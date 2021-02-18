@@ -1,18 +1,15 @@
 import shutil
 import tempfile
 from pathlib import Path
+from unittest import mock
 
 import hparams
 import pytest
-import torch
-import torch.nn
-from matplotlib import pyplot
 
 import lib
 import run
 from lib.audio import AudioFileMetadata
-from lib.datasets import Alignment
-from run._config import Cadence, DatasetType, get_dataset_label
+from run._utils import _find_duplicate_passages, nested_to_flat_config, split_dataset
 from tests._utils import TEST_DATA_PATH, make_passage
 
 TEST_DATA_PATH = TEST_DATA_PATH / "audio"
@@ -27,49 +24,6 @@ def run_around_tests():
     hparams.clear_config()
 
 
-def test_maybe_make_experiment_directories(capsys):
-    """ Test `maybe_make_experiment_directories` creates a directory structure. """
-    with tempfile.TemporaryDirectory() as directory:
-        with capsys.disabled():  # NOTE: Disable capsys because it messes with `sys.stdout`
-            path = Path(directory)
-            recorder = lib.environment.RecordStandardStreams()
-            run_name = "run_name"
-            checkpoints_directory_name = "checkpoints"
-            run_log_filename = "run.log"
-            run_root, checkpoints_directory = run._utils.maybe_make_experiment_directories(
-                path,
-                recorder,
-                run_name=run_name,
-                checkpoints_directory_name=checkpoints_directory_name,
-                run_log_filename=run_log_filename,
-            )
-            assert run_root.is_dir()
-            assert run_root.parent == path
-            assert run_root.name == run_name
-            assert checkpoints_directory.is_dir()
-            assert checkpoints_directory.parent == run_root
-            assert checkpoints_directory.name == checkpoints_directory_name
-            assert recorder.log_path.parent == run_root
-            assert recorder.log_path.name == run_log_filename
-
-
-def test_maybe_make_experiment_directories_from_checkpoint(capsys):
-    """ Test `maybe_make_experiment_directories_from_checkpoint` creates a directory structure. """
-    with tempfile.TemporaryDirectory() as directory:
-        with capsys.disabled():  # NOTE: Disable capsys because it messes with `sys.stdout`
-            path = Path(directory)
-            checkpoints_directory = path / "run_name" / "checkpoint_directory_name"
-            checkpoints_directory.mkdir(parents=True)
-            recorder = lib.environment.RecordStandardStreams()
-            run_name = "new_run"
-            checkpoint = run._utils.Checkpoint(checkpoints_directory, "", 0)
-            run_root, _ = run._utils.maybe_make_experiment_directories_from_checkpoint(
-                checkpoint, recorder, run_name=run_name
-            )
-            assert run_root.parent == path
-            assert run_root.name == run_name
-
-
 def test_normalize_audio():
     """Test `run._utils.normalize_audio` normalizes audio in `dataset`."""
     sample_rate = 8000
@@ -77,13 +31,13 @@ def test_normalize_audio():
     ffmpeg_encoding = "pcm_s16le"
     sox_encoding = "16-bit Signed Integer PCM"
     suffix = ".wav"
-    args = (sample_rate, num_channels, sox_encoding, 7.584, "256k", "16-bit")
+    args = (sample_rate, num_channels, sox_encoding, 7.584, "256k", "16-bit", 60672)
     with tempfile.TemporaryDirectory() as path:
         directory = Path(path)
         audio_path = directory / TEST_DATA_LJ.name
         shutil.copy(TEST_DATA_LJ, audio_path)
         metadata = AudioFileMetadata(audio_path, *args)
-        passage = make_passage(tuple(), lib.datasets.LINDA_JOHNSON, metadata)
+        passage = make_passage(speaker=lib.datasets.LINDA_JOHNSON, audio_file=metadata)
         dataset = {lib.datasets.LINDA_JOHNSON: [passage]}
         dataset = run._utils.normalize_audio(
             dataset,
@@ -99,75 +53,145 @@ def test_normalize_audio():
         assert lib.audio.get_audio_metadata(new_path) == AudioFileMetadata(new_path, *args)
 
 
-def test_worker_init_fn():
-    """Test `run._utils.worker_init_fn` sets a deterministic but random seed. """
-    run._utils.worker_init_fn(1, 123, 1)
-    assert torch.randn(1).item() == -0.9041745066642761
-    run._utils.worker_init_fn(1, 123, 1)
-    assert torch.randn(1).item() == -0.9041745066642761
-    run._utils.worker_init_fn(1, 123, 2)
-    assert torch.randn(1).item() == -1.5076009035110474
+def test__find_duplicate_passages():
+    """ Test `run._config._find_duplicate_passages` finds duplicate passages. """
+    dev_scripts = set(["This is a test."])
+    duplicates, rest = _find_duplicate_passages(
+        dev_scripts,
+        [
+            make_passage(script="I'm testing this."),
+            make_passage(script="This is a test."),
+            make_passage(script="This is a test!"),
+        ],
+        0.9,
+    )
+    assert [p.script for p in rest] == ["I'm testing this."]
+    assert [p.script for p in duplicates] == ["This is a test.", "This is a test!"]
 
 
-def test_set_context():
-    """Test `run._utils.set_context` updates comet, module, and grad context. """
-    comet = run._utils.CometMLExperiment(disabled=True)
-    rnn = torch.nn.LSTM(10, 20, 2).eval()
-    assert not rnn.training
-    with run._utils.set_context(run._utils.Context.TRAIN, rnn, comet):
-        assert rnn.training
-        assert comet.context == run._utils.Context.TRAIN.value
-        output, _ = rnn(torch.randn(5, 3, 10))
-        assert output.requires_grad
-    assert not rnn.training
+def test__find_duplicate_passages__no_duplicates():
+    """ Test `run._config._find_duplicate_passages` handles no duplicates. """
+    dev_scripts = set(["This is a test."])
+    duplicates, rest = _find_duplicate_passages(
+        dev_scripts, [make_passage(script="I'm testing this.")], 0.9
+    )
+    assert [p.script for p in rest] == ["I'm testing this."]
+    assert len(duplicates) == 0
 
 
-def test_get_dataset_stats():
-    """ Test `run._utils.get_dataset_stats` measures dataset statistics correctly. """
-    _passage = lambda a, b, s: make_passage((Alignment((a, b), (a * 10, b * 10), (a, b)),), s)
-    a = lib.datasets.Speaker("a")
-    b = lib.datasets.Speaker("b")
-    train = {a: [_passage(0, 2, a), _passage(0, 2, a)], b: [_passage(0, 1, a)]}
-    stats = run._utils.get_dataset_stats(train, {})
-    static = Cadence.STATIC
-    get_label = lambda n, t, s=None: get_dataset_label(n, cadence=static, type_=t, speaker=s)
-    assert stats == {
-        get_label("num_passages", DatasetType.TRAIN): 3,
-        get_label("num_characters", DatasetType.TRAIN): 5,
-        get_label("num_seconds", DatasetType.TRAIN): "50s 0ms",
-        get_label("num_audio_files", DatasetType.TRAIN): 1,  # NOTE: This counts unique audio files.
-        get_label("num_passages", DatasetType.TRAIN, a): 2,
-        get_label("num_characters", DatasetType.TRAIN, a): 4,
-        get_label("num_seconds", DatasetType.TRAIN, a): "40s 0ms",
-        get_label("num_audio_files", DatasetType.TRAIN, a): 1,
-        get_label("num_passages", DatasetType.TRAIN, b): 1,
-        get_label("num_characters", DatasetType.TRAIN, b): 1,
-        get_label("num_seconds", DatasetType.TRAIN, b): "10s 0ms",
-        get_label("num_audio_files", DatasetType.TRAIN, b): 1,
-        get_label("num_passages", DatasetType.DEV): 0,
-        get_label("num_characters", DatasetType.DEV): 0,
-        get_label("num_seconds", DatasetType.DEV): "0ms",
-        get_label("num_audio_files", DatasetType.DEV): 0,
+@mock.patch("random.shuffle", return_value=None)
+def test_split_dataset__deduplication(_):
+    """ Test `run._config.split_dataset` handles deduplication accross multiple speakers. """
+    speaker_a = lib.datasets.Speaker("a")
+    speaker_b = lib.datasets.Speaker("b")
+    speaker_c = lib.datasets.Speaker("c")
+    speaker_d = lib.datasets.Speaker("d")
+    alignments = lib.utils.Tuples(
+        [lib.datasets.Alignment((0, 1), (0, 1), (0, 1))], lib.datasets.alignment_dtype
+    )
+    passage = lambda script, speaker: make_passage(
+        script=script, speaker=speaker, alignments=alignments
+    )
+    dev_speakers = set([speaker_a, speaker_b, speaker_c])
+    dev_length = 1
+    dataset = {
+        speaker_a: [
+            passage("This is a test!", speaker_a),  # NOTE: Dev set
+            passage("I'm testing this.", speaker_a),  # NOTE: Initially, train set
+            passage("More training data testing!", speaker_a),  # NOTE: Train set
+            passage("Data for testing training.", speaker_a),  # NOTE: Train set
+        ],
+        speaker_b: [
+            passage("This is a test!", speaker_b),  # NOTE: Duplicate `speaker_a` dev passage
+            passage("This is a test.", speaker_b),  # NOTE: Duplicate `speaker_a` dev passage
+            passage("Completely different test.", speaker_b),  # NOTE: Train set
+            passage("Data for testing training.", speaker_a),  # NOTE: Train set
+        ],
+        speaker_c: [
+            passage("I'm testing this!", speaker_c),  # NOTE: Duplicate `speaker_a` train passage
+            passage("Another test.", speaker_c),  # NOTE: Train set
+        ],
+        speaker_d: [
+            passage("Outlier test!", speaker_d),  # NOTE: Train set
+            passage("This is a test!", speaker_a),  # NOTE: Non-dev set duplicate passage
+        ],
+    }
+    train, dev = split_dataset(dataset, dev_speakers, dev_length, 0.9)
+    assert train == {
+        speaker_a: [
+            passage("More training data testing!", speaker_a),
+            passage("Data for testing training.", speaker_a),
+        ],
+        speaker_b: [
+            passage("Completely different test.", speaker_b),
+            passage("Data for testing training.", speaker_a),
+        ],
+        speaker_c: [passage("Another test.", speaker_c)],
+        speaker_d: [passage("Outlier test!", speaker_d)],
+    }
+    assert dev == {
+        speaker_a: [
+            passage("I'm testing this.", speaker_a),
+            passage("This is a test!", speaker_a),
+        ],
+        speaker_b: [
+            passage("This is a test!", speaker_b),
+            passage("This is a test.", speaker_b),
+        ],
+        speaker_c: [passage("I'm testing this!", speaker_c)],
     }
 
 
-def test_comet_ml_experiment():
-    """Test if `run._utils.CometMLExperimentw` initializes, and the patched functions execute."""
-    comet = run._utils.CometMLExperiment(disabled=True)
-    with comet.context_manager(run._utils.Context.TRAIN):
-        assert comet.context == str(run._utils.Context.TRAIN)
-        comet.set_step(None)
-        comet.set_step(0)
-        comet.set_step(0)
-        comet.set_step(1)
-        comet.log_html_audio(
-            metadata="random metadata",
-            audio={"predicted_audio": torch.rand(100), "gold_audio": torch.rand(100)},
+@mock.patch("random.shuffle", return_value=None)
+def test_split_dataset__order(_):
+    """ Test `run._config.split_dataset` handles different dictionary orderings. """
+    speaker_a = lib.datasets.Speaker("a")
+    speaker_b = lib.datasets.Speaker("b")
+    alignments = lib.utils.Tuples(
+        [lib.datasets.Alignment((0, 1), (0, 1), (0, 1))], lib.datasets.alignment_dtype
+    )
+    passage = lambda script, speaker: make_passage(
+        script=script, speaker=speaker, alignments=alignments
+    )
+    dev_speakers = set([speaker_a, speaker_b])
+    dev_length = 1
+    dataset = {}
+    dataset[speaker_a] = [
+        passage("This is a test!", speaker_a),
+        passage("I'm testing this.", speaker_a),
+    ]
+    dataset[speaker_b] = [
+        passage("I'm testing this.", speaker_b),
+        passage("This is a test!", speaker_b),
+    ]
+    other_dataset = {}
+    other_dataset[speaker_b] = dataset[speaker_b]
+    other_dataset[speaker_a] = dataset[speaker_a]
+    assert list(other_dataset.keys()) != list(dataset.keys())
+
+    train, dev = split_dataset(dataset, dev_speakers, dev_length, 0.9)
+    other_train, other_dev = split_dataset(other_dataset, dev_speakers, dev_length, 0.9)
+    assert train == other_train
+    assert dev == other_dev
+
+
+def test_nested_to_flat_config():
+    """Test `nested_to_flat_config` flattens nested dicts, including edge cases with
+    an empty dict."""
+    assert (
+        nested_to_flat_config(
+            {
+                "a": {
+                    "b": "c",
+                    "d": {
+                        "e": "f",
+                    },
+                },
+                "g": "h",
+                "i": {},
+                "j": [],
+            },
+            delimitator=".",
         )
-        figure = pyplot.figure()
-        pyplot.close(figure)
-        comet.log_figures({run._config.Label("figure"): figure})
-        comet.log_current_epoch(0)
-        comet.log_epoch_end(0)
-        comet.set_name("name")
-        comet.add_tags(["tag"])
+        == {"a.b": "c", "a.d.e": "f", "g": "h", "j": []}
+    )

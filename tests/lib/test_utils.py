@@ -29,28 +29,6 @@ def test_random_sample():
         assert lib.utils.random_sample([1, 2, 3, 4], 5) == [1, 4, 3, 2]
 
 
-def test_nested_to_flat_dict():
-    """Test `lib.utils.nested_to_flat_dict` flattens nested dicts, including edge cases with
-    an empty dict."""
-    assert (
-        lib.utils.nested_to_flat_dict(
-            {
-                "a": {
-                    "b": "c",
-                    "d": {
-                        "e": "f",
-                    },
-                },
-                "g": "h",
-                "i": {},
-                "j": [],
-            },
-            delimitator=".",
-        )
-        == {"a.b": "c", "a.d.e": "f", "g": "h", "j": []}
-    )
-
-
 def test_mean():
     """ Test `lib.utils.mean` handles empty and non-empty iterables. """
     assert lib.utils.mean([1, 2, 3]) == 2

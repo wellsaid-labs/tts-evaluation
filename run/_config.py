@@ -1,58 +1,52 @@
-import collections
 import copy
 import enum
-import functools
 import logging
 import math
-import multiprocessing
-import pathlib
 import pprint
-import random
 import re
 import typing
 
 import torch
 import torch.nn
-import tqdm
 from hparams import HParams, add_config, configurable
-from Levenshtein.StringMatcher import StringMatcher
 from third_party import LazyLoader
-from torchnlp.random import fork_rng
 
 import lib
 import lib.datasets.m_ailabs
 import run
 from lib import datasets
-from lib.datasets import DATASETS, WSL_DATASETS, Speaker
+from lib.datasets import DATASETS, Speaker
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import IPython
     import IPython.display
     import librosa
-    import scipy
-    import scipy.signal
 else:
     librosa = LazyLoader("librosa", globals(), "librosa")
-    scipy = LazyLoader("scipy", globals(), "scipy")
     IPython = LazyLoader("IPython", globals(), "IPython")
 
 logger = logging.getLogger(__name__)
 pprinter = pprint.PrettyPrinter(indent=4)
 
 RANDOM_SEED = 1212212
-# SOURCE (Tacotron 1):
-# We use 24 kHz sampling rate for all experiments.
-SAMPLE_RATE = 24000
-# SOURCE (Tacotron 2):
-# We transform the STFT magnitude to the mel scale using an 80 channel mel filterbank spanning
-# 125 Hz to 7.6 kHz, followed by log dynamic range compression.
-# SOURCE (Tacotron 2 Author):
-# Google mentioned they settled on [20, 12000] with 128 filters in Google Chat.
-NUM_FRAME_CHANNELS = 128
 PHONEME_SEPARATOR = "|"
 DATASETS = copy.copy(DATASETS)
-# NOTE: Elliot Miller is not included due to his unannotated character portrayals.
-del DATASETS[datasets.ELLIOT_MILLER]
+del DATASETS[datasets.ELLIOT_MILLER]  # NOTE: Elliot Miller has unannotated character portrayals.
+
+# NOTE: It's theoretically impossible to know all the phonemes eSpeak might predict because
+# the predictions vary with context. We cannot practically generate every possible permutation
+# to generate the vocab.
+# TODO: Remove this once `grapheme_to_phoneme` is deprecated.
+# fmt: off
+DATASET_PHONETIC_CHARACTERS = [
+    '\n', ' ', '!', '"', "'", '(', ')', '*', ',', '-', '.', '/', ':', ';', '?', '[', ']', 'aɪ',
+    'aɪə', 'aɪɚ', 'aɪʊ', 'aɪʊɹ', 'aʊ', 'b', 'd', 'dʒ', 'eɪ', 'f', 'h', 'i', 'iə', 'iː', 'j',
+    'k', 'l', 'm', 'n', 'nʲ', 'n̩', 'oʊ', 'oː', 'oːɹ', 'p', 'r', 's', 't', 'tʃ', 'uː', 'v', 'w',
+    'x', 'z', 'æ', 'æː', 'ð', 'ø', 'ŋ', 'ɐ', 'ɐː', 'ɑː', 'ɑːɹ', 'ɑ̃', 'ɔ', 'ɔɪ', 'ɔː', 'ɔːɹ',
+    'ə', 'əl', 'ɚ', 'ɛ', 'ɛɹ', 'ɜː', 'ɡ', 'ɣ', 'ɪ', 'ɪɹ', 'ɫ', 'ɹ', 'ɾ', 'ʃ', 'ʊ', 'ʊɹ', 'ʌ',
+    'ʒ', 'ʔ', 'ˈ', 'ˌ', 'θ', 'ᵻ', 'ɬ'
+]
+# fmt: on
 
 TTS_DISK_CACHE_NAME = ".tts_cache"  # NOTE: Hidden directory stored in other directories for caching
 DISK_PATH = lib.environment.ROOT_PATH / "disk"
@@ -72,6 +66,17 @@ for directory in [
     SPECTROGRAM_MODEL_EXPERIMENTS_PATH,
 ]:
     directory.mkdir(exist_ok=True)
+
+# SOURCE (Tacotron 1):
+# We use 24 kHz sampling rate for all experiments.
+SAMPLE_RATE = 24000
+
+# SOURCE (Tacotron 2):
+# We transform the STFT magnitude to the mel scale using an 80 channel mel filterbank spanning
+# 125 Hz to 7.6 kHz, followed by log dynamic range compression.
+# SOURCE (Tacotron 2 Author):
+# Google mentioned they settled on [20, 12000] with 128 filters in Google Chat.
+NUM_FRAME_CHANNELS = 128
 
 
 class Cadence(enum.Enum):
@@ -119,18 +124,7 @@ def get_environment_label(name: str, cadence: Cadence = Cadence.STATIC) -> Label
     return Label("{cadence}/environment/{name}".format(cadence=cadence.value, name=name))
 
 
-def _get_window(window: str, window_length: int, window_hop: int) -> torch.Tensor:
-    """Get a `torch.Tensor` window that passes `scipy.signal.check_COLA`.
-
-    NOTE: `torch.hann_window` does not pass `scipy.signal.check_COLA`, for example. Learn more:
-    https://github.com/pytorch/audio/issues/452
-    """
-    window = librosa.filters.get_window(window, window_length)
-    assert scipy.signal.check_COLA(window, window_length, window_length - window_hop)
-    return torch.tensor(window).float()
-
-
-def configure_audio_processing():
+def _configure_audio_processing():
     """ Configure modules that process audio. """
     num_channels = 1  # NOTE: The signal model output is 1-channel, similar to Tacotron-2.
     # NOTE: The SoX and FFmpeg encodings are the same.
@@ -158,7 +152,7 @@ def configure_audio_processing():
     # NOTE: A "hann window" is standard for calculating an FFT, it's even mentioned as a "popular
     # window" on Wikipedia (https://en.wikipedia.org/wiki/Window_function).
     try:
-        window = _get_window("hann", frame_size, frame_hop)
+        window = run._utils.get_window("hann", frame_size, frame_hop)
         config = {
             lib.audio.power_spectrogram_to_framed_rms: HParams(window=window),
             lib.audio.SignalTodBMelSpectrogram.__init__: HParams(window=window),
@@ -255,10 +249,12 @@ def configure_audio_processing():
             ratios=[2] * int(math.log2(frame_hop)),
         ),
         # NOTE: A 0.400 `block_size` is standard for ITU-R BS.1770.
-        run._spectrogram_model._get_loudness: HParams(block_size=0.400, precision=0),
-        run._spectrogram_model._random_loudness_annotations: HParams(max_annotations=10),
-        run._spectrogram_model._random_speed_annotations: HParams(max_annotations=10, precision=2),
-        run._spectrogram_model._make_stop_token: HParams(
+        run.train.spectrogram_model._data._get_loudness: HParams(block_size=0.400, precision=0),
+        run.train.spectrogram_model._data._random_loudness_annotations: HParams(max_annotations=10),
+        run.train.spectrogram_model._data._random_speed_annotations: HParams(
+            max_annotations=10, precision=2
+        ),
+        run.train.spectrogram_model._data._make_stop_token: HParams(
             # NOTE: The stop token uncertainty was approximated by a fully trained model that
             # learned the stop token distribution. The distribution looked like a gradual increase
             # over 4 - 8 frames in January 2020, on Comet.
@@ -273,7 +269,7 @@ def configure_audio_processing():
     add_config(config)
 
 
-def configure_models():
+def _configure_models():
     """ Configure spectrogram and signal model. """
     # SOURCE (Tacotron 2):
     # Attention probabilities are computed after projecting inputs and location
@@ -410,15 +406,6 @@ def configure_models():
     add_config(config)
 
 
-def configure():
-    """ Configure modules. """
-    configure_audio_processing()
-    configure_models()
-
-    config = {lib.text.grapheme_to_phoneme: HParams(separator=PHONEME_SEPARATOR)}
-    add_config(config)
-
-
 def _include_passage(passage: datasets.Passage) -> bool:
     """Return `True` iff `passage` should be included in the dataset."""
     details = passage.to_string("audio_file", "script", "other_metadata")
@@ -462,171 +449,6 @@ def _handle_passage(passage: datasets.Passage) -> datasets.Passage:
     return passage
 
 
-def get_dataset(
-    datasets: typing.Dict[lib.datasets.Speaker, lib.datasets.DataLoader] = DATASETS,
-    path: pathlib.Path = DATA_PATH,
-) -> Dataset:
-    """Define a TTS dataset.
-
-    TODO: `normalize_audio` could be used replicate datasets with different audio processing.
-
-    Args:
-        datasets: Dictionary of datasets to load.
-        path: Directory to cache the dataset.
-    """
-    logger.info("Loading dataset...")
-    with multiprocessing.pool.ThreadPool() as pool:
-        handle_passages = lambda l: [_handle_passage(p) for p in l if _include_passage(p)]
-        load_data = lambda i: (i[0], handle_passages(i[1](path)))
-        items = list(pool.map(load_data, datasets.items()))
-    dataset = {k: v for k, v in items}
-    dataset = run._utils.normalize_audio(dataset)
-    return dataset
-
-
-@functools.lru_cache(maxsize=None)
-def _is_duplicate(a: str, b: str, min_similarity: float) -> bool:
-    """Helper function for `split_dataset` used to judge string similarity."""
-    matcher = StringMatcher(seq1=a, seq2=b)
-    return (
-        matcher.real_quick_ratio() > min_similarity
-        and matcher.quick_ratio() > min_similarity
-        and matcher.ratio() > min_similarity
-    )
-
-
-def _find_duplicate_passages(
-    dev_scripts: typing.Set[str],
-    passages: typing.List[lib.datasets.Passage],
-    min_similarity: float,
-) -> typing.Tuple[typing.List[lib.datasets.Passage], typing.List[lib.datasets.Passage]]:
-    """Find passages in `passages` that are a duplicate of a passage in `dev_scripts`.
-
-    Args:
-        dev_scripts: Set of unique scripts.
-        passages: Passages that may have a `script` thats already included in `dev_scripts`.
-        minimum_similarity: From 0 - 1, this is the minimum similarity two scripts must have to be
-          considered duplicates.
-    """
-    duplicates, rest = [], []
-    for passage in passages:
-        if passage.script in dev_scripts:
-            duplicates.append(passage)
-            continue
-
-        length = len(duplicates)
-        for dev_script in dev_scripts:
-            if _is_duplicate(dev_script, passage.script, min_similarity):
-                duplicates.append(passage)
-                break
-
-        if length == len(duplicates):
-            rest.append(passage)
-
-    return duplicates, rest
-
-
-DEV_SPEAKERS = [
-    lib.datasets.ADRIENNE_WALKER_HELLER,
-    lib.datasets.ALICIA_HARRIS__MANUAL_POST,
-    lib.datasets.BETH_CAMERON,
-    lib.datasets.ELISE_RANDALL,
-    lib.datasets.FRANK_BONACQUISTI,
-    lib.datasets.GEORGE_DRAKE_JR,
-    lib.datasets.HANUMAN_WELCH,
-    lib.datasets.HEATHER_DOE,
-    lib.datasets.HILARY_NORIEGA,
-    lib.datasets.JACK_RUTKOWSKI__MANUAL_POST,
-    lib.datasets.JOHN_HUNERLACH__NARRATION,
-    lib.datasets.JOHN_HUNERLACH__RADIO,
-    lib.datasets.MARK_ATHERLAY,
-    lib.datasets.MEGAN_SINCLAIR,
-    lib.datasets.SAM_SCHOLL__MANUAL_POST,
-    lib.datasets.STEVEN_WAHLBERG,
-    lib.datasets.SUSAN_MURPHY,
-]
-
-
-@lib.utils.log_runtime
-def split_dataset(
-    dataset: Dataset,
-    dev_speakers: typing.Set[lib.datasets.Speaker] = set(DEV_SPEAKERS),
-    approximate_dev_length: int = 30 * 60,
-    min_similarity: float = 0.9,
-    seed: int = 123,
-) -> typing.Tuple[Dataset, Dataset]:
-    """Split the dataset into a train set and development set.
-
-    NOTE: The RNG state should never change; otherwise, the training and dev datasets may be
-    different from experiment to experiment.
-
-    NOTE: `len_` assumes that the amount of data in each passage can be estimated with
-    `aligned_audio_length`. For example, if there was a long pause within a passage, this estimate
-    wouldn't make sense.
-
-    NOTE: Passages are split between the train and development set in groups. The groups are
-    dictated by textual similarity. The result of this is that the text in the train and
-    development sets is distinct.
-
-    NOTE: Any duplicate data for a speaker, not in `dev_speakers` will be discarded.
-
-    Args:
-        ...
-        dev_speakers: Speakers to include in the development set.
-        approximate_dev_length: Number of seconds per speaker in the development dataset. The
-            deduping algorithm may add extra items above the `approximate_dev_length`.
-        ...
-    """
-    logger.info("Splitting `dataset`...")
-    dev: typing.Dict[lib.datasets.Speaker, list] = collections.defaultdict(list)
-    train: typing.Dict[lib.datasets.Speaker, list] = collections.defaultdict(list)
-    dev_scripts: typing.Set[str] = set()
-    len_ = lambda _passage: _passage.aligned_audio_length()
-    sum_ = lambda _passages: sum([len_(p) for p in _passages])
-    with fork_rng(seed=seed):
-        iterator = list(sorted(dataset.items(), key=lambda i: (len(i[1]), i[0])))
-        for speaker, passages in tqdm.tqdm(iterator):
-            if speaker not in dev_speakers:
-                train[speaker] = passages
-                continue
-
-            duplicates, rest = _find_duplicate_passages(dev_scripts, passages, min_similarity)
-            dev[speaker].extend(duplicates)
-
-            random.shuffle(rest)
-            seconds = max(approximate_dev_length - sum_(dev[speaker]), 0)
-            splits = tuple(lib.utils.split(rest, [seconds, math.inf], len_))
-            dev[speaker].extend(splits[0])
-            train[speaker].extend(splits[1])
-            dev_scripts.update(d.script for d in dev[speaker])
-
-            message = "The `dev` dataset is larger than the `train` dataset."
-            assert sum_(train[speaker]) >= sum_(dev[speaker]), message
-            assert sum_(train[speaker]) > 0, "The train dataset has no aligned audio data."
-            assert sum_(dev[speaker]) > 0, "The train dataset has no aligned audio data."
-
-        # NOTE: Run the deduping algorithm until there are no more duplicates.
-        length = None
-        while length is None or length != len(dev_scripts):
-            logger.info("Rerunning until there are no more duplicates...")
-            length = len(dev_scripts)
-            for speaker, _ in iterator:
-                duplicates, rest = _find_duplicate_passages(
-                    dev_scripts, train[speaker], min_similarity
-                )
-                if speaker not in dev_speakers and len(duplicates) > 0:
-                    message = "Discarded %d duplicates for non-dev speaker %s. "
-                    logger.warning(message, len(duplicates), speaker)
-                elif speaker in dev_speakers:
-                    dev[speaker].extend(duplicates)
-                train[speaker] = rest
-                dev_scripts.update(d.script for d in duplicates)
-
-    _is_duplicate.cache_clear()
-
-    return dict(train), dict(dev)
-
-
 DIGIT_REGEX = re.compile(r"\d")
 ALPHANUMERIC_REGEX = re.compile(r"[a-zA-Z0-9]")
 
@@ -659,50 +481,50 @@ def _include_span(span: datasets.Span):
     return True
 
 
-class SpanGenerator(typing.Iterator[datasets.Span]):
-    """Define the dataset generator to train and evaluate the TTS models on.
+def _configure_data_processing():
+    """ Configure modules that process data, other than audio. """
+    dev_speakers = [
+        lib.datasets.ADRIENNE_WALKER_HELLER,
+        lib.datasets.ALICIA_HARRIS__MANUAL_POST,
+        lib.datasets.BETH_CAMERON,
+        lib.datasets.ELISE_RANDALL,
+        lib.datasets.FRANK_BONACQUISTI,
+        lib.datasets.GEORGE_DRAKE_JR,
+        lib.datasets.HANUMAN_WELCH,
+        lib.datasets.HEATHER_DOE,
+        lib.datasets.HILARY_NORIEGA,
+        lib.datasets.JACK_RUTKOWSKI__MANUAL_POST,
+        lib.datasets.JOHN_HUNERLACH__NARRATION,
+        lib.datasets.JOHN_HUNERLACH__RADIO,
+        lib.datasets.MARK_ATHERLAY,
+        lib.datasets.MEGAN_SINCLAIR,
+        lib.datasets.SAM_SCHOLL__MANUAL_POST,
+        lib.datasets.STEVEN_WAHLBERG,
+        lib.datasets.SUSAN_MURPHY,
+    ]
+    config = {
+        lib.text.grapheme_to_phoneme: HParams(separator=PHONEME_SEPARATOR),
+        run._utils.get_dataset: HParams(
+            datasets=DATASETS,
+            path=DATA_PATH,
+            include_passage=_include_passage,
+            handle_passage=_handle_passage,
+        ),
+        run._utils.split_dataset: HParams(
+            dev_speakers=set(dev_speakers),
+            approximate_dev_length=30 * 60,
+            min_similarity=0.9,
+        ),
+        run._utils.SpanGenerator.__init__: HParams(
+            max_seconds=15,
+            include_span=_include_span,
+        ),
+    }
+    add_config(config)
 
-    Args:
-        dataset
-        max_seconds: The maximum seconds delimited by an `Span`.
-    """
 
-    @lib.utils.log_runtime
-    def __init__(self, dataset: Dataset, max_seconds: int = 15):
-        self.max_seconds = max_seconds
-        self.dataset = dataset
-        self.generators: typing.Dict[lib.datasets.Speaker, typing.Iterator[lib.datasets.Span]] = {}
-        for speaker, passages in dataset.items():
-            # NOTE: Some datasets are pre-cut, and this conditional preserves their distribution.
-            is_singles = all([len(p.alignments) == 1 for p in passages])
-            max_seconds_ = math.inf if is_singles else max_seconds
-            self.generators[speaker] = datasets.SpanGenerator(passages, max_seconds_)
-        self.speakers = list(dataset.keys())
-        self.counter = {s: 0.0 for s in self.speakers}
-
-    def __iter__(self) -> typing.Iterator[datasets.Span]:
-        return self
-
-    def __next__(self) -> datasets.Span:
-        while True:  # NOTE: This samples speakers uniformly.
-            speaker = lib.utils.corrected_random_choice(self.counter)
-            span = next(self.generators[speaker])
-            if span.audio_length < self.max_seconds and _include_span(span):
-                self.counter[span.speaker] += span.audio_length
-                return span
-
-
-# NOTE: It's theoretically impossible to know all the phonemes eSpeak might predict because
-# the predictions vary with context. We cannot practically generate every possible permutation
-# to generate the vocab.
-# TODO: Remove this once `grapheme_to_phoneme` is deprecated.
-# fmt: off
-DATASET_PHONETIC_CHARACTERS = [
-    '\n', ' ', '!', '"', "'", '(', ')', '*', ',', '-', '.', '/', ':', ';', '?', '[', ']', 'aɪ',
-    'aɪə', 'aɪɚ', 'aɪʊ', 'aɪʊɹ', 'aʊ', 'b', 'd', 'dʒ', 'eɪ', 'f', 'h', 'i', 'iə', 'iː', 'j',
-    'k', 'l', 'm', 'n', 'nʲ', 'n̩', 'oʊ', 'oː', 'oːɹ', 'p', 'r', 's', 't', 'tʃ', 'uː', 'v', 'w',
-    'x', 'z', 'æ', 'æː', 'ð', 'ø', 'ŋ', 'ɐ', 'ɐː', 'ɑː', 'ɑːɹ', 'ɑ̃', 'ɔ', 'ɔɪ', 'ɔː', 'ɔːɹ',
-    'ə', 'əl', 'ɚ', 'ɛ', 'ɛɹ', 'ɜː', 'ɡ', 'ɣ', 'ɪ', 'ɪɹ', 'ɫ', 'ɹ', 'ɾ', 'ʃ', 'ʊ', 'ʊɹ', 'ʌ',
-    'ʒ', 'ʔ', 'ˈ', 'ˌ', 'θ', 'ᵻ', 'ɬ'
-]
-# fmt: on
+def configure():
+    """ Configure modules required for `run`. """
+    _configure_audio_processing()
+    _configure_models()
+    _configure_data_processing()

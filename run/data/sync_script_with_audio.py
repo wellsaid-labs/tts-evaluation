@@ -192,10 +192,10 @@ def _remove_punctuation(string: str) -> str:
     return MULTIPLE_WHITE_SPACES_REGEX.sub(" ", PUNCTUATION_REGEX.sub(" ", string).strip())
 
 
-# NOTE: Use private `_grapheme_to_phoneme` for performance...
-_grapheme_to_phoneme = lru_cache(maxsize=2 ** 20)(
-    partial(lib.text._grapheme_to_phoneme, separator="|")
-)
+@lru_cache(maxsize=2 ** 20)
+def _grapheme_to_phoneme(grapheme: str):
+    """NOTE: Use private `_line_grapheme_to_phoneme` for performance..."""
+    return lib.text._line_grapheme_to_phoneme([grapheme], separator="|")[0]
 
 
 @lru_cache(maxsize=2 ** 20)

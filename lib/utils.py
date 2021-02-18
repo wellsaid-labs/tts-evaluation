@@ -37,30 +37,6 @@ def random_sample(
     return random.sample(list_, min(len(list_), sample_size))
 
 
-def nested_to_flat_dict(
-    dict_: typing.Dict[str, typing.Any], delimitator: str = "."
-) -> typing.Dict[str, typing.Any]:
-    """Convert nested dictionary to a flat dictionary by concatenating keys with a `delimitator`.
-
-    Args:
-        dict_
-        delimitator: Delimitator used to join keys.
-    """
-    return _nested_to_flat_dict(dict_=dict_, delimitator=delimitator, keys=[])
-
-
-def _nested_to_flat_dict(
-    dict_: typing.Dict[str, typing.Any], delimitator: str, keys: typing.List[str]
-) -> typing.Dict[str, typing.Any]:
-    ret_ = {}
-    for key in dict_:
-        if isinstance(dict_[key], dict):
-            ret_.update(_nested_to_flat_dict(dict_[key], delimitator, keys + [key]))
-        else:
-            ret_[delimitator.join(keys + [key])] = dict_[key]
-    return ret_
-
-
 def mean(list_: typing.Iterable[float]) -> float:
     """ Mean function that does not return an error if `list_` is empty. """
     list_ = list(list_)

@@ -1,26 +1,14 @@
-"""
-TODO: This module should be split up into multiple files, it's quite long.
-"""
-import collections
-import collections.abc
-import copy
 import dataclasses
 import logging
-import math
-import os
 import pathlib
-import platform
 import random
 import sys
-import time
 import typing
 from functools import partial
 from itertools import chain
 
 # NOTE: `comet_ml` needs to be imported before torch
 import comet_ml  # type: ignore # noqa
-import hparams
-import hparams.hparams
 import torch
 import torch.nn
 import torch.optim
@@ -29,57 +17,53 @@ import torch.utils.data
 import tqdm
 import typer
 from hparams import HParam, HParams, add_config, configurable, get_config, parse_hparam_args
-from third_party import get_parameter_norm
-from torch.utils.data.dataloader import _MultiProcessingDataLoaderIter  # type: ignore
-from torchnlp.samplers import BucketBatchSampler, DeterministicSampler, DistributedBatchSampler
-from torchnlp.utils import get_total_parameters, lengths_to_mask, tensors_to
+from torchnlp.utils import get_total_parameters, lengths_to_mask
 
 import lib
-import run
-from lib.distributed import gather_list, get_rank, get_world_size, is_initialized, is_master
+from lib.distributed import get_world_size, is_master
 from lib.environment import load, load_most_recent_file, save
 from lib.utils import flatten
 from run._config import (
+    DATASET_PHONETIC_CHARACTERS,
+    DATASETS,
+    NUM_FRAME_CHANNELS,
+    PHONEME_SEPARATOR,
+    RANDOM_SEED,
     SPECTROGRAM_MODEL_EXPERIMENTS_PATH,
     Cadence,
+    Dataset,
     DatasetType,
-    Label,
+    configure,
     get_config_label,
     get_dataset_label,
+    get_environment_label,
     get_model_label,
 )
-from run._spectrogram_model import (
+from run._utils import get_dataset, nested_to_flat_config, split_dataset
+from run.train._utils import (
     Checkpoint,
-    InputEncoder,
-    SpanBatch,
-    get_average_db_rms_level,
-    get_cumulative_power_rms_level,
-    get_num_skipped,
-    make_span_batch,
-)
-from run._utils import (
     CometMLExperiment,
     Context,
+    get_dataset_stats,
+    init_distributed,
     maybe_make_experiment_directories,
     maybe_make_experiment_directories_from_checkpoint,
     set_context,
 )
+from run.train.spectrogram_model._data import DataIterator, DataLoader, InputEncoder, SpanBatch
+from run.train.spectrogram_model._metrics import DistributedMetrics, get_average_db_rms_level
+from run.train.spectrogram_model._utils import set_seed
 
 lib.environment.enable_fault_handler()
 logger = logging.getLogger(__name__)
 app = typer.Typer()
 
 
-@configurable
-def _set_seed(seed=HParam()):
-    lib.environment.set_seed(seed)
-
-
 def _configure(
     more_config: typing.Dict[str, typing.Any], debug: bool
 ) -> typing.Dict[str, typing.Any]:
     """ Configure modules for spectrogram model training, and return parameters. """
-    run._config.configure()
+    configure()
 
     train_batch_size = 28 if debug else 56
     dev_batch_size = train_batch_size * 4
@@ -94,7 +78,7 @@ def _configure(
 
     torch.optim.Adam.__init__ = configurable(torch.optim.Adam.__init__)  # type: ignore
     config = {
-        _set_seed: HParams(seed=run._config.RANDOM_SEED),
+        set_seed: HParams(seed=RANDOM_SEED),
         _State._get_optimizers: HParams(
             lr_multiplier_schedule=partial(
                 lib.optimizers.warmup_lr_multiplier_schedule, warmup=500
@@ -127,9 +111,7 @@ def _configure(
             dev_batch_size=dev_batch_size,
             num_workers=2 if debug else 4,
         ),
-        _DistributedMetrics.get_model_metrics: HParams(
-            num_frame_channels=run._config.NUM_FRAME_CHANNELS
-        ),
+        DistributedMetrics.get_model_metrics: HParams(num_frame_channels=NUM_FRAME_CHANNELS),
         # SOURCE (Tacotron 2):
         # We use the Adam optimizer with β1 = 0.9, β2 = 0.999, eps = 10−6 learning rate of 10−3
         # We also apply L2 regularization with weight 10−6
@@ -141,14 +123,23 @@ def _configure(
             amsgrad=True,
             betas=(0.9, 0.999),
         ),
-        run._spectrogram_model.InputEncoder.__init__: HParams(
-            phoneme_separator=run._config.PHONEME_SEPARATOR
-        ),
+        InputEncoder.__init__: HParams(phoneme_separator=PHONEME_SEPARATOR),
     }
     add_config(config)
     add_config(more_config)
-    _set_seed()
-    return lib.utils.nested_to_flat_dict(get_config())
+    set_seed()
+    return nested_to_flat_config(get_config())
+
+
+@dataclasses.dataclass(frozen=True)
+class Checkpoint(Checkpoint):
+    """Checkpoint used to checkpoint spectrogram model training."""
+
+    input_encoder: InputEncoder
+    model: lib.spectrogram_model.SpectrogramModel
+    optimizer: torch.optim.Adam
+    clipper: lib.optimizers.AdaptiveGradientNormClipper
+    scheduler: torch.optim.lr_scheduler.LambdaLR
 
 
 @dataclasses.dataclass(frozen=True)
@@ -168,8 +159,8 @@ class _State:
 
     @staticmethod
     def _get_input_encoder(
-        train_dataset: run._config.Dataset,
-        dev_dataset: run._config.Dataset,
+        train_dataset: Dataset,
+        dev_dataset: Dataset,
         comet: CometMLExperiment,
     ) -> InputEncoder:
         """Initialize an input encoder to encode model input.
@@ -179,7 +170,7 @@ class _State:
         passages = chain(*tuple(chain(train_dataset.values(), dev_dataset.values())))
         input_encoder = InputEncoder(
             flatten([p.script for p in passages]),
-            run._config.DATASET_PHONETIC_CHARACTERS,
+            DATASET_PHONETIC_CHARACTERS,
             list(train_dataset.keys()) + list(dev_dataset.keys()),
         )
 
@@ -290,8 +281,8 @@ class _State:
     @classmethod
     def from_dataset(
         cls,
-        train_dataset: run._config.Dataset,
-        dev_dataset: run._config.Dataset,
+        train_dataset: Dataset,
+        dev_dataset: Dataset,
         comet: CometMLExperiment,
         device: torch.device,
     ):
@@ -305,531 +296,22 @@ class _State:
         return cls(input_encoder, model, *cls._get_optimizers(model), comet, device)
 
 
-def _worker_init_fn(_, config):
-    # TODO: Add a method for transfering global configuration between processes without private
-    # variables.
-    # TODO: After the global configuration is transfered, the functions need to be rechecked
-    # like for a configuration, just in case the configuration is on a new process.
-    hparams.hparams._configuration = config
-    info = torch.utils.data.get_worker_info()
-    lib.environment.set_basic_logging_config()
-    logger.info("Worker %d/%d iterator started.", info.id + 1, info.num_workers)
-    _set_seed()  # NOTE: Each worker needs the same random seed to be deterministic.
-
-
-class _DataIterator(lib.utils.MappedIterator):
-    def __init__(self, dataset: run._config.Dataset, batch_size: int):
-        """Generate spans from `run._config.Dataset`.
-
-        NOTE: Our training procedure is similar to BERT, the examples are randomly sampled
-        from a large corpus of data with `SpanGenerator`.
-        """
-        iter_ = run._config.SpanGenerator(dataset)
-        iter_ = BucketBatchSampler(iter_, batch_size, False, self._data_iterator_sort_key)
-        iter_ = DeterministicSampler(iter_, run._config.RANDOM_SEED, cuda=False)
-        if is_initialized():
-            iter_ = DistributedBatchSampler(iter_, num_replicas=get_world_size(), rank=get_rank())
-        super().__init__(iter_)
-
-    @staticmethod
-    def _data_iterator_sort_key(span: lib.datasets.Span):
-        return span.audio_length
-
-    def __len__(self) -> int:
-        return sys.maxsize  # NOTE: The `DataLoader` needs `__len__`.
-
-
-class _DataLoader(collections.abc.Iterable):
-    """Load and batch spans given a dataset `iterator`.
-
-    NOTE: The `DataLoader` by default will create a sequential sampler. It'll use that sampler
-    to queue up batches from `_DataIterator`, in order.
-
-    NOTE: Each `DataLoader` worker replicates the dataset, and other objects. As of
-    02/04/2020, about half of our memory (30 gb) was used by `DataLoader` workers. This
-    can be resolved with memory sharing like "fork" and `gc.freeze`.
-
-    NOTE: `DataLoader` isn't compatible with "fork" because NCCL isn't fork safe. There
-    are also issues with OMP and CUDA. They have issues with fork, as well. Learn more:
-    > Unfortunately Gloo (that uses Infiniband) and NCCL2 are not fork safe, and you will
-    likely experience deadlocks if you don’t change this setting.
-    https://github.com/pytorch/pytorch/pull/4766
-    > After OpenMP features are utilized, a fork is only allowed if the child process does not
-    > use OpenMP features, or it does so as a completely new process (such as after exec()).
-    https://bisqwit.iki.fi/story/howto/openmp/#OpenmpAndFork
-    https://github.com/pytorch/pytorch/issues/42444
-    > The CUDA runtime does not support the fork start method
-    https://pytorch.org/docs/stable/notes/multiprocessing.html#cuda-in-multiprocessing
-
-    TODO: The `DataLoader` runs `make_span_batch` and `iterator` in each worker. For performance,
-    we could move `make_span_batch` to `_DataIterator` and preprocess larger batches at the
-    same time. The `collate_fn` function could be replaced with an `identity` function, and
-    everything could be processed in the `_DataIterator` efficiently. Learn more:
-    https://github.com/pytorch/pytorch/blob/272f4db043ec2c63ecfe6d2759e7893cb842a3c3/torch/utils/data/_utils/fetch.py#L35
-    https://pytorch.org/docs/stable/data.html#disable-automatic-batching
-    This should also help with code locality. Also, if we'd like to run a more expensive dataset
-    filtering, it is more doable in batches.
-
-    TODO: Remove `copy.deepcopy` after this issue is fixed:
-    https://github.com/pytorch/pytorch/issues/51849
-    """
-
-    def __init__(
-        self, iterator: _DataIterator, device: torch.device, input_encoder: InputEncoder, **kwargs
-    ):
-        logger.info("Creating `DataLoader`...")
-        self.device = device
-        max_parallel = int(os.cpu_count() // get_world_size())
-        loader = torch.utils.data.dataloader.DataLoader(
-            typing.cast(torch.utils.data.Dataset, iterator),
-            pin_memory=True,
-            batch_size=None,
-            worker_init_fn=partial(_worker_init_fn, config=copy.deepcopy(get_config())),
-            collate_fn=partial(
-                make_span_batch, input_encoder=input_encoder, max_parallel=max_parallel
-            ),
-            prefetch_factor=4,
-            **kwargs,
-        )
-        self.loader = iter(loader)
-        self.num_frames = 0.0
-        self.num_spans = 0.0
-        logger.info("Created `DataLoader`.")
-
-    @property
-    def average_spectrogram_length(self) -> float:
-        return self.num_frames / self.num_spans
-
-    def __iter__(self) -> typing.Iterator[SpanBatch]:
-        first = time.time()
-        while True:
-            batch = next(self.loader)
-            self.num_frames += batch.spectrogram.lengths.float().sum().item()
-            self.num_spans += batch.length
-            # NOTE: Tensors are moved to CUDA outside of the `DataLoader` workers. Learn more:
-            # > It is generally not recommended to return CUDA tensors in multi-process loading
-            # > because of many subtleties in using CUDA and sharing CUDA tensors in multiprocessing
-            # https://pytorch.org/docs/stable/data.html#multi-process-data-loading
-            yield typing.cast(SpanBatch, tensors_to(batch, device=self.device, non_blocking=True))
-            if first is not None:  # NOTE: The first batch will take the longest to load.
-                elapsed = lib.utils.seconds_to_string(time.time() - first)
-                logger.info("Time to first batch was %s.", elapsed)
-                first = None
-
-
 @configurable
 def _get_data_loaders(
     state: _State,
-    train_dataset: run._config.Dataset,
-    dev_dataset: run._config.Dataset,
+    train_dataset: Dataset,
+    dev_dataset: Dataset,
     train_batch_size: int = HParam(),
     dev_batch_size: int = HParam(),
     num_workers: int = HParam(),
-) -> typing.Tuple[_DataLoader, _DataLoader]:
+) -> typing.Tuple[DataLoader, DataLoader]:
     """ Initialize training and development data loaders.  """
     kwargs = dict(num_workers=num_workers, device=state.device, input_encoder=state.input_encoder)
-    DataLoaderPartial = partial(_DataLoader, **kwargs)
+    DataLoaderPartial = partial(DataLoader, **kwargs)
     return (
-        DataLoaderPartial(_DataIterator(train_dataset, train_batch_size)),
-        DataLoaderPartial(_DataIterator(dev_dataset, dev_batch_size)),
+        DataLoaderPartial(DataIterator(train_dataset, train_batch_size)),
+        DataLoaderPartial(DataIterator(dev_dataset, dev_batch_size)),
     )
-
-
-_Measurements = typing.List[float]
-# NOTE: `_Reduce` reduces a list of measurements into a metric.
-_Reduce = typing.Callable[[_Measurements], float]
-_Metrics = typing.Dict[Label, typing.Optional[float]]
-
-
-@dataclasses.dataclass
-class _DistributedMetrics:
-    """Track metrics with measurements taken on every process for every step.
-
-    TODO: Instead of using CUDA tensors, for synchronizing metadata and metrics, it's more natural
-    to use a `TCPStore` on CPU. Furthermore, `TCPStore` with `json` could store variable length
-    items like lists.
-    Furthermore, we could create a generic metric manager. The workers will communicate with the
-    manager by sending dictionaries. The master would start a thread that listens for, and
-    accumulates metrics from the workers.
-    This could also help reduce a lot of complexity this metrics implementation. There is a lot of
-    code that's focused on appending.
-
-    Args:
-        ...
-        batch_size: The batch size at each step.
-        data_queue_size: This measures the data loader queue each step. This metric should be a
-            positive integer indicating that the `data_loader` is loading faster than the data is
-            getting ingested; otherwise, the `data_loader` is bottlenecking training by loading too
-            slowly.
-        predicted_frame_alignment_norm: This measures the p-norm of an alignment from a frame to the
-            tokens. As the alignment per frame consolidates on a couple tokens in the input, this
-            metric goes from zero to one.
-        predicted_frame_alignment_std: This measures the discrete standard deviation of an alignment
-            from a frame to the tokens. As the alignment per frame is localized to a couple
-            sequential tokens in the input, this metric goes to zero.
-        num_predictions_per_speaker: The number of spectrograms predicted per speaker for each step.
-        num_skips_per_speaker: In the predicted alignment, this tracks the number of tokens
-            that were skipped per speaker. This could indicate that the model has issues, or that
-            the dataset is flawed.
-        num_tokens_per_speaker: The number of tokens per speaker for each step.
-        frame_rms_level: This measures the sum of the RMS level for each frame in each step.
-        text_length_bucket_size: This is a constant value bucket size for reporting the text
-            length distribution.
-        num_spans_per_text_length: For each text length bucket, this counts the number of spans.
-        num_frames_per_speaker: For each speaker, this counts the number of spectrogram frames
-            each step.
-        num_seconds_per_speaker: For each speaker, this counts the number of seconds each step.
-        num_frames_predicted: This measures the number of frames predicte each step.
-        num_frames: This measures the number of frames in each step.
-        max_num_frames: The maximum number of frames, in a spectrogram, seen.
-        num_reached_max: This measures the number of predicted spectrograms that reach max frames
-            each step.
-        num_reached_max_per_speaker: This measures the number of predicted spectrograms that reach
-            max frames each step per speaker.
-        predicted_frame_rms_level: This measures the sum of the RMS level for each predicted frame
-            in each step.
-        spectrogram_loss: This measures the difference between the original and predicted
-            spectrogram each step.
-        stop_token_loss: This measures the difference between the original and predicted stop token
-            distribution each step.
-        stop_token_num_correct: This measures the number of correct stop token predictions each
-            step.
-    """
-
-    comet: CometMLExperiment
-    device: torch.device
-    batch_size: typing.List[float] = dataclasses.field(default_factory=list)
-    data_queue_size: typing.List[float] = dataclasses.field(default_factory=list)
-    predicted_frame_alignment_norm: typing.List[float] = dataclasses.field(default_factory=list)
-    predicted_frame_alignment_std: typing.List[float] = dataclasses.field(default_factory=list)
-    num_predictions_per_speaker: typing.Dict[lib.datasets.Speaker, float] = dataclasses.field(
-        default_factory=lambda: collections.defaultdict(float)
-    )
-    num_skips_per_speaker: typing.Dict[lib.datasets.Speaker, float] = dataclasses.field(
-        default_factory=lambda: collections.defaultdict(float)
-    )
-    num_tokens_per_speaker: typing.Dict[lib.datasets.Speaker, float] = dataclasses.field(
-        default_factory=lambda: collections.defaultdict(float)
-    )
-    frame_rms_level: typing.List[float] = dataclasses.field(default_factory=list)
-    text_length_bucket_size: int = 25
-    num_spans_per_text_length: typing.Dict[int, float] = dataclasses.field(
-        default_factory=lambda: collections.defaultdict(float)
-    )
-    num_frames_per_speaker: typing.Dict[lib.datasets.Speaker, float] = dataclasses.field(
-        default_factory=lambda: collections.defaultdict(float)
-    )
-    num_seconds_per_speaker: typing.Dict[lib.datasets.Speaker, float] = dataclasses.field(
-        default_factory=lambda: collections.defaultdict(float)
-    )
-    num_frames_predicted: typing.List[float] = dataclasses.field(default_factory=list)
-    num_frames: typing.List[float] = dataclasses.field(default_factory=list)
-    max_num_frames: int = dataclasses.field(default_factory=int)
-    num_reached_max: typing.List[float] = dataclasses.field(default_factory=list)
-    num_reached_max_per_speaker: typing.Dict[lib.datasets.Speaker, float] = dataclasses.field(
-        default_factory=lambda: collections.defaultdict(float)
-    )
-    predicted_frame_rms_level: typing.List[float] = dataclasses.field(default_factory=list)
-    spectrogram_loss: typing.List[float] = dataclasses.field(default_factory=list)
-    stop_token_loss: typing.List[float] = dataclasses.field(default_factory=list)
-    stop_token_num_correct: typing.List[float] = dataclasses.field(default_factory=list)
-
-    def append(self, metric: typing.List[float], value: typing.Union[int, float, torch.Tensor]):
-        """Append measurement to a `metric`.
-
-        NOTE: The measurements will accrue on the master process only.
-        """
-        value = float(value.sum().item() if isinstance(value, torch.Tensor) else value)
-        metric.append(lib.distributed.reduce(value, self.device))
-
-    def gather(
-        self, values: typing.Union[typing.List[float], torch.Tensor], **kwargs
-    ) -> typing.List[float]:
-        values = values.view(-1).tolist() if isinstance(values, torch.Tensor) else values
-        return flatten(gather_list(values, device=self.device, **kwargs))
-
-    def update_dataset_metrics(self, batch: SpanBatch, input_encoder: InputEncoder):
-        """
-        TODO: Get dataset metrics on OOV words (spaCy and AmEPD) in our dataset.
-
-        TODO: Create a `streamlit` for measuring coverage in our dataset, and other datasets.
-
-        TODO: Measure the difference between punctuation in the phonetic vs grapheme phrases.
-        Apart from unique cases, they should have the same punctuation.
-        """
-        self.append(self.batch_size, batch.length)
-        self.append(self.num_frames, batch.spectrogram.lengths)
-
-        for text in self.gather([len(s.script) for s in batch.spans]):
-            self.num_spans_per_text_length[int(text // self.text_length_bucket_size)] += 1
-
-        iterator = zip(
-            self.gather(batch.encoded_speaker.tensor),
-            self.gather(batch.spectrogram.lengths),
-            self.gather([s.audio_length for s in batch.spans]),
-        )
-        for speaker_index, num_frames, num_seconds in iterator:
-            speaker = input_encoder.speaker_encoder.index_to_token[int(speaker_index)]
-            self.num_frames_per_speaker[speaker] += num_frames
-            self.num_seconds_per_speaker[speaker] += num_seconds
-            self.max_num_frames = max(self.max_num_frames, int(num_frames))
-
-    def update_alignment_metrics(
-        self,
-        alignments: torch.Tensor,
-        spectrogram_mask: torch.Tensor,
-        token_mask: torch.Tensor,
-        num_tokens: torch.Tensor,
-        speakers: torch.Tensor,
-        input_encoder: InputEncoder,
-        norm: float = math.inf,
-    ):
-        """
-        Args:
-            alignments (torch.FloatTensor [num_frames, batch_size, num_tokens])
-            spectrogram_mask (torch.BoolTensor [num_frames, batch_size])
-            token_mask (torch.BoolTensor [num_tokens, batch_size])
-            num_tokens (torch.LongTensor [1, batch_size])
-            speakers (torch.LongTensor [1, batch_size])
-            ...
-        """
-        mask = lambda t: t.masked_select(spectrogram_mask)
-        weighted_std = lib.utils.get_weighted_std(alignments, dim=2)
-        self.append(self.predicted_frame_alignment_std, mask(weighted_std))
-        self.append(self.predicted_frame_alignment_norm, mask(alignments.norm(norm, dim=2)))
-
-        num_skipped = get_num_skipped(alignments, token_mask, spectrogram_mask)
-
-        assert speakers.numel() == num_skipped.numel()
-        assert speakers.numel() == num_tokens.numel()
-        iterator = zip(self.gather(speakers), self.gather(num_skipped), self.gather(num_tokens))
-        for speaker_index, _num_skipped, _num_tokens in iterator:
-            speaker = input_encoder.speaker_encoder.index_to_token[int(speaker_index)]
-            self.num_skips_per_speaker[speaker] += _num_skipped
-            self.num_tokens_per_speaker[speaker] += _num_tokens
-
-    def update_reached_max_metrics(
-        self, batch: SpanBatch, input_encoder: InputEncoder, reached_max: torch.Tensor
-    ):
-        """
-        Args:
-            ...
-            reached_max (torch.BoolTensor [1, batch_size])
-        """
-        self.append(self.num_reached_max, reached_max)
-        iterator = zip(self.gather(batch.encoded_speaker.tensor), self.gather(reached_max))
-        for speaker_index, has_reached_max in iterator:
-            speaker = input_encoder.speaker_encoder.index_to_token[int(speaker_index)]
-            self.num_reached_max_per_speaker[speaker] += has_reached_max
-            self.num_predictions_per_speaker[speaker] += 1
-
-    def update_rms_metrics(
-        self,
-        target_spectrogram: torch.Tensor,
-        predicted_spectrogram: torch.Tensor,
-        target_mask: typing.Optional[torch.Tensor] = None,
-        predicted_mask: typing.Optional[torch.Tensor] = None,
-        **kwargs,
-    ):
-        """
-        Args:
-            target (torch.FloatTensor [num_frames, batch_size, frame_channels])
-            predicted (torch.FloatTensor [num_frames, batch_size, frame_channels])
-            target_mask (torch.FloatTensor [num_frames, batch_size])
-            predicted_mask (torch.FloatTensor [num_frames, batch_size])
-            **kwargs: Additional key word arguments passed to `get_rms_level`.
-        """
-        rms_ = lambda s, m: get_cumulative_power_rms_level(s, m, **kwargs)
-        self.append(self.frame_rms_level, rms_(target_spectrogram, target_mask))
-        self.append(self.predicted_frame_rms_level, rms_(predicted_spectrogram, predicted_mask))
-
-    def update_stop_token_accuracy(
-        self,
-        target: torch.Tensor,
-        predicted_logits: torch.Tensor,
-        stop_threshold: float,
-        mask: torch.Tensor,
-    ):
-        """
-        Args:
-            target (torch.FloatTensor [num_frames, batch_size])
-            predicted_logits (torch.FloatTensor [num_frames, batch_size])
-            stop_threshold
-            mask (torch.BoolTensor [num_frames, batch_size])
-        """
-        bool_ = lambda t: (t > stop_threshold).masked_select(mask)
-        is_correct = bool_(target) == bool_(torch.sigmoid(predicted_logits))
-        self.append(self.stop_token_num_correct, is_correct)
-
-    def update_data_queue_size(self, data_loader: _DataLoader):
-        # NOTE: `qsize` is not implemented on MacOS, learn more:
-        # https://docs.python.org/3/library/multiprocessing.html#multiprocessing.Queue.qsize
-        is_multiprocessing = isinstance(data_loader.loader, _MultiProcessingDataLoaderIter)
-        if is_multiprocessing and platform.system() != "Darwin":
-            iterator = typing.cast(_MultiProcessingDataLoaderIter, data_loader.loader)
-            self.append(self.data_queue_size, iterator._data_queue.qsize())
-
-    def log_optimizer_metrics(
-        self, optimizer: torch.optim.Adam, clipper: lib.optimizers.AdaptiveGradientNormClipper
-    ):
-        """Log optimizer metrics for `optimizer` and `clipper`. The model parameters have already
-        been sync'd; therefore, there is no need to further sync parameters.
-
-        TODO: Incorperate `optimizer_metrics` into the standard `_DistributedMetrics` usage.
-        """
-        label_ = partial(get_model_label, cadence=Cadence.STEP)
-        log = lambda n, v: self.comet.log_metric(label_(n), v)
-
-        assert len(optimizer.param_groups) == 1, "Expecting only 1 group of parameters."
-        param_group = optimizer.param_groups[0]
-        parameter_norm = get_parameter_norm(param_group["params"], 2)
-        parameter_norm_inf = get_parameter_norm(param_group["params"], math.inf)
-        assert torch.isfinite(parameter_norm), f"Gradient was too large {parameter_norm}."
-        assert torch.isfinite(parameter_norm_inf), f"Gradient was too large {parameter_norm_inf}."
-        log("grad_norm/two", parameter_norm.item())
-        log("grad_norm/inf", parameter_norm_inf.item())
-        log("lr", param_group["lr"])
-
-        if math.isfinite(clipper.max_norm):  # NOTE: Initially, `max_norm` will be `inf`.
-            log("grad_norm/max_norm", clipper.max_norm)
-
-    @staticmethod
-    def _div(num: _Measurements, denom: _Measurements, reduce: _Reduce) -> typing.Optional[float]:
-        if len(num) == 0 or len(denom) == 0 or reduce(denom) == 0:
-            return None
-        return reduce(num) / reduce(denom)
-
-    @configurable
-    def get_model_metrics(self, reduce: _Reduce, num_frame_channels=HParam(), **kwargs) -> _Metrics:
-        """ Get model metrics. """
-        div = partial(self._div, reduce=reduce)
-        spectrogram_loss = div(self.spectrogram_loss, self.num_frames)
-        if spectrogram_loss is not None:
-            spectrogram_loss /= num_frame_channels
-        metrics = {
-            "alignment_norm": div(self.predicted_frame_alignment_norm, self.num_frames_predicted),
-            "alignment_std": div(self.predicted_frame_alignment_std, self.num_frames_predicted),
-            "average_relative_speed": div(self.num_frames_predicted, self.num_frames),
-            "stop_token_accuracy": div(self.stop_token_num_correct, self.num_frames),
-            "stop_token_loss": div(self.stop_token_loss, self.num_frames),
-            "spectrogram_loss": spectrogram_loss,
-        }
-        return {get_model_label(k, **kwargs): v for k, v in metrics.items()}
-
-    def get_dataset_metrics(self, reduce: _Reduce, **kwargs) -> _Metrics:
-        """ Get generic dataset metrics. """
-        div = partial(self._div, reduce=reduce)
-        metrics = {
-            "data_loader_queue_size": div(self.data_queue_size, [1] * len(self.data_queue_size)),
-            "average_num_frames": div(self.num_frames, self.batch_size),
-            "max_num_frames": self.max_num_frames,
-        }
-        return {get_dataset_label(k, **kwargs): v for k, v in metrics.items()}
-
-    @staticmethod
-    def _rms(num: _Measurements, denom: _Measurements, reduce: _Reduce) -> typing.Optional[float]:
-        power_rms_level = _DistributedMetrics._div(num, denom, reduce)
-        if power_rms_level is not None:
-            return float(lib.audio.power_to_db(torch.tensor(power_rms_level)).item())
-        return None
-
-    def get_rms_metrics(self, reduce: _Reduce, cadence: Cadence, type_: DatasetType) -> _Metrics:
-        """Get loudness metrics in RMS dB."""
-        predicted_rms = self._rms(self.predicted_frame_rms_level, self.num_frames_predicted, reduce)
-        rms = self._rms(self.frame_rms_level, self.num_frames, reduce)
-        delta = None if predicted_rms is None or rms is None else predicted_rms - rms
-        return {
-            get_model_label("average_predicted_rms_level", cadence=cadence): predicted_rms,
-            get_dataset_label("average_rms_level", cadence=cadence, type_=type_): rms,
-            get_model_label("average_rms_level_delta", cadence=cadence): delta,
-        }
-
-    def get_text_length_metrics(self, **kwargs) -> _Metrics:
-        """ Get metrics summarizing text length bucket frequency. """
-        metrics = {}
-        for bucket, count in self.num_spans_per_text_length.items():
-            lower = bucket * self.text_length_bucket_size
-            upper = (bucket + 1) * self.text_length_bucket_size
-            label = get_dataset_label(f"text_length_bucket_{lower}_{upper}", **kwargs)
-            metrics[label] = count / sum(self.num_spans_per_text_length.values())
-        return metrics
-
-    def get_speaker_frequency_metrics(self, **kwargs) -> _Metrics:
-        """Get metrics summarizing speaker frequency.
-
-        NOTE: There is a discrepency between `num_frames_per_speaker` and `num_seconds_per_speaker`
-        because `num_seconds_per_speaker` is computed with `Span` and `num_frames_per_speaker`
-        is computed with `SpanBatch`. For example, in Feburary 2021, `make_span_batch` used
-        `_pad_and_trim_signal`. "elizabeth_klett", "mary_ann" and "judy_bieber" tend to need
-        significantly more trimming than other speakers."""
-        metrics = {}
-        label = lambda l, **k: get_dataset_label(f"frequency/{l}", **k, **kwargs)
-
-        total = sum(self.num_frames_per_speaker.values())
-        for speaker, count in self.num_frames_per_speaker.items():
-            metrics[label("num_frames", speaker=speaker)] = count / total
-
-        total = sum(self.num_seconds_per_speaker.values())
-        for speaker, count in self.num_seconds_per_speaker.items():
-            metrics[label("num_seconds", speaker=speaker)] = count / total
-
-        return metrics
-
-    def get_attention_skip_metrics(self, **kwargs) -> _Metrics:
-        """ Get metrics on token skipping per speaker via attention. """
-        metrics = {}
-        zip_ = zip(self.num_tokens_per_speaker.items(), self.num_skips_per_speaker.values())
-        for (speaker, num_tokens), num_skips in zip_:
-            metrics[get_model_label("skips", speaker=speaker, **kwargs)] = num_skips / num_tokens
-        return metrics
-
-    def get_reached_max_frames(self, reduce: _Reduce):
-        """NOTE: The predicted `self.batch_size` does not include predictions that overflowed. The
-        total number of predicted spectrograms is equal to `batch_size` plus `num_reached_max`.
-        """
-        if len(self.num_reached_max) == 0 or len(self.batch_size) == 0:
-            return None
-        denom = reduce(self.batch_size) + reduce(self.num_reached_max)
-        if denom == 0:
-            return None
-        return reduce(self.num_reached_max) / denom
-
-    def get_reached_max_metrics(self, reduce: _Reduce, **kwargs) -> _Metrics:
-        """ Get metrics on model overflow per speaker via attention. """
-        name = "reached_max_frames"
-        metrics = {get_model_label(name, **kwargs): self.get_reached_max_frames(reduce)}
-        for (speaker, num_predictions), num_reached_max in zip(
-            self.num_predictions_per_speaker.items(), self.num_reached_max_per_speaker.values()
-        ):
-            label = get_model_label(name, speaker=speaker, **kwargs)
-            metrics[label] = num_reached_max / num_predictions
-        return metrics
-
-    def log(self, reduce: _Reduce, dataset_type: DatasetType, cadence: Cadence):
-        """Log metrics to `self.comet`.
-
-        NOTE: Comet is limited in the number of metrics it can handle on a step-by-step basis.
-        It will throttle experiments reporting too many metrics, or it's UI will lag behind.
-        """
-        if not is_master():
-            return
-
-        metrics = {
-            **self.get_model_metrics(reduce=reduce, cadence=cadence),
-            **self.get_dataset_metrics(reduce=reduce, cadence=cadence, type_=dataset_type),
-        }
-
-        if cadence is not Cadence.STEP:
-            more_metrics = {
-                **self.get_rms_metrics(reduce=reduce, cadence=cadence, type_=dataset_type),
-                **self.get_text_length_metrics(cadence=cadence, type_=dataset_type),
-                **self.get_speaker_frequency_metrics(cadence=cadence, type_=dataset_type),
-                **self.get_attention_skip_metrics(cadence=cadence),
-                **self.get_reached_max_metrics(reduce=reduce, cadence=cadence),
-            }
-            metrics.update(more_metrics)
-
-        self.comet.log_metrics({k: v for k, v in metrics.items() if v is not None})
 
 
 def _visualize_source_vs_target(
@@ -882,9 +364,9 @@ def _visualize_source_vs_target(
 @configurable
 def _run_step(
     state: _State,
-    metrics: _DistributedMetrics,
+    metrics: DistributedMetrics,
     batch: SpanBatch,
-    data_loader: _DataLoader,
+    data_loader: DataLoader,
     dataset_type: DatasetType,
     visualize: bool = False,
     spectrogram_loss_scalar: float = HParam(),
@@ -1041,9 +523,9 @@ def _visualize_inferred(
 
 def _run_inference(
     state: _State,
-    metrics: _DistributedMetrics,
+    metrics: DistributedMetrics,
     batch: SpanBatch,
-    data_loader: _DataLoader,
+    data_loader: DataLoader,
     dataset_type: DatasetType,
     visualize: bool = False,
 ):
@@ -1100,7 +582,7 @@ def _run_inference(
 
 
 _BatchHandler = typing.Callable[
-    [_State, _DistributedMetrics, SpanBatch, _DataLoader, DatasetType, bool], None
+    [_State, DistributedMetrics, SpanBatch, DataLoader, DatasetType, bool], None
 ]
 
 
@@ -1109,8 +591,8 @@ def _run_worker(
     device_index: int,
     checkpoints_directory: pathlib.Path,
     checkpoint: typing.Optional[pathlib.Path],
-    train_dataset: run._config.Dataset,
-    dev_dataset: run._config.Dataset,
+    train_dataset: Dataset,
+    dev_dataset: Dataset,
     comet_partial: typing.Callable[..., CometMLExperiment],
     config: typing.Dict[str, typing.Any],
     debug: bool,
@@ -1123,7 +605,7 @@ def _run_worker(
     `num_spans_per_text_length`, or `max_num_frames` can be computed accross epochs?
     """
     lib.environment.set_basic_logging_config(device_index)
-    device = run._utils.init_distributed(device_index)
+    device = init_distributed(device_index)
     comet = comet_partial(disabled=not is_master(), auto_output_logging=False)
     _configure(config, debug)
     if checkpoint is None:
@@ -1134,7 +616,7 @@ def _run_worker(
     train_loader, dev_loader = _get_data_loaders(state, train_dataset, dev_dataset)
     _set_context = partial(set_context, model=state.model, comet=comet)
     dev_args = (DatasetType.DEV, dev_loader, dev_steps_per_epoch)
-    contexts: typing.List[typing.Tuple[Context, DatasetType, _DataLoader, int, _BatchHandler]] = [
+    contexts: typing.List[typing.Tuple[Context, DatasetType, DataLoader, int, _BatchHandler]] = [
         (Context.TRAIN, DatasetType.TRAIN, train_loader, train_steps_per_epoch, _run_step),
         (Context.EVALUATE, *dev_args, _run_step),
         (Context.EVALUATE_INFERENCE, *dev_args, _run_inference),
@@ -1149,9 +631,10 @@ def _run_worker(
 
         for context, dataset_type, data_loader, num_steps, handle_batch in contexts:
             with _set_context(context):
-                metrics = _DistributedMetrics(comet, state.device)
+                metrics = DistributedMetrics(comet, state.device)
                 loader = zip(range(num_steps), data_loader)
                 for i, batch in tqdm.tqdm(loader, total=num_steps) if is_master() else loader:
+                    batch = typing.cast(SpanBatch, batch)
                     handle_batch(state, metrics, batch, data_loader, dataset_type, i == 0)
                     if Context.TRAIN == context:
                         metrics.log(lambda l: l[-1], dataset_type, Cadence.STEP)
@@ -1173,13 +656,13 @@ def _run(
     """Run spectrogram model training. """
     lib.environment.check_module_versions()
 
-    datasets = run._config.DATASETS
+    datasets = DATASETS
     datasets = {k: v for k, v in list(datasets.items())[:1]} if debug else datasets
 
     # NOTE: Load, preprocess, and cache dataset values.
-    dataset = run._config.get_dataset(datasets)
-    train_dataset, dev_dataset = run._config.split_dataset(dataset)
-    comet.log_parameters(run._utils.get_dataset_stats(train_dataset, dev_dataset))
+    dataset = get_dataset(datasets)
+    train_dataset, dev_dataset = split_dataset(dataset)
+    comet.log_parameters(get_dataset_stats(train_dataset, dev_dataset))
 
     logger.info("Spawning workers %s", lib.utils.mazel_tov())
     # TODO: PyTorch-Lightning makes strong recommendations to not use `spawn`. Learn more:
@@ -1197,7 +680,7 @@ def _run(
             checkpoint,
             train_dataset,
             dev_dataset,
-            partial(run._utils.CometMLExperiment, experiment_key=comet.get_key()),
+            partial(CometMLExperiment, experiment_key=comet.get_key()),
             config,
             debug,
         ),
@@ -1242,7 +725,7 @@ def resume(
     else:
         checkpoint, loaded = load_most_recent_file(pattern, load)
     checkpoint_ = typing.cast(Checkpoint, loaded)
-    comet = run._utils.CometMLExperiment(experiment_key=checkpoint_.comet_experiment_key)
+    comet = CometMLExperiment(experiment_key=checkpoint_.comet_experiment_key)
     config, recorder = _setup_config(comet, context.args, debug)
     _, checkpoints_path = maybe_make_experiment_directories_from_checkpoint(checkpoint_, recorder)
     _run(checkpoints_path, config, comet, checkpoint, debug=debug)
@@ -1260,13 +743,13 @@ def start(
     """ Start a training run in PROJECT named NAME with TAGS. """
     lib.environment.assert_enough_disk_space(min_disk_space)
     lib.environment.set_basic_logging_config()
-    comet = run._utils.CometMLExperiment(project_name=project)
+    comet = CometMLExperiment(project_name=project)
     comet.set_name(name)
     comet.add_tags(tags)
     config, recorder = _setup_config(comet, context.args, debug)
     experiment_root = SPECTROGRAM_MODEL_EXPERIMENTS_PATH / lib.environment.bash_time_label()
     run_root, checkpoints_path = maybe_make_experiment_directories(experiment_root, recorder)
-    comet.log_other(run._config.get_environment_label("directory"), str(run_root))
+    comet.log_other(get_environment_label("directory"), str(run_root))
     _run(checkpoints_path, config, comet, debug=debug)
 
 

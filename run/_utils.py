@@ -1,100 +1,39 @@
-import contextlib
-import dataclasses
-import enum
+import collections
 import functools
-import io
-import itertools
 import logging
+import math
+import multiprocessing
 import multiprocessing.pool
 import os
 import pathlib
-import time
+import random
 import typing
-from datetime import timedelta
 
-import numpy
 import torch
-import torch.cuda
-import torch.distributed
 import torch.nn
-import torch.optim
 import tqdm
 from google.cloud import storage
+from hparams import HParam, HParams, configurable
+from Levenshtein.StringMatcher import StringMatcher
 from third_party import LazyLoader
+from torchnlp.random import fork_rng
 
 import lib
+import lib.datasets.m_ailabs
 import run
-from lib.utils import flatten, seconds_to_string
-from run._config import Cadence, Dataset, DatasetType, get_dataset_label, get_model_label
+from lib import datasets
+from lib.utils import flatten
+from run._config import Dataset
 
 if typing.TYPE_CHECKING:  # pragma: no cover
-    import comet_ml
-    import matplotlib.figure
+    import librosa
+    import scipy
+    import scipy.signal
 else:
-    comet_ml = LazyLoader("comet_ml", globals(), "comet_ml")
-    matplotlib = LazyLoader("matplotlib", globals(), "matplotlib")
-
+    librosa = LazyLoader("librosa", globals(), "librosa")
+    scipy = LazyLoader("scipy", globals(), "scipy")
 
 logger = logging.getLogger(__name__)
-
-
-@dataclasses.dataclass(frozen=True)
-class Checkpoint:
-
-    checkpoints_directory: pathlib.Path
-    comet_experiment_key: str
-    step: int
-    num_examples: int
-
-
-def maybe_make_experiment_directories_from_checkpoint(
-    checkpoint: Checkpoint, *args, **kwargs
-) -> typing.Tuple[pathlib.Path, pathlib.Path]:
-    """For checkpoints saved in the `maybe_make_experiment_directories` directory structure,
-    this creates another "run" under the original experiment.
-    """
-    return maybe_make_experiment_directories(
-        checkpoint.checkpoints_directory.parent.parent, *args, **kwargs
-    )
-
-
-def maybe_make_experiment_directories(
-    experiment_root: pathlib.Path,
-    recorder: lib.environment.RecordStandardStreams,
-    run_name: str = "RUN_" + lib.environment.bash_time_label(add_pid=False),
-    checkpoints_directory_name: str = "checkpoints",
-    run_log_filename: str = "run.log",
-) -> typing.Tuple[pathlib.Path, pathlib.Path]:
-    """Create a directory structure to store an experiment run, like so:
-
-      {experiment_root}/
-      └── {run_name}/
-          ├── run.log
-          └── {checkpoints_directory_name}/
-
-    TODO: Could this structure be encoded in some data structure? For example, we could return an
-    object called an `ExperimentDirectory` that has `children` called `RunsDirectory`.
-
-    Args:
-        experiment_root: Top-level directory to store an experiment, unless a
-          checkpoint is provided.
-        recorder: This records the standard streams, and saves it.
-        run_name: The name of this run.
-        checkpoints_directory_name: The name of the directory that stores checkpoints.
-        run_log_filename: The run log filename.
-
-    Return:
-        run_root: The root directory to store run files.
-        checkpoints_directory: The directory to store checkpoints.
-    """
-    logger.info("Updating directory structure...")
-    experiment_root.mkdir(exist_ok=True)
-    run_root = experiment_root / run_name
-    run_root.mkdir()
-    checkpoints_directory = run_root / checkpoints_directory_name
-    checkpoints_directory.mkdir()
-    recorder.update(run_root, log_filename=run_log_filename)
-    return run_root, checkpoints_directory
 
 
 def _normalize_audio(
@@ -142,292 +81,206 @@ def normalize_audio(
     return return_
 
 
-def init_distributed(
-    rank: int,
-    timeout: timedelta = timedelta(minutes=30),
-    backend: str = "nccl",
-    init_method: str = "tcp://127.0.0.1:29500",
-    world_size: int = torch.cuda.device_count(),
-) -> torch.device:
-    """Initiate distributed for training.
+@configurable
+def get_dataset(
+    datasets: typing.Dict[lib.datasets.Speaker, lib.datasets.DataLoader] = HParam(),
+    path: pathlib.Path = HParam(),
+    include_passage: typing.Callable[[lib.datasets.Passage], bool] = HParam(),
+    handle_passage: typing.Callable[[lib.datasets.Passage], lib.datasets.Passage] = HParam(),
+) -> Dataset:
+    """Define a TTS dataset.
 
-    Learn more about distributed environments here:
-    https://pytorch.org/tutorials/intermediate/dist_tuto.htm
-    https://github.com/pytorch/examples/blob/master/imagenet/main.py
-    """
-    torch.distributed.init_process_group(backend, init_method, timeout, world_size, rank)
-    logger.info("Worker %d started.", torch.distributed.get_rank())
-    logger.info("%d GPUs found.", world_size)
-    device = torch.device("cuda", rank)
-
-    # NOTE: Unless this is run, PyTorch may use a different GPU for some operations. Learn more:
-    # https://github.com/pytorch/pytorch/issues/3477#issuecomment-342294955
-    # https://github.com/pytorch/pytorch/issues/7071#issuecomment-437469653
-    torch.cuda.set_device(device)
-    # TODO: Instead of returning and passing around `torch.device`, rely on `torch.cuda.set_device`
-    # or `torch.cuda.device` to set context.
-    return device
-
-
-def get_dataset_stats(
-    train: Dataset, dev: Dataset
-) -> typing.Dict[run._config.Label, typing.Union[str, int, float]]:
-    """Get `train` and `dev` dataset statistics."""
-    stats: typing.Dict[run._config.Label, typing.Union[int, str, float]] = {}
-    data: Dataset
-    for data, type_ in [(train, DatasetType.TRAIN), (dev, DatasetType.DEV)]:
-        label_ = functools.partial(get_dataset_label, cadence=Cadence.STATIC, type_=type_)
-        passages_ = flatten([[p for p in v] for v in data.values()])
-        for speaker, passages in itertools.chain(list(data.items()), [(None, passages_)]):
-            label = label_ if speaker is None else functools.partial(label_, speaker=speaker)
-            stats[label("num_audio_files")] = len(set(p.audio_file for p in passages))
-            stats[label("num_passages")] = len(passages)
-            stats[label("num_characters")] = sum(len(p.script) for p in passages)
-            num_seconds = seconds_to_string(sum(p.aligned_audio_length() for p in passages))
-            stats[label("num_seconds")] = num_seconds
-    return stats
-
-
-class Context(enum.Enum):
-    """ Constants and labels for contextualizing the use-case. """
-
-    TRAIN: typing.Final = "train"
-    EVALUATE: typing.Final = "evaluate"
-    EVALUATE_INFERENCE: typing.Final = "evaluate_inference"
-
-
-class CometMLExperiment:
-    """Create a `comet_ml.Experiment` or `comet_ml.ExistingExperiment` object with several
-    adjustments.
+    TODO: `normalize_audio` could be used replicate datasets with different audio processing.
 
     Args:
-        project_name
-        experiment_key: Existing experiment identifier.
-        workspace
-        **kwargs: Other kwargs to pass to comet `Experiment` and / or `ExistingExperiment`
+        datasets: Dictionary of datasets to load.
+        path: Directory to cache the dataset.
+    """
+    logger.info("Loading dataset...")
+    with multiprocessing.pool.ThreadPool() as pool:
+        load_data = lambda i: (i[0], [handle_passage(p) for p in i[1](path) if include_passage(p)])
+        items = list(pool.map(load_data, datasets.items()))
+    dataset = {k: v for k, v in items}
+    dataset = run._utils.normalize_audio(dataset)
+    return dataset
+
+
+@functools.lru_cache(maxsize=None)
+def _is_duplicate(a: str, b: str, min_similarity: float) -> bool:
+    """Helper function for `split_dataset` used to judge string similarity."""
+    matcher = StringMatcher(seq1=a, seq2=b)
+    return (
+        matcher.real_quick_ratio() > min_similarity
+        and matcher.quick_ratio() > min_similarity
+        and matcher.ratio() > min_similarity
+    )
+
+
+def _find_duplicate_passages(
+    dev_scripts: typing.Set[str],
+    passages: typing.List[lib.datasets.Passage],
+    min_similarity: float,
+) -> typing.Tuple[typing.List[lib.datasets.Passage], typing.List[lib.datasets.Passage]]:
+    """Find passages in `passages` that are a duplicate of a passage in `dev_scripts`.
+
+    Args:
+        dev_scripts: Set of unique scripts.
+        passages: Passages that may have a `script` thats already included in `dev_scripts`.
+        minimum_similarity: From 0 - 1, this is the minimum similarity two scripts must have to be
+          considered duplicates.
+    """
+    duplicates, rest = [], []
+    for passage in passages:
+        if passage.script in dev_scripts:
+            duplicates.append(passage)
+            continue
+
+        length = len(duplicates)
+        for dev_script in dev_scripts:
+            if _is_duplicate(dev_script, passage.script, min_similarity):
+                duplicates.append(passage)
+                break
+
+        if length == len(duplicates):
+            rest.append(passage)
+
+    return duplicates, rest
+
+
+@lib.utils.log_runtime
+@configurable
+def split_dataset(
+    dataset: Dataset,
+    dev_speakers: typing.Set[lib.datasets.Speaker] = HParam(),
+    approximate_dev_length: int = HParam(),
+    min_similarity: float = HParam(),
+    seed: int = 123,
+) -> typing.Tuple[Dataset, Dataset]:
+    """Split the dataset into a train set and development set.
+
+    NOTE: The RNG state should never change; otherwise, the training and dev datasets may be
+    different from experiment to experiment.
+
+    NOTE: `len_` assumes that the amount of data in each passage can be estimated with
+    `aligned_audio_length`. For example, if there was a long pause within a passage, this estimate
+    wouldn't make sense.
+
+    NOTE: Passages are split between the train and development set in groups. The groups are
+    dictated by textual similarity. The result of this is that the text in the train and
+    development sets is distinct.
+
+    NOTE: Any duplicate data for a speaker, not in `dev_speakers` will be discarded.
+
+    NOTE: The duplicate cache is cleared after this function is run assuming it's not relevant
+    any more.
+
+    Args:
+        ...
+        dev_speakers: Speakers to include in the development set.
+        approximate_dev_length: Number of seconds per speaker in the development dataset. The
+            deduping algorithm may add extra items above the `approximate_dev_length`.
+        ...
+    """
+    logger.info("Splitting `dataset`...")
+    dev: typing.Dict[lib.datasets.Speaker, list] = collections.defaultdict(list)
+    train: typing.Dict[lib.datasets.Speaker, list] = collections.defaultdict(list)
+    dev_scripts: typing.Set[str] = set()
+    len_ = lambda _passage: _passage.aligned_audio_length()
+    sum_ = lambda _passages: sum([len_(p) for p in _passages])
+    with fork_rng(seed=seed):
+        iterator = list(sorted(dataset.items(), key=lambda i: (len(i[1]), i[0])))
+        for speaker, passages in tqdm.tqdm(iterator):
+            if speaker not in dev_speakers:
+                train[speaker] = passages
+                continue
+
+            duplicates, rest = _find_duplicate_passages(dev_scripts, passages, min_similarity)
+            dev[speaker].extend(duplicates)
+
+            random.shuffle(rest)
+            seconds = max(approximate_dev_length - sum_(dev[speaker]), 0)
+            splits = tuple(lib.utils.split(rest, [seconds, math.inf], len_))
+            dev[speaker].extend(splits[0])
+            train[speaker].extend(splits[1])
+            dev_scripts.update(d.script for d in dev[speaker])
+
+            message = "The `dev` dataset is larger than the `train` dataset."
+            assert sum_(train[speaker]) >= sum_(dev[speaker]), message
+            assert sum_(train[speaker]) > 0, "The train dataset has no aligned audio data."
+            assert sum_(dev[speaker]) > 0, "The train dataset has no aligned audio data."
+
+        # NOTE: Run the deduping algorithm until there are no more duplicates.
+        length = None
+        while length is None or length != len(dev_scripts):
+            logger.info("Rerunning until there are no more duplicates...")
+            length = len(dev_scripts)
+            for speaker, _ in iterator:
+                duplicates, rest = _find_duplicate_passages(
+                    dev_scripts, train[speaker], min_similarity
+                )
+                if speaker not in dev_speakers and len(duplicates) > 0:
+                    message = "Discarded %d duplicates for non-dev speaker %s. "
+                    logger.warning(message, len(duplicates), speaker)
+                elif speaker in dev_speakers:
+                    dev[speaker].extend(duplicates)
+                train[speaker] = rest
+                dev_scripts.update(d.script for d in duplicates)
+
+    _is_duplicate.cache_clear()
+
+    return dict(train), dict(dev)
+
+
+class SpanGenerator(typing.Iterator[datasets.Span]):
+    """Define the dataset generator to train and evaluate the TTS models on.
+
+    NOTE: For datasets that are conventional with only one alignment per passage, `SpanGenerator`
+    samples directly from that distribution.
+
+    Args:
+        dataset
+        max_seconds: The maximum seconds delimited by an `Span`.
     """
 
-    _BASE_HTML_STYLING = """
-<link rel="stylesheet"
-      href="https://cdnjs.cloudflare.com/ajax/libs/meyer-reset/2.0/reset.css"
-      type="text/css">
-<style>
-  body {
-    background-color: #f4f4f5;
-  }
-
-  p {
-    font-family: 'Roboto', system-ui, sans-serif;
-    margin-bottom: .5em;
-  }
-
-  b {
-    font-weight: bold
-  }
-
-  section {
-    padding: 1.5em;
-    border-bottom: 2px solid #E8E8E8;
-    background: white;
-  }
-</style>
-    """
-
+    @lib.utils.log_runtime
     def __init__(
         self,
-        project_name: typing.Optional[str] = None,
-        experiment_key: typing.Optional[str] = None,
-        workspace: typing.Optional[str] = None,
-        **kwargs,
+        dataset: Dataset,
+        max_seconds: int = HParam(),
+        include_span: typing.Callable[[lib.datasets.Span], bool] = HParam(),
     ):
-        if lib.environment.has_untracked_files():
-            raise ValueError(
-                "Experiment is not reproducible, Comet does not track untracked files. "
-                f"Please track these files via `git`:\n{lib.environment.get_untracked_files()}"
-            )
+        self.max_seconds = max_seconds
+        self.dataset = dataset
+        self.generators: typing.Dict[lib.datasets.Speaker, typing.Iterator[lib.datasets.Span]] = {}
+        for speaker, passages in dataset.items():
+            is_singles = all([len(p.alignments) == 1 for p in passages])
+            max_seconds_ = math.inf if is_singles else max_seconds
+            self.generators[speaker] = datasets.SpanGenerator(passages, max_seconds_)
+        self.counter = {s: 0.0 for s in list(dataset.keys())}
+        self.include_span = include_span
 
-        kwargs.update({"project_name": project_name, "workspace": workspace})
-        if experiment_key is None:
-            self._experiment = comet_ml.Experiment(**kwargs, display_summary_level=0)
-            self._experiment.log_html(self._BASE_HTML_STYLING)
-        else:
-            self._experiment = comet_ml.ExistingExperiment(
-                previous_experiment=experiment_key, **kwargs, display_summary_level=0
-            )
+    def __iter__(self) -> typing.Iterator[datasets.Span]:
+        return self
 
-        self.log_asset = self._experiment.log_asset
-        self.log_html = self._experiment.log_html
-        self.get_key = self._experiment.get_key
-        self.set_model_graph = self._experiment.set_model_graph
-
-        self._last_step_time: typing.Optional[float] = None
-        self._last_step: typing.Optional[int] = None
-        self._last_epoch_time: typing.Optional[float] = None
-        self._last_epoch_step: typing.Optional[int] = None
-        self._first_epoch_time: typing.Optional[float] = None
-        self._first_epoch_step: typing.Optional[int] = None
-
-        self._log_environment()
-
-    @property
-    def curr_step(self) -> typing.Optional[int]:
-        return typing.cast(typing.Optional[int], self._experiment.curr_step)
-
-    @property
-    def context(self) -> typing.Optional[str]:
-        return typing.cast(typing.Optional[str], self._experiment.context)
-
-    def _log_environment(self):
-        # TODO: Collect additional environment details like CUDA, CUDANN, NVIDIA Driver versions
-        # with this script:
-        # https://github.com/pytorch/pytorch/blob/master/torch/utils/collect_env.py
-        log_other = lambda k, v: self.log_other(run._config.get_environment_label(k), v)
-
-        log_other("last_git_commit_date", lib.environment.get_last_git_commit_date())
-        log_other("git_branch", lib.environment.get_git_branch_name())
-        log_other("has_git_patch", str(lib.environment.has_tracked_changes()))
-        log_other("gpus", lib.environment.get_cuda_gpus())
-        log_other("num_gpus", lib.environment.get_num_cuda_gpus())
-        log_other("disks", lib.environment.get_disks())
-        log_other("unique_cpus", lib.environment.get_unique_cpus())
-        log_other("num_cpus", os.cpu_count())
-        log_other("total_physical_memory", lib.environment.get_total_physical_memory())
-
-    def set_step(self, step: typing.Optional[int]):
-        self._experiment.set_step(step)
-        if self.curr_step is not None:
-            seconds_per_step = (
-                (time.time() - self._last_step_time) / (self.curr_step - self._last_step)
-                if self._last_step is not None
-                and self._last_step_time is not None
-                and self.curr_step > self._last_step
-                else None
-            )
-            self._last_step_time = time.time()
-            # NOTE: Ensure that the variable `last_step` is updated before `log_metric` is called.
-            # This prevents infinite recursion via `curr_step > last_step`.
-            self._last_step = self.curr_step
-            if seconds_per_step is not None:
-                label = get_model_label("seconds_per_step", Cadence.STEP)
-                self.log_metric(label, seconds_per_step)
-
-    @contextlib.contextmanager
-    def context_manager(self, context: Context):
-        with self._experiment.context_manager(str(context)):
-            yield self
-
-    def log_current_epoch(self, epoch: int):
-        self._last_epoch_step = self.curr_step
-        self._last_epoch_time = time.time()
-        if self._first_epoch_time is None and self._first_epoch_step is None:
-            assert self.curr_step is not None
-            self._first_epoch_step = self.curr_step
-            self._first_epoch_time = time.time()
-        self._experiment.log_current_epoch(epoch)
-
-    def log_epoch_end(self, epoch: int):
-        # NOTE: Logs an average `steps_per_second` for each epoch.
-        if (
-            self._last_epoch_step is not None
-            and self._last_epoch_time is not None
-            and self.curr_step is not None
-        ):
-            label = get_model_label("steps_per_second", Cadence.MULTI_STEP)
-            metric = (self.curr_step - self._last_epoch_step) / (
-                time.time() - self._last_epoch_time
-            )
-            self.log_metric(label, metric)
-
-        # NOTE: Logs an average `steps_per_second` since the training started.
-        if (
-            self._first_epoch_time is not None
-            and self._first_epoch_step is not None
-            and self.curr_step is not None
-        ):
-            with self.context_manager(None):
-                label = get_model_label("steps_per_second", Cadence.RUN)
-                metric = (self.curr_step - self._first_epoch_step) / (
-                    time.time() - self._first_epoch_time
-                )
-                self.log_metric(label, metric)
-
-        self._experiment.log_epoch_end(epoch)
-
-    def _upload_audio(
-        self, file_name: str, data: typing.Union[numpy.ndarray, torch.Tensor]
-    ) -> typing.Optional[str]:
-        """Upload the audio and return the URL."""
-        file_ = io.BytesIO()
-        lib.audio.write_audio(file_, data)
-        asset = self.log_asset(file_, file_name=file_name)
-        return asset["web"] if asset is not None else asset
-
-    def log_html_audio(
-        self,
-        audio: typing.Dict[str, typing.Union[numpy.ndarray, torch.Tensor]] = {},
-        **kwargs,
-    ):
-        """Audio with related metadata to Comet in the HTML tab.
-
-        Args:
-            audio
-            **kwargs: Additional metadata to include.
-        """
-        items = [f"<p><b>Step:</b> {self.curr_step}</p>"]
-        param_to_label = lambda s: s.title().replace("_", " ")
-        items.extend([f"<p><b>{param_to_label(k)}:</b> {v}</p>" for k, v in kwargs.items()])
-        for key, data in audio.items():
-            name = param_to_label(key)
-            file_name = f"step={self.curr_step},name={name},experiment={self.get_key()}"
-            url = self._upload_audio(file_name, data)
-            items.append(f"<p><b>{name}:</b></p>")
-            items.append(f'<audio controls preload="metadata" src="{url}"></audio>')
-        self.log_html("<section>{}</section>".format("\n".join(items)))
-
-    def log_parameter(self, key: run._config.Label, value: typing.Any):
-        self._experiment.log_parameter(key, repr(value))
-
-    def log_parameters(self, dict_: typing.Dict[run._config.Label, typing.Any]):
-        """
-        NOTE: Comet doesn't support `typing.Any` so we need to convert to a string representation.
-        For example, Comet will silently fail and not log parameters with `numpy` or `torch` values.
-        """
-        self._experiment.log_parameters({k: repr(v) for k, v in dict_.items()})
-
-    def log_other(self, key: run._config.Label, value: typing.Union[str, int, float]):
-        self._experiment.log_other(key, value)
-
-    def log_metrics(self, dict_: typing.Dict[run._config.Label, float]):
-        [self.log_metric(k, v) for k, v in dict_.items()]
-
-    def log_metric(self, name: run._config.Label, value: typing.Union[int, float]):
-        self._experiment.log_metric(name, value)
-
-    def log_figure(self, name: run._config.Label, figure: matplotlib.figure.Figure):
-        self._experiment.log_figure(str(name), figure)
-
-    def log_figures(self, dict_: typing.Dict[run._config.Label, matplotlib.figure.Figure]):
-        """ Log multiple figures from `dict_` via `experiment.log_figure`. """
-        [self.log_figure(k, v) for k, v in dict_.items()]
-
-    def set_name(self, name: str):
-        logger.info('Experiment name set to "%s"', name)
-        self._experiment.set_name(name)
-
-    def add_tags(self, tags: typing.List[str]):
-        logger.info("Added tags to experiment: %s", tags)
-        self._experiment.add_tags(tags)
+    def __next__(self) -> datasets.Span:
+        """ Sample spans with a uniform speaker distribution based on `span.audio_length`. """
+        while True:
+            speaker = lib.utils.corrected_random_choice(self.counter)
+            span = next(self.generators[speaker])
+            if span.audio_length < self.max_seconds and self.include_span(span):
+                self.counter[span.speaker] += span.audio_length
+                return span
 
 
-@contextlib.contextmanager
-def set_context(context: Context, model: torch.nn.Module, comet: CometMLExperiment):
-    with comet.context_manager(context.value):
-        logger.info("Setting context to '%s'.", context.value)
-        mode = model.training
-        model.train(mode=(context == Context.TRAIN))
-        with torch.set_grad_enabled(mode=(context == Context.TRAIN)):
-            yield
-        model.train(mode=mode)
+def get_window(window: str, window_length: int, window_hop: int) -> torch.Tensor:
+    """Get a `torch.Tensor` window that passes `scipy.signal.check_COLA`.
+
+    NOTE: `torch.hann_window` does not pass `scipy.signal.check_COLA`, for example. Learn more:
+    https://github.com/pytorch/audio/issues/452
+    """
+    window = librosa.filters.get_window(window, window_length)
+    assert scipy.signal.check_COLA(window, window_length, window_length - window_hop)
+    return torch.tensor(window).float()
 
 
 @functools.lru_cache(maxsize=1)
@@ -451,3 +304,28 @@ def gcs_uri_to_blob(gcs_uri: str) -> storage.Blob:
 def blob_to_gcs_uri(blob: storage.Blob) -> str:
     """ Get GCS URI (e.g. "gs://cloud-samples-tests/speech/brooklyn.flac") from `blob`. """
     return "gs://" + blob.bucket.name + "/" + blob.name
+
+
+def nested_to_flat_config(
+    config: typing.Dict[str, typing.Any], delimitator: str = "."
+) -> typing.Dict[str, typing.Any]:
+    """Convert nested `hparam` configuration a flat configuration by concatenating keys with a
+    `delimitator`.
+
+    Args:
+        ...
+        delimitator: Delimitator used to join keys.
+    """
+    return _nested_to_flat_config(config=config, delimitator=delimitator, keys=[])
+
+
+def _nested_to_flat_config(
+    config: typing.Dict[str, typing.Any], delimitator: str, keys: typing.List[str]
+) -> typing.Dict[str, typing.Any]:
+    ret_ = {}
+    for key in config:
+        if isinstance(config[key], dict) and not isinstance(config, HParams):
+            ret_.update(_nested_to_flat_config(config[key], delimitator, keys + [key]))
+        else:
+            ret_[delimitator.join(keys + [key])] = config[key]
+    return ret_

@@ -10,16 +10,17 @@ import lib
 import run
 from lib.datasets import JUDY_BIEBER, LINDA_JOHNSON, m_ailabs_en_us_judy_bieber_speech_dataset
 from run._config import Cadence, DatasetType
-from run._spectrogram_model import SpanBatch
-from run._utils import Context
-from run.train.spectrogram_model import (
+from run._utils import split_dataset
+from run.train._utils import CometMLExperiment, Context, get_dataset_stats, set_context
+from run.train.spectrogram_model.__main__ import (
     _configure,
-    _DistributedMetrics,
     _get_data_loaders,
     _run_inference,
     _run_step,
     _State,
 )
+from run.train.spectrogram_model._data import SpanBatch
+from run.train.spectrogram_model._metrics import DistributedMetrics
 from tests import _utils
 
 
@@ -55,10 +56,10 @@ def test_integration(mock_urlretrieve):
     # Test splitting data
     dataset = run._utils.normalize_audio(dataset)
     dev_speakers = set([JUDY_BIEBER])
-    train_dataset, dev_dataset = run._config.split_dataset(dataset, dev_speakers, 3)
+    train_dataset, dev_dataset = split_dataset(dataset, dev_speakers, 3)
 
     # Check dataset statistics are correct
-    stats = run._utils.get_dataset_stats(train_dataset, dev_dataset)
+    stats = get_dataset_stats(train_dataset, dev_dataset)
     get_dataset_label = lambda n, t, s=None: run._config.get_dataset_label(
         n, cadence=Cadence.STATIC, type_=t, speaker=s
     )
@@ -86,7 +87,7 @@ def test_integration(mock_urlretrieve):
     }
 
     # Create training state
-    comet = run._utils.CometMLExperiment(disabled=True, project_name="project name")
+    comet = CometMLExperiment(disabled=True, project_name="project name")
     device = torch.device("cpu")
     with mock.patch("torch.nn.parallel.DistributedDataParallel") as module:
         module.side_effect = _mock_distributed_data_parallel
@@ -108,8 +109,8 @@ def test_integration(mock_urlretrieve):
     )
 
     # Test `_run_step` with `_DistributedMetrics` and `_State`
-    with run._utils.set_context(Context.TRAIN, state.model, comet):
-        metrics = _DistributedMetrics(comet, device)
+    with set_context(Context.TRAIN, state.model, comet):
+        metrics = DistributedMetrics(comet, device)
         batch = typing.cast(SpanBatch, next(iter(train_loader)))
         assert state.step.item() == 0
 
@@ -135,12 +136,12 @@ def test_integration(mock_urlretrieve):
         metrics.log(sum, DatasetType.TRAIN, Cadence.MULTI_STEP)
 
     # Test `_run_inference` with `_DistributedMetrics` and `_State`
-    with run._utils.set_context(Context.EVALUATE_INFERENCE, state.model, comet):
-        metrics = _DistributedMetrics(comet, device)
+    with set_context(Context.EVALUATE_INFERENCE, state.model, comet):
+        metrics = DistributedMetrics(comet, device)
         batch = typing.cast(SpanBatch, next(iter(train_loader)))
         _run_inference(state, metrics, batch, dev_loader, DatasetType.DEV, True)
         assert state.step.item() == 1
-        assert metrics.num_overflowed[0] + metrics.batch_size[0] == 1
+        assert metrics.num_reached_max[0] + metrics.batch_size[0] == 1
 
         metrics.log(lambda l: l[-1], DatasetType.DEV, Cadence.STEP)
         metrics.log(sum, DatasetType.DEV, Cadence.MULTI_STEP)

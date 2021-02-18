@@ -278,7 +278,7 @@ def _get_dataset(speaker_names: typing.FrozenSet[str]) -> Dataset:
     """Load dataset."""
     logger.info("Loading dataset...")
     datasets = {k: v for k, v in DATASETS.items() if k.label in speaker_names}
-    dataset = run._config.get_dataset(datasets)
+    dataset = run._utils.get_dataset(datasets)
     logger.info(f"Finished loading dataset! {mazel_tov()}")
     return dataset
 
@@ -453,7 +453,7 @@ def _get_spans(dataset: Dataset, num_samples: int, slice_: bool = True) -> typin
     """Generate spans from our datasets."""
     logger.info("Generating spans...")
     kwargs = {} if slice_ else {"max_seconds": math.inf}
-    generator = run._config.SpanGenerator(dataset, **kwargs)
+    generator = run._utils.SpanGenerator(dataset, **kwargs)
     with fork_rng(123):
         spans = [next(generator) for _ in tqdm.tqdm(range(num_samples), total=num_samples)]
     return_ = [Span(s.passage, s.slice) for s in tqdm.tqdm(spans)]

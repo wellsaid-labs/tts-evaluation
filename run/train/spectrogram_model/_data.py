@@ -1,17 +1,26 @@
-import dataclasses
+import collections
+import collections.abc
+import copy
 import functools
+import logging
 import multiprocessing.pool
 import os
 import random
+import sys
+import time
 import typing
+from functools import partial
 
+import hparams.hparams
 import numpy
 import torch
 import torch.cuda
 import torch.distributed
 import torch.nn
 import torch.optim
-from hparams import HParam, configurable
+import torch.utils
+import torch.utils.data
+from hparams import HParam, configurable, get_config
 from third_party import LazyLoader
 from torchnlp.encoders import Encoder, LabelEncoder
 from torchnlp.encoders.text import (
@@ -20,12 +29,15 @@ from torchnlp.encoders.text import (
     SequenceBatch,
     stack_and_pad_tensors,
 )
-from torchnlp.utils import lengths_to_mask
+from torchnlp.samplers import BucketBatchSampler, DeterministicSampler, DistributedBatchSampler
+from torchnlp.utils import lengths_to_mask, tensors_to
 
 import lib
 import run
 from lib.audio import seconds_to_samples
+from lib.distributed import get_rank, get_world_size, is_initialized
 from lib.utils import flatten
+from run.train.spectrogram_model._utils import set_seed
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import librosa
@@ -37,6 +49,9 @@ else:
     ndimage = LazyLoader("ndimage", globals(), "scipy.ndimage")
     spacy = LazyLoader("spacy", globals(), "spacy")
     spacy_en = LazyLoader("spacy_en", globals(), "spacy.lang.en")
+
+
+logger = logging.getLogger(__name__)
 
 
 class EncodedInput(typing.NamedTuple):
@@ -126,19 +141,8 @@ class InputEncoder(Encoder):
         )
 
 
-@dataclasses.dataclass(frozen=True)
-class Checkpoint(run._utils.Checkpoint):
-    """Checkpoint used to checkpoint spectrogram model training."""
-
-    input_encoder: InputEncoder
-    model: lib.spectrogram_model.SpectrogramModel
-    optimizer: torch.optim.Adam
-    clipper: lib.optimizers.AdaptiveGradientNormClipper
-    scheduler: torch.optim.lr_scheduler.LambdaLR
-
-
 def _random_nonoverlapping_alignments(
-    alignments: typing.Tuple[lib.datasets.Alignment, ...], max_alignments: int
+    alignments: lib.utils.Tuples[lib.datasets.Alignment], max_alignments: int
 ) -> typing.Tuple[lib.datasets.Alignment, ...]:
     """Generate a random set of non-overlapping alignments, such that every point in the
     time-series has an equal probability of getting sampled inside an alignment.
@@ -527,99 +531,116 @@ def make_span_batch(
     )
 
 
-def get_num_skipped(
-    alignments: torch.Tensor, token_mask: torch.Tensor, spectrogram_mask: torch.Tensor
-) -> torch.Tensor:
-    """Given `alignments` from frames to tokens, this computes the number of tokens that were
-    skipped.
+def _worker_init_fn(_, config):
+    # TODO: Add a method for transfering global configuration between processes without private
+    # variables.
+    # TODO: After the global configuration is transfered, the functions need to be rechecked
+    # like for a configuration, just in case the configuration is on a new process.
+    hparams.hparams._configuration = config
+    info = torch.utils.data.get_worker_info()
+    lib.environment.set_basic_logging_config()
+    logger.info("Worker %d/%d iterator started.", info.id + 1, info.num_workers)
+    set_seed()  # NOTE: Each worker needs the same random seed to be deterministic.
 
-    NOTE: This function assumes a token is attended to if it has the most focus of all the other
-    tokens for some frame.
 
-    Args:
-        alignments (torch.FloatTensor [num_frames, batch_size, num_tokens])
-        token_mask (torch.BoolTensor [num_tokens, batch_size])
-        spectrogram_mask (torch.BoolTensor [num_frames, batch_size])
+class DataIterator(lib.utils.MappedIterator):
+    def __init__(self, dataset: run._config.Dataset, batch_size: int):
+        """Generate spans from `run._config.Dataset`.
 
-    Returns:
-        torch.FloatTensor [batch_size]
+        NOTE: Our training procedure is similar to BERT, the examples are randomly sampled
+        from a large corpus of data with `SpanGenerator`.
+        """
+        iter_ = run._utils.SpanGenerator(dataset)
+        iter_ = BucketBatchSampler(iter_, batch_size, False, self._data_iterator_sort_key)
+        iter_ = DeterministicSampler(iter_, run._config.RANDOM_SEED, cuda=False)
+        if is_initialized():
+            iter_ = DistributedBatchSampler(iter_, num_replicas=get_world_size(), rank=get_rank())
+        super().__init__(iter_)
+
+    @staticmethod
+    def _data_iterator_sort_key(span: lib.datasets.Span):
+        return span.audio_length
+
+    def __len__(self) -> int:
+        return sys.maxsize  # NOTE: The `DataLoader` needs `__len__`.
+
+
+class DataLoader(collections.abc.Iterable):
+    """Load and batch spans given a dataset `iterator`.
+
+    NOTE: The `DataLoader` by default will create a sequential sampler. It'll use that sampler
+    to queue up batches from `DataIterator`, in order.
+
+    NOTE: Each `DataLoader` worker replicates the dataset, and other objects. As of
+    02/04/2020, about half of our memory (30 gb) was used by `DataLoader` workers. This
+    can be resolved with memory sharing like "fork" and `gc.freeze`.
+
+    NOTE: `DataLoader` isn't compatible with "fork" because NCCL isn't fork safe. There
+    are also issues with OMP and CUDA. They have issues with fork, as well. Learn more:
+    > Unfortunately Gloo (that uses Infiniband) and NCCL2 are not fork safe, and you will
+    likely experience deadlocks if you don’t change this setting.
+    https://github.com/pytorch/pytorch/pull/4766
+    > After OpenMP features are utilized, a fork is only allowed if the child process does not
+    > use OpenMP features, or it does so as a completely new process (such as after exec()).
+    https://bisqwit.iki.fi/story/howto/openmp/#OpenmpAndFork
+    https://github.com/pytorch/pytorch/issues/42444
+    > The CUDA runtime does not support the fork start method
+    https://pytorch.org/docs/stable/notes/multiprocessing.html#cuda-in-multiprocessing
+
+    TODO: The `DataLoader` runs `make_span_batch` and `iterator` in each worker. For performance,
+    we could move `make_span_batch` to `DataIterator` and preprocess larger batches at the
+    same time. The `collate_fn` function could be replaced with an `identity` function, and
+    everything could be processed in the `DataIterator` efficiently. Learn more:
+    https://github.com/pytorch/pytorch/blob/272f4db043ec2c63ecfe6d2759e7893cb842a3c3/torch/utils/data/_utils/fetch.py#L35
+    https://pytorch.org/docs/stable/data.html#disable-automatic-batching
+    This should also help with code locality. Also, if we'd like to run a more expensive dataset
+    filtering, it is more doable in batches.
+
+    TODO: Remove `copy.deepcopy` after this issue is fixed:
+    https://github.com/pytorch/pytorch/issues/51849
+
+    TODO: Refactor `DataLoader`, so that common elements like `_worker_init_fn` and `time` are
+    shared in `train._utils`.
     """
-    if alignments.numel() == 0:
-        return torch.empty(alignments.shape[1], dtype=torch.float, device=alignments.device)
 
-    indices = alignments.max(dim=2, keepdim=True).indices
-    device = alignments.device
-    one = torch.ones(*alignments.shape, device=device, dtype=torch.long)
-    # [num_frames, batch_size, num_tokens]
-    num_skipped = torch.zeros(*alignments.shape, device=device, dtype=torch.long)
-    num_skipped = num_skipped.scatter(dim=2, index=indices, src=one)
-    # [num_frames, batch_size, num_tokens] → [batch_size, num_tokens]
-    num_skipped = num_skipped.masked_fill(~spectrogram_mask.unsqueeze(-1), 0).sum(dim=0)
-    token_mask = token_mask.transpose(0, 1)
-    return (num_skipped.masked_fill(~token_mask, -1) == 0).float().sum(dim=1)
+    def __init__(
+        self, iterator: DataIterator, device: torch.device, input_encoder: InputEncoder, **kwargs
+    ):
+        logger.info("Creating `DataLoader`...")
+        self.device = device
+        max_parallel = int(os.cpu_count() // get_world_size())
+        loader = torch.utils.data.dataloader.DataLoader(
+            typing.cast(torch.utils.data.Dataset, iterator),
+            pin_memory=True,
+            batch_size=None,
+            worker_init_fn=partial(_worker_init_fn, config=copy.deepcopy(get_config())),
+            collate_fn=partial(
+                make_span_batch, input_encoder=input_encoder, max_parallel=max_parallel
+            ),
+            prefetch_factor=4,
+            **kwargs,
+        )
+        self.loader = iter(loader)
+        self.num_frames = 0.0
+        self.num_spans = 0.0
+        logger.info("Created `DataLoader`.")
 
+    @property
+    def average_spectrogram_length(self) -> float:
+        return self.num_frames / self.num_spans
 
-"""
-TODO: In order to support `get_rms_level`, the signal used to compute the spectrogram should
-be padded appropriately. At the moment, the spectrogram is padded such that it's length
-is a multiple of the signal length.
-
-The current spectrogram does not work with `get_rms_level` because the boundary samples are
-underrepresented in the resulting spectrogram. Except for the boundaries, every sample
-appears 4 times in the resulting spectrogram assuming there is a 75% overlap between frames. The
-boundary samples appear less than 4 times. For example, the first and last sample appear
-only once in the spectrogram.
-
-In order to correct this, we'd need to add 3 additional frames to either end of the spectrogram.
-Unfortunately, adding a constant number of frames to either end is incompatible with the orignal
-impelementation where the resulting spectrogram length is a multiple of the signal length.
-
-Fortunately, this requirement can be relaxed. The signal model can be adjusted to accept 3
-additional frames on either side of the spectrogram. This would also ensure that the signal model
-has adequate information about the boundary samples.
-
-NOTE: Our approximate implementation of RMS-level is consistent with EBU R128 / ITU-R BS.1770
-loudness implementations. For example, see these implementations:
-https://github.com/BrechtDeMan/loudness.py
-https://github.com/csteinmetz1/pyloudnorm
-They don't even pad the signal to ensure every sample is represented.
-NOTE: For most signals, the underrepresentation of the first 85 milliseconds (assuming a frame
-length of 2048, frame hop of 512 and a sample rate of 24000), doesn't practically matter.
-"""
-
-
-def get_cumulative_power_rms_level(
-    db_spectrogram: torch.Tensor, mask: typing.Optional[torch.Tensor] = None, **kwargs
-) -> torch.Tensor:
-    """Get the sum of the power RMS level for each frame in the spectrogram.
-
-    Args:
-        db_spectrogram (torch.FloatTensor [num_frames, batch_size, frame_channels])
-        mask (torch.FloatTensor [num_frames, batch_size])
-        **kwargs: Additional key word arguments passed to `power_spectrogram_to_framed_rms`.
-
-    Returns:
-        torch.FloatTensor [batch_size]
-    """
-    spectrogram = typing.cast(torch.Tensor, lib.audio.db_to_power(db_spectrogram.transpose(0, 1)))
-    # [batch_size, num_frames, frame_channels] → [batch_size, num_frames]
-    rms = lib.audio.power_spectrogram_to_framed_rms(spectrogram, **kwargs)
-    return (rms if mask is None else rms * mask.transpose(0, 1)).pow(2).sum(dim=1)
-
-
-def get_average_db_rms_level(
-    db_spectrogram: torch.Tensor, mask: typing.Optional[torch.Tensor] = None, **kwargs
-) -> torch.Tensor:
-    """Get the average, over spectrogram frames, RMS level (dB) for each spectrogram.
-
-    Args:
-        db_spectrogram (torch.FloatTensor [num_frames, batch_size, frame_channels])
-        mask (torch.FloatTensor [num_frames, batch_size])
-        **kwargs: Additional key word arguments passed to `get_cumulative_power_rms_level`.
-
-    Returns:
-        torch.FloatTensor [batch_size]
-    """
-    num_elements = db_spectrogram.shape[0] if mask is None else mask.sum(dim=0)
-    cumulative_power_rms_level = get_cumulative_power_rms_level(db_spectrogram, mask, **kwargs)
-    return lib.audio.power_to_db(cumulative_power_rms_level / num_elements)
+    def __iter__(self) -> typing.Iterator[SpanBatch]:
+        first = time.time()
+        while True:
+            batch = next(self.loader)
+            self.num_frames += batch.spectrogram.lengths.float().sum().item()
+            self.num_spans += batch.length
+            # NOTE: Tensors are moved to CUDA outside of the `DataLoader` workers. Learn more:
+            # > It is generally not recommended to return CUDA tensors in multi-process loading
+            # > because of many subtleties in using CUDA and sharing CUDA tensors in multiprocessing
+            # https://pytorch.org/docs/stable/data.html#multi-process-data-loading
+            yield typing.cast(SpanBatch, tensors_to(batch, device=self.device, non_blocking=True))
+            if first is not None:  # NOTE: The first batch will take the longest to load.
+                elapsed = lib.utils.seconds_to_string(time.time() - first)
+                logger.info("Time to first batch was %s.", elapsed)
+                first = None
