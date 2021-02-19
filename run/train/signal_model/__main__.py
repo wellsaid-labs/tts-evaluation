@@ -13,8 +13,8 @@ import torch.utils.data
 from hparams import add_config, configurable
 
 import lib
-import run
 from run._config import SIGNAL_MODEL_EXPERIMENTS_PATH, Dataset
+from run.train import _utils
 from run.train._utils import CometMLExperiment, get_config_parameters, make_app, run_workers
 
 logger = logging.getLogger(__name__)
@@ -29,7 +29,7 @@ def _make_configuration(
 
 
 @dataclasses.dataclass(frozen=True)
-class Checkpoint(run.train._utils.Checkpoint):
+class Checkpoint(_utils.Checkpoint):
     """Checkpoint used to checkpoint spectrogram model training."""
 
     model: lib.signal_model.SignalModel

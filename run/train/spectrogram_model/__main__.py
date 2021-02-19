@@ -18,7 +18,6 @@ from hparams import HParam, HParams, add_config, configurable
 from torchnlp.utils import get_total_parameters, lengths_to_mask
 
 import lib
-import run
 from lib.distributed import get_world_size, is_master
 from lib.environment import save
 from lib.utils import flatten
@@ -34,6 +33,7 @@ from run._config import (
     get_dataset_label,
     get_model_label,
 )
+from run.train import _utils
 from run.train._utils import (
     CometMLExperiment,
     Context,
@@ -117,7 +117,7 @@ def _make_configuration(
 
 
 @dataclasses.dataclass(frozen=True)
-class Checkpoint(run.train._utils.Checkpoint):
+class Checkpoint(_utils.Checkpoint):
     """Checkpoint used to checkpoint spectrogram model training."""
 
     input_encoder: InputEncoder
