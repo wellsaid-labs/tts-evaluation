@@ -9,14 +9,13 @@ from itertools import chain
 
 # NOTE: `comet_ml` needs to be imported before torch
 import comet_ml  # type: ignore # noqa
-import hparams.hparams
 import torch
 import torch.nn
 import torch.optim
 import torch.utils
 import torch.utils.data
 import tqdm
-from hparams import HParam, HParams, add_config, configurable, get_config
+from hparams import HParam, HParams, add_config, configurable
 from torchnlp.utils import get_total_parameters, lengths_to_mask
 
 import lib
@@ -40,8 +39,8 @@ from run.train._utils import (
     CometMLExperiment,
     Context,
     get_config_parameters,
-    init_distributed,
     make_app,
+    run_workers,
     set_context,
     set_run_seed,
 )
@@ -576,26 +575,20 @@ _BatchHandler = typing.Callable[
 
 @configurable
 def _run_worker(
-    device_index: int,
+    device: torch.device,
+    comet: CometMLExperiment,
     checkpoints_directory: pathlib.Path,
     checkpoint: typing.Optional[pathlib.Path],
     train_dataset: Dataset,
     dev_dataset: Dataset,
-    comet_partial: typing.Callable[..., CometMLExperiment],
-    config: typing.Dict[str, typing.Any],
     train_steps_per_epoch: int = HParam(),
     dev_steps_per_epoch: int = HParam(),
 ) -> typing.NoReturn:
-    """Train and evaluate the spectrogram model on a loop.
+    """Train and evaluate the spectrogram model in a loop.
 
     TODO: Should we checkpoint `metrics` so that metrics like `num_frames_per_speaker`,
     `num_spans_per_text_length`, or `max_num_frames` can be computed accross epochs?
     """
-    lib.environment.set_basic_logging_config(device_index)
-    device = init_distributed(device_index)
-    comet = comet_partial(disabled=not is_master(), auto_output_logging=False)
-    hparams.hparams._configuration = config
-    set_run_seed()
     if checkpoint is None:
         state = _State.from_dataset(train_dataset, dev_dataset, comet, device)
     else:
@@ -657,10 +650,8 @@ def _run_app(
     add_config(_make_configuration(train_dataset, dev_dataset, debug))
     add_config(cli_config)
     comet.log_parameters(get_config_parameters())
-    logger.info("Spawning workers %s", lib.utils.mazel_tov())
-    partial_ = partial(CometMLExperiment, experiment_key=comet.get_key())
-    args = (checkpoints_path, checkpoint, train_dataset, dev_dataset, partial_, get_config())
-    return lib.distributed.spawn(_run_worker.get_configured_partial(), args=args)  # type: ignore
+    partial_ = _run_worker.get_configured_partial()
+    return run_workers(partial_, comet, checkpoints_path, checkpoint, train_dataset, dev_dataset)
 
 
 if __name__ == "__main__":  # pragma: no cover

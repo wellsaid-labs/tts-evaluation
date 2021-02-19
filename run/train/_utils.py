@@ -28,6 +28,7 @@ from torchnlp.utils import tensors_to
 
 import lib
 import run
+from lib.distributed import is_master
 from lib.environment import load, load_most_recent_file
 from lib.utils import flatten, seconds_to_string
 from run._config import Cadence, Dataset, DatasetType, get_dataset_label, get_model_label
@@ -100,33 +101,6 @@ def _maybe_make_experiment_directories(
     checkpoints_directory.mkdir()
     recorder.update(run_root, log_filename=run_log_filename)
     return run_root, checkpoints_directory
-
-
-def init_distributed(
-    rank: int,
-    timeout: timedelta = timedelta(minutes=30),
-    backend: str = "nccl",
-    init_method: str = "tcp://127.0.0.1:29500",
-    world_size: int = torch.cuda.device_count(),
-) -> torch.device:
-    """Initiate distributed for training.
-
-    Learn more about distributed environments here:
-    https://pytorch.org/tutorials/intermediate/dist_tuto.htm
-    https://github.com/pytorch/examples/blob/master/imagenet/main.py
-    """
-    torch.distributed.init_process_group(backend, init_method, timeout, world_size, rank)
-    logger.info("Worker %d started.", torch.distributed.get_rank())
-    logger.info("%d GPUs found.", world_size)
-    device = torch.device("cuda", rank)
-
-    # NOTE: Unless this is run, PyTorch may use a different GPU for some operations. Learn more:
-    # https://github.com/pytorch/pytorch/issues/3477#issuecomment-342294955
-    # https://github.com/pytorch/pytorch/issues/7071#issuecomment-437469653
-    torch.cuda.set_device(device)
-    # TODO: Instead of returning and passing around `torch.device`, rely on `torch.cuda.set_device`
-    # or `torch.cuda.device` to set context.
-    return device
 
 
 def _get_dataset_stats(
@@ -625,3 +599,58 @@ def make_app(run_app: _RunApp, directory: pathlib.Path, *args, **kwargs):
         _run(checkpoints_path, cli_config, comet, debug=debug)
 
     return app
+
+
+def _init_distributed(
+    rank: int,
+    timeout: timedelta = timedelta(minutes=30),
+    backend: str = "nccl",
+    init_method: str = "tcp://127.0.0.1:29500",
+    world_size: int = torch.cuda.device_count(),
+) -> torch.device:
+    """Initiate distributed for training.
+
+    Learn more about distributed environments here:
+    https://pytorch.org/tutorials/intermediate/dist_tuto.htm
+    https://github.com/pytorch/examples/blob/master/imagenet/main.py
+    """
+    torch.distributed.init_process_group(backend, init_method, timeout, world_size, rank)
+    logger.info("Worker %d started.", torch.distributed.get_rank())
+    logger.info("%d GPUs found.", world_size)
+    device = torch.device("cuda", rank)
+
+    # NOTE: Unless this is run, PyTorch may use a different GPU for some operations. Learn more:
+    # https://github.com/pytorch/pytorch/issues/3477#issuecomment-342294955
+    # https://github.com/pytorch/pytorch/issues/7071#issuecomment-437469653
+    torch.cuda.set_device(device)
+    # TODO: Instead of returning and passing around `torch.device`, rely on `torch.cuda.set_device`
+    # or `torch.cuda.device` to set context.
+    return device
+
+
+class _RunWorker(typing.Protocol):
+    def __call__(self, device: torch.device, comet: CometMLExperiment, *args):
+        ...
+
+
+def _run_workers_helper(
+    device_index: int,
+    comet_partial: typing.Callable[..., CometMLExperiment],
+    config: typing.Dict[str, typing.Any],
+    run_worker: _RunWorker,
+    *args,
+):
+    lib.environment.set_basic_logging_config(device_index)
+    device = _init_distributed(device_index)
+    comet = comet_partial(disabled=not is_master(), auto_output_logging=False)
+    hparams.hparams._configuration = config
+    set_run_seed()
+    return run_worker(device, comet, *args)
+
+
+def run_workers(run_worker: _RunWorker, comet: CometMLExperiment, *args):
+    """Spawn workers for each GPU, and setup their environment."""
+    logger.info("Spawning workers %s", lib.utils.mazel_tov())
+    partial_ = functools.partial(CometMLExperiment, experiment_key=comet.get_key())
+    args = (partial_, get_config(), run_worker, *args)
+    return lib.distributed.spawn(_run_workers_helper, args=args)  # type: ignore
