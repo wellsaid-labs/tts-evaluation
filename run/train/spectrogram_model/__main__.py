@@ -14,13 +14,13 @@ import torch.nn
 import torch.optim
 import torch.utils
 import torch.utils.data
-import tqdm
 from hparams import HParam, HParams, add_config, configurable
 from torchnlp.utils import get_total_parameters, lengths_to_mask
 
 import lib
+import run
 from lib.distributed import get_world_size, is_master
-from lib.environment import load, save
+from lib.environment import save
 from lib.utils import flatten
 from run._config import (
     DATASET_PHONETIC_CHARACTERS,
@@ -35,17 +35,17 @@ from run._config import (
     get_model_label,
 )
 from run.train._utils import (
-    Checkpoint,
     CometMLExperiment,
     Context,
     get_config_parameters,
     make_app,
     run_workers,
     set_context,
+    set_epoch,
     set_run_seed,
 )
 from run.train.spectrogram_model._data import DataLoader, DataProcessor, InputEncoder, SpanBatch
-from run.train.spectrogram_model._metrics import DistributedMetrics, get_average_db_rms_level
+from run.train.spectrogram_model._metrics import Metrics, get_average_db_rms_level
 
 logger = logging.getLogger(__name__)
 torch.optim.Adam.__init__ = configurable(torch.optim.Adam.__init__)
@@ -77,10 +77,6 @@ def _make_configuration(
             # We use the Adam optimizer [29] with β1 = 0.9, β2 = 0.999
             optimizer=torch.optim.Adam,
         ),
-        _run_worker: HParams(
-            train_steps_per_epoch=train_steps_per_epoch,
-            dev_steps_per_epoch=int(dev_steps_per_epoch),
-        ),
         _run_step: HParams(
             # NOTE: This scalar calibrates the loss so that it's scale is similar to Tacotron-2.
             spectrogram_loss_scalar=1 / 100,
@@ -99,10 +95,12 @@ def _make_configuration(
             # NOTE: Batch size parameters set after experimentation on a 2 Px100 GPU.
             train_batch_size=train_batch_size,
             dev_batch_size=dev_batch_size,
+            train_steps_per_epoch=train_steps_per_epoch,
+            dev_steps_per_epoch=int(dev_steps_per_epoch),
             num_workers=2 if debug else 4,
             prefetch_factor=2 if debug else 4,
         ),
-        DistributedMetrics.get_model_metrics: HParams(num_frame_channels=NUM_FRAME_CHANNELS),
+        Metrics.get_model_metrics: HParams(num_frame_channels=NUM_FRAME_CHANNELS),
         # SOURCE (Tacotron 2):
         # We use the Adam optimizer with β1 = 0.9, β2 = 0.999, eps = 10−6 learning rate of 10−3
         # We also apply L2 regularization with weight 10−6
@@ -119,7 +117,7 @@ def _make_configuration(
 
 
 @dataclasses.dataclass(frozen=True)
-class Checkpoint(Checkpoint):
+class Checkpoint(run.train._utils.Checkpoint):
     """Checkpoint used to checkpoint spectrogram model training."""
 
     input_encoder: InputEncoder
@@ -290,6 +288,8 @@ def _get_data_loaders(
     dev_dataset: Dataset,
     train_batch_size: int = HParam(),
     dev_batch_size: int = HParam(),
+    train_steps_per_epoch: int = HParam(),
+    dev_steps_per_epoch: int = HParam(),
     num_workers: int = HParam(),
     prefetch_factor: int = HParam(),
 ) -> typing.Tuple[DataLoader, DataLoader]:
@@ -297,8 +297,11 @@ def _get_data_loaders(
     max_parallel = int(os.cpu_count() // get_world_size())
     partial_ = partial(DataProcessor, input_encoder=state.input_encoder, max_parallel=max_parallel)
     kwargs = dict(num_workers=num_workers, device=state.device, prefetch_factor=prefetch_factor)
-    make_loader = lambda *a: DataLoader(partial_(*a), **kwargs)
-    return make_loader(train_dataset, train_batch_size), make_loader(dev_dataset, dev_batch_size)
+    make_loader = lambda d, b, s: DataLoader(partial_(d, b), num_steps_per_epoch=s, **kwargs)
+    return (
+        make_loader(train_dataset, train_batch_size, train_steps_per_epoch),
+        make_loader(dev_dataset, dev_batch_size, dev_steps_per_epoch),
+    )
 
 
 def _visualize_source_vs_target(
@@ -351,7 +354,7 @@ def _visualize_source_vs_target(
 @configurable
 def _run_step(
     state: _State,
-    metrics: DistributedMetrics,
+    metrics: Metrics,
     batch: SpanBatch,
     data_loader: DataLoader,
     dataset_type: DatasetType,
@@ -510,7 +513,7 @@ def _visualize_inferred(
 
 def _run_inference(
     state: _State,
-    metrics: DistributedMetrics,
+    metrics: Metrics,
     batch: SpanBatch,
     data_loader: DataLoader,
     dataset_type: DatasetType,
@@ -568,63 +571,53 @@ def _run_inference(
     metrics.update_reached_max_metrics(batch, state.input_encoder, reached_max)
 
 
-_BatchHandler = typing.Callable[
-    [_State, DistributedMetrics, SpanBatch, DataLoader, DatasetType, bool], None
-]
+_BatchHandler = typing.Callable[[_State, Metrics, SpanBatch, DataLoader, DatasetType, bool], None]
 
 
-@configurable
 def _run_worker(
     device: torch.device,
     comet: CometMLExperiment,
+    checkpoint: typing.Optional[Checkpoint],
     checkpoints_directory: pathlib.Path,
-    checkpoint: typing.Optional[pathlib.Path],
     train_dataset: Dataset,
     dev_dataset: Dataset,
-    train_steps_per_epoch: int = HParam(),
-    dev_steps_per_epoch: int = HParam(),
 ) -> typing.NoReturn:
     """Train and evaluate the spectrogram model in a loop.
 
     TODO: Should we checkpoint `metrics` so that metrics like `num_frames_per_speaker`,
     `num_spans_per_text_length`, or `max_num_frames` can be computed accross epochs?
     """
-    if checkpoint is None:
-        state = _State.from_dataset(train_dataset, dev_dataset, comet, device)
-    else:
-        checkpoint_ = typing.cast(Checkpoint, load(checkpoint, device=device))
-        state = _State.from_checkpoint(checkpoint_, comet, device)
+    state = (
+        _State.from_dataset(train_dataset, dev_dataset, comet, device)
+        if checkpoint is None
+        else _State.from_checkpoint(checkpoint, comet, device)
+    )
     train_loader, dev_loader = _get_data_loaders(state, train_dataset, dev_dataset)
-    _set_context = partial(set_context, model=state.model, comet=comet)
-    dev_args = (DatasetType.DEV, dev_loader, dev_steps_per_epoch)
-    contexts: typing.List[typing.Tuple[Context, DatasetType, DataLoader, int, _BatchHandler]] = [
-        (Context.TRAIN, DatasetType.TRAIN, train_loader, train_steps_per_epoch, _run_step),
-        (Context.EVALUATE, *dev_args, _run_step),
-        (Context.EVALUATE_INFERENCE, *dev_args, _run_inference),
+    contexts: typing.List[typing.Tuple[Context, DatasetType, DataLoader, _BatchHandler]] = [
+        (Context.TRAIN, DatasetType.TRAIN, train_loader, _run_step),
+        (Context.EVALUATE, DatasetType.DEV, dev_loader, _run_step),
+        (Context.EVALUATE_INFERENCE, DatasetType.DEV, dev_loader, _run_inference),
     ]
-
     while True:
-        epoch = int(state.step.item() // train_steps_per_epoch)
-        message = "Running Epoch %d (Step %d, Example %d)"
-        logger.info(message, epoch, state.step.item(), state.num_examples.item())
-        comet.set_step(typing.cast(int, state.step.item()))
-        comet.log_current_epoch(epoch)
+        with set_epoch(
+            comet,
+            step=state.step.item(),
+            steps_per_epoch=train_loader.num_steps_per_epoch,
+            num_examples=state.num_examples.item(),
+        ):
+            for context, dataset_type, data_loader, handle_batch in contexts:
+                with set_context(context, model=state.model, comet=comet):
+                    metrics = Metrics(comet, state.device)
+                    for i, batch in enumerate(data_loader):
+                        handle_batch(state, metrics, batch, data_loader, dataset_type, i == 0)
+                        if Context.TRAIN == context:
+                            metrics.log(lambda l: l[-1], dataset_type, Cadence.STEP)
+                    metrics.log(sum, dataset_type, Cadence.MULTI_STEP)
 
-        for context, dataset_type, data_loader, num_steps, handle_batch in contexts:
-            with _set_context(context):
-                metrics = DistributedMetrics(comet, state.device)
-                loader = zip(range(num_steps), data_loader)
-                for i, batch in tqdm.tqdm(loader, total=num_steps) if is_master() else loader:
-                    batch = typing.cast(SpanBatch, batch)
-                    handle_batch(state, metrics, batch, data_loader, dataset_type, i == 0)
-                    if Context.TRAIN == context:
-                        metrics.log(lambda l: l[-1], dataset_type, Cadence.STEP)
-                metrics.log(sum, dataset_type, Cadence.MULTI_STEP)
-
-        if is_master():
-            path = checkpoints_directory / f"step_{state.step.item()}{lib.environment.PT_EXTENSION}"
-            save(path, state.to_checkpoint(checkpoints_directory=checkpoints_directory))
-        comet.log_epoch_end(epoch)
+            if is_master():
+                name = f"step_{state.step.item()}{lib.environment.PT_EXTENSION}"
+                path = checkpoints_directory / name
+                save(path, state.to_checkpoint(checkpoints_directory=checkpoints_directory))
 
 
 def _run_app(
@@ -650,8 +643,7 @@ def _run_app(
     add_config(_make_configuration(train_dataset, dev_dataset, debug))
     add_config(cli_config)
     comet.log_parameters(get_config_parameters())
-    partial_ = _run_worker.get_configured_partial()
-    return run_workers(partial_, comet, checkpoints_path, checkpoint, train_dataset, dev_dataset)
+    return run_workers(_run_worker, comet, checkpoint, checkpoints_path, train_dataset, dev_dataset)
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -1,7 +1,6 @@
 import pathlib
 import shutil
 import tempfile
-import typing
 from unittest import mock
 
 import torch
@@ -20,8 +19,7 @@ from run.train.spectrogram_model.__main__ import (
     _run_step,
     _State,
 )
-from run.train.spectrogram_model._data import SpanBatch
-from run.train.spectrogram_model._metrics import DistributedMetrics
+from run.train.spectrogram_model._metrics import Metrics
 from tests import _utils
 
 
@@ -106,10 +104,10 @@ def test_integration(mock_urlretrieve):
         state, train_dataset, dev_dataset, batch_size, batch_size, 1
     )
 
-    # Test `_run_step` with `_DistributedMetrics` and `_State`
+    # Test `_run_step` with `Metrics` and `_State`
     with set_context(Context.TRAIN, state.model, comet):
-        metrics = DistributedMetrics(comet, device)
-        batch = typing.cast(SpanBatch, next(iter(train_loader)))
+        metrics = Metrics(comet, device)
+        batch = next(iter(train_loader))
         assert state.step.item() == 0
 
         _run_step(state, metrics, batch, train_loader, DatasetType.TRAIN, True)
@@ -133,10 +131,10 @@ def test_integration(mock_urlretrieve):
         metrics.log(lambda l: l[-1], DatasetType.TRAIN, Cadence.STEP)
         metrics.log(sum, DatasetType.TRAIN, Cadence.MULTI_STEP)
 
-    # Test `_run_inference` with `_DistributedMetrics` and `_State`
+    # Test `_run_inference` with `Metrics` and `_State`
     with set_context(Context.EVALUATE_INFERENCE, state.model, comet):
-        metrics = DistributedMetrics(comet, device)
-        batch = typing.cast(SpanBatch, next(iter(train_loader)))
+        metrics = Metrics(comet, device)
+        batch = next(iter(train_loader))
         _run_inference(state, metrics, batch, dev_loader, DatasetType.DEV, True)
         assert state.step.item() == 1
         assert metrics.num_reached_max[0] + metrics.batch_size[0] == 1

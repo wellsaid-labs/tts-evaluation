@@ -128,7 +128,7 @@ _Metrics = typing.Dict[Label, typing.Optional[float]]
 
 
 @dataclasses.dataclass
-class DistributedMetrics:
+class Metrics:
     """Track metrics with measurements taken on every process for every step.
 
     TODO: Instead of using CUDA tensors, for synchronizing metadata and metrics, it's more natural
@@ -361,7 +361,7 @@ class DistributedMetrics:
         """Log optimizer metrics for `optimizer` and `clipper`. The model parameters have already
         been sync'd; therefore, there is no need to further sync parameters.
 
-        TODO: Incorperate `optimizer_metrics` into the standard `DistributedMetrics` usage.
+        TODO: Incorperate `optimizer_metrics` into the standard `Metrics` usage.
         """
         label_ = partial(get_model_label, cadence=Cadence.STEP)
         log = lambda n, v: self.comet.log_metric(label_(n), v)
@@ -414,7 +414,7 @@ class DistributedMetrics:
 
     @staticmethod
     def _rms(num: _Measurements, denom: _Measurements, reduce: _Reduce) -> typing.Optional[float]:
-        power_rms_level = DistributedMetrics._div(num, denom, reduce)
+        power_rms_level = Metrics._div(num, denom, reduce)
         if power_rms_level is not None:
             return float(lib.audio.power_to_db(torch.tensor(power_rms_level)).item())
         return None

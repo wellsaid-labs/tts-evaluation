@@ -1,3 +1,4 @@
+import dataclasses
 import logging
 import pathlib
 import typing
@@ -9,8 +10,10 @@ import torch.nn
 import torch.optim
 import torch.utils
 import torch.utils.data
-from hparams import HParam, add_config, configurable
+from hparams import add_config, configurable
 
+import lib
+import run
 from run._config import SIGNAL_MODEL_EXPERIMENTS_PATH, Dataset
 from run.train._utils import CometMLExperiment, get_config_parameters, make_app, run_workers
 
@@ -25,16 +28,23 @@ def _make_configuration(
     return {}
 
 
-@configurable
+@dataclasses.dataclass(frozen=True)
+class Checkpoint(run.train._utils.Checkpoint):
+    """Checkpoint used to checkpoint spectrogram model training."""
+
+    model: lib.signal_model.SignalModel
+    optimizer: torch.optim.Adam
+    clipper: lib.optimizers.AdaptiveGradientNormClipper
+    scheduler: torch.optim.lr_scheduler.LambdaLR
+
+
 def _run_worker(
     device: torch.device,
     comet: CometMLExperiment,
+    checkpoint: typing.Optional[Checkpoint],
     checkpoints_directory: pathlib.Path,
-    checkpoint: typing.Optional[pathlib.Path],
     train_dataset: Dataset,
     dev_dataset: Dataset,
-    train_steps_per_epoch: int = HParam(),
-    dev_steps_per_epoch: int = HParam(),
 ) -> typing.NoReturn:
     """Train and evaluate the signal model in a loop."""
     while True:
@@ -54,8 +64,7 @@ def _run_app(
     add_config(_make_configuration(train_dataset, dev_dataset, debug))
     add_config(cli_config)
     comet.log_parameters(get_config_parameters())
-    partial_ = _run_worker.get_configured_partial()
-    return run_workers(partial_, comet, checkpoints_path, checkpoint, train_dataset, dev_dataset)
+    return run_workers(_run_worker, comet, checkpoint, checkpoints_path, train_dataset, dev_dataset)
 
 
 if __name__ == "__main__":  # pragma: no cover

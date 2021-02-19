@@ -21,6 +21,7 @@ import torch.distributed
 import torch.nn
 import torch.optim
 import torch.utils.data
+import tqdm
 import typer
 from hparams import HParam, HParams, configurable, get_config, parse_hparam_args
 from third_party import LazyLoader
@@ -395,6 +396,17 @@ def set_context(context: Context, model: torch.nn.Module, comet: CometMLExperime
         model.train(mode=mode)
 
 
+@contextlib.contextmanager
+def set_epoch(comet: CometMLExperiment, step: int, steps_per_epoch: int, num_examples: int):
+    epoch = int(step // steps_per_epoch)
+    message = "Running Epoch %d (Step %d, Example %d)"
+    logger.info(message, epoch, step, num_examples)
+    comet.set_step(typing.cast(int, step))
+    comet.log_current_epoch(epoch)
+    yield
+    comet.log_epoch_end(epoch)
+
+
 @configurable
 def set_run_seed(seed=HParam()):
     lib.environment.set_seed(seed)
@@ -450,7 +462,9 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
     https://github.com/pytorch/pytorch/issues/51849
     """
 
-    def __init__(self, dataset: typing.Mapping, device: torch.device, **kwargs):
+    def __init__(
+        self, dataset: typing.Mapping, device: torch.device, num_steps_per_epoch: int, **kwargs
+    ):
         logger.info("Creating `DataLoader`...")
         self.device = device
         loader = torch.utils.data.dataloader.DataLoader(
@@ -462,6 +476,7 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
             **kwargs,
         )
         self.loader = iter(loader)
+        self.num_steps_per_epoch = num_steps_per_epoch
         logger.info("Created `DataLoader`.")
 
     def process_batch(self, batch: DataLoaderVar) -> DataLoaderVar:
@@ -474,7 +489,9 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
     def __iter__(self) -> typing.Iterator[DataLoaderVar]:
         first = time.time()
 
-        while True:
+        iterator = range(self.num_steps_per_epoch)
+        for _ in tqdm.tqdm(iterator) if is_master() else iterator:
+
             yield self.process_batch(next(self.loader))
 
             # NOTE: The first batch will take the longest to load, so we log the time.
@@ -629,7 +646,13 @@ def _init_distributed(
 
 
 class _RunWorker(typing.Protocol):
-    def __call__(self, device: torch.device, comet: CometMLExperiment, *args):
+    def __call__(
+        self,
+        device: torch.device,
+        comet: CometMLExperiment,
+        checkpoint: typing.Optional[Checkpoint],
+        *args,
+    ) -> typing.NoReturn:
         ...
 
 
@@ -637,6 +660,7 @@ def _run_workers_helper(
     device_index: int,
     comet_partial: typing.Callable[..., CometMLExperiment],
     config: typing.Dict[str, typing.Any],
+    checkpoint: typing.Optional[pathlib.Path],
     run_worker: _RunWorker,
     *args,
 ):
@@ -645,12 +669,18 @@ def _run_workers_helper(
     comet = comet_partial(disabled=not is_master(), auto_output_logging=False)
     hparams.hparams._configuration = config
     set_run_seed()
-    return run_worker(device, comet, *args)
+    checkpoint_ = None if checkpoint is None else load(checkpoint, device=device)
+    return run_worker(device, comet, checkpoint_, *args)
 
 
-def run_workers(run_worker: _RunWorker, comet: CometMLExperiment, *args):
+def run_workers(
+    run_worker: _RunWorker,
+    comet: CometMLExperiment,
+    checkpoint: typing.Optional[pathlib.Path],
+    *args,
+):
     """Spawn workers for each GPU, and setup their environment."""
     logger.info("Spawning workers %s", lib.utils.mazel_tov())
     partial_ = functools.partial(CometMLExperiment, experiment_key=comet.get_key())
-    args = (partial_, get_config(), run_worker, *args)
+    args = (partial_, get_config(), checkpoint, run_worker, *args)
     return lib.distributed.spawn(_run_workers_helper, args=args)  # type: ignore
