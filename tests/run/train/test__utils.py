@@ -25,7 +25,7 @@ def run_around_tests():
     hparams.clear_config()
 
 
-def test_maybe_make_experiment_directories(capsys):
+def test__maybe_make_experiment_directories(capsys):
     """ Test `maybe_make_experiment_directories` creates a directory structure. """
     with tempfile.TemporaryDirectory() as directory:
         with capsys.disabled():  # NOTE: Disable capsys because it messes with `sys.stdout`
@@ -34,7 +34,7 @@ def test_maybe_make_experiment_directories(capsys):
             run_name = "run_name"
             checkpoints_directory_name = "checkpoints"
             run_log_filename = "run.log"
-            run_root, checkpoints_directory = run.train._utils.maybe_make_experiment_directories(
+            run_root, checkpoints_directory = run.train._utils._maybe_make_experiment_directories(
                 path,
                 recorder,
                 run_name=run_name,
@@ -51,7 +51,7 @@ def test_maybe_make_experiment_directories(capsys):
             assert recorder.log_path.name == run_log_filename
 
 
-def test_maybe_make_experiment_directories_from_checkpoint(capsys):
+def test__maybe_make_experiment_directories_from_checkpoint(capsys):
     """ Test `maybe_make_experiment_directories_from_checkpoint` creates a directory structure. """
     with tempfile.TemporaryDirectory() as directory:
         with capsys.disabled():  # NOTE: Disable capsys because it messes with `sys.stdout`
@@ -61,14 +61,14 @@ def test_maybe_make_experiment_directories_from_checkpoint(capsys):
             recorder = lib.environment.RecordStandardStreams()
             run_name = "new_run"
             checkpoint = run.train._utils.Checkpoint(checkpoints_directory, "", 0, 0)
-            run_root, _ = run.train._utils.maybe_make_experiment_directories_from_checkpoint(
+            run_root, _ = run.train._utils._maybe_make_experiment_directories_from_checkpoint(
                 checkpoint, recorder, run_name=run_name
             )
             assert run_root.parent == path
             assert run_root.name == run_name
 
 
-def test_get_dataset_stats():
+def test__get_dataset_stats():
     """ Test `run.train._utils.get_dataset_stats` measures dataset statistics correctly. """
     _alignment = lambda a, b: Alignment((a, b), (a * 10, b * 10), (a, b))
     _passage = lambda a, b, s: make_passage(
@@ -77,7 +77,7 @@ def test_get_dataset_stats():
     a = lib.datasets.Speaker("a")
     b = lib.datasets.Speaker("b")
     train = {a: [_passage(0, 2, a), _passage(0, 2, a)], b: [_passage(0, 1, a)]}
-    stats = run.train._utils.get_dataset_stats(train, {})
+    stats = run.train._utils._get_dataset_stats(train, {})
     static = Cadence.STATIC
     get_label = lambda n, t, s=None: get_dataset_label(n, cadence=static, type_=t, speaker=s)
     assert stats == {
@@ -134,3 +134,25 @@ def test_set_context():
         output, _ = rnn(torch.randn(5, 3, 10))
         assert output.requires_grad
     assert not rnn.training
+
+
+def test__nested_to_flat_config():
+    """Test `_nested_to_flat_config` flattens nested dicts, including edge cases with
+    an empty dict."""
+    assert (
+        run.train._utils._nested_to_flat_config(
+            {
+                "a": {
+                    "b": "c",
+                    "d": {
+                        "e": "f",
+                    },
+                },
+                "g": "h",
+                "i": {},
+                "j": [],
+            },
+            delimitator=".",
+        )
+        == {"a.b": "c", "a.d.e": "f", "g": "h", "j": []}
+    )

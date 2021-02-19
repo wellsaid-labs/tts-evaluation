@@ -5,16 +5,17 @@ import typing
 from unittest import mock
 
 import torch
+from hparams import add_config
 
 import lib
 import run
 from lib.datasets import JUDY_BIEBER, LINDA_JOHNSON, m_ailabs_en_us_judy_bieber_speech_dataset
 from run._config import Cadence, DatasetType
 from run._utils import split_dataset
-from run.train._utils import CometMLExperiment, Context, get_dataset_stats, set_context
+from run.train._utils import CometMLExperiment, Context, _get_dataset_stats, set_context
 from run.train.spectrogram_model.__main__ import (
-    _configure,
     _get_data_loaders,
+    _make_configuration,
     _run_inference,
     _run_step,
     _State,
@@ -22,11 +23,6 @@ from run.train.spectrogram_model.__main__ import (
 from run.train.spectrogram_model._data import SpanBatch
 from run.train.spectrogram_model._metrics import DistributedMetrics
 from tests import _utils
-
-
-def test__configure():
-    """ Test `spectrogram_model._configure` finds and configures modules. """
-    _configure({}, True)
 
 
 def _mock_distributed_data_parallel(module, *_, **__):
@@ -41,7 +37,7 @@ def _mock_distributed_data_parallel(module, *_, **__):
 def test_integration(mock_urlretrieve):
     mock_urlretrieve.side_effect = _utils.first_parameter_url_side_effect
 
-    _configure({}, True)
+    run._config.configure()
 
     # Test loading data
     directory = _utils.TEST_DATA_PATH / "datasets"
@@ -58,8 +54,10 @@ def test_integration(mock_urlretrieve):
     dev_speakers = set([JUDY_BIEBER])
     train_dataset, dev_dataset = split_dataset(dataset, dev_speakers, 3)
 
+    add_config(_make_configuration(train_dataset, dev_dataset, True))
+
     # Check dataset statistics are correct
-    stats = get_dataset_stats(train_dataset, dev_dataset)
+    stats = _get_dataset_stats(train_dataset, dev_dataset)
     get_dataset_label = lambda n, t, s=None: run._config.get_dataset_label(
         n, cadence=Cadence.STATIC, type_=t, speaker=s
     )

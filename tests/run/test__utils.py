@@ -9,7 +9,7 @@ import pytest
 import lib
 import run
 from lib.audio import AudioFileMetadata
-from run._utils import _find_duplicate_passages, nested_to_flat_config, split_dataset
+from run._utils import _find_duplicate_passages, split_dataset
 from tests._utils import TEST_DATA_PATH, make_passage
 
 TEST_DATA_PATH = TEST_DATA_PATH / "audio"
@@ -173,25 +173,3 @@ def test_split_dataset__order(_):
     other_train, other_dev = split_dataset(other_dataset, dev_speakers, dev_length, 0.9)
     assert train == other_train
     assert dev == other_dev
-
-
-def test_nested_to_flat_config():
-    """Test `nested_to_flat_config` flattens nested dicts, including edge cases with
-    an empty dict."""
-    assert (
-        nested_to_flat_config(
-            {
-                "a": {
-                    "b": "c",
-                    "d": {
-                        "e": "f",
-                    },
-                },
-                "g": "h",
-                "i": {},
-                "j": [],
-            },
-            delimitator=".",
-        )
-        == {"a.b": "c", "a.d.e": "f", "g": "h", "j": []}
-    )

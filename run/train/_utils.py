@@ -8,6 +8,7 @@ import itertools
 import logging
 import os
 import pathlib
+import sys
 import time
 import typing
 from datetime import timedelta
@@ -20,12 +21,14 @@ import torch.distributed
 import torch.nn
 import torch.optim
 import torch.utils.data
-from hparams import HParam, configurable, get_config
+import typer
+from hparams import HParam, HParams, configurable, get_config, parse_hparam_args
 from third_party import LazyLoader
 from torchnlp.utils import tensors_to
 
 import lib
 import run
+from lib.environment import load, load_most_recent_file
 from lib.utils import flatten, seconds_to_string
 from run._config import Cadence, Dataset, DatasetType, get_dataset_label, get_model_label
 
@@ -49,18 +52,18 @@ class Checkpoint:
     num_examples: int
 
 
-def maybe_make_experiment_directories_from_checkpoint(
+def _maybe_make_experiment_directories_from_checkpoint(
     checkpoint: Checkpoint, *args, **kwargs
 ) -> typing.Tuple[pathlib.Path, pathlib.Path]:
     """For checkpoints saved in the `maybe_make_experiment_directories` directory structure,
     this creates another "run" under the original experiment.
     """
-    return maybe_make_experiment_directories(
+    return _maybe_make_experiment_directories(
         checkpoint.checkpoints_directory.parent.parent, *args, **kwargs
     )
 
 
-def maybe_make_experiment_directories(
+def _maybe_make_experiment_directories(
     experiment_root: pathlib.Path,
     recorder: lib.environment.RecordStandardStreams,
     run_name: str = "RUN_" + lib.environment.bash_time_label(add_pid=False),
@@ -126,7 +129,7 @@ def init_distributed(
     return device
 
 
-def get_dataset_stats(
+def _get_dataset_stats(
     train: Dataset, dev: Dataset
 ) -> typing.Dict[run._config.Label, typing.Union[str, int, float]]:
     """Get `train` and `dev` dataset statistics."""
@@ -143,6 +146,37 @@ def get_dataset_stats(
             num_seconds = seconds_to_string(sum(p.aligned_audio_length() for p in passages))
             stats[label("num_seconds")] = num_seconds
     return stats
+
+
+def _nested_to_flat_config_helper(
+    config: typing.Dict[str, typing.Any], delimitator: str, keys: typing.List[str]
+) -> typing.Dict[str, typing.Any]:
+    ret_ = {}
+    for key in config:
+        if isinstance(config[key], dict) and not isinstance(config, HParams):
+            ret_.update(_nested_to_flat_config_helper(config[key], delimitator, keys + [key]))
+        else:
+            ret_[delimitator.join(keys + [key])] = config[key]
+    return ret_
+
+
+def _nested_to_flat_config(
+    config: typing.Dict[str, typing.Any], delimitator: str = "."
+) -> typing.Dict[str, typing.Any]:
+    """Convert nested `hparam` configuration a flat configuration by concatenating keys with a
+    `delimitator`.
+
+    Args:
+        ...
+        delimitator: Delimitator used to join keys.
+    """
+    return _nested_to_flat_config_helper(config=config, delimitator=delimitator, keys=[])
+
+
+def get_config_parameters() -> typing.Dict[run._config.Label, typing.Any]:
+    """Get `hparams` configuration as a flat dictionary that can be logged."""
+    flat = _nested_to_flat_config(get_config())
+    return {run._config.get_config_label(k): v for k, v in flat.items()}
 
 
 class Context(enum.Enum):
@@ -474,3 +508,120 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
                 elapsed = lib.utils.seconds_to_string(time.time() - first)
                 logger.info("Time to first batch was %s.", elapsed)
                 first = None
+
+
+class _RunApp(typing.Protocol):
+    def __call__(
+        self,
+        checkpoints_path: pathlib.Path,
+        checkpoint: typing.Optional[pathlib.Path],
+        train_dataset: run._config.Dataset,
+        dev_dataset: run._config.Dataset,
+        comet: CometMLExperiment,
+        cli_config: typing.Dict[str, typing.Any],
+        debug: bool = False,
+    ):
+        """Callback to run an experiment.
+
+        Args:
+            checkpoints_path: The directory to store checkpoints.
+            checkpoint: The path of the loaded checkpoint.
+            ...
+            cli_config: Additional configuration passed through the command line.
+            debug: Flag indicating if to start a debugging session.
+        """
+        ...
+
+
+def make_app(run_app: _RunApp, directory: pathlib.Path, *args, **kwargs):
+    """ Make CLI application for running an experiment, and saving it's details at `directory`."""
+    app = typer.Typer(*args, **kwargs)
+
+    lib.environment.enable_fault_handler()
+
+    def _run(
+        checkpoints_path: pathlib.Path,
+        cli_config: typing.Dict[str, typing.Any],
+        comet: CometMLExperiment,
+        checkpoint: typing.Optional[pathlib.Path] = None,
+        debug: bool = False,
+    ):
+        """Run spectrogram model training. """
+        lib.environment.check_module_versions()
+
+        datasets = run._config.DATASETS
+        datasets = {k: v for k, v in list(datasets.items())[:1]} if debug else datasets
+
+        # NOTE: Load, preprocess, and cache dataset values.
+        dataset = run._utils.get_dataset(datasets)
+        train_dataset, dev_dataset = run._utils.split_dataset(dataset)
+        comet.log_parameters(_get_dataset_stats(train_dataset, dev_dataset))
+
+        return run_app(
+            checkpoints_path, checkpoint, train_dataset, dev_dataset, comet, cli_config, debug
+        )
+
+    def _setup_config(
+        extra_cli_args: typing.List[str], debug: bool
+    ) -> typing.Tuple[typing.Dict[str, typing.Any], lib.environment.RecordStandardStreams]:
+        """
+        TODO: For checkpointed runs, should we triple check the same parameters are getting
+        configured? Should we throw an error if not? Or should we create a new experiment, and
+        ensure that each experiments parameters are immutable?
+
+        TODO: `RecordStandardStreams` should be started after `CometMLExperiment`; otherwise,
+        `CometMLExperiment` will not be able to monitor the standard streams. Can this be fixed?
+        """
+        recorder = lib.environment.RecordStandardStreams()
+        # NOTE: Ensure command line args are captured in the logs.
+        logger.info("Command line args: %s", str(sys.argv))
+        parsed = parse_hparam_args(extra_cli_args)
+        run._config.configure()
+        return parsed, recorder
+
+    @app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+    def resume(
+        context: typer.Context,
+        checkpoint: typing.Optional[pathlib.Path] = typer.Argument(
+            None, help="Checkpoint file to restart training from."
+        ),
+        debug: bool = typer.Option(False, help="Turn on debugging mode."),
+    ):
+        """Resume training from CHECKPOINT. If CHECKPOINT is not given, the most recent checkpoint
+        file is loaded."""
+        lib.environment.set_basic_logging_config()
+        pattern = str(directory / f"**/*{lib.environment.PT_EXTENSION}")
+        if checkpoint:
+            loaded = load(checkpoint)
+        else:
+            checkpoint, loaded = load_most_recent_file(pattern, load)
+        checkpoint_ = typing.cast(Checkpoint, loaded)
+        comet = CometMLExperiment(experiment_key=checkpoint_.comet_experiment_key)
+        cli_config, recorder = _setup_config(context.args, debug)
+        _, checkpoints_path = _maybe_make_experiment_directories_from_checkpoint(
+            checkpoint_, recorder
+        )
+        _run(checkpoints_path, cli_config, comet, checkpoint, debug=debug)
+
+    @app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+    def start(
+        context: typer.Context,
+        project: str = typer.Argument(..., help="Experiment project name."),
+        name: str = typer.Argument("", help="Experiment name."),
+        tags: typing.List[str] = typer.Option([], help="Experiment tags."),
+        debug: bool = typer.Option(False, help="Turn on debugging mode."),
+        min_disk_space: float = 0.2,
+    ):
+        """ Start a training run in PROJECT named NAME with TAGS. """
+        lib.environment.assert_enough_disk_space(min_disk_space)
+        lib.environment.set_basic_logging_config()
+        comet = CometMLExperiment(project_name=project)
+        comet.set_name(name)
+        comet.add_tags(tags)
+        cli_config, recorder = _setup_config(context.args, debug)
+        experiment_root = directory / lib.environment.bash_time_label()
+        run_root, checkpoints_path = _maybe_make_experiment_directories(experiment_root, recorder)
+        comet.log_other(run._config.get_environment_label("directory"), str(run_root))
+        _run(checkpoints_path, cli_config, comet, debug=debug)
+
+    return app

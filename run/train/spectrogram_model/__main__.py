@@ -3,30 +3,28 @@ import logging
 import os
 import pathlib
 import random
-import sys
 import typing
 from functools import partial
 from itertools import chain
 
 # NOTE: `comet_ml` needs to be imported before torch
 import comet_ml  # type: ignore # noqa
+import hparams.hparams
 import torch
 import torch.nn
 import torch.optim
 import torch.utils
 import torch.utils.data
 import tqdm
-import typer
-from hparams import HParam, HParams, add_config, configurable, get_config, parse_hparam_args
+from hparams import HParam, HParams, add_config, configurable, get_config
 from torchnlp.utils import get_total_parameters, lengths_to_mask
 
 import lib
 from lib.distributed import get_world_size, is_master
-from lib.environment import load, load_most_recent_file, save
+from lib.environment import load, save
 from lib.utils import flatten
 from run._config import (
     DATASET_PHONETIC_CHARACTERS,
-    DATASETS,
     NUM_FRAME_CHANNELS,
     PHONEME_SEPARATOR,
     RANDOM_SEED,
@@ -34,51 +32,43 @@ from run._config import (
     Cadence,
     Dataset,
     DatasetType,
-    configure,
-    get_config_label,
     get_dataset_label,
-    get_environment_label,
     get_model_label,
 )
-from run._utils import get_dataset, nested_to_flat_config, split_dataset
 from run.train._utils import (
     Checkpoint,
     CometMLExperiment,
     Context,
-    get_dataset_stats,
+    get_config_parameters,
     init_distributed,
-    maybe_make_experiment_directories,
-    maybe_make_experiment_directories_from_checkpoint,
+    make_app,
     set_context,
     set_run_seed,
 )
 from run.train.spectrogram_model._data import DataLoader, DataProcessor, InputEncoder, SpanBatch
 from run.train.spectrogram_model._metrics import DistributedMetrics, get_average_db_rms_level
 
-lib.environment.enable_fault_handler()
 logger = logging.getLogger(__name__)
-app = typer.Typer()
+torch.optim.Adam.__init__ = configurable(torch.optim.Adam.__init__)
 
 
-def _configure(
-    more_config: typing.Dict[str, typing.Any], debug: bool
-) -> typing.Dict[str, typing.Any]:
-    """ Configure modules for spectrogram model training, and return parameters. """
-    configure()
+def _make_configuration(
+    train_dataset: Dataset, dev_dataset: Dataset, debug: bool
+) -> typing.Dict[typing.Callable, typing.Any]:
+    """Make additional configuration for spectrogram model training."""
 
+    train_size = sum([sum([p.aligned_audio_length() for p in d]) for d in train_dataset.values()])
+    dev_size = sum([sum([p.aligned_audio_length() for p in d]) for d in dev_dataset.values()])
+    ratio = round(train_size / dev_size)
     train_batch_size = 28 if debug else 56
     dev_batch_size = train_batch_size * 4
     train_steps_per_epoch = 64 if debug else 1024
-    # NOTE: This parameter was set approximately based on the size of each respective
-    # dataset. The development dataset is about 16 times smaller than the training dataset
-    # based on the number of characters in each dataset.
-    dev_steps_per_epoch = (train_steps_per_epoch / (dev_batch_size / train_batch_size)) / 16
+    dev_steps_per_epoch = (train_steps_per_epoch / (dev_batch_size / train_batch_size)) / ratio
     assert dev_steps_per_epoch % 1 == 0, "The number of steps must be an integer."
     assert train_batch_size % get_world_size() == 0
     assert dev_batch_size % get_world_size() == 0
 
-    torch.optim.Adam.__init__ = configurable(torch.optim.Adam.__init__)  # type: ignore
-    config = {
+    return {
         set_run_seed: HParams(seed=RANDOM_SEED),
         _State._get_optimizers: HParams(
             lr_multiplier_schedule=partial(
@@ -127,10 +117,6 @@ def _configure(
         ),
         InputEncoder.__init__: HParams(phoneme_separator=PHONEME_SEPARATOR),
     }
-    add_config(config)
-    add_config(more_config)
-    set_run_seed()
-    return nested_to_flat_config(get_config())
 
 
 @dataclasses.dataclass(frozen=True)
@@ -609,7 +595,8 @@ def _run_worker(
     lib.environment.set_basic_logging_config(device_index)
     device = init_distributed(device_index)
     comet = comet_partial(disabled=not is_master(), auto_output_logging=False)
-    _configure(config, debug)
+    hparams.hparams._configuration = config
+    set_run_seed()
     if checkpoint is None:
         state = _State.from_dataset(train_dataset, dev_dataset, comet, device)
     else:
@@ -648,23 +635,19 @@ def _run_worker(
         comet.log_epoch_end(epoch)
 
 
-def _run(
+def _run_app(
     checkpoints_path: pathlib.Path,
-    config: typing.Dict[str, typing.Any],
+    checkpoint: typing.Optional[pathlib.Path],
+    train_dataset: Dataset,
+    dev_dataset: Dataset,
     comet: CometMLExperiment,
-    checkpoint: typing.Optional[pathlib.Path] = None,
+    cli_config: typing.Dict[str, typing.Any],
     debug: bool = False,
 ):
     """Run spectrogram model training. """
-    lib.environment.check_module_versions()
-
-    datasets = DATASETS
-    datasets = {k: v for k, v in list(datasets.items())[:1]} if debug else datasets
-
-    # NOTE: Load, preprocess, and cache dataset values.
-    dataset = get_dataset(datasets)
-    train_dataset, dev_dataset = split_dataset(dataset)
-    comet.log_parameters(get_dataset_stats(train_dataset, dev_dataset))
+    add_config(_make_configuration(train_dataset, dev_dataset, debug))
+    add_config(cli_config)
+    comet.log_parameters(get_config_parameters())
 
     logger.info("Spawning workers %s", lib.utils.mazel_tov())
     # TODO: PyTorch-Lightning makes strong recommendations to not use `spawn`. Learn more:
@@ -683,77 +666,12 @@ def _run(
             train_dataset,
             dev_dataset,
             partial(CometMLExperiment, experiment_key=comet.get_key()),
-            config,
+            get_config(),
             debug,
         ),
     )
 
 
-def _setup_config(
-    comet: CometMLExperiment, config: typing.List[str], debug: bool
-) -> typing.Tuple[typing.Dict[str, typing.Any], lib.environment.RecordStandardStreams]:
-    """
-    TODO: For checkpointed runs, should we triple check the same parameters are getting
-    configured? Should we throw an error if not? Or should we create a new experiment, and ensure
-    that each experiments parameters are immutable?
-
-    TODO: `RecordStandardStreams` should be started after `CometMLExperiment`; otherwise,
-    `CometMLExperiment` will not be able to monitor the standard streams. Can this be fixed?
-    """
-    recorder = lib.environment.RecordStandardStreams()
-    # NOTE: Ensure command line args are captured in the logs.
-    logger.info("Command line args: %s", str(sys.argv))
-    parsed = parse_hparam_args(config)
-    parameters = _configure(parsed, debug)
-    params = {get_config_label(k): v for k, v in parameters.items()}
-    comet.log_parameters(params)
-    return parsed, recorder
-
-
-@app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
-def resume(
-    context: typer.Context,
-    checkpoint: typing.Optional[pathlib.Path] = typer.Argument(
-        None, help="Checkpoint file to restart training from."
-    ),
-    debug: bool = typer.Option(False, help="Turn on debugging mode."),
-):
-    """Resume training from CHECKPOINT. If CHECKPOINT is not given, the most recent checkpoint
-    file is loaded."""
-    lib.environment.set_basic_logging_config()
-    pattern = str(SPECTROGRAM_MODEL_EXPERIMENTS_PATH / f"**/*{lib.environment.PT_EXTENSION}")
-    if checkpoint:
-        loaded = load(checkpoint)
-    else:
-        checkpoint, loaded = load_most_recent_file(pattern, load)
-    checkpoint_ = typing.cast(Checkpoint, loaded)
-    comet = CometMLExperiment(experiment_key=checkpoint_.comet_experiment_key)
-    config, recorder = _setup_config(comet, context.args, debug)
-    _, checkpoints_path = maybe_make_experiment_directories_from_checkpoint(checkpoint_, recorder)
-    _run(checkpoints_path, config, comet, checkpoint, debug=debug)
-
-
-@app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
-def start(
-    context: typer.Context,
-    project: str = typer.Argument(..., help="Experiment project name."),
-    name: str = typer.Argument("", help="Experiment name."),
-    tags: typing.List[str] = typer.Option([], help="Experiment tags."),
-    debug: bool = typer.Option(False, help="Turn on debugging mode."),
-    min_disk_space: float = 0.2,
-):
-    """ Start a training run in PROJECT named NAME with TAGS. """
-    lib.environment.assert_enough_disk_space(min_disk_space)
-    lib.environment.set_basic_logging_config()
-    comet = CometMLExperiment(project_name=project)
-    comet.set_name(name)
-    comet.add_tags(tags)
-    config, recorder = _setup_config(comet, context.args, debug)
-    experiment_root = SPECTROGRAM_MODEL_EXPERIMENTS_PATH / lib.environment.bash_time_label()
-    run_root, checkpoints_path = maybe_make_experiment_directories(experiment_root, recorder)
-    comet.log_other(get_environment_label("directory"), str(run_root))
-    _run(checkpoints_path, config, comet, debug=debug)
-
-
 if __name__ == "__main__":  # pragma: no cover
+    app = make_app(_run_app, SPECTROGRAM_MODEL_EXPERIMENTS_PATH)
     app()

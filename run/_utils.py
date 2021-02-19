@@ -305,28 +305,3 @@ def gcs_uri_to_blob(gcs_uri: str) -> storage.Blob:
 def blob_to_gcs_uri(blob: storage.Blob) -> str:
     """ Get GCS URI (e.g. "gs://cloud-samples-tests/speech/brooklyn.flac") from `blob`. """
     return "gs://" + blob.bucket.name + "/" + blob.name
-
-
-def nested_to_flat_config(
-    config: typing.Dict[str, typing.Any], delimitator: str = "."
-) -> typing.Dict[str, typing.Any]:
-    """Convert nested `hparam` configuration a flat configuration by concatenating keys with a
-    `delimitator`.
-
-    Args:
-        ...
-        delimitator: Delimitator used to join keys.
-    """
-    return _nested_to_flat_config(config=config, delimitator=delimitator, keys=[])
-
-
-def _nested_to_flat_config(
-    config: typing.Dict[str, typing.Any], delimitator: str, keys: typing.List[str]
-) -> typing.Dict[str, typing.Any]:
-    ret_ = {}
-    for key in config:
-        if isinstance(config[key], dict) and not isinstance(config, HParams):
-            ret_.update(_nested_to_flat_config(config[key], delimitator, keys + [key]))
-        else:
-            ret_[delimitator.join(keys + [key])] = config[key]
-    return ret_
