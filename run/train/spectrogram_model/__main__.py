@@ -583,7 +583,6 @@ def _run_worker(
     dev_dataset: Dataset,
     comet_partial: typing.Callable[..., CometMLExperiment],
     config: typing.Dict[str, typing.Any],
-    debug: bool,
     train_steps_per_epoch: int = HParam(),
     dev_steps_per_epoch: int = HParam(),
 ) -> typing.NoReturn:
@@ -644,32 +643,24 @@ def _run_app(
     cli_config: typing.Dict[str, typing.Any],
     debug: bool = False,
 ):
-    """Run spectrogram model training. """
+    """Run spectrogram model training.
+
+    TODO: PyTorch-Lightning makes strong recommendations to not use `spawn`. Learn more:
+    https://pytorch-lightning.readthedocs.io/en/stable/multi_gpu.html#distributed-data-parallel
+    https://github.com/PyTorchLightning/pytorch-lightning/pull/2029
+    https://github.com/PyTorchLightning/pytorch-lightning/issues/5772
+    Also, it's less normal to use `spawn` because it wouldn't work with multiple nodes, so
+    we should consider using `torch.distributed.launch`.
+    TODO: Should we consider setting OMP num threads similarly:
+    https://github.com/pytorch/pytorch/issues/22260
+    """
     add_config(_make_configuration(train_dataset, dev_dataset, debug))
     add_config(cli_config)
     comet.log_parameters(get_config_parameters())
-
     logger.info("Spawning workers %s", lib.utils.mazel_tov())
-    # TODO: PyTorch-Lightning makes strong recommendations to not use `spawn`. Learn more:
-    # https://pytorch-lightning.readthedocs.io/en/stable/multi_gpu.html#distributed-data-parallel
-    # https://github.com/PyTorchLightning/pytorch-lightning/pull/2029
-    # https://github.com/PyTorchLightning/pytorch-lightning/issues/5772
-    # Also, it's less normal to use `spawn` because it wouldn't work with multiple nodes, so
-    # we should consider using `torch.distributed.launch`.
-    # TODO: Should we consider setting OMP num threads similarly:
-    # https://github.com/pytorch/pytorch/issues/22260
-    return lib.distributed.spawn(
-        _run_worker.get_configured_partial(),  # type: ignore
-        args=(
-            checkpoints_path,
-            checkpoint,
-            train_dataset,
-            dev_dataset,
-            partial(CometMLExperiment, experiment_key=comet.get_key()),
-            get_config(),
-            debug,
-        ),
-    )
+    partial_ = partial(CometMLExperiment, experiment_key=comet.get_key())
+    args = (checkpoints_path, checkpoint, train_dataset, dev_dataset, partial_, get_config())
+    return lib.distributed.spawn(_run_worker.get_configured_partial(), args=args)  # type: ignore
 
 
 if __name__ == "__main__":  # pragma: no cover
