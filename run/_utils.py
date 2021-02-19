@@ -243,6 +243,7 @@ class SpanGenerator(typing.Iterator[datasets.Span]):
     """
 
     @lib.utils.log_runtime
+    @configurable
     def __init__(
         self,
         dataset: Dataset,

@@ -1,17 +1,11 @@
-import collections
-import collections.abc
-import copy
 import functools
 import logging
 import multiprocessing.pool
 import os
 import random
 import sys
-import time
 import typing
-from functools import partial
 
-import hparams.hparams
 import numpy
 import torch
 import torch.cuda
@@ -20,7 +14,7 @@ import torch.nn
 import torch.optim
 import torch.utils
 import torch.utils.data
-from hparams import HParam, configurable, get_config
+from hparams import HParam, configurable
 from third_party import LazyLoader
 from torchnlp.encoders import Encoder, LabelEncoder
 from torchnlp.encoders.text import (
@@ -30,14 +24,14 @@ from torchnlp.encoders.text import (
     stack_and_pad_tensors,
 )
 from torchnlp.samplers import BucketBatchSampler, DeterministicSampler, DistributedBatchSampler
-from torchnlp.utils import lengths_to_mask, tensors_to
+from torchnlp.utils import lengths_to_mask
 
 import lib
 import run
 from lib.audio import seconds_to_samples
 from lib.distributed import get_rank, get_world_size, is_initialized
 from lib.utils import flatten
-from run.train.spectrogram_model._utils import set_seed
+from run.train import _utils
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import librosa
@@ -448,104 +442,16 @@ class SpanBatch(typing.NamedTuple):
     speed_mask: SequenceBatch
 
 
-def make_span_batch(
-    spans: typing.List[lib.datasets.Span],
-    input_encoder: InputEncoder,
-    max_parallel: int = typing.cast(int, os.cpu_count()),
-    batch_dimension: int = 1,
-) -> SpanBatch:
-    """
-    NOTE: spaCy splits some (not all) words on apostrophes while AmEPD does not; therefore,
-    those words will not be found in AmEPD. The options are:
-    1. Return two different sequences with two different character to word mappings.
-    2. Merge the words with apostrophes, and merge the related word vectors.
-    (Choosen) 3. Keep the apostrophes separate, and miss some pronunciations.
-
-    NOTE: Contextual word-vectors would likely be more informative than word-vectors; however, they
-    are likely not as robust in the presence of OOV words due to intentional misspellings. Our
-    users intentionally misspell words to adjust the pronunciation. For that reason, we use
-    word-vectors.
-
-    NOTE: In Janurary 2020, this function profiled like so:
-    - 27% for `_signals_to_spectrograms`
-    - 25% on `nlp.pipe`
-    - 13% on `_random_loudness_annotations`
-    - 13% on `grapheme_to_phoneme`
-    - 6% for `_pad_and_trim_signal`
-    - 5% for `input_encoder.encode`
-    - 4% on `stack_and_pad_tensors`
-
-    TODO: For `spectrogram_model` training, this function is critical for performance and reducing
-    the number of CPUs needed for training. Here are some opportunities for performance:
-    - Using `jit` or `numpy` or `cuda` for a faster spectrogram calculation.
-    - Precomputing `nlp.pipe` and caching the results.
-    - Using `multiprocessing` for `grapheme_to_phoneme`.
-    - Using the precomputed spectrogram for `_pad_and_trim_signal`.
-    """
-    length = len(spans)
-    assert length > 0, "Batch must have at least one item."
-    assert max_parallel > 0, "`max_parallel` must be a positive number."
-
-    for span in spans:
-        lib.audio.assert_audio_normalized(span.audio_file)
-
-    nlp = lib.text.load_en_core_web_md(disable=("parser", "ner"))
-    docs: typing.List[spacy.tokens.Doc] = list(nlp.pipe([s.passage.script for s in spans]))
-    for i in range(length):
-        script_slice = spans[i].script_slice
-        span = docs[i].char_span(script_slice.start, script_slice.stop)  # type: ignore
-        assert span is not None, "Invalid `spacy.tokens.Span` selected."
-        docs[i] = span.as_doc()
-
-    char_to_word = [_get_char_to_word(d) for d in docs]
-    phonemes = typing.cast(typing.List[str], lib.text.grapheme_to_phoneme(docs))
-    decoded = [DecodedInput(s.script, p, s.speaker) for s, p in zip(spans, phonemes)]
-    encoded = [input_encoder.encode(d) for d in decoded]
-    with multiprocessing.pool.ThreadPool(min(max_parallel, len(spans))) as pool:
-        signals_: typing.List[numpy.ndarray] = list(pool.map(_span_read_audio_slice, spans))
-    loudness = [_random_loudness_annotations(s, a) for s, a in zip(spans, signals_)]
-    signals = [_pad_and_trim_signal(s) for s in signals_]
-    spectrogram, spectrogram_mask = _signals_to_spectrograms(signals)
-    speed = [_random_speed_annotations(s) for s in spans]
-
-    stack = functools.partial(stack_and_pad_tensors, dim=batch_dimension)
-    mask = functools.partial(torch.ones, dtype=torch.bool)
-    return SpanBatch(
-        spans=spans,
-        length=length,
-        audio=signals,
-        spectrogram=spectrogram,
-        spectrogram_mask=spectrogram_mask,
-        stop_token=_make_stop_token(spectrogram),
-        encoded_speaker=stack([s.speaker for s in encoded]),
-        encoded_text=stack([s.graphemes for s in encoded]),
-        encoded_text_mask=stack([mask(e.graphemes.shape[0]) for e in encoded]),
-        encoded_letter_case=stack([e.letter_cases for e in encoded]),
-        word_vectors=stack([_get_word_vectors(char_to_word[i], docs[i]) for i in range(length)]),
-        encoded_phonemes=stack([s.phonemes for s in encoded]),
-        encoded_phonemes_mask=stack([mask(e.phonemes.shape[0]) for e in encoded]),
-        loudness=stack([a[0] for a in loudness]),
-        loudness_mask=stack([a[1] for a in loudness]),
-        speed=stack([a[0] for a in speed]),
-        speed_mask=stack([a[1] for a in speed]),
-    )
-
-
-def _worker_init_fn(_, config):
-    # TODO: Add a method for transfering global configuration between processes without private
-    # variables.
-    # TODO: After the global configuration is transfered, the functions need to be rechecked
-    # like for a configuration, just in case the configuration is on a new process.
-    hparams.hparams._configuration = config
-    info = torch.utils.data.get_worker_info()
-    lib.environment.set_basic_logging_config()
-    logger.info("Worker %d/%d iterator started.", info.id + 1, info.num_workers)
-    set_seed()  # NOTE: Each worker needs the same random seed to be deterministic.
-
-
-class DataIterator(lib.utils.MappedIterator):
-    def __init__(self, dataset: run._config.Dataset, batch_size: int):
-        """Generate spans from `run._config.Dataset`.
+class DataProcessor(typing.Mapping[int, SpanBatch]):
+    def __init__(
+        self,
+        dataset: run._config.Dataset,
+        batch_size: int,
+        input_encoder: InputEncoder,
+        max_parallel: int = typing.cast(int, os.cpu_count()),
+        batch_dimension: int = 1,
+    ):
+        """Given an index, generate the appropriate batch indefinitely.
 
         NOTE: Our training procedure is similar to BERT, the examples are randomly sampled
         from a large corpus of data with `SpanGenerator`.
@@ -555,92 +461,118 @@ class DataIterator(lib.utils.MappedIterator):
         iter_ = DeterministicSampler(iter_, run._config.RANDOM_SEED, cuda=False)
         if is_initialized():
             iter_ = DistributedBatchSampler(iter_, num_replicas=get_world_size(), rank=get_rank())
-        super().__init__(iter_)
+        iter_ = typing.cast(typing.Iterator[typing.List[lib.datasets.Span]], iter_)
+        self.index_to_spans = lib.utils.MappedIterator(iter_)
+
+        self.input_encoder = input_encoder
+        self.max_parallel = max_parallel
+        self._stack = functools.partial(stack_and_pad_tensors, dim=batch_dimension)
+        self._make_mask = functools.partial(torch.ones, dtype=torch.bool)
 
     @staticmethod
     def _data_iterator_sort_key(span: lib.datasets.Span):
         return span.audio_length
 
-    def __len__(self) -> int:
-        return sys.maxsize  # NOTE: The `DataLoader` needs `__len__`.
+    def __iter__(self):
+        return [self[i] for i in range(len(self))]
 
+    def __len__(_) -> int:
+        return sys.maxsize
 
-class DataLoader(collections.abc.Iterable):
-    """Load and batch spans given a dataset `iterator`.
+    def __getitem__(self, index) -> SpanBatch:
+        """
+        NOTE: spaCy splits some (not all) words on apostrophes while AmEPD does not; therefore,
+        those words will not be found in AmEPD. The options are:
+        1. Return two different sequences with two different character to word mappings.
+        2. Merge the words with apostrophes, and merge the related word vectors.
+        (Choosen) 3. Keep the apostrophes separate, and miss some pronunciations.
 
-    NOTE: The `DataLoader` by default will create a sequential sampler. It'll use that sampler
-    to queue up batches from `DataIterator`, in order.
+        NOTE: Contextual word-vectors would likely be more informative than word-vectors; however,
+        they are likely not as robust in the presence of OOV words due to intentional misspellings.
+        Our users intentionally misspell words to adjust the pronunciation. For that reason, we use
+        word-vectors.
 
-    NOTE: Each `DataLoader` worker replicates the dataset, and other objects. As of
-    02/04/2020, about half of our memory (30 gb) was used by `DataLoader` workers. This
-    can be resolved with memory sharing like "fork" and `gc.freeze`.
+        NOTE: In Janurary 2020, this function profiled like so:
+        - 27% for `_signals_to_spectrograms`
+        - 25% on `nlp.pipe`
+        - 13% on `_random_loudness_annotations`
+        - 13% on `grapheme_to_phoneme`
+        - 6% for `_pad_and_trim_signal`
+        - 5% for `input_encoder.encode`
+        - 4% on `stack_and_pad_tensors`
 
-    NOTE: `DataLoader` isn't compatible with "fork" because NCCL isn't fork safe. There
-    are also issues with OMP and CUDA. They have issues with fork, as well. Learn more:
-    > Unfortunately Gloo (that uses Infiniband) and NCCL2 are not fork safe, and you will
-    likely experience deadlocks if you don’t change this setting.
-    https://github.com/pytorch/pytorch/pull/4766
-    > After OpenMP features are utilized, a fork is only allowed if the child process does not
-    > use OpenMP features, or it does so as a completely new process (such as after exec()).
-    https://bisqwit.iki.fi/story/howto/openmp/#OpenmpAndFork
-    https://github.com/pytorch/pytorch/issues/42444
-    > The CUDA runtime does not support the fork start method
-    https://pytorch.org/docs/stable/notes/multiprocessing.html#cuda-in-multiprocessing
+        TODO: For `spectrogram_model` training, this function is critical for performance and
+        reducing the number of CPUs needed for training. Here are some opportunities for
+        performance:
+        - Using `jit` or `numpy` or `cuda` for a faster spectrogram calculation.
+        - Precomputing `nlp.pipe` and caching the results.
+        - Using `multiprocessing` for `grapheme_to_phoneme`.
+        - Using the precomputed spectrogram for `_pad_and_trim_signal`.
+        """
+        spans = self.index_to_spans[index]
+        length = len(spans)
 
-    TODO: The `DataLoader` runs `make_span_batch` and `iterator` in each worker. For performance,
-    we could move `make_span_batch` to `DataIterator` and preprocess larger batches at the
-    same time. The `collate_fn` function could be replaced with an `identity` function, and
-    everything could be processed in the `DataIterator` efficiently. Learn more:
-    https://github.com/pytorch/pytorch/blob/272f4db043ec2c63ecfe6d2759e7893cb842a3c3/torch/utils/data/_utils/fetch.py#L35
-    https://pytorch.org/docs/stable/data.html#disable-automatic-batching
-    This should also help with code locality. Also, if we'd like to run a more expensive dataset
-    filtering, it is more doable in batches.
+        assert length > 0, "Batch must have at least one item."
+        assert self.max_parallel > 0, "`max_parallel` must be a positive number."
 
-    TODO: Remove `copy.deepcopy` after this issue is fixed:
-    https://github.com/pytorch/pytorch/issues/51849
+        for span in spans:
+            lib.audio.assert_audio_normalized(span.audio_file)
 
-    TODO: Refactor `DataLoader`, so that common elements like `_worker_init_fn` and `time` are
-    shared in `train._utils`.
-    """
+        nlp = lib.text.load_en_core_web_md(disable=("parser", "ner"))
+        docs: typing.List[spacy.tokens.Doc] = list(nlp.pipe([s.passage.script for s in spans]))
+        for i in range(length):
+            script_slice = spans[i].script_slice
+            span = docs[i].char_span(script_slice.start, script_slice.stop)  # type: ignore
+            assert span is not None, "Invalid `spacy.tokens.Span` selected."
+            docs[i] = span.as_doc()
 
-    def __init__(
-        self, iterator: DataIterator, device: torch.device, input_encoder: InputEncoder, **kwargs
-    ):
-        logger.info("Creating `DataLoader`...")
-        self.device = device
-        max_parallel = int(os.cpu_count() // get_world_size())
-        loader = torch.utils.data.dataloader.DataLoader(
-            typing.cast(torch.utils.data.Dataset, iterator),
-            pin_memory=True,
-            batch_size=None,
-            worker_init_fn=partial(_worker_init_fn, config=copy.deepcopy(get_config())),
-            collate_fn=partial(
-                make_span_batch, input_encoder=input_encoder, max_parallel=max_parallel
+        char_to_word = [_get_char_to_word(d) for d in docs]
+        phonemes = typing.cast(typing.List[str], lib.text.grapheme_to_phoneme(docs))
+        decoded = [DecodedInput(s.script, p, s.speaker) for s, p in zip(spans, phonemes)]
+        encoded = [self.input_encoder.encode(d) for d in decoded]
+        with multiprocessing.pool.ThreadPool(min(self.max_parallel, len(spans))) as pool:
+            signals_: typing.List[numpy.ndarray] = list(pool.map(_span_read_audio_slice, spans))
+        loudness = [_random_loudness_annotations(s, a) for s, a in zip(spans, signals_)]
+        signals = [_pad_and_trim_signal(s) for s in signals_]
+        spectrogram, spectrogram_mask = _signals_to_spectrograms(signals)
+        speed = [_random_speed_annotations(s) for s in spans]
+
+        return SpanBatch(
+            spans=spans,
+            length=length,
+            audio=signals,
+            spectrogram=spectrogram,
+            spectrogram_mask=spectrogram_mask,
+            stop_token=_make_stop_token(spectrogram),
+            encoded_speaker=self._stack([s.speaker for s in encoded]),
+            encoded_text=self._stack([s.graphemes for s in encoded]),
+            encoded_text_mask=self._stack([self._make_mask(e.graphemes.shape[0]) for e in encoded]),
+            encoded_letter_case=self._stack([e.letter_cases for e in encoded]),
+            word_vectors=self._stack(
+                [_get_word_vectors(char_to_word[i], docs[i]) for i in range(length)]
             ),
-            prefetch_factor=4,
-            **kwargs,
+            encoded_phonemes=self._stack([s.phonemes for s in encoded]),
+            encoded_phonemes_mask=self._stack(
+                [self._make_mask(e.phonemes.shape[0]) for e in encoded]
+            ),
+            loudness=self._stack([a[0] for a in loudness]),
+            loudness_mask=self._stack([a[1] for a in loudness]),
+            speed=self._stack([a[0] for a in speed]),
+            speed_mask=self._stack([a[1] for a in speed]),
         )
-        self.loader = iter(loader)
+
+
+class DataLoader(_utils.DataLoader[SpanBatch]):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.num_frames = 0.0
         self.num_spans = 0.0
-        logger.info("Created `DataLoader`.")
 
     @property
     def average_spectrogram_length(self) -> float:
         return self.num_frames / self.num_spans
 
-    def __iter__(self) -> typing.Iterator[SpanBatch]:
-        first = time.time()
-        while True:
-            batch = next(self.loader)
-            self.num_frames += batch.spectrogram.lengths.float().sum().item()
-            self.num_spans += batch.length
-            # NOTE: Tensors are moved to CUDA outside of the `DataLoader` workers. Learn more:
-            # > It is generally not recommended to return CUDA tensors in multi-process loading
-            # > because of many subtleties in using CUDA and sharing CUDA tensors in multiprocessing
-            # https://pytorch.org/docs/stable/data.html#multi-process-data-loading
-            yield typing.cast(SpanBatch, tensors_to(batch, device=self.device, non_blocking=True))
-            if first is not None:  # NOTE: The first batch will take the longest to load.
-                elapsed = lib.utils.seconds_to_string(time.time() - first)
-                logger.info("Time to first batch was %s.", elapsed)
-                first = None
+    def process_batch(self, batch: SpanBatch) -> SpanBatch:
+        self.num_frames += float(batch.spectrogram.lengths.float().sum().item())
+        self.num_spans += batch.length
+        return super().process_batch(batch)

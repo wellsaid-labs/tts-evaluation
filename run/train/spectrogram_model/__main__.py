@@ -1,5 +1,6 @@
 import dataclasses
 import logging
+import os
 import pathlib
 import random
 import sys
@@ -49,10 +50,10 @@ from run.train._utils import (
     maybe_make_experiment_directories,
     maybe_make_experiment_directories_from_checkpoint,
     set_context,
+    set_run_seed,
 )
-from run.train.spectrogram_model._data import DataIterator, DataLoader, InputEncoder, SpanBatch
+from run.train.spectrogram_model._data import DataLoader, DataProcessor, InputEncoder, SpanBatch
 from run.train.spectrogram_model._metrics import DistributedMetrics, get_average_db_rms_level
-from run.train.spectrogram_model._utils import set_seed
 
 lib.environment.enable_fault_handler()
 logger = logging.getLogger(__name__)
@@ -78,7 +79,7 @@ def _configure(
 
     torch.optim.Adam.__init__ = configurable(torch.optim.Adam.__init__)  # type: ignore
     config = {
-        set_seed: HParams(seed=RANDOM_SEED),
+        set_run_seed: HParams(seed=RANDOM_SEED),
         _State._get_optimizers: HParams(
             lr_multiplier_schedule=partial(
                 lib.optimizers.warmup_lr_multiplier_schedule, warmup=500
@@ -110,6 +111,7 @@ def _configure(
             train_batch_size=train_batch_size,
             dev_batch_size=dev_batch_size,
             num_workers=2 if debug else 4,
+            prefetch_factor=2 if debug else 4,
         ),
         DistributedMetrics.get_model_metrics: HParams(num_frame_channels=NUM_FRAME_CHANNELS),
         # SOURCE (Tacotron 2):
@@ -127,7 +129,7 @@ def _configure(
     }
     add_config(config)
     add_config(more_config)
-    set_seed()
+    set_run_seed()
     return nested_to_flat_config(get_config())
 
 
@@ -304,14 +306,14 @@ def _get_data_loaders(
     train_batch_size: int = HParam(),
     dev_batch_size: int = HParam(),
     num_workers: int = HParam(),
+    prefetch_factor: int = HParam(),
 ) -> typing.Tuple[DataLoader, DataLoader]:
     """ Initialize training and development data loaders.  """
-    kwargs = dict(num_workers=num_workers, device=state.device, input_encoder=state.input_encoder)
-    DataLoaderPartial = partial(DataLoader, **kwargs)
-    return (
-        DataLoaderPartial(DataIterator(train_dataset, train_batch_size)),
-        DataLoaderPartial(DataIterator(dev_dataset, dev_batch_size)),
-    )
+    max_parallel = int(os.cpu_count() // get_world_size())
+    partial_ = partial(DataProcessor, input_encoder=state.input_encoder, max_parallel=max_parallel)
+    kwargs = dict(num_workers=num_workers, device=state.device, prefetch_factor=prefetch_factor)
+    make_loader = lambda *a: DataLoader(partial_(*a), **kwargs)
+    return make_loader(train_dataset, train_batch_size), make_loader(dev_dataset, dev_batch_size)
 
 
 def _visualize_source_vs_target(

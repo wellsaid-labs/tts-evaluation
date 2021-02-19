@@ -368,7 +368,7 @@ def call_once(
 _MappedIteratorItem = typing.TypeVar("_MappedIteratorItem")
 
 
-class MappedIterator(typing.Generic[_MappedIteratorItem]):
+class MappedIterator(typing.Mapping[int, _MappedIteratorItem], typing.Generic[_MappedIteratorItem]):
     """ Wrap an iterator with a mapping. """
 
     def __init__(self, iterator: typing.Iterable[_MappedIteratorItem]):
@@ -383,6 +383,12 @@ class MappedIterator(typing.Generic[_MappedIteratorItem]):
             next(self.iter)
         self.offset = index + 1
         return next(self.iter)
+
+    def __iter__(self):
+        return [self[i] for i in range(len(self))]
+
+    def __len__(_):
+        raise NotImplementedError()
 
 
 _TuplesVar = typing.TypeVar("_TuplesVar")

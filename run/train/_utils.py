@@ -1,4 +1,5 @@
 import contextlib
+import copy
 import dataclasses
 import enum
 import functools
@@ -11,13 +12,17 @@ import time
 import typing
 from datetime import timedelta
 
+import hparams.hparams
 import numpy
 import torch
 import torch.cuda
 import torch.distributed
 import torch.nn
 import torch.optim
+import torch.utils.data
+from hparams import HParam, configurable, get_config
 from third_party import LazyLoader
+from torchnlp.utils import tensors_to
 
 import lib
 import run
@@ -380,3 +385,92 @@ def set_context(context: Context, model: torch.nn.Module, comet: CometMLExperime
         with torch.set_grad_enabled(mode=(context == Context.TRAIN)):
             yield
         model.train(mode=mode)
+
+
+@configurable
+def set_run_seed(seed=HParam()):
+    lib.environment.set_seed(seed)
+
+
+def _worker_init_fn(_, config):
+    # TODO: Add a method for transfering global configuration between processes without private
+    # variables.
+    # TODO: After the global configuration is transfered, the functions need to be rechecked
+    # like for a configuration, just in case the configuration is on a new process.
+    hparams.hparams._configuration = config
+    info = torch.utils.data.get_worker_info()
+    lib.environment.set_basic_logging_config()
+    logger.info("Worker %d/%d iterator started.", info.id + 1, info.num_workers)
+    set_run_seed()  # NOTE: Each worker needs the same random seed to be deterministic.
+
+
+DataLoaderVar = typing.TypeVar("DataLoaderVar")
+
+
+class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
+    """Load and batch spans given a dataset `iterator`.
+
+    NOTE: The `DataLoader` by default will create a sequential sampler. It'll use that sampler
+    to queue up batches from `DataIterator`, in order.
+
+    NOTE: Each `DataLoader` worker replicates the dataset, and other objects. As of
+    02/04/2020, about half of our memory (30 gb) was used by `DataLoader` workers. This
+    can be resolved with memory sharing like "fork" and `gc.freeze`.
+
+    NOTE: `DataLoader` isn't compatible with "fork" because NCCL isn't fork safe. There
+    are also issues with OMP and CUDA. They have issues with fork, as well. Learn more:
+    > Unfortunately Gloo (that uses Infiniband) and NCCL2 are not fork safe, and you will
+    likely experience deadlocks if you don’t change this setting.
+    https://github.com/pytorch/pytorch/pull/4766
+    > After OpenMP features are utilized, a fork is only allowed if the child process does not
+    > use OpenMP features, or it does so as a completely new process (such as after exec()).
+    https://bisqwit.iki.fi/story/howto/openmp/#OpenmpAndFork
+    https://github.com/pytorch/pytorch/issues/42444
+    > The CUDA runtime does not support the fork start method
+    https://pytorch.org/docs/stable/notes/multiprocessing.html#cuda-in-multiprocessing
+
+    TODO: The `DataLoader` runs `make_span_batch` and `iterator` in each worker. For performance,
+    we could move `make_span_batch` to `DataIterator` and preprocess larger batches at the
+    same time. The `collate_fn` function could be replaced with an `identity` function, and
+    everything could be processed in the `DataIterator` efficiently. Learn more:
+    https://github.com/pytorch/pytorch/blob/272f4db043ec2c63ecfe6d2759e7893cb842a3c3/torch/utils/data/_utils/fetch.py#L35
+    https://pytorch.org/docs/stable/data.html#disable-automatic-batching
+    This should also help with code locality. Also, if we'd like to run a more expensive dataset
+    filtering, it is more doable in batches.
+
+    TODO: Remove `copy.deepcopy` after this issue is fixed:
+    https://github.com/pytorch/pytorch/issues/51849
+    """
+
+    def __init__(self, dataset: typing.Mapping, device: torch.device, **kwargs):
+        logger.info("Creating `DataLoader`...")
+        self.device = device
+        loader = torch.utils.data.dataloader.DataLoader(
+            typing.cast(torch.utils.data.Dataset, dataset),
+            pin_memory=True,
+            batch_size=None,
+            worker_init_fn=functools.partial(_worker_init_fn, config=copy.deepcopy(get_config())),
+            collate_fn=lib.utils.identity,
+            **kwargs,
+        )
+        self.loader = iter(loader)
+        logger.info("Created `DataLoader`.")
+
+    def process_batch(self, batch: DataLoaderVar) -> DataLoaderVar:
+        # NOTE: Tensors are moved to CUDA outside of the `DataLoader` workers. Learn more:
+        # > It is generally not recommended to return CUDA tensors in multi-process loading
+        # > because of many subtleties in using CUDA and sharing CUDA tensors in multiprocessing
+        # https://pytorch.org/docs/stable/data.html#multi-process-data-loading
+        return typing.cast(DataLoaderVar, tensors_to(batch, device=self.device, non_blocking=True))
+
+    def __iter__(self) -> typing.Iterator[DataLoaderVar]:
+        first = time.time()
+
+        while True:
+            yield self.process_batch(next(self.loader))
+
+            # NOTE: The first batch will take the longest to load, so we log the time.
+            if first is not None:
+                elapsed = lib.utils.seconds_to_string(time.time() - first)
+                logger.info("Time to first batch was %s.", elapsed)
+                first = None
