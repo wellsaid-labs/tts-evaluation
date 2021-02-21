@@ -94,12 +94,24 @@ def get_weighted_std(tensor: torch.Tensor, dim: int = 0) -> torch.Tensor:
     return weighted_standard_deviation
 
 
-# Learn more about this typing:
+# NOTE: Due the issues around recursive typing, we've included a `flatten_2d` and
+# `flatten_3d` which don't have recursive typing.
+# NOTE: Learn more about this typing:
 # https://github.com/microsoft/pyright/issues/1147
 _FlattenReturnType = typing.TypeVar("_FlattenReturnType")
 _FlattenInputType = typing.Union[
     _FlattenReturnType, typing.Sequence[typing.Union[_FlattenReturnType, "_FlattenInputType"]]
 ]
+
+
+def flatten_2d(l: typing.List[typing.List[_FlattenReturnType]]) -> typing.List[_FlattenReturnType]:
+    return flatten(l)  # type: ignore
+
+
+def flatten_3d(
+    l: typing.List[typing.List[typing.List[_FlattenReturnType]]],
+) -> typing.List[_FlattenReturnType]:
+    return flatten(l)  # type: ignore
 
 
 def flatten(l: _FlattenInputType) -> typing.List[_FlattenReturnType]:

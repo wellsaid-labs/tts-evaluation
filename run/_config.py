@@ -95,8 +95,13 @@ Label = typing.NewType("Label", str)
 Dataset = typing.Dict[Speaker, typing.List[datasets.Passage]]
 
 
+class GetLabel(typing.Protocol):
+    def __call__(self, **kwargs) -> Label:
+        ...
+
+
 def get_dataset_label(
-    name: str, cadence: Cadence, type_: DatasetType, speaker: typing.Optional[Speaker] = None
+    name: str, cadence: Cadence, type_: DatasetType, speaker: typing.Optional[Speaker] = None, **_
 ) -> Label:
     """ Label something related to a dataset. """
     kwargs = dict(cadence=cadence.value, type=type_.value, name=name)
@@ -106,7 +111,9 @@ def get_dataset_label(
     return Label(label.format(speaker=speaker.label, **kwargs))
 
 
-def get_model_label(name: str, cadence: Cadence, speaker: typing.Optional[Speaker] = None) -> Label:
+def get_model_label(
+    name: str, cadence: Cadence, speaker: typing.Optional[Speaker] = None, **_
+) -> Label:
     """ Label something related to the model. """
     kwargs = dict(cadence=cadence.value, name=name)
     if speaker is None:
@@ -114,12 +121,12 @@ def get_model_label(name: str, cadence: Cadence, speaker: typing.Optional[Speake
     return Label("{cadence}/model/{speaker}/{name}".format(speaker=speaker.label, **kwargs))
 
 
-def get_config_label(name: str, cadence: Cadence = Cadence.STATIC) -> Label:
+def get_config_label(name: str, cadence: Cadence = Cadence.STATIC, **_) -> Label:
     """ Label something related to a configuration. """
     return Label("{cadence}/config/{name}".format(cadence=cadence.value, name=name))
 
 
-def get_environment_label(name: str, cadence: Cadence = Cadence.STATIC) -> Label:
+def get_environment_label(name: str, cadence: Cadence = Cadence.STATIC, **_) -> Label:
     """ Label something related to a environment. """
     return Label("{cadence}/environment/{name}".format(cadence=cadence.value, name=name))
 

@@ -1,10 +1,14 @@
+import asyncio
+import collections
 import contextlib
 import copy
 import dataclasses
 import enum
 import functools
+import gzip
 import io
 import itertools
+import json
 import logging
 import os
 import pathlib
@@ -29,7 +33,7 @@ from torchnlp.utils import tensors_to
 
 import lib
 import run
-from lib.distributed import is_master
+from lib.distributed import get_master_rank, get_rank, get_world_size, is_master
 from lib.environment import load, load_most_recent_file
 from lib.utils import flatten, seconds_to_string
 from run._config import Cadence, Dataset, DatasetType, get_dataset_label, get_model_label
@@ -622,16 +626,21 @@ def _init_distributed(
     rank: int,
     timeout: timedelta = timedelta(minutes=30),
     backend: str = "nccl",
-    init_method: str = "tcp://127.0.0.1:29500",
+    hostname: str = "127.0.0.1",
+    port: int = 29500,
     world_size: int = torch.cuda.device_count(),
-) -> torch.device:
+) -> typing.Tuple[torch.device, torch.distributed.Store]:
     """Initiate distributed for training.
 
     Learn more about distributed environments here:
     https://pytorch.org/tutorials/intermediate/dist_tuto.htm
     https://github.com/pytorch/examples/blob/master/imagenet/main.py
     """
-    torch.distributed.init_process_group(backend, init_method, timeout, world_size, rank)
+    is_master = rank == lib.distributed.get_master_rank()
+    store = torch.distributed.TCPStore(hostname, port, world_size, is_master, timeout)
+    torch.distributed.init_process_group(
+        backend, store=store, timeout=timeout, world_size=world_size, rank=rank
+    )
     logger.info("Worker %d started.", torch.distributed.get_rank())
     logger.info("%d GPUs found.", world_size)
     device = torch.device("cuda", rank)
@@ -642,13 +651,14 @@ def _init_distributed(
     torch.cuda.set_device(device)
     # TODO: Instead of returning and passing around `torch.device`, rely on `torch.cuda.set_device`
     # or `torch.cuda.device` to set context.
-    return device
+    return device, store
 
 
 class _RunWorker(typing.Protocol):
     def __call__(
         self,
         device: torch.device,
+        store: torch.distributed.Store,
         comet: CometMLExperiment,
         checkpoint: typing.Optional[Checkpoint],
         *args,
@@ -665,12 +675,12 @@ def _run_workers_helper(
     *args,
 ):
     lib.environment.set_basic_logging_config(device_index)
-    device = _init_distributed(device_index)
+    device, store = _init_distributed(device_index)
     comet = comet_partial(disabled=not is_master(), auto_output_logging=False)
     hparams.hparams._configuration = config
     set_run_seed()
     checkpoint_ = None if checkpoint is None else load(checkpoint, device=device)
-    return run_worker(device, comet, checkpoint_, *args)
+    return run_worker(device, store, comet, checkpoint_, *args)
 
 
 def run_workers(
@@ -684,3 +694,75 @@ def run_workers(
     partial_ = functools.partial(CometMLExperiment, experiment_key=comet.get_key())
     args = (partial_, get_config(), checkpoint, run_worker, *args)
     return lib.distributed.spawn(_run_workers_helper, args=args)  # type: ignore
+
+
+MetricsValue = typing.Union[float, int]
+MetricsValues = typing.Dict[str, MetricsValue]
+MetricsAll = typing.List[typing.List[MetricsValue]]
+
+
+class Metrics:
+    """
+    TODO: Look into other compression algorithms like Zstandard:
+    https://www.lucidchart.com/techblog/2019/12/06/json-compression-alternative-binary-formats-and-compression-methods/
+
+    Args:
+        all: Map a metric to every value reported, grouped by operation.
+    """
+
+    def __init__(
+        self,
+        store: torch.distributed.Store,
+        world_size=get_world_size(),
+        is_master=is_master(),
+        rank=get_rank(),
+    ):
+        self._store = torch.distributed.PrefixStore(self.__class__.__name__, store)
+        self._operation = -1
+        self._world_size = world_size
+        self._is_master = is_master
+        self._rank = rank
+        self.all: typing.Dict[str, MetricsAll] = {}
+
+    async def _get(self, key: str) -> MetricsValues:
+        """
+        NOTE: Learn about JSONs compact encoding, here: https://docs.python.org/3/library/json.html
+        """
+        return json.loads(gzip.decompress(bytes.fromhex(self._store.get(key).decode())).decode())
+
+    async def _gets(self, keys: typing.List[str]) -> typing.List[MetricsValues]:
+        tasks = tuple(self._get(k) for k in keys)
+        return typing.cast(typing.List[MetricsValues], await asyncio.gather(*tasks))
+
+    def _set(self, values: MetricsValues):
+        encoded = gzip.compress(json.dumps(values, separators=(",", ":")).encode()).hex()
+        self._store.set(f"/{self._rank}/{self._operation}", encoded)
+
+    def _update(self, values: typing.List[MetricsValues]):
+        """Update `self.all` with `values`."""
+        update = collections.defaultdict(list)
+        for metrics_ in values:
+            for key, value in metrics_.items():
+                update[key].append(value)
+        for key in set(itertools.chain(update.keys(), self.all.keys())):
+            group = update[key] if key in update else []
+            if key not in self.all:
+                self.all[key] = [[] for _ in range(self._operation)]
+            self.all[key].append(group)
+
+    @lib.utils.log_runtime
+    def update(self, values: MetricsValues):
+        """Update the master process `self.all` with `values`."""
+        self._operation += 1
+        if self._is_master:
+            ranks = [i for i in range(self._world_size) if i != get_master_rank()]
+            keys = [f"/{i}/{self._operation}" for i in ranks]
+            self._store.wait(keys)
+            results = asyncio.run(self._gets(keys))
+            self._update(results + [values])
+        else:
+            self._set(values)
+
+    def log(self):
+        """Report `self.all` on the master process."""
+        raise NotImplementedError()

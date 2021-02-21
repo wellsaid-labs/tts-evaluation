@@ -48,8 +48,8 @@ def _get_db_spectrogram(signal, **kwargs) -> torch.Tensor:
     return lib.audio.amplitude_to_db(spectrogram).permute(2, 0, 1)
 
 
-def test_get_cumulative_power_rms_level():
-    """Test `_metrics.get_cumulative_power_rms_level` gets an approximate dB RMS level
+def test_get_power_rms_level_sum():
+    """Test `_metrics.get_power_rms_level_sum` gets an approximate dB RMS level
     from a dB spectrogram."""
     frame_length = 1024
     frame_hop = frame_length // 4
@@ -67,12 +67,12 @@ def test_get_cumulative_power_rms_level():
         _db_spectrogram(lib.audio.full_scale_sine_wave()),
     ]
     db_spectrogram = torch.cat(db_spectrogram_, dim=1)
-    rms = _metrics.get_cumulative_power_rms_level(db_spectrogram, window=window)
+    rms = _metrics.get_power_rms_level_sum(db_spectrogram, window=window)
     assert_almost_equal(rms / db_spectrogram.shape[0], torch.Tensor([1.0000001, 0.500006]))
 
 
-def test_get_cumulative_power_rms_level__precise():
-    """Test `_metrics.get_cumulative_power_rms_level` gets an exact dB RMS level from a
+def test_get_power_rms_level_sum__precise():
+    """Test `_metrics.get_power_rms_level_sum` gets an exact dB RMS level from a
     dB spectrogram."""
     frame_length = 1024
     frame_hop = frame_length // 4
@@ -91,12 +91,12 @@ def test_get_cumulative_power_rms_level__precise():
         _db_spectrogram(lib.audio.full_scale_sine_wave()),
     ]
     db_spectrogram = torch.cat(db_spectrogram_, dim=1)
-    rms = _metrics.get_cumulative_power_rms_level(db_spectrogram, window=window)
+    rms = _metrics.get_power_rms_level_sum(db_spectrogram, window=window)
     assert_almost_equal(rms / (sample_rate / frame_hop), torch.Tensor([1.0, 0.49999998418]))
 
 
 def test_get_average_db_rms_level():
-    """Test `_metrics.get_cumulative_power_rms_level` gets the correct RMS level for
+    """Test `_metrics.get_power_rms_level_sum` gets the correct RMS level for
     a test file."""
     audio_path = TEST_DATA_PATH / "audio" / "bit(rate(lj_speech,24000),32).wav"
     metadata = lib.audio.get_audio_metadata(audio_path)

@@ -10,6 +10,7 @@ from itertools import chain
 # NOTE: `comet_ml` needs to be imported before torch
 import comet_ml  # type: ignore # noqa
 import torch
+import torch.distributed
 import torch.nn
 import torch.optim
 import torch.utils
@@ -100,7 +101,7 @@ def _make_configuration(
             num_workers=2 if debug else 4,
             prefetch_factor=2 if debug else 4,
         ),
-        Metrics.get_model_metrics: HParams(num_frame_channels=NUM_FRAME_CHANNELS),
+        Metrics._get_model_metrics: HParams(num_frame_channels=NUM_FRAME_CHANNELS),
         # SOURCE (Tacotron 2):
         # We use the Adam optimizer with β1 = 0.9, β2 = 0.999, eps = 10−6 learning rate of 10−3
         # We also apply L2 regularization with weight 10−6
@@ -137,10 +138,6 @@ class _State:
     comet: CometMLExperiment
     device: torch.device
     step: torch.Tensor = torch.tensor(0, dtype=torch.long)
-    num_examples: torch.Tensor = torch.tensor(0, dtype=torch.long)
-
-    def update_num_examples(self, count: int):
-        self.num_examples.add_(int(lib.distributed.reduce(count, self.device)))
 
     @staticmethod
     def _get_input_encoder(
@@ -234,7 +231,6 @@ class _State:
             optimizer=self.optimizer,
             clipper=self.clipper,
             scheduler=self.scheduler,
-            num_examples=int(self.num_examples.item()),
             step=int(self.step.item()),
             **kwargs,
         )
@@ -260,7 +256,6 @@ class _State:
             comet,
             device,
             torch.tensor(checkpoint.step),
-            torch.tensor(checkpoint.num_examples),
         )
 
     @classmethod
@@ -322,7 +317,7 @@ def _visualize_source_vs_target(
         predicted_stop_token (torch.FloatTensor [num_frames, batch_size]): Stopping probability for
             each frame.
         predicted_alignments (torch.FloatTensor [num_frames, batch_size, num_tokens]): Attention
-            alignment between `frames` and `tokens`.
+            alignments between `frames` and `tokens`.
         ...
     """
     if not is_master():
@@ -376,7 +371,7 @@ def _run_step(
         spectrogram_loss_scalar: This scales the spectrogram loss by some value.
         stop_token_min_loss: This thresholds the stop token loss to prevent overfitting.
     """
-    frames, stop_token, alignment, spectrogram_loss, stop_token_loss = state.model(
+    frames, stop_token, alignments, spectrogram_loss, stop_token_loss = state.model(
         tokens=batch.encoded_phonemes.tensor,
         speaker=batch.encoded_speaker.tensor,
         target_frames=batch.spectrogram.tensor,
@@ -409,7 +404,7 @@ def _run_step(
         (spectrogram_loss_ + stop_token_loss_).backward()
 
         # NOTE: Measure the "grad_norm" before `clipper.clip()`.
-        metrics.log_optimizer_metrics(state.optimizer, state.clipper)
+        metrics.log_optimizer_metrics(state.optimizer, state.clipper, cadence=Cadence.STEP)
 
         # NOTE: `optimizer` will not error if there are no gradients so we check beforehand.
         params = state.optimizer.param_groups[0]["params"]
@@ -417,35 +412,27 @@ def _run_step(
         state.clipper.clip()
         state.optimizer.step()
         state.step.add_(1)
-        state.update_num_examples(batch.length)
         state.scheduler.step()
         state.comet.set_step(typing.cast(int, state.step.item()))
 
     if visualize:
         _visualize_source_vs_target(
-            state, batch, frames, stop_token, alignment, dataset_type, Cadence.STEP
+            state, batch, frames, stop_token, alignments, dataset_type, Cadence.STEP
         )
 
-    # Update metrics, and log those updates.
-    metrics.update_dataset_metrics(batch, state.input_encoder)
-    metrics.append(metrics.num_frames_predicted, batch.spectrogram.lengths)
-    metrics.update_alignment_metrics(
-        alignment,
-        batch.spectrogram_mask.tensor,
-        batch.encoded_phonemes_mask.tensor,
-        batch.encoded_phonemes.lengths,
-        batch.encoded_speaker.tensor,
-        state.input_encoder,
-    )
-    metrics.update_stop_token_accuracy(
-        batch.stop_token.tensor,
-        stop_token,
-        typing.cast(float, state.model.module.stop_threshold),
-        batch.spectrogram_mask.tensor,
-    )
-    metrics.update_data_queue_size(data_loader)
-    metrics.append(metrics.spectrogram_loss, spectrogram_loss)
-    metrics.append(metrics.stop_token_loss, stop_token_loss)
+    stop_threshold = typing.cast(float, state.model.module.stop_threshold)
+    spectrogram_mask = batch.spectrogram_mask.tensor
+    spectrogram_lengths = batch.spectrogram.lengths
+    values: _utils.MetricsValues = {
+        **metrics.get_dataset_values(batch),
+        **metrics.get_alignment_values(batch, alignments, spectrogram_lengths, spectrogram_mask),
+        **metrics.get_loudness_values(batch, frames, spectrogram_mask),
+        **metrics.get_data_loader_values(data_loader),
+        **metrics.get_stop_token_values(batch, stop_token, stop_threshold),
+        metrics.SPECTROGRAM_LOSS_SUM: float(spectrogram_loss.sum().item()),
+        metrics.STOP_TOKEN_LOSS_SUM: float(stop_token_loss.sum().item()),
+    }
+    metrics.update(values)
 
 
 def _visualize_inferred(
@@ -469,7 +456,7 @@ def _visualize_inferred(
         predicted_stop_token (torch.FloatTensor [num_frames, batch_size]): Stopping probability for
             each frame.
         predicted_alignments (torch.FloatTensor [num_frames, batch_size, num_tokens]): Attention
-            alignment between `frames` and `tokens`.
+            alignments between `frames` and `tokens`.
         predicted_lengths (torch.LongTensor [1, batch_size]): The sequence length.
         ...
     """
@@ -539,36 +526,14 @@ def _run_inference(
             state, batch, frames, stop_tokens, alignments, lengths, dataset_type, Cadence.STEP
         )
 
-    # NOTE: Remove predictions that diverged (reached max) as to not skew other metrics. We
-    # count these sequences separatly with `reached_max_frames`.
-    bool_ = ~reached_max.view(-1)
-    if bool_.sum() > 0:
-        max_frames = lengths[:, bool_].max()
-        max_tokens = batch.encoded_phonemes.lengths[:, bool_].max()
-        # NOTE: `lengths_to_mask` moves data from gpu to cpu, so it causes a sync
-        predicted_mask = lengths_to_mask(lengths[:, bool_], device=lengths.device).transpose(0, 1)
-    else:
-        max_frames, max_tokens = 0, 0
-        predicted_mask = torch.ones(0, 0, dtype=torch.bool, device=lengths.device)
-    metrics.append(metrics.batch_size, batch.length - reached_max.sum().item())
-    metrics.append(metrics.num_frames, batch.spectrogram.lengths[:, bool_])
-    metrics.append(metrics.num_frames_predicted, lengths[:, bool_])
-    metrics.update_rms_metrics(
-        batch.spectrogram.tensor[:max_frames, bool_],
-        frames[:max_frames, bool_],
-        batch.spectrogram_mask.tensor[:max_frames, bool_],
-        predicted_mask,
-    )
-    metrics.update_alignment_metrics(
-        alignments[:max_frames, bool_, :max_tokens],
-        predicted_mask,
-        batch.encoded_phonemes_mask.tensor[:max_tokens, bool_],
-        batch.encoded_phonemes.lengths[:max_tokens, bool_],
-        batch.encoded_speaker.tensor[:, bool_],
-        state.input_encoder,
-    )
-    metrics.update_data_queue_size(data_loader)
-    metrics.update_reached_max_metrics(batch, state.input_encoder, reached_max)
+    mask = lengths_to_mask(lengths).transpose(0, 1)
+    values: _utils.MetricsValues = {
+        **metrics.get_dataset_values(batch, reached_max),
+        **metrics.get_alignment_values(batch, alignments, lengths, mask, reached_max),
+        **metrics.get_loudness_values(batch, frames, reached_max, mask),
+        **metrics.get_data_loader_values(data_loader),
+    }
+    metrics.update(values)
 
 
 _BatchHandler = typing.Callable[[_State, Metrics, SpanBatch, DataLoader, DatasetType, bool], None]
@@ -576,6 +541,7 @@ _BatchHandler = typing.Callable[[_State, Metrics, SpanBatch, DataLoader, Dataset
 
 def _run_worker(
     device: torch.device,
+    store: torch.distributed.Store,
     comet: CometMLExperiment,
     checkpoint: typing.Optional[Checkpoint],
     checkpoints_directory: pathlib.Path,
@@ -600,19 +566,16 @@ def _run_worker(
     ]
     while True:
         with set_epoch(
-            comet,
-            step=state.step.item(),
-            steps_per_epoch=train_loader.num_steps_per_epoch,
-            num_examples=state.num_examples.item(),
+            comet, step=state.step.item(), steps_per_epoch=train_loader.num_steps_per_epoch
         ):
             for context, dataset_type, data_loader, handle_batch in contexts:
                 with set_context(context, model=state.model, comet=comet):
-                    metrics = Metrics(comet, state.device)
+                    metrics = Metrics(store, comet, state.input_encoder.speaker_encoder.vocab)
                     for i, batch in enumerate(data_loader):
                         handle_batch(state, metrics, batch, data_loader, dataset_type, i == 0)
                         if Context.TRAIN == context:
-                            metrics.log(lambda l: l[-1], dataset_type, Cadence.STEP)
-                    metrics.log(sum, dataset_type, Cadence.MULTI_STEP)
+                            metrics.log(lambda l: l[-1:], type_=dataset_type, cadence=Cadence.STEP)
+                    metrics.log(is_verbose=True, type_=dataset_type, cadence=Cadence.MULTI_STEP)
 
             if is_master():
                 name = f"step_{state.step.item()}{lib.environment.PT_EXTENSION}"

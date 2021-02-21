@@ -1,12 +1,13 @@
 import collections
 import collections.abc
-import dataclasses
+import itertools
 import math
 import platform
 import typing
 from functools import partial
 
 import torch
+import torch.distributed
 import torch.nn
 import torch.optim
 import torch.utils
@@ -16,11 +17,12 @@ from third_party import get_parameter_norm
 from torch.utils.data.dataloader import _MultiProcessingDataLoaderIter
 
 import lib
-from lib.distributed import gather_list, is_master
-from lib.utils import flatten
-from run._config import Cadence, DatasetType, Label, get_dataset_label, get_model_label
-from run.train._utils import CometMLExperiment
-from run.train.spectrogram_model._data import DataLoader, InputEncoder, SpanBatch
+from lib.distributed import is_master
+from lib.utils import flatten_2d
+from run._config import GetLabel, get_dataset_label, get_model_label
+from run.train import _utils
+from run.train._utils import CometMLExperiment, MetricsValues
+from run.train.spectrogram_model._data import DataLoader, SpanBatch
 
 
 def get_num_skipped(
@@ -84,7 +86,7 @@ length of 2048, frame hop of 512 and a sample rate of 24000), doesn't practicall
 """
 
 
-def get_cumulative_power_rms_level(
+def get_power_rms_level_sum(
     db_spectrogram: torch.Tensor, mask: typing.Optional[torch.Tensor] = None, **kwargs
 ) -> torch.Tensor:
     """Get the sum of the power RMS level for each frame in the spectrogram.
@@ -111,408 +113,381 @@ def get_average_db_rms_level(
     Args:
         db_spectrogram (torch.FloatTensor [num_frames, batch_size, frame_channels])
         mask (torch.FloatTensor [num_frames, batch_size])
-        **kwargs: Additional key word arguments passed to `get_cumulative_power_rms_level`.
+        **kwargs: Additional key word arguments passed to `get_power_rms_level_sum`.
 
     Returns:
         torch.FloatTensor [batch_size]
     """
     num_elements = db_spectrogram.shape[0] if mask is None else mask.sum(dim=0)
-    cumulative_power_rms_level = get_cumulative_power_rms_level(db_spectrogram, mask, **kwargs)
+    cumulative_power_rms_level = get_power_rms_level_sum(db_spectrogram, mask, **kwargs)
     return lib.audio.power_to_db(cumulative_power_rms_level / num_elements)
 
 
-_Measurements = typing.List[float]
-# NOTE: `_Reduce` reduces a list of measurements into a metric.
-_Reduce = typing.Callable[[_Measurements], float]
-_Metrics = typing.Dict[Label, typing.Optional[float]]
+# NOTE: `_Select` selects which measurements to focus on.
+_Select = typing.Callable[[_utils.MetricsAll], _utils.MetricsAll]
+_GetMetrics = typing.Dict[GetLabel, float]
 
 
-@dataclasses.dataclass
-class Metrics:
-    """Track metrics with measurements taken on every process for every step.
-
-    TODO: Instead of using CUDA tensors, for synchronizing metadata and metrics, it's more natural
-    to use a `TCPStore` on CPU. Furthermore, `TCPStore` with `json` could store variable length
-    items like lists.
-    Furthermore, we could create a generic metric manager. The workers will communicate with the
-    manager by sending dictionaries. The master would start a thread that listens for, and
-    accumulates metrics from the workers.
-    This could also help reduce a lot of complexity this metrics implementation. There is a lot of
-    code that's focused on appending.
-
-    Args:
+class Metrics(_utils.Metrics):
+    """
+    Vars:
         ...
-        batch_size: The batch size at each step.
-        data_queue_size: This measures the data loader queue each step. This metric should be a
-            positive integer indicating that the `data_loader` is loading faster than the data is
-            getting ingested; otherwise, the `data_loader` is bottlenecking training by loading too
-            slowly.
-        predicted_frame_alignment_norm: This measures the p-norm of an alignment from a frame to the
-            tokens. As the alignment per frame consolidates on a couple tokens in the input, this
-            metric goes from zero to one.
-        predicted_frame_alignment_std: This measures the discrete standard deviation of an alignment
-            from a frame to the tokens. As the alignment per frame is localized to a couple
-            sequential tokens in the input, this metric goes to zero.
-        num_predictions_per_speaker: The number of spectrograms predicted per speaker for each step.
-        num_skips_per_speaker: In the predicted alignment, this tracks the number of tokens
-            that were skipped per speaker. This could indicate that the model has issues, or that
-            the dataset is flawed.
-        num_tokens_per_speaker: The number of tokens per speaker for each step.
-        frame_rms_level: This measures the sum of the RMS level for each frame in each step.
-        text_length_bucket_size: This is a constant value bucket size for reporting the text
-            length distribution.
-        num_spans_per_text_length: For each text length bucket, this counts the number of spans.
-        num_frames_per_speaker: For each speaker, this counts the number of spectrogram frames
-            each step.
-        num_seconds_per_speaker: For each speaker, this counts the number of seconds each step.
-        num_frames_predicted: This measures the number of frames predicte each step.
-        num_frames: This measures the number of frames in each step.
-        max_num_frames: The maximum number of frames, in a spectrogram, seen.
-        num_reached_max: This measures the number of predicted spectrograms that reach max frames
-            each step.
-        num_reached_max_per_speaker: This measures the number of predicted spectrograms that reach
-            max frames each step per speaker.
-        predicted_frame_rms_level: This measures the sum of the RMS level for each predicted frame
-            in each step.
-        spectrogram_loss: This measures the difference between the original and predicted
-            spectrogram each step.
-        stop_token_loss: This measures the difference between the original and predicted stop token
-            distribution each step.
-        stop_token_num_correct: This measures the number of correct stop token predictions each
-            step.
+        AVERAGE_NUM_FRAMES: The average number of frames per spectrogram.
+        AVERAGE_RMS_LEVEL: The average loudness per frame.
+        MAX_NUM_FRAMES: The maximum number of frames in a spectrogram.
+        MIN_DATA_LOADER_QUEUE_SIZE: The minimum data loader queue size.
+        FREQUENCY_NUM_FRAMES: The frequency of each speaker based on the number of frames.
+        FREQUENCY_NUM_SECONDS: The frequency of each speaker based on the number of seconds.
+        FREQUENCY_TEXT_LENGTH: The frequency of each text length bucket.
+        ALIGNMENT_NORM: The p-norm of an alignment. The more focused an alignment is the higher this
+            metric. The metric is bounded at [0, 1].
+        ALIGNMENT_SKIPS: This metric assumes that each alignment focuses on one token. This measures
+            the percentage of tokens skipped by the alignments.
+        ALIGNMENT_STD: This metric measures the standard deviation of an alignment. As the alignment
+            is more focused, this metrics goes to zero.
+        AVERAGE_PREDICTED_RMS_LEVEL: The average loudness per predicted frame.
+        AVERAGE_RELATIVE_SPEED: The number of predicted frames divided by the number of frames.
+        AVERAGE_RMS_LEVEL_DELTA: The delta between `AVERAGE_PREDICTED_RMS_LEVEL` and
+            `AVERAGE_RMS_LEVEL`.
+        GRADIENT_INFINITY_NORM: The total infinity norm of all parameter gradients.
+        GRADIENT_TWO_NORM: The total 2-norm of all parameter gradients.
+        GRADIENT_MAX_NORM: The maximum gradient norm used for clipping gradients.
+        LR: The learning rate.
+        REACHED_MAX_FRAMES: The percentage of perdictions that reached the maximum frames allowed.
+        ...
     """
 
-    comet: CometMLExperiment
-    device: torch.device
-    batch_size: typing.List[float] = dataclasses.field(default_factory=list)
-    data_queue_size: typing.List[float] = dataclasses.field(default_factory=list)
-    predicted_frame_alignment_norm: typing.List[float] = dataclasses.field(default_factory=list)
-    predicted_frame_alignment_std: typing.List[float] = dataclasses.field(default_factory=list)
-    num_predictions_per_speaker: typing.Dict[lib.datasets.Speaker, float] = dataclasses.field(
-        default_factory=lambda: collections.defaultdict(float)
-    )
-    num_skips_per_speaker: typing.Dict[lib.datasets.Speaker, float] = dataclasses.field(
-        default_factory=lambda: collections.defaultdict(float)
-    )
-    num_tokens_per_speaker: typing.Dict[lib.datasets.Speaker, float] = dataclasses.field(
-        default_factory=lambda: collections.defaultdict(float)
-    )
-    frame_rms_level: typing.List[float] = dataclasses.field(default_factory=list)
-    text_length_bucket_size: int = 25
-    num_spans_per_text_length: typing.Dict[int, float] = dataclasses.field(
-        default_factory=lambda: collections.defaultdict(float)
-    )
-    num_frames_per_speaker: typing.Dict[lib.datasets.Speaker, float] = dataclasses.field(
-        default_factory=lambda: collections.defaultdict(float)
-    )
-    num_seconds_per_speaker: typing.Dict[lib.datasets.Speaker, float] = dataclasses.field(
-        default_factory=lambda: collections.defaultdict(float)
-    )
-    num_frames_predicted: typing.List[float] = dataclasses.field(default_factory=list)
-    num_frames: typing.List[float] = dataclasses.field(default_factory=list)
-    max_num_frames: int = dataclasses.field(default_factory=int)
-    num_reached_max: typing.List[float] = dataclasses.field(default_factory=list)
-    num_reached_max_per_speaker: typing.Dict[lib.datasets.Speaker, float] = dataclasses.field(
-        default_factory=lambda: collections.defaultdict(float)
-    )
-    predicted_frame_rms_level: typing.List[float] = dataclasses.field(default_factory=list)
-    spectrogram_loss: typing.List[float] = dataclasses.field(default_factory=list)
-    stop_token_loss: typing.List[float] = dataclasses.field(default_factory=list)
-    stop_token_num_correct: typing.List[float] = dataclasses.field(default_factory=list)
+    (
+        ALIGNMENT_NORM_SUM,
+        ALIGNMENT_NUM_SKIPS,
+        ALIGNMENT_STD_SUM,
+        DATA_QUEUE_SIZE,
+        NUM_CORRECT_STOP_TOKEN,
+        NUM_FRAMES_MAX,
+        NUM_FRAMES_PREDICTED,
+        NUM_FRAMES,
+        NUM_REACHED_MAX,
+        NUM_SECONDS,
+        NUM_SPANS_PER_TEXT_LENGTH,
+        NUM_SPANS,
+        NUM_TOKENS,
+        RMS_SUM_PREDICTED,
+        RMS_SUM,
+        SPECTROGRAM_LOSS_SUM,
+        STOP_TOKEN_LOSS_SUM,
+        *_,
+    ) = tuple([str(i) for i in range(100)])
 
-    def append(self, metric: typing.List[float], value: typing.Union[int, float, torch.Tensor]):
-        """Append measurement to a `metric`.
+    AVERAGE_NUM_FRAMES = partial(get_dataset_label, "average_num_frames")
+    AVERAGE_RMS_LEVEL = partial(get_dataset_label, "average_rms_level")
+    MAX_NUM_FRAMES = partial(get_dataset_label, "max_num_frames")
+    MIN_DATA_LOADER_QUEUE_SIZE = partial(get_dataset_label, "min_data_loader_queue_size")
+    FREQUENCY_NUM_FRAMES = partial(get_dataset_label, "frequency/num_frames")
+    FREQUENCY_NUM_SECONDS = partial(get_dataset_label, "frequency/num_seconds")
+    FREQUENCY_TEXT_LENGTH = "text_length_bucket_{lower}_{upper}"
 
-        NOTE: The measurements will accrue on the master process only.
-        """
-        value = float(value.sum().item() if isinstance(value, torch.Tensor) else value)
-        metric.append(lib.distributed.reduce(value, self.device))
+    ALIGNMENT_NORM = partial(get_model_label, "alignment_norm")
+    ALIGNMENT_SKIPS = partial(get_model_label, "alignment_skips")
+    ALIGNMENT_STD = partial(get_model_label, "alignment_std")
+    AVERAGE_PREDICTED_RMS_LEVEL = partial(get_model_label, "average_predicted_rms_level")
+    AVERAGE_RELATIVE_SPEED = partial(get_model_label, "average_relative_speed")
+    AVERAGE_RMS_LEVEL_DELTA = partial(get_model_label, "average_rms_level_delta")
+    GRADIENT_INFINITY_NORM = partial(get_model_label, "grad_norm/inf")
+    GRADIENT_MAX_NORM = partial(get_model_label, "grad_norm/max_norm")
+    GRADIENT_TWO_NORM = partial(get_model_label, "grad_norm/two")
+    LR = partial(get_model_label, "lr")
+    REACHED_MAX_FRAMES = partial(get_model_label, "reached_max_frames")
+    SPECTROGRAM_LOSS = partial(get_model_label, "spectrogram_loss")
+    STOP_TOKEN_ACCURACY = partial(get_model_label, "stop_token_accuracy")
+    STOP_TOKEN_LOSS = partial(get_model_label, "stop_token_loss")
 
-    def gather(
-        self, values: typing.Union[typing.List[float], torch.Tensor], **kwargs
-    ) -> typing.List[float]:
-        values = values.view(-1).tolist() if isinstance(values, torch.Tensor) else values
-        return flatten(gather_list(values, device=self.device, **kwargs))
+    TEXT_LENGTH_BUCKET_SIZE = 25
+    ALIGNMENT_NORM_TYPE = math.inf
 
-    def update_dataset_metrics(self, batch: SpanBatch, input_encoder: InputEncoder):
+    def __init__(
+        self,
+        store: torch.distributed.Store,
+        comet: CometMLExperiment,
+        speakers: typing.List[lib.datasets.Speaker],
+    ):
+        super().__init__(store)
+        self.comet = comet
+        self.speakers = speakers
+
+    def get_dataset_values(
+        self, batch: SpanBatch, reached_max: typing.Optional[torch.Tensor] = None
+    ) -> MetricsValues:
         """
         TODO: Get dataset metrics on OOV words (spaCy and AmEPD) in our dataset.
-
         TODO: Create a `streamlit` for measuring coverage in our dataset, and other datasets.
-
         TODO: Measure the difference between punctuation in the phonetic vs grapheme phrases.
         Apart from unique cases, they should have the same punctuation.
         """
-        self.append(self.batch_size, batch.length)
-        self.append(self.num_frames, batch.spectrogram.lengths)
+        values = collections.defaultdict(float)
 
-        for text in self.gather([len(s.script) for s in batch.spans]):
-            self.num_spans_per_text_length[int(text // self.text_length_bucket_size)] += 1
+        for span, num_frames, num_tokens, has_reached_max in zip(
+            batch.spans,
+            batch.spectrogram.lengths.view(-1).tolist(),
+            batch.encoded_phonemes.lengths.view(-1).tolist(),
+            itertools.repeat(False) if reached_max is None else reached_max.view(-1).tolist(),
+        ):
+            if not has_reached_max:
+                assert span.speaker in self.speakers
+                index = int(len(span.script) // self.TEXT_LENGTH_BUCKET_SIZE)
+                values[f"{self.NUM_SPANS_PER_TEXT_LENGTH}/{index}"] += 1
 
-        iterator = zip(
-            self.gather(batch.encoded_speaker.tensor),
-            self.gather(batch.spectrogram.lengths),
-            self.gather([s.audio_length for s in batch.spans]),
-        )
-        for speaker_index, num_frames, num_seconds in iterator:
-            speaker = input_encoder.speaker_encoder.index_to_token[int(speaker_index)]
-            self.num_frames_per_speaker[speaker] += num_frames
-            self.num_seconds_per_speaker[speaker] += num_seconds
-            self.max_num_frames = max(self.max_num_frames, int(num_frames))
+                values[f"{self.NUM_FRAMES}/{span.speaker.label}"] += num_frames
+                values[f"{self.NUM_SECONDS}/{span.speaker.label}"] += span.audio_length
+                values[f"{self.NUM_SPANS}/{span.speaker.label}"] += 1
+                values[f"{self.NUM_TOKENS}/{span.speaker.label}"] += num_tokens
 
-    def update_alignment_metrics(
+                values[self.NUM_FRAMES_MAX] = max(num_frames, values[self.NUM_FRAMES_MAX])
+                values[self.NUM_FRAMES] += num_frames
+                values[self.NUM_SECONDS] += span.audio_length
+                values[self.NUM_SPANS] += 1
+                values[self.NUM_TOKENS] += num_tokens
+
+        return dict(values)
+
+    def get_alignment_values(
         self,
+        batch: SpanBatch,
         alignments: torch.Tensor,
+        spectrogram_lengths: torch.Tensor,
         spectrogram_mask: torch.Tensor,
-        token_mask: torch.Tensor,
-        num_tokens: torch.Tensor,
-        speakers: torch.Tensor,
-        input_encoder: InputEncoder,
-        norm: float = math.inf,
-    ):
+        reached_max: typing.Optional[torch.Tensor] = None,
+    ) -> MetricsValues:
         """
         Args:
+            ...
             alignments (torch.FloatTensor [num_frames, batch_size, num_tokens])
+            spectrogram_lengths (torch.LongTensor [1, batch_size])
             spectrogram_mask (torch.BoolTensor [num_frames, batch_size])
-            token_mask (torch.BoolTensor [num_tokens, batch_size])
-            num_tokens (torch.LongTensor [1, batch_size])
-            speakers (torch.LongTensor [1, batch_size])
-            ...
+            reached_max (torch.BoolTensor [batch_size]): Remove predictions that diverged
+                (reached max) as to not skew other metrics.
         """
-        mask = lambda t: t.masked_select(spectrogram_mask)
-        weighted_std = lib.utils.get_weighted_std(alignments, dim=2)
-        self.append(self.predicted_frame_alignment_std, mask(weighted_std))
-        self.append(self.predicted_frame_alignment_norm, mask(alignments.norm(norm, dim=2)))
+        values = collections.defaultdict(float)
+        tokens_mask = batch.encoded_phonemes_mask.tensor
+        alignments = alignments.masked_fill(~tokens_mask.transpose(0, 1).unsqueeze(0), 0)
+        alignments = alignments.masked_fill(~spectrogram_mask.unsqueeze(0), 0)
 
-        num_skipped = get_num_skipped(alignments, token_mask, spectrogram_mask)
+        for span, num_skipped, alignment_std, alignment_norm, length, has_reached_max in zip(
+            batch.spans,
+            get_num_skipped(alignments, tokens_mask, spectrogram_mask).view(-1).tolist(),
+            lib.utils.get_weighted_std(alignments, dim=2).sum(dim=0).view(-1).tolist(),
+            alignments.norm(p=self.ALIGNMENT_NORM, dim=2).sum(dim=0).view(-1).tolist(),
+            spectrogram_lengths.view(-1).tolist(),
+            itertools.repeat(False) if reached_max is None else reached_max.view(-1).tolist(),
+        ):
+            assert span.speaker in self.speakers
+            values[self.NUM_REACHED_MAX] += has_reached_max
+            values[f"{self.NUM_REACHED_MAX}/{span.speaker.label}"] += has_reached_max
 
-        assert speakers.numel() == num_skipped.numel()
-        assert speakers.numel() == num_tokens.numel()
-        iterator = zip(self.gather(speakers), self.gather(num_skipped), self.gather(num_tokens))
-        for speaker_index, _num_skipped, _num_tokens in iterator:
-            speaker = input_encoder.speaker_encoder.index_to_token[int(speaker_index)]
-            self.num_skips_per_speaker[speaker] += _num_skipped
-            self.num_tokens_per_speaker[speaker] += _num_tokens
+            if not has_reached_max:
+                values[f"{self.ALIGNMENT_NORM_SUM}/{span.speaker.label}"] += alignment_norm
+                values[f"{self.ALIGNMENT_NUM_SKIPS}/{span.speaker.label}"] += num_skipped
+                values[f"{self.ALIGNMENT_STD_SUM}/{span.speaker.label}"] += alignment_std
+                values[f"{self.NUM_FRAMES_PREDICTED}/{span.speaker.label}"] += length
 
-    def update_reached_max_metrics(
-        self, batch: SpanBatch, input_encoder: InputEncoder, reached_max: torch.Tensor
-    ):
-        """
-        Args:
-            ...
-            reached_max (torch.BoolTensor [1, batch_size])
-        """
-        self.append(self.num_reached_max, reached_max)
-        iterator = zip(self.gather(batch.encoded_speaker.tensor), self.gather(reached_max))
-        for speaker_index, has_reached_max in iterator:
-            speaker = input_encoder.speaker_encoder.index_to_token[int(speaker_index)]
-            self.num_reached_max_per_speaker[speaker] += has_reached_max
-            self.num_predictions_per_speaker[speaker] += 1
+                values[self.ALIGNMENT_NORM_SUM] += alignment_norm
+                values[self.ALIGNMENT_NUM_SKIPS] += num_skipped
+                values[self.ALIGNMENT_STD_SUM] += alignment_std
+                values[self.NUM_FRAMES_PREDICTED] += length
 
-    def update_rms_metrics(
+        return dict(values)
+
+    def get_loudness_values(
         self,
-        target_spectrogram: torch.Tensor,
+        batch: SpanBatch,
         predicted_spectrogram: torch.Tensor,
-        target_mask: typing.Optional[torch.Tensor] = None,
-        predicted_mask: typing.Optional[torch.Tensor] = None,
-        **kwargs,
-    ):
+        reached_max: typing.Optional[torch.Tensor] = None,
+        spectrogram_mask: typing.Optional[torch.Tensor] = None,
+    ) -> MetricsValues:
         """
         Args:
-            target (torch.FloatTensor [num_frames, batch_size, frame_channels])
+            ...
             predicted (torch.FloatTensor [num_frames, batch_size, frame_channels])
-            target_mask (torch.FloatTensor [num_frames, batch_size])
-            predicted_mask (torch.FloatTensor [num_frames, batch_size])
-            **kwargs: Additional key word arguments passed to `get_rms_level`.
+            reached_max (torch.BoolTensor [batch_size])
+            spectrogram_mask (torch.FloatTensor [num_frames, batch_size])
+            **kwargs: Additional key word arguments passed to `get_power_rms_level_sum`.
         """
-        rms_ = lambda s, m: get_cumulative_power_rms_level(s, m, **kwargs)
-        self.append(self.frame_rms_level, rms_(target_spectrogram, target_mask))
-        self.append(self.predicted_frame_rms_level, rms_(predicted_spectrogram, predicted_mask))
+        values = collections.defaultdict(float)
+        loudness = get_power_rms_level_sum(batch.spectrogram.tensor, batch.spectrogram_mask.tensor)
+        for span, loudness, predicted_loudness, has_reached_max in zip(
+            batch.spans,
+            loudness.tolist(),
+            get_power_rms_level_sum(predicted_spectrogram, spectrogram_mask),
+            itertools.repeat(False) if reached_max is None else reached_max.view(-1).tolist(),
+        ):
+            if has_reached_max:
+                assert span.speaker in self.speakers
+                values[f"{self.RMS_SUM_PREDICTED}/{span.speaker.label}"] += predicted_loudness
+                values[f"{self.RMS_SUM}/{span.speaker.label}"] += loudness
+                values[self.RMS_SUM_PREDICTED] += predicted_loudness
+                values[self.RMS_SUM] += loudness
 
-    def update_stop_token_accuracy(
-        self,
-        target: torch.Tensor,
-        predicted_logits: torch.Tensor,
-        stop_threshold: float,
-        mask: torch.Tensor,
-    ):
+        return dict(values)
+
+    def get_stop_token_values(
+        self, batch: SpanBatch, predicted_logits: torch.Tensor, stop_threshold: float
+    ) -> MetricsValues:
         """
         Args:
-            target (torch.FloatTensor [num_frames, batch_size])
+            ...
             predicted_logits (torch.FloatTensor [num_frames, batch_size])
-            stop_threshold
-            mask (torch.BoolTensor [num_frames, batch_size])
+            ...
         """
-        bool_ = lambda t: (t > stop_threshold).masked_select(mask)
-        is_correct = bool_(target) == bool_(torch.sigmoid(predicted_logits))
-        self.append(self.stop_token_num_correct, is_correct)
+        bool_ = lambda t: (t > stop_threshold).masked_select(batch.spectrogram_mask.tensor)
+        is_correct = bool_(batch.stop_token.tensor) == bool_(torch.sigmoid(predicted_logits))
+        return {self.NUM_CORRECT_STOP_TOKEN: float(is_correct.sum().item())}
 
-    def update_data_queue_size(self, data_loader: DataLoader):
-        # NOTE: `qsize` is not implemented on MacOS, learn more:
-        # https://docs.python.org/3/library/multiprocessing.html#multiprocessing.Queue.qsize
+    def get_data_loader_values(self, data_loader: DataLoader) -> MetricsValues:
+        """
+        NOTE: `qsize` is not implemented on MacOS, learn more:
+        https://docs.python.org/3/library/multiprocessing.html#multiprocessing.Queue.qsize
+        """
         is_multiprocessing = isinstance(data_loader.loader, _MultiProcessingDataLoaderIter)
         if is_multiprocessing and platform.system() != "Darwin":
             iterator = typing.cast(_MultiProcessingDataLoaderIter, data_loader.loader)
-            self.append(self.data_queue_size, iterator._data_queue.qsize())
+            return {self.DATA_QUEUE_SIZE: iterator._data_queue.qsize()}
+        return {}
+
+    def _reduce(
+        self,
+        key: str,
+        select: _Select,
+        op: typing.Callable[[typing.List[_utils.MetricsValue]], float] = sum,
+    ) -> float:
+        """Reduce all measurements to a float."""
+        flat = flatten_2d(select(self.all[key] if key in self.all else []))
+        assert all(not math.isnan(val) for val in flat), f"Encountered NaN value for metric {key}."
+        return math.nan if len(flat) == 0 else op(flat)
+
+    def _div(self, num: str, denom: str, **kwargs) -> float:
+        return self._reduce(num, **kwargs) / self._reduce(denom, **kwargs)
+
+    def _iter_speakers(self, select: _Select, is_verbose: bool = True):
+        """Iterate over all speakers if `is_verbose`, and return convenience metric operations."""
+        for speaker in itertools.chain([None], self.speakers if is_verbose else []):
+            suffix = "" if speaker is None else f"/{speaker.label}"
+            reduce = lambda k: self._reduce(f"{k}{suffix}", select=select)
+            div = lambda n, d: self._div(f"{n}{suffix}", f"{d}{suffix}", select=select)
+            yield speaker, reduce, div
+
+    @configurable
+    def _get_model_metrics(
+        self, select: _Select, is_verbose: bool, num_frame_channels=HParam()
+    ) -> _GetMetrics:
+        metrics = {}
+        for speaker, reduce, div in self._iter_speakers(select, is_verbose):
+            spectrogram_loss = div(self.SPECTROGRAM_LOSS_SUM, self.NUM_FRAMES) / num_frame_channels
+            total_spans = reduce(self.NUM_SPANS) + reduce(self.NUM_REACHED_MAX)
+            update = {
+                self.ALIGNMENT_NORM: div(self.ALIGNMENT_NORM_SUM, self.NUM_FRAMES_PREDICTED),
+                self.ALIGNMENT_STD: div(self.ALIGNMENT_STD_SUM, self.NUM_FRAMES_PREDICTED),
+                self.ALIGNMENT_SKIPS: div(self.ALIGNMENT_NUM_SKIPS, self.NUM_TOKENS),
+                self.AVERAGE_RELATIVE_SPEED: div(self.NUM_FRAMES_PREDICTED, self.NUM_FRAMES),
+                self.STOP_TOKEN_ACCURACY: div(self.NUM_CORRECT_STOP_TOKEN, self.NUM_FRAMES),
+                self.STOP_TOKEN_LOSS: div(self.STOP_TOKEN_LOSS_SUM, self.NUM_FRAMES),
+                self.REACHED_MAX_FRAMES: reduce(self.NUM_REACHED_MAX) / total_spans,
+                self.SPECTROGRAM_LOSS: spectrogram_loss,
+            }
+            metrics.update({partial(k, speaker=speaker): v for k, v in update.items()})
+        return metrics
+
+    def _get_dataset_metrics(self, select: _Select, is_verbose: bool) -> _GetMetrics:
+        """
+        NOTE: There is a discrepency between `num_frames_per_speaker` and `num_seconds_per_speaker`
+        because `num_seconds_per_speaker` is computed with `Span` and `num_frames_per_speaker`
+        is computed with `SpanBatch`. For example, in Feburary 2021, `make_span_batch` used
+        `_pad_and_trim_signal`. "elizabeth_klett", "mary_ann" and "judy_bieber" tend to need
+        significantly more trimming than other speakers.
+        """
+        reduce = partial(self._reduce, select=select)
+        metrics = {
+            self.AVERAGE_NUM_FRAMES: self._div(self.NUM_FRAMES, self.NUM_SPANS, select=select),
+            self.MAX_NUM_FRAMES: reduce(self.NUM_FRAMES_MAX, op=max),
+            self.MIN_DATA_LOADER_QUEUE_SIZE: reduce(self.DATA_QUEUE_SIZE, op=min),
+        }
+
+        if is_verbose:
+            total_frames = reduce(self.NUM_FRAMES)
+            total_seconds = reduce(self.NUM_SECONDS)
+            for speaker, _reduce, _ in self._iter_speakers(select):
+                update = {
+                    self.FREQUENCY_NUM_FRAMES: _reduce(self.NUM_FRAMES) / total_frames,
+                    self.FREQUENCY_NUM_SECONDS: _reduce(self.NUM_SECONDS) / total_seconds,
+                }
+                metrics.update({partial(k, speaker=speaker): v for k, v in update.items()})
+
+            total_spans = reduce(self.NUM_SPANS)
+            for key in self.all.keys():
+                if f"{self.NUM_SPANS_PER_TEXT_LENGTH}/" not in key:
+                    continue
+
+                bucket = int(key.split("/")[-1])
+                lower = bucket * self.TEXT_LENGTH_BUCKET_SIZE
+                upper = (bucket + 1) * self.TEXT_LENGTH_BUCKET_SIZE
+                label = partial(get_dataset_label, self.FREQUENCY_TEXT_LENGTH.format(lower, upper))
+                metrics[label] = reduce(key) / total_spans
+
+        return metrics
+
+    def _get_loudness_metrics(self, select: _Select, is_verbose: bool) -> _GetMetrics:
+        power_to_db = lambda r: float(lib.audio.power_to_db(torch.tensor(r)).item())
+        metrics = {}
+        for speaker, _, div in self._iter_speakers(select, is_verbose):
+            predicted_rms = power_to_db(div(self.RMS_SUM_PREDICTED, self.NUM_FRAMES_PREDICTED))
+            rms = power_to_db(div(self.RMS_SUM, self.NUM_FRAMES))
+            update = {
+                self.AVERAGE_PREDICTED_RMS_LEVEL: predicted_rms,
+                self.AVERAGE_RMS_LEVEL: rms,
+                self.AVERAGE_RMS_LEVEL_DELTA: predicted_rms - rms,
+            }
+            metrics.update({partial(k, speaker=speaker): v for k, v in update.items()})
+        return metrics
+
+    def log(self, select: _Select = lib.utils.identity, is_verbose: bool = False, **kwargs):
+        """Log metrics to `self.comet`.
+
+        Args:
+            select: Select a subset of measurements to reduce.
+            is_verbose: Comet will throttle experiments or lag if too many metrics are logged.
+                This flag controls the number of metrics logged.
+            **kwargs: Key-word arguments passed to `get_model_label` and `get_dataset_label`.
+        """
+        if is_master():
+            metrics = {
+                **self._get_model_metrics(select=select, is_verbose=is_verbose),
+                **self._get_dataset_metrics(select=select, is_verbose=is_verbose),
+                **self._get_loudness_metrics(select=select, is_verbose=is_verbose),
+            }
+            self.comet.log_metrics(
+                {k(**kwargs): v for k, v in metrics.items() if not math.isnan(v)}
+            )
 
     def log_optimizer_metrics(
-        self, optimizer: torch.optim.Adam, clipper: lib.optimizers.AdaptiveGradientNormClipper
+        self,
+        optimizer: torch.optim.Adam,
+        clipper: lib.optimizers.AdaptiveGradientNormClipper,
+        **kwargs,
     ):
         """Log optimizer metrics for `optimizer` and `clipper`. The model parameters have already
         been sync'd; therefore, there is no need to further sync parameters.
 
         TODO: Incorperate `optimizer_metrics` into the standard `Metrics` usage.
         """
-        label_ = partial(get_model_label, cadence=Cadence.STEP)
-        log = lambda n, v: self.comet.log_metric(label_(n), v)
-
         assert len(optimizer.param_groups) == 1, "Expecting only 1 group of parameters."
         param_group = optimizer.param_groups[0]
         parameter_norm = get_parameter_norm(param_group["params"], 2)
         parameter_norm_inf = get_parameter_norm(param_group["params"], math.inf)
         assert torch.isfinite(parameter_norm), f"Gradient was too large {parameter_norm}."
         assert torch.isfinite(parameter_norm_inf), f"Gradient was too large {parameter_norm_inf}."
-        log("grad_norm/two", parameter_norm.item())
-        log("grad_norm/inf", parameter_norm_inf.item())
-        log("lr", param_group["lr"])
-
+        metrics = {
+            self.GRADIENT_TWO_NORM: parameter_norm.item(),
+            self.GRADIENT_INFINITY_NORM: parameter_norm_inf.item(),
+            self.LR: param_group["lr"],
+        }
+        self.comet.log_metrics({k(**kwargs): v for k, v in metrics.items()})
         if math.isfinite(clipper.max_norm):  # NOTE: Initially, `max_norm` will be `inf`.
-            log("grad_norm/max_norm", clipper.max_norm)
-
-    @staticmethod
-    def _div(num: _Measurements, denom: _Measurements, reduce: _Reduce) -> typing.Optional[float]:
-        if len(num) == 0 or len(denom) == 0 or reduce(denom) == 0:
-            return None
-        return reduce(num) / reduce(denom)
-
-    @configurable
-    def get_model_metrics(self, reduce: _Reduce, num_frame_channels=HParam(), **kwargs) -> _Metrics:
-        """ Get model metrics. """
-        div = partial(self._div, reduce=reduce)
-        spectrogram_loss = div(self.spectrogram_loss, self.num_frames)
-        if spectrogram_loss is not None:
-            spectrogram_loss /= num_frame_channels
-        metrics = {
-            "alignment_norm": div(self.predicted_frame_alignment_norm, self.num_frames_predicted),
-            "alignment_std": div(self.predicted_frame_alignment_std, self.num_frames_predicted),
-            "average_relative_speed": div(self.num_frames_predicted, self.num_frames),
-            "stop_token_accuracy": div(self.stop_token_num_correct, self.num_frames),
-            "stop_token_loss": div(self.stop_token_loss, self.num_frames),
-            "spectrogram_loss": spectrogram_loss,
-        }
-        return {get_model_label(k, **kwargs): v for k, v in metrics.items()}
-
-    def get_dataset_metrics(self, reduce: _Reduce, **kwargs) -> _Metrics:
-        """ Get generic dataset metrics. """
-        div = partial(self._div, reduce=reduce)
-        metrics = {
-            "data_loader_queue_size": div(self.data_queue_size, [1] * len(self.data_queue_size)),
-            "average_num_frames": div(self.num_frames, self.batch_size),
-            "max_num_frames": self.max_num_frames,
-        }
-        return {get_dataset_label(k, **kwargs): v for k, v in metrics.items()}
-
-    @staticmethod
-    def _rms(num: _Measurements, denom: _Measurements, reduce: _Reduce) -> typing.Optional[float]:
-        power_rms_level = Metrics._div(num, denom, reduce)
-        if power_rms_level is not None:
-            return float(lib.audio.power_to_db(torch.tensor(power_rms_level)).item())
-        return None
-
-    def get_rms_metrics(self, reduce: _Reduce, cadence: Cadence, type_: DatasetType) -> _Metrics:
-        """Get loudness metrics in RMS dB."""
-        predicted_rms = self._rms(self.predicted_frame_rms_level, self.num_frames_predicted, reduce)
-        rms = self._rms(self.frame_rms_level, self.num_frames, reduce)
-        delta = None if predicted_rms is None or rms is None else predicted_rms - rms
-        return {
-            get_model_label("average_predicted_rms_level", cadence=cadence): predicted_rms,
-            get_dataset_label("average_rms_level", cadence=cadence, type_=type_): rms,
-            get_model_label("average_rms_level_delta", cadence=cadence): delta,
-        }
-
-    def get_text_length_metrics(self, **kwargs) -> _Metrics:
-        """ Get metrics summarizing text length bucket frequency. """
-        metrics = {}
-        for bucket, count in self.num_spans_per_text_length.items():
-            lower = bucket * self.text_length_bucket_size
-            upper = (bucket + 1) * self.text_length_bucket_size
-            label = get_dataset_label(f"text_length_bucket_{lower}_{upper}", **kwargs)
-            metrics[label] = count / sum(self.num_spans_per_text_length.values())
-        return metrics
-
-    def get_speaker_frequency_metrics(self, **kwargs) -> _Metrics:
-        """Get metrics summarizing speaker frequency.
-
-        NOTE: There is a discrepency between `num_frames_per_speaker` and `num_seconds_per_speaker`
-        because `num_seconds_per_speaker` is computed with `Span` and `num_frames_per_speaker`
-        is computed with `SpanBatch`. For example, in Feburary 2021, `make_span_batch` used
-        `_pad_and_trim_signal`. "elizabeth_klett", "mary_ann" and "judy_bieber" tend to need
-        significantly more trimming than other speakers."""
-        metrics = {}
-        label = lambda l, **k: get_dataset_label(f"frequency/{l}", **k, **kwargs)
-
-        total = sum(self.num_frames_per_speaker.values())
-        for speaker, count in self.num_frames_per_speaker.items():
-            metrics[label("num_frames", speaker=speaker)] = count / total
-
-        total = sum(self.num_seconds_per_speaker.values())
-        for speaker, count in self.num_seconds_per_speaker.items():
-            metrics[label("num_seconds", speaker=speaker)] = count / total
-
-        return metrics
-
-    def get_attention_skip_metrics(self, **kwargs) -> _Metrics:
-        """ Get metrics on token skipping per speaker via attention. """
-        metrics = {}
-        zip_ = zip(self.num_tokens_per_speaker.items(), self.num_skips_per_speaker.values())
-        for (speaker, num_tokens), num_skips in zip_:
-            metrics[get_model_label("skips", speaker=speaker, **kwargs)] = num_skips / num_tokens
-        return metrics
-
-    def get_reached_max_frames(self, reduce: _Reduce):
-        """NOTE: The predicted `self.batch_size` does not include predictions that overflowed. The
-        total number of predicted spectrograms is equal to `batch_size` plus `num_reached_max`.
-        """
-        if len(self.num_reached_max) == 0 or len(self.batch_size) == 0:
-            return None
-        denom = reduce(self.batch_size) + reduce(self.num_reached_max)
-        if denom == 0:
-            return None
-        return reduce(self.num_reached_max) / denom
-
-    def get_reached_max_metrics(self, reduce: _Reduce, **kwargs) -> _Metrics:
-        """ Get metrics on model overflow per speaker via attention. """
-        name = "reached_max_frames"
-        metrics = {get_model_label(name, **kwargs): self.get_reached_max_frames(reduce)}
-        for (speaker, num_predictions), num_reached_max in zip(
-            self.num_predictions_per_speaker.items(), self.num_reached_max_per_speaker.values()
-        ):
-            label = get_model_label(name, speaker=speaker, **kwargs)
-            metrics[label] = num_reached_max / num_predictions
-        return metrics
-
-    def log(self, reduce: _Reduce, dataset_type: DatasetType, cadence: Cadence):
-        """Log metrics to `self.comet`.
-
-        NOTE: Comet is limited in the number of metrics it can handle on a step-by-step basis.
-        It will throttle experiments reporting too many metrics, or it's UI will lag behind.
-        """
-        if not is_master():
-            return
-
-        metrics = {
-            **self.get_model_metrics(reduce=reduce, cadence=cadence),
-            **self.get_dataset_metrics(reduce=reduce, cadence=cadence, type_=dataset_type),
-        }
-
-        if cadence is not Cadence.STEP:
-            more_metrics = {
-                **self.get_rms_metrics(reduce=reduce, cadence=cadence, type_=dataset_type),
-                **self.get_text_length_metrics(cadence=cadence, type_=dataset_type),
-                **self.get_speaker_frequency_metrics(cadence=cadence, type_=dataset_type),
-                **self.get_attention_skip_metrics(cadence=cadence),
-                **self.get_reached_max_metrics(reduce=reduce, cadence=cadence),
-            }
-            metrics.update(more_metrics)
-
-        self.comet.log_metrics({k: v for k, v in metrics.items() if v is not None})
+            self.comet.log_metric(self.GRADIENT_MAX_NORM(**kwargs), clipper.max_norm)
