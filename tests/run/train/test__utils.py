@@ -61,7 +61,7 @@ def test__maybe_make_experiment_directories_from_checkpoint(capsys):
             checkpoints_directory.mkdir(parents=True)
             recorder = lib.environment.RecordStandardStreams()
             run_name = "new_run"
-            checkpoint = run.train._utils.Checkpoint(checkpoints_directory, "", 0, 0)
+            checkpoint = run.train._utils.Checkpoint(checkpoints_directory, "", 0)
             run_root, _ = run.train._utils._maybe_make_experiment_directories_from_checkpoint(
                 checkpoint, recorder, run_name=run_name
             )
