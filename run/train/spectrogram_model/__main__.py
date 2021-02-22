@@ -37,6 +37,7 @@ from run.train import _utils
 from run.train._utils import (
     CometMLExperiment,
     Context,
+    DataLoader,
     get_config_parameters,
     make_app,
     run_workers,
@@ -44,7 +45,7 @@ from run.train._utils import (
     set_epoch,
     set_run_seed,
 )
-from run.train.spectrogram_model._data import DataLoader, DataProcessor, InputEncoder, SpanBatch
+from run.train.spectrogram_model._data import DataProcessor, InputEncoder, SpanBatch
 from run.train.spectrogram_model._metrics import Metrics, get_average_db_rms_level
 
 logger = logging.getLogger(__name__)
