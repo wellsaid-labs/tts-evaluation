@@ -29,7 +29,6 @@ import tqdm
 import typer
 from hparams import HParam, HParams, configurable, get_config, parse_hparam_args
 from third_party import LazyLoader
-from torchnlp.utils import tensors_to
 
 import lib
 import run
@@ -428,7 +427,7 @@ def _worker_init_fn(_, config):
     set_run_seed()  # NOTE: Each worker needs the same random seed to be deterministic.
 
 
-DataLoaderVar = typing.TypeVar("DataLoaderVar")
+DataLoaderVar = typing.TypeVar("DataLoaderVar", bound=tuple)
 
 
 class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
@@ -483,12 +482,27 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
         self.num_steps_per_epoch = num_steps_per_epoch
         logger.info("Created `DataLoader`.")
 
-    def process_batch(self, batch: DataLoaderVar) -> DataLoaderVar:
+    def process_tensor(self, tensor: torch.Tensor) -> torch.Tensor:
+        assert tensor.is_pinned(), "Expecting `tensor` memory to be pinned before moving."
+        return tensor.to(device=self.device, non_blocking=True)
+
+    def process_batch(self, batch: tuple) -> tuple:
+        """
+        Args:
+            batch: A `NamedTuple` with tensors to process.
+        """
+        if not hasattr(batch, "_fields") or not hasattr(batch, "_asdict"):
+            return batch
+
         # NOTE: Tensors are moved to CUDA outside of the `DataLoader` workers. Learn more:
         # > It is generally not recommended to return CUDA tensors in multi-process loading
         # > because of many subtleties in using CUDA and sharing CUDA tensors in multiprocessing
         # https://pytorch.org/docs/stable/data.html#multi-process-data-loading
-        return typing.cast(DataLoaderVar, tensors_to(batch, device=self.device, non_blocking=True))
+        kwargs = {
+            k: self.process_tensor(v) if torch.is_tensor(v) else self.process_batch(v)
+            for k, v in typing.cast(dict, batch._asdict()).items()
+        }
+        return batch.__class__(**kwargs)
 
     def __iter__(self) -> typing.Iterator[DataLoaderVar]:
         first = time.time()
@@ -496,7 +510,7 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
         iterator = range(self.num_steps_per_epoch)
         for _ in tqdm.tqdm(iterator) if is_master() else iterator:
 
-            yield self.process_batch(next(self.loader))
+            yield typing.cast(DataLoaderVar, self.process_batch(next(self.loader)))
 
             # NOTE: The first batch will take the longest to load, so we log the time.
             if first is not None:

@@ -388,8 +388,6 @@ class SpanBatch(typing.NamedTuple):
 
     length: int
 
-    audio: typing.List[torch.Tensor]
-
     # SequenceBatch[torch.FloatTensor [num_frames, batch_size, frame_channels],
     #               torch.LongTensor [1, batch_size])
     spectrogram: SequenceBatch
@@ -540,7 +538,6 @@ class DataProcessor(typing.Mapping[int, SpanBatch]):
         return SpanBatch(
             spans=spans,
             length=length,
-            audio=signals,
             spectrogram=spectrogram,
             spectrogram_mask=spectrogram_mask,
             stop_token=_make_stop_token(spectrogram),
@@ -575,4 +572,4 @@ class DataLoader(_utils.DataLoader[SpanBatch]):
     def process_batch(self, batch: SpanBatch) -> SpanBatch:
         self.num_frames += float(batch.spectrogram.lengths.float().sum().item())
         self.num_spans += batch.length
-        return super().process_batch(batch)
+        return typing.cast(SpanBatch, super().process_batch(batch))
