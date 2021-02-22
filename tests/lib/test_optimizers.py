@@ -11,7 +11,7 @@ from tests._utils import assert_almost_equal
 def test_adaptive_gradient_norm_clipper_():
     """ Test `AdaptiveGradientNormClipper` clips the gradient norm correctly. """
     parameters = torch.zeros(3)
-    clippers = lib.optimizers.AdaptiveGradientNormClipper(parameters, 10, float("inf"))
+    clippers = lib.optimizers.AdaptiveGradientNormClipper([parameters], 10, float("inf"))
 
     parameters.grad = torch.tensor([1.0, 2.0, 3.0])
     clippers.clip()
@@ -25,7 +25,7 @@ def test_adaptive_gradient_norm_clipper_():
 def test_adaptive_gradient_norm_clipper__window():
     """ Test `AdaptiveGradientNormClipper` manages the window correctly. """
     parameters = torch.zeros(1)
-    clippers = lib.optimizers.AdaptiveGradientNormClipper(parameters, 3, float("inf"))
+    clippers = lib.optimizers.AdaptiveGradientNormClipper([parameters], 3, float("inf"))
 
     parameters.grad = torch.tensor([4.0])
     clippers.clip()
@@ -55,7 +55,7 @@ def test_adaptive_gradient_norm_clipper__window():
 def test_adaptive_gradient_norm_clipper__large_gradient():
     """ Test `AdaptiveGradientNormClipper` errors given a large gradient. """
     parameters = torch.zeros(1)
-    clippers = lib.optimizers.AdaptiveGradientNormClipper(parameters, 3, float("inf"))
+    clippers = lib.optimizers.AdaptiveGradientNormClipper([parameters], 3, float("inf"))
 
     parameters.grad = torch.tensor([math.nan])
     with pytest.raises(ValueError):
