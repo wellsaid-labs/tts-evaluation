@@ -560,21 +560,3 @@ class DataProcessor(typing.Mapping[int, SpanBatch]):
             speed=self._stack([a[0] for a in speed]),
             speed_mask=self._stack([a[1] for a in speed]),
         )
-
-
-class DataLoader(_utils.DataLoader[SpanBatch]):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.num_frames = 0.0
-        self.num_spans = 0.0
-
-    @property
-    def average_spectrogram_length(self) -> float:
-        return self.num_frames / self.num_spans
-
-    def process_batch(self, batch: typing.Tuple) -> typing.Tuple:
-        if isinstance(batch, SpanBatch):
-            self.num_frames += float(batch.spectrogram.lengths.float().sum().item())
-            self.num_spans += batch.length
-            return typing.cast(SpanBatch, super().process_batch(batch))
-        return super().process_batch(batch)

@@ -85,6 +85,8 @@ def _make_configuration(
             # starts overfitting on the train set.
             # TODO: Try increasing the stop token minimum loss because it still overfit.
             stop_token_min_loss=0.0105,
+            # NOTE: This value is the average spectrogram length in the training dataset.
+            average_spectrogram_length=315.0,
         ),
         _get_data_loaders: HParams(
             # SOURCE: Tacotron 2
@@ -355,6 +357,7 @@ def _run_step(
     visualize: bool = False,
     spectrogram_loss_scalar: float = HParam(),
     stop_token_min_loss: float = HParam(),
+    average_spectrogram_length: float = HParam(),
 ):
     """Run the `model` on the next batch from `data_loader`, and maybe update it.
 
@@ -369,6 +372,8 @@ def _run_step(
         visualize: If `True` visualize the results with `comet`.
         spectrogram_loss_scalar: This scales the spectrogram loss by some value.
         stop_token_min_loss: This thresholds the stop token loss to prevent overfitting.
+        average_spectrogram_length: The training dataset average spectrogram length. It is used
+            to normalize the loss magnitude.
     """
     frames, stop_token, alignments, spectrogram_loss, stop_token_loss = state.model(
         tokens=batch.encoded_phonemes.tensor,
@@ -387,10 +392,8 @@ def _run_step(
         # NOTE: We sum over the `num_frames` dimension to ensure that we don't bias based on
         # `num_frames`. For example, a larger `num_frames` means that the denominator is larger;
         # therefore, the loss value for each element is smaller.
-        # NOTE: We average accross `batch_size` and `frame_channels` so that the loss magnitude is
-        # invariant to those variables.
-
-        average_spectrogram_length = data_loader.average_spectrogram_length
+        # NOTE: We average accross `batch_size`, `num_frames` and `frame_channels` so that the loss
+        # magnitude is invariant to those variables.
 
         # spectrogram_loss [num_frames, batch_size, frame_channels] → [1]
         spectrogram_loss_ = (spectrogram_loss.sum(dim=0) / average_spectrogram_length).mean()
