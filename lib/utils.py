@@ -105,13 +105,13 @@ _FlattenInputType = typing.Union[
 
 
 def flatten_2d(l: typing.List[typing.List[_FlattenReturnType]]) -> typing.List[_FlattenReturnType]:
-    return flatten(l)  # type: ignore
+    return [item for sublist in l for item in sublist]
 
 
 def flatten_3d(
     l: typing.List[typing.List[typing.List[_FlattenReturnType]]],
 ) -> typing.List[_FlattenReturnType]:
-    return flatten(l)  # type: ignore
+    return [item for sublist in l for subsublist in sublist for item in subsublist]
 
 
 def flatten(l: _FlattenInputType) -> typing.List[_FlattenReturnType]:
