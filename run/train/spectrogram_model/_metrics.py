@@ -206,11 +206,12 @@ class Metrics(_utils.Metrics):
 
     def __init__(
         self,
-        store: torch.distributed.Store,
+        store: torch.distributed.TCPStore,
         comet: CometMLExperiment,
         speakers: typing.List[lib.datasets.Speaker],
+        **kwargs,
     ):
-        super().__init__(store)
+        super().__init__(store, **kwargs)
         self.comet = comet
         self.speakers = speakers
 
@@ -275,7 +276,7 @@ class Metrics(_utils.Metrics):
             batch.spans,
             get_num_skipped(alignments, tokens_mask, spectrogram_mask).view(-1).tolist(),
             lib.utils.get_weighted_std(alignments, dim=2).sum(dim=0).view(-1).tolist(),
-            alignments.norm(p=self.ALIGNMENT_NORM, dim=2).sum(dim=0).view(-1).tolist(),
+            alignments.norm(p=self.ALIGNMENT_NORM_TYPE, dim=2).sum(dim=0).view(-1).tolist(),
             spectrogram_lengths.view(-1).tolist(),
             itertools.repeat(False) if reached_max is None else reached_max.view(-1).tolist(),
         ):
@@ -428,8 +429,8 @@ class Metrics(_utils.Metrics):
                 bucket = int(key.split("/")[-1])
                 lower = bucket * self.TEXT_LENGTH_BUCKET_SIZE
                 upper = (bucket + 1) * self.TEXT_LENGTH_BUCKET_SIZE
-                label = partial(get_dataset_label, self.FREQUENCY_TEXT_LENGTH.format(lower, upper))
-                metrics[label] = reduce(key) / total_spans
+                name = self.FREQUENCY_TEXT_LENGTH.format(lower=lower, upper=upper)
+                metrics[partial(get_dataset_label, name)] = reduce(key) / total_spans
 
         return metrics
 

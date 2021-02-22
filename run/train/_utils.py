@@ -54,7 +54,6 @@ class Checkpoint:
     checkpoints_directory: pathlib.Path
     comet_experiment_key: str
     step: int
-    num_examples: int
 
 
 def _maybe_make_experiment_directories_from_checkpoint(
@@ -400,10 +399,10 @@ def set_context(context: Context, model: torch.nn.Module, comet: CometMLExperime
 
 
 @contextlib.contextmanager
-def set_epoch(comet: CometMLExperiment, step: int, steps_per_epoch: int, num_examples: int):
+def set_epoch(comet: CometMLExperiment, step: int, steps_per_epoch: int):
     epoch = int(step // steps_per_epoch)
-    message = "Running Epoch %d (Step %d, Example %d)"
-    logger.info(message, epoch, step, num_examples)
+    message = "Running Epoch %d (Step %d)"
+    logger.info(message, epoch, step)
     comet.set_step(typing.cast(int, step))
     comet.log_current_epoch(epoch)
     yield
@@ -483,7 +482,10 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
         logger.info("Created `DataLoader`.")
 
     def process_tensor(self, tensor: torch.Tensor) -> torch.Tensor:
-        assert tensor.is_pinned(), "Expecting `tensor` memory to be pinned before moving."
+        # NOTE: `torch.utils.data.dataloader.DataLoader` doesn't pin tensors if CUDA isn't
+        # available.
+        message = "Expecting `tensor` memory to be pinned before moving."
+        assert not torch.cuda.is_available() or tensor.is_pinned(), message
         return tensor.to(device=self.device, non_blocking=True)
 
     def process_batch(self, batch: tuple) -> tuple:
@@ -643,7 +645,7 @@ def _init_distributed(
     hostname: str = "127.0.0.1",
     port: int = 29500,
     world_size: int = torch.cuda.device_count(),
-) -> typing.Tuple[torch.device, torch.distributed.Store]:
+) -> typing.Tuple[torch.device, torch.distributed.TCPStore]:
     """Initiate distributed for training.
 
     Learn more about distributed environments here:
@@ -672,7 +674,7 @@ class _RunWorker(typing.Protocol):
     def __call__(
         self,
         device: torch.device,
-        store: torch.distributed.Store,
+        store: torch.distributed.TCPStore,
         comet: CometMLExperiment,
         checkpoint: typing.Optional[Checkpoint],
         *args,
@@ -726,7 +728,7 @@ class Metrics:
 
     def __init__(
         self,
-        store: torch.distributed.Store,
+        store: torch.distributed.TCPStore,
         world_size=get_world_size(),
         is_master=is_master(),
         rank=get_rank(),
@@ -742,7 +744,9 @@ class Metrics:
         """
         NOTE: Learn about JSONs compact encoding, here: https://docs.python.org/3/library/json.html
         """
-        return json.loads(gzip.decompress(bytes.fromhex(self._store.get(key).decode())).decode())
+        result = json.loads(gzip.decompress(bytes.fromhex(self._store.get(key).decode())).decode())
+        assert self._store.delete_key(key)
+        return result
 
     async def _gets(self, keys: typing.List[str]) -> typing.List[MetricsValues]:
         tasks = tuple(self._get(k) for k in keys)

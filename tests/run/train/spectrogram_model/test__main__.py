@@ -4,6 +4,7 @@ import tempfile
 from unittest import mock
 
 import torch
+import torch.distributed
 from hparams import add_config
 
 import lib
@@ -85,6 +86,7 @@ def test_integration(mock_urlretrieve):
     # Create training state
     comet = CometMLExperiment(disabled=True, project_name="project name")
     device = torch.device("cpu")
+    store = torch.distributed.TCPStore("127.0.0.1", 29500, 0, True)
     with mock.patch("torch.nn.parallel.DistributedDataParallel") as module:
         module.side_effect = _mock_distributed_data_parallel
         state = _State.from_dataset(train_dataset, dev_dataset, comet, device)
@@ -95,7 +97,8 @@ def test_integration(mock_urlretrieve):
         'o', 'r', 'd', 'h', 'e', 'b', 'y', '.', 'm', 'u', 'k', 'g'
     ]
     # fmt: on
-    assert state.input_encoder.speaker_encoder.vocab == list(train_dataset.keys())
+    speakers = state.input_encoder.speaker_encoder.vocab
+    assert speakers == list(train_dataset.keys())
     assert state.model.vocab_size == state.input_encoder.phoneme_encoder.vocab_size
     assert state.model.num_speakers == state.input_encoder.speaker_encoder.vocab_size
 
@@ -106,41 +109,59 @@ def test_integration(mock_urlretrieve):
 
     # Test `_run_step` with `Metrics` and `_State`
     with set_context(Context.TRAIN, state.model, comet):
-        metrics = Metrics(comet, device)
+        metrics = Metrics(store, comet, speakers)
         batch = next(iter(train_loader))
         assert state.step.item() == 0
 
         _run_step(state, metrics, batch, train_loader, DatasetType.TRAIN, True)
         assert state.step.item() == 1
-        assert metrics.batch_size == [batch.length]
-        assert metrics.num_frames == [batch.spectrogram.lengths[0].item()]
-        assert metrics.num_spans_per_text_length == {
-            len(batch.spans[0].script) // metrics.text_length_bucket_size: 1.0
-        }
-        assert metrics.num_frames_per_speaker == {
-            batch.spans[0].speaker: batch.spectrogram.lengths[0].item()
-        }
-        assert list(metrics.num_skips_per_speaker.keys()) == [s.speaker for s in batch.spans]
-        assert metrics.num_tokens_per_speaker == {
-            batch.spans[0].speaker: batch.encoded_phonemes.lengths[0].item()
-        }
-        assert len(metrics.predicted_frame_alignment_std) == 1
-        assert len(metrics.predicted_frame_alignment_norm) == 1
-        assert len(metrics.stop_token_num_correct) == 1
 
-        metrics.log(lambda l: l[-1], DatasetType.TRAIN, Cadence.STEP)
-        metrics.log(sum, DatasetType.TRAIN, Cadence.MULTI_STEP)
+        # fmt: off
+        keys = [
+            metrics.ALIGNMENT_NUM_SKIPS, metrics.ALIGNMENT_STD_SUM, metrics.ALIGNMENT_NORM_SUM,
+            metrics.NUM_REACHED_MAX, metrics.RMS_SUM_PREDICTED, metrics.RMS_SUM
+        ]
+        # fmt: on
+        for key in keys:
+            assert len(metrics.all[key]) == 1
+            assert len(metrics.all[f"{key}/{batch.spans[0].speaker.label}"]) == 1
+        assert all(metrics.all[metrics.NUM_CORRECT_STOP_TOKEN]) == 1
+
+        num_frames = [[batch.spectrogram.lengths[0].item()]]
+        num_tokens = [[batch.encoded_phonemes.lengths[0].item()]]
+        num_seconds = [[batch.spans[0].audio_length]]
+        bucket = len(batch.spans[0].script) // metrics.TEXT_LENGTH_BUCKET_SIZE
+        values = {
+            metrics.NUM_FRAMES_MAX: num_frames,
+            metrics.NUM_FRAMES_PREDICTED: num_frames,
+            f"{metrics.NUM_FRAMES_PREDICTED}/{JUDY_BIEBER.label}": num_frames,
+            metrics.NUM_FRAMES: num_frames,
+            f"{metrics.NUM_FRAMES}/{JUDY_BIEBER.label}": num_frames,
+            metrics.NUM_SECONDS: num_seconds,
+            f"{metrics.NUM_SECONDS}/{JUDY_BIEBER.label}": num_seconds,
+            f"{metrics.NUM_SPANS_PER_TEXT_LENGTH}/{bucket}": [[batch_size]],
+            metrics.NUM_SPANS: [[batch.length]],
+            f"{metrics.NUM_SPANS}/{JUDY_BIEBER.label}": [[batch.length]],
+            metrics.NUM_TOKENS: num_tokens,
+            f"{metrics.NUM_TOKENS}/{JUDY_BIEBER.label}": num_tokens,
+        }
+        for key, value in values.items():
+            assert metrics.all[key] == value
+
+        metrics.log(lambda l: l[-1:], type_=DatasetType.TRAIN, cadence=Cadence.STEP)
+        metrics.log(is_verbose=True, type_=DatasetType.TRAIN, cadence=Cadence.MULTI_STEP)
 
     # Test `_run_inference` with `Metrics` and `_State`
     with set_context(Context.EVALUATE_INFERENCE, state.model, comet):
-        metrics = Metrics(comet, device)
+        metrics = Metrics(store, comet, speakers)
         batch = next(iter(train_loader))
         _run_inference(state, metrics, batch, dev_loader, DatasetType.DEV, True)
         assert state.step.item() == 1
-        assert metrics.num_reached_max[0] + metrics.batch_size[0] == 1
+        total = metrics.all[metrics.NUM_REACHED_MAX][0][0] + metrics.all[metrics.NUM_SPANS][0][0]
+        assert total == 1
 
-        metrics.log(lambda l: l[-1], DatasetType.DEV, Cadence.STEP)
-        metrics.log(sum, DatasetType.DEV, Cadence.MULTI_STEP)
+        metrics.log(lambda l: l[-1:], type_=DatasetType.TRAIN, cadence=Cadence.STEP)
+        metrics.log(is_verbose=True, type_=DatasetType.TRAIN, cadence=Cadence.MULTI_STEP)
 
     # Test loading and saving a checkpoint
     with mock.patch("torch.nn.parallel.DistributedDataParallel") as module:

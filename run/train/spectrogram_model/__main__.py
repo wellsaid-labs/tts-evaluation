@@ -540,7 +540,7 @@ _BatchHandler = typing.Callable[[_State, Metrics, SpanBatch, DataLoader, Dataset
 
 def _run_worker(
     device: torch.device,
-    store: torch.distributed.Store,
+    store: torch.distributed.TCPStore,
     comet: CometMLExperiment,
     checkpoint: typing.Optional[Checkpoint],
     checkpoints_directory: pathlib.Path,
