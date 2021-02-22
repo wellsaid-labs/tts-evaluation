@@ -232,6 +232,10 @@ class Metrics(_utils.Metrics):
             batch.encoded_phonemes.lengths.view(-1).tolist(),
             itertools.repeat(False) if reached_max is None else reached_max.view(-1).tolist(),
         ):
+            # NOTE: Create a key for `self.NUM_SPANS` so a value exists, even if zero.
+            values[self.NUM_SPANS] += float(not has_reached_max)
+            values[f"{self.NUM_SPANS}/{span.speaker.label}"] += float(not has_reached_max)
+
             if not has_reached_max:
                 assert span.speaker in self.speakers
                 index = int(len(span.script) // self.TEXT_LENGTH_BUCKET_SIZE)
@@ -239,13 +243,11 @@ class Metrics(_utils.Metrics):
 
                 values[f"{self.NUM_FRAMES}/{span.speaker.label}"] += num_frames
                 values[f"{self.NUM_SECONDS}/{span.speaker.label}"] += span.audio_length
-                values[f"{self.NUM_SPANS}/{span.speaker.label}"] += 1
                 values[f"{self.NUM_TOKENS}/{span.speaker.label}"] += num_tokens
 
                 values[self.NUM_FRAMES_MAX] = max(num_frames, values[self.NUM_FRAMES_MAX])
                 values[self.NUM_FRAMES] += num_frames
                 values[self.NUM_SECONDS] += span.audio_length
-                values[self.NUM_SPANS] += 1
                 values[self.NUM_TOKENS] += num_tokens
 
         return dict(values)
@@ -301,8 +303,8 @@ class Metrics(_utils.Metrics):
         self,
         batch: SpanBatch,
         predicted_spectrogram: torch.Tensor,
+        spectrogram_mask: torch.Tensor,
         reached_max: typing.Optional[torch.Tensor] = None,
-        spectrogram_mask: typing.Optional[torch.Tensor] = None,
     ) -> MetricsValues:
         """
         Args:
@@ -320,7 +322,7 @@ class Metrics(_utils.Metrics):
             get_power_rms_level_sum(predicted_spectrogram, spectrogram_mask),
             itertools.repeat(False) if reached_max is None else reached_max.view(-1).tolist(),
         ):
-            if has_reached_max:
+            if not has_reached_max:
                 assert span.speaker in self.speakers
                 values[f"{self.RMS_SUM_PREDICTED}/{span.speaker.label}"] += predicted_loudness
                 values[f"{self.RMS_SUM}/{span.speaker.label}"] += loudness
@@ -365,7 +367,10 @@ class Metrics(_utils.Metrics):
         return math.nan if len(flat) == 0 else op(flat)
 
     def _div(self, num: str, denom: str, **kwargs) -> float:
-        return self._reduce(num, **kwargs) / self._reduce(denom, **kwargs)
+        reduced_denom = self._reduce(denom, **kwargs)
+        if reduced_denom == 0:
+            return math.nan
+        return self._reduce(num, **kwargs) / reduced_denom
 
     def _iter_speakers(self, select: _Select, is_verbose: bool = True):
         """Iterate over all speakers if `is_verbose`, and return convenience metric operations."""

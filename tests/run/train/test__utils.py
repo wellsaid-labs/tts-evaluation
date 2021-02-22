@@ -176,4 +176,4 @@ def test_metrics():
         "c": [[2], [1, 2]],
         "d": [[], [2]],
     }
-    assert store.num_keys == 0
+    assert store.num_keys() == 1

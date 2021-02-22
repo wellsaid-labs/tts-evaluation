@@ -104,7 +104,7 @@ def test_integration(mock_urlretrieve):
 
     batch_size = 1
     train_loader, dev_loader = _get_data_loaders(
-        state, train_dataset, dev_dataset, batch_size, batch_size, 1
+        state, train_dataset, dev_dataset, batch_size, batch_size, 1, 1, 0, 2
     )
 
     # Test `_run_step` with `Metrics` and `_State`
@@ -170,3 +170,4 @@ def test_integration(mock_urlretrieve):
             state.to_checkpoint(checkpoints_directory=pathlib.Path(".")), comet, device
         )
     assert state.step == loaded.step
+    assert metrics._store.num_keys() == 1

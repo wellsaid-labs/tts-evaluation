@@ -529,7 +529,7 @@ def _run_inference(
     values: _utils.MetricsValues = {
         **metrics.get_dataset_values(batch, reached_max),
         **metrics.get_alignment_values(batch, alignments, lengths, mask, reached_max),
-        **metrics.get_loudness_values(batch, frames, reached_max, mask),
+        **metrics.get_loudness_values(batch, frames, mask, reached_max),
         **metrics.get_data_loader_values(data_loader),
     }
     metrics.update(values)
