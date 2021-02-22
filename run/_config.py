@@ -31,7 +31,8 @@ pprinter = pprint.PrettyPrinter(indent=4)
 RANDOM_SEED = 1212212
 PHONEME_SEPARATOR = "|"
 DATASETS = copy.copy(DATASETS)
-del DATASETS[datasets.ELLIOT_MILLER]  # NOTE: Elliot Miller has unannotated character portrayals.
+del DATASETS[datasets.ELLIOT_MILLER]  # NOTE: Elliot has unannotated character portrayals.
+del DATASETS[datasets.ELIZABETH_KLETT]  # NOTE: Elizabeth has unannotated character portrayals.
 
 # NOTE: It's theoretically impossible to know all the phonemes eSpeak might predict because
 # the predictions vary with context. We cannot practically generate every possible permutation
