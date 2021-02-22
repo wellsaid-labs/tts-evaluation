@@ -25,7 +25,6 @@ import torch.distributed
 import torch.nn
 import torch.optim
 import torch.utils.data
-import tqdm
 import typer
 from hparams import HParam, HParams, configurable, get_config, parse_hparam_args
 from third_party import LazyLoader
@@ -509,8 +508,7 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
     def __iter__(self) -> typing.Iterator[DataLoaderVar]:
         first = time.time()
 
-        iterator = range(self.num_steps_per_epoch)
-        for _ in tqdm.tqdm(iterator) if is_master() else iterator:
+        for _ in range(self.num_steps_per_epoch):
 
             yield typing.cast(DataLoaderVar, self.process_batch(next(self.loader)))
 
