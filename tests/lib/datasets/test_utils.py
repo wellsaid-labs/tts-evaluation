@@ -1,6 +1,4 @@
 import functools
-import math
-import pathlib
 import pickle
 import typing
 from collections import Counter
@@ -12,7 +10,7 @@ import pytest
 import lib
 from lib.datasets import Alignment, Passage, alignment_dtype
 from lib.datasets.utils import UnprocessedPassage, make_passages
-from lib.utils import flatten
+from lib.utils import flatten_2d
 from tests._utils import (
     TEST_DATA_PATH,
     assert_uniform_distribution,
@@ -67,7 +65,7 @@ def test_span_generator__zero():
         counter.update(span.passage.alignments[span.slice])
     alignments_ = [dataset[0].alignments, dataset[-1].alignments]
     alignments = [list(typing.cast(typing.Tuple[Alignment], a)) for a in alignments_]
-    assert set(counter.keys()) == set(flatten(alignments))
+    assert set(counter.keys()) == set(flatten_2d(alignments))
     assert_uniform_distribution(counter, abs=0.015)
 
 
@@ -85,7 +83,7 @@ def test_span_generator__singular():
         span = next(iterator)
         counter.update(span.passage.alignments[span.slice])
     alignments = [list(typing.cast(typing.Tuple[Alignment], d.alignments)) for d in dataset]
-    assert set(counter.keys()) == set(flatten(alignments))
+    assert set(counter.keys()) == set(flatten_2d(alignments))
     assert_uniform_distribution(counter, abs=0.015)
 
 
@@ -102,7 +100,7 @@ def test_span_generator__multiple_multiple():
         span = next(iterator)
         counter.update(span.passage.alignments[span.slice])
     alignments = [list(typing.cast(typing.Tuple[Alignment], d.alignments)) for d in dataset]
-    assert set(counter.keys()) == set(flatten(alignments))
+    assert set(counter.keys()) == set(flatten_2d(alignments))
     assert_uniform_distribution(counter, abs=0.015)
 
 
@@ -140,7 +138,7 @@ def test_span_generator__multiple_unequal_passages__large_max_seconds():
         spans_counter[slice_] += 1
 
     alignments = [list(typing.cast(typing.Tuple[Alignment], d.alignments)) for d in dataset]
-    assert set(alignments_counter.keys()) == set(flatten(alignments))
+    assert set(alignments_counter.keys()) == set(flatten_2d(alignments))
     assert_uniform_distribution(alignments_counter, abs=0.015)
 
     for passage in dataset:

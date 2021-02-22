@@ -36,7 +36,7 @@ import lib
 import run
 from lib.audio import amplitude_to_db, signal_to_rms
 from lib.datasets import DATASETS, Passage
-from lib.utils import clamp, flatten, mazel_tov, round_, seconds_to_string
+from lib.utils import clamp, flatten_2d, mazel_tov, round_, seconds_to_string
 from run._config import Dataset
 
 lib.environment.set_basic_logging_config(reset=True)
@@ -512,9 +512,9 @@ def _maybe_analyze_dataset(dataset: Dataset):
     if not st.checkbox("Analyze", key=_maybe_analyze_dataset.__name__):
         return
 
-    files = set(flatten([[p.audio_file for p in v] for v in dataset.values()]))
+    files = set(flatten_2d([[p.audio_file for p in v] for v in dataset.values()]))
     aligned_seconds = sum(
-        flatten([[p.aligned_audio_length() for p in v] for v in dataset.values()])
+        flatten_2d([[p.aligned_audio_length() for p in v] for v in dataset.values()])
     )
     st.markdown(
         f"At a high-level, this dataset has:\n"
@@ -633,7 +633,7 @@ def _maybe_analyze_spans(dataset: Dataset, spans: typing.List[Span]):
             f"Note that **{len(mistranscriptions) / len(spans):.2%}** spans have one or more "
             "mistranscriptions."
         )
-        mistranscriptions = flatten([s.mistranscriptions for s in spans])
+        mistranscriptions = flatten_2d([s.mistranscriptions for s in spans])
         iterator = [len(m[0]) for m in mistranscriptions if len(m[0]) > 0]
         _bucket_and_visualize(iterator, x="Characters")
         st.write("A random sample of mistranscriptions:")

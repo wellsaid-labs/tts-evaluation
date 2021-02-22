@@ -105,12 +105,17 @@ _FlattenInputType = typing.Union[
 
 
 def flatten_2d(l: typing.List[typing.List[_FlattenReturnType]]) -> typing.List[_FlattenReturnType]:
+    """Flatten a 2d list into a 1d list.
+
+    Learn more: https://stackoverflow.com/questions/952914/how-to-make-a-flat-list-out-of-list-of-lists
+    """
     return [item for sublist in l for item in sublist]
 
 
 def flatten_3d(
     l: typing.List[typing.List[typing.List[_FlattenReturnType]]],
 ) -> typing.List[_FlattenReturnType]:
+    """Flatten a 3d list into a 1d list."""
     return [item for sublist in l for subsublist in sublist for item in subsublist]
 
 
@@ -288,7 +293,7 @@ def pad_tensor(
     padding = [[0, 0] for _ in range(input_.dim())]
     padding[dim] = list(pad)
     # NOTE: `torch.nn.functional.pad` accepts the last dimension first.
-    flat: typing.List[int] = flatten(list(reversed(padding)))
+    flat: typing.List[int] = flatten_2d(list(reversed(padding)))
     return torch.nn.functional.pad(input_, flat, **kwargs)
 
 

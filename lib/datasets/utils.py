@@ -22,7 +22,7 @@ from third_party import LazyLoader
 
 import lib
 from lib.audio import AudioFileMetadata, get_audio_metadata
-from lib.utils import flatten, list_to_tuple
+from lib.utils import flatten_2d, list_to_tuple
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import pandas
@@ -150,6 +150,13 @@ class Passage:
         else:
             raise TypeError("Invalid argument type: {}".format(type(key)))
 
+    def _get(self, field) -> typing.List[float]:
+        """Get the values for `field` in `self.alignments`."""
+        Number = typing.Union[float, int]
+        values: typing.List[typing.Tuple[Number, Number]]
+        values = [getattr(a, field) for a in self.alignments]
+        return flatten_2d([list(v) for v in values])
+
     def check_invariants(self, eps=1e-6):
         """Check datastructure invariants."""
         assert all(a.script[0] <= a.script[1] for a in self.alignments)
@@ -163,14 +170,13 @@ class Passage:
         assert all(a.audio[0] <= b.audio[1] for a, b in pairs)
 
         if len(self.alignments) != 0:
-            get_ = lambda f: flatten([list(getattr(a, f)) for a in self.alignments])
             # NOTE: `eps` allows for minor rounding errors.
-            assert max(get_("audio")) <= self.audio_file.length + eps
-            assert max(get_("script")) <= len(self.script)
-            assert max(get_("transcript")) <= len(self.transcript)
-            assert min(get_("audio")) >= 0
-            assert min(get_("script")) >= 0
-            assert min(get_("transcript")) >= 0
+            assert max(self._get("audio")) <= self.audio_file.length + eps
+            assert max(self._get("script")) <= len(self.script)
+            assert max(self._get("transcript")) <= len(self.transcript)
+            assert min(self._get("audio")) >= 0
+            assert min(self._get("script")) >= 0
+            assert min(self._get("transcript")) >= 0
 
 
 SpanType = typing.TypeVar("SpanType", bound="Span")
@@ -356,7 +362,7 @@ def make_passages(
         dataset: Dataset with a list of documents each with a list of passsages.
         **kwargs: Keyword arguments passed to `make_nonalignments`.
     """
-    audio_paths = list(set(d.audio_path for d in lib.utils.flatten(dataset)))
+    audio_paths = list(set(d.audio_path for d in flatten_2d(dataset)))
     with multiprocessing.pool.ThreadPool() as pool:
         audio_paths = [p for e, p in zip(pool.map(_exists, audio_paths), audio_paths) if e]
     metadatas = get_audio_metadata(typing.cast(typing.List[pathlib.Path], list(audio_paths)))

@@ -17,6 +17,7 @@ from third_party import LazyLoader
 from tqdm import tqdm
 
 import lib
+from lib.utils import flatten, flatten_2d
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import en_core_web_md
@@ -127,7 +128,7 @@ def _multiline_grapheme_to_phoneme(
     # NOTE: `grapheme` is split on new lines because `espeak` is inconsistent in it's handling of
     # new lines.
     splits = [g.split("\n") for g in graphemes]
-    phonemes = _line_grapheme_to_phoneme(lib.utils.flatten(splits), separator=separator, **kwargs)
+    phonemes = _line_grapheme_to_phoneme(flatten_2d(splits), separator=separator, **kwargs)
     return_ = []
     for split in splits:
         concat = (separator + "\n" + separator).join(phonemes[: len(split)])
@@ -162,7 +163,7 @@ def _grapheme_to_phoneme_with_punctuation(
         docs = [(items.pop(0) if isinstance(d, str) else d) for d in docs]
     docs = typing.cast(typing.Union[spacy.tokens.Doc, spacy.tokens.span.Span], docs)
 
-    splits = []
+    splits: typing.List[typing.List[typing.Union[typing.Tuple[str], str]]] = []
     for doc in docs:
         message = "The separator is not unique."
         assert not separator or all(separator not in t.text for t in doc), message
@@ -174,7 +175,7 @@ def _grapheme_to_phoneme_with_punctuation(
         # - "judgement, name & face memory" (CCONJ)
         # - "to public interest/national security" (SYM)
         # - "spectacular, grand // desco da" (SYM)
-        items = []
+        items: typing.List[typing.Union[typing.Tuple[str], str]] = []
         iterator = itertools.groupby(doc, lambda t: t.pos == spacy.symbols.PUNCT)  # type: ignore
         for is_punct, group in iterator:
             phrase = "".join([t.text_with_ws for t in group])
@@ -184,12 +185,12 @@ def _grapheme_to_phoneme_with_punctuation(
             items.append(tuple(phrase) if is_punct and not is_alpha_numeric else phrase)
         splits.append(items)
 
-    inputs = [i for i in lib.utils.flatten(splits) if isinstance(i, str)]
+    inputs = [i for i in flatten_2d(splits) if isinstance(i, str)]
     phonemes = _multiline_grapheme_to_phoneme(inputs, separator=separator, **kwargs)
     return_ = []
     for items in splits:
         items_ = [(phonemes.pop(0) if isinstance(i, str) else list(i)) for i in items]
-        return_.append(separator.join([t for t in lib.utils.flatten(items_) if len(t) > 0]))
+        return_.append(separator.join([t for t in flatten(items_) if len(t) > 0]))
     return return_
 
 
@@ -621,9 +622,7 @@ def normalize_vo_script(text: str, strip: bool = True) -> str:
     return text
 
 
-_READABLE_CHARACTERS = set(
-    lib.utils.flatten([normalize_vo_script(chr(i), strip=False) for i in range(0, 128)])
-)
+_READABLE_CHARACTERS = set(normalize_vo_script(chr(i), strip=False) for i in range(0, 128))
 
 
 def is_normalized_vo_script(text: str) -> bool:
@@ -742,7 +741,7 @@ def normalize_non_standard_words(text: str, variety: str = "AmE", **kwargs) -> s
         _nltk_download(dependency)
 
     tokens = [[t.text, t.whitespace_] for t in load_en_english()(text)]
-    merged = [tokens[0]]
+    merged: typing.List[typing.List[str]] = [tokens[0]]
     # TODO: Use https://spacy.io/usage/linguistic-features#retokenization
     for token, whitespace in tokens[1:]:
         # NOTE: For example, spaCy tokenizes "$29.95" as two tokens, and this undos that.
@@ -752,9 +751,10 @@ def normalize_non_standard_words(text: str, variety: str = "AmE", **kwargs) -> s
         else:
             merged.append([token, whitespace])
 
-    assert "".join(lib.utils.flatten(merged)) == text
-    normalized = normalise.normalise([t[0] for t in merged], variety=variety, **kwargs)
-    return "".join(lib.utils.flatten([[n.strip(), m[1]] for n, m in zip(normalized, merged)]))
+    assert "".join(flatten_2d(merged)) == text
+    arg = [t[0] for t in merged]
+    normalized = typing.cast(typing.List[str], normalise.normalise(arg, variety=variety, **kwargs))
+    return "".join(flatten_2d([[n.strip(), m[1]] for n, m in zip(normalized, merged)]))
 
 
 def format_alignment(

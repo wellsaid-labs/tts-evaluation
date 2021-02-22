@@ -21,7 +21,6 @@ from torchnlp.utils import get_total_parameters, lengths_to_mask
 import lib
 from lib.distributed import get_world_size, is_master
 from lib.environment import save
-from lib.utils import flatten
 from run._config import (
     DATASET_PHONETIC_CHARACTERS,
     NUM_FRAME_CHANNELS,
@@ -151,7 +150,7 @@ class _State:
         """
         passages = chain(*tuple(chain(train_dataset.values(), dev_dataset.values())))
         input_encoder = InputEncoder(
-            flatten([p.script for p in passages]),
+            [p.script for p in passages],
             DATASET_PHONETIC_CHARACTERS,
             list(train_dataset.keys()) + list(dev_dataset.keys()),
         )

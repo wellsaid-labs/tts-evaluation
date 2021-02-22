@@ -34,7 +34,7 @@ import lib
 import run
 from lib.distributed import get_master_rank, get_rank, get_world_size, is_master
 from lib.environment import load, load_most_recent_file
-from lib.utils import flatten, seconds_to_string
+from lib.utils import flatten_2d, seconds_to_string
 from run._config import Cadence, Dataset, DatasetType, get_dataset_label, get_model_label
 
 if typing.TYPE_CHECKING:  # pragma: no cover
@@ -115,7 +115,7 @@ def _get_dataset_stats(
     data: Dataset
     for data, type_ in [(train, DatasetType.TRAIN), (dev, DatasetType.DEV)]:
         label_ = functools.partial(get_dataset_label, cadence=Cadence.STATIC, type_=type_)
-        passages_ = flatten([[p for p in v] for v in data.values()])
+        passages_ = flatten_2d([[p for p in v] for v in data.values()])
         for speaker, passages in itertools.chain(list(data.items()), [(None, passages_)]):
             label = label_ if speaker is None else functools.partial(label_, speaker=speaker)
             stats[label("num_audio_files")] = len(set(p.audio_file for p in passages))

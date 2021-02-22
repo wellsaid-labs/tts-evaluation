@@ -421,7 +421,7 @@ def align_stt_with_script(
         [ScriptToken(i, m.group(0), (m.start(), m.end())) for m in re.finditer(r"\S+", script)]
         for i, script in enumerate(scripts)
     ]
-    script_tokens: typing.List[ScriptToken] = lib.utils.flatten(script_tokens_)
+    script_tokens: typing.List[ScriptToken] = lib.utils.flatten_2d(script_tokens_)
     transcript, stt_tokens = _flatten_stt_result(stt_result)
 
     # Align `script_tokens` and `stt_tokens`.
@@ -622,7 +622,7 @@ def _sync_and_upload(
         for s in scripts_
     ]
     message = "Scripts cannot contain funky characters."
-    assert all(lib.text.is_normalized_vo_script(t) for t in lib.utils.flatten(scripts)), message
+    assert all(lib.text.is_normalized_vo_script(t) for t in lib.utils.flatten_2d(scripts)), message
 
     logger.info("Maybe running speech-to-text and caching results...")
     filtered = list(filter(lambda i: not i[-1].exists(), zip(audio_blobs, scripts, stt_blobs)))

@@ -18,4 +18,4 @@ def main(flag: str, args: typing.List[str]):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1], lib.utils.flatten([a.split() for a in sys.argv[2:]]))
+    main(sys.argv[1], lib.utils.flatten_2d([a.split() for a in sys.argv[2:]]))

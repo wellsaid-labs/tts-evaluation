@@ -13,7 +13,7 @@ import torch
 import torch.nn
 import tqdm
 from google.cloud import storage
-from hparams import HParam, HParams, configurable
+from hparams import HParam, configurable
 from Levenshtein.StringMatcher import StringMatcher
 from third_party import LazyLoader
 from torchnlp.random import fork_rng
@@ -22,7 +22,7 @@ import lib
 import lib.datasets.m_ailabs
 import run
 from lib import datasets
-from lib.utils import flatten
+from lib.utils import flatten_2d
 from run._config import Dataset
 
 if typing.TYPE_CHECKING:  # pragma: no cover
@@ -63,7 +63,7 @@ def normalize_audio(
     """
     logger.info("Normalizing dataset audio...")
     audio_paths_ = [[p.audio_file.path for p in v] for v in dataset.values()]
-    audio_paths: typing.Set[pathlib.Path] = set(flatten(audio_paths_))
+    audio_paths: typing.Set[pathlib.Path] = set(flatten_2d(audio_paths_))
     partial = functools.partial(lib.audio.normalize_audio, **kwargs)
     partial = functools.partial(_normalize_audio, callable_=partial)
     args = [(p, _normalize_path(p)) for p in audio_paths if not _normalize_path(p).exists()]

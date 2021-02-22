@@ -2,7 +2,7 @@ import re
 import typing
 
 from lib.environment import AnsiCodes
-from lib.utils import flatten
+from lib.utils import flatten_2d
 from run.data.sync_script_with_audio import (
     ScriptToken,
     SttToken,
@@ -55,7 +55,7 @@ def _get_script_tokens(scripts: typing.List[str]) -> typing.List[ScriptToken]:
         [ScriptToken(i, m.group(0), (m.start(), m.end())) for m in re.finditer(r"\S+", script)]
         for i, script in enumerate(scripts)
     ]
-    return flatten(tokens)
+    return flatten_2d(tokens)
 
 
 def _get_stt_tokens(stt_results: typing.List[str]) -> typing.List[SttToken]:
@@ -67,7 +67,7 @@ def _get_stt_tokens(stt_results: typing.List[str]) -> typing.List[SttToken]:
         ]
         for stt_result in stt_results
     ]
-    return flatten(tokens)
+    return flatten_2d(tokens)
 
 
 def test_format_differences():

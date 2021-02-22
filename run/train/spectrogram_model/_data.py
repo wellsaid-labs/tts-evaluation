@@ -30,7 +30,7 @@ import lib
 import run
 from lib.audio import seconds_to_samples
 from lib.distributed import get_rank, get_world_size, is_initialized
-from lib.utils import flatten
+from lib.utils import flatten_2d
 from run.train import _utils
 
 if typing.TYPE_CHECKING:  # pragma: no cover
@@ -151,7 +151,7 @@ def _random_nonoverlapping_alignments(
     # NOTE: Each of these is a synchronization point along which we can match up the script
     # character, transcript character, and audio sample. We can use any of these points for
     # cutting.
-    bounds = flatten([[get_(a, 0), get_(a, -1)] for a in alignments])
+    bounds = flatten_2d([[get_(a, 0), get_(a, -1)] for a in alignments])
     num_cuts = random.randint(0, int(lib.utils.clamp(max_alignments, min_=0, max_=len(bounds) - 1)))
 
     if num_cuts == 0:
