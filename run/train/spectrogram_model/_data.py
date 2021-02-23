@@ -1,6 +1,6 @@
+import asyncio
 import functools
 import logging
-import multiprocessing.pool
 import os
 import random
 import sys
@@ -375,9 +375,16 @@ def _make_stop_token(
     return SequenceBatch(stop_token, spectrogram.lengths)
 
 
-def _span_read_audio_slice(span: lib.datasets.Span) -> numpy.ndarray:
+async def _span_read_audio_slice(span: lib.datasets.Span) -> numpy.ndarray:
     start = span._first.audio[0]
     return lib.audio.read_wave_audio_slice(span.passage.audio_file, start, span.audio_length)
+
+
+async def _spans_read_audio_slice(
+    spans: typing.List[lib.datasets.Span],
+) -> typing.Tuple[numpy.ndarray]:
+    tasks = tuple(_span_read_audio_slice(s) for s in spans)
+    return await asyncio.gather(*tasks)
 
 
 class SpanBatch(typing.NamedTuple):
@@ -447,8 +454,7 @@ class DataProcessor(typing.Mapping[int, SpanBatch]):
         dataset: run._config.Dataset,
         batch_size: int,
         input_encoder: InputEncoder,
-        step: int,
-        max_parallel: int = typing.cast(int, os.cpu_count()),
+        step: int = 0,
         batch_dimension: int = 1,
     ):
         """Given an index, generate the appropriate batch indefinitely.
@@ -478,7 +484,6 @@ class DataProcessor(typing.Mapping[int, SpanBatch]):
         self.index_to_spans = lib.utils.MappedIterator(iter_)
 
         self.input_encoder = input_encoder
-        self.max_parallel = max_parallel
         self._stack = functools.partial(stack_and_pad_tensors, dim=batch_dimension)
         self._make_mask = functools.partial(torch.ones, dtype=torch.bool)
 
@@ -492,7 +497,7 @@ class DataProcessor(typing.Mapping[int, SpanBatch]):
     def __len__(_) -> int:
         return sys.maxsize
 
-    def __getitem__(self, index) -> SpanBatch:
+    def _make_span_batch(self, spans: typing.List[lib.datasets.Span]) -> SpanBatch:
         """
         NOTE: spaCy splits some (not all) words on apostrophes while AmEPD does not; therefore,
         those words will not be found in AmEPD. The options are:
@@ -522,7 +527,6 @@ class DataProcessor(typing.Mapping[int, SpanBatch]):
         - Using `multiprocessing` for `grapheme_to_phoneme`.
         - Using the precomputed spectrogram for `_pad_and_trim_signal`.
         """
-        spans = self.index_to_spans[index]
         length = len(spans)
 
         assert length > 0, "Batch must have at least one item."
@@ -543,8 +547,7 @@ class DataProcessor(typing.Mapping[int, SpanBatch]):
         phonemes = typing.cast(typing.List[str], lib.text.grapheme_to_phoneme(docs))
         decoded = [DecodedInput(s.script, p, s.speaker) for s, p in zip(spans, phonemes)]
         encoded = [self.input_encoder.encode(d) for d in decoded]
-        with multiprocessing.pool.ThreadPool(min(self.max_parallel, len(spans))) as pool:
-            signals_: typing.List[numpy.ndarray] = list(pool.map(_span_read_audio_slice, spans))
+        signals_ = asyncio.run(_spans_read_audio_slice(spans))
         loudness = [_random_loudness_annotations(s, a) for s, a in zip(spans, signals_)]
         signals = [_pad_and_trim_signal(s) for s in signals_]
         spectrogram, spectrogram_mask = _signals_to_spectrograms(signals)
@@ -573,3 +576,6 @@ class DataProcessor(typing.Mapping[int, SpanBatch]):
             speed=self._stack([a[0] for a in speed]),
             speed_mask=self._stack([a[1] for a in speed]),
         )
+
+    def __getitem__(self, index) -> SpanBatch:
+        return self._make_span_batch(self.index_to_spans[index])

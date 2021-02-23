@@ -291,13 +291,9 @@ def _get_data_loaders(
     prefetch_factor: int = HParam(),
 ) -> typing.Tuple[DataLoader, DataLoader]:
     """ Initialize training and development data loaders.  """
-    max_parallel = int(os.cpu_count() // get_world_size())
-    input_encoder, step = state.input_encoder, state.step.item()
-    partial_ = partial(
-        DataProcessor, input_encoder=input_encoder, max_parallel=max_parallel, step=step
-    )
-    train = partial_(train_dataset, train_batch_size)
-    dev = partial_(dev_dataset, dev_batch_size)
+    input_encoder, step = state.input_encoder, int(state.step.item())
+    train = DataProcessor(train_dataset, train_batch_size, input_encoder=input_encoder, step=step)
+    dev = DataProcessor(dev_dataset, dev_batch_size, input_encoder=input_encoder, step=step)
     kwargs = dict(num_workers=num_workers, device=state.device, prefetch_factor=prefetch_factor)
     return (
         DataLoader(train, num_steps_per_epoch=train_steps_per_epoch, **kwargs),
