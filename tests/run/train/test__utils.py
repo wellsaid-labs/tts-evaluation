@@ -160,7 +160,7 @@ def test__nested_to_flat_config():
 
 
 def test_metrics():
-    """Test `run.train._utils.Metrics` gathers and reduces metrics.b"""
+    """Test `run.train._utils.Metrics` gathers and reduces metrics."""
     master_store = torch.distributed.TCPStore("127.0.0.1", 29500, 1, True)
     store = torch.distributed.TCPStore("127.0.0.1", 29500, 1, False)
     master_metrics = run.train._utils.Metrics(master_store, 2, True, 0)

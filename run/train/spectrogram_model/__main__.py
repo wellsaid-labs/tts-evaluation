@@ -292,12 +292,16 @@ def _get_data_loaders(
 ) -> typing.Tuple[DataLoader, DataLoader]:
     """ Initialize training and development data loaders.  """
     max_parallel = int(os.cpu_count() // get_world_size())
-    partial_ = partial(DataProcessor, input_encoder=state.input_encoder, max_parallel=max_parallel)
+    input_encoder, step = state.input_encoder, state.step.item()
+    partial_ = partial(
+        DataProcessor, input_encoder=input_encoder, max_parallel=max_parallel, step=step
+    )
+    train = partial_(train_dataset, train_batch_size)
+    dev = partial_(dev_dataset, dev_batch_size)
     kwargs = dict(num_workers=num_workers, device=state.device, prefetch_factor=prefetch_factor)
-    make_loader = lambda d, b, s: DataLoader(partial_(d, b), num_steps_per_epoch=s, **kwargs)
     return (
-        make_loader(train_dataset, train_batch_size, train_steps_per_epoch),
-        make_loader(dev_dataset, dev_batch_size, dev_steps_per_epoch),
+        DataLoader(train, num_steps_per_epoch=train_steps_per_epoch, **kwargs),
+        DataLoader(dev, num_steps_per_epoch=dev_steps_per_epoch, **kwargs),
     )
 
 
@@ -411,7 +415,7 @@ def _run_step(
 
         # NOTE: `optimizer` will not error if there are no gradients so we check beforehand.
         params = state.optimizer.param_groups[0]["params"]
-        assert all([p.grad is not None for p in params]), "No gradients found."
+        assert all([p.grad is not None for p in params]), "`None` gradients found."
         state.clipper.clip()
         state.optimizer.step()
         state.step.add_(1)

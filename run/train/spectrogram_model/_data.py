@@ -31,7 +31,6 @@ import run
 from lib.audio import seconds_to_samples
 from lib.distributed import get_rank, get_world_size, is_initialized
 from lib.utils import flatten_2d
-from run.train import _utils
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import librosa
@@ -448,6 +447,7 @@ class DataProcessor(typing.Mapping[int, SpanBatch]):
         dataset: run._config.Dataset,
         batch_size: int,
         input_encoder: InputEncoder,
+        step: int,
         max_parallel: int = typing.cast(int, os.cpu_count()),
         batch_dimension: int = 1,
     ):
@@ -455,10 +455,23 @@ class DataProcessor(typing.Mapping[int, SpanBatch]):
 
         NOTE: Our training procedure is similar to BERT, the examples are randomly sampled
         from a large corpus of data with `SpanGenerator`.
+
+        TODO: The `DataProcessor`s state is difficult to checkpoint; therefore, the data pipeline
+        isn't deterministic. Here are a couple of ideas to make it deterministic:
+        - Implement a conditional `DataProcessor`, so that it's output is deterministic based
+          on the step. This is doable as long as we can coordinate `BucketBatchSampler` and
+          `DeterministicIterator`. Today, the batch generated depends on these random variables:
+          random generator state, the bucket, the bucket batch index. Given a step, we'd need
+          to generate the correct bucket and batch.
+        - Create `DataProcessor` from scratch each time and fast forward the random state
+          to the correct step. We'd likely need to implement a faster fast forward method because
+          today it'd take 1 hour to generate 100,000 steps.
+        - Checkpoint the random state of every worker, and use it to restart those workers. We'd
+          likely need to setup a communication channel with workers, in order to implement this.
         """
         iter_ = run._utils.SpanGenerator(dataset)
         iter_ = BucketBatchSampler(iter_, batch_size, False, self._data_iterator_sort_key)
-        iter_ = DeterministicSampler(iter_, run._config.RANDOM_SEED, cuda=False)
+        iter_ = DeterministicSampler(iter_, run._config.RANDOM_SEED + step, cuda=False)
         if is_initialized():
             iter_ = DistributedBatchSampler(iter_, num_replicas=get_world_size(), rank=get_rank())
         iter_ = typing.cast(typing.Iterator[typing.List[lib.datasets.Span]], iter_)

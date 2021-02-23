@@ -21,8 +21,8 @@ from lib.distributed import is_master
 from lib.utils import flatten_2d
 from run._config import GetLabel, get_dataset_label, get_model_label
 from run.train import _utils
-from run.train._utils import CometMLExperiment, MetricsValues
-from run.train.spectrogram_model._data import DataLoader, SpanBatch
+from run.train._utils import CometMLExperiment, DataLoader, MetricsValues
+from run.train.spectrogram_model._data import SpanBatch
 
 
 def get_num_skipped(

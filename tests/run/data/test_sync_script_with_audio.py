@@ -11,6 +11,7 @@ from run.data.sync_script_with_audio import (
     _remove_punctuation,
     format_differences,
     format_ratio,
+    is_sound_alike,
 )
 
 
@@ -19,6 +20,15 @@ def test__remove_punctuation():
     assert _remove_punctuation("123 abc !.?") == "123 abc"
     assert _remove_punctuation("Hello. You've") == "Hello You ve"
     assert _remove_punctuation("Hello. \n\fYou've") == "Hello You ve"
+
+
+def test_is_sound_alike():
+    """ Test `is_sound_alike` if determines if two phrase sound-alike. """
+    assert not is_sound_alike("Hello", "Hi")
+    assert is_sound_alike("financingA", "financing a")
+    assert is_sound_alike("twentieth", "20th")
+    assert is_sound_alike("screen introduction", "screen--Introduction,")
+    assert is_sound_alike("Hello-you've", "Hello. You've")
 
 
 def test_format_ratio():
