@@ -167,7 +167,7 @@ def samples_to_seconds(samples: int, sample_rate: int = HParam()) -> float:
     return float(samples) / sample_rate
 
 
-def clip_waveform(waveform: np.ndarray):
+def clip_waveform(waveform: np.ndarray) -> np.ndarray:
     """Clip audio at the maximum and minimum amplitude.
 
     TODO: In SoX, they implemented `--guard`, which: "Automatically invoke the gain effect to guard
@@ -176,30 +176,33 @@ def clip_waveform(waveform: np.ndarray):
     NOTE: Clipping will cause distortion to the waveform, learn more:
     https://en.wikipedia.org/wiki/Clipping_(audio)
     """
-    num_clipped_samples = (waveform < -1).sum() + (waveform > 1).sum()
+    dtype = waveform.dtype
+    is_floating = np.issubdtype(dtype, np.floating)
+    min_: typing.Union[int, float] = -1.0 if is_floating else np.iinfo(dtype).min
+    max_: typing.Union[int, float] = 1.0 if is_floating else np.iinfo(dtype).max
+    num_clipped_samples = (waveform < min_).sum() + (waveform > max_).sum()
     if num_clipped_samples > 0:
         max_sample = np.max(np.absolute(waveform))
         logger.debug("%d samples clipped (%f max sample)", num_clipped_samples, max_sample)
-    return np.clip(waveform, -1.0, 1.0)
+    return np.clip(waveform, min_, max_)
 
 
-def read_audio(path: Path) -> np.ndarray:
-    """Read an audio file slice into a `np.float32` array.
+def read_audio(path: Path, dtype=("f32le", "pcm_f32le", np.float32)) -> np.ndarray:
+    """Read an audio file slice into a `numpy` array.
 
     NOTE: Audio files with multiple channels will be mixed into a mono channel.
     NOTE: `ffmpeg` may load audio that's not clipped.
     NOTE: This doesn't support a `path` with spaces.
     """
-    command = f"ffmpeg -i {path} -f f32le -acodec pcm_f32le -ac 1 pipe:"
-    ndarray = np.frombuffer(
-        subprocess.check_output(command.split(), stderr=subprocess.DEVNULL),
-        np.float32,  # type: ignore
-    )
+    command = f"ffmpeg -i {path} -f {dtype[0]} -acodec {dtype[1]} -ac 1 pipe:".split()
+    ndarray = np.frombuffer(subprocess.check_output(command, stderr=subprocess.DEVNULL), dtype[2])
     return clip_waveform(ndarray)
 
 
-def read_audio_slice(path: Path, start: float, length: float) -> np.ndarray:
-    """Read an audio file slice into a `np.float32` array.
+def read_audio_slice(
+    path: Path, start: float, length: float, dtype=("f32le", "pcm_f32le", np.float32)
+) -> np.ndarray:
+    """Read an audio file slice into a `numpy` array.
 
     NOTE: Audio files with multiple channels will be mixed into a mono channel.
 
@@ -217,25 +220,27 @@ def read_audio_slice(path: Path, start: float, length: float) -> np.ndarray:
         length: The length of the audio segment.
     """
     if length == 0:
-        return np.array([], dtype=np.float32)  # type: ignore
-    command = f"ffmpeg -ss {start} -t {length} -i {path} -f f32le -acodec pcm_f32le -ac 1 pipe:"
-    ndarray = np.frombuffer(
-        subprocess.check_output(command.split(), stderr=subprocess.DEVNULL),
-        np.float32,  # type: ignore
+        return np.array([], dtype=dtype[2])
+    command = (
+        f"ffmpeg -ss {start} -t {length} -i {path} -f {dtype[0]} -acodec {dtype[1]} -ac 1 pipe:"
     )
+    buffer = subprocess.check_output(command.split(), stderr=subprocess.DEVNULL)
+    ndarray = np.frombuffer(buffer, dtype[2])
     return clip_waveform(ndarray)
 
 
-def read_wave_audio_slice(metadata: AudioFileMetadata, start: float, length: float) -> np.ndarray:
-    """ Fast read and seek 32-bit floating point WAVE file. """
-    assert metadata.encoding == "32-bit Floating Point PCM"
+def read_wave_audio_slice(
+    metadata: AudioFileMetadata, start: float, length: float, dtype=np.float32
+) -> np.ndarray:
+    """ Fast read and seek WAVE file. """
+    assert metadata.path.suffix == ".wav"
     assert metadata.num_channels == 1
-    num_bytes_per_sample = 4
+    num_bytes_per_sample = np.dtype(dtype).itemsize
     sample_rate = metadata.sample_rate
     header_size = os.path.getsize(metadata.path) - num_bytes_per_sample * metadata.num_samples
     start = lib.utils.round_(sample_rate * start * num_bytes_per_sample, num_bytes_per_sample)
     length = lib.utils.round_(sample_rate * length, num_bytes_per_sample)
-    ndarray = np.fromfile(metadata.path, dtype=np.float32, count=length, offset=start + header_size)
+    ndarray = np.fromfile(metadata.path, dtype=dtype, count=length, offset=start + header_size)
     return clip_waveform(ndarray)
 
 
