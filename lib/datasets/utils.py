@@ -104,6 +104,10 @@ def _to_string(self: typing.Union[Span, Passage], *fields: str) -> str:
 class Passage:
     """A voiced passage.
 
+    TODO: Create a `ConventionalPassage` or `ConventionalSpan` for storing tens of thousands
+    of single alignment pre-cut spans. We could more efficiently and accurately handle script
+    and audio updates. We could more efficiently create a `ConventionalSpan`.
+
     Args:
         audio_file: A voice-over of the `script`.
         speaker: An identifier of the voice.
@@ -157,11 +161,20 @@ class Passage:
         values = [getattr(a, field) for a in self.alignments]
         return flatten_2d([list(v) for v in values])
 
+    @staticmethod
+    def _no_white_space(s: str) -> bool:
+        return s.strip() == s
+
     def check_invariants(self, eps=1e-6):
         """Check datastructure invariants."""
         assert all(a.script[0] <= a.script[1] for a in self.alignments)
         assert all(a.audio[0] <= a.audio[1] for a in self.alignments)
         assert all(a.transcript[0] <= a.transcript[1] for a in self.alignments)
+
+        slices = (self.script[a.script[0] : a.script[1]] for a in self.alignments)
+        assert all(self._no_white_space(s) for s in slices)
+        slices = (self.script[a.transcript[0] : a.transcript[1]] for a in self.alignments)
+        assert all(self._no_white_space(s) for s in slices)
 
         pairs = zip(self.alignments, self.alignments[1:])
         assert all(a.script[1] <= b.script[0] for a, b in pairs)
@@ -357,6 +370,8 @@ def make_passages(
 
     NOTE: This function processes passages in a batch; therefore, it'd be ideal to pass as many
     items at once as possible.
+
+    TODO: Use `asycio` instead of `ThreadPool` for simplicity.
 
     Args:
         dataset: Dataset with a list of documents each with a list of passsages.

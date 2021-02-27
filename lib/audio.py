@@ -118,6 +118,8 @@ def _get_audio_metadata(
     NOTE: It's difficult to determine the bash maximum argument length, learn more:
     https://unix.stackexchange.com/questions/45143/what-is-a-canonical-way-to-find-the-actual-maximum-argument-list-length
     https://stackoverflow.com/questions/19354870/bash-command-line-and-input-limit
+
+    TODO: Use `asycio` instead of `ThreadPool` for simplicity.
     """
     if len(set(paths)) != len(paths):
         logger.warning("`_get_audio_metadata` was called with duplicate paths.")
@@ -309,10 +311,16 @@ def normalize_audio(
     https://superuser.com/questions/326629/how-can-i-make-ffmpeg-be-quieter-less-verbose
 
     TODO: If the `source` is already normalized, could the performance of this function be
-    improved?
+    improved? For example, if the `source` is already normalized can we link `destination` to
+    `source`?
 
     TODO: Can we use this function to measure, and reduce clipping? For example, SoX has a clipping
     guard that can be turned on, and it warns about clipping.
+
+    TODO: SoX is considered to have a better resampler than ffmpeg. Should we use the SoX resampler
+    along with guard? Learn more:
+    https://trac.ffmpeg.org/wiki/FFmpeg%20and%20the%20SoX%20Resampler
+    https://www.reddit.com/r/audiophile/comments/308023/highest_quality_resampling_and_bit_depth/
     """
     assert destination.suffix == suffix, f'The normalized file must be of type "{suffix}".'
     command = "" if len(audio_filters) == 0 else f"-af {audio_filters}"

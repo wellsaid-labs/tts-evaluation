@@ -22,12 +22,8 @@ import torch.utils.data
 
 logger = logging.getLogger(__name__)
 
+
 _RandomSampleReturnType = typing.TypeVar("_RandomSampleReturnType")
-
-
-def round_(x: float, bucket_size: float) -> float:
-    """Bin `x` into buckets."""
-    return bucket_size * round(x / bucket_size)
 
 
 def random_sample(
