@@ -17,7 +17,6 @@ Setup your local development environment by following [these instructions](LOCAL
 
 1. Setup your environment variables...
 
-
    Also set these environment variables...
 
    ```zsh
