@@ -549,11 +549,9 @@ def make_app(run_app: _RunApp, directory: pathlib.Path, *args, **kwargs):
         """Run spectrogram model training. """
         lib.environment.check_module_versions()
 
-        datasets = run._config.DATASETS
-        datasets = {k: v for k, v in list(datasets.items())[:1]} if debug else datasets
-
         # NOTE: Load, preprocess, and cache dataset values.
-        dataset = run._utils.get_dataset(datasets)
+        _datasets = {k: v for k, v in list(run._config.DATASETS.items())[:1]}
+        dataset = run._utils.get_dataset(**({"datasets": _datasets} if debug else {}))
         train_dataset, dev_dataset = run._utils.split_dataset(dataset)
         comet.log_parameters(_get_dataset_stats(train_dataset, dev_dataset))
 
