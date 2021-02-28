@@ -168,14 +168,18 @@ def test_metrics():
     metrics = run.train._utils.Metrics(store, 2, False, 1)
     metrics.update({"a": 1, "b": 1})
     master_metrics.update({"a": 2, "c": 2})
-    assert master_metrics.all == {"a": [[1, 2]], "b": [[1]], "c": [[2]]}
+    assert master_metrics.all == {
+        "a": [(1, 2)],
+        "b": [(1,)],
+        "c": [(2,)],
+    }
     metrics.update({"b": 1, "c": 1})
     master_metrics.update({"c": 2, "d": 2})
     assert master_metrics.all == {
-        "a": [[1, 2], []],
-        "b": [[1], [1]],
-        "c": [[2], [1, 2]],
-        "d": [[], [2]],
+        "a": [(1, 2), tuple()],
+        "b": [(1,), (1,)],
+        "c": [(2,), (1, 2)],
+        "d": [tuple(), (2,)],
     }
     assert store.num_keys() == 1
 

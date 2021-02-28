@@ -701,7 +701,7 @@ def run_workers(
 
 MetricsValue = typing.Union[float, int]
 MetricsValues = typing.Dict[str, MetricsValue]
-MetricsAll = typing.List[typing.List[MetricsValue]]
+MetricsAll = typing.List[typing.Tuple[MetricsValue]]
 
 
 class Metrics:
@@ -750,9 +750,9 @@ class Metrics:
             for key, value in metrics_.items():
                 update[key].append(value)
         for key in set(itertools.chain(update.keys(), self.all.keys())):
-            group = update[key] if key in update else []
+            group = tuple(update[key]) if key in update else tuple()
             if key not in self.all:
-                self.all[key] = [[] for _ in range(self._operation)]
+                self.all[key] = [tuple() for _ in range(self._operation)]
             self.all[key].append(group)
 
     def update(self, values: MetricsValues):

@@ -123,9 +123,9 @@ def test_integration(mock_urlretrieve):
             assert len(metrics.all[f"{key}/{batch.spans[0].speaker.label}"]) == 1
         assert all(metrics.all[metrics.NUM_CORRECT_STOP_TOKEN]) == 1
 
-        num_frames = [[batch.spectrogram.lengths[0].item()]]
-        num_tokens = [[batch.encoded_phonemes.lengths[0].item()]]
-        num_seconds = [[batch.spans[0].audio_length]]
+        num_frames = [(batch.spectrogram.lengths[0].item(),)]
+        num_tokens = [(batch.encoded_phonemes.lengths[0].item(),)]
+        num_seconds = [(batch.spans[0].audio_length,)]
         bucket = len(batch.spans[0].script) // metrics.TEXT_LENGTH_BUCKET_SIZE
         values = {
             metrics.NUM_FRAMES_MAX: num_frames,
@@ -135,9 +135,9 @@ def test_integration(mock_urlretrieve):
             f"{metrics.NUM_FRAMES}/{JUDY_BIEBER.label}": num_frames,
             metrics.NUM_SECONDS: num_seconds,
             f"{metrics.NUM_SECONDS}/{JUDY_BIEBER.label}": num_seconds,
-            f"{metrics.NUM_SPANS_PER_TEXT_LENGTH}/{bucket}": [[batch_size]],
-            metrics.NUM_SPANS: [[batch.length]],
-            f"{metrics.NUM_SPANS}/{JUDY_BIEBER.label}": [[batch.length]],
+            f"{metrics.NUM_SPANS_PER_TEXT_LENGTH}/{bucket}": [(batch_size,)],
+            metrics.NUM_SPANS: [(batch.length,)],
+            f"{metrics.NUM_SPANS}/{JUDY_BIEBER.label}": [(batch.length,)],
             metrics.NUM_TOKENS: num_tokens,
             f"{metrics.NUM_TOKENS}/{JUDY_BIEBER.label}": num_tokens,
         }

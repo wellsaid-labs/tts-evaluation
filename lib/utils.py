@@ -105,7 +105,9 @@ _FlattenInputType = typing.Union[
 ]
 
 
-def flatten_2d(l: typing.List[typing.List[_FlattenReturnType]]) -> typing.List[_FlattenReturnType]:
+def flatten_2d(
+    l: typing.Iterable[typing.Iterable[_FlattenReturnType]],
+) -> typing.List[_FlattenReturnType]:
     """Flatten a 2d list into a 1d list.
 
     Learn more: https://stackoverflow.com/questions/952914/how-to-make-a-flat-list-out-of-list-of-lists
@@ -114,7 +116,7 @@ def flatten_2d(l: typing.List[typing.List[_FlattenReturnType]]) -> typing.List[_
 
 
 def flatten_3d(
-    l: typing.List[typing.List[typing.List[_FlattenReturnType]]],
+    l: typing.Iterable[typing.Iterable[typing.Iterable[_FlattenReturnType]]],
 ) -> typing.List[_FlattenReturnType]:
     """Flatten a 3d list into a 1d list."""
     return [item for sublist in l for subsublist in sublist for item in subsublist]
