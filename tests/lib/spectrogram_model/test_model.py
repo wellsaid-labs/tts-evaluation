@@ -9,6 +9,7 @@ import pytest
 import torch
 import torch.nn
 from hparams import HParams
+from torch.nn.functional import binary_cross_entropy_with_logits, mse_loss
 from torchnlp.random import fork_rng
 from torchnlp.utils import lengths_to_mask
 
@@ -28,7 +29,6 @@ class _Inputs(typing.NamedTuple):
     tokens: torch.Tensor
     speaker: torch.Tensor
     num_tokens: torch.Tensor
-    target_stop_token: torch.Tensor
     target_frames: torch.Tensor
     target_mask: torch.Tensor
     target_lengths: torch.Tensor
@@ -131,15 +131,11 @@ def _make_inputs(
     # [num_frames, batch_size]
     target_mask = lengths_to_mask(target_lengths).transpose(0, 1)
 
-    target_stop_token = torch.zeros(max_frames, batch_size)
-    target_stop_token[-1] = 1.0
-
     return (
         _Inputs(
             tokens,
             speaker,
             num_tokens,
-            target_stop_token,
             target_frames,
             target_mask,
             target_lengths,
@@ -315,7 +311,6 @@ def test_spectrogram_model__train():
         tokens,
         speaker,
         num_tokens,
-        target_stop_token,
         target_frames,
         target_mask,
         _,
@@ -323,11 +318,10 @@ def test_spectrogram_model__train():
     model = _make_spectrogram_model(params)
     _mock_model(model)
 
-    frames, stop_token, alignment, spectrogram_loss, stop_token_loss = model(
+    frames, stop_token, alignment = model(
         tokens,
         speaker,
         target_frames,
-        target_stop_token,
         num_tokens=num_tokens,
         target_mask=target_mask,
     )
@@ -349,17 +343,7 @@ def test_spectrogram_model__train():
         params.max_num_tokens,
     )
 
-    assert spectrogram_loss.dtype == torch.float
-    assert spectrogram_loss.shape == (
-        params.max_frames,
-        params.batch_size,
-        params.num_frame_channels,
-    )
-
-    assert stop_token_loss.dtype == torch.float
-    assert stop_token_loss.shape == (params.max_frames, params.batch_size)
-
-    (spectrogram_loss.sum() + stop_token_loss.sum()).backward()
+    (frames.sum() + stop_token.sum()).backward()
 
 
 def test_spectrogram_model__reached_max_all():
@@ -453,7 +437,6 @@ def test_spectrogram_model__infer_train():
             num_tokens=num_tokens,
             target_frames=frames,
             target_mask=lengths_to_mask(lengths).transpose(0, 1),
-            target_stop_token=torch.zeros(frames.shape[0], params.batch_size),
             mode=Mode.FORWARD,
         )
 
@@ -534,7 +517,6 @@ def test_spectrogram_model__train_batch_padding_invariance():
         tokens,
         speaker,
         num_tokens,
-        target_stop_token,
         target_frames,
         _,
         target_lengths,
@@ -551,7 +533,6 @@ def test_spectrogram_model__train_batch_padding_invariance():
             tokens,
             speaker,
             target_frames,
-            target_stop_token,
             num_tokens=num_tokens,
             target_mask=lengths_to_mask(target_lengths).transpose(0, 1),
         )
@@ -567,7 +548,6 @@ def test_spectrogram_model__train_batch_padding_invariance():
             tokens[:num_tokens_, i],
             speaker[:, i],
             target_frames[:length, i],
-            target_stop_token[:length, i],
             num_tokens=num_tokens[i],
             target_mask=lengths_to_mask(length).transpose(0, 1),
         )
@@ -758,15 +738,23 @@ def test_spectrogram_model__version():
         assert_almost_equal(reached_max.squeeze(0), torch.tensor([False, False, False, True, True]))
 
     with fork_rng(seed=123):
-        frames, stop_token, alignment, spectrogram_loss, stop_token_loss = model(
+        target_frames = frames
+        target_mask = lengths_to_mask(lengths).transpose(0, 1)
+        frames, stop_token, _ = model(
             tokens,
             speaker,
             num_tokens=num_tokens,
-            target_frames=frames,
-            target_mask=lengths_to_mask(lengths).transpose(0, 1),
-            target_stop_token=torch.zeros(frames.shape[0], params.batch_size),
+            target_frames=target_frames,
+            target_mask=target_mask,
             mode=Mode.FORWARD,
         )
+
+        spectrogram_loss = mse_loss(frames, target_frames, reduction="none")
+        spectrogram_loss *= target_mask.unsqueeze(2)
+
+        target = torch.zeros(frames.shape[0], params.batch_size)
+        stop_token_loss = binary_cross_entropy_with_logits(stop_token, target, reduction="none")
+        stop_token_loss *= target_mask
 
         (spectrogram_loss.sum() + stop_token_loss.sum()).backward()
 

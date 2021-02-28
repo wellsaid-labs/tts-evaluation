@@ -10,6 +10,7 @@ import io
 import itertools
 import json
 import logging
+import math
 import os
 import pathlib
 import sys
@@ -34,7 +35,15 @@ import run
 from lib.distributed import get_master_rank, get_rank, get_world_size, is_master
 from lib.environment import load, load_most_recent_file
 from lib.utils import flatten_2d, seconds_to_string
-from run._config import Cadence, Dataset, DatasetType, get_dataset_label, get_model_label
+from run._config import (
+    Cadence,
+    Dataset,
+    DatasetType,
+    Device,
+    Label,
+    get_dataset_label,
+    get_timer_label,
+)
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import comet_ml
@@ -227,12 +236,12 @@ class CometMLExperiment:
         self.get_key = self._experiment.get_key
         self.set_model_graph = self._experiment.set_model_graph
 
-        self._last_step_time: typing.Optional[float] = None
-        self._last_step: typing.Optional[int] = None
-        self._last_epoch_time: typing.Optional[float] = None
-        self._last_epoch_step: typing.Optional[int] = None
-        self._first_epoch_time: typing.Optional[float] = None
-        self._first_epoch_step: typing.Optional[int] = None
+        self._last_step_time: float = math.nan
+        self._last_step: float = math.nan
+        self._last_epoch_time: float = math.nan
+        self._last_epoch_step: float = math.nan
+        self._first_epoch_time: float = math.nan
+        self._first_epoch_step: float = math.nan
 
         self._log_environment()
 
@@ -261,21 +270,20 @@ class CometMLExperiment:
         log_other("total_physical_memory", lib.environment.get_total_physical_memory())
 
     def set_step(self, step: typing.Optional[int]):
+        """
+        NOTE: Ensure that the variable `_last_step` is updated before `self.log_metric` is called.
+        This prevents infinite recursion via
+        `not math.isnan(seconds_per_step) and seconds_per_step > 0`.
+        """
         self._experiment.set_step(step)
         if self.curr_step is not None:
-            seconds_per_step = (
-                (time.time() - self._last_step_time) / (self.curr_step - self._last_step)
-                if self._last_step is not None
-                and self._last_step_time is not None
-                and self.curr_step > self._last_step
-                else None
-            )
+            num_steps = self.curr_step - self._last_step
+            num_seconds = time.time() - self._last_step_time
+            seconds_per_step = num_seconds / num_steps if num_steps > 0 else math.nan
             self._last_step_time = time.time()
-            # NOTE: Ensure that the variable `last_step` is updated before `log_metric` is called.
-            # This prevents infinite recursion via `curr_step > last_step`.
             self._last_step = self.curr_step
-            if seconds_per_step is not None:
-                label = get_model_label("seconds_per_step", Cadence.STEP)
+            if not math.isnan(seconds_per_step) and seconds_per_step > 0:
+                label = get_timer_label("seconds_per_step", cadence=Cadence.STEP)
                 self.log_metric(label, seconds_per_step)
 
     @contextlib.contextmanager
@@ -284,39 +292,31 @@ class CometMLExperiment:
             yield self
 
     def log_current_epoch(self, epoch: int):
+        assert self.curr_step is not None
         self._last_epoch_step = self.curr_step
         self._last_epoch_time = time.time()
-        if self._first_epoch_time is None and self._first_epoch_step is None:
-            assert self.curr_step is not None
+        if math.isnan(self._first_epoch_time) and math.isnan(self._first_epoch_step):
             self._first_epoch_step = self.curr_step
             self._first_epoch_time = time.time()
         self._experiment.log_current_epoch(epoch)
 
     def log_epoch_end(self, epoch: int):
+        assert self.curr_step is not None
+
         # NOTE: Logs an average `steps_per_second` for each epoch.
-        if (
-            self._last_epoch_step is not None
-            and self._last_epoch_time is not None
-            and self.curr_step is not None
-        ):
-            label = get_model_label("steps_per_second", Cadence.MULTI_STEP)
-            metric = (self.curr_step - self._last_epoch_step) / (
-                time.time() - self._last_epoch_time
-            )
-            self.log_metric(label, metric)
+        label = get_timer_label("steps_per_second", cadence=Cadence.MULTI_STEP)
+        num_seconds = time.time() - self._last_epoch_time
+        steps_per_second = (self.curr_step - self._last_epoch_step) / num_seconds
+        if not math.isnan(steps_per_second):
+            self.log_metric(label, steps_per_second)
 
         # NOTE: Logs an average `steps_per_second` since the training started.
-        if (
-            self._first_epoch_time is not None
-            and self._first_epoch_step is not None
-            and self.curr_step is not None
-        ):
-            with self.context_manager(None):
-                label = get_model_label("steps_per_second", Cadence.RUN)
-                metric = (self.curr_step - self._first_epoch_step) / (
-                    time.time() - self._first_epoch_time
-                )
-                self.log_metric(label, metric)
+        with self.context_manager(None):
+            label = get_timer_label("steps_per_second", cadence=Cadence.RUN)
+            num_seconds = time.time() - self._first_epoch_time
+            steps_per_second = (self.curr_step - self._first_epoch_step) / num_seconds
+            if not math.isnan(steps_per_second):
+                self.log_metric(label, steps_per_second)
 
         self._experiment.log_epoch_end(epoch)
 
@@ -463,10 +463,10 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
     https://github.com/pytorch/pytorch/issues/51849
     """
 
+    @lib.utils.log_runtime
     def __init__(
         self, dataset: typing.Mapping, device: torch.device, num_steps_per_epoch: int, **kwargs
     ):
-        logger.info("Creating `DataLoader`...")
         self.device = device
         loader = torch.utils.data.dataloader.DataLoader(
             typing.cast(torch.utils.data.Dataset, dataset),
@@ -478,7 +478,6 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
         )
         self.loader = iter(loader)
         self.num_steps_per_epoch = num_steps_per_epoch
-        logger.info("Created `DataLoader`.")
 
     def process_tensor(self, tensor: torch.Tensor) -> torch.Tensor:
         # NOTE: `torch.utils.data.dataloader.DataLoader` doesn't pin tensors if CUDA isn't
@@ -489,16 +488,17 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
 
     def process_batch(self, batch: tuple) -> tuple:
         """
+        NOTE: Tensors are moved to CUDA outside of the `DataLoader` workers. Learn more:
+        > It is generally not recommended to return CUDA tensors in multi-process loading
+        > because of many subtleties in using CUDA and sharing CUDA tensors in multiprocessing
+        https://pytorch.org/docs/stable/data.html#multi-process-data-loading
+
         Args:
             batch: A `NamedTuple` with tensors to process.
         """
         if not hasattr(batch, "_fields") or not hasattr(batch, "_asdict"):
             return batch
 
-        # NOTE: Tensors are moved to CUDA outside of the `DataLoader` workers. Learn more:
-        # > It is generally not recommended to return CUDA tensors in multi-process loading
-        # > because of many subtleties in using CUDA and sharing CUDA tensors in multiprocessing
-        # https://pytorch.org/docs/stable/data.html#multi-process-data-loading
         kwargs = {
             k: self.process_tensor(v) if torch.is_tensor(v) else self.process_batch(v)
             for k, v in typing.cast(dict, batch._asdict()).items()
@@ -506,17 +506,8 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
         return batch.__class__(**kwargs)
 
     def __iter__(self) -> typing.Iterator[DataLoaderVar]:
-        first = time.time()
-
         for _ in range(self.num_steps_per_epoch):
-
             yield typing.cast(DataLoaderVar, self.process_batch(next(self.loader)))
-
-            # NOTE: The first batch will take the longest to load, so we log the time.
-            if first is not None:
-                elapsed = lib.utils.seconds_to_string(time.time() - first)
-                logger.info("Time to first batch was %s.", elapsed)
-                first = None
 
 
 class _RunApp(typing.Protocol):
@@ -782,3 +773,43 @@ class Metrics:
     def log(self):
         """Report `self.all` on the master process."""
         raise NotImplementedError()
+
+
+class _TimerEvent(typing.NamedTuple):
+    name: str
+    cpu: float
+    cuda: typing.Optional[torch.cuda.Event]
+
+
+class Timer:
+    """Record and time the time elapsed between the below events."""
+
+    LOAD_DATA = "load_data"
+    MODEL_FORWARD = "model_forward"
+    MODEL_BACKWARD = "model_backward"
+    MODEL_STEP = "model_step"
+    VISUALIZE_PREDICTIONS = "visualize_predictions"
+    REPORT_METRICS = "report_metrics"
+    _LAST_EVENT = "last_event"
+
+    def __init__(self):
+        self.events: typing.List[_TimerEvent] = []
+
+    def record_event(self, name: str):
+        event = None
+        if torch.cuda.is_available():
+            event = torch.cuda.Event(enable_timing=True)
+            event.record()
+        self.events.append(_TimerEvent(name, time.perf_counter(), event))
+
+    def get_timers(self, **kwargs) -> typing.Dict[Label, float]:
+        self.record_event(self._LAST_EVENT)
+        times: typing.Dict[Label, float] = collections.defaultdict(float)
+        for prev, next in zip(self.events, self.events[1:]):
+            times[get_timer_label(prev.name, **kwargs)] += next.cpu - prev.cpu
+            if torch.cuda.is_available():
+                prev.cuda.synchronize()
+                next.cuda.synchronize()
+                label = get_timer_label(prev.name, device=Device.CUDA, **kwargs)
+                times[label] += prev.cuda.elapsed_time(next.cuda) / 1000
+        return dict(times)

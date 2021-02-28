@@ -1,7 +1,6 @@
 import asyncio
 import functools
 import logging
-import os
 import random
 import sys
 import typing
@@ -530,7 +529,6 @@ class DataProcessor(typing.Mapping[int, SpanBatch]):
         length = len(spans)
 
         assert length > 0, "Batch must have at least one item."
-        assert self.max_parallel > 0, "`max_parallel` must be a positive number."
 
         for span in spans:
             lib.audio.assert_audio_normalized(span.audio_file)

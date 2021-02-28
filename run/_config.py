@@ -92,6 +92,11 @@ class DatasetType(enum.Enum):
     DEV: typing.Final = "dev"
 
 
+class Device(enum.Enum):
+    CUDA: typing.Final = "cuda"
+    CPU: typing.Final = "cpu"
+
+
 Label = typing.NewType("Label", str)
 Dataset = typing.Dict[Speaker, typing.List[datasets.Passage]]
 
@@ -130,6 +135,14 @@ def get_config_label(name: str, cadence: Cadence = Cadence.STATIC, **_) -> Label
 def get_environment_label(name: str, cadence: Cadence = Cadence.STATIC, **_) -> Label:
     """ Label something related to a environment. """
     return Label("{cadence}/environment/{name}".format(cadence=cadence.value, name=name))
+
+
+def get_timer_label(
+    name: str, device: Device = Device.CPU, cadence: Cadence = Cadence.STATIC, **_
+) -> Label:
+    """ Label something related to a performance. """
+    template = "{cadence}/timer/{device}/{name}"
+    return Label(template.format(cadence=cadence.value, device=device.value, name=name))
 
 
 def _configure_audio_processing():

@@ -1,4 +1,5 @@
 import tempfile
+import time
 from pathlib import Path
 
 import hparams
@@ -177,3 +178,15 @@ def test_metrics():
         "d": [[], [2]],
     }
     assert store.num_keys() == 1
+
+
+def test_timer():
+    """Test `run.train._utils.Timer` times an event from start to end."""
+    wait = 0.05
+    name = "start"
+    timer = run.train._utils.Timer()
+    timer.record_event(name)
+    time.sleep(wait)
+    timers = timer.get_timers()
+    assert len(timers) == 1
+    assert timers[run._config.get_timer_label(name)] > wait

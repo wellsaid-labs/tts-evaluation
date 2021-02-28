@@ -12,7 +12,7 @@ import run
 from lib.datasets import JUDY_BIEBER, LINDA_JOHNSON, m_ailabs_en_us_judy_bieber_speech_dataset
 from run._config import Cadence, DatasetType
 from run._utils import split_dataset
-from run.train._utils import CometMLExperiment, Context, _get_dataset_stats, set_context
+from run.train._utils import CometMLExperiment, Context, Timer, _get_dataset_stats, set_context
 from run.train.spectrogram_model.__main__ import (
     _get_data_loaders,
     _make_configuration,
@@ -109,11 +109,12 @@ def test_integration(mock_urlretrieve):
 
     # Test `_run_step` with `Metrics` and `_State`
     with set_context(Context.TRAIN, state.model, comet):
+        timer = Timer()
         metrics = Metrics(store, comet, speakers)
         batch = next(iter(train_loader))
         assert state.step.item() == 0
 
-        _run_step(state, metrics, batch, train_loader, DatasetType.TRAIN, True)
+        _run_step(state, metrics, batch, train_loader, DatasetType.TRAIN, timer, True)
         assert state.step.item() == 1
 
         # fmt: off
@@ -153,9 +154,10 @@ def test_integration(mock_urlretrieve):
 
     # Test `_run_inference` with `Metrics` and `_State`
     with set_context(Context.EVALUATE_INFERENCE, state.model, comet):
+        timer = Timer()
         metrics = Metrics(store, comet, speakers)
         batch = next(iter(train_loader))
-        _run_inference(state, metrics, batch, dev_loader, DatasetType.DEV, True)
+        _run_inference(state, metrics, batch, dev_loader, DatasetType.DEV, timer, True)
         assert state.step.item() == 1
         total = metrics.all[metrics.NUM_REACHED_MAX][0][0] + metrics.all[metrics.NUM_SPANS][0][0]
         assert total == 1

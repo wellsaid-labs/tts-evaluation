@@ -1,6 +1,5 @@
 import dataclasses
 import logging
-import os
 import pathlib
 import random
 import typing
@@ -16,6 +15,7 @@ import torch.optim
 import torch.utils
 import torch.utils.data
 from hparams import HParam, HParams, add_config, configurable
+from torch.nn.functional import binary_cross_entropy_with_logits, mse_loss
 from torchnlp.utils import get_total_parameters, lengths_to_mask
 
 import lib
@@ -38,6 +38,7 @@ from run.train._utils import (
     CometMLExperiment,
     Context,
     DataLoader,
+    Timer,
     get_config_parameters,
     make_app,
     run_workers,
@@ -355,6 +356,7 @@ def _run_step(
     batch: SpanBatch,
     data_loader: DataLoader,
     dataset_type: DatasetType,
+    timer: Timer,
     visualize: bool = False,
     spectrogram_loss_scalar: float = HParam(),
     stop_token_min_loss: float = HParam(),
@@ -376,16 +378,28 @@ def _run_step(
         average_spectrogram_length: The training dataset average spectrogram length. It is used
             to normalize the loss magnitude.
     """
-    frames, stop_token, alignments, spectrogram_loss, stop_token_loss = state.model(
+    timer.record_event(timer.MODEL_FORWARD)
+    frames, stop_token, alignments = state.model(
         tokens=batch.encoded_phonemes.tensor,
         speaker=batch.encoded_speaker.tensor,
         target_frames=batch.spectrogram.tensor,
-        target_stop_token=batch.stop_token.tensor,
         num_tokens=batch.encoded_phonemes.lengths,
         tokens_mask=batch.encoded_phonemes_mask.tensor,
         target_mask=batch.spectrogram_mask.tensor,
         mode=lib.spectrogram_model.Mode.FORWARD,
     )
+
+    # SOURCE: Tacotron 2
+    # We minimize the summed mean squared error (MSE) from before and after the post-net to aid
+    # convergence.
+    spectrogram_loss = mse_loss(frames, batch.spectrogram.tensor, reduction="none")
+    spectrogram_loss *= batch.spectrogram_mask.tensor.unsqueeze(2)
+
+    # SOURCE (Tacotron 2 Author):
+    # The author confirmed they used BCE loss in Google Chat.
+    target = batch.stop_token.tensor
+    stop_token_loss = binary_cross_entropy_with_logits(stop_token, target, reduction="none")
+    stop_token_loss *= batch.spectrogram_mask.tensor
 
     if state.model.training:
         state.model.zero_grad(set_to_none=True)
@@ -404,11 +418,14 @@ def _run_step(
         stop_token_loss_ = (stop_token_loss.sum(dim=0) / average_spectrogram_length).mean()
         stop_token_loss_ = (stop_token_loss_ - stop_token_min_loss).abs() + stop_token_min_loss
 
+        timer.record_event(timer.MODEL_BACKWARD)
         (spectrogram_loss_ + stop_token_loss_).backward()
 
+        timer.record_event(timer.REPORT_METRICS)
         # NOTE: Measure the "grad_norm" before `clipper.clip()`.
         metrics.log_optimizer_metrics(state.optimizer, state.clipper, cadence=Cadence.STEP)
 
+        timer.record_event(timer.MODEL_STEP)
         # NOTE: `optimizer` will not error if there are no gradients so we check beforehand.
         params = state.optimizer.param_groups[0]["params"]
         assert all([p.grad is not None for p in params]), "`None` gradients found."
@@ -419,10 +436,12 @@ def _run_step(
         state.comet.set_step(typing.cast(int, state.step.item()))
 
     if visualize:
+        timer.record_event(timer.VISUALIZE_PREDICTIONS)
         _visualize_source_vs_target(
             state, batch, frames, stop_token, alignments, dataset_type, Cadence.STEP
         )
 
+    timer.record_event(timer.REPORT_METRICS)
     stop_threshold = typing.cast(float, state.model.module.stop_threshold)
     spectrogram_mask = batch.spectrogram_mask.tensor
     spectrogram_lengths = batch.spectrogram.lengths
@@ -507,16 +526,16 @@ def _run_inference(
     batch: SpanBatch,
     data_loader: DataLoader,
     dataset_type: DatasetType,
+    timer: Timer,
     visualize: bool = False,
 ):
     """Run the model in inference mode, and measure it's results.
-
-    TODO: Consider calling `update_dataset_metrics`, and filtering the spans which overflowed.
 
     Args:
         ...
         visualize: If `True` visualize the results with `comet`.
     """
+    timer.record_event(timer.MODEL_FORWARD)
     frames, stop_tokens, alignments, lengths, reached_max = state.model.module(
         batch.encoded_phonemes.tensor,
         batch.encoded_speaker.tensor,
@@ -525,10 +544,12 @@ def _run_inference(
     )
 
     if visualize:
+        timer.record_event(timer.VISUALIZE_PREDICTIONS)
         _visualize_inferred(
             state, batch, frames, stop_tokens, alignments, lengths, dataset_type, Cadence.STEP
         )
 
+    timer.record_event(timer.REPORT_METRICS)
     mask = lengths_to_mask(lengths).transpose(0, 1)
     values: _utils.MetricsValues = {
         **metrics.get_dataset_values(batch, reached_max),
@@ -539,7 +560,38 @@ def _run_inference(
     metrics.update(values)
 
 
-_BatchHandler = typing.Callable[[_State, Metrics, SpanBatch, DataLoader, DatasetType, bool], None]
+_HandleBatch = typing.Callable[
+    [_State, Metrics, SpanBatch, DataLoader, DatasetType, Timer, bool], None
+]
+
+
+def _run_steps(
+    store: torch.distributed.TCPStore,
+    context: Context,
+    state: _State,
+    dataset_type: DatasetType,
+    data_loader: DataLoader,
+    handle_batch: _HandleBatch,
+):
+    """Run the `handle_batch` in a loop over `data_loader` batches."""
+    with set_context(context, model=state.model, comet=state.comet):
+        metrics = Metrics(store, state.comet, state.input_encoder.speaker_encoder.vocab)
+        iterator = iter(data_loader)
+        while True:
+            timer = Timer()
+            timer.record_event(timer.LOAD_DATA)
+            batch = next(iterator, None)
+            if batch is None:
+                break
+
+            is_visualize = state.step.item() % data_loader.num_steps_per_epoch == 0
+            handle_batch(state, metrics, batch, data_loader, dataset_type, timer, is_visualize)
+
+            if Context.TRAIN == context:
+                metrics.log(lambda l: l[-1:], type_=dataset_type, cadence=Cadence.STEP)
+                state.comet.log_metrics(timer.get_timers())
+
+        metrics.log(is_verbose=True, type_=dataset_type, cadence=Cadence.MULTI_STEP)
 
 
 def _run_worker(
@@ -562,7 +614,7 @@ def _run_worker(
         else _State.from_checkpoint(checkpoint, comet, device)
     )
     train_loader, dev_loader = _get_data_loaders(state, train_dataset, dev_dataset)
-    contexts: typing.List[typing.Tuple[Context, DatasetType, DataLoader, _BatchHandler]] = [
+    contexts: typing.List[typing.Tuple[Context, DatasetType, DataLoader, _HandleBatch]] = [
         (Context.TRAIN, DatasetType.TRAIN, train_loader, _run_step),
         (Context.EVALUATE, DatasetType.DEV, dev_loader, _run_step),
         (Context.EVALUATE_INFERENCE, DatasetType.DEV, dev_loader, _run_inference),
@@ -572,13 +624,7 @@ def _run_worker(
             comet, step=state.step.item(), steps_per_epoch=train_loader.num_steps_per_epoch
         ):
             for context, dataset_type, data_loader, handle_batch in contexts:
-                with set_context(context, model=state.model, comet=comet):
-                    metrics = Metrics(store, comet, state.input_encoder.speaker_encoder.vocab)
-                    for i, batch in enumerate(data_loader):
-                        handle_batch(state, metrics, batch, data_loader, dataset_type, i == 0)
-                        if Context.TRAIN == context:
-                            metrics.log(lambda l: l[-1:], type_=dataset_type, cadence=Cadence.STEP)
-                    metrics.log(is_verbose=True, type_=dataset_type, cadence=Cadence.MULTI_STEP)
+                _run_steps(store, context, state, dataset_type, data_loader, handle_batch)
 
             if is_master():
                 name = f"step_{state.step.item()}{lib.environment.PT_EXTENSION}"

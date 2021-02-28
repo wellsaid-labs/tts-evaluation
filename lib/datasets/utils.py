@@ -173,7 +173,7 @@ class Passage:
 
         slices = (self.script[a.script[0] : a.script[1]] for a in self.alignments)
         assert all(self._no_white_space(s) for s in slices)
-        slices = (self.script[a.transcript[0] : a.transcript[1]] for a in self.alignments)
+        slices = (self.transcript[a.transcript[0] : a.transcript[1]] for a in self.alignments)
         assert all(self._no_white_space(s) for s in slices)
 
         pairs = zip(self.alignments, self.alignments[1:])
