@@ -804,10 +804,11 @@ class Timer:
         self.record_event(self._LAST_EVENT)
         times: typing.Dict[Label, float] = collections.defaultdict(float)
         for prev, next in zip(self.events, self.events[1:]):
-            times[get_timer_label(prev.name, **kwargs)] += next.cpu - prev.cpu
+            name = f"seconds/{prev.name}"
+            times[get_timer_label(name, **kwargs)] += next.cpu - prev.cpu
             if torch.cuda.is_available():
                 prev.cuda.synchronize()
                 next.cuda.synchronize()
-                label = get_timer_label(prev.name, device=Device.CUDA, **kwargs)
+                label = get_timer_label(name, device=Device.CUDA, **kwargs)
                 times[label] += prev.cuda.elapsed_time(next.cuda) / 1000
         return dict(times)

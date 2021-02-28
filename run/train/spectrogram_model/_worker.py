@@ -507,7 +507,7 @@ def _run_steps(
 
             if Context.TRAIN == context:
                 metrics.log(lambda l: l[-1:], type_=dataset_type, cadence=Cadence.STEP)
-                state.comet.log_metrics(timer.get_timers())
+                state.comet.log_metrics(timer.get_timers(cadence=Cadence.STEP))
 
         metrics.log(is_verbose=True, type_=dataset_type, cadence=Cadence.MULTI_STEP)
 
