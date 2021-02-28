@@ -20,7 +20,7 @@ Setup your local development environment by following [these instructions](LOCAL
    Also set these environment variables...
 
    ```zsh
-   TRAIN_SCRIPT_PATH='path/to/train.py' # EXAMPLE: run/train/spectrogram_model.py
+   TRAIN_SCRIPT_PATH='path/to/train' # EXAMPLE: run/train/spectrogram_model
    ZONE='your-vm-zone' # EXAMPLE: us-central1-a
    NAME=$USER"-your-instance-name" # EXAMPLE: michaelp-baseline
    GCP_USER='your-gcp-user-name' # Example: michaelp
