@@ -755,7 +755,6 @@ class Metrics:
                 self.all[key] = [[] for _ in range(self._operation)]
             self.all[key].append(group)
 
-    @lib.utils.log_runtime
     def update(self, values: MetricsValues):
         """Update the master process `self.all` with `values`."""
         self._operation += 1
