@@ -14,19 +14,15 @@ import torch.nn
 import torch.optim
 import torch.utils
 import torch.utils.data
-from hparams import HParam, HParams, add_config, configurable
+from hparams import HParam, configurable
 from torch.nn.functional import binary_cross_entropy_with_logits, mse_loss
 from torchnlp.utils import get_total_parameters, lengths_to_mask
 
 import lib
-from lib.distributed import get_world_size, is_master
+from lib.distributed import is_master
 from lib.environment import save
 from run._config import (
     DATASET_PHONETIC_CHARACTERS,
-    NUM_FRAME_CHANNELS,
-    PHONEME_SEPARATOR,
-    RANDOM_SEED,
-    SPECTROGRAM_MODEL_EXPERIMENTS_PATH,
     Cadence,
     Dataset,
     DatasetType,
@@ -34,90 +30,14 @@ from run._config import (
     get_model_label,
 )
 from run.train import _utils
-from run.train._utils import (
-    CometMLExperiment,
-    Context,
-    DataLoader,
-    Timer,
-    get_config_parameters,
-    make_app,
-    run_workers,
-    set_context,
-    set_epoch,
-    set_run_seed,
-)
+from run.train._utils import CometMLExperiment, Context, DataLoader, Timer, set_context, set_epoch
 from run.train.spectrogram_model._data import DataProcessor, InputEncoder, SpanBatch
 from run.train.spectrogram_model._metrics import Metrics, get_average_db_rms_level
 
 logger = logging.getLogger(__name__)
-torch.optim.Adam.__init__ = configurable(torch.optim.Adam.__init__)
 
-
-def _make_configuration(
-    train_dataset: Dataset, dev_dataset: Dataset, debug: bool
-) -> typing.Dict[typing.Callable, typing.Any]:
-    """Make additional configuration for spectrogram model training."""
-
-    train_size = sum([sum([p.aligned_audio_length() for p in d]) for d in train_dataset.values()])
-    dev_size = sum([sum([p.aligned_audio_length() for p in d]) for d in dev_dataset.values()])
-    ratio = round(train_size / dev_size)
-    train_batch_size = 28 if debug else 56
-    dev_batch_size = train_batch_size * 4
-    train_steps_per_epoch = 64 if debug else 1024
-    dev_steps_per_epoch = (train_steps_per_epoch / (dev_batch_size / train_batch_size)) / ratio
-    assert dev_steps_per_epoch % 1 == 0, "The number of steps must be an integer."
-    assert train_batch_size % get_world_size() == 0
-    assert dev_batch_size % get_world_size() == 0
-
-    return {
-        set_run_seed: HParams(seed=RANDOM_SEED),
-        _State._get_optimizers: HParams(
-            lr_multiplier_schedule=partial(
-                lib.optimizers.warmup_lr_multiplier_schedule, warmup=500
-            ),
-            # SOURCE (Tacotron 2):
-            # We use the Adam optimizer [29] with β1 = 0.9, β2 = 0.999
-            optimizer=torch.optim.Adam,
-        ),
-        _run_step: HParams(
-            # NOTE: This scalar calibrates the loss so that it's scale is similar to Tacotron-2.
-            spectrogram_loss_scalar=1 / 100,
-            # NOTE: Learn more about this parameter here: https://arxiv.org/abs/2002.08709
-            # NOTE: This value is the minimum loss the test set achieves before the model
-            # starts overfitting on the train set.
-            # TODO: Try increasing the stop token minimum loss because it still overfit.
-            stop_token_min_loss=0.0105,
-            # NOTE: This value is the average spectrogram length in the training dataset.
-            average_spectrogram_length=315.0,
-        ),
-        _get_data_loaders: HParams(
-            # SOURCE: Tacotron 2
-            # To train the feature prediction network, we apply the standard maximum-likelihood
-            # training procedure (feeding in the correct output instead of the predicted output on
-            # the decoder side, also referred to as teacher-forcing) with a batch size of 64 on a
-            # single GPU.
-            # NOTE: Batch size parameters set after experimentation on a 2 Px100 GPU.
-            train_batch_size=train_batch_size,
-            dev_batch_size=dev_batch_size,
-            train_steps_per_epoch=train_steps_per_epoch,
-            dev_steps_per_epoch=int(dev_steps_per_epoch),
-            num_workers=2 if debug else 4,
-            prefetch_factor=2 if debug else 4,
-        ),
-        Metrics._get_model_metrics: HParams(num_frame_channels=NUM_FRAME_CHANNELS),
-        # SOURCE (Tacotron 2):
-        # We use the Adam optimizer with β1 = 0.9, β2 = 0.999, eps = 10−6 learning rate of 10−3
-        # We also apply L2 regularization with weight 10−6
-        # NOTE: No L2 regularization performed better based on Comet experiments in March 2020.
-        torch.optim.Adam.__init__: HParams(
-            eps=10 ** -6,
-            weight_decay=0,
-            lr=10 ** -3,
-            amsgrad=True,
-            betas=(0.9, 0.999),
-        ),
-        InputEncoder.__init__: HParams(phoneme_separator=PHONEME_SEPARATOR),
-    }
+if not hasattr(torch.optim.Adam.__init__, "_configurable"):
+    torch.optim.Adam.__init__ = configurable(torch.optim.Adam.__init__)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -594,7 +514,7 @@ def _run_steps(
         metrics.log(is_verbose=True, type_=dataset_type, cadence=Cadence.MULTI_STEP)
 
 
-def _run_worker(
+def run_worker(
     device: torch.device,
     store: torch.distributed.TCPStore,
     comet: CometMLExperiment,
@@ -630,34 +550,3 @@ def _run_worker(
                 name = f"step_{state.step.item()}{lib.environment.PT_EXTENSION}"
                 path = checkpoints_directory / name
                 save(path, state.to_checkpoint(checkpoints_directory=checkpoints_directory))
-
-
-def _run_app(
-    checkpoints_path: pathlib.Path,
-    checkpoint: typing.Optional[pathlib.Path],
-    train_dataset: Dataset,
-    dev_dataset: Dataset,
-    comet: CometMLExperiment,
-    cli_config: typing.Dict[str, typing.Any],
-    debug: bool = False,
-):
-    """Run spectrogram model training.
-
-    TODO: PyTorch-Lightning makes strong recommendations to not use `spawn`. Learn more:
-    https://pytorch-lightning.readthedocs.io/en/stable/multi_gpu.html#distributed-data-parallel
-    https://github.com/PyTorchLightning/pytorch-lightning/pull/2029
-    https://github.com/PyTorchLightning/pytorch-lightning/issues/5772
-    Also, it's less normal to use `spawn` because it wouldn't work with multiple nodes, so
-    we should consider using `torch.distributed.launch`.
-    TODO: Should we consider setting OMP num threads similarly:
-    https://github.com/pytorch/pytorch/issues/22260
-    """
-    add_config(_make_configuration(train_dataset, dev_dataset, debug))
-    add_config(cli_config)
-    comet.log_parameters(get_config_parameters())
-    return run_workers(_run_worker, comet, checkpoint, checkpoints_path, train_dataset, dev_dataset)
-
-
-if __name__ == "__main__":  # pragma: no cover
-    app = make_app(_run_app, SPECTROGRAM_MODEL_EXPERIMENTS_PATH)
-    app()

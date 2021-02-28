@@ -18,7 +18,9 @@ from run.train import _utils
 from run.train._utils import CometMLExperiment, get_config_parameters, make_app, run_workers
 
 logger = logging.getLogger(__name__)
-torch.optim.Adam.__init__ = configurable(torch.optim.Adam.__init__)
+
+if not hasattr(torch.optim.Adam.__init__, "_configurable"):
+    torch.optim.Adam.__init__ = configurable(torch.optim.Adam.__init__)
 
 
 def _make_configuration(

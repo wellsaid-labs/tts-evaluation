@@ -13,14 +13,9 @@ from lib.datasets import JUDY_BIEBER, LINDA_JOHNSON, m_ailabs_en_us_judy_bieber_
 from run._config import Cadence, DatasetType
 from run._utils import split_dataset
 from run.train._utils import CometMLExperiment, Context, Timer, _get_dataset_stats, set_context
-from run.train.spectrogram_model.__main__ import (
-    _get_data_loaders,
-    _make_configuration,
-    _run_inference,
-    _run_step,
-    _State,
-)
+from run.train.spectrogram_model.__main__ import _make_configuration
 from run.train.spectrogram_model._metrics import Metrics
+from run.train.spectrogram_model._worker import _get_data_loaders, _run_inference, _run_step, _State
 from tests import _utils
 
 
