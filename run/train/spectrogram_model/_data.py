@@ -409,42 +409,11 @@ class SpanBatch(typing.NamedTuple):
     # SequenceBatch[torch.LongTensor [1, batch_size], torch.LongTensor [1, batch_size])
     encoded_speaker: SequenceBatch
 
-    # NOTE: Mask padding with `False`.
-    # SequenceBatch[torch.BoolTensor [num_characters, batch_size], torch.LongTensor [1, batch_size])
-    encoded_text_mask: SequenceBatch
-
-    # SequenceBatch[torch.LongTensor [num_characters, batch_size], torch.LongTensor [1, batch_size])
-    encoded_text: SequenceBatch
-
-    # SequenceBatch[torch.LongTensor [num_characters, batch_size], torch.LongTensor [1, batch_size])
-    encoded_letter_case: SequenceBatch
-
-    # SequenceBatch[torch.LongTensor [num_characters, batch_size], torch.LongTensor [1, batch_size])
-    word_vectors: SequenceBatch
-
     # SequenceBatch[torch.LongTensor [num_phonemes, batch_size], torch.LongTensor [1, batch_size])
     encoded_phonemes: SequenceBatch
 
     # SequenceBatch[torch.LongTensor [num_phonemes, batch_size], torch.LongTensor [1, batch_size])
     encoded_phonemes_mask: SequenceBatch
-
-    # SequenceBatch[torch.FloatTensor [num_characters, batch_size],
-    #               torch.LongTensor [1, batch_size])
-    loudness: SequenceBatch
-
-    # NOTE: Mask padding with `False`.
-    # SequenceBatch[torch.BoolTensor [num_characters, batch_size],
-    #               torch.LongTensor [1, batch_size])
-    loudness_mask: SequenceBatch
-
-    # SequenceBatch[torch.FloatTensor [num_characters, batch_size],
-    #               torch.LongTensor [1, batch_size])
-    speed: SequenceBatch
-
-    # NOTE: Mask padding with `False`.
-    # SequenceBatch[torch.BoolTensor [num_characters, batch_size],
-    #               torch.LongTensor [1, batch_size])
-    speed_mask: SequenceBatch
 
 
 class DataProcessor(typing.Mapping[int, SpanBatch]):
@@ -541,15 +510,12 @@ class DataProcessor(typing.Mapping[int, SpanBatch]):
             assert span is not None, "Invalid `spacy.tokens.Span` selected."
             docs[i] = span.as_doc()
 
-        char_to_word = [_get_char_to_word(d) for d in docs]
         phonemes = typing.cast(typing.List[str], lib.text.grapheme_to_phoneme(docs))
         decoded = [DecodedInput(s.script, p, s.speaker) for s, p in zip(spans, phonemes)]
         encoded = [self.input_encoder.encode(d) for d in decoded]
         signals_ = asyncio.run(_spans_read_audio_slice(spans))
-        loudness = [_random_loudness_annotations(s, a) for s, a in zip(spans, signals_)]
         signals = [_pad_and_trim_signal(s) for s in signals_]
         spectrogram, spectrogram_mask = _signals_to_spectrograms(signals)
-        speed = [_random_speed_annotations(s) for s in spans]
 
         return SpanBatch(
             spans=spans,
@@ -559,20 +525,10 @@ class DataProcessor(typing.Mapping[int, SpanBatch]):
             spectrogram_mask=spectrogram_mask,
             stop_token=_make_stop_token(spectrogram),
             encoded_speaker=self._stack([s.speaker for s in encoded]),
-            encoded_text=self._stack([s.graphemes for s in encoded]),
-            encoded_text_mask=self._stack([self._make_mask(e.graphemes.shape[0]) for e in encoded]),
-            encoded_letter_case=self._stack([e.letter_cases for e in encoded]),
-            word_vectors=self._stack(
-                [_get_word_vectors(char_to_word[i], docs[i]) for i in range(length)]
-            ),
             encoded_phonemes=self._stack([s.phonemes for s in encoded]),
             encoded_phonemes_mask=self._stack(
                 [self._make_mask(e.phonemes.shape[0]) for e in encoded]
             ),
-            loudness=self._stack([a[0] for a in loudness]),
-            loudness_mask=self._stack([a[1] for a in loudness]),
-            speed=self._stack([a[0] for a in speed]),
-            speed_mask=self._stack([a[1] for a in speed]),
         )
 
     def __getitem__(self, index) -> SpanBatch:
