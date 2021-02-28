@@ -272,13 +272,13 @@ class Metrics(_utils.Metrics):
         values = collections.defaultdict(float)
         tokens_mask = batch.encoded_phonemes_mask.tensor
         alignments = alignments.masked_fill(~tokens_mask.transpose(0, 1).unsqueeze(0), 0)
-        alignments = alignments.masked_fill(~spectrogram_mask.unsqueeze(0), 0)
+        reduce = lambda a: a.masked_fill(~spectrogram_mask, 0).sum(dim=0).view(-1).tolist()
 
         for span, num_skipped, alignment_std, alignment_norm, length, has_reached_max in zip(
             batch.spans,
             get_num_skipped(alignments, tokens_mask, spectrogram_mask).view(-1).tolist(),
-            lib.utils.get_weighted_std(alignments, dim=2).sum(dim=0).view(-1).tolist(),
-            alignments.norm(p=self.ALIGNMENT_NORM_TYPE, dim=2).sum(dim=0).view(-1).tolist(),
+            reduce(lib.utils.get_weighted_std(alignments, dim=2)),
+            reduce(alignments.norm(p=self.ALIGNMENT_NORM_TYPE, dim=2)),
             spectrogram_lengths.view(-1).tolist(),
             itertools.repeat(False) if reached_max is None else reached_max.view(-1).tolist(),
         ):

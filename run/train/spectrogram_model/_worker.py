@@ -468,7 +468,7 @@ def _run_inference(
         )
 
     timer.record_event(timer.REPORT_METRICS)
-    mask = lengths_to_mask(lengths).transpose(0, 1)
+    mask = lengths_to_mask(lengths, device=lengths.device).transpose(0, 1)
     values: _utils.MetricsValues = {
         **metrics.get_dataset_values(batch, reached_max),
         **metrics.get_alignment_values(batch, alignments, lengths, mask, reached_max),
