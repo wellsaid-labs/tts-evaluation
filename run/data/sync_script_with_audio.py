@@ -9,7 +9,7 @@ Usage Example:
 
     PREFIX=gs://wellsaid_labs_datasets/hilary_noriega/processed
     python -m run.data.sync_script_with_audio \
-      --voice-over "$PREFIX/speech_to_text/script_1.wav" \
+      --voice-over "$PREFIX/recordings/script_1.wav" \
       --script "$PREFIX/scripts/script_1_-_hilary.csv" \
       --destination "$PREFIX/"
 """
@@ -377,12 +377,12 @@ def _flatten_stt_result(stt_result: SttResult) -> typing.Tuple[str, typing.List[
         transcript += result["transcript"]
         for word in result["words"]:
             audio = (float(word["startTime"][:-1]), float(word["endTime"][:-1]))
-            slice_ = (offset, offset + len(word["word"]))
-            stt_tokens.append(SttToken(word["word"], audio, slice_))
-            if transcript[slice(*slice_)] != word["word"]:
+            sliced = transcript[slice(offset, offset + len(word["word"]))]
+            if sliced != word["word"]:
                 message = "The transcript ('%s') doesn't align with the words ('%s')."
-                logging.warning(message, transcript[slice(*slice_)], word["word"])
+                logging.warning(message, sliced, word["word"])
                 offset -= 1  # NOTE: Google may have forgotten a space, so we corrected for that.
+            stt_tokens.append(SttToken(word["word"], audio, (offset, offset + len(word["word"]))))
             offset += len(word["word"]) + 1
     for prev, next in zip(stt_tokens[:-1], stt_tokens[1:]):
         if prev.audio[-1] > next.audio[0]:
@@ -395,6 +395,9 @@ def _flatten_stt_result(stt_result: SttResult) -> typing.Tuple[str, typing.List[
     # Google STT predicted the token "factories.given." in the above transcript it predicted.
     if " ".join(t.text for t in stt_tokens).strip() != transcript.strip():
         logger.warning("Google STT may not be white-space tokenized.")
+    message = "Transcript has white-spaces."
+    no_white_space = lambda t: t.strip() == t
+    assert all(no_white_space(transcript[t.slice[0] : t.slice[1]]) for t in stt_tokens), message
     return transcript, stt_tokens
 
 
