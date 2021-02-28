@@ -339,7 +339,7 @@ def _run_step(
         timer.record_event(timer.MODEL_BACKWARD)
         (spectrogram_loss_ + stop_token_loss_).backward()
 
-        timer.record_event(timer.REPORT_METRICS)
+        timer.record_event(timer.LOG_METRICS)
         # NOTE: Measure the "grad_norm" before `clipper.clip()`.
         metrics.log_optimizer_metrics(state.optimizer, state.clipper, cadence=Cadence.STEP)
 
@@ -359,7 +359,7 @@ def _run_step(
             state, batch, frames, stop_token, alignments, dataset_type, Cadence.STEP
         )
 
-    timer.record_event(timer.REPORT_METRICS)
+    timer.record_event(timer.MEASURE_METRICS)
     stop_threshold = typing.cast(float, state.model.module.stop_threshold)
     spectrogram_mask = batch.spectrogram_mask.tensor
     spectrogram_lengths = batch.spectrogram.lengths
@@ -372,6 +372,7 @@ def _run_step(
         metrics.SPECTROGRAM_LOSS_SUM: float(spectrogram_loss.sum().item()),
         metrics.STOP_TOKEN_LOSS_SUM: float(stop_token_loss.sum().item()),
     }
+    timer.record_event(timer.GATHER_METRICS)
     metrics.update(values)
 
 
@@ -467,7 +468,7 @@ def _run_inference(
             state, batch, frames, stop_tokens, alignments, lengths, dataset_type, Cadence.STEP
         )
 
-    timer.record_event(timer.REPORT_METRICS)
+    timer.record_event(timer.MEASURE_METRICS)
     mask = lengths_to_mask(lengths, device=lengths.device).transpose(0, 1)
     values: _utils.MetricsValues = {
         **metrics.get_dataset_values(batch, reached_max),
@@ -475,6 +476,7 @@ def _run_inference(
         **metrics.get_loudness_values(batch, frames, mask, reached_max),
         **metrics.get_data_loader_values(data_loader),
     }
+    timer.record_event(timer.GATHER_METRICS)
     metrics.update(values)
 
 
@@ -505,6 +507,7 @@ def _run_steps(
             is_visualize = state.step.item() % data_loader.num_steps_per_epoch == 0
             handle_batch(state, metrics, batch, data_loader, dataset_type, timer, is_visualize)
 
+            timer.record_event(timer.LOG_METRICS)
             if Context.TRAIN == context:
                 metrics.log(lambda l: l[-1:], type_=dataset_type, cadence=Cadence.STEP)
                 state.comet.log_metrics(timer.get_timers(cadence=Cadence.STEP))

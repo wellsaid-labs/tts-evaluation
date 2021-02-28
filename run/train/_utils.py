@@ -786,7 +786,9 @@ class Timer:
     MODEL_BACKWARD = "model_backward"
     MODEL_STEP = "model_step"
     VISUALIZE_PREDICTIONS = "visualize_predictions"
-    REPORT_METRICS = "report_metrics"
+    MEASURE_METRICS = "measure_metrics"
+    GATHER_METRICS = "gather_metrics"
+    LOG_METRICS = "log_metrics"
     _LAST_EVENT = "last_event"
 
     def __init__(self):
