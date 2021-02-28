@@ -6,8 +6,6 @@ import typing
 from functools import partial
 from itertools import chain
 
-# NOTE: `comet_ml` needs to be imported before torch
-import comet_ml  # type: ignore # noqa
 import torch
 import torch.distributed
 import torch.nn

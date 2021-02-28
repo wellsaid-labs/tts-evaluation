@@ -3,8 +3,6 @@ import logging
 import pathlib
 import typing
 
-# NOTE: `comet_ml` needs to be imported before torch
-import comet_ml  # type: ignore # noqa
 import torch
 import torch.nn
 import torch.optim

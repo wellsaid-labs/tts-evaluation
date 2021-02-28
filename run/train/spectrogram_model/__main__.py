@@ -3,8 +3,6 @@ import pathlib
 import typing
 from functools import partial
 
-# NOTE: `comet_ml` needs to be imported before torch
-import comet_ml  # type: ignore # noqa
 import torch
 import torch.optim
 from hparams import HParams, add_config

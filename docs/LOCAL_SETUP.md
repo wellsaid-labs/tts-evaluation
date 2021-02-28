@@ -57,8 +57,17 @@ This repository requires [Comet](https://www.comet.ml) for visualization, and yo
 a team member to create you an account.
 
 With your new account, you'll need to create a `.comet.config` file in this repositories root
-level directory. The file should contain the `api_key`, `rest_api_key` and `workspace`
-configurations. Learn more on
+level directory with these configurations:
+
+```
+[comet]
+workspace=wellsaid-labs
+api_key=<api_key>
+rest_api_key=<rest_api_key>
+disable_auto_logging=1
+```
+
+Learn more about where to find the `api_key` and `rest_api_key` configurations on
 [this web page](https://www.comet.ml/docs/python-sdk/advanced/#python-configuration).
 
 ## 5. Google Cloud
