@@ -692,10 +692,14 @@ def run_workers(
     checkpoint: typing.Optional[pathlib.Path],
     *args,
 ):
-    """Spawn workers for each GPU, and setup their environment."""
+    """Spawn workers for each GPU, and setup their environment.
+
+    TODO: Remove `copy.deepcopy` after this issue is fixed:
+    https://github.com/pytorch/pytorch/issues/51849
+    """
     logger.info("Spawning workers %s", lib.utils.mazel_tov())
     partial_ = functools.partial(CometMLExperiment, experiment_key=comet.get_key())
-    args = (partial_, get_config(), checkpoint, run_worker, *args)
+    args = (partial_, copy.deepcopy(get_config()), checkpoint, run_worker, *args)
     return lib.distributed.spawn(_run_workers_helper, args=args)  # type: ignore
 
 
