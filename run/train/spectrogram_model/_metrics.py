@@ -215,6 +215,10 @@ class Metrics(_utils.Metrics):
         self.comet = comet
         self.speakers = speakers
 
+    @staticmethod
+    def _tolist(tensor: torch.Tensor) -> typing.List[float]:
+        return tensor.view(-1).tolist()
+
     def get_dataset_values(
         self, batch: SpanBatch, reached_max: typing.Optional[torch.Tensor] = None
     ) -> MetricsValues:
@@ -224,13 +228,13 @@ class Metrics(_utils.Metrics):
         TODO: Measure the difference between punctuation in the phonetic vs grapheme phrases.
         Apart from unique cases, they should have the same punctuation.
         """
-        values = collections.defaultdict(float)
+        values: typing.Dict[str, float] = collections.defaultdict(float)
 
         for span, num_frames, num_tokens, has_reached_max in zip(
             batch.spans,
-            batch.spectrogram.lengths.view(-1).tolist(),
-            batch.encoded_phonemes.lengths.view(-1).tolist(),
-            itertools.repeat(False) if reached_max is None else reached_max.view(-1).tolist(),
+            self._tolist(batch.spectrogram.lengths),
+            self._tolist(batch.encoded_phonemes.lengths),
+            itertools.repeat(False) if reached_max is None else self._tolist(reached_max),
         ):
             # NOTE: Create a key for `self.NUM_SPANS` so a value exists, even if zero.
             values[self.NUM_SPANS] += float(not has_reached_max)
@@ -269,18 +273,18 @@ class Metrics(_utils.Metrics):
             reached_max (torch.BoolTensor [batch_size]): Remove predictions that diverged
                 (reached max) as to not skew other metrics.
         """
-        values = collections.defaultdict(float)
+        values: typing.Dict[str, float] = collections.defaultdict(float)
         tokens_mask = batch.encoded_phonemes_mask.tensor
         alignments = alignments.masked_fill(~tokens_mask.transpose(0, 1).unsqueeze(0), 0)
-        reduce = lambda a: a.masked_fill(~spectrogram_mask, 0).sum(dim=0).view(-1).tolist()
+        _tolist = lambda a: self._tolist(a.masked_fill(~spectrogram_mask, 0).sum(dim=0))
 
         for span, num_skipped, alignment_std, alignment_norm, length, has_reached_max in zip(
             batch.spans,
-            get_num_skipped(alignments, tokens_mask, spectrogram_mask).view(-1).tolist(),
-            reduce(lib.utils.get_weighted_std(alignments, dim=2)),
-            reduce(alignments.norm(p=self.ALIGNMENT_NORM_TYPE, dim=2)),
-            spectrogram_lengths.view(-1).tolist(),
-            itertools.repeat(False) if reached_max is None else reached_max.view(-1).tolist(),
+            self._tolist(get_num_skipped(alignments, tokens_mask, spectrogram_mask)),
+            _tolist(lib.utils.get_weighted_std(alignments, dim=2)),
+            _tolist(alignments.norm(p=self.ALIGNMENT_NORM_TYPE, dim=2)),
+            self._tolist(spectrogram_lengths),
+            itertools.repeat(False) if reached_max is None else self._tolist(reached_max),
         ):
             assert span.speaker in self.speakers
             values[self.NUM_REACHED_MAX] += has_reached_max
@@ -314,13 +318,13 @@ class Metrics(_utils.Metrics):
             spectrogram_mask (torch.FloatTensor [num_frames, batch_size])
             **kwargs: Additional key word arguments passed to `get_power_rms_level_sum`.
         """
-        values = collections.defaultdict(float)
+        values: typing.Dict[str, float] = collections.defaultdict(float)
         loudness = get_power_rms_level_sum(batch.spectrogram.tensor, batch.spectrogram_mask.tensor)
         for span, loudness, predicted_loudness, has_reached_max in zip(
             batch.spans,
-            loudness.tolist(),
-            get_power_rms_level_sum(predicted_spectrogram, spectrogram_mask),
-            itertools.repeat(False) if reached_max is None else reached_max.view(-1).tolist(),
+            self._tolist(loudness),
+            self._tolist(get_power_rms_level_sum(predicted_spectrogram, spectrogram_mask)),
+            itertools.repeat(False) if reached_max is None else self._tolist(reached_max),
         ):
             if not has_reached_max:
                 assert span.speaker in self.speakers
