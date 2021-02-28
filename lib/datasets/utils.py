@@ -564,6 +564,26 @@ file is around 72,000 and the precision of the alignments is 0.1, so it should b
 """
 
 
+def _temporary_fix_for_transcript_offset(
+    transcript: str, alignments: typing.List[typing.List]
+) -> typing.List[typing.List]:
+    """Temporary fix for a bug in `sync_script_with_audio.py`.
+
+    TODO: Remove after datasets are reprocessed.
+    """
+    return_ = []
+    for alignment_ in alignments:
+        alignment = Alignment(*list_to_tuple(alignment_))
+        word = transcript[alignment.transcript[0] : alignment.transcript[1]]
+        if word.strip() != word:
+            update = (alignment.transcript[0] - 1, alignment.transcript[1] - 1)
+            alignment = alignment._replace(transcript=update)
+            corrected = transcript[alignment.transcript[0] : alignment.transcript[1]]
+            logger.warning("Corrected '%s' to '%s'.", word, corrected)
+        return_.append(lib.utils.tuple_to_list(alignment))
+    return return_
+
+
 def dataset_loader(
     directory: Path,
     root_directory_name: str,
@@ -643,6 +663,7 @@ def dataset_loader(
         assert len(scripts) == len(json_["alignments"]), error
         document = []
         for (_, script), alignments in zip(scripts.iterrows(), json_["alignments"]):
+            alignments = _temporary_fix_for_transcript_offset(json_["transcript"], alignments)
             passage = UnprocessedPassage(
                 audio_path=recording_path,
                 speaker=speaker,
