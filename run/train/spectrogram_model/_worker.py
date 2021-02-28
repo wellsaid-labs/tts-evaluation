@@ -496,16 +496,16 @@ def _run_steps(
     """Run the `handle_batch` in a loop over `data_loader` batches."""
     with set_context(context, model=state.model, comet=state.comet):
         metrics = Metrics(store, state.comet, state.input_encoder.speaker_encoder.vocab)
-        iterator = iter(data_loader)
+        iterator = enumerate(iter(data_loader))
         while True:
             timer = Timer()
             timer.record_event(timer.LOAD_DATA)
-            batch = next(iterator, None)
-            if batch is None:
+            item = next(iterator, None)
+            if item is None:
                 break
 
-            is_visualize = state.step.item() % data_loader.num_steps_per_epoch == 0
-            handle_batch(state, metrics, batch, data_loader, dataset_type, timer, is_visualize)
+            index, batch = item
+            handle_batch(state, metrics, batch, data_loader, dataset_type, timer, index == 0)
 
             timer.record_event(timer.LOG_METRICS)
             if Context.TRAIN == context:

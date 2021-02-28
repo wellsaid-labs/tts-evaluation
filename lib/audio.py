@@ -587,6 +587,8 @@ def power_to_db(tensor: torch.Tensor, eps: float = 1e-10) -> torch.Tensor:
     """Convert power (https://www.dsprelated.com/freebooks/mdft/Decibels.html) units to decibel
     units.
 
+    TODO: Fix numerical instability: https://github.com/pytorch/audio/issues/611
+
     Args:
         tensor (torch.FloatTensor)
         eps (float or torch.FloatTensor): The minimum amplitude to `log` avoiding the discontinuity
