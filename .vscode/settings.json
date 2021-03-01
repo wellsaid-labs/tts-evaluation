@@ -35,19 +35,8 @@
   "python.linting.flake8Enabled": true,
   "python.linting.pylintEnabled": false,
   "python.linting.mypyEnabled": false,
-  "python.experiments.optOutFrom": [
-    "All"
-  ],
   "reflow.preferredLineLength": 100,
   "git.autofetch": true,
   "eslint.run": "onSave",
-  "spellright.language": [
-    "en"
-  ],
-  "spellright.documentTypes": [
-    "markdown",
-    "latex",
-    "plaintext"
-  ],
   "python.analysis.autoImportCompletions": false
 }
