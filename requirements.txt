@@ -1,3 +1,7 @@
+# TODO: Use `uvloop` along side `asycio`:
+# https://github.com/MagicStack/uvloop
+# http://magic.io/blog/uvloop-blazing-fast-python-networking/
+
 # Math Library
 numpy
 scipy
