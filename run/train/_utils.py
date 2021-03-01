@@ -254,9 +254,17 @@ class CometMLExperiment:
         return typing.cast(typing.Optional[str], self._experiment.context)
 
     def _log_environment(self):
-        # TODO: Collect additional environment details like CUDA, CUDANN, NVIDIA Driver versions
-        # with this script:
-        # https://github.com/pytorch/pytorch/blob/master/torch/utils/collect_env.py
+        """
+        TODO: Collection additional information via:
+        torch.cuda.get_device_capability
+        torch.cuda.get_arch_list
+        torch.cuda.get_device_name
+        torch.cuda.get_gencode_flags
+
+        TODO: Collect additional environment details like CUDA, CUDANN, NVIDIA Driver versions
+        with this script:
+        https://github.com/pytorch/pytorch/blob/master/torch/utils/collect_env.py
+        """
         log_other = lambda k, v: self.log_other(run._config.get_environment_label(k), v)
 
         log_other("last_git_commit_date", lib.environment.get_last_git_commit_date())

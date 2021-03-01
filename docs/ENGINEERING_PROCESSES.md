@@ -5,7 +5,7 @@
 Where possible, we prefer that code is tested. For Python, we use `pytest` for testing like so:
 
 ```bash
-pytest
+python -m pytest
 ```
 
 After the tests run, we use `pytest-cov` to analyze and print the test case code coverage. Whenever
@@ -21,10 +21,10 @@ we use `yapf` and `flake8`. These tools can be used like so:
 
 ```bash
 # Run our linter, learn more: https://en.wikipedia.org/wiki/Lint_(software)
-flake8 src/; flake8 tests/;
+python -m flake8 lib/; python -m flake8 tests/; python -m flake8 run/;
 
 # Automatically format your code.
-yapf src/ tests/ --recursive --in-place;
+python -m yapf src/ tests/ --recursive --in-place;
 ```
 
 You'll want to integrate `yapf` and `flake8` into your code editor, both of these tools are
