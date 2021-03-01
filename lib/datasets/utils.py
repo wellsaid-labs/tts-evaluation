@@ -433,6 +433,8 @@ class SpanGenerator(typing.Iterator[Span]):
     sampled continuously and ignored. We could handle that better by excluding large samples
     from the sampling distribution.
 
+    TODO: Use `lib.utils.corrected_random_choice` in order to ensure a uniform length distribution.
+
     Args:
         passages
         max_seconds: The maximum interval length.
