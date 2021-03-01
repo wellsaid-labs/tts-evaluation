@@ -792,6 +792,7 @@ class Timer:
     VISUALIZE_PREDICTIONS = "visualize_predictions"
     MEASURE_METRICS = "measure_metrics"
     GATHER_METRICS = "gather_metrics"
+    REDUCE_METRICS = "reduce_metrics"
     LOG_METRICS = "log_metrics"
     _LAST_EVENT = "last_event"
 

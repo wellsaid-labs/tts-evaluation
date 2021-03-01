@@ -339,9 +339,8 @@ def _run_step(
         timer.record_event(timer.MODEL_BACKWARD)
         (spectrogram_loss_ + stop_token_loss_).backward()
 
-        timer.record_event(timer.LOG_METRICS)
         # NOTE: Measure the "grad_norm" before `clipper.clip()`.
-        metrics.log_optimizer_metrics(state.optimizer, state.clipper, cadence=Cadence.STEP)
+        metrics.log_optimizer_metrics(state.optimizer, state.clipper, timer, cadence=Cadence.STEP)
 
         timer.record_event(timer.MODEL_STEP)
         # NOTE: `optimizer` will not error if there are no gradients so we check beforehand.
@@ -507,9 +506,8 @@ def _run_steps(
             index, batch = item
             handle_batch(state, metrics, batch, data_loader, dataset_type, timer, index == 0)
 
-            timer.record_event(timer.LOG_METRICS)
             if Context.TRAIN == context:
-                metrics.log(lambda l: l[-1:], type_=dataset_type, cadence=Cadence.STEP)
+                metrics.log(lambda l: l[-1:], timer, type_=dataset_type, cadence=Cadence.STEP)
                 state.comet.log_metrics(timer.get_timers(cadence=Cadence.STEP))
 
         metrics.log(is_verbose=True, type_=dataset_type, cadence=Cadence.MULTI_STEP)

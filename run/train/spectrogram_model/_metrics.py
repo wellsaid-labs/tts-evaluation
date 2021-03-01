@@ -21,7 +21,7 @@ from lib.distributed import is_master
 from lib.utils import flatten_2d
 from run._config import GetLabel, get_dataset_label, get_model_label
 from run.train import _utils
-from run.train._utils import CometMLExperiment, DataLoader, MetricsValues
+from run.train._utils import CometMLExperiment, DataLoader, MetricsValues, Timer
 from run.train.spectrogram_model._data import SpanBatch
 
 
@@ -457,7 +457,13 @@ class Metrics(_utils.Metrics):
             metrics.update({partial(k, speaker=speaker): v for k, v in update.items()})
         return metrics
 
-    def log(self, select: _Select = lib.utils.identity, is_verbose: bool = False, **kwargs):
+    def log(
+        self,
+        select: _Select = lib.utils.identity,
+        timer: typing.Optional[Timer] = None,
+        is_verbose: bool = False,
+        **kwargs,
+    ):
         """Log metrics to `self.comet`.
 
         Args:
@@ -467,11 +473,15 @@ class Metrics(_utils.Metrics):
             **kwargs: Key-word arguments passed to `get_model_label` and `get_dataset_label`.
         """
         if is_master():
+            if timer is not None:
+                timer.record_event(timer.REDUCE_METRICS)
             metrics = {
                 **self._get_model_metrics(select=select, is_verbose=is_verbose),
                 **self._get_dataset_metrics(select=select, is_verbose=is_verbose),
                 **self._get_loudness_metrics(select=select, is_verbose=is_verbose),
             }
+            if timer is not None:
+                timer.record_event(timer.LOG_METRICS)
             self.comet.log_metrics(
                 {k(**kwargs): v for k, v in metrics.items() if not math.isnan(v)}
             )
@@ -480,6 +490,7 @@ class Metrics(_utils.Metrics):
         self,
         optimizer: torch.optim.Adam,
         clipper: lib.optimizers.AdaptiveGradientNormClipper,
+        timer: typing.Optional[Timer] = None,
         **kwargs,
     ):
         """Log optimizer metrics for `optimizer` and `clipper`. The model parameters have already
@@ -487,6 +498,8 @@ class Metrics(_utils.Metrics):
 
         TODO: Incorperate `optimizer_metrics` into the standard `Metrics` usage.
         """
+        if timer is not None:
+            timer.record_event(timer.REDUCE_METRICS)
         assert len(optimizer.param_groups) == 1, "Expecting only 1 group of parameters."
         param_group = optimizer.param_groups[0]
         parameter_norm = get_parameter_norm(param_group["params"], 2)
@@ -498,6 +511,8 @@ class Metrics(_utils.Metrics):
             self.GRADIENT_INFINITY_NORM: parameter_norm_inf.item(),
             self.LR: param_group["lr"],
         }
+        if timer is not None:
+            timer.record_event(timer.LOG_METRICS)
         self.comet.log_metrics({k(**kwargs): v for k, v in metrics.items()})
         if math.isfinite(clipper.max_norm):  # NOTE: Initially, `max_norm` will be `inf`.
             self.comet.log_metric(self.GRADIENT_MAX_NORM(**kwargs), clipper.max_norm)
