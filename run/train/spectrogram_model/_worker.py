@@ -289,6 +289,8 @@ def _run_step(
     https://pytorch.org/tutorials/recipes/recipes/tuning_guide.html#pre-allocate-memory-in-case-of-variable-input-length
     TODO: Maybe enable the CUDNN auto tuner:
     https://pytorch.org/tutorials/recipes/recipes/tuning_guide.html#enable-cudnn-auto-tuner
+    TODO: Use `asycio` to measure, gather, and reduce metrics without blocking training. This could
+    help improve performance by as much as ~9% (70ms of 800ms).
 
     Args:
         ...
