@@ -13,7 +13,6 @@ import torch.optim
 import torch.utils
 import torch.utils.data
 from hparams import HParam, configurable
-from third_party import get_parameter_norm
 from torch.utils.data.dataloader import _MultiProcessingDataLoaderIter
 
 import lib
@@ -194,7 +193,7 @@ class Metrics(_utils.Metrics):
     AVERAGE_RMS_LEVEL_DELTA = partial(get_model_label, "average_rms_level_delta")
     GRADIENT_INFINITY_NORM = partial(get_model_label, "grad_norm/inf")
     GRADIENT_MAX_NORM = partial(get_model_label, "grad_norm/max_norm")
-    GRADIENT_TWO_NORM = partial(get_model_label, "grad_norm/two")
+    GRADIENT_NORM = partial(get_model_label, "grad_norm")
     LR = partial(get_model_label, "lr")
     REACHED_MAX_FRAMES = partial(get_model_label, "reached_max_frames")
     SPECTROGRAM_LOSS = partial(get_model_label, "spectrogram_loss")
@@ -487,9 +486,10 @@ class Metrics(_utils.Metrics):
 
     def log_optimizer_metrics(
         self,
+        parameter_norm: float,
+        parameter_norm_inf: float,
         optimizer: torch.optim.Adam,
         clipper: lib.optimizers.AdaptiveGradientNormClipper,
-        timer: typing.Optional[Timer] = None,
         **kwargs,
     ):
         """Log optimizer metrics for `optimizer` and `clipper`. The model parameters have already
@@ -497,20 +497,13 @@ class Metrics(_utils.Metrics):
 
         TODO: Incorperate `optimizer_metrics` into the standard `Metrics` usage.
         """
-        record_event = lambda e: None if timer is None else timer.record_event(e)
-        record_event(Timer.REDUCE_METRICS)
-        assert len(optimizer.param_groups) == 1, "Expecting only 1 group of parameters."
-        param_group = optimizer.param_groups[0]
-        parameter_norm = get_parameter_norm(param_group["params"], 2)
-        parameter_norm_inf = get_parameter_norm(param_group["params"], math.inf)
-        assert torch.isfinite(parameter_norm), f"Gradient was too large {parameter_norm}."
-        assert torch.isfinite(parameter_norm_inf), f"Gradient was too large {parameter_norm_inf}."
-        metrics = {
-            self.GRADIENT_TWO_NORM: parameter_norm.item(),
-            self.GRADIENT_INFINITY_NORM: parameter_norm_inf.item(),
-            self.LR: param_group["lr"],
-        }
-        record_event(Timer.LOG_METRICS)
-        self.comet.log_metrics({k(**kwargs): v for k, v in metrics.items()})
-        if math.isfinite(clipper.max_norm):  # NOTE: Initially, `max_norm` will be `inf`.
-            self.comet.log_metric(self.GRADIENT_MAX_NORM(**kwargs), clipper.max_norm)
+        if is_master():
+            assert len(optimizer.param_groups) == 1, "Expecting only 1 group of parameters."
+            metrics = {
+                self.GRADIENT_NORM: parameter_norm,
+                self.GRADIENT_INFINITY_NORM: parameter_norm_inf,
+                self.LR: optimizer.param_groups[0]["lr"],
+            }
+            self.comet.log_metrics({k(**kwargs): v for k, v in metrics.items()})
+            if math.isfinite(clipper.max_norm):  # NOTE: Initially, `max_norm` will be `inf`.
+                self.comet.log_metric(self.GRADIENT_MAX_NORM(**kwargs), clipper.max_norm)

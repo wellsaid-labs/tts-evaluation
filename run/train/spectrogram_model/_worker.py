@@ -1,5 +1,6 @@
 import dataclasses
 import logging
+import math
 import pathlib
 import random
 import typing
@@ -13,6 +14,7 @@ import torch.optim
 import torch.utils
 import torch.utils.data
 from hparams import HParam, configurable
+from third_party import get_parameter_norm
 from torch.nn.functional import binary_cross_entropy_with_logits, mse_loss
 from torchnlp.utils import get_total_parameters, lengths_to_mask
 
@@ -339,18 +341,24 @@ def _run_step(
         timer.record_event(timer.MODEL_BACKWARD)
         (spectrogram_loss_ + stop_token_loss_).backward()
 
-        # NOTE: Measure the "grad_norm" before `clipper.clip()`.
-        metrics.log_optimizer_metrics(state.optimizer, state.clipper, timer, cadence=Cadence.STEP)
-
         timer.record_event(timer.MODEL_STEP)
         # NOTE: `optimizer` will not error if there are no gradients so we check beforehand.
+        assert len(state.optimizer.param_groups) == 1, "Expecting only 1 group of parameters."
         params = state.optimizer.param_groups[0]["params"]
         assert all([p.grad is not None for p in params]), "`None` gradients found."
-        state.clipper.clip()
+        # NOTE: Measure the "grad_norm" before `clipper.clip()`.
+        norm_inf = get_parameter_norm(params, math.inf) if is_master() else torch.tensor(math.nan)
+        assert not is_master() or torch.isfinite(norm_inf), f"Gradient was too large {norm_inf}."
+        norm = state.clipper.clip()
         state.optimizer.step()
-        state.step.add_(1)
         state.scheduler.step()
+        timer.record_event(timer.LOG_METRICS)
+        state.step.add_(1)
         state.comet.set_step(typing.cast(int, state.step.item()))
+        norm_inf_ = float(norm_inf.item())
+        metrics.log_optimizer_metrics(
+            norm, norm_inf_, state.optimizer, state.clipper, cadence=Cadence.STEP
+        )
 
     if visualize:
         timer.record_event(timer.VISUALIZE_PREDICTIONS)
