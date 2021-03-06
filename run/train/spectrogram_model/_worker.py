@@ -31,7 +31,7 @@ from run._config import (
 )
 from run.train import _utils
 from run.train._utils import CometMLExperiment, Context, DataLoader, Timer, set_context, set_epoch
-from run.train.spectrogram_model._data import DataProcessor, InputEncoder, SpanBatch
+from run.train.spectrogram_model._data import Batch, DataProcessor, InputEncoder
 from run.train.spectrogram_model._metrics import Metrics, get_average_db_rms_level
 
 logger = logging.getLogger(__name__)
@@ -105,11 +105,7 @@ class _State:
         comet: CometMLExperiment,
         input_encoder: InputEncoder,
     ) -> lib.spectrogram_model.SpectrogramModel:
-        """Initialize a model onto `device`.
-
-        NOTE: Learn more about `DistributedDataParallel` here:
-        https://discuss.pytorch.org/t/proper-distributeddataparallel-usage/74564
-        """
+        """Initialize a model onto `device`."""
         model = lib.spectrogram_model.SpectrogramModel(
             input_encoder.phoneme_encoder.vocab_size,
             input_encoder.speaker_encoder.vocab_size,
@@ -169,6 +165,8 @@ class _State:
 
         NOTE: `dataclasses.astuple` isn't compatible with PyTorch, learn more:
         https://github.com/pytorch/pytorch/issues/52127
+        NOTE: Learn more about `DistributedDataParallel` here:
+        https://discuss.pytorch.org/t/proper-distributeddataparallel-usage/74564
         """
         return cls(
             checkpoint.input_encoder,
@@ -216,6 +214,8 @@ def _get_data_loaders(
     train = DataProcessor(train_dataset, train_batch_size, input_encoder=input_encoder, step=step)
     dev = DataProcessor(dev_dataset, dev_batch_size, input_encoder=input_encoder, step=step)
     kwargs = dict(num_workers=num_workers, device=state.device, prefetch_factor=prefetch_factor)
+    train = typing.cast(torch.utils.data.Dataset, train)
+    dev = typing.cast(torch.utils.data.Dataset, dev)
     return (
         DataLoader(train, num_steps_per_epoch=train_steps_per_epoch, **kwargs),
         DataLoader(dev, num_steps_per_epoch=dev_steps_per_epoch, **kwargs),
@@ -224,7 +224,7 @@ def _get_data_loaders(
 
 def _visualize_source_vs_target(
     state: _State,
-    batch: SpanBatch,
+    batch: Batch,
     predicted_spectrogram: torch.Tensor,
     predicted_stop_token: torch.Tensor,
     predicted_alignments: torch.Tensor,
@@ -273,7 +273,7 @@ def _visualize_source_vs_target(
 def _run_step(
     state: _State,
     metrics: Metrics,
-    batch: SpanBatch,
+    batch: Batch,
     data_loader: DataLoader,
     dataset_type: DatasetType,
     timer: Timer,
@@ -301,7 +301,7 @@ def _run_step(
             to normalize the loss magnitude.
     """
     timer.record_event(timer.MODEL_FORWARD)
-    frames, stop_token, alignments = state.model(
+    predictions = state.model(
         tokens=batch.encoded_phonemes.tensor,
         speaker=batch.encoded_speaker.tensor,
         target_frames=batch.spectrogram.tensor,
@@ -310,6 +310,7 @@ def _run_step(
         target_mask=batch.spectrogram_mask.tensor,
         mode=lib.spectrogram_model.Mode.FORWARD,
     )
+    frames, stop_token, alignments = typing.cast(typing.Tuple, predictions)
 
     # SOURCE: Tacotron 2
     # We minimize the summed mean squared error (MSE) from before and after the post-net to aid
@@ -358,7 +359,7 @@ def _run_step(
         state.step.add_(1)
         state.comet.set_step(typing.cast(int, state.step.item()))
         norm_inf_ = float(norm_inf.item())
-        metrics.log_optimizer_metrics(
+        metrics.log_optim_metrics(
             norm, norm_inf_, state.optimizer, state.clipper, cadence=Cadence.STEP
         )
 
@@ -387,7 +388,7 @@ def _run_step(
 
 def _visualize_inferred(
     state: _State,
-    batch: SpanBatch,
+    batch: Batch,
     predicted_spectrogram: torch.Tensor,
     predicted_stop_token: torch.Tensor,
     predicted_alignments: torch.Tensor,
@@ -451,7 +452,7 @@ def _visualize_inferred(
 def _run_inference(
     state: _State,
     metrics: Metrics,
-    batch: SpanBatch,
+    batch: Batch,
     data_loader: DataLoader,
     dataset_type: DatasetType,
     timer: Timer,
@@ -489,9 +490,17 @@ def _run_inference(
     metrics.update(values)
 
 
-_HandleBatch = typing.Callable[
-    [_State, Metrics, SpanBatch, DataLoader, DatasetType, Timer, bool], None
-]
+class _HandleBatch(typing.Protocol):
+    def __call__(
+        self,
+        state: _State,
+        metrics: Metrics,
+        batch: Batch,
+        data_loader: DataLoader,
+        timer: Timer,
+        visualize: bool,
+    ) -> None:
+        ...
 
 
 def _run_steps(

@@ -458,14 +458,6 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
     > The CUDA runtime does not support the fork start method
     https://pytorch.org/docs/stable/notes/multiprocessing.html#cuda-in-multiprocessing
 
-    TODO: The `DataLoader` runs `make_span_batch` and `iterator` in each worker. For performance,
-    we could move `make_span_batch` to `DataIterator` and preprocess larger batches at the
-    same time. The `collate_fn` function could be replaced with an `identity` function, and
-    everything could be processed in the `DataIterator` efficiently. Learn more:
-    https://github.com/pytorch/pytorch/blob/272f4db043ec2c63ecfe6d2759e7893cb842a3c3/torch/utils/data/_utils/fetch.py#L35
-    https://pytorch.org/docs/stable/data.html#disable-automatic-batching
-    This should also help with code locality. Also, if we'd like to run a more expensive dataset
-    filtering, it is more doable in batches.
 
     TODO: Remove `copy.deepcopy` after this issue is fixed:
     https://github.com/pytorch/pytorch/issues/51849
@@ -473,13 +465,17 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
 
     @lib.utils.log_runtime
     def __init__(
-        self, dataset: typing.Mapping, device: torch.device, num_steps_per_epoch: int, **kwargs
+        self,
+        dataset: torch.utils.data.Dataset,
+        device: torch.device,
+        num_steps_per_epoch: int,
+        **kwargs,
     ):
         self.device = device
         loader = torch.utils.data.dataloader.DataLoader(
-            typing.cast(torch.utils.data.Dataset, dataset),
+            dataset,
             pin_memory=True,
-            batch_size=None,
+            batch_size=typing.cast(int, None),
             worker_init_fn=functools.partial(_worker_init_fn, config=copy.deepcopy(get_config())),
             collate_fn=lib.utils.identity,
             **kwargs,

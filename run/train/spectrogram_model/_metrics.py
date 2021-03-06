@@ -2,7 +2,6 @@ import collections
 import collections.abc
 import itertools
 import math
-import platform
 import typing
 from functools import partial
 
@@ -13,15 +12,13 @@ import torch.optim
 import torch.utils
 import torch.utils.data
 from hparams import HParam, configurable
-from torch.utils.data.dataloader import _MultiProcessingDataLoaderIter
 
 import lib
 from lib.distributed import is_master
-from lib.utils import flatten_2d
 from run._config import GetLabel, get_dataset_label, get_model_label
 from run.train import _utils
-from run.train._utils import CometMLExperiment, DataLoader, MetricsValues, Timer
-from run.train.spectrogram_model._data import SpanBatch
+from run.train._utils import CometMLExperiment, MetricsValues, Timer
+from run.train.spectrogram_model._data import Batch
 
 
 def get_num_skipped(
@@ -122,8 +119,6 @@ def get_average_db_rms_level(
     return lib.audio.power_to_db(cumulative_power_rms_level / num_elements)
 
 
-# NOTE: `_Select` selects which measurements to focus on.
-_Select = typing.Callable[[_utils.MetricsAll], _utils.MetricsAll]
 _GetMetrics = typing.Dict[GetLabel, float]
 
 
@@ -191,10 +186,6 @@ class Metrics(_utils.Metrics):
     AVERAGE_PREDICTED_RMS_LEVEL = partial(get_model_label, "average_predicted_rms_level")
     AVERAGE_RELATIVE_SPEED = partial(get_model_label, "average_relative_speed")
     AVERAGE_RMS_LEVEL_DELTA = partial(get_model_label, "average_rms_level_delta")
-    GRADIENT_INFINITY_NORM = partial(get_model_label, "grad_norm/inf")
-    GRADIENT_MAX_NORM = partial(get_model_label, "grad_norm/max_norm")
-    GRADIENT_NORM = partial(get_model_label, "grad_norm")
-    LR = partial(get_model_label, "lr")
     REACHED_MAX_FRAMES = partial(get_model_label, "reached_max_frames")
     SPECTROGRAM_LOSS = partial(get_model_label, "spectrogram_loss")
     STOP_TOKEN_ACCURACY = partial(get_model_label, "stop_token_accuracy")
@@ -210,16 +201,12 @@ class Metrics(_utils.Metrics):
         speakers: typing.List[lib.datasets.Speaker],
         **kwargs,
     ):
-        super().__init__(store, **kwargs)
+        super().__init__(store, comet, **kwargs)
         self.comet = comet
         self.speakers = speakers
 
-    @staticmethod
-    def _tolist(tensor: torch.Tensor) -> typing.List[float]:
-        return tensor.view(-1).tolist()
-
     def get_dataset_values(
-        self, batch: SpanBatch, reached_max: typing.Optional[torch.Tensor] = None
+        self, batch: Batch, reached_max: typing.Optional[torch.Tensor] = None
     ) -> MetricsValues:
         """
         TODO: Get dataset metrics on OOV words (spaCy and AmEPD) in our dataset.
@@ -231,9 +218,9 @@ class Metrics(_utils.Metrics):
 
         for span, num_frames, num_tokens, has_reached_max in zip(
             batch.spans,
-            self._tolist(batch.spectrogram.lengths),
-            self._tolist(batch.encoded_phonemes.lengths),
-            itertools.repeat(False) if reached_max is None else self._tolist(reached_max),
+            self._to_list(batch.spectrogram.lengths),
+            self._to_list(batch.encoded_phonemes.lengths),
+            itertools.repeat(False) if reached_max is None else self._to_list(reached_max),
         ):
             # NOTE: Create a key for `self.NUM_SPANS` so a value exists, even if zero.
             values[self.NUM_SPANS] += float(not has_reached_max)
@@ -257,7 +244,7 @@ class Metrics(_utils.Metrics):
 
     def get_alignment_values(
         self,
-        batch: SpanBatch,
+        batch: Batch,
         alignments: torch.Tensor,
         spectrogram_lengths: torch.Tensor,
         spectrogram_mask: torch.Tensor,
@@ -275,15 +262,15 @@ class Metrics(_utils.Metrics):
         values: typing.Dict[str, float] = collections.defaultdict(float)
         tokens_mask = batch.encoded_phonemes_mask.tensor
         alignments = alignments.masked_fill(~tokens_mask.transpose(0, 1).unsqueeze(0), 0)
-        _tolist = lambda a: self._tolist(a.masked_fill(~spectrogram_mask, 0).sum(dim=0))
+        _to_list = lambda a: self._to_list(a.masked_fill(~spectrogram_mask, 0).sum(dim=0))
 
         for span, num_skipped, alignment_std, alignment_norm, length, has_reached_max in zip(
             batch.spans,
-            self._tolist(get_num_skipped(alignments, tokens_mask, spectrogram_mask)),
-            _tolist(lib.utils.get_weighted_std(alignments, dim=2)),
-            _tolist(alignments.norm(p=self.ALIGNMENT_NORM_TYPE, dim=2)),
-            self._tolist(spectrogram_lengths),
-            itertools.repeat(False) if reached_max is None else self._tolist(reached_max),
+            self._to_list(get_num_skipped(alignments, tokens_mask, spectrogram_mask)),
+            _to_list(lib.utils.get_weighted_std(alignments, dim=2)),
+            _to_list(alignments.norm(p=self.ALIGNMENT_NORM_TYPE, dim=2)),
+            self._to_list(spectrogram_lengths),
+            itertools.repeat(False) if reached_max is None else self._to_list(reached_max),
         ):
             assert span.speaker in self.speakers
             values[self.NUM_REACHED_MAX] += has_reached_max
@@ -304,7 +291,7 @@ class Metrics(_utils.Metrics):
 
     def get_loudness_values(
         self,
-        batch: SpanBatch,
+        batch: Batch,
         predicted_spectrogram: torch.Tensor,
         spectrogram_mask: torch.Tensor,
         reached_max: typing.Optional[torch.Tensor] = None,
@@ -321,9 +308,9 @@ class Metrics(_utils.Metrics):
         loudness = get_power_rms_level_sum(batch.spectrogram.tensor, batch.spectrogram_mask.tensor)
         for span, loudness, predicted_loudness, has_reached_max in zip(
             batch.spans,
-            self._tolist(loudness),
-            self._tolist(get_power_rms_level_sum(predicted_spectrogram, spectrogram_mask)),
-            itertools.repeat(False) if reached_max is None else self._tolist(reached_max),
+            self._to_list(loudness),
+            self._to_list(get_power_rms_level_sum(predicted_spectrogram, spectrogram_mask)),
+            itertools.repeat(False) if reached_max is None else self._to_list(reached_max),
         ):
             if not has_reached_max:
                 assert span.speaker in self.speakers
@@ -335,7 +322,7 @@ class Metrics(_utils.Metrics):
         return dict(values)
 
     def get_stop_token_values(
-        self, batch: SpanBatch, predicted_logits: torch.Tensor, stop_threshold: float
+        self, batch: Batch, predicted_logits: torch.Tensor, stop_threshold: float
     ) -> MetricsValues:
         """
         Args:
@@ -347,48 +334,25 @@ class Metrics(_utils.Metrics):
         is_correct = bool_(batch.stop_token.tensor) == bool_(torch.sigmoid(predicted_logits))
         return {self.NUM_CORRECT_STOP_TOKEN: float(is_correct.sum().item())}
 
-    def get_data_loader_values(self, data_loader: DataLoader) -> MetricsValues:
+    def _iter_permutations(self, select: _utils.MetricsSelect, is_verbose: bool = True):
+        """Iterate over permutations of metric names and return convenience operations.
+
+        Args:
+            is_verbose: If `True`, iterate over more permutations.
         """
-        NOTE: `qsize` is not implemented on MacOS, learn more:
-        https://docs.python.org/3/library/multiprocessing.html#multiprocessing.Queue.qsize
-        """
-        is_multiprocessing = isinstance(data_loader.loader, _MultiProcessingDataLoaderIter)
-        if is_multiprocessing and platform.system() != "Darwin":
-            iterator = typing.cast(_MultiProcessingDataLoaderIter, data_loader.loader)
-            return {self.DATA_QUEUE_SIZE: iterator._data_queue.qsize()}
-        return {}
-
-    def _reduce(
-        self,
-        key: str,
-        select: _Select,
-        op: typing.Callable[[typing.List[_utils.MetricsValue]], float] = sum,
-    ) -> float:
-        """Reduce all measurements to a float."""
-        flat = flatten_2d(select(self.all[key] if key in self.all else []))
-        assert all(not math.isnan(val) for val in flat), f"Encountered NaN value for metric {key}."
-        return math.nan if len(flat) == 0 else op(flat)
-
-    def _div(self, num: str, denom: str, **kwargs) -> float:
-        reduced_denom = self._reduce(denom, **kwargs)
-        if reduced_denom == 0:
-            return math.nan
-        return self._reduce(num, **kwargs) / reduced_denom
-
-    def _iter_speakers(self, select: _Select, is_verbose: bool = True):
-        """Iterate over all speakers if `is_verbose`, and return convenience metric operations."""
         for speaker in itertools.chain([None], self.speakers if is_verbose else []):
             suffix = "" if speaker is None else f"/{speaker.label}"
-            reduce = lambda k: self._reduce(f"{k}{suffix}", select=select)
-            div = lambda n, d: self._div(f"{n}{suffix}", f"{d}{suffix}", select=select)
+            format_ = lambda s: f"{s}{suffix}"
+            reduce = lambda k: self._reduce(format_(k), select=select)
+            div = lambda n, d: self._div(format_(n), format_(d), select=select)
             yield speaker, reduce, div
 
     @configurable
     def _get_model_metrics(
-        self, select: _Select, is_verbose: bool, num_frame_channels=HParam()
+        self, select: _utils.MetricsSelect, is_verbose: bool, num_frame_channels=HParam()
     ) -> _GetMetrics:
         metrics = {}
-        for speaker, reduce, div in self._iter_speakers(select, is_verbose):
+        for speaker, reduce, div in self._iter_permutations(select, is_verbose):
             spectrogram_loss = div(self.SPECTROGRAM_LOSS_SUM, self.NUM_FRAMES) / num_frame_channels
             total_spans = reduce(self.NUM_SPANS) + reduce(self.NUM_REACHED_MAX)
             update = {
@@ -404,11 +368,11 @@ class Metrics(_utils.Metrics):
             metrics.update({partial(k, speaker=speaker): v for k, v in update.items()})
         return metrics
 
-    def _get_dataset_metrics(self, select: _Select, is_verbose: bool) -> _GetMetrics:
+    def _get_dataset_metrics(self, select: _utils.MetricsSelect, is_verbose: bool) -> _GetMetrics:
         """
         NOTE: There is a discrepency between `num_frames_per_speaker` and `num_seconds_per_speaker`
         because `num_seconds_per_speaker` is computed with `Span` and `num_frames_per_speaker`
-        is computed with `SpanBatch`. For example, in Feburary 2021, `make_span_batch` used
+        is computed with `Batch`. For example, in Feburary 2021, `make_batch` used
         `_pad_and_trim_signal`. "elizabeth_klett", "mary_ann" and "judy_bieber" tend to need
         significantly more trimming than other speakers.
         """
@@ -422,7 +386,7 @@ class Metrics(_utils.Metrics):
         if is_verbose:
             total_frames = reduce(self.NUM_FRAMES)
             total_seconds = reduce(self.NUM_SECONDS)
-            for speaker, _reduce, _ in self._iter_speakers(select):
+            for speaker, _reduce, _ in self._iter_permutations(select):
                 update = {
                     self.FREQUENCY_NUM_FRAMES: _reduce(self.NUM_FRAMES) / total_frames,
                     self.FREQUENCY_NUM_SECONDS: _reduce(self.NUM_SECONDS) / total_seconds,
@@ -430,7 +394,7 @@ class Metrics(_utils.Metrics):
                 metrics.update({partial(k, speaker=speaker): v for k, v in update.items()})
 
             total_spans = reduce(self.NUM_SPANS)
-            for key in self.all.keys():
+            for key in self.data.keys():
                 if f"{self.NUM_SPANS_PER_TEXT_LENGTH}/" not in key:
                     continue
 
@@ -442,10 +406,10 @@ class Metrics(_utils.Metrics):
 
         return metrics
 
-    def _get_loudness_metrics(self, select: _Select, is_verbose: bool) -> _GetMetrics:
+    def _get_loudness_metrics(self, select: _utils.MetricsSelect, is_verbose: bool) -> _GetMetrics:
         power_to_db = lambda r: float(lib.audio.power_to_db(torch.tensor(r)).item())
         metrics = {}
-        for speaker, _, div in self._iter_speakers(select, is_verbose):
+        for speaker, _, div in self._iter_permutations(select, is_verbose):
             predicted_rms = power_to_db(div(self.RMS_SUM_PREDICTED, self.NUM_FRAMES_PREDICTED))
             rms = power_to_db(div(self.RMS_SUM, self.NUM_FRAMES))
             update = {
@@ -458,7 +422,7 @@ class Metrics(_utils.Metrics):
 
     def log(
         self,
-        select: _Select = lib.utils.identity,
+        select: _utils.MetricsSelect = lib.utils.identity,
         timer: typing.Optional[Timer] = None,
         is_verbose: bool = False,
         **kwargs,
@@ -466,7 +430,7 @@ class Metrics(_utils.Metrics):
         """Log metrics to `self.comet`.
 
         Args:
-            select: Select a subset of measurements to reduce.
+            ...
             is_verbose: Comet will throttle experiments or lag if too many metrics are logged.
                 This flag controls the number of metrics logged.
             **kwargs: Key-word arguments passed to `get_model_label` and `get_dataset_label`.
@@ -483,27 +447,3 @@ class Metrics(_utils.Metrics):
             self.comet.log_metrics(
                 {k(**kwargs): v for k, v in metrics.items() if not math.isnan(v)}
             )
-
-    def log_optimizer_metrics(
-        self,
-        parameter_norm: float,
-        parameter_norm_inf: float,
-        optimizer: torch.optim.Adam,
-        clipper: lib.optimizers.AdaptiveGradientNormClipper,
-        **kwargs,
-    ):
-        """Log optimizer metrics for `optimizer` and `clipper`. The model parameters have already
-        been sync'd; therefore, there is no need to further sync parameters.
-
-        TODO: Incorperate `optimizer_metrics` into the standard `Metrics` usage.
-        """
-        if is_master():
-            assert len(optimizer.param_groups) == 1, "Expecting only 1 group of parameters."
-            metrics = {
-                self.GRADIENT_NORM: parameter_norm,
-                self.GRADIENT_INFINITY_NORM: parameter_norm_inf,
-                self.LR: optimizer.param_groups[0]["lr"],
-            }
-            self.comet.log_metrics({k(**kwargs): v for k, v in metrics.items()})
-            if math.isfinite(clipper.max_norm):  # NOTE: Initially, `max_norm` will be `inf`.
-                self.comet.log_metric(self.GRADIENT_MAX_NORM(**kwargs), clipper.max_norm)

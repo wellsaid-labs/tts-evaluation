@@ -386,7 +386,7 @@ async def _spans_read_audio_slice(
     return await asyncio.gather(*tasks)
 
 
-class SpanBatch(typing.NamedTuple):
+class Batch(typing.NamedTuple):
     """Batch of preprocessed `Span` used to training or evaluating the spectrogram model."""
 
     spans: typing.List[lib.datasets.Span]
@@ -416,14 +416,81 @@ class SpanBatch(typing.NamedTuple):
     encoded_phonemes_mask: SequenceBatch
 
 
-class DataProcessor(typing.Mapping[int, SpanBatch]):
+def make_batch(spans: typing.List[lib.datasets.Span], input_encoder: InputEncoder) -> Batch:
+    """
+    NOTE: spaCy splits some (not all) words on apostrophes while AmEPD does not; therefore,
+    those words will not be found in AmEPD. The options are:
+    1. Return two different sequences with two different character to word mappings.
+    2. Merge the words with apostrophes, and merge the related word vectors.
+    (Choosen) 3. Keep the apostrophes separate, and miss some pronunciations.
+
+    NOTE: Contextual word-vectors would likely be more informative than word-vectors; however,
+    they are likely not as robust in the presence of OOV words due to intentional misspellings.
+    Our users intentionally misspell words to adjust the pronunciation. For that reason, we use
+    word-vectors.
+
+    NOTE: In Janurary 2020, this function profiled like so:
+    - 27% for `_signals_to_spectrograms`
+    - 25% on `nlp.pipe`
+    - 13% on `_random_loudness_annotations`
+    - 13% on `grapheme_to_phoneme`
+    - 6% for `_pad_and_trim_signal`
+    - 5% for `input_encoder.encode`
+    - 4% on `stack_and_pad_tensors`
+
+    TODO: For `spectrogram_model` training, this function is critical for performance and
+    reducing the number of CPUs needed for training. Here are some opportunities for
+    performance:
+    - Using `jit` or `numpy` or `cuda` for a faster spectrogram calculation.
+    - Precomputing `nlp.pipe` and caching the results.
+    - Using `multiprocessing` for `grapheme_to_phoneme`.
+    - Using the precomputed spectrogram for `_pad_and_trim_signal`.
+    """
+    _stack = functools.partial(stack_and_pad_tensors, dim=1)
+    _make_mask = functools.partial(torch.ones, dtype=torch.bool)
+
+    length = len(spans)
+
+    assert length > 0, "Batch must have at least one item."
+
+    for span in spans:
+        lib.audio.assert_audio_normalized(span.audio_file)
+
+    nlp = lib.text.load_en_core_web_md(disable=("parser", "ner"))
+    docs: typing.List[spacy.tokens.Doc] = list(nlp.pipe([s.passage.script for s in spans]))
+    for i in range(length):
+        script_slice = spans[i].script_slice
+        span = docs[i].char_span(script_slice.start, script_slice.stop)  # type: ignore
+        assert span is not None, "Invalid `spacy.tokens.Span` selected."
+        docs[i] = span.as_doc()
+
+    phonemes = typing.cast(typing.List[str], lib.text.grapheme_to_phoneme(docs))
+    decoded = [DecodedInput(s.script, p, s.speaker) for s, p in zip(spans, phonemes)]
+    encoded = [input_encoder.encode(d) for d in decoded]
+    signals_ = asyncio.run(_spans_read_audio_slice(spans))
+    signals = [_pad_and_trim_signal(s) for s in signals_]
+    spectrogram, spectrogram_mask = _signals_to_spectrograms(signals)
+
+    return Batch(
+        spans=spans,
+        length=length,
+        audio=signals,
+        spectrogram=spectrogram,
+        spectrogram_mask=spectrogram_mask,
+        stop_token=_make_stop_token(spectrogram),
+        encoded_speaker=_stack([s.speaker for s in encoded]),
+        encoded_phonemes=_stack([s.phonemes for s in encoded]),
+        encoded_phonemes_mask=_stack([_make_mask(e.phonemes.shape[0]) for e in encoded]),
+    )
+
+
+class DataProcessor(typing.Mapping[int, Batch]):
     def __init__(
         self,
         dataset: run._config.Dataset,
         batch_size: int,
         input_encoder: InputEncoder,
         step: int = 0,
-        batch_dimension: int = 1,
     ):
         """Given an index, generate the appropriate batch indefinitely.
 
@@ -450,86 +517,17 @@ class DataProcessor(typing.Mapping[int, SpanBatch]):
             iter_ = DistributedBatchSampler(iter_, num_replicas=get_world_size(), rank=get_rank())
         iter_ = typing.cast(typing.Iterator[typing.List[lib.datasets.Span]], iter_)
         self.index_to_spans = lib.utils.MappedIterator(iter_)
-
         self.input_encoder = input_encoder
-        self._stack = functools.partial(stack_and_pad_tensors, dim=batch_dimension)
-        self._make_mask = functools.partial(torch.ones, dtype=torch.bool)
 
     @staticmethod
     def _data_iterator_sort_key(span: lib.datasets.Span):
         return span.audio_length
 
     def __iter__(self):
-        return [self[i] for i in range(len(self))]
+        return (self[i] for i in range(len(self)))
 
     def __len__(_) -> int:
         return sys.maxsize
 
-    def _make_span_batch(self, spans: typing.List[lib.datasets.Span]) -> SpanBatch:
-        """
-        NOTE: spaCy splits some (not all) words on apostrophes while AmEPD does not; therefore,
-        those words will not be found in AmEPD. The options are:
-        1. Return two different sequences with two different character to word mappings.
-        2. Merge the words with apostrophes, and merge the related word vectors.
-        (Choosen) 3. Keep the apostrophes separate, and miss some pronunciations.
-
-        NOTE: Contextual word-vectors would likely be more informative than word-vectors; however,
-        they are likely not as robust in the presence of OOV words due to intentional misspellings.
-        Our users intentionally misspell words to adjust the pronunciation. For that reason, we use
-        word-vectors.
-
-        NOTE: In Janurary 2020, this function profiled like so:
-        - 27% for `_signals_to_spectrograms`
-        - 25% on `nlp.pipe`
-        - 13% on `_random_loudness_annotations`
-        - 13% on `grapheme_to_phoneme`
-        - 6% for `_pad_and_trim_signal`
-        - 5% for `input_encoder.encode`
-        - 4% on `stack_and_pad_tensors`
-
-        TODO: For `spectrogram_model` training, this function is critical for performance and
-        reducing the number of CPUs needed for training. Here are some opportunities for
-        performance:
-        - Using `jit` or `numpy` or `cuda` for a faster spectrogram calculation.
-        - Precomputing `nlp.pipe` and caching the results.
-        - Using `multiprocessing` for `grapheme_to_phoneme`.
-        - Using the precomputed spectrogram for `_pad_and_trim_signal`.
-        """
-        length = len(spans)
-
-        assert length > 0, "Batch must have at least one item."
-
-        for span in spans:
-            lib.audio.assert_audio_normalized(span.audio_file)
-
-        nlp = lib.text.load_en_core_web_md(disable=("parser", "ner"))
-        docs: typing.List[spacy.tokens.Doc] = list(nlp.pipe([s.passage.script for s in spans]))
-        for i in range(length):
-            script_slice = spans[i].script_slice
-            span = docs[i].char_span(script_slice.start, script_slice.stop)  # type: ignore
-            assert span is not None, "Invalid `spacy.tokens.Span` selected."
-            docs[i] = span.as_doc()
-
-        phonemes = typing.cast(typing.List[str], lib.text.grapheme_to_phoneme(docs))
-        decoded = [DecodedInput(s.script, p, s.speaker) for s, p in zip(spans, phonemes)]
-        encoded = [self.input_encoder.encode(d) for d in decoded]
-        signals_ = asyncio.run(_spans_read_audio_slice(spans))
-        signals = [_pad_and_trim_signal(s) for s in signals_]
-        spectrogram, spectrogram_mask = _signals_to_spectrograms(signals)
-
-        return SpanBatch(
-            spans=spans,
-            length=length,
-            audio=signals,
-            spectrogram=spectrogram,
-            spectrogram_mask=spectrogram_mask,
-            stop_token=_make_stop_token(spectrogram),
-            encoded_speaker=self._stack([s.speaker for s in encoded]),
-            encoded_phonemes=self._stack([s.phonemes for s in encoded]),
-            encoded_phonemes_mask=self._stack(
-                [self._make_mask(e.phonemes.shape[0]) for e in encoded]
-            ),
-        )
-
-    def __getitem__(self, index) -> SpanBatch:
-        return self._make_span_batch(self.index_to_spans[index])
+    def __getitem__(self, index) -> Batch:
+        return make_batch(self.index_to_spans[index], self.input_encoder)
