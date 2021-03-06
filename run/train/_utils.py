@@ -510,7 +510,7 @@ def save_checkpoint(checkpoint: Checkpoint, checkpoints_directory: pathlib.Path,
         lib.environment.save(checkpoints_directory / name, checkpoint)
 
 
-def _worker_init_fn(_, config):
+def _worker_init_fn(_, config, worker_init_fn):
     # TODO: Add a method for transfering global configuration between processes without private
     # variables.
     # TODO: After the global configuration is transfered, the functions need to be rechecked
@@ -519,7 +519,7 @@ def _worker_init_fn(_, config):
     info = torch.utils.data.get_worker_info()
     lib.environment.set_basic_logging_config()
     logger.info("Worker %d/%d iterator started.", info.id + 1, info.num_workers)
-    set_run_seed()  # NOTE: Each worker needs the same random seed to be deterministic.
+    worker_init_fn()
 
 
 DataLoaderVar = typing.TypeVar("DataLoaderVar", bound=tuple)
@@ -547,7 +547,6 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
     > The CUDA runtime does not support the fork start method
     https://pytorch.org/docs/stable/notes/multiprocessing.html#cuda-in-multiprocessing
 
-
     TODO: Remove `copy.deepcopy` after this issue is fixed:
     https://github.com/pytorch/pytorch/issues/51849
     """
@@ -558,6 +557,7 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
         dataset: torch.utils.data.Dataset,
         device: torch.device,
         num_steps_per_epoch: int,
+        worker_init_fn: typing.Optional[typing.Callable],
         **kwargs,
     ):
         self.device = device
@@ -565,7 +565,9 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
             dataset,
             pin_memory=True,
             batch_size=typing.cast(int, None),
-            worker_init_fn=functools.partial(_worker_init_fn, config=copy.deepcopy(get_config())),
+            worker_init_fn=functools.partial(
+                _worker_init_fn, config=copy.deepcopy(get_config()), worker_init_fn=worker_init_fn
+            ),
             collate_fn=lib.utils.identity,
             **kwargs,
         )

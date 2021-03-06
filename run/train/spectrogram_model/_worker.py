@@ -37,6 +37,7 @@ from run.train._utils import (
     save_checkpoint,
     set_context,
     set_epoch,
+    set_run_seed,
 )
 from run.train.spectrogram_model._data import Batch, DataProcessor, InputEncoder
 from run.train.spectrogram_model._metrics import Metrics, get_average_db_rms_level
@@ -204,6 +205,11 @@ class _State:
         return cls(input_encoder, model, *cls._get_optimizers(model), comet, device)
 
 
+def _worker_init_fn():
+    # NOTE: Each worker needs the same random seed to be in-sync.
+    set_run_seed()
+
+
 @configurable
 def _get_data_loaders(
     state: _State,
@@ -220,7 +226,12 @@ def _get_data_loaders(
     input_encoder, step = state.input_encoder, int(state.step.item())
     train = DataProcessor(train_dataset, train_batch_size, input_encoder=input_encoder, step=step)
     dev = DataProcessor(dev_dataset, dev_batch_size, input_encoder=input_encoder, step=step)
-    kwargs = dict(num_workers=num_workers, device=state.device, prefetch_factor=prefetch_factor)
+    kwargs = dict(
+        num_workers=num_workers,
+        device=state.device,
+        prefetch_factor=prefetch_factor,
+        worker_init_fn=_worker_init_fn,
+    )
     train = typing.cast(torch.utils.data.Dataset, train)
     dev = typing.cast(torch.utils.data.Dataset, dev)
     return (
