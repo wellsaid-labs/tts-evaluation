@@ -706,6 +706,7 @@ class Metrics(lib.distributed.DictStore):
     LR = partial(get_model_label, "lr")
 
     def __init__(self, store: torch.distributed.TCPStore, comet: CometMLExperiment, **kwargs):
+        self.data: typing.Dict[str, MetricsStoreValues]
         super().__init__(store, **kwargs)
         self.comet = comet
 
