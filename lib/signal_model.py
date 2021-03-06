@@ -18,19 +18,6 @@ import lib
 logger = logging.getLogger(__name__)
 
 
-class L1L2Loss(torch.nn.Module):
-    def __init__(self, *args, **kwargs):
-        super().__init__()
-        self.l1_loss = torch.nn.L1Loss(*args, **kwargs)
-        self.l2_loss = torch.nn.MSELoss(*args, **kwargs)
-
-    def __call__(self, *args, **kwargs) -> torch.Tensor:
-        return super().__call__(*args, **kwargs)
-
-    def forward(self, *args, **kwargs) -> torch.Tensor:
-        return self.l1_loss(*args, **kwargs) + self.l2_loss(*args, **kwargs)
-
-
 class _InterpolateAndConcat(torch.nn.Module):
     """Interpolates `concat` tensor, and concatenates it to `tensor`.
 
@@ -513,6 +500,7 @@ class SpectrogramDiscriminator(torch.nn.Module):
     @configurable
     def __init__(self, fft_length: int, num_mel_bins: int, hidden_size: int = HParam()):
         super().__init__()
+        self.fft_length = fft_length
         input_size = fft_length + num_mel_bins + 2
         self.layers = _Sequential(
             torch.nn.Conv1d(input_size, hidden_size, kernel_size=3, padding=1),

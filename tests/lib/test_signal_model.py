@@ -14,15 +14,6 @@ from tests import _utils
 assert_almost_equal = lambda *a, **k: _utils.assert_almost_equal(*a, **k, decimal=5)
 
 
-def test_l1_l2_loss():
-    """ Test `lib.signal_model.L1L2Loss` is differentiable. """
-    loss = lib.signal_model.L1L2Loss()
-    input_ = torch.randn(3, 5, requires_grad=True)
-    target = torch.randn(3, 5)
-    output = loss(input_, target)
-    output.backward()
-
-
 def test__interpolate_and_concat():
     """ Test `lib.signal_model._InterpolateAndConcat` trims and concats. """
     module = lib.signal_model._InterpolateAndConcat(size=1, scale_factor=2)
