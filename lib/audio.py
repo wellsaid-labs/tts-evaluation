@@ -607,30 +607,25 @@ def amplitude_to_db(tensor: torch.Tensor, **kwargs) -> torch.Tensor:
     return power_to_db(tensor, **kwargs) * 2
 
 
-def amplitude_to_power(
-    tensor: typing.Union[torch.Tensor, np.ndarray]
-) -> typing.Union[torch.Tensor, np.ndarray]:
+_TensorOrArray = typing.TypeVar("_TensorOrArray", torch.Tensor, np.ndarray)
+
+
+def amplitude_to_power(tensor: _TensorOrArray) -> _TensorOrArray:
     """ Convert amplitude (https://en.wikipedia.org/wiki/Amplitude) units to power units. """
     return tensor ** 2
 
 
-def power_to_amplitude(
-    tensor: typing.Union[torch.Tensor, np.ndarray]
-) -> typing.Union[torch.Tensor, np.ndarray]:
+def power_to_amplitude(tensor: _TensorOrArray) -> _TensorOrArray:
     """ Convert power units to amplitude units. """
     return tensor ** 0.5
 
 
-def db_to_power(
-    tensor: typing.Union[torch.Tensor, np.ndarray]
-) -> typing.Union[torch.Tensor, np.ndarray]:
+def db_to_power(tensor: _TensorOrArray) -> _TensorOrArray:
     """ Convert decibel units to power units. """
     return 10 ** (tensor / 10.0)
 
 
-def db_to_amplitude(
-    tensor: typing.Union[torch.Tensor, np.ndarray]
-) -> typing.Union[torch.Tensor, np.ndarray]:
+def db_to_amplitude(tensor: _TensorOrArray) -> _TensorOrArray:
     """ Convert decibel units to amplitude units. """
     return db_to_power(tensor / 2)
 
