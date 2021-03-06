@@ -107,9 +107,9 @@ def _run_app(
     train_dataset: Dataset,
     dev_dataset: Dataset,
     comet: CometMLExperiment,
+    checkpoint: typing.Optional[pathlib.Path],
     cli_config: typing.Dict[str, typing.Any],
     debug: bool,
-    checkpoint: typing.Optional[pathlib.Path] = None,
 ):
     """Run spectrogram model training.
 
@@ -140,11 +140,9 @@ def resume(
 ):
     """Resume training from CHECKPOINT. If CHECKPOINT is not given, the most recent checkpoint
     file is loaded."""
-    checkpoints_path, checkpoint, train_dataset, dev_dataset, comet = resume_experiment(
-        SPECTROGRAM_MODEL_EXPERIMENTS_PATH, checkpoint, debug=debug
-    )
+    args = resume_experiment(SPECTROGRAM_MODEL_EXPERIMENTS_PATH, checkpoint, debug=debug)
     cli_config = parse_hparam_args(context.args)
-    _run_app(checkpoints_path, train_dataset, dev_dataset, comet, cli_config, debug, checkpoint)
+    _run_app(*args, cli_config, debug)
 
 
 @app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
@@ -156,11 +154,9 @@ def start(
     debug: bool = typer.Option(False, help="Turn on debugging mode."),
 ):
     """ Start a training run in PROJECT named NAME with TAGS. """
-    checkpoints_path, train_dataset, dev_dataset, comet = start_experiment(
-        SPECTROGRAM_MODEL_EXPERIMENTS_PATH, project, name, tags, debug=debug
-    )
+    args = start_experiment(SPECTROGRAM_MODEL_EXPERIMENTS_PATH, project, name, tags, debug=debug)
     cli_config = parse_hparam_args(context.args)
-    _run_app(checkpoints_path, train_dataset, dev_dataset, comet, cli_config, debug)
+    _run_app(*args, None, cli_config, debug)
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -460,7 +460,7 @@ def start_experiment(
 def resume_experiment(
     directory: pathlib.Path, checkpoint: typing.Optional[pathlib.Path], **kwargs
 ) -> typing.Tuple[
-    pathlib.Path, pathlib.Path, run._config.Dataset, run._config.Dataset, CometMLExperiment
+    pathlib.Path, run._config.Dataset, run._config.Dataset, CometMLExperiment, pathlib.Path
 ]:
     """Resume training from `checkpoint`. If `checkpoint` is not given, the most recent checkpoint
     file is loaded from `directory`."""
@@ -474,7 +474,7 @@ def resume_experiment(
     comet = CometMLExperiment(experiment_key=checkpoint_.comet_experiment_key)
     recorder = _setup_experiment()
     _, checkpoints_path = _maybe_make_experiment_directories_from_checkpoint(checkpoint, recorder)
-    return checkpoints_path, checkpoint, *_run_experiment(comet, **kwargs), comet
+    return checkpoints_path, *_run_experiment(comet, **kwargs), comet, checkpoint
 
 
 @contextlib.contextmanager

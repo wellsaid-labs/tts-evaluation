@@ -68,6 +68,8 @@ for directory in [
 ]:
     directory.mkdir(exist_ok=True)
 
+# TODO: Instead of using global variables, can we use `hparams`, easily?
+
 # SOURCE (Tacotron 1):
 # We use 24 kHz sampling rate for all experiments.
 SAMPLE_RATE = 24000
@@ -78,6 +80,23 @@ SAMPLE_RATE = 24000
 # SOURCE (Tacotron 2 Author):
 # Google mentioned they settled on [20, 12000] with 128 filters in Google Chat.
 NUM_FRAME_CHANNELS = 128
+
+
+# SOURCE (Tacotron 2):
+# mel spectrograms are computed through a shorttime Fourier transform (STFT)
+# using a 50 ms frame size, 12.5 ms frame hop, and a Hann window function.
+# TODO: Parameterizing frame sizes in milliseconds can help ensure that your code is invariant
+# to the sample rate; however, we would need to assure that we're still using powers of two
+# for performance.
+# TODO: 50ms / 12.5ms spectrogram is not typical spectrogram parameterization, a more typical
+# parameterization is 25ms / 10ms. Learn more:
+# https://www.dsprelated.com/freebooks/sasp/Classic_Spectrograms.html
+# https://github.com/pytorch/audio/issues/384#issuecomment-597020705
+# https://pytorch.org/audio/compliance.kaldi.html
+FRAME_SIZE = 2048  # NOTE: Frame size in samples.
+FFT_LENGTH = 2048
+assert FRAME_SIZE % 4 == 0
+FRAME_HOP = FRAME_SIZE // 4
 
 
 class Cadence(enum.Enum):
@@ -158,26 +177,10 @@ def _configure_audio_processing():
     ffmpeg_encoding = "pcm_f32le"
     suffix = ".wav"
 
-    # SOURCE (Tacotron 2):
-    # mel spectrograms are computed through a shorttime Fourier transform (STFT)
-    # using a 50 ms frame size, 12.5 ms frame hop, and a Hann window function.
-    # TODO: Parameterizing frame sizes in milliseconds can help ensure that your code is invariant
-    # to the sample rate; however, we would need to assure that we're still using powers of two
-    # for performance.
-    # TODO: 50ms / 12.5ms spectrogram is not typical spectrogram parameterization, a more typical
-    # parameterization is 25ms / 10ms. Learn more:
-    # https://www.dsprelated.com/freebooks/sasp/Classic_Spectrograms.html
-    # https://github.com/pytorch/audio/issues/384#issuecomment-597020705
-    # https://pytorch.org/audio/compliance.kaldi.html
-    frame_size = 2048  # NOTE: Frame size in samples.
-    fft_length = 2048
-    assert frame_size % 4 == 0
-    frame_hop = frame_size // 4
-
     # NOTE: A "hann window" is standard for calculating an FFT, it's even mentioned as a "popular
     # window" on Wikipedia (https://en.wikipedia.org/wiki/Window_function).
     try:
-        window = run._utils.get_window("hann", frame_size, frame_hop)
+        window = run._utils.get_window("hann", FRAME_SIZE, FRAME_HOP)
         config = {
             lib.audio.power_spectrogram_to_framed_rms: HParams(window=window),
             lib.audio.SignalTodBMelSpectrogram.__init__: HParams(window=window),
@@ -194,7 +197,7 @@ def _configure_audio_processing():
     try:
         librosa.effects.trim = configurable(librosa.effects.trim)
         config = {
-            librosa.effects.trim: HParams(frame_length=frame_size, hop_length=frame_hop),
+            librosa.effects.trim: HParams(frame_length=FRAME_SIZE, hop_length=FRAME_HOP),
         }
         add_config(config)
     except ImportError:
@@ -210,7 +213,7 @@ def _configure_audio_processing():
         lib.audio.seconds_to_samples: HParams(sample_rate=SAMPLE_RATE),
         lib.audio.samples_to_seconds: HParams(sample_rate=SAMPLE_RATE),
         lib.visualize.plot_waveform: HParams(sample_rate=SAMPLE_RATE),
-        lib.visualize.plot_spectrogram: HParams(sample_rate=SAMPLE_RATE, frame_hop=frame_hop),
+        lib.visualize.plot_spectrogram: HParams(sample_rate=SAMPLE_RATE, frame_hop=FRAME_HOP),
         lib.visualize.plot_mel_spectrogram: HParams(**hertz_bounds),
         lib.audio.write_audio: HParams(sample_rate=SAMPLE_RATE),
         lib.audio.normalize_audio: HParams(
@@ -224,11 +227,11 @@ def _configure_audio_processing():
         lib.audio.assert_audio_normalized: HParams(
             suffix=suffix, encoding=sox_encoding, sample_rate=SAMPLE_RATE, num_channels=num_channels
         ),
-        lib.audio.pad_remainder: HParams(multiple=frame_hop, mode="constant", constant_values=0.0),
-        lib.audio.signal_to_framed_rms: HParams(frame_length=frame_size, hop_length=frame_hop),
+        lib.audio.pad_remainder: HParams(multiple=FRAME_HOP, mode="constant", constant_values=0.0),
+        lib.audio.signal_to_framed_rms: HParams(frame_length=FRAME_SIZE, hop_length=FRAME_HOP),
         lib.audio.SignalTodBMelSpectrogram.__init__: HParams(
-            fft_length=fft_length,
-            frame_hop=frame_hop,
+            fft_length=FFT_LENGTH,
+            frame_hop=FRAME_HOP,
             sample_rate=SAMPLE_RATE,
             num_mel_bins=NUM_FRAME_CHANNELS,
             # SOURCE (Tacotron 2):
@@ -247,8 +250,8 @@ def _configure_audio_processing():
         ),
         lib.audio.griffin_lim: HParams(
             sample_rate=SAMPLE_RATE,
-            fft_length=fft_length,
-            frame_hop=frame_hop,
+            fft_length=FFT_LENGTH,
+            frame_hop=FRAME_HOP,
             # SOURCE (Tacotron 1):
             # We found that raising the predicted magnitudes by a power of 1.2 before feeding to
             # Griffin-Lim reduces artifacts
@@ -268,10 +271,10 @@ def _configure_audio_processing():
             # included everything but 3 alignments. The last three alignments were 0.19 "or",
             # 0.21 "or", and 0.24 "EEOC". The slowest alignment was the acronym "EEOC" with the
             # last letter taking 0.5 seconds.
-            max_frames_per_token=(0.18 / (frame_hop / SAMPLE_RATE)),
+            max_frames_per_token=(0.18 / (FRAME_HOP / SAMPLE_RATE)),
         ),
         lib.signal_model.SignalModel.__init__: HParams(
-            ratios=[2] * int(math.log2(frame_hop)),
+            ratios=[2] * int(math.log2(FRAME_HOP)),
         ),
         # NOTE: A 0.400 `block_size` is standard for ITU-R BS.1770.
         run.train.spectrogram_model._data._get_loudness: HParams(block_size=0.400, precision=0),
