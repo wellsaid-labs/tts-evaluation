@@ -643,7 +643,6 @@ class _RunWorker(typing.Protocol):
         device: torch.device,
         store: torch.distributed.TCPStore,
         comet: CometMLExperiment,
-        checkpoint_path: typing.Optional[pathlib.Path],
         checkpoint: typing.Optional[Checkpoint],
         *args,
     ) -> typing.NoReturn:
@@ -664,7 +663,7 @@ def _run_workers_helper(
     hparams.hparams._configuration = config
     set_run_seed()
     checkpoint_ = None if checkpoint is None else load(checkpoint, device=device)
-    return run_worker(device, store, comet, checkpoint, checkpoint_, *args)
+    return run_worker(device, store, comet, checkpoint_, *args)
 
 
 def run_workers(

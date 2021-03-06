@@ -555,7 +555,6 @@ def run_worker(
     device: torch.device,
     store: torch.distributed.TCPStore,
     comet: CometMLExperiment,
-    checkpoint_path: typing.Optional[pathlib.Path],
     checkpoint: typing.Optional[Checkpoint],
     checkpoints_directory: pathlib.Path,
     train_dataset: Dataset,

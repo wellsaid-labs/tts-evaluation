@@ -103,7 +103,7 @@ def _make_configuration(
 
 
 def _run_app(
-    checkpoints_path: pathlib.Path,
+    checkpoints_directory: pathlib.Path,
     train_dataset: Dataset,
     dev_dataset: Dataset,
     comet: CometMLExperiment,
@@ -126,7 +126,7 @@ def _run_app(
     add_config(cli_config)
     comet.log_parameters(get_config_parameters())
     return run_workers(
-        _worker.run_worker, comet, checkpoint, checkpoints_path, train_dataset, dev_dataset
+        _worker.run_worker, comet, checkpoint, checkpoints_directory, train_dataset, dev_dataset
     )
 
 
