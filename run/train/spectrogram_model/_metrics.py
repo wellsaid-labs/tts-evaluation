@@ -183,7 +183,7 @@ class Metrics(_utils.Metrics):
     MIN_DATA_LOADER_QUEUE_SIZE = partial(get_dataset_label, "min_data_loader_queue_size")
     FREQUENCY_NUM_FRAMES = partial(get_dataset_label, "frequency/num_frames")
     FREQUENCY_NUM_SECONDS = partial(get_dataset_label, "frequency/num_seconds")
-    FREQUENCY_TEXT_LENGTH = "text_length_bucket_{lower}_{upper}"
+    FREQUENCY_TEXT_LENGTH = partial(get_dataset_label, "text_length_bucket_{lower}_{upper}")
 
     ALIGNMENT_NORM = partial(get_model_label, "alignment_norm")
     ALIGNMENT_SKIPS = partial(get_model_label, "alignment_skips")
@@ -437,8 +437,8 @@ class Metrics(_utils.Metrics):
                 bucket = int(key.split("/")[-1])
                 lower = bucket * self.TEXT_LENGTH_BUCKET_SIZE
                 upper = (bucket + 1) * self.TEXT_LENGTH_BUCKET_SIZE
-                name = self.FREQUENCY_TEXT_LENGTH.format(lower=lower, upper=upper)
-                metrics[partial(get_dataset_label, name)] = reduce(key) / total_spans
+                get_label = partial(self.FREQUENCY_TEXT_LENGTH, lower=lower, upper=upper)
+                metrics[get_label] = reduce(key) / total_spans
 
         return metrics
 
