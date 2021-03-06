@@ -2,6 +2,11 @@
 # https://stackoverflow.com/questions/33533148/how-do-i-specify-that-the-return-type-of-a-method-is-the-same-as-the-class-itsel
 from __future__ import annotations
 
+import asyncio
+import collections
+import gzip
+import itertools
+import json
 import logging
 import typing
 
@@ -55,3 +60,76 @@ def spawn(*args, nprocs=None, **kwargs):
         assert torch.cuda.device_count() > 0, "Unable to find CUDA devices."
         nprocs = torch.cuda.device_count() if nprocs is None else nprocs
     return torch.multiprocessing.spawn(*args, nprocs=nprocs, **kwargs)  # type: ignore
+
+
+DictStoreValue = typing.Union[
+    str, int, float, bool, None, typing.List["DictStoreValue"], typing.Dict[str, "DictStoreValue"]
+]
+DictStoreData = typing.Dict[str, DictStoreValue]
+DictStoreDataCollection = typing.Dict[str, typing.List[typing.Tuple[DictStoreValue]]]
+
+
+class DictStore:
+    """DictStore gathers `dict`s from workers on master.
+
+    TODO: Look into other compression algorithms like Zstandard:
+    https://www.lucidchart.com/techblog/2019/12/06/json-compression-alternative-binary-formats-and-compression-methods/
+
+    TODO: Support multiple simultaneous `update` operations on `master`.
+
+    Args:
+        data: On the master process, this is a merged collection of data from the worker processes.
+    """
+
+    def __init__(
+        self,
+        store: torch.distributed.TCPStore,
+        world_size=get_world_size(),
+        is_master=is_master(),
+        rank=get_rank(),
+    ):
+        self._store = torch.distributed.PrefixStore(self.__class__.__name__, store)
+        self._operation = -1
+        self._world_size = world_size
+        self._is_master = is_master
+        self._rank = rank
+        self.data: DictStoreDataCollection = {}
+
+    async def _get(self, key: str) -> DictStoreData:
+        """
+        NOTE: Learn about JSONs compact encoding, here: https://docs.python.org/3/library/json.html
+        """
+        result = json.loads(gzip.decompress(bytes.fromhex(self._store.get(key).decode())).decode())
+        assert self._store.delete_key(key)
+        return result
+
+    async def _gets(self, keys: typing.List[str]) -> typing.List[DictStoreData]:
+        tasks = tuple(self._get(k) for k in keys)
+        return typing.cast(typing.List[DictStoreData], await asyncio.gather(*tasks))
+
+    def _set(self, values: DictStoreData):
+        encoded = gzip.compress(json.dumps(values, separators=(",", ":")).encode()).hex()
+        self._store.set(f"/{self._rank}/{self._operation}", encoded)
+
+    def _update(self, data: typing.List[DictStoreData]):
+        """Shallow update `self.data` with `data`."""
+        update = collections.defaultdict(list)
+        for dict_ in data:
+            for key, value in dict_.items():
+                update[key].append(value)
+        for key in set(itertools.chain(update.keys(), self.data.keys())):
+            group = tuple(update[key]) if key in update else tuple()
+            if key not in self.data:
+                self.data[key] = [tuple() for _ in range(self._operation)]
+            self.data[key].append(group)
+
+    def update(self, data: DictStoreData):
+        """Shallow update the master process `self.data` with `data`."""
+        self._operation += 1
+        if self._is_master:
+            ranks = [i for i in range(self._world_size) if i != get_master_rank()]
+            keys = [f"/{i}/{self._operation}" for i in ranks]
+            self._store.wait(keys)
+            self._update([data] + asyncio.run(self._gets(keys)))
+        else:
+            self._set(data)

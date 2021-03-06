@@ -711,77 +711,81 @@ def run_workers(
     return lib.distributed.spawn(_run_workers_helper, args=args)  # type: ignore
 
 
-MetricsValue = typing.Union[float, int]
-MetricsValues = typing.Dict[str, MetricsValue]
-MetricsAll = typing.List[typing.Tuple[MetricsValue]]
+MetricsValues = typing.Dict[str, float]
+MetricsStoreValues = typing.List[typing.Tuple[float]]
+MetricsReduceOp = typing.Callable[[typing.List[float]], float]
+# Select a subset of `MetricsStoreValues`.
+MetricsSelect = typing.Callable[[MetricsStoreValues], MetricsStoreValues]
 
 
-class Metrics:
-    """
-    TODO: Look into other compression algorithms like Zstandard:
-    https://www.lucidchart.com/techblog/2019/12/06/json-compression-alternative-binary-formats-and-compression-methods/
+class Metrics(lib.distributed.DictStore):
 
-    Args:
-        all: Map a metric to every value reported, grouped by operation.
-    """
+    (
+        DATA_QUEUE_SIZE,
+        *_,
+    ) = tuple([str(i) for i in range(100)])
 
-    def __init__(
+    MIN_DATA_LOADER_QUEUE_SIZE = partial(get_dataset_label, "min_data_loader_queue_size")
+
+    GRADIENT_INFINITY_NORM = partial(get_model_label, "grad_norm/inf")
+    GRADIENT_MAX_NORM = partial(get_model_label, "grad_norm/max_norm")
+    GRADIENT_NORM = partial(get_model_label, "grad_norm")
+    LR = partial(get_model_label, "lr")
+
+    def __init__(self, store: torch.distributed.TCPStore, comet: CometMLExperiment, **kwargs):
+        super().__init__(store, **kwargs)
+        self.comet = comet
+
+    @staticmethod
+    def _to_list(tensor: torch.Tensor) -> typing.List[float]:
+        return tensor.view(-1).tolist()
+
+    def get_data_loader_values(self, data_loader: DataLoader) -> MetricsValues:
+        """
+        NOTE: `qsize` is not implemented on MacOS, learn more:
+        https://docs.python.org/3/library/multiprocessing.html#multiprocessing.Queue.qsize
+        """
+        is_multiprocessing = isinstance(data_loader.loader, _MultiProcessingDataLoaderIter)
+        if is_multiprocessing and platform.system() != "Darwin":
+            iterator = typing.cast(_MultiProcessingDataLoaderIter, data_loader.loader)
+            return {self.DATA_QUEUE_SIZE: iterator._data_queue.qsize()}
+        return {}
+
+    def _reduce(self, key: str, select: MetricsSelect, op: MetricsReduceOp = sum) -> float:
+        """Reduce `self.data[key]` measurements to a float."""
+        data = typing.cast(typing.Dict[str, MetricsStoreValues], self.data)
+        flat = flatten_2d(select(data[key] if key in data else []))
+        assert all(not math.isnan(val) for val in flat), f"Encountered NaN value for metric {key}."
+        return math.nan if len(flat) == 0 else op(flat)
+
+    def _div(self, num: str, denom: str, **kwargs) -> float:
+        """ Reduce and divide `self.data[num] / self.data[denom]`. """
+        reduced_denom = self._reduce(denom, **kwargs)
+        if reduced_denom == 0:
+            return math.nan
+        return self._reduce(num, **kwargs) / reduced_denom
+
+    def log_optim_metrics(
         self,
-        store: torch.distributed.TCPStore,
-        world_size=get_world_size(),
-        is_master=is_master(),
-        rank=get_rank(),
+        parameter_norm: float,
+        parameter_norm_inf: float,
+        optimizer: torch.optim.Adam,
+        clipper: lib.optimizers.AdaptiveGradientNormClipper,
+        **kwargs,
     ):
-        self._store = torch.distributed.PrefixStore(self.__class__.__name__, store)
-        self._operation = -1
-        self._world_size = world_size
-        self._is_master = is_master
-        self._rank = rank
-        self.all: typing.Dict[str, MetricsAll] = {}
-
-    async def _get(self, key: str) -> MetricsValues:
+        """Log optimizer metrics for `optimizer` and `clipper`. The model parameters have already
+        been sync'd; therefore, there is no need to further sync parameters.
         """
-        NOTE: Learn about JSONs compact encoding, here: https://docs.python.org/3/library/json.html
-        """
-        result = json.loads(gzip.decompress(bytes.fromhex(self._store.get(key).decode())).decode())
-        assert self._store.delete_key(key)
-        return result
-
-    async def _gets(self, keys: typing.List[str]) -> typing.List[MetricsValues]:
-        tasks = tuple(self._get(k) for k in keys)
-        return typing.cast(typing.List[MetricsValues], await asyncio.gather(*tasks))
-
-    def _set(self, values: MetricsValues):
-        encoded = gzip.compress(json.dumps(values, separators=(",", ":")).encode()).hex()
-        self._store.set(f"/{self._rank}/{self._operation}", encoded)
-
-    def _update(self, values: typing.List[MetricsValues]):
-        """Update `self.all` with `values`."""
-        update = collections.defaultdict(list)
-        for metrics_ in values:
-            for key, value in metrics_.items():
-                update[key].append(value)
-        for key in set(itertools.chain(update.keys(), self.all.keys())):
-            group = tuple(update[key]) if key in update else tuple()
-            if key not in self.all:
-                self.all[key] = [tuple() for _ in range(self._operation)]
-            self.all[key].append(group)
-
-    def update(self, values: MetricsValues):
-        """Update the master process `self.all` with `values`."""
-        self._operation += 1
-        if self._is_master:
-            ranks = [i for i in range(self._world_size) if i != get_master_rank()]
-            keys = [f"/{i}/{self._operation}" for i in ranks]
-            self._store.wait(keys)
-            results = asyncio.run(self._gets(keys))
-            self._update(results + [values])
-        else:
-            self._set(values)
-
-    def log(self):
-        """Report `self.all` on the master process."""
-        raise NotImplementedError()
+        if is_master():
+            assert len(optimizer.param_groups) == 1, "Expecting only 1 group of parameters."
+            metrics = {
+                self.GRADIENT_NORM: parameter_norm,
+                self.GRADIENT_INFINITY_NORM: parameter_norm_inf,
+                self.LR: optimizer.param_groups[0]["lr"],
+            }
+            self.comet.log_metrics({k(**kwargs): v for k, v in metrics.items()})
+            if math.isfinite(clipper.max_norm):  # NOTE: Initially, `max_norm` will be `inf`.
+                self.comet.log_metric(self.GRADIENT_MAX_NORM(**kwargs), clipper.max_norm)
 
 
 class _TimerEvent(typing.NamedTuple):

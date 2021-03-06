@@ -160,30 +160,6 @@ def test__nested_to_flat_config():
     )
 
 
-def test_metrics():
-    """Test `run.train._utils.Metrics` gathers and reduces metrics."""
-    master_store = torch.distributed.TCPStore("127.0.0.1", 29500, 1, True)
-    store = torch.distributed.TCPStore("127.0.0.1", 29500, 1, False)
-    master_metrics = run.train._utils.Metrics(master_store, 2, True, 0)
-    metrics = run.train._utils.Metrics(store, 2, False, 1)
-    metrics.update({"a": 1, "b": 1})
-    master_metrics.update({"a": 2, "c": 2})
-    assert master_metrics.all == {
-        "a": [(1, 2)],
-        "b": [(1,)],
-        "c": [(2,)],
-    }
-    metrics.update({"b": 1, "c": 1})
-    master_metrics.update({"c": 2, "d": 2})
-    assert master_metrics.all == {
-        "a": [(1, 2), tuple()],
-        "b": [(1,), (1,)],
-        "c": [(2,), (1, 2)],
-        "d": [tuple(), (2,)],
-    }
-    assert store.num_keys() == 1
-
-
 def test_timer():
     """Test `run.train._utils.Timer` times an event from start to end."""
     wait = 0.05
