@@ -20,7 +20,6 @@ from torchnlp.utils import get_total_parameters, lengths_to_mask
 
 import lib
 from lib.distributed import is_master
-from lib.environment import save
 from run._config import (
     DATASET_PHONETIC_CHARACTERS,
     Cadence,
@@ -30,7 +29,15 @@ from run._config import (
     get_model_label,
 )
 from run.train import _utils
-from run.train._utils import CometMLExperiment, Context, DataLoader, Timer, set_context, set_epoch
+from run.train._utils import (
+    CometMLExperiment,
+    Context,
+    DataLoader,
+    Timer,
+    save_checkpoint,
+    set_context,
+    set_epoch,
+)
 from run.train.spectrogram_model._data import Batch, DataProcessor, InputEncoder
 from run.train.spectrogram_model._metrics import Metrics, get_average_db_rms_level
 
@@ -497,6 +504,7 @@ class _HandleBatch(typing.Protocol):
         metrics: Metrics,
         batch: Batch,
         data_loader: DataLoader,
+        dataset_type: DatasetType,
         timer: Timer,
         visualize: bool,
     ) -> None:
@@ -536,6 +544,7 @@ def run_worker(
     device: torch.device,
     store: torch.distributed.TCPStore,
     comet: CometMLExperiment,
+    checkpoint_path: typing.Optional[pathlib.Path],
     checkpoint: typing.Optional[Checkpoint],
     checkpoints_directory: pathlib.Path,
     train_dataset: Dataset,
@@ -564,7 +573,5 @@ def run_worker(
             for context, dataset_type, data_loader, handle_batch in contexts:
                 _run_steps(store, context, state, dataset_type, data_loader, handle_batch)
 
-            if is_master():
-                name = f"step_{state.step.item()}{lib.environment.PT_EXTENSION}"
-                path = checkpoints_directory / name
-                save(path, state.to_checkpoint(checkpoints_directory=checkpoints_directory))
+            name = f"step_{state.step.item()}"
+            save_checkpoint(state.to_checkpoint(), checkpoints_directory, name)

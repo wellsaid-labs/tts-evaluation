@@ -1,22 +1,21 @@
-import asyncio
 import collections
 import contextlib
 import copy
 import dataclasses
 import enum
 import functools
-import gzip
 import io
 import itertools
-import json
 import logging
 import math
 import os
 import pathlib
+import platform
 import sys
 import time
 import typing
 from datetime import timedelta
+from functools import partial
 
 import hparams.hparams
 import numpy
@@ -26,13 +25,13 @@ import torch.distributed
 import torch.nn
 import torch.optim
 import torch.utils.data
-import typer
-from hparams import HParam, HParams, configurable, get_config, parse_hparam_args
+from hparams import HParam, HParams, configurable, get_config
 from third_party import LazyLoader
+from torch.utils.data.dataloader import _MultiProcessingDataLoaderIter
 
 import lib
 import run
-from lib.distributed import get_master_rank, get_rank, get_world_size, is_master
+from lib.distributed import is_master
 from lib.environment import load, load_most_recent_file
 from lib.utils import flatten_2d, seconds_to_string
 from run._config import (
@@ -42,6 +41,7 @@ from run._config import (
     Device,
     Label,
     get_dataset_label,
+    get_model_label,
     get_timer_label,
 )
 
@@ -54,83 +54,6 @@ else:
 
 
 logger = logging.getLogger(__name__)
-
-
-@dataclasses.dataclass(frozen=True)
-class Checkpoint:
-
-    checkpoints_directory: pathlib.Path
-    comet_experiment_key: str
-    step: int
-
-
-def _maybe_make_experiment_directories_from_checkpoint(
-    checkpoint: Checkpoint, *args, **kwargs
-) -> typing.Tuple[pathlib.Path, pathlib.Path]:
-    """For checkpoints saved in the `maybe_make_experiment_directories` directory structure,
-    this creates another "run" under the original experiment.
-    """
-    return _maybe_make_experiment_directories(
-        checkpoint.checkpoints_directory.parent.parent, *args, **kwargs
-    )
-
-
-def _maybe_make_experiment_directories(
-    experiment_root: pathlib.Path,
-    recorder: lib.environment.RecordStandardStreams,
-    run_name: str = "RUN_" + lib.environment.bash_time_label(add_pid=False),
-    checkpoints_directory_name: str = "checkpoints",
-    run_log_filename: str = "run.log",
-) -> typing.Tuple[pathlib.Path, pathlib.Path]:
-    """Create a directory structure to store an experiment run, like so:
-
-      {experiment_root}/
-      └── {run_name}/
-          ├── run.log
-          └── {checkpoints_directory_name}/
-
-    TODO: Could this structure be encoded in some data structure? For example, we could return an
-    object called an `ExperimentDirectory` that has `children` called `RunsDirectory`.
-
-    Args:
-        experiment_root: Top-level directory to store an experiment, unless a
-          checkpoint is provided.
-        recorder: This records the standard streams, and saves it.
-        run_name: The name of this run.
-        checkpoints_directory_name: The name of the directory that stores checkpoints.
-        run_log_filename: The run log filename.
-
-    Return:
-        run_root: The root directory to store run files.
-        checkpoints_directory: The directory to store checkpoints.
-    """
-    logger.info("Updating directory structure...")
-    experiment_root.mkdir(exist_ok=True)
-    run_root = experiment_root / run_name
-    run_root.mkdir()
-    checkpoints_directory = run_root / checkpoints_directory_name
-    checkpoints_directory.mkdir()
-    recorder.update(run_root, log_filename=run_log_filename)
-    return run_root, checkpoints_directory
-
-
-def _get_dataset_stats(
-    train: Dataset, dev: Dataset
-) -> typing.Dict[run._config.Label, typing.Union[str, int, float]]:
-    """Get `train` and `dev` dataset statistics."""
-    stats: typing.Dict[run._config.Label, typing.Union[int, str, float]] = {}
-    data: Dataset
-    for data, type_ in [(train, DatasetType.TRAIN), (dev, DatasetType.DEV)]:
-        label_ = functools.partial(get_dataset_label, cadence=Cadence.STATIC, type_=type_)
-        passages_ = flatten_2d([[p for p in v] for v in data.values()])
-        for speaker, passages in itertools.chain(list(data.items()), [(None, passages_)]):
-            label = label_ if speaker is None else functools.partial(label_, speaker=speaker)
-            stats[label("num_audio_files")] = len(set(p.audio_file for p in passages))
-            stats[label("num_passages")] = len(passages)
-            stats[label("num_characters")] = sum(len(p.script) for p in passages)
-            num_seconds = seconds_to_string(sum(p.aligned_audio_length() for p in passages))
-            stats[label("num_seconds")] = num_seconds
-    return stats
 
 
 def _nested_to_flat_config_helper(
@@ -394,6 +317,166 @@ class CometMLExperiment:
         self._experiment.add_tags(tags)
 
 
+@dataclasses.dataclass(frozen=True)
+class Checkpoint:
+
+    comet_experiment_key: str
+    step: int
+
+
+def _get_dataset_stats(
+    train: Dataset, dev: Dataset
+) -> typing.Dict[run._config.Label, typing.Union[str, int, float]]:
+    """Get `train` and `dev` dataset statistics."""
+    stats: typing.Dict[run._config.Label, typing.Union[int, str, float]] = {}
+    data: Dataset
+    for data, type_ in [(train, DatasetType.TRAIN), (dev, DatasetType.DEV)]:
+        label_ = functools.partial(get_dataset_label, cadence=Cadence.STATIC, type_=type_)
+        passages_ = flatten_2d([[p for p in v] for v in data.values()])
+        for speaker, passages in itertools.chain(list(data.items()), [(None, passages_)]):
+            label = label_ if speaker is None else functools.partial(label_, speaker=speaker)
+            stats[label("num_audio_files")] = len(set(p.audio_file for p in passages))
+            stats[label("num_passages")] = len(passages)
+            stats[label("num_characters")] = sum(len(p.script) for p in passages)
+            num_seconds = seconds_to_string(sum(p.aligned_audio_length() for p in passages))
+            stats[label("num_seconds")] = num_seconds
+    return stats
+
+
+def _run_experiment(
+    comet: CometMLExperiment, debug: bool = False
+) -> typing.Tuple[run._config.Dataset, run._config.Dataset]:
+    """Helper function for `start_experiment` and  `resume_experiment`. """
+    lib.environment.check_module_versions()
+
+    # NOTE: Load, preprocess, and cache dataset values.
+    _datasets = {k: v for k, v in list(run._config.DATASETS.items())[:1]}
+    dataset = run._utils.get_dataset(**({"datasets": _datasets} if debug else {}))
+    train_dataset, dev_dataset = run._utils.split_dataset(dataset)
+    comet.log_parameters(_get_dataset_stats(train_dataset, dev_dataset))
+
+    return train_dataset, dev_dataset
+
+
+def _maybe_make_experiment_directories_from_checkpoint(
+    checkpoint_path: pathlib.Path,
+    *args,
+    run_prefix: str = "RUN_",
+    run_suffix: str = lib.environment.bash_time_label(add_pid=False),
+    checkpoints_directory_name: str = "checkpoints",
+    **kwargs,
+) -> typing.Tuple[pathlib.Path, pathlib.Path]:
+    """For checkpoints saved with the `_maybe_make_experiment_directories` directory structure,
+    this creates another "run" under the original experiment.
+    """
+    message = "Unexpected directory structure."
+    assert checkpoint_path.parent.name == checkpoints_directory_name, message
+    assert checkpoint_path.parent.parent.name.startswith(run_prefix), message
+    return _maybe_make_experiment_directories(
+        checkpoint_path.parent.parent.parent,
+        *args,
+        run_name=run_prefix + run_suffix,
+        checkpoints_directory_name=checkpoints_directory_name,
+        **kwargs,
+    )
+
+
+def _maybe_make_experiment_directories(
+    experiment_root: pathlib.Path,
+    recorder: lib.environment.RecordStandardStreams,
+    run_name: str = "RUN_" + lib.environment.bash_time_label(add_pid=False),
+    checkpoints_directory_name: str = "checkpoints",
+    run_log_filename: str = "run.log",
+) -> typing.Tuple[pathlib.Path, pathlib.Path]:
+    """Create a directory structure to store an experiment run, like so:
+
+      {experiment_root}/
+      └── {run_name}/
+          ├── run.log
+          └── {checkpoints_directory_name}/
+
+    TODO: Could this structure be encoded in some data structure? For example, we could return an
+    object called an `ExperimentDirectory` that has `children` called `RunsDirectory`.
+
+    Args:
+        experiment_root: Top-level directory to store an experiment, unless a
+          checkpoint is provided.
+        recorder: This records the standard streams, and saves it.
+        run_name: The name of this run.
+        checkpoints_directory_name: The name of the directory that stores checkpoints.
+        run_log_filename: The run log filename.
+
+    Return:
+        run_root: The root directory to store run files.
+        checkpoints_directory: The directory to store checkpoints.
+    """
+    logger.info("Updating directory structure...")
+    experiment_root.mkdir(exist_ok=True)
+    run_root = experiment_root / run_name
+    run_root.mkdir()
+    checkpoints_directory = run_root / checkpoints_directory_name
+    checkpoints_directory.mkdir()
+    recorder.update(run_root, log_filename=run_log_filename)
+    return run_root, checkpoints_directory
+
+
+def _setup_experiment() -> lib.environment.RecordStandardStreams:
+    """
+    TODO: For checkpointed runs, should we triple check the same parameters are getting
+    configured? Should we throw an error if not? Or should we create a new experiment, and
+    ensure that each experiments parameters are immutable?
+
+    TODO: `RecordStandardStreams` should be started after `CometMLExperiment`; otherwise,
+    `CometMLExperiment` will not be able to monitor the standard streams. Can this be fixed?
+    """
+    recorder = lib.environment.RecordStandardStreams()
+    logger.info("Command line args: %s", str(sys.argv))  # NOTE: Command line args are recorded.
+    run._config.configure()
+    return recorder
+
+
+def start_experiment(
+    directory: pathlib.Path,
+    project: str,
+    name: str = "",
+    tags: typing.List[str] = [],
+    min_disk_space: float = 0.2,
+    **kwargs,
+) -> typing.Tuple[pathlib.Path, run._config.Dataset, run._config.Dataset, CometMLExperiment]:
+    """Start a training run in a comet `project` named `name` with `tags`. The training run
+    results are saved in `directory`."""
+    lib.environment.assert_enough_disk_space(min_disk_space)
+    lib.environment.set_basic_logging_config()
+    comet = CometMLExperiment(project_name=project)
+    comet.set_name(name)
+    comet.add_tags(tags)
+    recorder = _setup_experiment()
+    experiment_root = directory / lib.environment.bash_time_label()
+    run_root, checkpoints_path = _maybe_make_experiment_directories(experiment_root, recorder)
+    comet.log_other(run._config.get_environment_label("directory"), str(run_root))
+    return checkpoints_path, *_run_experiment(comet, **kwargs), comet
+
+
+def resume_experiment(
+    directory: pathlib.Path, checkpoint: typing.Optional[pathlib.Path], **kwargs
+) -> typing.Tuple[
+    pathlib.Path, pathlib.Path, run._config.Dataset, run._config.Dataset, CometMLExperiment
+]:
+    """Resume training from `checkpoint`. If `checkpoint` is not given, the most recent checkpoint
+    file is loaded from `directory`."""
+    lib.environment.set_basic_logging_config()
+    pattern = str(directory / f"**/*{lib.environment.PT_EXTENSION}")
+    if checkpoint:
+        loaded = load(checkpoint)
+    else:
+        checkpoint, loaded = load_most_recent_file(pattern, load)
+    checkpoint_ = typing.cast(Checkpoint, loaded)
+    comet = CometMLExperiment(experiment_key=checkpoint_.comet_experiment_key)
+    recorder = _setup_experiment()
+    _, checkpoints_path = _maybe_make_experiment_directories_from_checkpoint(checkpoint, recorder)
+    return checkpoints_path, checkpoint, *_run_experiment(comet, **kwargs), comet
+
+
 @contextlib.contextmanager
 def set_context(context: Context, model: torch.nn.Module, comet: CometMLExperiment):
     with comet.context_manager(context.value):
@@ -419,6 +502,12 @@ def set_epoch(comet: CometMLExperiment, step: int, steps_per_epoch: int):
 @configurable
 def set_run_seed(seed=HParam()):
     lib.environment.set_seed(seed)
+
+
+def save_checkpoint(checkpoint: Checkpoint, checkpoints_directory: pathlib.Path, name: str):
+    if is_master():
+        name = f"{name}{lib.environment.PT_EXTENSION}"
+        lib.environment.save(checkpoints_directory / name, checkpoint)
 
 
 def _worker_init_fn(_, config):
@@ -514,121 +603,6 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
             yield typing.cast(DataLoaderVar, self.process_batch(next(self.loader)))
 
 
-class _RunApp(typing.Protocol):
-    def __call__(
-        self,
-        checkpoints_path: pathlib.Path,
-        checkpoint: typing.Optional[pathlib.Path],
-        train_dataset: run._config.Dataset,
-        dev_dataset: run._config.Dataset,
-        comet: CometMLExperiment,
-        cli_config: typing.Dict[str, typing.Any],
-        debug: bool = False,
-    ):
-        """Callback to run an experiment.
-
-        Args:
-            checkpoints_path: The directory to store checkpoints.
-            checkpoint: The path of the loaded checkpoint.
-            ...
-            cli_config: Additional configuration passed through the command line.
-            debug: Flag indicating if to start a debugging session.
-        """
-        ...
-
-
-def make_app(run_app: _RunApp, directory: pathlib.Path, *args, **kwargs):
-    """ Make CLI application for running an experiment, and saving it's details at `directory`."""
-    app = typer.Typer(*args, **kwargs)
-
-    lib.environment.enable_fault_handler()
-
-    def _run(
-        checkpoints_path: pathlib.Path,
-        cli_config: typing.Dict[str, typing.Any],
-        comet: CometMLExperiment,
-        checkpoint: typing.Optional[pathlib.Path] = None,
-        debug: bool = False,
-    ):
-        """Run spectrogram model training. """
-        lib.environment.check_module_versions()
-
-        # NOTE: Load, preprocess, and cache dataset values.
-        _datasets = {k: v for k, v in list(run._config.DATASETS.items())[:1]}
-        dataset = run._utils.get_dataset(**({"datasets": _datasets} if debug else {}))
-        train_dataset, dev_dataset = run._utils.split_dataset(dataset)
-        comet.log_parameters(_get_dataset_stats(train_dataset, dev_dataset))
-
-        return run_app(
-            checkpoints_path, checkpoint, train_dataset, dev_dataset, comet, cli_config, debug
-        )
-
-    def _setup_config(
-        extra_cli_args: typing.List[str], debug: bool
-    ) -> typing.Tuple[typing.Dict[str, typing.Any], lib.environment.RecordStandardStreams]:
-        """
-        TODO: For checkpointed runs, should we triple check the same parameters are getting
-        configured? Should we throw an error if not? Or should we create a new experiment, and
-        ensure that each experiments parameters are immutable?
-
-        TODO: `RecordStandardStreams` should be started after `CometMLExperiment`; otherwise,
-        `CometMLExperiment` will not be able to monitor the standard streams. Can this be fixed?
-        """
-        recorder = lib.environment.RecordStandardStreams()
-        # NOTE: Ensure command line args are captured in the logs.
-        logger.info("Command line args: %s", str(sys.argv))
-        parsed = parse_hparam_args(extra_cli_args)
-        run._config.configure()
-        return parsed, recorder
-
-    @app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
-    def resume(
-        context: typer.Context,
-        checkpoint: typing.Optional[pathlib.Path] = typer.Argument(
-            None, help="Checkpoint file to restart training from."
-        ),
-        debug: bool = typer.Option(False, help="Turn on debugging mode."),
-    ):
-        """Resume training from CHECKPOINT. If CHECKPOINT is not given, the most recent checkpoint
-        file is loaded."""
-        lib.environment.set_basic_logging_config()
-        pattern = str(directory / f"**/*{lib.environment.PT_EXTENSION}")
-        if checkpoint:
-            loaded = load(checkpoint)
-        else:
-            checkpoint, loaded = load_most_recent_file(pattern, load)
-        checkpoint_ = typing.cast(Checkpoint, loaded)
-        comet = CometMLExperiment(experiment_key=checkpoint_.comet_experiment_key)
-        cli_config, recorder = _setup_config(context.args, debug)
-        _, checkpoints_path = _maybe_make_experiment_directories_from_checkpoint(
-            checkpoint_, recorder
-        )
-        _run(checkpoints_path, cli_config, comet, checkpoint, debug=debug)
-
-    @app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
-    def start(
-        context: typer.Context,
-        project: str = typer.Argument(..., help="Experiment project name."),
-        name: str = typer.Argument("", help="Experiment name."),
-        tags: typing.List[str] = typer.Option([], help="Experiment tags."),
-        debug: bool = typer.Option(False, help="Turn on debugging mode."),
-        min_disk_space: float = 0.2,
-    ):
-        """ Start a training run in PROJECT named NAME with TAGS. """
-        lib.environment.assert_enough_disk_space(min_disk_space)
-        lib.environment.set_basic_logging_config()
-        comet = CometMLExperiment(project_name=project)
-        comet.set_name(name)
-        comet.add_tags(tags)
-        cli_config, recorder = _setup_config(context.args, debug)
-        experiment_root = directory / lib.environment.bash_time_label()
-        run_root, checkpoints_path = _maybe_make_experiment_directories(experiment_root, recorder)
-        comet.log_other(run._config.get_environment_label("directory"), str(run_root))
-        _run(checkpoints_path, cli_config, comet, debug=debug)
-
-    return app
-
-
 def _init_distributed(
     rank: int,
     timeout: timedelta = timedelta(minutes=30),
@@ -667,6 +641,7 @@ class _RunWorker(typing.Protocol):
         device: torch.device,
         store: torch.distributed.TCPStore,
         comet: CometMLExperiment,
+        checkpoint_path: typing.Optional[pathlib.Path],
         checkpoint: typing.Optional[Checkpoint],
         *args,
     ) -> typing.NoReturn:
@@ -687,7 +662,7 @@ def _run_workers_helper(
     hparams.hparams._configuration = config
     set_run_seed()
     checkpoint_ = None if checkpoint is None else load(checkpoint, device=device)
-    return run_worker(device, store, comet, checkpoint_, *args)
+    return run_worker(device, store, comet, checkpoint, checkpoint_, *args)
 
 
 def run_workers(
@@ -731,6 +706,9 @@ class Metrics(lib.distributed.DictStore):
     def __init__(self, store: torch.distributed.TCPStore, comet: CometMLExperiment, **kwargs):
         super().__init__(store, **kwargs)
         self.comet = comet
+
+    def update(self, data: MetricsValues):
+        return super().update(typing.cast(lib.distributed.DictStoreData, data))
 
     @staticmethod
     def _to_list(tensor: torch.Tensor) -> typing.List[float]:

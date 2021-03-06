@@ -5,7 +5,8 @@ from functools import partial
 
 import torch
 import torch.optim
-from hparams import HParams, add_config
+import typer
+from hparams import HParams, add_config, parse_hparam_args
 
 import lib
 from lib.distributed import get_world_size
@@ -19,15 +20,18 @@ from run._config import (
 from run.train._utils import (
     CometMLExperiment,
     get_config_parameters,
-    make_app,
+    resume_experiment,
     run_workers,
     set_run_seed,
+    start_experiment,
 )
 from run.train.spectrogram_model import _worker
 from run.train.spectrogram_model._data import InputEncoder
 from run.train.spectrogram_model._metrics import Metrics
 
+lib.environment.enable_fault_handler()
 logger = logging.getLogger(__name__)
+app = typer.Typer()
 
 
 def _make_configuration(
@@ -100,12 +104,12 @@ def _make_configuration(
 
 def _run_app(
     checkpoints_path: pathlib.Path,
-    checkpoint: typing.Optional[pathlib.Path],
     train_dataset: Dataset,
     dev_dataset: Dataset,
     comet: CometMLExperiment,
     cli_config: typing.Dict[str, typing.Any],
-    debug: bool = False,
+    debug: bool,
+    checkpoint: typing.Optional[pathlib.Path] = None,
 ):
     """Run spectrogram model training.
 
@@ -126,6 +130,38 @@ def _run_app(
     )
 
 
+@app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+def resume(
+    context: typer.Context,
+    checkpoint: typing.Optional[pathlib.Path] = typer.Argument(
+        None, help="Checkpoint file to restart training from."
+    ),
+    debug: bool = typer.Option(False, help="Turn on debugging mode."),
+):
+    """Resume training from CHECKPOINT. If CHECKPOINT is not given, the most recent checkpoint
+    file is loaded."""
+    checkpoints_path, checkpoint, train_dataset, dev_dataset, comet = resume_experiment(
+        SPECTROGRAM_MODEL_EXPERIMENTS_PATH, checkpoint, debug=debug
+    )
+    cli_config = parse_hparam_args(context.args)
+    _run_app(checkpoints_path, train_dataset, dev_dataset, comet, cli_config, debug, checkpoint)
+
+
+@app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+def start(
+    context: typer.Context,
+    project: str = typer.Argument(..., help="Experiment project name."),
+    name: str = typer.Argument("", help="Experiment name."),
+    tags: typing.List[str] = typer.Option([], help="Experiment tags."),
+    debug: bool = typer.Option(False, help="Turn on debugging mode."),
+):
+    """ Start a training run in PROJECT named NAME with TAGS. """
+    checkpoints_path, train_dataset, dev_dataset, comet = start_experiment(
+        SPECTROGRAM_MODEL_EXPERIMENTS_PATH, project, name, tags, debug=debug
+    )
+    cli_config = parse_hparam_args(context.args)
+    _run_app(checkpoints_path, train_dataset, dev_dataset, comet, cli_config, debug)
+
+
 if __name__ == "__main__":  # pragma: no cover
-    app = make_app(_run_app, SPECTROGRAM_MODEL_EXPERIMENTS_PATH)
     app()
