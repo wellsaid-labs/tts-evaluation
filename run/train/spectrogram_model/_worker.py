@@ -264,7 +264,7 @@ def _visualize_source_vs_target(
     if not is_master():
         return
 
-    item = random.randint(0, batch.length - 1)
+    item = random.randint(0, len(batch) - 1)
     spectrogram_length = int(batch.spectrogram.lengths[0, item].item())
     text_length = int(batch.encoded_phonemes.lengths[0, item].item())
 
@@ -432,7 +432,7 @@ def _visualize_inferred(
     if not is_master():
         return
 
-    item = random.randint(0, batch.length - 1)
+    item = random.randint(0, len(batch) - 1)
     num_frames = int(batch.spectrogram.lengths[0, item].item())
     num_frames_predicted = int(predicted_lengths[0, item].item())
     text_length = int(batch.encoded_phonemes.lengths[0, item].item())

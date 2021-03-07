@@ -504,10 +504,14 @@ def set_run_seed(seed=HParam()):
     lib.environment.set_seed(seed)
 
 
-def save_checkpoint(checkpoint: Checkpoint, checkpoints_directory: pathlib.Path, name: str):
+def save_checkpoint(
+    checkpoint: Checkpoint,
+    checkpoints_directory: pathlib.Path,
+    name: str,
+    suffix=lib.environment.PT_EXTENSION,
+):
     if is_master():
-        name = f"{name}{lib.environment.PT_EXTENSION}"
-        lib.environment.save(checkpoints_directory / name, checkpoint)
+        lib.environment.save(checkpoints_directory / f"{name}{suffix}", checkpoint)
 
 
 def _worker_init_fn(_, config, worker_init_fn):

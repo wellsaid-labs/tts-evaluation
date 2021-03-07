@@ -1,4 +1,5 @@
 import asyncio
+import dataclasses
 import functools
 import logging
 import random
@@ -386,12 +387,11 @@ async def _spans_read_audio_slice(
     return await asyncio.gather(*tasks)
 
 
-class Batch(typing.NamedTuple):
+@dataclasses.dataclass(frozen=True)
+class Batch:
     """Batch of preprocessed `Span` used to training or evaluating the spectrogram model."""
 
     spans: typing.List[lib.datasets.Span]
-
-    length: int
 
     audio: typing.List[torch.Tensor]
 
@@ -414,6 +414,9 @@ class Batch(typing.NamedTuple):
 
     # SequenceBatch[torch.LongTensor [num_phonemes, batch_size], torch.LongTensor [1, batch_size])
     encoded_phonemes_mask: SequenceBatch
+
+    def __len__(self):
+        return len(self.spans)
 
 
 def make_batch(spans: typing.List[lib.datasets.Span], input_encoder: InputEncoder) -> Batch:
@@ -449,16 +452,14 @@ def make_batch(spans: typing.List[lib.datasets.Span], input_encoder: InputEncode
     _stack = functools.partial(stack_and_pad_tensors, dim=1)
     _make_mask = functools.partial(torch.ones, dtype=torch.bool)
 
-    length = len(spans)
-
-    assert length > 0, "Batch must have at least one item."
+    assert len(spans) > 0, "Batch must have at least one item."
 
     for span in spans:
         lib.audio.assert_audio_normalized(span.audio_file)
 
     nlp = lib.text.load_en_core_web_md(disable=("parser", "ner"))
     docs: typing.List[spacy.tokens.Doc] = list(nlp.pipe([s.passage.script for s in spans]))
-    for i in range(length):
+    for i in range(len(spans)):
         script_slice = spans[i].script_slice
         span = docs[i].char_span(script_slice.start, script_slice.stop)  # type: ignore
         assert span is not None, "Invalid `spacy.tokens.Span` selected."
@@ -473,7 +474,6 @@ def make_batch(spans: typing.List[lib.datasets.Span], input_encoder: InputEncode
 
     return Batch(
         spans=spans,
-        length=length,
         audio=signals,
         spectrogram=spectrogram,
         spectrogram_mask=spectrogram_mask,
