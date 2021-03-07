@@ -2,7 +2,6 @@
 
 TODO:
 - Add a script for creating a batch of instances.
-- Add a script for imaging a machine and printing the progress.
 - Add a script for updating a machine's start up script for signal model training.
 """
 import logging
@@ -237,6 +236,35 @@ def ip(zone: str = typer.Option(...), name: str = typer.Option(...)):
     assert len(response["networkInterfaces"]) == 1
     assert len(response["networkInterfaces"][0]["accessConfigs"]) == 1
     typer.echo(response["networkInterfaces"][0]["accessConfigs"][0]["natIP"])
+
+
+@app.command()
+def image_and_delete(
+    image_family: str = typer.Option(...),
+    image_name: str = typer.Option(...),
+    name: str = typer.Option(...),
+    vm_name: str = typer.Option(...),
+    zone: str = typer.Option(...),
+):
+    """Image the underlying managed instance, and delete it afterwards.
+
+    NOTE: This will remove the instance from it's managed group, and it cannot be put back.
+    """
+    api = "gcloud compute"
+    suffix = f"--zone={zone}"
+    commands = [
+        f"{api} instance-groups managed abandon-instances {name} --instances={vm_name} {suffix}",
+        f"{api} instances stop {vm_name} {suffix}",
+        f"{api} images create {image_name} --family={image_family} "
+        f"--source-disk={vm_name} --source-disk-zone={zone} --storage-location=us --verbosity=info",
+    ]
+    for command in commands:
+        typer.echo(subprocess.check_output(command, shell=True).decode().strip())
+
+    typer.confirm("Are you sure you want to delete the instance?", abort=True)
+    command = f"gcloud compute instances delete {vm_name} --zone={zone}"
+    typer.echo(subprocess.check_output(command, shell=True).decode().strip())
+    delete_instance(name, zone)
 
 
 if __name__ == "__main__":

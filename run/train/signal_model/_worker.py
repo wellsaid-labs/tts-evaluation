@@ -465,8 +465,8 @@ def _visualize_inferred_end_to_end(
 
     model = partial(get_model_label, cadence=Cadence.STEP)
     dataset = partial(get_dataset_label, cadence=Cadence.STEP, type_=dataset_type)
-    num_frames = batch.batch.predicted_spectrogram.lengths[:, item]
-    gold_spectrogram = batch.batch.predicted_spectrogram.tensor[:num_frames, item]
+    num_frames = batch.batch.spectrogram.lengths[:, item]
+    gold_spectrogram = batch.batch.spectrogram.tensor[:num_frames, item]
     figures = {
         dataset("gold_spectrogram"): lib.visualize.plot_mel_spectrogram(gold_spectrogram),
         model("predicted_spectrogram"): lib.visualize.plot_mel_spectrogram(predicted_spectrogram),

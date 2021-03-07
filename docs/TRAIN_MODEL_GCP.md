@@ -168,3 +168,15 @@ Setup your local development environment by following [these instructions](LOCAL
    ```
 
    You may need to run the above a couple of times.
+
+   💡 TIP: The instance can be imaged and deleted. For example:
+
+   ```zsh
+   VM_NAME=$(python -m run.utils.gcp most-recent --filter $NAME)
+   python -m run.utils.gcp image-and-delete \
+      --image-family=$NAME \
+      --image-name="$NAME-v1" \
+      --name=$NAME \
+      --vm-name=$VM_NAME \
+      --zone=$(python -m run.utils.gcp zone --name $VM_NAME)
+   ```
