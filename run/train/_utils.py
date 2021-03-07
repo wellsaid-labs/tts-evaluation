@@ -93,6 +93,7 @@ class Context(enum.Enum):
     TRAIN: typing.Final = "train"
     EVALUATE: typing.Final = "evaluate"
     EVALUATE_INFERENCE: typing.Final = "evaluate_inference"
+    EVALUATE_END_TO_END: typing.Final = "evaluate_end_to_end"
 
 
 class CometMLExperiment:
@@ -509,9 +510,11 @@ def save_checkpoint(
     checkpoints_directory: pathlib.Path,
     name: str,
     suffix=lib.environment.PT_EXTENSION,
-):
+) -> pathlib.Path:
+    path = checkpoints_directory / f"{name}{suffix}"
     if is_master():
-        lib.environment.save(checkpoints_directory / f"{name}{suffix}", checkpoint)
+        lib.environment.save(path, checkpoint)
+    return path
 
 
 def _worker_init_fn(_, config, worker_init_fn):

@@ -149,7 +149,7 @@ class _State:
         scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer_, lr_multiplier_schedule)
         return optimizer_, clipper, scheduler
 
-    def to_checkpoint(self, **kwargs):
+    def to_checkpoint(self):
         """ Create a checkpoint to save the spectrogram training state. """
         return Checkpoint(
             comet_experiment_key=self.comet.get_key(),
@@ -159,7 +159,6 @@ class _State:
             clipper=self.clipper,
             scheduler=self.scheduler,
             step=int(self.step.item()),
-            **kwargs,
         )
 
     @classmethod
