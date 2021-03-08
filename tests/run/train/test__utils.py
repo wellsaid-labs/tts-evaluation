@@ -130,7 +130,7 @@ def test_set_context():
     comet = run.train._utils.CometMLExperiment(disabled=True)
     rnn = torch.nn.LSTM(10, 20, 2).eval()
     assert not rnn.training
-    with run.train._utils.set_context(run.train._utils.Context.TRAIN, rnn, comet):
+    with run.train._utils.set_context(run.train._utils.Context.TRAIN, comet, rnn):
         assert rnn.training
         assert comet.context == run.train._utils.Context.TRAIN.value
         output, _ = rnn(torch.randn(5, 3, 10))

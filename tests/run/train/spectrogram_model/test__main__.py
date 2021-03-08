@@ -37,7 +37,7 @@ def test_integration():
     )
 
     # Test `_run_step` with `Metrics` and `_State`
-    with set_context(Context.TRAIN, state.model, comet):
+    with set_context(Context.TRAIN, comet, state.model):
         timer = Timer()
         metrics = Metrics(store, comet, speakers)
         batch = next(iter(train_loader))
@@ -82,7 +82,7 @@ def test_integration():
         metrics.log(is_verbose=True, type_=DatasetType.TRAIN, cadence=Cadence.MULTI_STEP)
 
     # Test `_run_inference` with `Metrics` and `_State`
-    with set_context(Context.EVALUATE_INFERENCE, state.model, comet):
+    with set_context(Context.EVALUATE_INFERENCE, comet, state.model):
         timer = Timer()
         metrics = Metrics(store, comet, speakers)
         batch = next(iter(train_loader))
