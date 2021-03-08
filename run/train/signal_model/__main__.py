@@ -132,10 +132,8 @@ def _make_configuration(
             real_label=real_label, fake_label=fake_label, threshold=threshold
         ),
         torch.optim.Adam.__init__: HParams(
-            eps=10 ** -6,
-            weight_decay=0,
             lr=10 ** -4,
-            amsgrad=True,
+            amsgrad=False,
             betas=(0.9, 0.999),
         ),
     }
