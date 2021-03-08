@@ -374,7 +374,6 @@ def __run_step(state: _State, timer: Timer, metrics: Metrics):
     metrics.log_optim_metrics(norm, norm_inf_, state.optimizer, state.clipper, cadence=Cadence.STEP)
 
 
-@lib.utils.log_runtime
 def _run_step(
     state: _State,
     metrics: Metrics,
