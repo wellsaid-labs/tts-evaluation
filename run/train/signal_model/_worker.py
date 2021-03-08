@@ -20,7 +20,7 @@ from torchnlp.utils import get_total_parameters
 
 import lib
 from lib.audio import SignalTodBMelSpectrogram
-from lib.distributed import get_rank, is_master
+from lib.distributed import get_rank, get_world_size, is_master
 from lib.signal_model import SignalModel, SpectrogramDiscriminator, generate_waveform
 from lib.visualize import plot_mel_spectrogram, plot_spectrogram
 from run._config import (
@@ -230,10 +230,13 @@ class _State:
         )
 
 
-def _worker_init_fn():
+def _worker_init_fn(step: int):
     # NOTE: Each worker needs a different random seed to generate unique data.
     info = torch.utils.data.get_worker_info()
-    seed = RANDOM_SEED + get_rank() * info.num_workers + info.id
+    seed = RANDOM_SEED
+    seed += get_world_size() * info.num_workers * step
+    seed += get_rank() * info.num_workers
+    seed += info.id
     lib.environment.set_seed(seed)
     logger.info("Worker random seed set to %d", seed)
 
@@ -265,7 +268,7 @@ def _get_data_loaders(
         num_workers=num_workers,
         device=state.device,
         prefetch_factor=prefetch_factor,
-        worker_init_fn=_worker_init_fn,
+        worker_init_fn=partial(_worker_init_fn, step=int(state.step.item())),
     )
     return (
         DataLoader(train, num_steps_per_epoch=train_steps_per_epoch, **kwargs),
