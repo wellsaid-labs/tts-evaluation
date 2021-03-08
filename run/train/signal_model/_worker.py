@@ -544,27 +544,31 @@ def _run_steps(
     dataset_type: DatasetType,
     data_loader: DataLoader,
     handle_batch: _HandleBatch,
+    **kwargs,
 ):
     """Run the `handle_batch` in a loop over `data_loader` batches."""
-    with set_context(context, state.comet, *state.models):
-        with contextlib.nullcontext() if context == Context.TRAIN else state.ema:
-            speakers = state.spectrogram_model_checkpoint.input_encoder.speaker_encoder.vocab
-            metrics = Metrics(store, state.comet, speakers)
-            iterator = iter(data_loader)
-            while True:
-                timer = Timer()
-                timer.record_event(timer.LOAD_DATA)
-                batch = next(iterator, None)
-                if batch is None:
-                    break
+    with contextlib.ExitStack() as stack:
+        stack.enter_context(set_context(context, state.comet, *state.models))
+        stack.enter_context(set_epoch(state.comet, step=state.step.item(), **kwargs))
+        stack.enter_context(contextlib.nullcontext() if context == Context.TRAIN else state.ema)
 
-                handle_batch(state, metrics, batch, data_loader, timer)
+        speakers = state.spectrogram_model_checkpoint.input_encoder.speaker_encoder.vocab
+        metrics = Metrics(store, state.comet, speakers)
+        iterator = iter(data_loader)
+        while True:
+            timer = Timer()
+            timer.record_event(timer.LOAD_DATA)
+            batch = next(iterator, None)
+            if batch is None:
+                break
 
-                if Context.TRAIN == context:
-                    metrics.log(lambda l: l[-1:], timer, type_=dataset_type, cadence=Cadence.STEP)
-                    state.comet.log_metrics(timer.get_timers(cadence=Cadence.STEP))
+            handle_batch(state, metrics, batch, data_loader, timer)
 
-            metrics.log(is_verbose=True, type_=dataset_type, cadence=Cadence.MULTI_STEP)
+            if Context.TRAIN == context:
+                metrics.log(lambda l: l[-1:], timer, type_=dataset_type, cadence=Cadence.STEP)
+                state.comet.log_metrics(timer.get_timers(cadence=Cadence.STEP))
+
+        metrics.log(is_verbose=True, type_=dataset_type, cadence=Cadence.MULTI_STEP)
 
 
 def run_worker(
@@ -596,16 +600,14 @@ def run_worker(
     ]
     while True:
         steps_per_epoch = train_loader.num_steps_per_epoch
-        with set_epoch(comet, step=state.step.item(), steps_per_epoch=steps_per_epoch):
-            [_run_steps(store, state, *args) for args in contexts]
+        [_run_steps(store, state, *args, steps_per_epoch=steps_per_epoch) for args in contexts]
 
-            with set_context(Context.EVALUATE_INFERENCE, state.comet, *state.models):
-                with state.ema:
-                    _visualize_inferred(state, dev_loader, DatasetType.DEV)
+        with set_context(Context.EVALUATE_INFERENCE, state.comet, *state.models):
+            with state.ema:
+                _visualize_inferred(state, dev_loader, DatasetType.DEV)
 
-            with set_context(Context.EVALUATE_END_TO_END, state.comet, *state.models):
-                with state.ema:
-                    _visualize_inferred_end_to_end(state, dev_loader, DatasetType.DEV)
+        with set_context(Context.EVALUATE_END_TO_END, state.comet, *state.models):
+            with state.ema:
+                _visualize_inferred_end_to_end(state, dev_loader, DatasetType.DEV)
 
-            name = f"step_{state.step.item()}"
-            save_checkpoint(state.to_checkpoint(), checkpoints_directory, name)
+        save_checkpoint(state.to_checkpoint(), checkpoints_directory, f"step_{state.step.item()}")

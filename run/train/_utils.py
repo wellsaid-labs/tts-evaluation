@@ -501,8 +501,8 @@ def set_context(
 @contextlib.contextmanager
 def set_epoch(comet: CometMLExperiment, step: int, steps_per_epoch: int):
     epoch = int(step // steps_per_epoch)
-    message = "Running Epoch %d (Step %d)"
-    logger.info(message, epoch, step)
+    message = "[%s] Running Epoch %d (Step %d)"
+    logger.info(message, comet.context, epoch, step)
     comet.set_step(typing.cast(int, step))
     comet.log_current_epoch(epoch)
     yield
