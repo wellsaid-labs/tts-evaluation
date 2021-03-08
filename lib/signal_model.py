@@ -304,7 +304,7 @@ class SignalModel(torch.nn.Module):
         self.hidden_size = hidden_size
         self.max_channel_size = max_channel_size
         self.mu = mu
-        self.upscale_factor = np.prod(ratios)
+        self.upscale_factor = int(np.prod(ratios))
 
         self.pre_net = _Sequential(
             _InterpolateAndMask(1),
@@ -320,7 +320,7 @@ class SignalModel(torch.nn.Module):
                 self.get_layer_size(i),
                 self.get_layer_size(i + 1),
                 r,
-                np.prod(ratios[:i]),
+                int(np.prod(ratios[:i])),
             )
             for i, r in enumerate(ratios)
         ]
@@ -337,9 +337,8 @@ class SignalModel(torch.nn.Module):
         self.condition = torch.nn.Conv1d(self.get_layer_size(0), max_size, kernel_size=1)
 
         padding: float = typing.cast(torch.nn.Conv1d, self.pre_net[1]).kernel_size[0] // 2
-        padding += (
-            typing.cast(torch.nn.Conv1d, self.network[-2]).kernel_size[0] // 2
-        ) / self.upscale_factor
+        post_net_padding = typing.cast(torch.nn.Conv1d, self.network[-2]).kernel_size[0] // 2
+        padding += post_net_padding / self.upscale_factor
         padding += sum([m.padding_required for m in self.modules() if isinstance(m, _Block)])
         self.excess_padding: int = round((math.ceil(padding) - padding) * self.upscale_factor)
         self.padding: int = math.ceil(padding)
@@ -370,6 +369,7 @@ class SignalModel(torch.nn.Module):
             if isinstance(module, torch.nn.Conv1d):
                 yield module
 
+    @lib.utils.log_runtime
     def reset_parameters(self):
         for module in self.modules():
             if isinstance(module, torch.nn.Conv1d):

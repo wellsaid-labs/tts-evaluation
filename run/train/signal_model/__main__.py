@@ -170,7 +170,7 @@ def _run_app(
 def resume(
     context: typer.Context,
     checkpoint: typing.Optional[pathlib.Path] = typer.Argument(
-        None, help="Checkpoint file to restart training from."
+        None, help="Checkpoint file to restart training from.", exists=True, dir_okay=False
     ),
     debug: bool = typer.Option(False, help="Turn on debugging mode."),
 ):
@@ -184,12 +184,15 @@ def resume(
 @app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
 def start(
     context: typer.Context,
+    checkpoint: pathlib.Path = typer.Argument(
+        ...,
+        help="Spectrogram model checkpoint file to generate training data with.",
+        exists=True,
+        dir_okay=False,
+    ),
     project: str = typer.Argument(..., help="Experiment project name."),
     name: str = typer.Argument("", help="Experiment name."),
     tags: typing.List[str] = typer.Option([], help="Experiment tags."),
-    checkpoint: pathlib.Path = typer.Argument(
-        None, help="Spectrogram model checkpoint file to generate training data with."
-    ),
     debug: bool = typer.Option(False, help="Turn on debugging mode."),
 ):
     """Start a training run in PROJECT named NAME with TAGS."""

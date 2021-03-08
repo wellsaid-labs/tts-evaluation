@@ -5,6 +5,7 @@ import math
 import pathlib
 import random
 import typing
+import warnings
 from functools import partial
 
 import torch
@@ -123,7 +124,10 @@ class _State:
         device: torch.device,
         kwargs: typing.List[typing.Dict] = HParam(),
     ) -> typing.List[SignalTodBMelSpectrogram]:
-        return [SignalTodBMelSpectrogram(**k).to(device, non_blocking=True) for k in kwargs]
+        with warnings.catch_warnings():
+            message = r".*Overwriting configured argument.*"
+            warnings.filterwarnings("ignore", module=r".*hparams", message=message)
+            return [SignalTodBMelSpectrogram(**k).to(device, non_blocking=True) for k in kwargs]
 
     @staticmethod
     @configurable
@@ -540,7 +544,8 @@ def run_worker(
     TODO: Support training from ground truth spectrograms.
     """
     conditions = [checkpoint is None, spectrogram_model_checkpoint is None]
-    assert any(conditions) and not all(conditions)
+    message = "Either signal model or spectrogram model checkpoint needs to be defined."
+    assert any(conditions) and not all(conditions), message
     state = (
         _State.make(typing.cast(pathlib.Path, spectrogram_model_checkpoint), comet, device)
         if checkpoint is None

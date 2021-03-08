@@ -33,7 +33,7 @@ import lib
 import run
 from lib.distributed import is_master
 from lib.environment import load, load_most_recent_file
-from lib.utils import flatten_2d, seconds_to_string
+from lib.utils import dataclass_as_dict, flatten_2d, seconds_to_string
 from run._config import (
     Cadence,
     Dataset,
@@ -517,6 +517,25 @@ def save_checkpoint(
     return path
 
 
+_ApplyToTensorsVar = typing.TypeVar("_ApplyToTensorsVar")
+
+
+def apply_to_tensors(
+    data: _ApplyToTensorsVar, func: typing.Callable[[torch.Tensor], torch.Tensor]
+) -> _ApplyToTensorsVar:
+    """
+    Args:
+        data: An object holding data, either a `dataclass` or `NamedTuple`.
+    """
+    is_named_tuple = hasattr(data, "_fields") and hasattr(data, "_asdict")
+    if not dataclasses.is_dataclass(data) and not is_named_tuple:
+        return data
+
+    dict_ = typing.cast(dict, data._asdict()) if is_named_tuple else dataclass_as_dict(data)
+    process = lambda v: func(v) if torch.is_tensor(v) else apply_to_tensors(v, func)
+    return data.__class__(**{k: process(v) for k, v in dict_.items()})
+
+
 def _worker_init_fn(_, config, worker_init_fn):
     # TODO: Add a method for transfering global configuration between processes without private
     # variables.
@@ -582,34 +601,21 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
         self.num_steps_per_epoch = num_steps_per_epoch
 
     def process_tensor(self, tensor: torch.Tensor) -> torch.Tensor:
+        """
+        NOTE: Tensors are moved to CUDA outside of the `DataLoader` workers. Learn more:
+        > It is generally not recommended to return CUDA tensors in multi-process loading
+        > because of many subtleties in using CUDA and sharing CUDA tensors in multiprocessing
+        https://pytorch.org/docs/stable/data.html#multi-process-data-loading
+        """
         # NOTE: `torch.utils.data.dataloader.DataLoader` doesn't pin tensors if CUDA isn't
         # available.
         message = "Expecting `tensor` memory to be pinned before moving."
         assert not torch.cuda.is_available() or tensor.is_pinned(), message
         return tensor.to(device=self.device, non_blocking=True)
 
-    def process_batch(self, batch: tuple) -> tuple:
-        """
-        NOTE: Tensors are moved to CUDA outside of the `DataLoader` workers. Learn more:
-        > It is generally not recommended to return CUDA tensors in multi-process loading
-        > because of many subtleties in using CUDA and sharing CUDA tensors in multiprocessing
-        https://pytorch.org/docs/stable/data.html#multi-process-data-loading
-
-        Args:
-            batch: A `NamedTuple` with tensors to process.
-        """
-        if not hasattr(batch, "_fields") or not hasattr(batch, "_asdict"):
-            return batch
-
-        kwargs = {
-            k: self.process_tensor(v) if torch.is_tensor(v) else self.process_batch(v)
-            for k, v in typing.cast(dict, batch._asdict()).items()
-        }
-        return batch.__class__(**kwargs)
-
     def __iter__(self) -> typing.Iterator[DataLoaderVar]:
         for _ in range(self.num_steps_per_epoch):
-            yield typing.cast(DataLoaderVar, self.process_batch(next(self.loader)))
+            yield apply_to_tensors(next(self.loader), self.process_tensor)
 
 
 def _init_distributed(

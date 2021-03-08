@@ -1,3 +1,8 @@
+# Learn more:
+# https://stackoverflow.com/questions/33533148/how-do-i-specify-that-the-return-type-of-a-method-is-the-same-as-the-class-itsel
+from __future__ import annotations
+
+import copy
 import dataclasses
 import math
 import random
@@ -11,6 +16,7 @@ from torchnlp.encoders.text import SequenceBatch, stack_and_pad_tensors
 from torchnlp.samplers import BucketBatchSampler
 
 import lib
+import run
 import run._config
 import run._utils
 from run.train import spectrogram_model
@@ -140,6 +146,9 @@ class Batch:
     def __len__(self):
         return len(self.indicies)
 
+    def pin_memory(self) -> Batch:
+        return run.train._utils.apply_to_tensors(self, lambda t: t.pin_memory())
+
 
 class DataProcessor(torch.utils.data.IterableDataset):
     def __init__(
@@ -166,7 +175,11 @@ class DataProcessor(torch.utils.data.IterableDataset):
         self.batch_size = batch_size
         self.slice_padding = slice_padding
         self.slice_size = slice_size
-        self.spectrogram_model = checkpoint.model.train(mode=False)
+        # NOTE: Without `copy.deepcopy`, `multiprocessing` "spawn" throws an error while replicating
+        # this object onto another process...
+        # `ValueError: bad value(s) in fds_to_keep`
+        # Learn more: https://github.com/pytorch/pytorch/issues/35858
+        self.spectrogram_model = copy.deepcopy(checkpoint.model.train(mode=False))
         self._slice = partial(
             _get_slice, spectrogram_slice_size=slice_size, spectrogram_slice_pad=slice_padding
         )
@@ -195,12 +208,13 @@ class DataProcessor(torch.utils.data.IterableDataset):
         num_frames = batch.spectrogram.lengths.sum().item()
         weights = batch.spectrogram.lengths.view(-1).float()
         num_batches = int(math.floor(num_frames / self.slice_size / self.batch_size))
+        get_spectrogram = lambda i: spectrograms[: batch.spectrogram.lengths[:, i], i]
         for _ in range(num_batches):
             indicies = torch.multinomial(weights, self.batch_size, replacement=True).tolist()
-            slices = [self._slice(spectrograms[:, i], batch.audio[i]) for i in indicies]
+            slices = [self._slice(get_spectrogram(i), batch.audio[i]) for i in indicies]
             yield Batch(
                 batch=SpectrogramModelBatch(
-                    **{f.name: getattr(batch, f.name) for f in dataclasses.fields(batch)},
+                    **lib.utils.dataclass_as_dict(batch),
                     predicted_spectrogram=SequenceBatch(spectrograms, batch.spectrogram.lengths),
                 ),
                 indicies=indicies,

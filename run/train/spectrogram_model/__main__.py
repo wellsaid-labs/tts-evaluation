@@ -134,7 +134,7 @@ def _run_app(
 def resume(
     context: typer.Context,
     checkpoint: typing.Optional[pathlib.Path] = typer.Argument(
-        None, help="Checkpoint file to restart training from."
+        None, help="Checkpoint file to restart training from.", exists=True, dir_okay=False
     ),
     debug: bool = typer.Option(False, help="Turn on debugging mode."),
 ):

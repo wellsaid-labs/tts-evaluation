@@ -78,8 +78,8 @@ class _RightMaskedBiRNN(torch.nn.Module):
             [torch.nn.ModuleList([_rnn(i), _rnn(i)]) for i in range(num_layers)]
         )
 
+    @staticmethod
     def _backward_pass(
-        self,
         backward_rnn: typing.Union[torch.nn.LSTM, torch.nn.GRU],
         tokens: torch.Tensor,
         num_tokens: torch.Tensor,

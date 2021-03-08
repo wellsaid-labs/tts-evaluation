@@ -2,6 +2,7 @@
 # https://stackoverflow.com/questions/33533148/how-do-i-specify-that-the-return-type-of-a-method-is-the-same-as-the-class-itsel
 from __future__ import annotations
 
+import dataclasses
 import functools
 import itertools
 import logging
@@ -511,3 +512,8 @@ def corrected_random_choice(
     keys = list(distribution.keys())
     max_ = max(distribution.values())
     return random.choices(keys, [(max_ - v + eps) for v in distribution.values()])[0]
+
+
+def dataclass_as_dict(data):
+    """Shallow copy `dataclass` to `dict`."""
+    return {f.name: getattr(data, f.name) for f in dataclasses.fields(data) if f.init}
