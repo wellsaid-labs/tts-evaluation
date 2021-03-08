@@ -15,7 +15,7 @@ import lib
 import run
 import run._config
 import run._utils
-from run.train import spectrogram_model
+from run.train import _utils, spectrogram_model
 
 
 class _Slice(typing.NamedTuple):
@@ -117,7 +117,7 @@ class SpectrogramModelBatch(spectrogram_model._worker.Batch):
 
 
 @dataclasses.dataclass(frozen=True)
-class Batch(run.train._utils.Batch):
+class Batch(_utils.Batch):
     """Batch of preprocessed `Span` used to training or evaluating the spectrogram model."""
 
     batch: SpectrogramModelBatch

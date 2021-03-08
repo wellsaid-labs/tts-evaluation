@@ -31,6 +31,7 @@ import run
 from lib.audio import seconds_to_samples
 from lib.distributed import get_rank, get_world_size, is_initialized
 from lib.utils import flatten_2d
+from run.train import _utils
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import librosa
@@ -388,7 +389,7 @@ async def _spans_read_audio_slice(
 
 
 @dataclasses.dataclass(frozen=True)
-class Batch(run.train._utils.Batch):
+class Batch(_utils.Batch):
     """Batch of preprocessed `Span` used to training or evaluating the spectrogram model."""
 
     spans: typing.List[lib.datasets.Span]
