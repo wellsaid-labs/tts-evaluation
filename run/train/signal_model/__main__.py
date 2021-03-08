@@ -48,7 +48,8 @@ def _make_configuration(
     batch_size_ratio = 1 / 2
     dev_batch_size = train_batch_size * train_slice_size / dev_slice_size / 2
     dev_steps_per_epoch = 1 if debug else 16
-    train_steps_per_epoch = 1 if debug else dev_steps_per_epoch * batch_size_ratio * round(ratio)
+    train_steps_per_epoch = int(round(dev_steps_per_epoch * batch_size_ratio * ratio))
+    train_steps_per_epoch = 1 if debug else train_steps_per_epoch
     assert train_batch_size % get_world_size() == 0
     assert dev_batch_size % get_world_size() == 0
 

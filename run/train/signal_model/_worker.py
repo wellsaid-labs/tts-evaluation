@@ -22,6 +22,7 @@ import lib
 from lib.audio import SignalTodBMelSpectrogram
 from lib.distributed import get_rank, is_master
 from lib.signal_model import SignalModel, SpectrogramDiscriminator
+from lib.visualize import plot_mel_spectrogram, plot_spectrogram
 from run._config import (
     RANDOM_SEED,
     Cadence,
@@ -433,6 +434,24 @@ def _run_step(
     metrics.update(values)
 
 
+def _log_specs(state: _State, target: torch.Tensor, predicted: torch.Tensor, **kwargs):
+    """Log the various spectrograms produced by `state.signal_to_spectrogram_modules`."""
+    get_dataset_label_ = partial(get_dataset_label, **kwargs)
+    get_model_label_ = partial(get_model_label, **kwargs)
+    for signal_to_spectrogram_module in state.signal_to_spectrogram_modules:
+        signal_to_spec = partial(signal_to_spectrogram_module, intermediate=True)
+        Specs = typing.Tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+        target_specs = typing.cast(Specs, signal_to_spec(target))
+        predicted_specs = typing.cast(Specs, signal_to_spec(predicted))
+        iterator = zip((get_dataset_label_, get_model_label_), (target_specs, predicted_specs))
+        for get_label, specs in iterator:
+            suffix = "{fft_length}_spectrogram"
+            for name, spec in zip((f"db_mel_{suffix}", f"db_{suffix}", suffix), specs):
+                plot = plot_mel_spectrogram if "_mel_" in name else plot_spectrogram
+                fft_length = signal_to_spectrogram_module.fft_length
+                state.comet.log_figure(get_label(name, fft_length=fft_length), plot(spec))
+
+
 @lib.utils.log_runtime
 def _visualize_inferred(state: _State, data_loader: DataLoader, dataset_type: DatasetType):
     """Run in inference mode and visualize results."""
@@ -444,19 +463,16 @@ def _visualize_inferred(state: _State, data_loader: DataLoader, dataset_type: Da
     length = batch.batch.predicted_spectrogram.lengths[:, item]
     spectrogram = batch.batch.predicted_spectrogram.tensor[:length, item]
     predicted = typing.cast(torch.Tensor, state.model.module(spectrogram))
-
+    target = batch.batch.audio[item]
     state.comet.log_html_audio(
-        audio={
-            "gold_audio": batch.batch.audio[item],
-            "predicted_audio": predicted,
-        },
+        audio={"gold_audio": target.cpu().numpy(), "predicted_audio": predicted.cpu().numpy()},
         context=state.comet.context,
         text=batch.batch.spans[item].script,
         speaker=batch.batch.spans[item].speaker,
     )
-    get_dataset_label_ = partial(get_dataset_label, cadence=Cadence.STEP, type_=dataset_type)
-    figure = lib.visualize.plot_mel_spectrogram(spectrogram)
-    state.comet.log_figure(get_dataset_label_("input_spectrogram"), figure)
+    get_label = partial(get_dataset_label, cadence=Cadence.STEP, type_=dataset_type)
+    state.comet.log_figure(get_label("input_spectrogram"), plot_mel_spectrogram(spectrogram))
+    _log_specs(state, target.to(state.device), predicted, cadence=Cadence.STEP, type_=dataset_type)
 
 
 @lib.utils.log_runtime
@@ -477,31 +493,30 @@ def _visualize_inferred_end_to_end(
         speaker=batch.batch.encoded_speaker.tensor[:, item],
         mode=lib.spectrogram_model.Mode.INFER,
     )
-    predicted_signal = typing.cast(torch.Tensor, state.model.module(predicted_spectrogram))
-
-    model = partial(get_model_label, cadence=Cadence.STEP)
-    dataset = partial(get_dataset_label, cadence=Cadence.STEP, type_=dataset_type)
+    predicted = typing.cast(torch.Tensor, state.model.module(predicted_spectrogram))
+    target = batch.batch.audio[item]
+    model_label_ = partial(get_model_label, cadence=Cadence.STEP)
+    dataset_label_ = partial(get_dataset_label, cadence=Cadence.STEP, type_=dataset_type)
     num_frames = batch.batch.spectrogram.lengths[:, item]
     gold_spectrogram = batch.batch.spectrogram.tensor[:num_frames, item]
     figures = {
-        dataset("gold_spectrogram"): lib.visualize.plot_mel_spectrogram(gold_spectrogram),
-        model("predicted_spectrogram"): lib.visualize.plot_mel_spectrogram(predicted_spectrogram),
-        model("alignment"): lib.visualize.plot_alignments(predicted_alignments),
-        model("stop_token"): lib.visualize.plot_logits(predicted_stop_token),
+        dataset_label_("gold_spectrogram"): plot_mel_spectrogram(gold_spectrogram),
+        model_label_("predicted_spectrogram"): plot_mel_spectrogram(predicted_spectrogram),
+        model_label_("alignment"): lib.visualize.plot_alignments(predicted_alignments),
+        model_label_("stop_token"): lib.visualize.plot_logits(predicted_stop_token),
     }
     state.comet.log_figures(figures)
     audio = {
         "predicted_griffin_lim_audio": lib.audio.griffin_lim(predicted_spectrogram.cpu().numpy()),
         "gold_griffin_lim_audio": lib.audio.griffin_lim(gold_spectrogram.cpu().numpy()),
-        "predicted_signal_model_audio": predicted_signal.cpu().numpy(),
-        "gold_audio": batch.batch.audio[item].cpu().numpy(),
+        "predicted_signal_model_audio": predicted.cpu().numpy(),
+        "gold_audio": target.cpu().numpy(),
     }
+    span = batch.batch.spans[item]
     state.comet.log_html_audio(
-        audio=audio,
-        context=state.comet.context,
-        text=batch.batch.spans[item].script,
-        speaker=batch.batch.spans[item].speaker,
+        audio=audio, context=state.comet.context, text=span.script, speaker=span.speaker
     )
+    _log_specs(state, target.to(state.device), predicted, cadence=Cadence.STEP, type_=dataset_type)
 
 
 class _HandleBatch(typing.Protocol):
