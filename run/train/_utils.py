@@ -822,8 +822,9 @@ class Timer:
     LOG_METRICS = "log_metrics"
     _LAST_EVENT = "last_event"
 
-    def __init__(self):
+    def __init__(self, prefix="seconds/"):
         self.events: typing.List[_TimerEvent] = []
+        self.prefix = prefix
 
     def record_event(self, name: str):
         event = None
@@ -836,7 +837,7 @@ class Timer:
         self.record_event(self._LAST_EVENT)
         times: typing.Dict[Label, float] = collections.defaultdict(float)
         for prev, next in zip(self.events, self.events[1:]):
-            name = f"seconds/{prev.name}"
+            name = f"{self.prefix}{prev.name}"
             times[get_timer_label(name, **kwargs)] += next.cpu - prev.cpu
             if torch.cuda.is_available():
                 prev.cuda.synchronize()

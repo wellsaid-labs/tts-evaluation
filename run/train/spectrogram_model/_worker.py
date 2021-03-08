@@ -234,7 +234,7 @@ def _get_data_loaders(
     dev_steps_per_epoch: int = HParam(),
     num_workers: int = HParam(),
     prefetch_factor: int = HParam(),
-) -> typing.Tuple[DataLoader, DataLoader]:
+) -> typing.Tuple[DataLoader[Batch], DataLoader[Batch]]:
     """ Initialize training and development data loaders.  """
     input_encoder, step = state.input_encoder, int(state.step.item())
     train = DataProcessor(train_dataset, train_batch_size, input_encoder=input_encoder, step=step)

@@ -256,7 +256,7 @@ def _get_data_loaders(
     dev_steps_per_epoch: int = HParam(),
     num_workers: int = HParam(),
     prefetch_factor: int = HParam(),
-) -> typing.Tuple[DataLoader, DataLoader]:
+) -> typing.Tuple[DataLoader[Batch], DataLoader[Batch]]:
     """ Initialize training and development data loaders.  """
     model = state.model.module if isinstance(state.model, DistributedDataParallel) else state.model
     padding = typing.cast(int, model.padding)

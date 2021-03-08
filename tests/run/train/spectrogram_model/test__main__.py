@@ -70,8 +70,8 @@ def test_integration():
             metrics.NUM_SECONDS: num_seconds,
             f"{metrics.NUM_SECONDS}/{JUDY_BIEBER.label}": num_seconds,
             f"{metrics.NUM_SPANS_PER_TEXT_LENGTH}/{bucket}": [(batch_size,)],
-            metrics.NUM_SPANS: [(batch.length,)],
-            f"{metrics.NUM_SPANS}/{JUDY_BIEBER.label}": [(batch.length,)],
+            metrics.NUM_SPANS: [(len(batch),)],
+            f"{metrics.NUM_SPANS}/{JUDY_BIEBER.label}": [(len(batch),)],
             metrics.NUM_TOKENS: num_tokens,
             f"{metrics.NUM_TOKENS}/{JUDY_BIEBER.label}": num_tokens,
         }

@@ -129,15 +129,12 @@ Setup your local development environment by following [these instructions](LOCAL
    EXPERIMENT_NAME='Your experiment name'
    ```
 
-1. Start training...
+1. Start training... For example, run this command to train a spectrogram model:
 
    ```bash
    pkill -9 python; sleep 5s; nvidia-smi; \
    PYTHONPATH=. python $TRAIN_SCRIPT_PATH start $COMET_PROJECT "$EXPERIMENT_NAME";
    ```
-
-   💡 TIP: You may want to include the optional
-   `--spectrogram_model_checkpoint=$SPECTROGRAM_CHECKPOINT` argument.
 
    ❓ LEARN MORE: PyTorch leaves zombie processes that must be killed, check out:
    https://leimao.github.io/blog/Kill-PyTorch-Distributed-Training-Processes/

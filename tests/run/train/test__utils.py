@@ -58,16 +58,26 @@ def test__maybe_make_experiment_directories_from_checkpoint(capsys):
     with tempfile.TemporaryDirectory() as directory:
         with capsys.disabled():  # NOTE: Disable capsys because it messes with `sys.stdout`
             path = Path(directory)
-            checkpoints_directory = path / "run_name" / "checkpoint_directory_name"
-            checkpoints_directory.mkdir(parents=True)
             recorder = lib.environment.RecordStandardStreams()
-            run_name = "new_run"
-            checkpoint = run.train._utils.Checkpoint(checkpoints_directory, "", 0)
+            run_name = "run"
+            checkpoints_directory_name = "checkpoints"
+            run_log_filename = "run.log"
+            run_root, checkpoints_directory = run.train._utils._maybe_make_experiment_directories(
+                path,
+                recorder,
+                run_name=run_name,
+                checkpoints_directory_name=checkpoints_directory_name,
+                run_log_filename=run_log_filename,
+            )
+            run_suffix = "_1"
             run_root, _ = run.train._utils._maybe_make_experiment_directories_from_checkpoint(
-                checkpoint, recorder, run_name=run_name
+                checkpoints_directory / "checkpoint.pt",
+                recorder,
+                run_prefix=run_name,
+                run_suffix=run_suffix,
             )
             assert run_root.parent == path
-            assert run_root.name == run_name
+            assert run_root.name == run_name + run_suffix
 
 
 def test__get_dataset_stats():
@@ -164,9 +174,10 @@ def test_timer():
     """Test `run.train._utils.Timer` times an event from start to end."""
     wait = 0.05
     name = "start"
-    timer = run.train._utils.Timer()
+    prefix = "prefix/"
+    timer = run.train._utils.Timer(prefix=prefix)
     timer.record_event(name)
     time.sleep(wait)
     timers = timer.get_timers()
     assert len(timers) == 1
-    assert timers[run._config.get_timer_label(name)] > wait
+    assert timers[run._config.get_timer_label(f"{prefix}{name}")] > wait
