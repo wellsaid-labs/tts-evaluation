@@ -1,3 +1,4 @@
+import contextlib
 import dataclasses
 import logging
 import math
@@ -535,14 +536,18 @@ class _HandleBatch(typing.Protocol):
 
 def _run_steps(
     store: torch.distributed.TCPStore,
-    context: Context,
     state: _State,
+    context: Context,
     dataset_type: DatasetType,
     data_loader: DataLoader,
     handle_batch: _HandleBatch,
+    **kwargs,
 ):
     """Run the `handle_batch` in a loop over `data_loader` batches."""
-    with set_context(context, state.comet, state.model):
+    with contextlib.ExitStack() as stack:
+        stack.enter_context(set_context(context, state.comet, state.model))
+        stack.enter_context(set_epoch(state.comet, step=state.step.item(), **kwargs))
+
         metrics = Metrics(store, state.comet, state.input_encoder.speaker_encoder.vocab)
         iterator = enumerate(iter(data_loader))
         while True:
@@ -588,11 +593,6 @@ def run_worker(
         (Context.EVALUATE_INFERENCE, DatasetType.DEV, dev_loader, _run_inference),
     ]
     while True:
-        with set_epoch(
-            comet, step=state.step.item(), steps_per_epoch=train_loader.num_steps_per_epoch
-        ):
-            for context, dataset_type, data_loader, handle_batch in contexts:
-                _run_steps(store, context, state, dataset_type, data_loader, handle_batch)
-
-            name = f"step_{state.step.item()}"
-            save_checkpoint(state.to_checkpoint(), checkpoints_directory, name)
+        steps_per_epoch = train_loader.num_steps_per_epoch
+        [_run_steps(store, state, *args, steps_per_epoch=steps_per_epoch) for args in contexts]
+        save_checkpoint(state.to_checkpoint(), checkpoints_directory, f"step_{state.step.item()}")
