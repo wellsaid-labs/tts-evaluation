@@ -346,22 +346,18 @@ class SignalModel(torch.nn.Module):
         # NOTE: We initialize the convolution parameters before weight norm factorizes them.
         self.reset_parameters()
 
-        # NOTE: The `torch.nn.Module` by default is initialized to `self.training = True`.
-        self.train(mode=True)
+        for module in self._get_weight_norm_modules():
+            torch.nn.utils.weight_norm(module)
 
-    def train(self: _SignalModelSelfType, *args, **kwargs) -> _SignalModelSelfType:
-        """Sets the module in training or evaluation mode.
+    def remove_weight_norm_(self):
+        """Remove `weight_norm` from `self`.
 
-        Learn more here: https://pytorch.org/docs/stable/nn.html#torch.nn.Module.train
+        WARNING: `remove_weight_norm` creates and deletes model parameters. For example, if an
+        optimizer depends on the current model parameters, this will break that connection.
         """
-        super().train(*args, **kwargs)
-        if not lib.distributed.is_initialized() or self.training:
-            for module in self._get_weight_norm_modules():
-                if self.training and not _has_weight_norm(module):
-                    torch.nn.utils.weight_norm(module)
-                if not self.training and _has_weight_norm(module):
-                    torch.nn.utils.remove_weight_norm(module)
-        return self
+        for module in self._get_weight_norm_modules():
+            if _has_weight_norm(module):
+                torch.nn.utils.remove_weight_norm(module)
 
     def _get_weight_norm_modules(self) -> typing.Iterator[torch.nn.Module]:
         """ Get all modules that should have their weight(s) normalized. """

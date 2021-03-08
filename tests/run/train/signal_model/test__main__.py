@@ -4,6 +4,7 @@ from unittest import mock
 
 from hparams import add_config
 
+import lib
 from run._config import Cadence, DatasetType
 from run.train import spectrogram_model
 from run.train._utils import Context, Timer, save_checkpoint, set_context
@@ -19,7 +20,7 @@ from run.train.signal_model._worker import (
 from tests.run.train._utils import mock_distributed_data_parallel, setup_experiment
 
 
-def _make_checkpoint(temp_dir, train_dataset, dev_dataset, comet, device, name="checkpoint"):
+def _make_checkpoint(temp_dir, train_dataset, dev_dataset, comet, device, name="spectrogram"):
     add_config(spectrogram_model.__main__._make_configuration(train_dataset, dev_dataset, True))
     with mock.patch("torch.nn.parallel.DistributedDataParallel") as module:
         module.side_effect = mock_distributed_data_parallel
@@ -46,7 +47,7 @@ def test_integration():
     )
 
     # Test `_run_step` with `Metrics` and `_State`
-    with set_context(Context.TRAIN, comet, state.model):
+    with set_context(Context.TRAIN, comet, *state.models):
         timer = Timer()
         metrics = Metrics(store, comet, speakers)
         batch = next(iter(train_loader))
@@ -59,12 +60,16 @@ def test_integration():
         metrics.log(is_verbose=True, type_=DatasetType.TRAIN, cadence=Cadence.MULTI_STEP)
 
     # Test inference visualizations
-    with set_context(Context.EVALUATE_INFERENCE, comet, state.model):
+    with set_context(Context.EVALUATE_INFERENCE, comet, *state.models):
         _visualize_inferred(state, dev_loader, DatasetType.DEV)
         _visualize_inferred_end_to_end(state, dev_loader, DatasetType.DEV)
 
     # Test loading and saving a checkpoint
     with mock.patch("run.train.signal_model._worker.DistributedDataParallel") as module:
         module.side_effect = mock_distributed_data_parallel
-        loaded = state.from_checkpoint(state.to_checkpoint(), comet, device)
+        checkpoint = state.to_checkpoint()
+        checkpoint_path = save_checkpoint(checkpoint, pathlib.Path(temp_dir.name), "signal")
+        checkpoint = lib.environment.load(checkpoint_path)
+        loaded = state.from_checkpoint(checkpoint, comet, device)
+
     assert state.step == loaded.step

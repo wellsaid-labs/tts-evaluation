@@ -76,5 +76,5 @@ def mock_distributed_data_parallel(module, *_, **__):
     # NOTE: `module.module = module` would cause the `named_children` property to error, so
     # instead we set a `property`, learn more:
     # https://stackoverflow.com/questions/1325673/how-to-add-property-to-a-class-dynamically
-    module.__class__.module = property(lambda self: module)
+    module.__class__.module = property(lambda self: self)
     return module

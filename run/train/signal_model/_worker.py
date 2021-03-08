@@ -85,13 +85,17 @@ class _State:
         assert self.scheduler.last_epoch == self.step.item()
         assert self.scheduler.optimizer == self.optimizer
         assert self.ema.step == self.step.item() + 1
-        ids = set(id(p) for p in self.model.parameters() if p.requires_grad)
-        assert set(id(p) for p in self.ema.parameters) == ids
-        assert set(id(p) for p in self.optimizer.param_groups[0]["params"]) == ids
-        assert set(id(p) for p in self.clipper.parameters) == ids
+        ptrs = set(p.data_ptr() for p in self.model.parameters() if p.requires_grad)
+        assert set(p.data_ptr() for p in self.model.module.parameters() if p.requires_grad) == ptrs
+        assert len(self.optimizer.param_groups) == 1
+        assert set(p.data_ptr() for p in self.optimizer.param_groups[0]["params"]) == ptrs
+        assert set(p.data_ptr() for p in self.clipper.parameters) == ptrs
+        assert set(p.data_ptr() for p in self.ema.parameters) == ptrs
         for discrim, discrim_optimizer in zip(self.discrims, self.discrim_optimizers):
-            ids = set(id(p) for p in discrim.parameters() if p.requires_grad)
-            assert set(id(p) for p in discrim_optimizer.param_groups[0]["params"]) == ids
+            ptrs = set(p.data_ptr() for p in discrim.parameters() if p.requires_grad)
+            assert set(p.data_ptr() for p in discrim.module.parameters() if p.requires_grad) == ptrs
+            assert len(discrim_optimizer.param_groups) == 1
+            assert set(p.data_ptr() for p in discrim_optimizer.param_groups[0]["params"]) == ptrs
 
     @staticmethod
     def _get_model(
@@ -358,7 +362,6 @@ def __run_step(state: _State, timer: Timer, metrics: Metrics):
     timer.record_event(timer.MODEL_STEP)
 
     # NOTE: `optimizer` will not error if there are no gradients so we check beforehand.
-    assert len(state.optimizer.param_groups) == 1, "Expecting only 1 group of parameters."
     params = state.optimizer.param_groups[0]["params"]
     assert all([p.grad is not None for p in params]), "`None` gradients found."
 
