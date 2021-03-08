@@ -374,6 +374,7 @@ def __run_step(state: _State, timer: Timer, metrics: Metrics):
     metrics.log_optim_metrics(norm, norm_inf_, state.optimizer, state.clipper, cadence=Cadence.STEP)
 
 
+@lib.utils.log_runtime
 def _run_step(
     state: _State,
     metrics: Metrics,
@@ -387,6 +388,8 @@ def _run_step(
     it affects the demoninator of the loss reduction operation.
 
     TODO: For the target signal, the `signal_to_spec` can be computed during data processing.
+
+    TODO: Parallelize loop with multiple independent discriminators.
     """
     timer.record_event(timer.MODEL_FORWARD)
     signal = state.model(

@@ -4,10 +4,17 @@ from run._config import (
     Cadence,
     DatasetType,
     Label,
+    _label,
     get_config_label,
     get_dataset_label,
     get_model_label,
 )
+
+
+def test__label():
+    """ Test `run._config._label` handles recursive templates. """
+    label = Label("512_spectrogram")
+    assert _label("{name}", name="{fft_length}_spectrogram", fft_length=512) == label
 
 
 def test_get_dataset_label():

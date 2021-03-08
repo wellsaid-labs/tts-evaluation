@@ -93,12 +93,13 @@ class Metrics(_utils.Metrics):
         ):
             span = batch.batch.spans[index]
             assert span.speaker in self.speakers
-            for label in ["", f"/{span.speaker.label}"]:
-                values[f"{self.NUM_FRAMES}{label}"] += num_frames
-                values[f"{self.NUM_SAMPLES}/{label}"] += num_samples
-                values[f"{self.NUM_SLICES}/{label}"] += 1
-                min_num_samples = values[f"{self.NUM_SAMPLES_MIN_}/{label}"]
-                values[f"{self.NUM_SAMPLES_MIN_}/{label}"] += min(min_num_samples, num_samples)
+            for suffix in ["", f"/{span.speaker.label}"]:
+                format_ = lambda s: f"{s}{suffix}"
+                values[format_(self.NUM_FRAMES)] += num_frames
+                values[format_(self.NUM_SAMPLES)] += num_samples
+                values[format_(self.NUM_SLICES)] += 1
+                label = format_(self.NUM_SAMPLES_MIN_)
+                values[label] += min(values[label], num_samples) if label in values else num_samples
 
         return dict(values)
 

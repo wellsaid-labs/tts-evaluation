@@ -46,8 +46,8 @@ def _make_configuration(
     train_slice_size = 8192
     dev_slice_size = 32768
     batch_size_ratio = 1 / 2
-    dev_batch_size = train_batch_size * train_slice_size / dev_slice_size / 2
-    dev_steps_per_epoch = 1 if debug else 16
+    dev_batch_size = int(train_batch_size * train_slice_size / dev_slice_size / 2)
+    dev_steps_per_epoch = 1 if debug else 64
     train_steps_per_epoch = int(round(dev_steps_per_epoch * batch_size_ratio * ratio))
     train_steps_per_epoch = 1 if debug else train_steps_per_epoch
     assert train_batch_size % get_world_size() == 0
@@ -88,7 +88,7 @@ def _make_configuration(
             # synchronous updates, using the Adam optimizer with β1 = 0.9, β2 =
             # 0.999, eps = 10−8 and a fixed learning rate of 10−4
             # NOTE: Parameters set after experimentation on a 8 V100 GPUs.
-            train_batch_size=128,
+            train_batch_size=train_batch_size,
             # SOURCE: Efficient Neural Audio Synthesis
             # The WaveRNN models are trained on sequences of 960 audio samples.
             # SOURCE: Parallel WaveNet: Fast High-Fidelity Speech Synthesis
@@ -98,9 +98,9 @@ def _make_configuration(
             # NOTE: The `spectrogram_slice_size` must be larger than the
             # `fft_length - frame_hop` of the largest `SpectrogramLoss`;
             # otherwise, the loss can't be computed.
-            train_slice_size=int(8192 / FRAME_HOP),
-            dev_batch_size=16,
-            dev_slice_size=int(32768 / FRAME_HOP),
+            train_slice_size=int(train_slice_size / FRAME_HOP),
+            dev_batch_size=dev_batch_size,
+            dev_slice_size=int(dev_slice_size / FRAME_HOP),
             train_span_bucket_size=32,
             dev_span_bucket_size=32,
             train_steps_per_epoch=train_steps_per_epoch,

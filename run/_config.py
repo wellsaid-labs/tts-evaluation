@@ -125,6 +125,18 @@ class GetLabel(typing.Protocol):
         ...
 
 
+def _label(template: str, *args, **kwargs) -> Label:
+    """Format `template` recursively, and return a `Label`.
+
+    TODO: For recursive formatting, don't reuse arguments.
+    """
+    while True:
+        formatted = template.format(*args, **kwargs)
+        if formatted == template:
+            return Label(formatted)
+        template = formatted
+
+
 def get_dataset_label(
     name: str,
     cadence: Cadence,
@@ -135,9 +147,8 @@ def get_dataset_label(
     """ Label something related to a dataset. """
     kwargs = dict(cadence=cadence.value, type=type_.value, name=name, **kwargs)
     if speaker is None:
-        return Label("{cadence}/dataset/{type}/{name}".format(**kwargs))
-    label = "{cadence}/dataset/{type}/{speaker}/{name}"
-    return Label(label.format(speaker=speaker.label, **kwargs))
+        return _label("{cadence}/dataset/{type}/{name}", **kwargs)
+    return _label("{cadence}/dataset/{type}/{speaker}/{name}", speaker=speaker.label, **kwargs)
 
 
 def get_model_label(
@@ -146,18 +157,18 @@ def get_model_label(
     """ Label something related to the model. """
     kwargs = dict(cadence=cadence.value, name=name, **kwargs)
     if speaker is None:
-        return Label("{cadence}/model/{name}".format(**kwargs))
-    return Label("{cadence}/model/{speaker}/{name}".format(speaker=speaker.label, **kwargs))
+        return _label("{cadence}/model/{name}", **kwargs)
+    return _label("{cadence}/model/{speaker}/{name}", speaker=speaker.label, **kwargs)
 
 
 def get_config_label(name: str, cadence: Cadence = Cadence.STATIC, **kwargs) -> Label:
     """ Label something related to a configuration. """
-    return Label("{cadence}/config/{name}".format(cadence=cadence.value, name=name, **kwargs))
+    return _label("{cadence}/config/{name}", cadence=cadence.value, name=name, **kwargs)
 
 
 def get_environment_label(name: str, cadence: Cadence = Cadence.STATIC, **kwargs) -> Label:
     """ Label something related to a environment. """
-    return Label("{cadence}/environment/{name}".format(cadence=cadence.value, name=name, **kwargs))
+    return _label("{cadence}/environment/{name}", cadence=cadence.value, name=name, **kwargs)
 
 
 def get_timer_label(
@@ -165,7 +176,7 @@ def get_timer_label(
 ) -> Label:
     """ Label something related to a performance. """
     template = "{cadence}/timer/{device}/{name}"
-    return Label(template.format(cadence=cadence.value, device=device.value, name=name, **kwargs))
+    return _label(template, cadence=cadence.value, device=device.value, name=name, **kwargs)
 
 
 def _configure_audio_processing():
