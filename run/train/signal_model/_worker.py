@@ -21,7 +21,7 @@ from torchnlp.utils import get_total_parameters
 import lib
 from lib.audio import SignalTodBMelSpectrogram
 from lib.distributed import get_rank, is_master
-from lib.signal_model import SignalModel, SpectrogramDiscriminator
+from lib.signal_model import SignalModel, SpectrogramDiscriminator, generate_waveform
 from lib.visualize import plot_mel_spectrogram, plot_spectrogram
 from run._config import (
     RANDOM_SEED,
@@ -459,7 +459,9 @@ def _log_specs(state: _State, target: torch.Tensor, predicted: torch.Tensor, **k
 
 
 @lib.utils.log_runtime
-def _visualize_inferred(state: _State, data_loader: DataLoader, dataset_type: DatasetType):
+def _visualize_inferred(
+    state: _State, data_loader: DataLoader, dataset_type: DatasetType, split_size: int = 32
+):
     """Run in inference mode and visualize results."""
     if not is_master():
         return
@@ -468,7 +470,8 @@ def _visualize_inferred(state: _State, data_loader: DataLoader, dataset_type: Da
     item = random.randint(0, len(batch.batch) - 1)
     length = batch.batch.predicted_spectrogram.lengths[:, item]
     spectrogram = batch.batch.predicted_spectrogram.tensor[:length, item].to(state.device)
-    predicted = typing.cast(torch.Tensor, state.model.module(spectrogram))
+    predicted = list(generate_waveform(state.model.module, spectrogram.split(split_size)))
+    predicted = typing.cast(torch.Tensor, torch.cat(predicted, dim=-1))
     target = batch.batch.audio[item]
     state.comet.log_html_audio(
         audio={"gold_audio": target.numpy(), "predicted_audio": predicted.cpu().numpy()},
@@ -483,7 +486,7 @@ def _visualize_inferred(state: _State, data_loader: DataLoader, dataset_type: Da
 
 @lib.utils.log_runtime
 def _visualize_inferred_end_to_end(
-    state: _State, data_loader: DataLoader, dataset_type: DatasetType
+    state: _State, data_loader: DataLoader, dataset_type: DatasetType, split_size: int = 32
 ):
     """Run spectrogram and signal model in inference mode and visualize results."""
     if not is_master():
@@ -499,8 +502,9 @@ def _visualize_inferred_end_to_end(
         speaker=batch.batch.encoded_speaker.tensor[:, item],
         mode=lib.spectrogram_model.Mode.INFER,
     )
-    predicted = state.model.module(predicted_spectrogram.to(state.device))
-    predicted = typing.cast(torch.Tensor, predicted)
+    splits = predicted_spectrogram.to(state.device).split(split_size)
+    predicted = list(generate_waveform(state.model.module, splits))
+    predicted = typing.cast(torch.Tensor, torch.cat(predicted, dim=-1))
     target = batch.batch.audio[item]
     model_label_ = partial(get_model_label, cadence=Cadence.STEP)
     dataset_label_ = partial(get_dataset_label, cadence=Cadence.STEP, type_=dataset_type)
@@ -595,11 +599,12 @@ def run_worker(
         with set_epoch(comet, step=state.step.item(), steps_per_epoch=steps_per_epoch):
             [_run_steps(store, state, *args) for args in contexts]
 
-            with state.ema:
-                with set_context(Context.EVALUATE_INFERENCE, state.comet, *state.models):
+            with set_context(Context.EVALUATE_INFERENCE, state.comet, *state.models):
+                with state.ema:
                     _visualize_inferred(state, dev_loader, DatasetType.DEV)
 
-                with set_context(Context.EVALUATE_END_TO_END, state.comet, *state.models):
+            with set_context(Context.EVALUATE_END_TO_END, state.comet, *state.models):
+                with state.ema:
                     _visualize_inferred_end_to_end(state, dev_loader, DatasetType.DEV)
 
             name = f"step_{state.step.item()}"
