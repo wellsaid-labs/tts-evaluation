@@ -1,7 +1,3 @@
-# Learn more:
-# https://stackoverflow.com/questions/33533148/how-do-i-specify-that-the-return-type-of-a-method-is-the-same-as-the-class-itsel
-from __future__ import annotations
-
 import copy
 import dataclasses
 import math
@@ -121,7 +117,7 @@ class SpectrogramModelBatch(spectrogram_model._worker.Batch):
 
 
 @dataclasses.dataclass(frozen=True)
-class Batch:
+class Batch(run.train._utils.Batch):
     """Batch of preprocessed `Span` used to training or evaluating the spectrogram model."""
 
     batch: SpectrogramModelBatch
@@ -145,9 +141,6 @@ class Batch:
 
     def __len__(self):
         return len(self.indicies)
-
-    def pin_memory(self) -> Batch:
-        return run.train._utils.apply_to_tensors(self, lambda t: t.pin_memory())
 
 
 class DataProcessor(torch.utils.data.IterableDataset):

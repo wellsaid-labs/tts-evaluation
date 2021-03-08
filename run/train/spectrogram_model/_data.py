@@ -1,7 +1,3 @@
-# Learn more:
-# https://stackoverflow.com/questions/33533148/how-do-i-specify-that-the-return-type-of-a-method-is-the-same-as-the-class-itsel
-from __future__ import annotations
-
 import asyncio
 import dataclasses
 import functools
@@ -392,7 +388,7 @@ async def _spans_read_audio_slice(
 
 
 @dataclasses.dataclass(frozen=True)
-class Batch:
+class Batch(run.train._utils.Batch):
     """Batch of preprocessed `Span` used to training or evaluating the spectrogram model."""
 
     spans: typing.List[lib.datasets.Span]
@@ -421,9 +417,6 @@ class Batch:
 
     def __len__(self):
         return len(self.spans)
-
-    def pin_memory(self) -> Batch:
-        return run.train._utils.apply_to_tensors(self, lambda t: t.pin_memory())
 
 
 def make_batch(spans: typing.List[lib.datasets.Span], input_encoder: InputEncoder) -> Batch:

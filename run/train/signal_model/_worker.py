@@ -273,6 +273,7 @@ def _get_data_loaders(
 def _run_discriminator(
     state: _State,
     metrics: Metrics,
+    timer: Timer,
     batch: Batch,
     i: int,
     fake_db_mel_spectrogram: torch.Tensor,
@@ -307,6 +308,7 @@ def _run_discriminator(
         generator_loss: (torch.FloatTensor [batch_size]): The generator loss on `fake`.
         ...
     """
+    timer.record_event(timer.MODEL_FORWARD)
     discriminator = state.discrims[i]
     discriminator_optimizer = state.discrim_optimizers[i]
     batch_size = fake_spectrogram.shape[0]
@@ -334,10 +336,12 @@ def _run_discriminator(
     )
 
     if discriminator.training:
+        timer.record_event(timer.MODEL_BACKWARD)
         discriminator.zero_grad(set_to_none=True)
         discriminator_loss.mean().backward()
         discriminator_optimizer.step()
 
+    timer.record_event(timer.MODEL_FORWARD)
     # NOTE: Use real labels instead of fake to flip the gradient for the generator.
     predictions = discriminator(fake_spectrogram, fake_db_spectrogram, fake_db_mel_spectrogram)
     predictions = typing.cast(torch.Tensor, predictions)
@@ -409,7 +413,7 @@ def _run_step(
         l1_loss_ = l1_loss(predicted_specs[0], target_specs[0], reduction="none").mean(dim=1)
         mse_loss_ = mse_loss(predicted_specs[0], target_specs[0], reduction="none").mean(dim=1)
         generator_loss, get_discrim_values = _run_discriminator(
-            state, metrics, batch, i, *predicted_specs, *target_specs
+            state, metrics, timer, batch, i, *predicted_specs, *target_specs
         )
         loss += l1_loss_.mean() + mse_loss_.mean() + generator_loss.mean()
 
@@ -463,11 +467,11 @@ def _visualize_inferred(state: _State, data_loader: DataLoader, dataset_type: Da
     batch = typing.cast(Batch, next(iter(data_loader)))
     item = random.randint(0, len(batch.batch) - 1)
     length = batch.batch.predicted_spectrogram.lengths[:, item]
-    spectrogram = batch.batch.predicted_spectrogram.tensor[:length, item]
+    spectrogram = batch.batch.predicted_spectrogram.tensor[:length, item].to(state.device)
     predicted = typing.cast(torch.Tensor, state.model.module(spectrogram))
     target = batch.batch.audio[item]
     state.comet.log_html_audio(
-        audio={"gold_audio": target.cpu().numpy(), "predicted_audio": predicted.cpu().numpy()},
+        audio={"gold_audio": target.numpy(), "predicted_audio": predicted.cpu().numpy()},
         context=state.comet.context,
         text=batch.batch.spans[item].script,
         speaker=batch.batch.spans[item].speaker,
@@ -489,13 +493,14 @@ def _visualize_inferred_end_to_end(
     item = random.randint(0, len(batch.batch) - 1)
     num_tokens = batch.batch.encoded_phonemes.lengths[:, item]
     spectrogram_model = state.spectrogram_model_checkpoint.model
-    spectrogram_model = spectrogram_model.train(False).to(state.device)
+    spectrogram_model = spectrogram_model.train(False)
     predicted_spectrogram, predicted_stop_token, predicted_alignments, _, _ = spectrogram_model(
         tokens=batch.batch.encoded_phonemes.tensor[:num_tokens, item],
         speaker=batch.batch.encoded_speaker.tensor[:, item],
         mode=lib.spectrogram_model.Mode.INFER,
     )
-    predicted = typing.cast(torch.Tensor, state.model.module(predicted_spectrogram))
+    predicted = state.model.module(predicted_spectrogram.to(state.device))
+    predicted = typing.cast(torch.Tensor, predicted)
     target = batch.batch.audio[item]
     model_label_ = partial(get_model_label, cadence=Cadence.STEP)
     dataset_label_ = partial(get_dataset_label, cadence=Cadence.STEP, type_=dataset_type)
@@ -509,10 +514,10 @@ def _visualize_inferred_end_to_end(
     }
     state.comet.log_figures(figures)
     audio = {
-        "predicted_griffin_lim_audio": lib.audio.griffin_lim(predicted_spectrogram.cpu().numpy()),
-        "gold_griffin_lim_audio": lib.audio.griffin_lim(gold_spectrogram.cpu().numpy()),
+        "predicted_griffin_lim_audio": lib.audio.griffin_lim(predicted_spectrogram.numpy()),
+        "gold_griffin_lim_audio": lib.audio.griffin_lim(gold_spectrogram.numpy()),
         "predicted_signal_model_audio": predicted.cpu().numpy(),
-        "gold_audio": target.cpu().numpy(),
+        "gold_audio": target.numpy(),
     }
     span = batch.batch.spans[item]
     state.comet.log_html_audio(

@@ -1,3 +1,7 @@
+# Learn more:
+# https://stackoverflow.com/questions/33533148/how-do-i-specify-that-the-return-type-of-a-method-is-the-same-as-the-class-itsel
+from __future__ import annotations
+
 import collections
 import contextlib
 import copy
@@ -28,6 +32,7 @@ import torch.utils.data
 from hparams import HParam, HParams, configurable, get_config
 from third_party import LazyLoader
 from torch.utils.data.dataloader import _MultiProcessingDataLoaderIter
+from torchnlp.encoders.text import SequenceBatch
 
 import lib
 import run
@@ -525,7 +530,7 @@ _ApplyToTensorsVar = typing.TypeVar("_ApplyToTensorsVar")
 
 
 def apply_to_tensors(
-    data: _ApplyToTensorsVar, func: typing.Callable[[torch.Tensor], torch.Tensor]
+    data: _ApplyToTensorsVar, callable: typing.Callable[[torch.Tensor], torch.Tensor]
 ) -> _ApplyToTensorsVar:
     """
     Args:
@@ -536,8 +541,23 @@ def apply_to_tensors(
         return data
 
     dict_ = typing.cast(dict, data._asdict()) if is_named_tuple else dataclass_as_dict(data)
-    process = lambda v: func(v) if torch.is_tensor(v) else apply_to_tensors(v, func)
+    process = lambda v: callable(v) if torch.is_tensor(v) else apply_to_tensors(v, callable)
     return data.__class__(**{k: process(v) for k, v in dict_.items()})
+
+
+@dataclasses.dataclass(frozen=True)
+class Batch:
+    def apply(self, callable):
+        """Apply `callable` to `SequenceBatch` in `Batch`."""
+        items = lib.utils.dataclass_as_dict(self).items()
+        to = partial(apply_to_tensors, callable=callable)
+        return self.__class__(**{k: to(v) if isinstance(v, SequenceBatch) else v for k, v in items})
+
+    def pin_memory(self) -> Batch:
+        """Learn more about this special function:
+        https://pytorch.org/docs/stable/data.html#memory-pinning
+        """
+        return self.apply(lambda t: t.pin_memory())
 
 
 def _worker_init_fn(_, config, worker_init_fn):
@@ -552,7 +572,7 @@ def _worker_init_fn(_, config, worker_init_fn):
     worker_init_fn()
 
 
-DataLoaderVar = typing.TypeVar("DataLoaderVar", bound=tuple)
+DataLoaderVar = typing.TypeVar("DataLoaderVar", bound=Batch)
 
 
 class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
@@ -610,16 +630,17 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
         > It is generally not recommended to return CUDA tensors in multi-process loading
         > because of many subtleties in using CUDA and sharing CUDA tensors in multiprocessing
         https://pytorch.org/docs/stable/data.html#multi-process-data-loading
+
+        NOTE: `torch.utils.data.dataloader.DataLoader` doesn't pin tensors if CUDA isn't
+        available.
         """
-        # NOTE: `torch.utils.data.dataloader.DataLoader` doesn't pin tensors if CUDA isn't
-        # available.
         message = "Expecting `tensor` memory to be pinned before moving."
         assert not torch.cuda.is_available() or tensor.is_pinned(), message
         return tensor.to(device=self.device, non_blocking=True)
 
     def __iter__(self) -> typing.Iterator[DataLoaderVar]:
         for _ in range(self.num_steps_per_epoch):
-            yield apply_to_tensors(next(self.loader), self.process_tensor)
+            yield next(self.loader).apply(self.process_tensor)
 
 
 def _init_distributed(
