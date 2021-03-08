@@ -70,6 +70,17 @@ class _State:
     device: torch.device
     step: torch.Tensor = torch.tensor(0, dtype=torch.long)
 
+    def __post_init__(self):
+        """ Check datastructure invariants. """
+        assert self.scheduler._step_count == self.step.item() + 1
+        assert self.scheduler.last_epoch == self.step.item()
+        assert self.scheduler.optimizer == self.optimizer
+        ids = set(id(p) for p in self.model.parameters() if p.requires_grad)
+        assert set(id(p) for p in self.optimizer.param_groups[0]["params"]) == ids
+        assert set(id(p) for p in self.clipper.parameters) == ids
+        assert self.model.module.vocab_size == self.input_encoder.phoneme_encoder.vocab_size
+        assert self.model.module.num_speakers == self.input_encoder.speaker_encoder.vocab_size
+
     @staticmethod
     def _get_input_encoder(
         train_dataset: Dataset,
@@ -530,7 +541,7 @@ def _run_steps(
     handle_batch: _HandleBatch,
 ):
     """Run the `handle_batch` in a loop over `data_loader` batches."""
-    with set_context(context, model=state.model, comet=state.comet):
+    with set_context(context, state.comet, state.model):
         metrics = Metrics(store, state.comet, state.input_encoder.speaker_encoder.vocab)
         iterator = enumerate(iter(data_loader))
         while True:

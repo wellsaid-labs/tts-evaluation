@@ -82,7 +82,15 @@ class _State:
         assert len(self.discrims) == len(self.signal_to_spectrogram_modules)
         assert self.scheduler._step_count == self.step.item() + 1
         assert self.scheduler.last_epoch == self.step.item()
+        assert self.scheduler.optimizer == self.optimizer
         assert self.ema.step == self.step.item() + 1
+        ids = set(id(p) for p in self.model.parameters() if p.requires_grad)
+        assert set(id(p) for p in self.ema.parameters) == ids
+        assert set(id(p) for p in self.optimizer.param_groups[0]["params"]) == ids
+        assert set(id(p) for p in self.clipper.parameters) == ids
+        for discrim, discrim_optimizer in zip(self.discrims, self.discrim_optimizers):
+            ids = set(id(p) for p in discrim.parameters() if p.requires_grad)
+            assert set(id(p) for p in discrim_optimizer.param_groups[0]["params"]) == ids
 
     @staticmethod
     def _get_model(
@@ -159,6 +167,10 @@ class _State:
             spectrogram_model_checkpoint_path=self.spectrogram_model_checkpoint_path,
             step=int(self.step.item()),
         )
+
+    @property
+    def models(self) -> typing.Tuple[torch.nn.Module]:
+        return tuple([self.model] + self.discrims)
 
     @classmethod
     def from_checkpoint(
@@ -508,7 +520,7 @@ def _run_steps(
     handle_batch: _HandleBatch,
 ):
     """Run the `handle_batch` in a loop over `data_loader` batches."""
-    with set_context(context, model=state.model, comet=state.comet):
+    with set_context(context, state.comet, *state.models):
         with contextlib.nullcontext() if context == Context.TRAIN else state.ema:
             speakers = state.spectrogram_model_checkpoint.input_encoder.speaker_encoder.vocab
             metrics = Metrics(store, state.comet, speakers)
@@ -562,12 +574,10 @@ def run_worker(
             [_run_steps(store, state, *args) for args in contexts]
 
             with state.ema:
-                params = list(filter(lambda p: p.requires_grad, state.model.parameters()))
-                assert state.ema.shadow == params
-                with set_context(Context.EVALUATE_INFERENCE, model=state.model, comet=state.comet):
+                with set_context(Context.EVALUATE_INFERENCE, state.comet, *state.models):
                     _visualize_inferred(state, dev_loader, DatasetType.DEV)
 
-                with set_context(Context.EVALUATE_END_TO_END, model=state.model, comet=state.comet):
+                with set_context(Context.EVALUATE_END_TO_END, state.comet, *state.models):
                     _visualize_inferred_end_to_end(state, dev_loader, DatasetType.DEV)
 
             name = f"step_{state.step.item()}"

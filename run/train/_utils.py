@@ -479,14 +479,18 @@ def resume_experiment(
 
 
 @contextlib.contextmanager
-def set_context(context: Context, model: torch.nn.Module, comet: CometMLExperiment):
+def set_context(
+    context: Context,
+    comet: CometMLExperiment,
+    *models: torch.nn.Module,
+):
     with comet.context_manager(context.value):
         logger.info("Setting context to '%s'.", context.value)
-        mode = model.training
-        model.train(mode=(context == Context.TRAIN))
+        modes = [model.training for model in models]
+        [model.train(mode=(context == Context.TRAIN)) for model in models]
         with torch.set_grad_enabled(mode=(context == Context.TRAIN)):
             yield
-        model.train(mode=mode)
+        [model.train(mode=mode) for model, mode in zip(models, modes)]
 
 
 @contextlib.contextmanager
