@@ -1,5 +1,6 @@
 import collections
 import functools
+import itertools
 import logging
 import math
 import multiprocessing
@@ -149,39 +150,13 @@ def _find_duplicate_passages(
 
 
 @lib.utils.log_runtime
-@configurable
-def split_dataset(
+def _split_dataset(
     dataset: Dataset,
-    dev_speakers: typing.Set[lib.datasets.Speaker] = HParam(),
-    approximate_dev_length: int = HParam(),
-    min_similarity: float = HParam(),
-    seed: int = 123,
+    dev_speakers: typing.Set[lib.datasets.Speaker],
+    approx_dev_length: int,
+    min_similarity: float,
+    seed: int,
 ) -> typing.Tuple[Dataset, Dataset]:
-    """Split the dataset into a train set and development set.
-
-    NOTE: The RNG state should never change; otherwise, the training and dev datasets may be
-    different from experiment to experiment.
-
-    NOTE: `len_` assumes that the amount of data in each passage can be estimated with
-    `aligned_audio_length`. For example, if there was a long pause within a passage, this estimate
-    wouldn't make sense.
-
-    NOTE: Passages are split between the train and development set in groups. The groups are
-    dictated by textual similarity. The result of this is that the text in the train and
-    development sets is distinct.
-
-    NOTE: Any duplicate data for a speaker, not in `dev_speakers` will be discarded.
-
-    NOTE: The duplicate cache is cleared after this function is run assuming it's not relevant
-    any more.
-
-    Args:
-        ...
-        dev_speakers: Speakers to include in the development set.
-        approximate_dev_length: Number of seconds per speaker in the development dataset. The
-            deduping algorithm may add extra items above the `approximate_dev_length`.
-        ...
-    """
     logger.info("Splitting `dataset`...")
     dev: typing.Dict[lib.datasets.Speaker, list] = collections.defaultdict(list)
     train: typing.Dict[lib.datasets.Speaker, list] = collections.defaultdict(list)
@@ -199,7 +174,7 @@ def split_dataset(
             dev[speaker].extend(duplicates)
 
             random.shuffle(rest)
-            seconds = max(approximate_dev_length - sum_(dev[speaker]), 0)
+            seconds = max(approx_dev_length - sum_(dev[speaker]), 0)
             splits = tuple(lib.utils.split(rest, [seconds, math.inf], len_))
             dev[speaker].extend(splits[0])
             train[speaker].extend(splits[1])
@@ -230,6 +205,59 @@ def split_dataset(
     _is_duplicate.cache_clear()
 
     return dict(train), dict(dev)
+
+
+@lib.utils.log_runtime
+@configurable
+def split_dataset(
+    dataset: Dataset,
+    dev_speakers: typing.Set[lib.datasets.Speaker] = HParam(),
+    approx_dev_length: int = HParam(),
+    min_similarity: float = HParam(),
+    groups: typing.Optional[typing.List[typing.Set[lib.datasets.Speaker]]] = None,
+    seed: int = 123,
+) -> typing.Tuple[Dataset, Dataset]:
+    """Split the dataset into a train set and development set.
+
+    NOTE: The RNG state should never change; otherwise, the training and dev datasets may be
+    different from experiment to experiment.
+
+    NOTE: `len_` assumes that the amount of data in each passage can be estimated with
+    `aligned_audio_length`. For example, if there was a long pause within a passage, this estimate
+    wouldn't make sense.
+
+    NOTE: Passages are split between the train and development set in groups. The groups are
+    dictated by textual similarity. The result of this is that the text in the train and
+    development sets is distinct.
+
+    NOTE: Any duplicate data for a speaker, not in `dev_speakers` will be discarded.
+
+    NOTE: The duplicate cache is cleared after this function is run assuming it's not relevant
+    any more.
+
+    Args:
+        ...
+        dev_speakers: Speakers to include in the development set.
+        approx_dev_length: Number of seconds per speaker in the development dataset. The
+            deduping algorithm may add extra items above the `approx_dev_length`.
+        groups: Speakers to be deduplicated, together. Otherwise, the speakers are considered to
+            have independent datasets.
+        ...
+    """
+    remaining = set(dataset.keys())
+    groups = [] if groups is None else groups
+    message = "Groups must not have overlapping speakers."
+    assert len(set(itertools.chain(*tuple(groups)))) == sum([len(g) for g in groups]), message
+    [remaining.remove(s) for group in groups for s in group if s in remaining]
+
+    train: Dataset = {}
+    dev: Dataset = {}
+    for group in groups + [set([s]) for s in remaining]:
+        subset = {k: v for k, v in dataset.items() if k in group}
+        _train, _dev = _split_dataset(subset, dev_speakers, approx_dev_length, min_similarity, seed)
+        train.update(_train)
+        dev.update(_dev)
+    return train, dev
 
 
 class SpanGenerator(typing.Iterator[datasets.Span]):

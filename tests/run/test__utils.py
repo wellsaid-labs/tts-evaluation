@@ -86,6 +86,7 @@ def test_split_dataset__deduplication(_):
     speaker_b = lib.datasets.Speaker("b")
     speaker_c = lib.datasets.Speaker("c")
     speaker_d = lib.datasets.Speaker("d")
+    groups = [set([speaker_a, speaker_b, speaker_c, speaker_d])]
     alignments = lib.utils.Tuples(
         [lib.datasets.Alignment((0, 1), (0, 1), (0, 1))], lib.datasets.alignment_dtype
     )
@@ -116,7 +117,7 @@ def test_split_dataset__deduplication(_):
             passage("This is a test!", speaker_a),  # NOTE: Non-dev set duplicate passage
         ],
     }
-    train, dev = split_dataset(dataset, dev_speakers, dev_length, 0.9)
+    train, dev = split_dataset(dataset, dev_speakers, dev_length, 0.9, groups)
     assert train == {
         speaker_a: [
             passage("More training data testing!", speaker_a),
@@ -147,6 +148,7 @@ def test_split_dataset__order(_):
     """ Test `run._config.split_dataset` handles different dictionary orderings. """
     speaker_a = lib.datasets.Speaker("a")
     speaker_b = lib.datasets.Speaker("b")
+    groups = [set([speaker_a, speaker_b])]
     alignments = lib.utils.Tuples(
         [lib.datasets.Alignment((0, 1), (0, 1), (0, 1))], lib.datasets.alignment_dtype
     )
@@ -169,7 +171,40 @@ def test_split_dataset__order(_):
     other_dataset[speaker_a] = dataset[speaker_a]
     assert list(other_dataset.keys()) != list(dataset.keys())
 
-    train, dev = split_dataset(dataset, dev_speakers, dev_length, 0.9)
-    other_train, other_dev = split_dataset(other_dataset, dev_speakers, dev_length, 0.9)
+    train, dev = split_dataset(dataset, dev_speakers, dev_length, 0.9, groups)
+    other_train, other_dev = split_dataset(other_dataset, dev_speakers, dev_length, 0.9, groups)
     assert train == other_train
     assert dev == other_dev
+
+
+@mock.patch("random.shuffle", return_value=None)
+def test_split_dataset__groups(_):
+    """ Test `run._config.split_dataset` handles independent speakers. """
+    speaker_a = lib.datasets.Speaker("a")
+    speaker_b = lib.datasets.Speaker("b")
+    alignments = lib.utils.Tuples(
+        [lib.datasets.Alignment((0, 1), (0, 1), (0, 1))], lib.datasets.alignment_dtype
+    )
+    passage = lambda script, speaker: make_passage(
+        script=script, speaker=speaker, alignments=alignments
+    )
+    dev_speakers = set([speaker_a, speaker_b])
+    dev_length = 1
+    dataset = {}
+    dataset[speaker_a] = [
+        passage("This is a test!", speaker_a),
+        passage("I'm testing this.", speaker_a),
+    ]
+    dataset[speaker_b] = [
+        passage("I'm testing this.", speaker_b),
+        passage("This is a test!", speaker_b),
+    ]
+    train, dev = split_dataset(dataset, dev_speakers, dev_length, 0.9)
+    assert train == {
+        speaker_a: [passage("I'm testing this.", speaker_a)],
+        speaker_b: [passage("This is a test!", speaker_b)],
+    }
+    assert dev == {
+        speaker_a: [passage("This is a test!", speaker_a)],
+        speaker_b: [passage("I'm testing this.", speaker_b)],
+    }

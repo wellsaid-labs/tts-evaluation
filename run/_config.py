@@ -550,8 +550,9 @@ def _configure_data_processing():
             handle_passage=_handle_passage,
         ),
         run._utils.split_dataset: HParams(
+            groups=[set(datasets.WSL_DATASETS)],
             dev_speakers=set(dev_speakers),
-            approximate_dev_length=30 * 60,
+            approx_dev_length=30 * 60,
             min_similarity=0.9,
         ),
         run._utils.SpanGenerator.__init__: HParams(
