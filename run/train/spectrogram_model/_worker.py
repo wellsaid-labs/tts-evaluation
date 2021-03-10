@@ -534,6 +534,7 @@ class _HandleBatch(typing.Protocol):
         ...
 
 
+@lib.utils.log_runtime
 def _run_steps(
     store: torch.distributed.TCPStore,
     state: _State,
