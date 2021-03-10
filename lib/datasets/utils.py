@@ -763,6 +763,6 @@ def update_passage_audio(
     message = "The audio files must have similar length."
     assert abs(passage.audio_file.length - audio_file.length) < eps, message
     if passage.alignments[-1].audio[-1] <= audio_file.length:
-        return passage
+        return dataclasses.replace(passage, audio_file=audio_file)
     updated = lib.utils.Tuples([_clamp(a, audio_file) for a in passage.alignments], alignment_dtype)
     return dataclasses.replace(passage, alignments=updated, audio_file=audio_file)
