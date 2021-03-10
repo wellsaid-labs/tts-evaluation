@@ -674,10 +674,10 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
         self.prefetch()
         for _ in range(self.num_steps_per_epoch):
             torch.cuda.current_stream().wait_stream(self.stream)
-            next = self.next
-            next.apply_(lambda t: t.record_stream(torch.cuda.current_stream()))
+            next_ = self.next
+            next_.apply_(lambda t: t.record_stream(torch.cuda.current_stream()))
             self.prefetch()
-            yield next
+            yield next_
 
 
 def _init_distributed(
