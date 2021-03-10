@@ -149,7 +149,6 @@ def _find_duplicate_passages(
     return duplicates, rest
 
 
-@lib.utils.log_runtime
 def _split_dataset(
     dataset: Dataset,
     dev_speakers: typing.Set[lib.datasets.Speaker],

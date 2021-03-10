@@ -749,7 +749,7 @@ def update_conventional_passage_script(passage: Passage, script: str) -> Passage
 
 def _clamp(alignment: Alignment, audio_file: AudioFileMetadata) -> Alignment:
     """ Helped function for `update_passage_audio`. """
-    if alignment.audio[-1] < audio_file.length:
+    if alignment.audio[-1] <= audio_file.length:
         return alignment
     new = (min(alignment.audio[0], audio_file.length), min(alignment.audio[-1], audio_file.length))
     return alignment._replace(audio=new)
@@ -762,5 +762,7 @@ def update_passage_audio(
     audio file."""
     message = "The audio files must have similar length."
     assert abs(passage.audio_file.length - audio_file.length) < eps, message
+    if passage.alignments[-1].audio[-1] <= audio_file.length:
+        return passage
     updated = lib.utils.Tuples([_clamp(a, audio_file) for a in passage.alignments], alignment_dtype)
     return dataclasses.replace(passage, alignments=updated, audio_file=audio_file)
