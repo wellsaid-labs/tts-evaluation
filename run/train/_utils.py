@@ -531,8 +531,8 @@ _ApplyToTensorsVar = typing.TypeVar("_ApplyToTensorsVar")
 
 
 def apply_to_tensors(
-    data: _ApplyToTensorsVar, call: typing.Callable[[torch.Tensor], torch.Tensor]
-) -> _ApplyToTensorsVar:
+    data: _ApplyToTensorsVar, call: typing.Callable[[torch.Tensor], torch.Tensor], is_return=True
+) -> typing.Optional[_ApplyToTensorsVar]:
     """
     Args:
         data: An object holding data, either a `dataclass` or `NamedTuple`.
@@ -542,17 +542,25 @@ def apply_to_tensors(
         return data
 
     dict_ = typing.cast(dict, data._asdict()) if is_named_tuple else dataclass_as_dict(data)
-    apply = lambda v: call(v) if torch.is_tensor(v) else apply_to_tensors(v, call)
-    return data.__class__(**{k: apply(v) for k, v in dict_.items()})
+    apply = lambda v: call(v) if torch.is_tensor(v) else apply_to_tensors(v, call, is_return)
+    if is_return:
+        return data.__class__(**{k: apply(v) for k, v in dict_.items()})
+    else:
+        [apply(value) for value in dict_.values()]
 
 
 @dataclasses.dataclass(frozen=True)
 class Batch:
-    def apply(self, call):
-        """Apply `apply` to `SequenceBatch` in `Batch`."""
-        items = lib.utils.dataclass_as_dict(self).items()
-        apply = lambda o: apply_to_tensors(o, call=call) if isinstance(o, SequenceBatch) else o
-        return dataclasses.replace(self, **{k: apply(v) for k, v in items})
+    def apply(self, call: typing.Callable[[torch.Tensor], torch.Tensor]) -> Batch:
+        """Apply `call` to `SequenceBatch` in `Batch`."""
+        apply = lambda o: apply_to_tensors(o, call, True) if isinstance(o, SequenceBatch) else o
+        dict_ = lib.utils.dataclass_as_dict(self)
+        return dataclasses.replace(self, **{k: apply(v) for k, v in dict_.items()})
+
+    def apply_(self, call: typing.Callable[[torch.Tensor], torch.Tensor]) -> None:
+        """Apply `call` to `SequenceBatch` in `Batch`, in-place."""
+        apply = lambda o: apply_to_tensors(o, call, False) if isinstance(o, SequenceBatch) else o
+        [apply(value) for value in lib.utils.dataclass_as_dict(self).values()]
 
     def pin_memory(self) -> Batch:
         """Learn more about this special function:
@@ -622,6 +630,7 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
         **kwargs,
     ):
         self.device = device
+        self.stream = torch.cuda.Stream()
         loader = torch.utils.data.dataloader.DataLoader(
             dataset,
             pin_memory=True,
@@ -649,9 +658,26 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
         assert not torch.cuda.is_available() or tensor.is_pinned(), message
         return tensor.to(device=self.device, non_blocking=True)
 
+    def prefetch(self):
+        """Prefetch next example, and move it asynchronously to the correct device.
+
+        Learn more:
+        https://github.com/PyTorchLightning/lightning-bolts/pull/127
+        https://github.com/NVIDIA/apex/issues/304
+        """
+        # https://github.com/PyTorchLightning/lightning-bolts/pull/127
+        # https://github.com/NVIDIA/apex/issues/304
+        with torch.cuda.stream(self.stream):
+            self.next: DataLoaderVar = next(self.loader).apply(self.process_tensor)
+
     def __iter__(self) -> typing.Iterator[DataLoaderVar]:
+        self.prefetch()
         for _ in range(self.num_steps_per_epoch):
-            yield next(self.loader).apply(self.process_tensor)
+            torch.cuda.current_stream().wait_stream(self.stream)
+            next = self.next
+            next.apply_(lambda t: t.record_stream(torch.cuda.current_stream()))
+            self.prefetch()
+            yield next
 
 
 def _init_distributed(
