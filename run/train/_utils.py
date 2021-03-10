@@ -630,7 +630,7 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
         **kwargs,
     ):
         self.device = device
-        self.stream = torch.cuda.Stream()
+        self.stream = torch.cuda.Stream() if torch.cuda.is_available() else None
         loader = torch.utils.data.dataloader.DataLoader(
             dataset,
             pin_memory=True,
@@ -671,6 +671,9 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
             self.next: DataLoaderVar = next(self.loader).apply(self.process_tensor)
 
     def __iter__(self) -> typing.Iterator[DataLoaderVar]:
+        if not torch.cuda.is_available():
+            yield from (next(self.loader) for _ in range(self.num_steps_per_epoch))
+
         self.prefetch()
         for _ in range(self.num_steps_per_epoch):
             torch.cuda.current_stream().wait_stream(self.stream)
