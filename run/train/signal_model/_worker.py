@@ -230,12 +230,16 @@ class _State:
         )
 
 
-def _worker_init_fn(step: int):
+def _worker_init_fn(
+    step: int,
+    rank: int,
+    world_size: int,
+):
     # NOTE: Each worker needs a different random seed to generate unique data.
     info = torch.utils.data.get_worker_info()
     seed = RANDOM_SEED
-    seed += get_world_size() * info.num_workers * step
-    seed += get_rank() * info.num_workers
+    seed += world_size * info.num_workers * step
+    seed += rank * info.num_workers
     seed += info.id
     lib.environment.set_seed(seed)
     logger.info("Worker random seed set to %d", seed)
@@ -268,7 +272,12 @@ def _get_data_loaders(
         num_workers=num_workers,
         device=state.device,
         prefetch_factor=prefetch_factor,
-        worker_init_fn=partial(_worker_init_fn, step=int(state.step.item())),
+        worker_init_fn=partial(
+            _worker_init_fn,
+            step=int(state.step.item()),
+            rank=get_rank(),
+            world_size=get_world_size(),
+        ),
     )
     return (
         DataLoader(train, num_steps_per_epoch=train_steps_per_epoch, **kwargs),
