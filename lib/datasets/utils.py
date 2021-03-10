@@ -654,6 +654,8 @@ def dataset_loader(
             command = f"gsutil cp -n {gcs_path}/{directory.name}/*{suffix} {directory}/"
             subprocess.run(command.split(), check=True)
         files_ = [p for p in directory.iterdir() if p.suffix == suffix]
+        message = "Expecting an equal number of recording, alignment, and script files."
+        assert len(files) == 0 or len(files_) == len(files[-1]), message
         files.append(sorted(files_, key=lambda p: lib.text.numbers_then_natural_keys(p.name)))
 
     dataset = []

@@ -31,6 +31,7 @@ import torch.optim
 import torch.utils.data
 from hparams import HParam, HParams, configurable, get_config
 from third_party import LazyLoader
+from torch.utils.data._utils.pin_memory import pin_memory
 from torch.utils.data.dataloader import _MultiProcessingDataLoaderIter
 from torchnlp.encoders.text import SequenceBatch
 
@@ -530,7 +531,7 @@ _ApplyToTensorsVar = typing.TypeVar("_ApplyToTensorsVar")
 
 
 def apply_to_tensors(
-    data: _ApplyToTensorsVar, callable: typing.Callable[[torch.Tensor], torch.Tensor]
+    data: _ApplyToTensorsVar, call: typing.Callable[[torch.Tensor], torch.Tensor]
 ) -> _ApplyToTensorsVar:
     """
     Args:
@@ -541,23 +542,33 @@ def apply_to_tensors(
         return data
 
     dict_ = typing.cast(dict, data._asdict()) if is_named_tuple else dataclass_as_dict(data)
-    process = lambda v: callable(v) if torch.is_tensor(v) else apply_to_tensors(v, callable)
-    return data.__class__(**{k: process(v) for k, v in dict_.items()})
+    apply = lambda v: call(v) if torch.is_tensor(v) else apply_to_tensors(v, call)
+    return data.__class__(**{k: apply(v) for k, v in dict_.items()})
 
 
 @dataclasses.dataclass(frozen=True)
 class Batch:
-    def apply(self, callable):
-        """Apply `callable` to `SequenceBatch` in `Batch`."""
+    def apply(self, call):
+        """Apply `apply` to `SequenceBatch` in `Batch`."""
         items = lib.utils.dataclass_as_dict(self).items()
-        to = partial(apply_to_tensors, callable=callable)
-        return self.__class__(**{k: to(v) if isinstance(v, SequenceBatch) else v for k, v in items})
+        apply = lambda o: apply_to_tensors(o, call=call) if isinstance(o, SequenceBatch) else o
+        return dataclasses.replace(self, **{k: apply(v) for k, v in items})
 
     def pin_memory(self) -> Batch:
         """Learn more about this special function:
         https://pytorch.org/docs/stable/data.html#memory-pinning
+
+        NOTE: Filtering `v` by `SequenceBatch` will cause these errors:
+        `RuntimeError: received 0 items of ancdata`
+        ... followed up with ...
+        `RuntimeError: Pin memory thread exited unexpectedly`
+        Learn more: https://github.com/pytorch/pytorch/issues/973
+
+        NOTE: The above issue can also be resolved by increasing `ulimit`, like so:
+        `ulimit -S -n 4096`.
         """
-        return self.apply(lambda t: t.pin_memory())
+        items = lib.utils.dataclass_as_dict(self).items()
+        return dataclasses.replace(self, **{k: pin_memory(v) for k, v in items})
 
 
 def _worker_init_fn(_, config, worker_init_fn):
