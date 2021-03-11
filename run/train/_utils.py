@@ -32,8 +32,7 @@ import torch.optim
 import torch.utils.data
 from hparams import HParam, HParams, configurable, get_config
 from third_party import LazyLoader
-from torch.utils.data._utils.pin_memory import pin_memory
-from torch.utils.data.dataloader import _MultiProcessingDataLoaderIter
+from torch.utils.data.dataloader import _BaseDataLoaderIter, _MultiProcessingDataLoaderIter
 from torchnlp.encoders.text import SequenceBatch
 
 import lib
@@ -631,7 +630,7 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
         self._set_r_limit()
         self.device = device
         self.stream = torch.cuda.Stream() if torch.cuda.is_available() else None
-        loader = torch.utils.data.dataloader.DataLoader(
+        self.loader = torch.utils.data.dataloader.DataLoader(
             dataset,
             pin_memory=True,
             batch_size=typing.cast(int, None),
@@ -641,7 +640,7 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
             collate_fn=lib.utils.identity,
             **kwargs,
         )
-        self.loader = iter(loader)
+        self.iter: typing.Optional[_BaseDataLoaderIter] = None
         self.num_steps_per_epoch = num_steps_per_epoch
 
     @staticmethod
@@ -675,14 +674,16 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
         https://github.com/PyTorchLightning/lightning-bolts/pull/127
         https://github.com/NVIDIA/apex/issues/304
         """
-        # https://github.com/PyTorchLightning/lightning-bolts/pull/127
-        # https://github.com/NVIDIA/apex/issues/304
         with torch.cuda.stream(self.stream):
-            self.next: DataLoaderVar = next(self.loader).apply(self.process_tensor)
+            assert self.iter is not None
+            self.next: DataLoaderVar = next(self.iter).apply(self.process_tensor)
 
     def __iter__(self) -> typing.Iterator[DataLoaderVar]:
+        if self.iter is None:
+            self.iter = typing.cast(_BaseDataLoaderIter, iter(self.loader))
+
         if not torch.cuda.is_available():
-            yield from (next(self.loader) for _ in range(self.num_steps_per_epoch))
+            yield from (next(self.iter) for _ in range(self.num_steps_per_epoch))
 
         self.prefetch()
         for _ in range(self.num_steps_per_epoch):
@@ -809,9 +810,9 @@ class Metrics(lib.distributed.DictStore):
         NOTE: `qsize` is not implemented on MacOS, learn more:
         https://docs.python.org/3/library/multiprocessing.html#multiprocessing.Queue.qsize
         """
-        is_multiprocessing = isinstance(data_loader.loader, _MultiProcessingDataLoaderIter)
+        is_multiprocessing = isinstance(data_loader.iter, _MultiProcessingDataLoaderIter)
         if is_multiprocessing and platform.system() != "Darwin":
-            iterator = typing.cast(_MultiProcessingDataLoaderIter, data_loader.loader)
+            iterator = typing.cast(_MultiProcessingDataLoaderIter, data_loader.iter)
             return {self.DATA_QUEUE_SIZE: iterator._data_queue.qsize()}
         return {}
 
