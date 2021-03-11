@@ -104,7 +104,8 @@ class DictStore:
         DictStore.num_instances += 1
         name = self.__class__.__name__
         identifier = f"{name}/{DictStore.num_instances}" if identifier is None else identifier
-        self._store = torch.distributed.PrefixStore(identifier, store)
+        self._prefix = identifier
+        self._store = torch.distributed.PrefixStore(self._prefix, store)
         self._operation = -1
         self._world_size = get_world_size() if world_size is None else world_size
         self._is_master = is_master() if is_master_ is None else is_master_
@@ -145,7 +146,9 @@ class DictStore:
         if self._is_master:
             ranks = [i for i in range(self._world_size) if i != get_master_rank()]
             keys = [f"/{i}/{self._operation}" for i in ranks]
-            self._store.wait(keys)
+            # NOTE: `wait` may deadlock if multiple `keys` are passed, learn more:
+            # https://github.com/pytorch/pytorch/issues/53840
+            [self._store.wait([key]) for key in keys]
             self._update([data] + asyncio.run(self._gets(keys)))
         else:
             self._set(data)

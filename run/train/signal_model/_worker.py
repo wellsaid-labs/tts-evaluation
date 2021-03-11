@@ -244,7 +244,6 @@ def _worker_init_fn(
     seed += rank * info.num_workers
     seed += info.id
     lib.environment.set_seed(seed)
-    logger.info("Worker random seed set to %d", seed)
 
 
 @configurable
