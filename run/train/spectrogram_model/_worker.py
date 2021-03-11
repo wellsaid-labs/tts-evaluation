@@ -26,6 +26,7 @@ from run._config import (
     Cadence,
     Dataset,
     DatasetType,
+    configurable_,
     get_dataset_label,
     get_model_label,
 )
@@ -44,9 +45,7 @@ from run.train.spectrogram_model._data import Batch, DataProcessor, InputEncoder
 from run.train.spectrogram_model._metrics import Metrics, get_average_db_rms_level
 
 logger = logging.getLogger(__name__)
-
-if not hasattr(torch.optim.Adam.__init__, "_configurable"):
-    torch.optim.Adam.__init__ = configurable(torch.optim.Adam.__init__)
+torch.optim.Adam.__init__ = configurable_(torch.optim.Adam.__init__)
 
 
 @dataclasses.dataclass(frozen=True)

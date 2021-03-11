@@ -179,6 +179,32 @@ def get_timer_label(
     return _label(template, cadence=cadence.value, device=device.value, name=name, **kwargs)
 
 
+def configurable_(func: typing.Callable):
+    """`configurable` has issues if it's run twice, on the same function.
+
+    TODO: Remove this, once, this issue is resolved: https://github.com/PetrochukM/HParams/issues/8
+    """
+    if not hasattr(func, "_configurable"):
+        return configurable(func)
+    return func
+
+
+try:
+    librosa.effects.trim = configurable_(librosa.effects.trim)
+except ImportError:
+    logger.info("Ignoring optional `librosa` configurations.")
+
+try:
+    IPython.display.Audio.__init__ = configurable_(IPython.display.Audio.__init__)
+except ImportError:
+    logger.info("Ignoring optional `IPython` configurations.")
+
+torch.nn.modules.batchnorm._BatchNorm.__init__ = configurable_(
+    torch.nn.modules.batchnorm._BatchNorm.__init__
+)
+torch.nn.LayerNorm.__init__ = configurable_(torch.nn.LayerNorm.__init__)
+
+
 def _configure_audio_processing():
     """ Configure modules that process audio. """
     num_channels = 1  # NOTE: The signal model output is 1-channel, similar to Tacotron-2.
@@ -206,7 +232,6 @@ def _configure_audio_processing():
     hertz_bounds = {"lower_hertz": 20, "upper_hertz": 20000}
 
     try:
-        librosa.effects.trim = configurable(librosa.effects.trim)
         config = {
             librosa.effects.trim: HParams(frame_length=FRAME_SIZE, hop_length=FRAME_HOP),
         }
@@ -215,7 +240,6 @@ def _configure_audio_processing():
         logger.info("Ignoring optional `librosa` configurations.")
 
     try:
-        IPython.display.Audio.__init__ = configurable(IPython.display.Audio.__init__)
         add_config({IPython.display.Audio.__init__: HParams(rate=SAMPLE_RATE)})
     except ImportError:
         logger.info("Ignoring optional `IPython` configurations.")
@@ -431,10 +455,6 @@ def _configure_models():
 
     # NOTE: PyTorch and Tensorflow parameterize `BatchNorm` differently, learn more:
     # https://stackoverflow.com/questions/48345857/batchnorm-momentum-convention-pytorch?utm_medium=organic&utm_source=google_rich_qa&utm_campaign=google_rich_qa
-    torch.nn.modules.batchnorm._BatchNorm.__init__ = configurable(  # type: ignore
-        torch.nn.modules.batchnorm._BatchNorm.__init__
-    )
-    torch.nn.LayerNorm.__init__ = configurable(torch.nn.LayerNorm.__init__)  # type: ignore
     config = {
         # NOTE: `momentum=0.01` to match Tensorflow defaults.
         torch.nn.modules.batchnorm._BatchNorm.__init__: HParams(momentum=0.01),

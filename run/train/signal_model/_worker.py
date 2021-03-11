@@ -28,6 +28,7 @@ from run._config import (
     Cadence,
     Dataset,
     DatasetType,
+    configurable_,
     get_dataset_label,
     get_model_label,
 )
@@ -45,6 +46,7 @@ from run.train.signal_model._data import Batch, DataProcessor
 from run.train.signal_model._metrics import Metrics, MetricsValues
 
 logger = logging.getLogger(__name__)
+torch.optim.Adam.__init__ = configurable_(torch.optim.Adam.__init__)
 
 
 @dataclasses.dataclass(frozen=True)

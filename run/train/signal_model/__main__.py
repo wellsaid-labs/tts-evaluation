@@ -9,7 +9,7 @@ import torch.optim
 import torch.utils
 import torch.utils.data
 import typer
-from hparams import HParams, add_config, configurable, parse_hparam_args
+from hparams import HParams, add_config, parse_hparam_args
 
 import lib
 from run._config import FRAME_HOP, RANDOM_SEED, SIGNAL_MODEL_EXPERIMENTS_PATH, Dataset
@@ -27,9 +27,6 @@ from run.train.signal_model import _metrics, _worker
 lib.environment.enable_fault_handler()
 logger = logging.getLogger(__name__)
 app = typer.Typer()
-
-if not hasattr(torch.optim.Adam.__init__, "_configurable"):
-    torch.optim.Adam.__init__ = configurable(torch.optim.Adam.__init__)
 
 
 def _make_configuration(
