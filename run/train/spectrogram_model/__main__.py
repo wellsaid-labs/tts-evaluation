@@ -9,7 +9,6 @@ import typer
 from hparams import HParams, add_config, parse_hparam_args
 
 import lib
-from lib.distributed import get_world_size
 from run._config import (
     NUM_FRAME_CHANNELS,
     PHONEME_SEPARATOR,
@@ -48,8 +47,8 @@ def _make_configuration(
     dev_batch_size = train_batch_size * batch_size_ratio
     dev_steps_per_epoch = 1 if debug else 16
     train_steps_per_epoch = 1 if debug else dev_steps_per_epoch * batch_size_ratio * round(ratio)
-    assert train_batch_size % get_world_size() == 0
-    assert dev_batch_size % get_world_size() == 0
+    assert train_batch_size % lib.distributed.get_device_count() == 0
+    assert dev_batch_size % lib.distributed.get_device_count() == 0
 
     return {
         set_run_seed: HParams(seed=RANDOM_SEED),

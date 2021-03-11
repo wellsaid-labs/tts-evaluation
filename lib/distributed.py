@@ -16,6 +16,8 @@ import torch.distributed
 import torch.nn
 import torch.nn.functional
 
+from lib.environment import IS_TESTING_ENVIRONMENT
+
 logger = logging.getLogger(__name__)
 
 
@@ -34,20 +36,28 @@ def get_master_rank() -> typing.Literal[0]:
 
 
 def get_rank():
-    if not is_initialized():
+    if IS_TESTING_ENVIRONMENT and not is_initialized():
         return get_master_rank()
     return torch.distributed.get_rank()
 
 
 def is_master() -> bool:
     """Returns `True` if distributed isn't initialized or if this process is the master process."""
-    if not is_initialized():
+    if IS_TESTING_ENVIRONMENT and not is_initialized():
         return True
     return torch.distributed.get_rank() == get_master_rank()
 
 
+def get_device_count() -> int:
+    if IS_TESTING_ENVIRONMENT and not torch.cuda.is_available():
+        return 1
+    return torch.cuda.device_count()
+
+
 def get_world_size() -> int:
-    return torch.distributed.get_world_size() if is_initialized() else 1
+    if IS_TESTING_ENVIRONMENT and not is_initialized():
+        return 1
+    return torch.distributed.get_world_size()
 
 
 def spawn(*args, nprocs=None, **kwargs):
@@ -84,15 +94,15 @@ class DictStore:
     def __init__(
         self,
         store: torch.distributed.TCPStore,
-        world_size=get_world_size(),
-        is_master=is_master(),
-        rank=get_rank(),
+        world_size: typing.Optional[int] = None,
+        is_master_: typing.Optional[bool] = None,
+        rank: typing.Optional[int] = None,
     ):
         self._store = torch.distributed.PrefixStore(self.__class__.__name__, store)
         self._operation = -1
-        self._world_size = world_size
-        self._is_master = is_master
-        self._rank = rank
+        self._world_size = get_world_size() if world_size is None else world_size
+        self._is_master = is_master() if is_master_ is None else is_master_
+        self._rank = get_rank() if rank is None else rank
         self.data: DictStoreDataCollection = {}
 
     async def _get(self, key: str) -> DictStoreData:

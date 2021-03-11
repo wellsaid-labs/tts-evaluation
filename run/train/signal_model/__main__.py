@@ -12,7 +12,6 @@ import typer
 from hparams import HParams, add_config, configurable, parse_hparam_args
 
 import lib
-from lib.distributed import get_world_size
 from run._config import FRAME_HOP, RANDOM_SEED, SIGNAL_MODEL_EXPERIMENTS_PATH, Dataset
 from run._utils import get_window
 from run.train._utils import (
@@ -42,7 +41,7 @@ def _make_configuration(
     dev_size = sum([sum([p.aligned_audio_length() for p in d]) for d in dev_dataset.values()])
     ratio = train_size / dev_size
     logger.info("The training dataset is approx %fx bigger than the development dataset.", ratio)
-    train_batch_size = 32 if debug else 128
+    train_batch_size = int((32 if debug else 128) / lib.distributed.get_device_count())
     train_slice_size = 8192
     dev_slice_size = 32768
     batch_size_ratio = 1 / 2
@@ -50,8 +49,6 @@ def _make_configuration(
     dev_steps_per_epoch = 1 if debug else 64
     train_steps_per_epoch = int(round(dev_steps_per_epoch * batch_size_ratio * ratio))
     train_steps_per_epoch = 1 if debug else train_steps_per_epoch
-    assert train_batch_size % get_world_size() == 0
-    assert dev_batch_size % get_world_size() == 0
 
     # NOTE: The `num_mel_bins` must be proportional to `fft_length`,
     # learn more:
