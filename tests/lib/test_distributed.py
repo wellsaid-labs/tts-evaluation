@@ -50,8 +50,8 @@ def test_is_master__not_initialized():
 def test_dict_store():
     """Test `lib.distributed.DictStore` gathers data onto master."""
     make_store = functools.partial(torch.distributed.TCPStore, "127.0.0.1", 29500, 1)
-    main_store = lib.distributed.DictStore(make_store(is_master=True), 2, True, 0)
-    store = lib.distributed.DictStore(make_store(is_master=False), 2, False, 1)
+    main_store = lib.distributed.DictStore(make_store(is_master=True), 2, True, 0, "main")
+    store = lib.distributed.DictStore(make_store(is_master=False), 2, False, 1, "main")
 
     store.update({"a": 2, "c": 2})
     main_store.update({"a": 1, "b": 1})
@@ -86,8 +86,8 @@ def test_dict_store():
 def test_dict_store__order_of_operations():
     """Test `lib.distributed.DictStore` respects the order of operations."""
     make_store = functools.partial(torch.distributed.TCPStore, "127.0.0.1", 29500, 1)
-    main_store = lib.distributed.DictStore(make_store(is_master=True), 2, True, 0)
-    store = lib.distributed.DictStore(make_store(is_master=False), 2, False, 1)
+    main_store = lib.distributed.DictStore(make_store(is_master=True), 2, True, 0, "main")
+    store = lib.distributed.DictStore(make_store(is_master=False), 2, False, 1, "main")
 
     store.update({"a": 2, "c": 2})
     store.update({"a": 4, "c": 4})
@@ -97,4 +97,30 @@ def test_dict_store__order_of_operations():
         "a": [(1, 2), (3, 4)],
         "b": [(1,), (3,)],
         "c": [(2,), (4,)],
+    }
+
+
+def test_dict_store__multiple_stores():
+    """Test `lib.distributed.DictStore` handles multiple `DictStore` stores."""
+    make_store = functools.partial(torch.distributed.TCPStore, "127.0.0.1", 29500, 1)
+    main_tcp_store = make_store(is_master=True)
+    child_tcp_store = make_store(is_master=False)
+    main_store = lib.distributed.DictStore(main_tcp_store, 2, True, 0, "main")
+    store = lib.distributed.DictStore(child_tcp_store, 2, False, 1, "main")
+    other_main_store = lib.distributed.DictStore(main_tcp_store, 2, True, 0, "other")
+    other_store = lib.distributed.DictStore(child_tcp_store, 2, False, 1, "other")
+
+    store.update({"a": 2, "c": 2})
+    other_store.update({"d": 4, "f": 4})
+    main_store.update({"a": 1, "b": 1})
+    other_main_store.update({"d": 3, "e": 3})
+    assert main_store.data == {
+        "a": [(1, 2)],
+        "b": [(1,)],
+        "c": [(2,)],
+    }
+    assert other_main_store.data == {
+        "d": [(3, 4)],
+        "e": [(3,)],
+        "f": [(4,)],
     }

@@ -91,14 +91,20 @@ class DictStore:
         data: On the master process, this is a merged collection of data from the worker processes.
     """
 
+    num_instances = -1
+
     def __init__(
         self,
         store: torch.distributed.TCPStore,
         world_size: typing.Optional[int] = None,
         is_master_: typing.Optional[bool] = None,
         rank: typing.Optional[int] = None,
+        identifier: typing.Optional[str] = None,
     ):
-        self._store = torch.distributed.PrefixStore(self.__class__.__name__, store)
+        DictStore.num_instances += 1
+        name = self.__class__.__name__
+        identifier = f"{name}/{DictStore.num_instances}" if identifier is None else identifier
+        self._store = torch.distributed.PrefixStore(identifier, store)
         self._operation = -1
         self._world_size = get_world_size() if world_size is None else world_size
         self._is_master = is_master() if is_master_ is None else is_master_

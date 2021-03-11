@@ -618,7 +618,6 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
     https://github.com/pytorch/pytorch/issues/51849
     """
 
-    @lib.utils.log_runtime
     def __init__(
         self,
         dataset: torch.utils.data.Dataset,
