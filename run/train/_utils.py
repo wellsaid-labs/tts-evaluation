@@ -15,6 +15,7 @@ import math
 import os
 import pathlib
 import platform
+import resource
 import sys
 import time
 import typing
@@ -570,13 +571,11 @@ class Batch:
         `RuntimeError: received 0 items of ancdata`
         ... followed up with ...
         `RuntimeError: Pin memory thread exited unexpectedly`
+        The issue can also be resolved by increasing `ulimit`, like so:
+        `ulimit -S -n 4096`. It can also be resolved by not filtering.
         Learn more: https://github.com/pytorch/pytorch/issues/973
-
-        NOTE: The above issue can also be resolved by increasing `ulimit`, like so:
-        `ulimit -S -n 4096`.
         """
-        items = lib.utils.dataclass_as_dict(self).items()
-        return dataclasses.replace(self, **{k: pin_memory(v) for k, v in items})
+        return self.apply(lambda t: t.pin_memory())
 
 
 def _worker_init_fn(_, config, worker_init_fn):
@@ -629,6 +628,7 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
         worker_init_fn: typing.Optional[typing.Callable],
         **kwargs,
     ):
+        self._set_r_limit()
         self.device = device
         self.stream = torch.cuda.Stream() if torch.cuda.is_available() else None
         loader = torch.utils.data.dataloader.DataLoader(
@@ -643,6 +643,16 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
         )
         self.loader = iter(loader)
         self.num_steps_per_epoch = num_steps_per_epoch
+
+    @staticmethod
+    def _set_r_limit(soft_limit=4096):
+        """Increase the number of available file descriptors to `soft_limit`.
+
+        Learn more: https://github.com/pytorch/pytorch/issues/973
+        """
+        if platform.system() == "Linux":
+            rlimit = resource.getrlimit(resource.RLIMIT_NOFILE)
+            resource.setrlimit(resource.RLIMIT_NOFILE, (soft_limit, rlimit[1]))
 
     def process_tensor(self, tensor: torch.Tensor) -> torch.Tensor:
         """
