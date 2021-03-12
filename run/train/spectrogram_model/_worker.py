@@ -307,7 +307,8 @@ def _run_step(
     TODO: Maybe enable the CUDNN auto tuner:
     https://pytorch.org/tutorials/recipes/recipes/tuning_guide.html#enable-cudnn-auto-tuner
     TODO: Use multithreading to overlap measure, gather, and reduction metrics operations with
-    the `backwards` model pass.
+    the `backwards` model pass. The metrics overhead takes 21 milliseconds (3% of runtime), on
+    average.
 
     Args:
         ...
