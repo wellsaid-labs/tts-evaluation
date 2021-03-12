@@ -50,6 +50,7 @@ git+https://github.com/PetrochukM/HParams.git # Organize hyperparameters
 pandas
 retry
 typer
+uvloop
 
 # Web
 flask

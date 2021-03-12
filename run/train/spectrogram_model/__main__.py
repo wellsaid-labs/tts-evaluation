@@ -28,7 +28,6 @@ from run.train.spectrogram_model import _worker
 from run.train.spectrogram_model._data import InputEncoder
 from run.train.spectrogram_model._metrics import Metrics
 
-lib.environment.enable_fault_handler()
 logger = logging.getLogger(__name__)
 app = typer.Typer()
 

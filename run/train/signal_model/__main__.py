@@ -24,7 +24,6 @@ from run.train._utils import (
 )
 from run.train.signal_model import _metrics, _worker
 
-lib.environment.enable_fault_handler()
 logger = logging.getLogger(__name__)
 app = typer.Typer()
 
