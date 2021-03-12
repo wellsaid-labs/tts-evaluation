@@ -109,10 +109,10 @@ class DictStore:
     def _encode(values: DictStoreData) -> str:
         return gzip.compress(json.dumps(values, separators=(",", ":")).encode()).hex()
 
-    def _gather(self, data: DictStoreData) -> typing.Optional[typing.List[DictStoreData]]:
-        output = [None for _ in range(get_world_size())] if is_master() else None
-        torch.distributed.gather_object(self._encode(data), output, dst=get_master_rank())
-        return [self._decode(typing.cast(str, o)) for o in output] if is_master() else None
+    def _gather(self, data: DictStoreData) -> typing.List[DictStoreData]:
+        outputs = [None for _ in range(get_world_size())]
+        torch.distributed.all_gather_object(outputs, self._encode(data))
+        return [self._decode(typing.cast(str, o)) for o in outputs]
 
     def _update(self, data: typing.List[DictStoreData]):
         """Shallow update `self.data` with `data`."""
@@ -131,5 +131,5 @@ class DictStore:
         """Shallow update the master process `self.data` with `data`."""
         self._operation += 1
         merged = self._gather(data)
-        if merged is not None:
+        if is_master():
             self._update(merged)
