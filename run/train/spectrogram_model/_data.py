@@ -1,10 +1,10 @@
-import asyncio
 import dataclasses
 import functools
 import logging
 import random
 import sys
 import typing
+from concurrent import futures
 
 import numpy
 import torch
@@ -376,16 +376,9 @@ def _make_stop_token(
     return SequenceBatch(stop_token, spectrogram.lengths)
 
 
-async def _span_read_audio_slice(span: lib.datasets.Span) -> numpy.ndarray:
+def _span_read_audio_slice(span: lib.datasets.Span) -> numpy.ndarray:
     start = span._first.audio[0]
     return lib.audio.read_wave_audio_slice(span.passage.audio_file, start, span.audio_length)
-
-
-async def _spans_read_audio_slice(
-    spans: typing.List[lib.datasets.Span],
-) -> typing.Tuple[numpy.ndarray]:
-    tasks = tuple(_span_read_audio_slice(s) for s in spans)
-    return await asyncio.gather(*tasks)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -420,7 +413,9 @@ class Batch(_utils.Batch):
         return len(self.spans)
 
 
-def make_batch(spans: typing.List[lib.datasets.Span], input_encoder: InputEncoder) -> Batch:
+def make_batch(
+    spans: typing.List[lib.datasets.Span], input_encoder: InputEncoder, max_workers: int = 6
+) -> Batch:
     """
     NOTE: spaCy splits some (not all) words on apostrophes while AmEPD does not; therefore,
     those words will not be found in AmEPD. The options are:
@@ -469,7 +464,9 @@ def make_batch(spans: typing.List[lib.datasets.Span], input_encoder: InputEncode
     phonemes = typing.cast(typing.List[str], lib.text.grapheme_to_phoneme(docs))
     decoded = [DecodedInput(s.script, p, s.speaker) for s, p in zip(spans, phonemes)]
     encoded = [input_encoder.encode(d) for d in decoded]
-    signals_ = asyncio.run(_spans_read_audio_slice(spans))
+    with futures.ThreadPoolExecutor(max_workers=min(max_workers, len(spans))) as pool:
+        signals_ = list(pool.map(_span_read_audio_slice, spans))
+        signals_ = typing.cast(typing.List[numpy.ndarray], signals_)
     signals = [_pad_and_trim_signal(s) for s in signals_]
     spectrogram, spectrogram_mask = _signals_to_spectrograms(signals)
 
