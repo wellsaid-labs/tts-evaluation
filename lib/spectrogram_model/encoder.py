@@ -7,6 +7,7 @@ from hparams import HParam, configurable
 from torchnlp.encoders.text import DEFAULT_PADDING_INDEX
 from torchnlp.nn import LockedDropout
 
+from lib.spectrogram_model.model import Inputs
 from lib.utils import LSTM
 
 
@@ -241,40 +242,21 @@ class Encoder(torch.nn.Module):
                 gain = torch.nn.init.calculate_gain("relu")
                 torch.nn.init.xavier_uniform_(module.weight, gain=gain)
 
-    def __call__(
-        self,
-        tokens: torch.Tensor,
-        tokens_mask: torch.Tensor,
-        num_tokens: torch.Tensor,
-        speaker: torch.Tensor,
-    ) -> torch.Tensor:
-        return super().__call__(tokens, tokens_mask, num_tokens, speaker)
+    def __call__(self, inputs: Inputs) -> torch.Tensor:
+        return super().__call__(inputs)
 
-    def forward(
-        self,
-        tokens: torch.Tensor,
-        tokens_mask: torch.Tensor,
-        num_tokens: torch.Tensor,
-        speaker: torch.Tensor,
-    ) -> torch.Tensor:
+    def forward(self, inputs: Inputs) -> torch.Tensor:
         """
-        Args:
-            tokens (torch.LongTensor [batch_size, num_tokens]): Batch of sequences.
-            tokens_mask (torch.BoolTensor [batch_size, num_tokens]): Sequence mask(s) to deliminate
-                padding in `tokens` with zeros.
-            num_tokens (torch.LongTensor [batch_size]): Number of tokens in each sequence.
-            speaker (torch.FloatTensor [batch_size, speaker_embedding_dim])
-
         Returns:
             output (torch.FloatTensor [num_tokens, batch_size, out_dim]): Batch of sequences.
         """
         # [batch_size, speaker_embedding_dim] → [batch_size, num_tokens, speaker_embedding_dim]
-        speaker = speaker.unsqueeze(1).expand(-1, tokens.shape[1], -1)
+        speaker = inputs.speaker.unsqueeze(1).expand(-1, inputs.tokens.shape[1], -1)
         # [batch_size, num_tokens] → [batch_size, num_tokens, hidden_size]
         # TODO: The speaker embedding decreases the size of the token embedding. This side-effect
         # is not intuitive. In order to implement this, we recommend that you slice in the
         # residual connection.
-        tokens = torch.cat([self.embed_token(tokens), speaker], dim=2)
+        tokens = torch.cat([self.embed_token(inputs.tokens), speaker], dim=2)
 
         # Our input is expected to have shape `[batch_size, num_tokens, hidden_size]`.  The
         # convolution layers expect input of shape
@@ -283,7 +265,7 @@ class Encoder(torch.nn.Module):
         tokens = tokens.transpose(1, 2)
 
         # [batch_size, num_tokens] → [batch_size, 1, num_tokens]
-        tokens_mask = tokens_mask.unsqueeze(1)
+        tokens_mask = inputs.tokens_mask.unsqueeze(1)
 
         for conv, norm in zip(self.conv_layers, self.norm_layers):
             tokens = tokens.masked_fill(~tokens_mask, 0)
@@ -297,7 +279,7 @@ class Encoder(torch.nn.Module):
         tokens_mask = tokens_mask.permute(2, 0, 1)
 
         tokens = self.lstm_norm(
-            tokens + self.lstm(self.lstm_dropout(tokens), tokens_mask, num_tokens)
+            tokens + self.lstm(self.lstm_dropout(tokens), tokens_mask, inputs.num_tokens)
         )
 
         # [num_tokens, batch_size, hidden_size] →

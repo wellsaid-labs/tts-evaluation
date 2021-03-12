@@ -4,8 +4,8 @@ import torch
 from hparams import HParams
 
 import lib
-from lib.spectrogram_model.attention import LocationRelativeAttentionHiddenState
-from lib.spectrogram_model.decoder import AutoregressiveDecoder, AutoregressiveDecoderHiddenState
+from lib.spectrogram_model.attention import AttentionHiddenState
+from lib.spectrogram_model.decoder import Decoder, DecoderHiddenState
 
 
 @pytest.fixture(autouse=True)
@@ -21,17 +21,16 @@ def _make_decoder(
     lstm_hidden_size=4,
     encoder_output_size=5,
     stop_net_dropout=0.5,
-) -> AutoregressiveDecoder:
-    """ Make `decoder.AutoregressiveDecoder` for testing. """
-    hparams.add_config(
-        {
-            lib.spectrogram_model.pre_net.PreNet.__init__: HParams(num_layers=1, dropout=0.5),
-            lib.spectrogram_model.attention.LocationRelativeAttention.__init__: HParams(
-                hidden_size=4, convolution_filter_size=3, dropout=0.1, window_length=5
-            ),
-        }
-    )
-    return AutoregressiveDecoder(
+) -> Decoder:
+    """ Make `decoder.Decoder` for testing. """
+    config = {
+        lib.spectrogram_model.pre_net.PreNet.__init__: HParams(num_layers=1, dropout=0.5),
+        lib.spectrogram_model.attention.Attention.__init__: HParams(
+            hidden_size=4, convolution_filter_size=3, dropout=0.1, window_length=5
+        ),
+    }
+    hparams.add_config(config)
+    return Decoder(
         num_frame_channels=num_frame_channels,
         speaker_embedding_size=speaker_embedding_size,
         pre_net_size=pre_net_size,
@@ -42,7 +41,7 @@ def _make_decoder(
 
 
 def test_autoregressive_decoder():
-    """ Test `decoder.AutoregressiveDecoder` handles a basic case. """
+    """ Test `decoder.Decoder` handles a basic case. """
     batch_size = 5
     num_tokens = 6
     module = _make_decoder()
@@ -70,7 +69,7 @@ def test_autoregressive_decoder():
         assert alignment.dtype == torch.float
         assert alignment.shape == (1, batch_size, num_tokens)
 
-        assert isinstance(hidden_state, AutoregressiveDecoderHiddenState)
+        assert isinstance(hidden_state, DecoderHiddenState)
 
         assert hidden_state.last_frame.dtype == torch.float
         assert hidden_state.last_frame.shape == (
@@ -85,7 +84,7 @@ def test_autoregressive_decoder():
             module.encoder_output_size,
         )
 
-        assert isinstance(hidden_state.attention_hidden_state, LocationRelativeAttentionHiddenState)
+        assert isinstance(hidden_state.attention_hidden_state, AttentionHiddenState)
         assert isinstance(hidden_state.lstm_one_hidden_state, tuple)
         assert isinstance(hidden_state.lstm_two_hidden_state, tuple)
 
@@ -93,7 +92,7 @@ def test_autoregressive_decoder():
 
 
 def test_autoregressive_decoder__target():
-    """ Test `decoder.AutoregressiveDecoder` handles `target_frames` inputs. """
+    """ Test `decoder.Decoder` handles `target_frames` inputs. """
     batch_size = 5
     num_frames = 3
     num_tokens = 6
@@ -129,7 +128,7 @@ def test_autoregressive_decoder__target():
         module.encoder_output_size,
     )
 
-    assert isinstance(hidden_state.attention_hidden_state, LocationRelativeAttentionHiddenState)
+    assert isinstance(hidden_state.attention_hidden_state, AttentionHiddenState)
     assert isinstance(hidden_state.lstm_one_hidden_state, tuple)
     assert isinstance(hidden_state.lstm_two_hidden_state, tuple)
 

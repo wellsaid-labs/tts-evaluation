@@ -7,74 +7,57 @@ import torch
 
 import lib
 import lib.spectrogram_model.attention
-from lib.spectrogram_model.attention import (
-    LocationRelativeAttention,
-    LocationRelativeAttentionHiddenState,
-)
+from lib.spectrogram_model.attention import Attention, AttentionHiddenState, _window
 from tests import _utils
 
 
 def test__window():
-    """ Test `lib.spectrogram_model.attention._window` to window given a simple tensor. """
-    window = lib.spectrogram_model.attention._window(
-        torch.tensor([1, 2, 3]), start=torch.tensor(1), length=2, dim=0
-    )[0]
+    """ Test `_window` to window given a simple tensor. """
+    window = _window(torch.tensor([1, 2, 3]), start=torch.tensor(1), length=2, dim=0)[0]
     assert torch.equal(window, torch.tensor([2, 3]))
 
 
 def test__window__identity():
-    """Test `lib.spectrogram_model.attention._window` to compute an identity if `length` is equal
+    """Test `_window` to compute an identity if `length` is equal
     to the dimension size."""
-    window = lib.spectrogram_model.attention._window(
-        torch.tensor([1, 2, 3]), start=torch.tensor(0), length=3, dim=0
-    )[0]
+    window = _window(torch.tensor([1, 2, 3]), start=torch.tensor(0), length=3, dim=0)[0]
     assert torch.equal(window, torch.tensor([1, 2, 3]))
 
 
 def test__window__length_to_small():
-    """ Test `lib.spectrogram_model.attention._window` fails if `length` is too small. """
+    """ Test `_window` fails if `length` is too small. """
     with pytest.raises(RuntimeError):
-        lib.spectrogram_model.attention._window(
-            torch.tensor([1, 2, 3]), start=torch.tensor(0), length=-1, dim=0
-        )
+        _window(torch.tensor([1, 2, 3]), start=torch.tensor(0), length=-1, dim=0)
 
 
 def test__window__length_to_long():
-    """ Test `lib.spectrogram_model.attention._window` fails if `length` is too long. """
+    """ Test `_window` fails if `length` is too long. """
     with pytest.raises(AssertionError):
-        lib.spectrogram_model.attention._window(
-            torch.tensor([1, 2, 3]), start=torch.tensor(0), length=4, dim=0
-        )
+        _window(torch.tensor([1, 2, 3]), start=torch.tensor(0), length=4, dim=0)
 
 
 def test__window__start_to_small():
-    """ Test `lib.spectrogram_model.attention._window` fails if `start` is out of range.  """
+    """ Test `_window` fails if `start` is out of range.  """
     with pytest.raises(AssertionError):
-        lib.spectrogram_model.attention._window(
-            torch.tensor([1, 2, 3]), start=torch.tensor(-1), length=3, dim=0
-        )
+        _window(torch.tensor([1, 2, 3]), start=torch.tensor(-1), length=3, dim=0)
 
 
 def test__window__start_to_large():
-    """ Test `lib.spectrogram_model.attention._window` fails if `start` is out of range.  """
+    """ Test `_window` fails if `start` is out of range.  """
     with pytest.raises(AssertionError):
-        lib.spectrogram_model.attention._window(
-            torch.tensor([1, 2, 3]), start=torch.tensor(4), length=1, dim=0
-        )
+        _window(torch.tensor([1, 2, 3]), start=torch.tensor(4), length=1, dim=0)
 
 
 def test__window__window_out_of_range():
-    """ Test `lib.spectrogram_model.attention._window` fails if the window is out of range.  """
+    """ Test `_window` fails if the window is out of range.  """
     with pytest.raises(AssertionError):
-        lib.spectrogram_model.attention._window(
-            torch.tensor([1, 2, 3]), start=torch.tensor(1), length=3, dim=0
-        )
+        _window(torch.tensor([1, 2, 3]), start=torch.tensor(1), length=3, dim=0)
 
 
 def test__window__2d():
-    """Test `lib.spectrogram_model.attention._window` to window given a 2d `tensor` with variable
+    """Test `_window` to window given a 2d `tensor` with variable
     `start`."""
-    window = lib.spectrogram_model.attention._window(
+    window = _window(
         torch.tensor([[1, 2, 3], [1, 2, 3]]),
         start=torch.tensor([1, 0]),
         length=2,
@@ -84,24 +67,20 @@ def test__window__2d():
 
 
 def test__window__3d():
-    """Test `lib.spectrogram_model.attention._window` to window given a 3d `tensor` and 2d `start`.
+    """Test `_window` to window given a 3d `tensor` and 2d `start`.
     Furthermore, this tests a negative `dim`."""
     tensor = torch.tensor([[[1, 2, 3, 4, 5], [1, 2, 3, 4, 5]], [[1, 2, 3, 4, 5], [1, 2, 3, 4, 5]]])
-    window = lib.spectrogram_model.attention._window(
-        tensor, start=torch.tensor([[0, 1], [2, 3]]), length=2, dim=-1
-    )[0]
+    window = _window(tensor, start=torch.tensor([[0, 1], [2, 3]]), length=2, dim=-1)[0]
     assert torch.equal(window, torch.tensor([[[1, 2], [2, 3]], [[3, 4], [4, 5]]]))
 
 
 def test__window__transpose_invariance():
-    """Test `lib.spectrogram_model.attention._window` to window given a transposed 3d `tensor`.
-    `lib.spectrogram_model.attention._window` should return consistent results regardless of the
+    """Test `_window` to window given a transposed 3d `tensor`.
+    `_window` should return consistent results regardless of the
     dimension and ordering of the data."""
     tensor = torch.tensor([[[1, 2, 3, 4, 5], [1, 2, 3, 4, 5]], [[1, 2, 3, 4, 5], [1, 2, 3, 4, 5]]])
     tensor = tensor.transpose(-2, -1)
-    window = lib.spectrogram_model.attention._window(
-        tensor, start=torch.tensor([[0, 1], [2, 3]]), length=2, dim=-2
-    )[0]
+    window = _window(tensor, start=torch.tensor([[0, 1], [2, 3]]), length=2, dim=-2)[0]
     assert torch.equal(window.transpose(-1, -2), torch.tensor([[[1, 2], [2, 3]], [[3, 4], [4, 5]]]))
 
 
@@ -114,12 +93,12 @@ def _make_attention(
     dropout=0.5,
     window_length=7,
 ) -> typing.Tuple[
-    LocationRelativeAttention,
-    typing.Tuple[torch.Tensor, torch.Tensor, torch.Tensor, LocationRelativeAttentionHiddenState],
+    Attention,
+    typing.Tuple[torch.Tensor, torch.Tensor, torch.Tensor, AttentionHiddenState],
     typing.Tuple[int, int],
 ]:
-    """ Make `attention.LocationRelativeAttention` and it's inputs for testing."""
-    module = LocationRelativeAttention(
+    """ Make `attention.Attention` and it's inputs for testing."""
+    module = Attention(
         query_hidden_size=query_hidden_size,
         hidden_size=attention_hidden_size,
         convolution_filter_size=convolution_filter_size,
@@ -131,7 +110,7 @@ def _make_attention(
     query = torch.randn(1, batch_size, query_hidden_size)
     padding = (module.cumulative_alignment_padding, module.cumulative_alignment_padding)
     cumulative_alignment = torch.zeros(batch_size, max_num_tokens)
-    hidden_state = LocationRelativeAttentionHiddenState(
+    hidden_state = AttentionHiddenState(
         cumulative_alignment=lib.utils.pad_tensor(cumulative_alignment, padding, 1, value=1.0),
         window_start=torch.zeros(batch_size, dtype=torch.long),
     )
@@ -143,7 +122,7 @@ def _make_attention(
 
 
 def _make_num_tokens(tokens_mask):
-    """ Create `num_tokens` input for `attention.LocationRelativeAttention`. """
+    """ Create `num_tokens` input for `attention.Attention`. """
     return tokens_mask.sum(dim=1)
 
 
@@ -151,8 +130,8 @@ def _add_padding(
     amount: int,
     tokens: torch.Tensor,
     tokens_mask: torch.Tensor,
-    hidden_state: LocationRelativeAttentionHiddenState,
-) -> typing.Tuple[torch.Tensor, torch.Tensor, LocationRelativeAttentionHiddenState]:
+    hidden_state: AttentionHiddenState,
+) -> typing.Tuple[torch.Tensor, torch.Tensor, AttentionHiddenState]:
     """ Add zero padding to `tokens`, `tokens_mask` and `hidden_state`. """
     tokens_padding = torch.randn(amount, tokens.shape[1], tokens.shape[2])
     padded_tokens = torch.cat([tokens, tokens_padding], dim=0)
@@ -169,7 +148,7 @@ assert_almost_equal = partial(_utils.assert_almost_equal, decimal=5)
 
 
 def test_location_relative_attention():
-    """ Test `attention.LocationRelativeAttention` handles a basic case. """
+    """ Test `attention.Attention` handles a basic case. """
     (
         module,
         (tokens, tokens_mask, query, hidden_state),
@@ -226,7 +205,7 @@ def test_location_relative_attention():
 
 
 def test_location_relative_attention__batch_invariance():
-    """ Test `attention.LocationRelativeAttention` is consistent regardless of the batch size. """
+    """ Test `attention.Attention` is consistent regardless of the batch size. """
     (
         module,
         (tokens, tokens_mask, query, hidden_state),
@@ -262,12 +241,8 @@ def test_location_relative_attention__batch_invariance():
 
 
 def test_location_relative_attention__padding_invariance():
-    """ Test `attention.LocationRelativeAttention` is consistent regardless of the padding. """
-    (
-        module,
-        (tokens, tokens_mask, query, hidden_state),
-        (batch_size, _),
-    ) = _make_attention(dropout=0)
+    """ Test `attention.Attention` is consistent regardless of the padding. """
+    (module, (tokens, tokens_mask, query, hidden_state), _) = _make_attention(dropout=0)
     num_tokens = _make_num_tokens(tokens_mask)
     num_padding = 4
     padded_tokens, padded_tokens_mask, padded_hidden_state = _add_padding(
@@ -295,12 +270,8 @@ def test_location_relative_attention__padding_invariance():
 
 
 def test_location_relative_attention__zero():
-    """ Test `attention.LocationRelativeAttention` doesn't have a discontinuity at zero. """
-    (
-        module,
-        (tokens, _, query, hidden_state),
-        (batch_size, max_num_tokens),
-    ) = _make_attention()
+    """ Test `attention.Attention` doesn't have a discontinuity at zero. """
+    (module, (tokens, _, query, hidden_state), (batch_size, max_num_tokens)) = _make_attention()
     tokens_mask = torch.randn(batch_size, max_num_tokens) < 0.5
     tokens_mask[:, 0] = True  # NOTE: Softmax will fail unless one token is present.
     num_tokens = _make_num_tokens(tokens_mask)
@@ -311,7 +282,7 @@ def test_location_relative_attention__zero():
 
 
 def test_location_relative_attention__window_invariance():
-    """Test `attention.LocationRelativeAttention` is consistent regardless of the window size, if
+    """Test `attention.Attention` is consistent regardless of the window size, if
     the window size is larger than the number of tokens."""
     max_num_tokens = 6
     num_padding = 5

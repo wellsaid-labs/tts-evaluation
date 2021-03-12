@@ -6,6 +6,7 @@ import torch.nn
 from torchnlp.random import fork_rng
 
 import lib.spectrogram_model.encoder
+from lib.spectrogram_model.model import Inputs
 from tests import _utils
 
 assert_almost_equal = partial(_utils.assert_almost_equal, decimal=5)
@@ -196,24 +197,19 @@ def _make_encoder(
     )
 
     # NOTE: Ensure modules like `LayerNorm` perturbs the input instead of being just an identity.
-    for name, parameter in encoder.named_parameters():
-        if parameter.std() == 0:
-            torch.nn.init.normal_(parameter)
+    [torch.nn.init.normal_(p) for p in encoder.parameters() if p.std() == 0]
 
     tokens = torch.randint(1, vocab_size, (batch_size, num_tokens))
     tokens_mask = torch.ones(batch_size, num_tokens, dtype=torch.bool)
     speaker = torch.randn(batch_size, speaker_embedding_size)
-    return encoder, (tokens, tokens_mask, speaker), (num_tokens, batch_size, out_size)
+    input_ = Inputs(tokens, speaker, tokens_mask.sum(dim=1), tokens_mask)
+    return encoder, input_, (num_tokens, batch_size, out_size)
 
 
 def test_encoder():
     """ Test `encoder.Encoder` handles a basic case. """
-    (
-        module,
-        (tokens, tokens_mask, speaker),
-        (num_tokens, batch_size, out_size),
-    ) = _make_encoder()
-    output = module(tokens, tokens_mask, tokens_mask.sum(dim=1), speaker)
+    (module, arg, (num_tokens, batch_size, out_size)) = _make_encoder()
+    output = module(arg)
     assert output.dtype == torch.float
     assert output.shape == (num_tokens, batch_size, out_size)
     output.sum().backward()
@@ -222,32 +218,26 @@ def test_encoder():
 def test_encoder_filter_size():
     """ Test `encoder.Encoder` handles different filter sizes. """
     for filter_size in [1, 3, 5]:
-        (
-            module,
-            (tokens, tokens_mask, speaker),
-            (num_tokens, batch_size, out_size),
-        ) = _make_encoder(convolution_filter_size=filter_size)
-        output = module(tokens, tokens_mask, tokens_mask.sum(dim=1), speaker)
+        module, arg, (num_tokens, batch_size, out_size) = _make_encoder(
+            convolution_filter_size=filter_size
+        )
+        output = module(arg)
         assert output.shape == (num_tokens, batch_size, out_size)
         output.sum().backward()
 
 
 def test_encoder_padding_invariance():
     """ Test `encoder.Encoder` is consistent regardless of the padding. """
-    (
-        module,
-        (tokens, tokens_mask, speaker),
-        (num_tokens, batch_size, out_size),
-    ) = _make_encoder(dropout=0)
-    expected = module(tokens, tokens_mask, tokens_mask.sum(dim=1), speaker)
+    (module, arg, (_, batch_size, _)) = _make_encoder(dropout=0)
+    expected = module(arg)
     expected.sum().backward()
     expected_grad = [p.grad for p in module.parameters() if p.grad is not None]
     module.zero_grad()
     for padding_len in range(1, 10):
         padding = torch.zeros(batch_size, padding_len)
-        padded_tokens = torch.cat([tokens, padding.long()], dim=1)
-        padded_tokens_mask = torch.cat([tokens_mask, padding.bool()], dim=1)
-        result = module(padded_tokens, padded_tokens_mask, tokens_mask.sum(dim=1), speaker)
+        padded_tokens = torch.cat([arg.tokens, padding.long()], dim=1)
+        padded_tokens_mask = torch.cat([arg.tokens_mask, padding.bool()], dim=1)
+        result = module(arg._replace(tokens=padded_tokens, tokens_mask=padded_tokens_mask))
         result.sum().backward()
         result_grad = [p.grad for p in module.parameters() if p.grad is not None]
         module.zero_grad()

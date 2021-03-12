@@ -5,35 +5,50 @@ import torch.nn
 import torch.nn.functional
 from hparams import HParam, configurable
 
-from lib.spectrogram_model.attention import (
-    LocationRelativeAttention,
-    LocationRelativeAttentionHiddenState,
-)
+from lib.spectrogram_model.attention import Attention, AttentionHiddenState
 from lib.spectrogram_model.pre_net import PreNet
 from lib.utils import LSTM, LSTMCell
 
 
-class AutoregressiveDecoderHiddenState(typing.NamedTuple):
+class DecoderHiddenState(typing.NamedTuple):
     """Hidden state from previous time steps, used to predict the next time step.
 
     Args:
         last_attention_context (torch.FloatTensor [batch_size, encoder_output_size]):
-            `LocationRelativeAttention` last output.
+            `Attention` last output.
         last_frame (torch.FloatTensor [1, batch_size, num_frame_channels], optional): The last
             predicted frame.
-        attention_hidden_state: `AutoregressiveDecoder.attention` hidden state.
-        lstm_one_hidden_state: `AutoregressiveDecoder.lstm_layer_one` hidden state.
-        lstm_two_hidden_state: `AutoregressiveDecoder.lstm_layer_two` hidden state.
+        attention_hidden_state: `Decoder.attention` hidden state.
+        lstm_one_hidden_state: `Decoder.lstm_layer_one` hidden state.
+        lstm_two_hidden_state: `Decoder.lstm_layer_two` hidden state.
     """
 
     last_attention_context: torch.Tensor
     last_frame: torch.Tensor
-    attention_hidden_state: LocationRelativeAttentionHiddenState
+    attention_hidden_state: AttentionHiddenState
     lstm_one_hidden_state: typing.Optional[typing.Tuple[torch.Tensor, torch.Tensor]] = None
     lstm_two_hidden_state: typing.Optional[typing.Tuple[torch.Tensor, torch.Tensor]] = None
 
 
-class AutoregressiveDecoder(torch.nn.Module):
+class DecoderOut(typing.NamedTuple):
+    """
+    Args:
+        frames (torch.FloatTensor [num_frames, batch_size, num_frame_channels]): Spectrogram
+            frame(s).
+        stop_tokens (torch.FloatTensor [num_frames, batch_size]): Stopping probability for each
+            frame in logits.
+        alignments (torch.FloatTensor [num_frames, batch_size, num_tokens]): Attention alignment
+            between `frames` and `tokens`.
+        hidden_state
+    """
+
+    frames: torch.Tensor
+    stop_tokens: torch.Tensor
+    alignments: torch.Tensor
+    hidden_state: DecoderHiddenState
+
+
+class Decoder(torch.nn.Module):
     """Predicts the next spectrogram frame, given the previous spectrogram frame.
 
     Reference:
@@ -84,7 +99,7 @@ class AutoregressiveDecoder(torch.nn.Module):
             input_size=lstm_hidden_size + self.encoder_output_size + speaker_embedding_size,
             hidden_size=lstm_hidden_size,
         )
-        self.attention = LocationRelativeAttention(query_hidden_size=lstm_hidden_size)
+        self.attention = Attention(query_hidden_size=lstm_hidden_size)
         self.linear_out = torch.nn.Linear(
             in_features=lstm_hidden_size + self.encoder_output_size + speaker_embedding_size,
             out_features=num_frame_channels,
@@ -96,7 +111,7 @@ class AutoregressiveDecoder(torch.nn.Module):
 
     def _make_initial_hidden_state(
         self, tokens: torch.Tensor, speaker: torch.Tensor
-    ) -> AutoregressiveDecoderHiddenState:
+    ) -> DecoderHiddenState:
         """Make an initial hidden state, if one is not provided.
 
         Args:
@@ -134,10 +149,10 @@ class AutoregressiveDecoder(torch.nn.Module):
             value=0.0,
         )
 
-        return AutoregressiveDecoderHiddenState(
+        return DecoderHiddenState(
             last_attention_context=initial_attention_context,
             last_frame=initial_frame.unsqueeze(0),
-            attention_hidden_state=LocationRelativeAttentionHiddenState(
+            attention_hidden_state=AttentionHiddenState(
                 cumulative_alignment=cumulative_alignment,
                 window_start=torch.zeros(batch_size, device=device, dtype=torch.long),
             ),
@@ -152,9 +167,9 @@ class AutoregressiveDecoder(torch.nn.Module):
         num_tokens: torch.Tensor,
         speaker: torch.Tensor,
         target_frames: typing.Optional[torch.Tensor] = None,
-        hidden_state: typing.Optional[AutoregressiveDecoderHiddenState] = None,
+        hidden_state: typing.Optional[DecoderHiddenState] = None,
         **kwargs,
-    ) -> typing.Tuple[torch.Tensor, torch.Tensor, torch.Tensor, AutoregressiveDecoderHiddenState]:
+    ) -> DecoderOut:
         return super().__call__(
             tokens=tokens,
             tokens_mask=tokens_mask,
@@ -172,9 +187,9 @@ class AutoregressiveDecoder(torch.nn.Module):
         num_tokens: torch.Tensor,
         speaker: torch.Tensor,
         target_frames: typing.Optional[torch.Tensor] = None,
-        hidden_state: typing.Optional[AutoregressiveDecoderHiddenState] = None,
+        hidden_state: typing.Optional[DecoderHiddenState] = None,
         **kwargs,
-    ) -> typing.Tuple[torch.Tensor, torch.Tensor, torch.Tensor, AutoregressiveDecoderHiddenState]:
+    ) -> DecoderOut:
         """
         Args:
             tokens (torch.FloatTensor [num_tokens, batch_size, encoder_output_size])
@@ -184,15 +199,6 @@ class AutoregressiveDecoder(torch.nn.Module):
             target_frames (torch.FloatTensor [num_frames, batch_size, num_frame_channels],
                 optional): Ground truth frames for "teacher forcing" and loss.
             hidden_state: Hidden state from previous time steps, used to predict the next time step.
-
-        Returns:
-            frames (torch.FloatTensor [num_frames, batch_size, num_frame_channels]): Spectrogram
-                frame(s).
-            stop_token (torch.FloatTensor [num_frames, batch_size]): Stopping probability for each
-                frame in logits.
-            alignments (torch.FloatTensor [num_frames, batch_size, num_tokens]): Attention alignment
-                between `frames` and `tokens`.
-            hidden_state
         """
         assert target_frames is None or hidden_state is None, (
             "Either the decoder is conditioned on `target_frames` or "
@@ -305,7 +311,7 @@ class AutoregressiveDecoder(torch.nn.Module):
         # [num_frames, batch_size, num_frame_channels]
         frames = self.linear_out(torch.cat([frames, attention_contexts, speaker], dim=2))
 
-        hidden_state = AutoregressiveDecoderHiddenState(
+        hidden_state = DecoderHiddenState(
             last_attention_context=last_attention_context,
             last_frame=frames[-1].unsqueeze(0),
             attention_hidden_state=attention_hidden_state,
@@ -313,4 +319,4 @@ class AutoregressiveDecoder(torch.nn.Module):
             lstm_two_hidden_state=lstm_two_hidden_state,
         )
 
-        return frames, stop_token, alignments.detach(), hidden_state
+        return DecoderOut(frames, stop_token, alignments.detach(), hidden_state)

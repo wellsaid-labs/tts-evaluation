@@ -369,7 +369,7 @@ def _configure_models():
             lstm_layers=1,
             out_size=encoder_output_size,
         ),
-        lib.spectrogram_model.attention.LocationRelativeAttention.__init__: HParams(
+        lib.spectrogram_model.attention.Attention.__init__: HParams(
             # SOURCE (Tacotron 2):
             # Location features are computed using 32 1-D convolution filters of length 31.
             # SOURCE (Tacotron 2):
@@ -385,7 +385,7 @@ def _configure_models():
             # to set the `window_length`.
             window_length=9,
         ),
-        lib.spectrogram_model.decoder.AutoregressiveDecoder.__init__: HParams(
+        lib.spectrogram_model.decoder.Decoder.__init__: HParams(
             encoder_output_size=encoder_output_size,
             # SOURCE (Tacotron 2):
             # The prediction from the previous time step is first passed through a small
@@ -427,8 +427,8 @@ def _configure_models():
         lib.spectrogram_model.pre_net.PreNet.__init__: HParams(dropout=0.5),
         # NOTE: This dropout approach proved effective in Comet in March 2020.
         lib.spectrogram_model.SpectrogramModel.__init__: HParams(speaker_embed_dropout=0.1),
-        lib.spectrogram_model.attention.LocationRelativeAttention.__init__: HParams(dropout=0.1),
-        lib.spectrogram_model.decoder.AutoregressiveDecoder.__init__: HParams(stop_net_dropout=0.5),
+        lib.spectrogram_model.attention.Attention.__init__: HParams(dropout=0.1),
+        lib.spectrogram_model.decoder.Decoder.__init__: HParams(stop_net_dropout=0.5),
         lib.spectrogram_model.encoder.Encoder.__init__: HParams(dropout=0.1),
     }
     add_config(config)

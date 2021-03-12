@@ -66,7 +66,7 @@ def _window(
     return torch.gather(tensor, dim, indices), indices
 
 
-class LocationRelativeAttentionHiddenState(typing.NamedTuple):
+class AttentionHiddenState(typing.NamedTuple):
     """Hidden state from previous time steps, used to predict the next time step.
 
     Args:
@@ -79,7 +79,7 @@ class LocationRelativeAttentionHiddenState(typing.NamedTuple):
     window_start: torch.Tensor
 
 
-class LocationRelativeAttention(torch.nn.Module):
+class Attention(torch.nn.Module):
     """Query using the Bahdanau attention mechanism given location features.
 
     Reference:
@@ -132,9 +132,9 @@ class LocationRelativeAttention(torch.nn.Module):
         tokens_mask: torch.Tensor,
         num_tokens: torch.Tensor,
         query: torch.Tensor,
-        hidden_state: LocationRelativeAttentionHiddenState,
+        hidden_state: AttentionHiddenState,
         token_skip_warning: float = math.inf,
-    ) -> typing.Tuple[torch.Tensor, torch.Tensor, LocationRelativeAttentionHiddenState]:
+    ) -> typing.Tuple[torch.Tensor, torch.Tensor, AttentionHiddenState]:
         return super().__call__(
             tokens, tokens_mask, num_tokens, query, hidden_state, token_skip_warning
         )
@@ -145,9 +145,9 @@ class LocationRelativeAttention(torch.nn.Module):
         tokens_mask: torch.Tensor,
         num_tokens: torch.Tensor,
         query: torch.Tensor,
-        hidden_state: LocationRelativeAttentionHiddenState,
+        hidden_state: AttentionHiddenState,
         token_skip_warning: float,
-    ) -> typing.Tuple[torch.Tensor, torch.Tensor, LocationRelativeAttentionHiddenState]:
+    ) -> typing.Tuple[torch.Tensor, torch.Tensor, AttentionHiddenState]:
         """
         Args:
             tokens (torch.FloatTensor [num_tokens, batch_size, hidden_size]): Batch of sequences.
@@ -237,8 +237,6 @@ class LocationRelativeAttention(torch.nn.Module):
             if max_tokens_skipped > token_skip_warning:
                 logger.warning("Attention module skipped %d tokens.", max_tokens_skipped)
 
-        hidden_state = LocationRelativeAttentionHiddenState(
-            cumulative_alignment + alignment, window_start
-        )
+        hidden_state = AttentionHiddenState(cumulative_alignment + alignment, window_start)
 
         return context, alignment[:, part], hidden_state

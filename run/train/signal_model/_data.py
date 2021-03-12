@@ -19,7 +19,6 @@ from run.train import _utils, spectrogram_model
 
 
 class _Slice(typing.NamedTuple):
-
     # torch.FloatTensor [num_frames, frame_channels]
     spectrogram: torch.Tensor
 
