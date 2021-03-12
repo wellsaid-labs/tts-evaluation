@@ -722,6 +722,22 @@ def power_spectrogram_to_framed_rms(
     return frame_rms if has_batch_dim else frame_rms.squeeze(0)
 
 
+class Spectrograms(typing.NamedTuple):
+    """
+    Args:
+        db_mel (torch.FloatTensor [batch_size  (optional), num_frames, num_mel_bins]):
+            A spectrogram with the mel scale for frequency and decibel scale for loudness.
+        db (torch.FloatTensor [batch_size (optional), num_frames, fft_length // 2 + 1]):
+            A spectrogram with a decibel scale for loudness.
+        amp (torch.FloatTensor [batch_size (optional), num_frames, fft_length // 2 + 1]):
+            A spectrogram with a amplitude scale for loudness.
+    """
+
+    db_mel: torch.Tensor
+    db: torch.Tensor
+    amp: torch.Tensor
+
+
 class SignalTodBMelSpectrogram(torch.nn.Module):
     """Compute a dB-mel-scaled spectrogram from signal.
 
@@ -814,26 +830,29 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
         self.register_buffer("weighting", weighting)
 
     @typing.overload
-    def forward(
+    def __call__(
         self,
         signal: torch.Tensor,
-        intermediate: typing.Literal[False],
-        aligned: bool,
+        intermediate: typing.Literal[False] = False,
+        aligned: bool = False,
     ) -> torch.Tensor:
         ...  # pragma: no cover
 
     @typing.overload
-    def forward(
+    def __call__(
         self,
         signal: torch.Tensor,
         intermediate: typing.Literal[True],
-        aligned: bool,
-    ) -> typing.Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        aligned: bool = False,
+    ) -> Spectrograms:
         ...  # pragma: no cover
+
+    def __call__(self, *args, **kwargs):
+        return super().__call__(*args, **kwargs)
 
     def forward(
         self, signal: torch.Tensor, intermediate: bool = False, aligned: bool = False
-    ) -> typing.Union[typing.Tuple[torch.Tensor, torch.Tensor, torch.Tensor], torch.Tensor]:
+    ) -> typing.Union[Spectrograms, torch.Tensor]:
         """Compute a dB-mel-scaled spectrogram from signal.
 
         NOTE: Iff a batch of signals is padded sufficiently with zeros and the signal length is a
@@ -845,16 +864,6 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
                 returns a `db_spectrogram` and `spectrogram`.
             aligned: If `True` the returned spectrogram is aligned to the signal
                 such that `signal.shape[1] // self.frame_hop == db_mel_spectrogram.shape[1]`
-
-        Returns:
-            db_mel_spectrogram (torch.FloatTensor
-                [batch_size  (optional), num_frames, num_mel_bins]): A spectrogram with the mel
-                scale for frequency, decibel scale for power, and a regular time scale.
-            db_spectrogram (torch.FloatTensor
-                [batch_size (optional), num_frames, fft_length // 2 + 1]): This is only  returned
-                iff `intermediate=True`.
-            spectrogram (torch.FloatTensor [batch_size (optional),
-                num_frames, fft_length // 2 + 1]): This is only returned iff `intermediate=True`.
         """
         assert signal.dtype == torch.float32, "Invalid argument."
         assert isinstance(self.window, torch.Tensor)
@@ -924,7 +933,7 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
             spectrogram = torch.sqrt(torch.clamp(power_spectrogram, min=self.eps)).transpose(-2, -1)
             db_spectrogram = db_spectrogram if has_batch_dim else db_spectrogram.squeeze(0)
             spectrogram = spectrogram if has_batch_dim else spectrogram.squeeze(0)
-            return db_mel_spectrogram, db_spectrogram, spectrogram
+            return Spectrograms(db_mel_spectrogram, db_spectrogram, spectrogram)
         else:
             return db_mel_spectrogram
 

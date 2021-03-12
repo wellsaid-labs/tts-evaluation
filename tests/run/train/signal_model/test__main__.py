@@ -12,6 +12,7 @@ from run.train.signal_model.__main__ import _make_configuration
 from run.train.signal_model._metrics import Metrics
 from run.train.signal_model._worker import (
     _get_data_loaders,
+    _HandleBatchArgs,
     _run_step,
     _State,
     _visualize_inferred,
@@ -53,7 +54,8 @@ def test_integration():
         batch = next(iter(train_loader))
         assert state.step.item() == 0
 
-        _run_step(state, metrics, batch, train_loader, timer)
+        args = (state, train_loader, Context.TRAIN, DatasetType.TRAIN, metrics, timer, batch)
+        _run_step(_HandleBatchArgs(*args))
         assert state.step.item() == 1
 
         metrics.log(lambda l: l[-1:], type_=DatasetType.TRAIN, cadence=Cadence.STEP)

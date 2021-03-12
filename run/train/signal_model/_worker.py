@@ -19,7 +19,7 @@ from torch.nn.parallel import DistributedDataParallel
 from torchnlp.utils import get_total_parameters
 
 import lib
-from lib.audio import SignalTodBMelSpectrogram
+from lib.audio import SignalTodBMelSpectrogram, Spectrograms
 from lib.distributed import get_rank, get_world_size, is_master
 from lib.signal_model import SignalModel, SpectrogramDiscriminator, generate_waveform
 from lib.visualize import plot_mel_spectrogram, plot_spectrogram
@@ -286,19 +286,23 @@ def _get_data_loaders(
     )
 
 
+class _HandleBatchArgs(typing.NamedTuple):
+    state: _State
+    data_loader: DataLoader
+    context: Context
+    dataset_type: DatasetType
+    metrics: Metrics
+    timer: Timer
+    batch: Batch
+    cadence: Cadence = Cadence.STEP
+
+
 @configurable
 def _run_discriminator(
-    state: _State,
-    metrics: Metrics,
-    timer: Timer,
-    batch: Batch,
+    args: _HandleBatchArgs,
     i: int,
-    fake_db_mel_spectrogram: torch.Tensor,
-    fake_db_spectrogram: torch.Tensor,
-    fake_spectrogram: torch.Tensor,
-    real_db_mel_spectrogram: torch.Tensor,
-    real_db_spectrogram: torch.Tensor,
-    real_spectrogram: torch.Tensor,
+    fake_specs: Spectrograms,
+    real_specs: Spectrograms,
     real_label: bool = HParam(),
     fake_label: bool = HParam(),
 ) -> typing.Tuple[torch.Tensor, typing.Callable[..., MetricsValues]]:
@@ -313,39 +317,31 @@ def _run_discriminator(
         ...
         i: The index of the discriminator and discriminator optimizer to use.
         ...
-        fake_spectrogram (torch.FloatTensor [batch_size, num_frames, fft_length // 2 + 1])
-        fake_db_spectrogram (torch.FloatTensor [batch_size, num_frames, fft_length // 2 + 1])
-        fake_db_mel_spectrogram (torch.FloatTensor [batch_size, num_frames, num_mel_bins])
-        real_spectrogram (torch.FloatTensor [batch_size, num_frames, fft_length // 2 + 1])
-        real_db_spectrogram (torch.FloatTensor [batch_size, num_frames, fft_length // 2 + 1])
-        real_db_mel_spectrogram (torch.FloatTensor [batch_size, num_frames, num_mel_bins])
-        ...
 
     Returns:
         generator_loss: (torch.FloatTensor [batch_size]): The generator loss on `fake`.
         ...
     """
-    timer.record_event(timer.MODEL_FORWARD)
-    discriminator = state.discrims[i]
-    discriminator_optimizer = state.discrim_optimizers[i]
-    batch_size = fake_spectrogram.shape[0]
-    device = fake_spectrogram.device
+    args.timer.record_event(args.timer.MODEL_FORWARD)
+    discriminator = args.state.discrims[i]
+    discriminator_optimizer = args.state.discrim_optimizers[i]
+    batch_size = fake_specs.amp.shape[0]
+    device = fake_specs.amp.device
 
     real_labels = torch.full((batch_size,), float(real_label), device=device)
     fake_labels = torch.full((batch_size,), float(fake_label), device=device)
     labels = torch.cat([real_labels, fake_labels])
 
     # NOTE: `detach` to avoid updating the generator.
-    db_mel_spectrogram = torch.cat([real_db_mel_spectrogram, fake_db_mel_spectrogram.detach()])
-    db_spectrogram = torch.cat([real_db_spectrogram, fake_db_spectrogram.detach()])
-    spectrogram = torch.cat([real_spectrogram, fake_spectrogram.detach()])
-    predictions = discriminator(spectrogram, db_spectrogram, db_mel_spectrogram)
-    predictions = typing.cast(torch.Tensor, predictions)
+    db_mel = torch.cat([real_specs.db_mel, fake_specs.db_mel.detach()])
+    db = torch.cat([real_specs.db, fake_specs.db.detach()])
+    amp = torch.cat([real_specs.amp, fake_specs.amp.detach()])
+    predictions = typing.cast(torch.Tensor, discriminator(amp, db, db_mel))
     discriminator_loss = binary_cross_entropy_with_logits(predictions, labels, reduction="none")
     get_discrim_values = partial(
-        metrics.get_discrim_values,
+        args.metrics.get_discrim_values,
         fft_length=discriminator.module.fft_length,
-        batch=batch,
+        batch=args.batch,
         real_logits=predictions[:batch_size],
         fake_logits=predictions[batch_size:],
         discrim_real_losses=discriminator_loss[:batch_size],
@@ -353,14 +349,14 @@ def _run_discriminator(
     )
 
     if discriminator.training:
-        timer.record_event(timer.MODEL_BACKWARD)
+        args.timer.record_event(args.timer.MODEL_BACKWARD)
         discriminator.zero_grad(set_to_none=True)
         discriminator_loss.mean().backward()
         discriminator_optimizer.step()
 
-    timer.record_event(timer.MODEL_FORWARD)
+    args.timer.record_event(args.timer.MODEL_FORWARD)
     # NOTE: Use real labels instead of fake to flip the gradient for the generator.
-    predictions = discriminator(fake_spectrogram, fake_db_spectrogram, fake_db_mel_spectrogram)
+    predictions = discriminator(fake_specs.amp, fake_specs.db, fake_specs.db_mel)
     predictions = typing.cast(torch.Tensor, predictions)
     generator_loss = binary_cross_entropy_with_logits(predictions, real_labels, reduction="none")
     get_discrim_values = partial(
@@ -371,36 +367,7 @@ def _run_discriminator(
     return generator_loss, get_discrim_values
 
 
-def __run_step(state: _State, timer: Timer, metrics: Metrics):
-    timer.record_event(timer.MODEL_STEP)
-
-    # NOTE: `optimizer` will not error if there are no gradients so we check beforehand.
-    params = state.optimizer.param_groups[0]["params"]
-    assert all([p.grad is not None for p in params]), "`None` gradients found."
-
-    # NOTE: Measure the "grad_norm" before `state.step_()`.
-    norm_inf = get_parameter_norm(params, math.inf) if is_master() else torch.tensor(math.nan)
-    assert not is_master() or torch.isfinite(norm_inf), f"Gradient was too large {norm_inf}."
-
-    norm = state.clipper.clip()
-    state.optimizer.step()
-    state.ema.update()
-    state.scheduler.step()
-    state.step.add_(1)
-    state.comet.set_step(typing.cast(int, state.step.item()))
-
-    timer.record_event(timer.LOG_METRICS)
-    norm_inf_ = float(norm_inf.item())
-    metrics.log_optim_metrics(norm, norm_inf_, state.optimizer, state.clipper, cadence=Cadence.STEP)
-
-
-def _run_step(
-    state: _State,
-    metrics: Metrics,
-    batch: Batch,
-    data_loader: DataLoader,
-    timer: Timer,
-):
+def _run_step(args: _HandleBatchArgs):
     """Run the `model` on the next batch from `data_loader`, and maybe update it.
 
     TODO: Example padding shouldn't affect the model loss, at all. For example, at the moment,
@@ -410,68 +377,74 @@ def _run_step(
 
     TODO: Parallelize loop with multiple independent discriminators.
     """
-    timer.record_event(timer.MODEL_FORWARD)
-    signal = state.model(
-        spectrogram=batch.spectrogram.tensor,
-        spectrogram_mask=batch.spectrogram_mask.tensor,
+    args.timer.record_event(args.timer.MODEL_FORWARD)
+    signal = args.state.model(
+        spectrogram=args.batch.spectrogram.tensor,
+        spectrogram_mask=args.batch.spectrogram_mask.tensor,
         pad_input=False,
     )
     signal = typing.cast(torch.Tensor, signal)
 
     loss = torch.tensor(0.0, device=signal.device)
-    get_values_partials = []
-    for i, signal_to_spectrogram_module in enumerate(state.signal_to_spectrogram_modules):
-        signal_to_spec = partial(signal_to_spectrogram_module, intermediate=True)
-        Specs = typing.Tuple[torch.Tensor, torch.Tensor, torch.Tensor]
-        predicted_specs = typing.cast(Specs, signal_to_spec(signal))
-        target_specs = typing.cast(Specs, signal_to_spec(batch.target_signal.tensor))
-
-        l1_loss_ = l1_loss(predicted_specs[0], target_specs[0], reduction="none").mean(dim=1)
-        mse_loss_ = mse_loss(predicted_specs[0], target_specs[0], reduction="none").mean(dim=1)
-        generator_loss, get_discrim_values = _run_discriminator(
-            state, metrics, timer, batch, i, *predicted_specs, *target_specs
-        )
+    get_values = []
+    for i, signal_to_spectrogram in enumerate(args.state.signal_to_spectrogram_modules):
+        pred_specs = signal_to_spectrogram(signal, intermediate=True)
+        gold_specs = signal_to_spectrogram(args.batch.target_signal.tensor, intermediate=True)
+        generator_loss, get_discrim_values = _run_discriminator(args, i, pred_specs, gold_specs)
+        l1_loss_ = l1_loss(pred_specs.db_mel, gold_specs.db_mel, reduction="none").mean(dim=1)
+        mse_loss_ = mse_loss(pred_specs.db_mel, gold_specs.db_mel, reduction="none").mean(dim=1)
         loss += l1_loss_.mean() + mse_loss_.mean() + generator_loss.mean()
 
-        get_model_values = partial(
-            metrics.get_model_values,
-            fft_length=signal_to_spectrogram_module.fft_length,
-            batch=batch,
-            l1_losses=l1_loss_,
-            mse_losses=mse_loss_,
+        fft_length = signal_to_spectrogram.fft_length
+        get_model_values = args.metrics.get_model_values
+        get_values.append(partial(get_model_values, fft_length, args.batch, l1_loss_, mse_loss_))
+        get_values.append(get_discrim_values)
+
+    if args.state.model.training:
+        args.state.model.zero_grad(set_to_none=True)
+        args.timer.record_event(args.timer.MODEL_BACKWARD)
+        (loss / len(args.state.signal_to_spectrogram_modules)).backward()
+
+        args.timer.record_event(args.timer.MODEL_STEP)
+        # NOTE: `optimizer` will not error if there are no gradients so we check beforehand.
+        params = args.state.optimizer.param_groups[0]["params"]
+        assert all([p.grad is not None for p in params]), "`None` gradients found."
+        # NOTE: Measure the "grad_norm" before `state.step_()`.
+        norm_inf = get_parameter_norm(params, math.inf) if is_master() else torch.tensor(math.nan)
+        assert not is_master() or torch.isfinite(norm_inf), f"Gradient was too large {norm_inf}."
+
+        norm = args.state.clipper.clip()
+        args.state.optimizer.step()
+        args.state.ema.update()
+        args.state.scheduler.step()
+        args.state.step.add_(1)
+        args.state.comet.set_step(typing.cast(int, args.state.step.item()))
+
+        args.timer.record_event(args.timer.LOG_METRICS)
+        norm_inf_ = float(norm_inf.item())
+        args.metrics.log_optim_metrics(
+            norm, norm_inf_, args.state.optimizer, args.state.clipper, cadence=args.cadence
         )
-        get_values_partials.extend([get_discrim_values, get_model_values])
 
-    if state.model.training:
-        state.model.zero_grad(set_to_none=True)
-        timer.record_event(timer.MODEL_BACKWARD)
-        (loss / len(state.signal_to_spectrogram_modules)).backward()
-        __run_step(state, timer, metrics)
-
-    timer.record_event(timer.MEASURE_METRICS)
-    values: _utils.MetricsValues = {k: v for p in get_values_partials for k, v in p().items()}
-    values.update(metrics.get_dataset_values(batch))
-    values.update(metrics.get_data_loader_values(data_loader))
-    timer.record_event(timer.GATHER_METRICS)
-    metrics.update(values)
+    args.timer.record_event(args.timer.MEASURE_METRICS)
+    values: _utils.MetricsValues = {k: v for p in get_values for k, v in p().items()}
+    values.update(args.metrics.get_dataset_values(args.batch))
+    values.update(args.metrics.get_data_loader_values(args.data_loader))
+    args.timer.record_event(args.timer.GATHER_METRICS)
+    args.metrics.update(values)
 
 
-def _log_specs(state: _State, target: torch.Tensor, predicted: torch.Tensor, **kwargs):
+def _log_specs(state: _State, gold: torch.Tensor, pred: torch.Tensor, **kwargs):
     """Log the various spectrograms produced by `state.signal_to_spectrogram_modules`."""
-    get_dataset_label_ = partial(get_dataset_label, **kwargs)
-    get_model_label_ = partial(get_model_label, **kwargs)
-    for signal_to_spectrogram_module in state.signal_to_spectrogram_modules:
-        signal_to_spec = partial(signal_to_spectrogram_module, intermediate=True)
-        Specs = typing.Tuple[torch.Tensor, torch.Tensor, torch.Tensor]
-        target_specs = typing.cast(Specs, signal_to_spec(target))
-        predicted_specs = typing.cast(Specs, signal_to_spec(predicted))
-        iterator = zip((get_dataset_label_, get_model_label_), (target_specs, predicted_specs))
-        for get_label, specs in iterator:
-            suffix = "{fft_length}_spectrogram"
-            for name, spec in zip((f"db_mel_{suffix}", f"db_{suffix}", suffix), specs):
-                plot = plot_mel_spectrogram if "_mel_" in name else plot_spectrogram
-                fft_length = signal_to_spectrogram_module.fft_length
-                state.comet.log_figure(get_label(name, fft_length=fft_length), plot(spec))
+    get_labels = (partial(get_dataset_label, **kwargs), partial(get_model_label, **kwargs))
+    signals = (gold, pred)
+    for signal_to_spectrogram in state.signal_to_spectrogram_modules:
+        for get_label, signal in zip(get_labels, signals):
+            for key, spec in signal_to_spectrogram(signal, intermediate=True)._asdict().items():
+                fft_length = signal_to_spectrogram.fft_length
+                label = get_label(f"{key}_{fft_length}_spectrogram", fft_length=fft_length)
+                plot = plot_mel_spectrogram if "_mel" in key else plot_spectrogram
+                state.comet.log_figure(label, plot(spec))
 
 
 @lib.utils.log_runtime
@@ -546,11 +519,7 @@ def _visualize_inferred_end_to_end(
     _log_specs(state, target.to(state.device), predicted, cadence=Cadence.STEP, type_=dataset_type)
 
 
-class _HandleBatch(typing.Protocol):
-    def __call__(
-        self, state: _State, metrics: Metrics, batch: Batch, data_loader: DataLoader, timer: Timer
-    ) -> None:
-        ...
+_HandleBatch = typing.Callable[[_HandleBatchArgs], None]
 
 
 @lib.utils.log_runtime
@@ -563,6 +532,7 @@ def _run_steps(
     **kwargs,
 ):
     """Run the `handle_batch` in a loop over `data_loader` batches."""
+    make_args = partial(_HandleBatchArgs, state, data_loader, context, dataset_type)
     with contextlib.ExitStack() as stack:
         stack.enter_context(set_context(context, state.comet, *state.models))
         stack.enter_context(set_epoch(state.comet, step=state.step.item(), **kwargs))
@@ -578,7 +548,7 @@ def _run_steps(
             if batch is None:
                 break
 
-            handle_batch(state, metrics, batch, data_loader, timer)
+            handle_batch(make_args(metrics, timer, batch))
 
             if Context.TRAIN == context:
                 metrics.log(lambda l: l[-1:], timer, type_=dataset_type, cadence=Cadence.STEP)
