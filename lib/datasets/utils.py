@@ -371,8 +371,6 @@ def make_passages(
     NOTE: This function processes passages in a batch; therefore, it'd be ideal to pass as many
     items at once as possible.
 
-    TODO: Use `asycio` instead of `ThreadPool` for simplicity.
-
     Args:
         dataset: Dataset with a list of documents each with a list of passsages.
         **kwargs: Keyword arguments passed to `make_nonalignments`.

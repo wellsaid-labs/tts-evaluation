@@ -92,7 +92,6 @@ def get_dataset(
     """Define a TTS dataset.
 
     TODO: `normalize_audio` could be used replicate datasets with different audio processing.
-    TODO: Use `asycio` instead of `ThreadPool` for simplicity.
 
     Args:
         datasets: Dictionary of datasets to load.

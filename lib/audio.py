@@ -118,8 +118,6 @@ def _get_audio_metadata(
     NOTE: It's difficult to determine the bash maximum argument length, learn more:
     https://unix.stackexchange.com/questions/45143/what-is-a-canonical-way-to-find-the-actual-maximum-argument-list-length
     https://stackoverflow.com/questions/19354870/bash-command-line-and-input-limit
-
-    TODO: Use `asycio` instead of `ThreadPool` for simplicity.
     """
     if len(set(paths)) != len(paths):
         logger.warning("`_get_audio_metadata` was called with duplicate paths.")

@@ -2,7 +2,6 @@
 # https://stackoverflow.com/questions/33533148/how-do-i-specify-that-the-return-type-of-a-method-is-the-same-as-the-class-itsel
 from __future__ import annotations
 
-import asyncio
 import collections
 import gzip
 import itertools
@@ -16,6 +15,7 @@ import torch.distributed
 import torch.nn
 import torch.nn.functional
 
+import lib
 from lib.environment import IS_TESTING_ENVIRONMENT
 
 logger = logging.getLogger(__name__)
@@ -85,48 +85,34 @@ class DictStore:
     TODO: Look into other compression algorithms like Zstandard:
     https://www.lucidchart.com/techblog/2019/12/06/json-compression-alternative-binary-formats-and-compression-methods/
 
-    TODO: Support multiple simultaneous `update` operations on `master`.
+    NOTE: We use `torch.distributed.gather_object` instead of `torch.distributed.TCPStore` because
+    of these issues:
+    https://github.com/pytorch/pytorch/issues/53872
+    https://github.com/pytorch/pytorch/issues/53840
 
     Args:
         data: On the master process, this is a merged collection of data from the worker processes.
     """
 
-    num_instances = -1
-
-    def __init__(
-        self,
-        store: torch.distributed.TCPStore,
-        world_size: typing.Optional[int] = None,
-        is_master_: typing.Optional[bool] = None,
-        rank: typing.Optional[int] = None,
-        identifier: typing.Optional[str] = None,
-    ):
-        DictStore.num_instances += 1
-        name = self.__class__.__name__
-        identifier = f"{name}/{DictStore.num_instances}" if identifier is None else identifier
-        self._prefix = identifier
-        self._store = torch.distributed.PrefixStore(self._prefix, store)
-        self._operation = -1
-        self._world_size = get_world_size() if world_size is None else world_size
-        self._is_master = is_master() if is_master_ is None else is_master_
-        self._rank = get_rank() if rank is None else rank
+    def __init__(self):
         self.data: DictStoreDataCollection = {}
+        self._operation = -1
 
-    async def _get(self, key: str) -> DictStoreData:
+    @staticmethod
+    def _decode(encoded: str) -> DictStoreData:
         """
         NOTE: Learn about JSONs compact encoding, here: https://docs.python.org/3/library/json.html
         """
-        result = json.loads(gzip.decompress(bytes.fromhex(self._store.get(key).decode())).decode())
-        assert self._store.delete_key(key)
-        return result
+        return json.loads(gzip.decompress(bytes.fromhex(encoded)).decode())
 
-    async def _gets(self, keys: typing.List[str]) -> typing.List[DictStoreData]:
-        tasks = tuple(self._get(k) for k in keys)
-        return typing.cast(typing.List[DictStoreData], await asyncio.gather(*tasks))
+    @staticmethod
+    def _encode(values: DictStoreData) -> str:
+        return gzip.compress(json.dumps(values, separators=(",", ":")).encode()).hex()
 
-    def _set(self, values: DictStoreData):
-        encoded = gzip.compress(json.dumps(values, separators=(",", ":")).encode()).hex()
-        self._store.set(f"/{self._rank}/{self._operation}", encoded)
+    def _gather(self, data: DictStoreData) -> typing.Optional[typing.List[DictStoreData]]:
+        output = [None for _ in range(get_world_size())] if is_master() else None
+        torch.distributed.gather_object(self._encode(data), output, dst=get_master_rank())
+        return [self._decode(typing.cast(str, o)) for o in output] if is_master() else None
 
     def _update(self, data: typing.List[DictStoreData]):
         """Shallow update `self.data` with `data`."""
@@ -140,15 +126,10 @@ class DictStore:
                 self.data[key] = [tuple() for _ in range(self._operation)]
             self.data[key].append(group)
 
+    @lib.utils.log_runtime
     def update(self, data: DictStoreData):
         """Shallow update the master process `self.data` with `data`."""
         self._operation += 1
-        if self._is_master:
-            ranks = [i for i in range(self._world_size) if i != get_master_rank()]
-            keys = [f"/{i}/{self._operation}" for i in ranks]
-            # NOTE: `wait` may deadlock if multiple `keys` are passed, learn more:
-            # https://github.com/pytorch/pytorch/issues/53840
-            [self._store.wait([key]) for key in keys]
-            self._update([data] + asyncio.run(self._gets(keys)))
-        else:
-            self._set(data)
+        merged = self._gather(data)
+        if merged is not None:
+            self._update(merged)

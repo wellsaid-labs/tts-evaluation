@@ -227,10 +227,7 @@ def metadata(
     paths: typing.List[pathlib.Path] = typer.Argument(..., exists=True, dir_okay=False),
     max_parallel: int = typer.Option(16),
 ):
-    """Print the metadata for each file in PATHS.
-
-    TODO: Use `asycio` instead of `ThreadPool` for simplicity.
-    """
+    """Print the metadata for each file in PATHS."""
     num_parallel = lib.utils.clamp(len(paths), max_=max_parallel)
     with multiprocessing.pool.ThreadPool(num_parallel) as pool:
         results = list(tqdm.tqdm(pool.imap_unordered(_metadata, paths), total=len(paths)))
