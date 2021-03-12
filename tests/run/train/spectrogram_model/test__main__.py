@@ -7,7 +7,13 @@ from run._config import Cadence, DatasetType
 from run.train._utils import Context, Timer, set_context
 from run.train.spectrogram_model.__main__ import _make_configuration
 from run.train.spectrogram_model._metrics import Metrics
-from run.train.spectrogram_model._worker import _get_data_loaders, _run_inference, _run_step, _State
+from run.train.spectrogram_model._worker import (
+    _get_data_loaders,
+    _HandleBatchArgs,
+    _run_inference,
+    _run_step,
+    _State,
+)
 from tests.run.train._utils import mock_distributed_data_parallel, setup_experiment
 
 
@@ -21,10 +27,10 @@ def test_integration():
         state = _State.from_dataset(train_dataset, dev_dataset, comet, device)
     assert state.model.module == state.model  # Enusre the mock worked
     # fmt: off
-    assert state.input_encoder.grapheme_encoder.vocab == [
+    assert sorted(state.input_encoder.grapheme_encoder.vocab) == sorted([
         '<pad>', '<unk>', '</s>', '<s>', '<copy>', 'a', 't', ' ', 'w', 'l', 's', ',', 'i', 'n', 'f',
         'o', 'r', 'd', 'h', 'e', 'b', 'y', '.', 'm', 'u', 'k', 'g'
-    ]
+    ])
     # fmt: on
     speakers = state.input_encoder.speaker_encoder.vocab
     assert speakers == list(train_dataset.keys())
@@ -43,7 +49,8 @@ def test_integration():
         batch = next(iter(train_loader))
         assert state.step.item() == 0
 
-        _run_step(state, metrics, batch, train_loader, DatasetType.TRAIN, timer, True)
+        args = (state, train_loader, Context.TRAIN, DatasetType.TRAIN, metrics, timer, batch, True)
+        _run_step(_HandleBatchArgs(*args))
         assert state.step.item() == 1
 
         # fmt: off
@@ -86,7 +93,8 @@ def test_integration():
         timer = Timer()
         metrics = Metrics(comet, speakers)
         batch = next(iter(train_loader))
-        _run_inference(state, metrics, batch, dev_loader, DatasetType.DEV, timer, True)
+        args = (state, dev_loader, Context.EVALUATE, DatasetType.DEV, metrics, timer, batch, True)
+        _run_inference(_HandleBatchArgs(*args))
         assert state.step.item() == 1
         total = metrics.data[metrics.NUM_REACHED_MAX][0][0] + metrics.data[metrics.NUM_SPANS][0][0]
         assert total == 1
@@ -99,4 +107,3 @@ def test_integration():
         module.side_effect = mock_distributed_data_parallel
         loaded = state.from_checkpoint(state.to_checkpoint(), comet, device)
     assert state.step == loaded.step
-    assert metrics._store.num_keys() == 1

@@ -68,6 +68,9 @@ def setup_experiment(mock_urlretrieve):
     # Create training state
     comet = CometMLExperiment(disabled=True, project_name="project name")
     device = torch.device("cpu")
+    torch.distributed.init_process_group(
+        backend="gloo", init_method="tcp://127.0.0.1:23456", world_size=1, rank=0
+    )
     return train_dataset, dev_dataset, comet, device
 
 

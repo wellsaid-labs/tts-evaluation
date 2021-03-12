@@ -252,43 +252,36 @@ def _get_data_loaders(
     )
 
 
-def _visualize_source_vs_target(
-    state: _State,
-    batch: Batch,
-    predicted_spectrogram: torch.Tensor,
-    predicted_stop_token: torch.Tensor,
-    predicted_alignments: torch.Tensor,
-    dataset_type: DatasetType,
-    cadence: Cadence,
-):
-    """Visualize predictions as compared to the original `batch`.
+class _HandleBatchArgs(typing.NamedTuple):
+    state: _State
+    data_loader: DataLoader
+    context: Context
+    dataset_type: DatasetType
+    metrics: Metrics
+    timer: Timer
+    batch: Batch
+    visualize: bool
+    cadence: Cadence = Cadence.STEP
 
-    Args:
-        ...
-        predicted_spectrogram (torch.FloatTensor [num_frames, batch_size, frame_channels]):
-            Spectrogram frames.
-        predicted_stop_token (torch.FloatTensor [num_frames, batch_size]): Stopping probability for
-            each frame.
-        predicted_alignments (torch.FloatTensor [num_frames, batch_size, num_tokens]): Attention
-            alignments between `frames` and `tokens`.
-        ...
-    """
+
+def _visualize_source_vs_target(args: _HandleBatchArgs, preds: lib.spectrogram_model.Forward):
+    """Visualize predictions as compared to the original `batch`."""
     if not is_master():
         return
 
-    item = random.randint(0, len(batch) - 1)
-    spectrogram_length = int(batch.spectrogram.lengths[0, item].item())
-    text_length = int(batch.encoded_phonemes.lengths[0, item].item())
+    item = random.randint(0, len(args.batch) - 1)
+    spectrogram_length = int(args.batch.spectrogram.lengths[0, item].item())
+    text_length = int(args.batch.encoded_phonemes.lengths[0, item].item())
 
     # predicted_spectrogram, gold_spectrogram [num_frames, frame_channels]
-    predicted_spectrogram = predicted_spectrogram[:spectrogram_length, item]
-    gold_spectrogram = batch.spectrogram.tensor[:spectrogram_length, item]
+    predicted_spectrogram = preds.frames[:spectrogram_length, item]
+    gold_spectrogram = args.batch.spectrogram.tensor[:spectrogram_length, item]
 
     predicted_delta = abs(gold_spectrogram - predicted_spectrogram)
-    predicted_alignments = predicted_alignments[:spectrogram_length, item, :text_length]
-    predicted_stop_token = predicted_stop_token[:spectrogram_length, item]
-    model = partial(get_model_label, cadence=cadence)
-    dataset = partial(get_dataset_label, cadence=cadence, type_=dataset_type)
+    predicted_alignments = preds.alignments[:spectrogram_length, item, :text_length]
+    predicted_stop_token = preds.stop_tokens[:spectrogram_length, item]
+    model = partial(get_model_label, cadence=args.cadence)
+    dataset = partial(get_dataset_label, cadence=args.cadence, type_=args.dataset_type)
     figures = {
         model("spectrogram_delta"): lib.visualize.plot_mel_spectrogram(predicted_delta),
         model("predicted_spectrogram"): lib.visualize.plot_mel_spectrogram(predicted_spectrogram),
@@ -296,18 +289,12 @@ def _visualize_source_vs_target(
         model("stop_token"): lib.visualize.plot_logits(predicted_stop_token),
         dataset("gold_spectrogram"): lib.visualize.plot_mel_spectrogram(gold_spectrogram),
     }
-    state.comet.log_figures(figures)
+    args.state.comet.log_figures(figures)
 
 
 @configurable
 def _run_step(
-    state: _State,
-    metrics: Metrics,
-    batch: Batch,
-    data_loader: DataLoader,
-    dataset_type: DatasetType,
-    timer: Timer,
-    visualize: bool = False,
+    args: _HandleBatchArgs,
     spectrogram_loss_scalar: float = HParam(),
     stop_token_min_loss: float = HParam(),
     average_spectrogram_length: float = HParam(),
@@ -319,8 +306,8 @@ def _run_step(
     https://pytorch.org/tutorials/recipes/recipes/tuning_guide.html#pre-allocate-memory-in-case-of-variable-input-length
     TODO: Maybe enable the CUDNN auto tuner:
     https://pytorch.org/tutorials/recipes/recipes/tuning_guide.html#enable-cudnn-auto-tuner
-    TODO: Use `asycio` to measure, gather, and reduce metrics without blocking training. This could
-    help improve performance by as much as ~9% (70ms of 800ms).
+    TODO: Use multithreading to overlap measure, gather, and reduction metrics operations with
+    the `backwards` model pass.
 
     Args:
         ...
@@ -330,32 +317,32 @@ def _run_step(
         average_spectrogram_length: The training dataset average spectrogram length. It is used
             to normalize the loss magnitude.
     """
-    timer.record_event(timer.MODEL_FORWARD)
-    predictions = state.model(
-        tokens=batch.encoded_phonemes.tensor,
-        speaker=batch.encoded_speaker.tensor,
-        target_frames=batch.spectrogram.tensor,
-        num_tokens=batch.encoded_phonemes.lengths,
-        tokens_mask=batch.encoded_phonemes_mask.tensor,
-        target_mask=batch.spectrogram_mask.tensor,
+    args.timer.record_event(args.timer.MODEL_FORWARD)
+    preds = args.state.model(
+        tokens=args.batch.encoded_phonemes.tensor,
+        speaker=args.batch.encoded_speaker.tensor,
+        target_frames=args.batch.spectrogram.tensor,
+        num_tokens=args.batch.encoded_phonemes.lengths,
+        tokens_mask=args.batch.encoded_phonemes_mask.tensor,
+        target_mask=args.batch.spectrogram_mask.tensor,
         mode=lib.spectrogram_model.Mode.FORWARD,
     )
-    frames, stop_token, alignments = typing.cast(typing.Tuple, predictions)
+    preds = typing.cast(lib.spectrogram_model.Forward, preds)
 
     # SOURCE: Tacotron 2
     # We minimize the summed mean squared error (MSE) from before and after the post-net to aid
     # convergence.
-    spectrogram_loss = mse_loss(frames, batch.spectrogram.tensor, reduction="none")
-    spectrogram_loss *= batch.spectrogram_mask.tensor.unsqueeze(2)
+    spectrogram_loss = mse_loss(preds.frames, args.batch.spectrogram.tensor, reduction="none")
+    spectrogram_loss *= args.batch.spectrogram_mask.tensor.unsqueeze(2)
 
     # SOURCE (Tacotron 2 Author):
     # The author confirmed they used BCE loss in Google Chat.
-    target = batch.stop_token.tensor
-    stop_token_loss = binary_cross_entropy_with_logits(stop_token, target, reduction="none")
-    stop_token_loss *= batch.spectrogram_mask.tensor
+    target = args.batch.stop_token.tensor
+    stop_token_loss = binary_cross_entropy_with_logits(preds.stop_tokens, target, reduction="none")
+    stop_token_loss *= args.batch.spectrogram_mask.tensor
 
-    if state.model.training:
-        state.model.zero_grad(set_to_none=True)
+    if args.state.model.training:
+        args.state.model.zero_grad(set_to_none=True)
 
         # NOTE: We sum over the `num_frames` dimension to ensure that we don't bias based on
         # `num_frames`. For example, a larger `num_frames` means that the denominator is larger;
@@ -371,166 +358,124 @@ def _run_step(
         stop_token_loss_ = (stop_token_loss.sum(dim=0) / average_spectrogram_length).mean()
         stop_token_loss_ = (stop_token_loss_ - stop_token_min_loss).abs() + stop_token_min_loss
 
-        timer.record_event(timer.MODEL_BACKWARD)
+        args.timer.record_event(args.timer.MODEL_BACKWARD)
         (spectrogram_loss_ + stop_token_loss_).backward()
 
-        timer.record_event(timer.MODEL_STEP)
+        args.timer.record_event(args.timer.MODEL_STEP)
         # NOTE: `optimizer` will not error if there are no gradients so we check beforehand.
-        params = state.optimizer.param_groups[0]["params"]
+        params = args.state.optimizer.param_groups[0]["params"]
         assert all([p.grad is not None for p in params]), "`None` gradients found."
         # NOTE: Measure the "grad_norm" before `clipper.clip()`.
         norm_inf = get_parameter_norm(params, math.inf) if is_master() else torch.tensor(math.nan)
         assert not is_master() or torch.isfinite(norm_inf), f"Gradient was too large {norm_inf}."
-        norm = state.clipper.clip()
-        state.optimizer.step()
-        state.scheduler.step()
-        timer.record_event(timer.LOG_METRICS)
-        state.step.add_(1)
-        state.comet.set_step(typing.cast(int, state.step.item()))
+        norm = args.state.clipper.clip()
+        args.state.optimizer.step()
+        args.state.scheduler.step()
+        args.timer.record_event(args.timer.LOG_METRICS)
+        args.state.step.add_(1)
+        args.state.comet.set_step(typing.cast(int, args.state.step.item()))
+
         norm_inf_ = float(norm_inf.item())
-        metrics.log_optim_metrics(
-            norm, norm_inf_, state.optimizer, state.clipper, cadence=Cadence.STEP
+        args.metrics.log_optim_metrics(
+            norm, norm_inf_, args.state.optimizer, args.state.clipper, cadence=args.cadence
         )
 
-    if visualize:
-        timer.record_event(timer.VISUALIZE_PREDICTIONS)
-        _visualize_source_vs_target(
-            state, batch, frames, stop_token, alignments, dataset_type, Cadence.STEP
-        )
+    if args.visualize:
+        args.timer.record_event(args.timer.VISUALIZE_PREDICTIONS)
+        _visualize_source_vs_target(args, preds)
 
-    timer.record_event(timer.MEASURE_METRICS)
-    stop_threshold = typing.cast(float, state.model.module.stop_threshold)
-    spectrogram_mask = batch.spectrogram_mask.tensor
-    spectrogram_lengths = batch.spectrogram.lengths
+    args.timer.record_event(args.timer.MEASURE_METRICS)
+    stop_threshold = typing.cast(float, args.state.model.module.stop_threshold)
+    spectrogram_mask = args.batch.spectrogram_mask.tensor
+    spectrogram_lengths = args.batch.spectrogram.lengths
     values: _utils.MetricsValues = {
-        **metrics.get_dataset_values(batch),
-        **metrics.get_alignment_values(batch, alignments, spectrogram_lengths, spectrogram_mask),
-        **metrics.get_loudness_values(batch, frames, spectrogram_mask),
-        **metrics.get_data_loader_values(data_loader),
-        **metrics.get_stop_token_values(batch, stop_token, stop_threshold),
-        metrics.SPECTROGRAM_LOSS_SUM: float(spectrogram_loss.sum().item()),
-        metrics.STOP_TOKEN_LOSS_SUM: float(stop_token_loss.sum().item()),
+        **args.metrics.get_dataset_values(args.batch),
+        **args.metrics.get_alignment_values(
+            args.batch, preds.alignments, spectrogram_lengths, spectrogram_mask
+        ),
+        **args.metrics.get_loudness_values(args.batch, preds.frames, spectrogram_mask),
+        **args.metrics.get_data_loader_values(args.data_loader),
+        **args.metrics.get_stop_token_values(args.batch, preds.stop_tokens, stop_threshold),
+        args.metrics.SPECTROGRAM_LOSS_SUM: float(spectrogram_loss.sum().item()),
+        args.metrics.STOP_TOKEN_LOSS_SUM: float(stop_token_loss.sum().item()),
     }
-    timer.record_event(timer.GATHER_METRICS)
-    metrics.update(values)
+    args.timer.record_event(args.timer.GATHER_METRICS)
+    args.metrics.update(values)
 
 
-def _visualize_inferred(
-    state: _State,
-    batch: Batch,
-    predicted_spectrogram: torch.Tensor,
-    predicted_stop_token: torch.Tensor,
-    predicted_alignments: torch.Tensor,
-    predicted_lengths: torch.Tensor,
-    dataset_type: DatasetType,
-    cadence: Cadence,
-):
+def _visualize_inferred(args: _HandleBatchArgs, preds: lib.spectrogram_model.Infer):
     """Run in inference mode and visualize results.
 
     TODO: Visualize any related text annotations.
-
-    Args:
-        ...
-        predicted_spectrogram (torch.FloatTensor [num_frames, batch_size, frame_channels]):
-            Spectrogram frames.
-        predicted_stop_token (torch.FloatTensor [num_frames, batch_size]): Stopping probability for
-            each frame.
-        predicted_alignments (torch.FloatTensor [num_frames, batch_size, num_tokens]): Attention
-            alignments between `frames` and `tokens`.
-        predicted_lengths (torch.LongTensor [1, batch_size]): The sequence length.
-        ...
     """
     if not is_master():
         return
 
-    item = random.randint(0, len(batch) - 1)
-    num_frames = int(batch.spectrogram.lengths[0, item].item())
-    num_frames_predicted = int(predicted_lengths[0, item].item())
-    text_length = int(batch.encoded_phonemes.lengths[0, item].item())
+    item = random.randint(0, len(args.batch) - 1)
+    num_frames = int(args.batch.spectrogram.lengths[0, item].item())
+    num_frames_predicted = int(preds.lengths[0, item].item())
+    text_length = int(args.batch.encoded_phonemes.lengths[0, item].item())
     # gold_spectrogram [num_frames, frame_channels]
-    gold_spectrogram = batch.spectrogram.tensor[:num_frames, item]
+    gold_spectrogram = args.batch.spectrogram.tensor[:num_frames, item]
     # spectrogram [num_frames, frame_channels]
-    predicted_spectrogram = predicted_spectrogram[:num_frames_predicted, item]
-    predicted_alignments = predicted_alignments[:num_frames_predicted, item, :text_length]
-    predicted_stop_token = predicted_stop_token[:num_frames_predicted, item]
+    predicted_spectrogram = preds.frames[:num_frames_predicted, item]
+    predicted_alignments = preds.alignments[:num_frames_predicted, item, :text_length]
+    predicted_stop_token = preds.stop_tokens[:num_frames_predicted, item]
 
-    model = partial(get_model_label, cadence=cadence)
-    dataset = partial(get_dataset_label, cadence=cadence, type_=dataset_type)
+    model = partial(get_model_label, cadence=args.cadence)
+    dataset = partial(get_dataset_label, cadence=args.cadence, type_=args.dataset_type)
     figures = {
         dataset("gold_spectrogram"): lib.visualize.plot_mel_spectrogram(gold_spectrogram),
         model("predicted_spectrogram"): lib.visualize.plot_mel_spectrogram(predicted_spectrogram),
         model("alignment"): lib.visualize.plot_alignments(predicted_alignments),
         model("stop_token"): lib.visualize.plot_logits(predicted_stop_token),
     }
-    state.comet.log_figures(figures)
+    args.state.comet.log_figures(figures)
     audio = {
         "predicted_griffin_lim_audio": lib.audio.griffin_lim(predicted_spectrogram.cpu().numpy()),
         "gold_griffin_lim_audio": lib.audio.griffin_lim(gold_spectrogram.cpu().numpy()),
-        "gold_audio": batch.audio[item].cpu().numpy(),
+        "gold_audio": args.batch.audio[item].cpu().numpy(),
     }
-    state.comet.log_html_audio(
+    args.state.comet.log_html_audio(
         audio=audio,
-        context=state.comet.context,
-        text=batch.spans[item].script,
-        speaker=batch.spans[item].speaker,
+        context=args.state.comet.context,
+        text=args.batch.spans[item].script,
+        speaker=args.batch.spans[item].speaker,
         predicted_loudness=get_average_db_rms_level(predicted_spectrogram.unsqueeze(1)).item(),
         gold_loudness=get_average_db_rms_level(gold_spectrogram.unsqueeze(1)).item(),
     )
 
 
-def _run_inference(
-    state: _State,
-    metrics: Metrics,
-    batch: Batch,
-    data_loader: DataLoader,
-    dataset_type: DatasetType,
-    timer: Timer,
-    visualize: bool = False,
-):
-    """Run the model in inference mode, and measure it's results.
-
-    Args:
-        ...
-        visualize: If `True` visualize the results with `comet`.
-    """
-    timer.record_event(timer.MODEL_FORWARD)
-    frames, stop_tokens, alignments, lengths, reached_max = state.model.module(
-        batch.encoded_phonemes.tensor,
-        batch.encoded_speaker.tensor,
-        batch.encoded_phonemes.lengths,
+def _run_inference(args: _HandleBatchArgs):
+    """Run the model in inference mode, and measure it's results."""
+    args.timer.record_event(args.timer.MODEL_FORWARD)
+    preds = args.state.model.module(
+        args.batch.encoded_phonemes.tensor,
+        args.batch.encoded_speaker.tensor,
+        args.batch.encoded_phonemes.lengths,
         mode=lib.spectrogram_model.Mode.INFER,
     )
+    preds = typing.cast(lib.spectrogram_model.Infer, preds)
 
-    if visualize:
-        timer.record_event(timer.VISUALIZE_PREDICTIONS)
-        _visualize_inferred(
-            state, batch, frames, stop_tokens, alignments, lengths, dataset_type, Cadence.STEP
-        )
+    if args.visualize:
+        args.timer.record_event(args.timer.VISUALIZE_PREDICTIONS)
+        _visualize_inferred(args, preds)
 
-    timer.record_event(timer.MEASURE_METRICS)
-    mask = lengths_to_mask(lengths, device=lengths.device).transpose(0, 1)
+    args.timer.record_event(args.timer.MEASURE_METRICS)
+    mask = lengths_to_mask(preds.lengths, device=preds.lengths.device).transpose(0, 1)
     values: _utils.MetricsValues = {
-        **metrics.get_dataset_values(batch, reached_max),
-        **metrics.get_alignment_values(batch, alignments, lengths, mask, reached_max),
-        **metrics.get_loudness_values(batch, frames, mask, reached_max),
-        **metrics.get_data_loader_values(data_loader),
+        **args.metrics.get_dataset_values(args.batch, preds.reached_max),
+        **args.metrics.get_alignment_values(
+            args.batch, preds.alignments, preds.lengths, mask, preds.reached_max
+        ),
+        **args.metrics.get_loudness_values(args.batch, preds.frames, mask, preds.reached_max),
+        **args.metrics.get_data_loader_values(args.data_loader),
     }
-    timer.record_event(timer.GATHER_METRICS)
-    metrics.update(values)
+    args.timer.record_event(args.timer.GATHER_METRICS)
+    args.metrics.update(values)
 
 
-class _HandleBatch(typing.Protocol):
-    def __call__(
-        self,
-        state: _State,
-        metrics: Metrics,
-        batch: Batch,
-        data_loader: DataLoader,
-        dataset_type: DatasetType,
-        timer: Timer,
-        visualize: bool,
-    ) -> None:
-        ...
+_HandleBatch = typing.Callable[[_HandleBatchArgs], None]
 
 
 @lib.utils.log_runtime
@@ -543,6 +488,7 @@ def _run_steps(
     **kwargs,
 ):
     """Run the `handle_batch` in a loop over `data_loader` batches."""
+    make_args = partial(_HandleBatchArgs, state, data_loader, context, dataset_type)
     with contextlib.ExitStack() as stack:
         stack.enter_context(set_context(context, state.comet, state.model))
         stack.enter_context(set_epoch(state.comet, step=state.step.item(), **kwargs))
@@ -557,7 +503,7 @@ def _run_steps(
                 break
 
             index, batch = item
-            handle_batch(state, metrics, batch, data_loader, dataset_type, timer, index == 0)
+            handle_batch(make_args(metrics, timer, batch, index == 0))
 
             if Context.TRAIN == context:
                 metrics.log(lambda l: l[-1:], timer, type_=dataset_type, cadence=Cadence.STEP)
