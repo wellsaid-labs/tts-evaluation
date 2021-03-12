@@ -88,6 +88,8 @@ Setup your local development environment by following [these instructions](LOCAL
 
    When prompted, enter your sudo password.
 
+   💡 TIP: The `VM_NAME` filter can be `$NAME` or any relevant substring in the `$VM_NAME`.
+
 1. Leave this process running until you've started training. This will allow you to make any
    hot-fixes to your code in case you run into an error.
 
