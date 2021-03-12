@@ -126,7 +126,6 @@ class DictStore:
                 self.data[key] = [tuple() for _ in range(self._operation)]
             self.data[key].append(group)
 
-    @lib.utils.log_runtime
     def update(self, data: DictStoreData):
         """Shallow update the master process `self.data` with `data`."""
         self._operation += 1

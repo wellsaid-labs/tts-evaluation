@@ -68,8 +68,7 @@ def setup_experiment(mock_urlretrieve):
     # Create training state
     comet = CometMLExperiment(disabled=True, project_name="project name")
     device = torch.device("cpu")
-    store = torch.distributed.TCPStore("127.0.0.1", 29500, 0, True)
-    return train_dataset, dev_dataset, comet, device, store
+    return train_dataset, dev_dataset, comet, device
 
 
 def mock_distributed_data_parallel(module, *_, **__):

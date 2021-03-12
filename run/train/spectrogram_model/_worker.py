@@ -535,7 +535,6 @@ class _HandleBatch(typing.Protocol):
 
 @lib.utils.log_runtime
 def _run_steps(
-    store: torch.distributed.TCPStore,
     state: _State,
     context: Context,
     dataset_type: DatasetType,
@@ -548,7 +547,7 @@ def _run_steps(
         stack.enter_context(set_context(context, state.comet, state.model))
         stack.enter_context(set_epoch(state.comet, step=state.step.item(), **kwargs))
 
-        metrics = Metrics(store, state.comet, state.input_encoder.speaker_encoder.vocab)
+        metrics = Metrics(state.comet, state.input_encoder.speaker_encoder.vocab)
         iterator = enumerate(iter(data_loader))
         while True:
             timer = Timer()
@@ -569,7 +568,6 @@ def _run_steps(
 
 def run_worker(
     device: torch.device,
-    store: torch.distributed.TCPStore,
     comet: CometMLExperiment,
     checkpoint: typing.Optional[Checkpoint],
     checkpoints_directory: pathlib.Path,
@@ -594,5 +592,5 @@ def run_worker(
     ]
     while True:
         steps_per_epoch = train_loader.num_steps_per_epoch
-        [_run_steps(store, state, *args, steps_per_epoch=steps_per_epoch) for args in contexts]
+        [_run_steps(state, *args, steps_per_epoch=steps_per_epoch) for args in contexts]
         save_checkpoint(state.to_checkpoint(), checkpoints_directory, f"step_{state.step.item()}")

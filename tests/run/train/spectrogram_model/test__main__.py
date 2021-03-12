@@ -12,7 +12,7 @@ from tests.run.train._utils import mock_distributed_data_parallel, setup_experim
 
 
 def test_integration():
-    train_dataset, dev_dataset, comet, device, store = setup_experiment()
+    train_dataset, dev_dataset, comet, device = setup_experiment()
 
     add_config(_make_configuration(train_dataset, dev_dataset, True))
 
@@ -39,7 +39,7 @@ def test_integration():
     # Test `_run_step` with `Metrics` and `_State`
     with set_context(Context.TRAIN, comet, state.model):
         timer = Timer()
-        metrics = Metrics(store, comet, speakers)
+        metrics = Metrics(comet, speakers)
         batch = next(iter(train_loader))
         assert state.step.item() == 0
 
@@ -84,7 +84,7 @@ def test_integration():
     # Test `_run_inference` with `Metrics` and `_State`
     with set_context(Context.EVALUATE_INFERENCE, comet, state.model):
         timer = Timer()
-        metrics = Metrics(store, comet, speakers)
+        metrics = Metrics(comet, speakers)
         batch = next(iter(train_loader))
         _run_inference(state, metrics, batch, dev_loader, DatasetType.DEV, timer, True)
         assert state.step.item() == 1

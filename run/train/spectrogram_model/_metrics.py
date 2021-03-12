@@ -196,12 +196,11 @@ class Metrics(_utils.Metrics):
 
     def __init__(
         self,
-        store: torch.distributed.TCPStore,
         comet: CometMLExperiment,
         speakers: typing.List[lib.datasets.Speaker],
         **kwargs,
     ):
-        super().__init__(store, comet, **kwargs)
+        super().__init__(comet, **kwargs)
         self.comet = comet
         self.speakers = speakers
 

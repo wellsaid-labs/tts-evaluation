@@ -73,13 +73,12 @@ class Metrics(_utils.Metrics):
     @configurable
     def __init__(
         self,
-        store: torch.distributed.TCPStore,
         comet: CometMLExperiment,
         speakers: typing.List[lib.datasets.Speaker],
         fft_lengths: typing.List[int] = HParam(),
         **kwargs,
     ):
-        super().__init__(store, comet, **kwargs)
+        super().__init__(comet, **kwargs)
         self.speakers = speakers
         self.fft_lengths = fft_lengths
 

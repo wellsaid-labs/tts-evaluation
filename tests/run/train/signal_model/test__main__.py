@@ -31,7 +31,7 @@ def _make_checkpoint(temp_dir, train_dataset, dev_dataset, comet, device, name="
 
 
 def test_integration():
-    train_dataset, dev_dataset, comet, device, store = setup_experiment()
+    train_dataset, dev_dataset, comet, device = setup_experiment()
     temp_dir = tempfile.TemporaryDirectory()
     checkpoint_path = _make_checkpoint(temp_dir, train_dataset, dev_dataset, comet, device)
     add_config(_make_configuration(train_dataset, dev_dataset, True))
@@ -49,7 +49,7 @@ def test_integration():
     # Test `_run_step` with `Metrics` and `_State`
     with set_context(Context.TRAIN, comet, *state.models):
         timer = Timer()
-        metrics = Metrics(store, comet, speakers)
+        metrics = Metrics(comet, speakers)
         batch = next(iter(train_loader))
         assert state.step.item() == 0
 

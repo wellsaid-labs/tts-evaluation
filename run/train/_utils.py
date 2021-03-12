@@ -700,20 +700,17 @@ def _init_distributed(
     rank: int,
     timeout: timedelta = timedelta(minutes=30),
     backend: str = "nccl",
-    hostname: str = "127.0.0.1",
-    port: int = 29500,
+    init_method: str = "tcp://127.0.0.1:29500",
     world_size: int = torch.cuda.device_count(),
-) -> typing.Tuple[torch.device, torch.distributed.TCPStore]:
+) -> torch.device:
     """Initiate distributed for training.
 
     Learn more about distributed environments here:
     https://pytorch.org/tutorials/intermediate/dist_tuto.htm
     https://github.com/pytorch/examples/blob/master/imagenet/main.py
     """
-    is_master = rank == lib.distributed.get_master_rank()
-    store = torch.distributed.TCPStore(hostname, port, world_size, is_master, timeout)
     torch.distributed.init_process_group(
-        backend, store=store, timeout=timeout, world_size=world_size, rank=rank
+        backend=backend, init_method=init_method, world_size=world_size, rank=rank, timeout=timeout
     )
     logger.info("Worker %d started.", torch.distributed.get_rank())
     logger.info("%d GPUs found.", world_size)
@@ -725,14 +722,13 @@ def _init_distributed(
     torch.cuda.set_device(device)
     # TODO: Instead of returning and passing around `torch.device`, rely on `torch.cuda.set_device`
     # or `torch.cuda.device` to set context.
-    return device, store
+    return device
 
 
 class _RunWorker(typing.Protocol):
     def __call__(
         self,
         device: torch.device,
-        store: torch.distributed.TCPStore,
         comet: CometMLExperiment,
         checkpoint: typing.Optional[Checkpoint],
         *args,
@@ -749,12 +745,12 @@ def _run_workers_helper(
     *args,
 ):
     lib.environment.set_basic_logging_config(device_index)
-    device, store = _init_distributed(device_index)
+    device = _init_distributed(device_index)
     comet = comet_partial(disabled=not is_master(), auto_output_logging=False)
     hparams.hparams._configuration = config
     set_run_seed()
     checkpoint_ = None if checkpoint is None else load(checkpoint, device=device)
-    return run_worker(device, store, comet, checkpoint_, *args)
+    return run_worker(device, comet, checkpoint_, *args)
 
 
 def run_workers(
@@ -795,9 +791,9 @@ class Metrics(lib.distributed.DictStore):
     GRADIENT_NORM = partial(get_model_label, "grad_norm")
     LR = partial(get_model_label, "lr")
 
-    def __init__(self, store: torch.distributed.TCPStore, comet: CometMLExperiment, **kwargs):
+    def __init__(self, comet: CometMLExperiment, **kwargs):
         self.data: typing.Dict[str, MetricsStoreValues]
-        super().__init__(store, **kwargs)
+        super().__init__(**kwargs)
         self.comet = comet
 
     def update(self, data: MetricsValues):
