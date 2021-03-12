@@ -172,6 +172,7 @@ class Metrics(_utils.Metrics):
         *_,
     ) = tuple([str(i) for i in range(100)])
 
+    NUM_SPANS_ = partial(get_dataset_label, "num_spans")
     AVERAGE_NUM_FRAMES = partial(get_dataset_label, "average_num_frames")
     AVERAGE_RMS_LEVEL = partial(get_dataset_label, "average_rms_level")
     MAX_NUM_FRAMES = partial(get_dataset_label, "max_num_frames")
@@ -226,18 +227,16 @@ class Metrics(_utils.Metrics):
             values[f"{self.NUM_SPANS}/{span.speaker.label}"] += float(not has_reached_max)
 
             if not has_reached_max:
-                assert span.speaker in self.speakers
                 index = int(len(span.script) // self.TEXT_LENGTH_BUCKET_SIZE)
                 values[f"{self.NUM_SPANS_PER_TEXT_LENGTH}/{index}"] += 1
-
-                values[f"{self.NUM_FRAMES}/{span.speaker.label}"] += num_frames
-                values[f"{self.NUM_SECONDS}/{span.speaker.label}"] += span.audio_length
-                values[f"{self.NUM_TOKENS}/{span.speaker.label}"] += num_tokens
-
                 values[self.NUM_FRAMES_MAX] = max(num_frames, values[self.NUM_FRAMES_MAX])
-                values[self.NUM_FRAMES] += num_frames
-                values[self.NUM_SECONDS] += span.audio_length
-                values[self.NUM_TOKENS] += num_tokens
+
+                assert span.speaker in self.speakers
+                for suffix in ["", f"/{span.speaker.label}"]:
+                    format_ = lambda s: f"{s}{suffix}"
+                    values[format_(self.NUM_FRAMES)] += num_frames
+                    values[format_(self.NUM_SECONDS)] += span.audio_length
+                    values[format_(self.NUM_TOKENS)] += num_tokens
 
         return dict(values)
 
@@ -276,15 +275,12 @@ class Metrics(_utils.Metrics):
             values[f"{self.NUM_REACHED_MAX}/{span.speaker.label}"] += has_reached_max
 
             if not has_reached_max:
-                values[f"{self.ALIGNMENT_NORM_SUM}/{span.speaker.label}"] += alignment_norm
-                values[f"{self.ALIGNMENT_NUM_SKIPS}/{span.speaker.label}"] += num_skipped
-                values[f"{self.ALIGNMENT_STD_SUM}/{span.speaker.label}"] += alignment_std
-                values[f"{self.NUM_FRAMES_PREDICTED}/{span.speaker.label}"] += length
-
-                values[self.ALIGNMENT_NORM_SUM] += alignment_norm
-                values[self.ALIGNMENT_NUM_SKIPS] += num_skipped
-                values[self.ALIGNMENT_STD_SUM] += alignment_std
-                values[self.NUM_FRAMES_PREDICTED] += length
+                for suffix in ["", f"/{span.speaker.label}"]:
+                    format_ = lambda s: f"{s}{suffix}"
+                    values[format_(self.ALIGNMENT_NORM_SUM)] += alignment_norm
+                    values[format_(self.ALIGNMENT_NUM_SKIPS)] += num_skipped
+                    values[format_(self.ALIGNMENT_STD_SUM)] += alignment_std
+                    values[format_(self.NUM_FRAMES_PREDICTED)] += length
 
         return dict(values)
 
@@ -313,10 +309,10 @@ class Metrics(_utils.Metrics):
         ):
             if not has_reached_max:
                 assert span.speaker in self.speakers
-                values[f"{self.RMS_SUM_PREDICTED}/{span.speaker.label}"] += predicted_loudness
-                values[f"{self.RMS_SUM}/{span.speaker.label}"] += loudness
-                values[self.RMS_SUM_PREDICTED] += predicted_loudness
-                values[self.RMS_SUM] += loudness
+                for suffix in ["", f"/{span.speaker.label}"]:
+                    format_ = lambda s: f"{s}{suffix}"
+                    values[format_(self.RMS_SUM_PREDICTED)] += predicted_loudness
+                    values[format_(self.RMS_SUM)] += loudness
 
         return dict(values)
 
@@ -377,7 +373,6 @@ class Metrics(_utils.Metrics):
         """
         reduce = partial(self._reduce, select=select)
         metrics = {
-            self.AVERAGE_NUM_FRAMES: self._div(self.NUM_FRAMES, self.NUM_SPANS, select=select),
             self.MAX_NUM_FRAMES: reduce(self.NUM_FRAMES_MAX, op=max),
             self.MIN_DATA_LOADER_QUEUE_SIZE: reduce(self.DATA_QUEUE_SIZE, op=min),
         }
@@ -385,10 +380,12 @@ class Metrics(_utils.Metrics):
         if is_verbose:
             total_frames = reduce(self.NUM_FRAMES)
             total_seconds = reduce(self.NUM_SECONDS)
-            for speaker, _reduce, _ in self._iter_permutations(select):
+            for speaker, _reduce, _div in self._iter_permutations(select):
                 update = {
+                    self.AVERAGE_NUM_FRAMES: _div(self.NUM_FRAMES, self.NUM_SPANS),
                     self.FREQUENCY_NUM_FRAMES: _reduce(self.NUM_FRAMES) / total_frames,
                     self.FREQUENCY_NUM_SECONDS: _reduce(self.NUM_SECONDS) / total_seconds,
+                    self.NUM_SPANS_: _reduce(self.NUM_SPANS),
                 }
                 metrics.update({partial(k, speaker=speaker): v for k, v in update.items()})
 
