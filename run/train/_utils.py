@@ -30,7 +30,6 @@ import torch.distributed
 import torch.nn
 import torch.optim
 import torch.utils.data
-import uvloop
 from hparams import HParam, HParams, configurable, get_config
 from third_party import LazyLoader
 from torch.utils.data.dataloader import _BaseDataLoaderIter, _MultiProcessingDataLoaderIter
@@ -61,7 +60,6 @@ else:
 
 
 lib.environment.enable_fault_handler()
-uvloop.install()
 logger = logging.getLogger(__name__)
 
 
