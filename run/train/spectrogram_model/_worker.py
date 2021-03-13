@@ -308,7 +308,11 @@ def _run_step(
     https://pytorch.org/tutorials/recipes/recipes/tuning_guide.html#enable-cudnn-auto-tuner
     TODO: Use multithreading to overlap measure, gather, and reduction metrics operations with
     the `backwards` model pass. The metrics overhead takes 21 milliseconds (3% of runtime), on
-    average.
+    average. Learn more:
+    https://github.com/NVIDIA/nccl/issues/338
+    https://github.com/horovod/horovod/issues/665
+    https://discuss.pytorch.org/t/how-to-overlap-h2d-and-training/93635/5
+    https://github.com/pytorch/pytorch/issues/23729#issuecomment-518616242
 
     Args:
         ...

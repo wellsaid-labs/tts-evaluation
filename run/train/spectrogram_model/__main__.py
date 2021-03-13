@@ -81,7 +81,7 @@ def _make_configuration(
             dev_batch_size=dev_batch_size,
             train_steps_per_epoch=train_steps_per_epoch,
             dev_steps_per_epoch=int(dev_steps_per_epoch),
-            num_workers=2 if debug else 4,
+            num_workers=2,
             prefetch_factor=2 if debug else 4,
         ),
         Metrics._get_model_metrics: HParams(num_frame_channels=NUM_FRAME_CHANNELS),

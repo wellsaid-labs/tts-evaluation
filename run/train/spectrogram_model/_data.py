@@ -23,13 +23,14 @@ from torchnlp.encoders.text import (
     SequenceBatch,
     stack_and_pad_tensors,
 )
-from torchnlp.samplers import BucketBatchSampler, DeterministicSampler, DistributedBatchSampler
+from torchnlp.samplers import DeterministicSampler, DistributedBatchSampler
 from torchnlp.utils import lengths_to_mask
 
 import lib
 import run
 from lib.audio import seconds_to_samples
 from lib.distributed import get_rank, get_world_size, is_initialized
+from lib.samplers import BucketBatchSampler
 from lib.utils import flatten_2d
 from run.train import _utils
 

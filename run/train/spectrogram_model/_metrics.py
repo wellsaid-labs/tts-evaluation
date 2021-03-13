@@ -377,18 +377,18 @@ class Metrics(_utils.Metrics):
             self.MIN_DATA_LOADER_QUEUE_SIZE: reduce(self.DATA_QUEUE_SIZE, op=min),
         }
 
-        if is_verbose:
-            total_frames = reduce(self.NUM_FRAMES)
-            total_seconds = reduce(self.NUM_SECONDS)
-            for speaker, _reduce, _div in self._iter_permutations(select):
-                update = {
-                    self.AVERAGE_NUM_FRAMES: _div(self.NUM_FRAMES, self.NUM_SPANS),
-                    self.FREQUENCY_NUM_FRAMES: _reduce(self.NUM_FRAMES) / total_frames,
-                    self.FREQUENCY_NUM_SECONDS: _reduce(self.NUM_SECONDS) / total_seconds,
-                    self.NUM_SPANS_: _reduce(self.NUM_SPANS),
-                }
-                metrics.update({partial(k, speaker=speaker): v for k, v in update.items()})
+        total_frames = reduce(self.NUM_FRAMES)
+        total_seconds = reduce(self.NUM_SECONDS)
+        for speaker, _reduce, _div in self._iter_permutations(select, is_verbose):
+            update = {
+                self.AVERAGE_NUM_FRAMES: _div(self.NUM_FRAMES, self.NUM_SPANS),
+                self.FREQUENCY_NUM_FRAMES: _reduce(self.NUM_FRAMES) / total_frames,
+                self.FREQUENCY_NUM_SECONDS: _reduce(self.NUM_SECONDS) / total_seconds,
+                self.NUM_SPANS_: _reduce(self.NUM_SPANS),
+            }
+            metrics.update({partial(k, speaker=speaker): v for k, v in update.items()})
 
+        if is_verbose:
             total_spans = reduce(self.NUM_SPANS)
             for key in self.data.keys():
                 if f"{self.NUM_SPANS_PER_TEXT_LENGTH}/" not in key:
