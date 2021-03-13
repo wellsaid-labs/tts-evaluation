@@ -48,7 +48,7 @@ Setup your local development environment by following [these instructions](LOCAL
    python -m run.utils.gcp watch-instance --name=$NAME --zone=$ZONE
    ```
 
-   ❓ LEARN MORE: See our machine type benchmarks [here](TODO).
+   ❓ LEARN MORE: See our machine type benchmarks [here](./TRAIN_MODEL_GCP_BENCHMARKS.md).
 
    💡 TIP: The output of the startup script will be saved on the VM here:
    `/var/log/syslog`
