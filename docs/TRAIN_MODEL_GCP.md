@@ -11,7 +11,7 @@ Related Documentation:
 
 Setup your local development environment by following [these instructions](LOCAL_SETUP.md).
 
-## Train a Model with Amazon Web Services (AWS)
+## Train a Model with Google Cloud Platform (GCP)
 
 ### From your local repository
 
@@ -118,10 +118,11 @@ Setup your local development environment by following [these instructions](LOCAL
    [create an Google Machine Image](https://cloud.google.com/compute/docs/machine-images/create-machine-images)
    so you don't need to setup your VM from scratch again.
 
-1. Start a `screen` session...
+1. Start a `screen` session with a new virtual environment...
 
    ```bash
    screen
+   . venv/bin/activate
    ```
 
 1. For [comet](https://www.comet.ml/wellsaid-labs), name your experiment and pick a project...
