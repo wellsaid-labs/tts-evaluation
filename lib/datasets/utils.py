@@ -193,6 +193,7 @@ class Passage:
 
 
 SpanType = typing.TypeVar("SpanType", bound="Span")
+Slice = slice
 
 
 @dataclasses.dataclass(frozen=True)
@@ -205,7 +206,7 @@ class Span:
     """
 
     passage: Passage
-    slice: slice  # type: ignore
+    slice: Slice
     _first: Alignment = dataclasses.field(init=False)
     _last: Alignment = dataclasses.field(init=False)
 
