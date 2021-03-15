@@ -227,7 +227,7 @@ OLD_WSL_DATASETS = {
 }
 
 
-_deprecated_wsl_dataset_metadata = {
+_deprecated_metadata = {
     (
         "Sean Hannity",
         Speaker("Sean Hannity"),
