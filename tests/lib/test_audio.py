@@ -255,7 +255,7 @@ def test_read_wave_audio__16_bit_pcm():
     metadata = lib.audio.get_audio_metadata(audio_path)
     start = 1
     length = 2
-    slice_ = lib.audio.read_wave_audio(metadata, start, length, dtype=np.int16)
+    slice_ = lib.audio.read_wave_audio(metadata, start, length)
     audio = lib.audio.read_audio(audio_path, dtype=("s16le", "pcm_s16le", np.int16))
     expected = audio[start * metadata.sample_rate : (start + length) * metadata.sample_rate]
     np.testing.assert_almost_equal(slice_, expected)

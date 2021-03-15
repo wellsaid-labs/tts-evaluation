@@ -69,6 +69,11 @@ def session_cache(func: typing.Optional[typing.Callable] = None, **kwargs):
     return session_state["cache"][func.__qualname__]
 
 
+def clear_session_cache():
+    logger.info("Clearing cache...")
+    [v.cache_clear() for v in get_session_state()["cache"].values()]
+
+
 def _static_symlink(target: pathlib.Path) -> pathlib.Path:
     """System link `target` to `root / static`, and return the linked location.
 
@@ -124,6 +129,19 @@ def map_(
 def read_wave_audio(*args, **kwargs) -> np.ndarray:
     """ Read audio slice, and cache. """
     return lib.audio.read_wave_audio(*args, **kwargs)
+
+
+def span_audio(span: lib.datasets.Span) -> np.ndarray:
+    """Get `span` audio using cached `read_audio_slice`."""
+    start = span.passage.alignments[span.slice][0].audio[0]
+    return read_wave_audio(span.passage.audio_file, start, span.audio_length)
+
+
+def passage_audio(passage: lib.datasets.Passage) -> np.ndarray:
+    """Get `span` audio using cached `read_audio_slice`."""
+    start = passage.alignments[0].audio[0]
+    end = passage.alignments[-1].audio[-1]
+    return read_wave_audio(passage.audio_file, start, end - start)
 
 
 @lib.utils.log_runtime

@@ -240,18 +240,21 @@ def read_audio_slice(
     return clip_waveform(ndarray)
 
 
-def read_wave_audio(
-    metadata: AudioMetadata, start: float = 0, length: float = -1, dtype=np.float32
-) -> np.ndarray:
+def read_wave_audio(metadata: AudioMetadata, start: float = 0, length: float = -1) -> np.ndarray:
     """ Fast read and seek WAVE file (for supported formats). """
     assert metadata.path.suffix == ".wav"
     assert metadata.num_channels == 1
-    assert (
-        (dtype == np.float32 and metadata.encoding == AudioEncoding.PCM_FLOAT_32_BIT)
-        or (dtype == np.int32 and metadata.encoding == AudioEncoding.PCM_INT_32_BIT)
-        or (dtype == np.int16 and metadata.encoding == AudioEncoding.PCM_INT_16_BIT)
-        or (dtype == np.int8 and metadata.encoding == AudioEncoding.PCM_INT_8_BIT)
-    )
+    if metadata.encoding is AudioEncoding.PCM_FLOAT_32_BIT:
+        dtype = np.float32
+    elif metadata.encoding is AudioEncoding.PCM_INT_32_BIT:
+        dtype = np.int32
+    elif metadata.encoding is AudioEncoding.PCM_INT_16_BIT:
+        dtype = np.int16
+    elif metadata.encoding is AudioEncoding.PCM_INT_8_BIT:
+        dtype = np.int8
+    else:
+        raise TypeError(f"Encoding '{metadata.encoding}' is not supported.")
+
     num_bytes_per_sample = np.dtype(dtype).itemsize
     sample_rate = metadata.sample_rate
     header_size = os.path.getsize(metadata.path) - num_bytes_per_sample * metadata.num_samples

@@ -20,7 +20,7 @@ import run
 from lib.datasets import DATASETS, Span
 from lib.utils import flatten_2d, mazel_tov, seconds_to_str
 from run._config import Dataset
-from run._streamlit import audio_to_html, get_dataset, get_session_state, map_
+from run._streamlit import audio_to_html, clear_session_cache, get_dataset, map_
 from run.data.dataset_dashboard import _utils as utils
 
 lib.environment.set_basic_logging_config(reset=True)
@@ -280,8 +280,7 @@ def main():
     st.write("The dataset dashboard is an effort to understand our dataset and dataset processing.")
 
     if st.sidebar.button("Clear Session Cache"):
-        logger.info("Clearing cache...")
-        [v.cache_clear() for v in get_session_state()["cache"].values()]
+        clear_session_cache()
 
     sidebar = st.sidebar
 

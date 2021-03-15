@@ -20,7 +20,7 @@ from lib.audio import amplitude_to_db, signal_to_rms
 from lib.datasets import Passage, Span
 from lib.utils import clamp, flatten_2d, round_, seconds_to_str
 from run._config import Dataset
-from run._streamlit import fast_grapheme_to_phoneme, read_wave_audio
+from run._streamlit import fast_grapheme_to_phoneme, read_wave_audio, span_audio
 
 logger = logging.getLogger(__name__)
 
@@ -195,12 +195,6 @@ def span_pauses(span: Span) -> typing.List[float]:
 
 def span_total_silence(span: Span) -> float:
     return sum(span_pauses(span))
-
-
-def span_audio(span: Span) -> np.ndarray:
-    """Get `span` audio using cached `read_audio_slice`."""
-    start = span.passage.alignments[span.slice][0].audio[0]
-    return read_wave_audio(span.passage.audio_file, start, span.audio_length)
 
 
 def span_audio_slice(span: Span, second: float, lengths: typing.Tuple[float, float]) -> np.ndarray:
