@@ -7,12 +7,12 @@ import time
 import typing
 
 import altair as alt
+import librosa.util
 import numpy as np
 import pandas as pd
 import streamlit as st
 import torch
 import tqdm
-from librosa.util import utils as librosa_utils
 from torchnlp.random import fork_rng
 
 import lib
@@ -20,7 +20,7 @@ from lib.audio import amplitude_to_db, signal_to_rms
 from lib.datasets import Passage, Span
 from lib.utils import clamp, flatten_2d, round_, seconds_to_str
 from run._config import Dataset
-from run._streamlit import fast_grapheme_to_phoneme, read_wave_audio_slice
+from run._streamlit import fast_grapheme_to_phoneme, read_wave_audio
 
 logger = logging.getLogger(__name__)
 
@@ -95,7 +95,7 @@ def _visualize_signal(
         ...
     """
     ratio = sample_rate // max_sample_rate
-    frames = librosa_utils.frame(signal, ratio, ratio, axis=0)  # type: ignore
+    frames = librosa.util.frame(signal, ratio, ratio, axis=0)  # type: ignore
     envelope = np.max(np.abs(frames), axis=-1)
     assert frames.shape[1] == ratio
     assert frames.shape[0] == envelope.shape[0]
@@ -200,7 +200,7 @@ def span_total_silence(span: Span) -> float:
 def span_audio(span: Span) -> np.ndarray:
     """Get `span` audio using cached `read_audio_slice`."""
     start = span.passage.alignments[span.slice][0].audio[0]
-    return read_wave_audio_slice(span.passage.audio_file, start, span.audio_length)
+    return read_wave_audio(span.passage.audio_file, start, span.audio_length)
 
 
 def span_audio_slice(span: Span, second: float, lengths: typing.Tuple[float, float]) -> np.ndarray:
@@ -209,7 +209,7 @@ def span_audio_slice(span: Span, second: float, lengths: typing.Tuple[float, flo
     second = span.passage.alignments[span.slice][0].audio[0] + second
     start = clamp_(second - lengths[0])
     end = clamp_(second + lengths[1])
-    return read_wave_audio_slice(span.passage.audio_file, start, end - start)
+    return read_wave_audio(span.passage.audio_file, start, end - start)
 
 
 def span_audio_boundary_rms_level(

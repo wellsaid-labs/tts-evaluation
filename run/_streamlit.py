@@ -121,9 +121,9 @@ def map_(
 
 
 @session_cache(maxsize=None)
-def read_wave_audio_slice(*args, **kwargs) -> np.ndarray:
+def read_wave_audio(*args, **kwargs) -> np.ndarray:
     """ Read audio slice, and cache. """
-    return lib.audio.read_wave_audio_slice(*args, **kwargs)
+    return lib.audio.read_wave_audio(*args, **kwargs)
 
 
 @lib.utils.log_runtime

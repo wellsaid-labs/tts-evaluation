@@ -240,8 +240,8 @@ def read_audio_slice(
     return clip_waveform(ndarray)
 
 
-def read_wave_audio_slice(
-    metadata: AudioMetadata, start: float, length: float, dtype=np.float32
+def read_wave_audio(
+    metadata: AudioMetadata, start: float = 0, length: float = -1, dtype=np.float32
 ) -> np.ndarray:
     """ Fast read and seek WAVE file (for supported formats). """
     assert metadata.path.suffix == ".wav"
@@ -256,7 +256,7 @@ def read_wave_audio_slice(
     sample_rate = metadata.sample_rate
     header_size = os.path.getsize(metadata.path) - num_bytes_per_sample * metadata.num_samples
     start = lib.utils.round_(sample_rate * start * num_bytes_per_sample, num_bytes_per_sample)
-    length = lib.utils.round_(sample_rate * length, num_bytes_per_sample)
+    length = lib.utils.round_(sample_rate * length, num_bytes_per_sample) if length > 0 else length
     ndarray = np.fromfile(metadata.path, dtype=dtype, count=length, offset=start + header_size)
     return clip_waveform(ndarray)
 

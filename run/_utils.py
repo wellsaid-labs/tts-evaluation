@@ -23,7 +23,6 @@ import lib
 import lib.datasets.m_ailabs
 import run
 from lib import datasets
-from lib.utils import flatten_2d
 from run._config import Dataset
 
 if typing.TYPE_CHECKING:  # pragma: no cover
@@ -37,49 +36,54 @@ else:
 logger = logging.getLogger(__name__)
 
 
+@configurable
+def normalized_audio_path(
+    path: pathlib.Path,
+    encoding: str = HParam(),
+    sample_rate: int = HParam(),
+    num_channels: int = HParam(),
+    **_,
+):
+    """Get a unique filename based on a couple of audio normalization parameters."""
+    kwargs = dict(encoding=encoding, sample_rate=sample_rate, num_channels=num_channels)
+    kwargs_ = ",".join([f"{k}={v}" for k, v in kwargs.items()])
+    return path.parent / run._config.TTS_DISK_CACHE_NAME / f"ffmpeg({path.stem},{kwargs_}).wav"
+
+
 def _normalize_audio(
-    args: typing.Tuple[pathlib.Path, pathlib.Path], callable_: typing.Callable[..., None]
+    args: typing.Tuple[pathlib.Path, pathlib.Path], call: typing.Callable[..., None], **kwargs
 ):
     """ Helper function for `normalize_audio`. """
     source, destination = args
     destination.parent.mkdir(exist_ok=True, parents=True)
-    callable_(source, destination)
-
-
-def _normalize_path(path: pathlib.Path) -> pathlib.Path:
-    """ Helper function for `normalize_audio`. """
-    return path.parent / run._config.TTS_DISK_CACHE_NAME / f"ffmpeg({path.stem}).wav"
+    call(source, destination, **kwargs)
 
 
 @lib.utils.log_runtime
 def normalize_audio(
-    dataset: Dataset, num_processes: int = typing.cast(int, os.cpu_count()), **kwargs
+    dataset: Dataset,
+    num_processes: int = typing.cast(int, os.cpu_count()),
+    **kwargs,
 ) -> Dataset:
     """Normalize audio with ffmpeg in `dataset`.
 
-    TODO: Consider using the ffmpeg SoX resampler, instead.
     TODO: In order to better estimate the performance, we could measure progress based on audio
     file length.
     TODO: In order to encourage parallelism, the longest files should be normalized first.
     """
     logger.info("Normalizing dataset audio...")
-    audio_paths_ = [[p.audio_file.path for p in v] for v in dataset.values()]
-    audio_paths: typing.Set[pathlib.Path] = set(flatten_2d(audio_paths_))
-    partial = functools.partial(lib.audio.normalize_audio, **kwargs)
-    partial = functools.partial(_normalize_audio, callable_=partial)
-    args = [(p, _normalize_path(p)) for p in audio_paths if not _normalize_path(p).exists()]
+    paths = list(set([p.audio_file.path for v in dataset.values() for p in v]))
+    updated_paths = [normalized_audio_path(p, **kwargs) for p in paths]
+    normalize = functools.partial(_normalize_audio, call=lib.audio.normalize_audio, **kwargs)
+    args = [(p, u) for p, u in zip(paths, updated_paths) if not u.exists()]
     with multiprocessing.pool.ThreadPool(num_processes) as pool:
-        list(tqdm.tqdm(pool.imap_unordered(partial, args), total=len(args)))
+        list(tqdm.tqdm(pool.imap_unordered(normalize, args), total=len(args)))
 
-    metadatas = lib.audio.get_audio_metadata([_normalize_path(p) for p in audio_paths])
-    lookup = {p: m for p, m in zip(audio_paths, metadatas)}
-    logger.info("Updating dataset to use normalized audio files...")
-    return_ = {
-        s: [lib.datasets.update_passage_audio(p, lookup[p.audio_file.path]) for p in d]
-        for s, d in dataset.items()
-    }
-    logger.info("Normalized dataset audio %s", lib.utils.mazel_tov())
-    return return_
+    logger.info("Updating dataset passages with normalized audio...")
+    lookup = {p: m for p, m in zip(paths, lib.audio.get_audio_metadata(updated_paths))}
+    update: typing.Callable[[lib.datasets.Passage], lib.datasets.Passage]
+    update = lambda p: lib.datasets.update_passage_audio(p, lookup[p.audio_file.path])
+    return {s: [update(p) for p in d] for s, d in dataset.items()}
 
 
 @configurable

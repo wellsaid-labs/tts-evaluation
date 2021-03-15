@@ -379,7 +379,7 @@ def _make_stop_token(
 
 def _span_read_audio_slice(span: lib.datasets.Span) -> numpy.ndarray:
     start = span._first.audio[0]
-    return lib.audio.read_wave_audio_slice(span.passage.audio_file, start, span.audio_length)
+    return lib.audio.read_wave_audio(span.passage.audio_file, start, span.audio_length)
 
 
 @dataclasses.dataclass(frozen=True)

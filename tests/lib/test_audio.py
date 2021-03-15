@@ -224,12 +224,19 @@ def test_read_audio_slice():
     np.testing.assert_almost_equal(slice_, expected)
 
 
-def test_read_wave_audio_slice():
-    """ Test `lib.audio.read_wave_audio_slice` gets the correct slice. """
+def test_read_wave_audio():
+    """ Test `lib.audio.read_wave_audio` reads the full audio, correctly. """
+    metadata = lib.audio.get_audio_metadata(TEST_DATA_LJ)
+    audio = lib.audio.read_wave_audio(metadata)
+    np.testing.assert_almost_equal(audio, lib.audio.read_audio(TEST_DATA_LJ))
+
+
+def test_read_wave_audio__slice():
+    """ Test `lib.audio.read_wave_audio` gets the correct slice. """
     metadata = lib.audio.get_audio_metadata(TEST_DATA_LJ)
     start = 1
     length = 2
-    slice_ = lib.audio.read_wave_audio_slice(metadata, start, length)
+    slice_ = lib.audio.read_wave_audio(metadata, start, length)
     audio = lib.audio.read_audio(TEST_DATA_LJ)
     expected = audio[start * metadata.sample_rate : (start + length) * metadata.sample_rate]
     np.testing.assert_almost_equal(slice_, expected)
@@ -242,13 +249,13 @@ def test_read_audio_slice__identity():
     np.testing.assert_almost_equal(audio, lib.audio.read_audio(TEST_DATA_LJ))
 
 
-def test_read_wave_audio_slice__16_bit_pcm():
-    """ Test `lib.audio.read_wave_audio_slice` handles signed-integer. """
+def test_read_wave_audio__16_bit_pcm():
+    """ Test `lib.audio.read_wave_audio` handles signed-integer. """
     audio_path = TEST_DATA_PATH / "rate(lj_speech,24000).wav"
     metadata = lib.audio.get_audio_metadata(audio_path)
     start = 1
     length = 2
-    slice_ = lib.audio.read_wave_audio_slice(metadata, start, length, dtype=np.int16)
+    slice_ = lib.audio.read_wave_audio(metadata, start, length, dtype=np.int16)
     audio = lib.audio.read_audio(audio_path, dtype=("s16le", "pcm_s16le", np.int16))
     expected = audio[start * metadata.sample_rate : (start + length) * metadata.sample_rate]
     np.testing.assert_almost_equal(slice_, expected)

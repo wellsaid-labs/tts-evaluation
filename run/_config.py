@@ -311,6 +311,9 @@ def _configure_audio_processing():
         lib.signal_model.SignalModel.__init__: HParams(
             ratios=[2] * int(math.log2(FRAME_HOP)),
         ),
+        run._utils.normalized_audio_path: HParams(
+            encoding=ffmpeg_encoding, sample_rate=SAMPLE_RATE, num_channels=num_channels
+        ),
         # NOTE: A 0.400 `block_size` is standard for ITU-R BS.1770.
         run.train.spectrogram_model._data._get_loudness: HParams(block_size=0.400, precision=0),
         run.train.spectrogram_model._data._random_loudness_annotations: HParams(max_annotations=10),
