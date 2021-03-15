@@ -1,3 +1,4 @@
+import enum
 import logging
 import math
 import multiprocessing.pool
@@ -33,13 +34,20 @@ else:
 logger = logging.getLogger(__name__)
 
 
-class AudioFileMetadata(typing.NamedTuple):
+class AudioEncoding(enum.Enum):
+    MPEG: typing.Final = "MPEG audio (layer I, II or III)"
+    PCM_INT_8_BIT: typing.Final = "8-bit Signed Integer PCM"
+    PCM_INT_16_BIT: typing.Final = "16-bit Signed Integer PCM"
+    PCM_INT_24_BIT: typing.Final = "24-bit Signed Integer PCM"
+    PCM_INT_32_BIT: typing.Final = "32-bit Signed Integer PCM"
+    PCM_FLOAT_32_BIT: typing.Final = "32-bit Floating Point PCM"
+
+
+class AudioMetadata(typing.NamedTuple):
     """
     TODO: The `sample_rate` does not change in porportion to the number of channels; therefore, the
     `sample_rate` should technically be called the `frame_rate` because it measures the number of
     frames per second.
-    TODO: The `length` property is equal to `num_samples / sample_rate`, and it should be defined
-    as such.
 
     Learn more: http://sox.sourceforge.net/soxi.html
 
@@ -48,7 +56,6 @@ class AudioFileMetadata(typing.NamedTuple):
       sample_rate: The sample rate of the audio.
       num_channels: The number of audio channels in the audio file.
       encoding: The encoding of the audio file (e.g. "32-bit Floating Point PCM").
-      length: The duration of the audio file in seconds.
       bit_rate: The number of bits per second.
       precision: The estimated sample precision in bits.
       num_samples: The duration of the audio file in samples.
@@ -57,14 +64,17 @@ class AudioFileMetadata(typing.NamedTuple):
     path: Path
     sample_rate: int
     num_channels: int
-    encoding: str
-    length: float
+    encoding: AudioEncoding
     bit_rate: str
     precision: str
     num_samples: int
 
+    @property
+    def length(self):
+        return self.num_samples / self.sample_rate
 
-def _parse_audio_metadata(metadata: str) -> AudioFileMetadata:
+
+def _parse_audio_metadata(metadata: str) -> AudioMetadata:
     """Parse audio metadata returned by `sox --i`.
 
     NOTE: This parses the output of `sox --i` instead individual requests like `sox --i -r` and
@@ -87,19 +97,20 @@ def _parse_audio_metadata(metadata: str) -> AudioFileMetadata:
     assert splits[4].split()[3] == "samples"
     sample_rate = int(splits[2])
     num_samples = int(splits[4].split()[2])
-    return AudioFileMetadata(
+    name = next((e for e in AudioEncoding if e.value == splits[7]), None)
+    assert name is not None, f"Format '{splits[7]}' isn't supported."
+    return AudioMetadata(
         path=Path(str(splits[0][1:-1])),
         sample_rate=sample_rate,
         num_channels=int(splits[1]),
-        encoding=splits[7],
-        length=float(num_samples) / sample_rate,
+        encoding=name,
         bit_rate=splits[6],
         precision=splits[3],
         num_samples=num_samples,
     )
 
 
-def _get_audio_metadata_helper(chunk: typing.List[Path]) -> typing.List[AudioFileMetadata]:
+def _get_audio_metadata_helper(chunk: typing.List[Path]) -> typing.List[AudioMetadata]:
     # NOTE: `-V1` ignores non-actionable warnings, SoX tends to spam the command line with strict
     # formating warnings like: "sox WARN wav: wave header missing extended part of fmt chunk".
     command = ["sox", "--i", "-V1"] + [str(p) for p in chunk]
@@ -113,7 +124,7 @@ def _get_audio_metadata(
     *paths: Path,
     max_arg_length: int = 2 ** 16,
     max_parallel: int = typing.cast(int, os.cpu_count()),
-) -> typing.Iterator[AudioFileMetadata]:
+) -> typing.Iterator[AudioMetadata]:
     """
     NOTE: It's difficult to determine the bash maximum argument length, learn more:
     https://unix.stackexchange.com/questions/45143/what-is-a-canonical-way-to-find-the-actual-maximum-argument-list-length
@@ -141,12 +152,12 @@ def _get_audio_metadata(
 
 
 @typing.overload
-def get_audio_metadata(paths: typing.List[Path], **kwargs) -> typing.List[AudioFileMetadata]:
+def get_audio_metadata(paths: typing.List[Path], **kwargs) -> typing.List[AudioMetadata]:
     ...
 
 
 @typing.overload
-def get_audio_metadata(paths: Path, **kwargs) -> AudioFileMetadata:
+def get_audio_metadata(paths: Path, **kwargs) -> AudioMetadata:
     ...
 
 
@@ -230,11 +241,17 @@ def read_audio_slice(
 
 
 def read_wave_audio_slice(
-    metadata: AudioFileMetadata, start: float, length: float, dtype=np.float32
+    metadata: AudioMetadata, start: float, length: float, dtype=np.float32
 ) -> np.ndarray:
-    """ Fast read and seek WAVE file. """
+    """ Fast read and seek WAVE file (for supported formats). """
     assert metadata.path.suffix == ".wav"
     assert metadata.num_channels == 1
+    assert (
+        (dtype == np.float32 and metadata.encoding == AudioEncoding.PCM_FLOAT_32_BIT)
+        or (dtype == np.int32 and metadata.encoding == AudioEncoding.PCM_INT_32_BIT)
+        or (dtype == np.int16 and metadata.encoding == AudioEncoding.PCM_INT_16_BIT)
+        or (dtype == np.int8 and metadata.encoding == AudioEncoding.PCM_INT_8_BIT)
+    )
     num_bytes_per_sample = np.dtype(dtype).itemsize
     sample_rate = metadata.sample_rate
     header_size = os.path.getsize(metadata.path) - num_bytes_per_sample * metadata.num_samples
@@ -331,9 +348,9 @@ def normalize_audio(
 
 @configurable
 def assert_audio_normalized(
-    metadata: AudioFileMetadata,
+    metadata: AudioMetadata,
     suffix: str = HParam(),
-    encoding: str = HParam(),
+    encoding: AudioEncoding = HParam(),
     sample_rate: int = HParam(),
     num_channels: int = HParam(),
 ):

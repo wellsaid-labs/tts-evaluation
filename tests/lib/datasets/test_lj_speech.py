@@ -1,4 +1,3 @@
-import math
 import pathlib
 import re
 import shutil
@@ -54,18 +53,14 @@ def test_lj_speech_dataset(mock_urlretrieve, mock_get_audio_metadata, _):
         assert len(data) == 13100
         assert sum([len(r.script) for r in data]) == 1310332
         alignments = lib.utils.Tuples(
-            [lib.datasets.Alignment((0, 151), (0.0, math.inf), (0, 151))],
+            [lib.datasets.Alignment((0, 151), (0.0, 0.0), (0, 151))],
             lib.datasets.alignment_dtype,
         )
-        nonalignments = lib.utils.Tuples(
-            [
-                lib.datasets.Alignment(script=(0, 0), audio=(0.0, 0.0), transcript=(0, 0)),
-                lib.datasets.Alignment(
-                    script=(151, 151), audio=(math.inf, math.inf), transcript=(151, 151)
-                ),
-            ],
-            lib.datasets.alignment_dtype,
-        )
+        nonalignments_ = [
+            lib.datasets.Alignment(script=(0, 0), audio=(0.0, 0.0), transcript=(0, 0)),
+            lib.datasets.Alignment(script=(151, 151), audio=(0.0, 0.0), transcript=(151, 151)),
+        ]
+        nonalignments = lib.utils.Tuples(nonalignments_, lib.datasets.alignment_dtype)
         assert data[0] == lib.datasets.Passage(
             audio_file=_utils.make_metadata(directory / "LJSpeech-1.1/wavs/LJ001-0001.wav"),
             speaker=lib.datasets.LINDA_JOHNSON,

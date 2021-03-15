@@ -202,18 +202,18 @@ def loudness(paths: typing.List[pathlib.Path] = typer.Argument(..., exists=True,
     typer.echo(tabulate.tabulate(sorted(results), headers=["LUFS", "Path"]))
 
 
-class _SharedAudioFileMetadata(typing.NamedTuple):
+class _SharedAudioMetadata(typing.NamedTuple):
     sample_rate: int
     num_channels: int
-    encoding: str
+    encoding: lib.audio.AudioEncoding
     bit_rate: str
     precision: str
 
 
-def _metadata(path: pathlib.Path) -> typing.Tuple[pathlib.Path, _SharedAudioFileMetadata]:
+def _metadata(path: pathlib.Path) -> typing.Tuple[pathlib.Path, _SharedAudioMetadata]:
     """ Helper for the `metadata` command."""
     metadata = lib.audio.get_audio_metadata(path)
-    return path, _SharedAudioFileMetadata(
+    return path, _SharedAudioMetadata(
         sample_rate=metadata.sample_rate,
         num_channels=metadata.num_channels,
         encoding=metadata.encoding,
@@ -230,6 +230,7 @@ def metadata(
     """Print the metadata for each file in PATHS."""
     num_parallel = lib.utils.clamp(len(paths), max_=max_parallel)
     with multiprocessing.pool.ThreadPool(num_parallel) as pool:
+        results: typing.List[typing.Tuple[pathlib.Path, _SharedAudioMetadata]]
         results = list(tqdm.tqdm(pool.imap_unordered(_metadata, paths), total=len(paths)))
 
     groups = collections.defaultdict(list)

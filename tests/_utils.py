@@ -39,17 +39,17 @@ def subprocess_run_side_effect(command, *args, _command: str = "", _func=subproc
 
 def make_metadata(
     path: pathlib.Path = pathlib.Path("."),
-    sample_rate=0,
+    sample_rate=1,
     num_channels=0,
-    encoding="",
+    encoding=lib.audio.AudioEncoding.PCM_INT_8_BIT,
     length=math.inf,
     bit_rate="",
     precision="",
     num_samples=0,
-) -> lib.audio.AudioFileMetadata:
-    """ Make a `AudioFileMetadata` for testing. """
-    return lib.audio.AudioFileMetadata(
-        path, sample_rate, num_channels, encoding, length, bit_rate, precision, num_samples
+) -> lib.audio.AudioMetadata:
+    """ Make a `AudioMetadata` for testing. """
+    return lib.audio.AudioMetadata(
+        path, sample_rate, num_channels, encoding, bit_rate, precision, num_samples
     )
 
 
@@ -61,18 +61,19 @@ def make_passage(
         [], lib.datasets.alignment_dtype
     ),
     speaker: lib.datasets.Speaker = lib.datasets.Speaker(""),
-    audio_file: lib.audio.AudioFileMetadata = make_metadata(),
+    audio_file: lib.audio.AudioMetadata = make_metadata(),
     script: typing.Optional[str] = None,
     transcript: typing.Optional[str] = None,
     **kwargs,
 ) -> lib.datasets.Passage:
     """ Make a `Passage` for testing. """
     max_ = lambda attr: max([getattr(a, attr)[1] for a in alignments])
+    make_str: typing.Callable[[str], str]
     make_str = lambda attr: "." * max_(attr) if len(alignments) else ""
-    script = make_str("script") if script is None else script
-    transcript = make_str("transcript") if transcript is None else transcript
+    script_ = make_str("script") if script is None else script
+    transcript_ = make_str("transcript") if transcript is None else transcript
     return lib.datasets.Passage(
-        audio_file, speaker, script, transcript, alignments, nonalignments, **kwargs
+        audio_file, speaker, script_, transcript_, alignments, nonalignments, **kwargs
     )
 
 
@@ -80,13 +81,13 @@ def get_audio_metadata_side_effect(
     paths: typing.Union[pathlib.Path, typing.List[pathlib.Path]],
     _func=lib.audio.get_audio_metadata,
     **kwargs,
-) -> typing.Union[lib.audio.AudioFileMetadata, typing.List[lib.audio.AudioFileMetadata]]:
+) -> typing.Union[lib.audio.AudioMetadata, typing.List[lib.audio.AudioMetadata]]:
     """`get_audio_metadata.side_effect` that returns placeholder metadata if the path doesn't
     exist."""
     is_list = isinstance(paths, list)
     paths = paths if isinstance(paths, list) else [paths]
     existing = [p for p in paths if p.exists() and p.is_file()]
-    metadatas: typing.List[lib.audio.AudioFileMetadata] = _func(existing, **kwargs)
+    metadatas: typing.List[lib.audio.AudioMetadata] = _func(existing, **kwargs)
     metadatas = [metadatas.pop(0) if p.exists() else make_metadata(path=p) for p in paths]
     return metadatas if is_list else metadatas[0]
 

@@ -10,6 +10,7 @@ import warnings  # noqa: E402
 
 import pytest  # noqa: E402
 import torch.autograd  # noqa: E402
+import torch.distributed  # noqa: E402
 from hparams import set_lazy_resolution  # noqa: E402
 
 import lib  # noqa: E402
@@ -37,3 +38,7 @@ def run_before_test():
         )
         with torch.autograd.detect_anomaly():
             yield
+    try:
+        torch.distributed.destroy_process_group()
+    except RuntimeError:
+        pass

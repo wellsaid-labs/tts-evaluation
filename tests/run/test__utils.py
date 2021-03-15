@@ -8,7 +8,7 @@ import pytest
 
 import lib
 import run
-from lib.audio import AudioFileMetadata
+from lib.audio import AudioMetadata
 from run._utils import _find_duplicate_passages, split_dataset
 from tests._utils import TEST_DATA_PATH, make_passage
 
@@ -29,14 +29,14 @@ def test_normalize_audio():
     sample_rate = 8000
     num_channels = 2
     ffmpeg_encoding = "pcm_s16le"
-    sox_encoding = "16-bit Signed Integer PCM"
+    sox_encoding = lib.audio.AudioEncoding.PCM_INT_16_BIT
     suffix = ".wav"
-    args = (sample_rate, num_channels, sox_encoding, 7.584, "256k", "16-bit", 60672)
+    args = (sample_rate, num_channels, sox_encoding, "256k", "16-bit", 60672)
     with tempfile.TemporaryDirectory() as path:
         directory = Path(path)
         audio_path = directory / TEST_DATA_LJ.name
         shutil.copy(TEST_DATA_LJ, audio_path)
-        metadata = AudioFileMetadata(audio_path, *args)
+        metadata = AudioMetadata(audio_path, *args)
         passage = make_passage(speaker=lib.datasets.LINDA_JOHNSON, audio_file=metadata)
         dataset = {lib.datasets.LINDA_JOHNSON: [passage]}
         dataset = run._utils.normalize_audio(
@@ -50,7 +50,7 @@ def test_normalize_audio():
         assert len(dataset[lib.datasets.LINDA_JOHNSON]) == 1
         new_path = dataset[lib.datasets.LINDA_JOHNSON][0].audio_file.path
         assert new_path.absolute() != audio_path.absolute()
-        assert lib.audio.get_audio_metadata(new_path) == AudioFileMetadata(new_path, *args)
+        assert lib.audio.get_audio_metadata(new_path) == AudioMetadata(new_path, *args)
 
 
 def test__find_duplicate_passages():

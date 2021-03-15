@@ -84,12 +84,11 @@ def test__parse_audio_metadata():
     Bit Rate       : 1.06M
     Sample Encoding: 24-bit Signed Integer PCM"""
     )
-    assert metadata == lib.audio.AudioFileMetadata(
+    assert metadata == lib.audio.AudioMetadata(
         path=pathlib.Path("data/Heather Doe/03 Recordings/Heather_4-21.wav"),
         sample_rate=44100,
         num_channels=1,
-        encoding="24-bit Signed Integer PCM",
-        length=13588.089818594104,
+        encoding=lib.audio.AudioEncoding.PCM_INT_24_BIT,
         bit_rate="1.06M",
         precision="24-bit",
         num_samples=599234761,
@@ -109,12 +108,11 @@ def test__parse_audio_metadata__mp3():
     Sample Encoding: MPEG audio (layer I, II or III)
     Comment        : 'Title=WellSaid_Script4'"""
     )
-    assert metadata == lib.audio.AudioFileMetadata(
+    assert metadata == lib.audio.AudioMetadata(
         path=pathlib.Path("data/beth_cameron/recordings/4.mp3"),
         sample_rate=44100,
         num_channels=1,
-        encoding="MPEG audio (layer I, II or III)",
-        length=738.6229931972789,
+        encoding=lib.audio.AudioEncoding.MPEG,
         bit_rate="256k",
         precision="16-bit",
         num_samples=32573274,
@@ -136,12 +134,11 @@ def test__parse_audio_metadata__multiline_comments():
     Year=2015
     Genre=0"""
     )
-    assert metadata == lib.audio.AudioFileMetadata(
+    assert metadata == lib.audio.AudioMetadata(
         path=pathlib.Path("coldcomforthvac_061915.mp3"),
         sample_rate=44100,
         num_channels=1,
-        encoding="MPEG audio (layer I, II or III)",
-        length=297.33,
+        encoding=lib.audio.AudioEncoding.MPEG,
         bit_rate="256k",
         precision="16-bit",
         num_samples=13112253,
@@ -150,12 +147,11 @@ def test__parse_audio_metadata__multiline_comments():
 
 def test_get_audio_metadata():
     """ Test `lib.audio.get_audio_metadata` returns the right metadata. """
-    assert lib.audio.get_audio_metadata(TEST_DATA_LJ) == lib.audio.AudioFileMetadata(
+    assert lib.audio.get_audio_metadata(TEST_DATA_LJ) == lib.audio.AudioMetadata(
         path=TEST_DATA_LJ,
         sample_rate=24000,
         num_channels=1,
-        encoding="32-bit Floating Point PCM",
-        length=7.583958333333333,
+        encoding=lib.audio.AudioEncoding.PCM_FLOAT_32_BIT,
         bit_rate="768k",
         precision="25-bit",
         num_samples=182015,
@@ -171,12 +167,11 @@ def test_get_audio_metadata__large_batch():
     """ Test `lib.audio.get_audio_metadata` handles a large batch.  """
     metadatas = lib.audio.get_audio_metadata([TEST_DATA_LJ] * 100, max_arg_length=124)
     for metadata in metadatas:
-        assert metadata == lib.audio.AudioFileMetadata(
+        assert metadata == lib.audio.AudioMetadata(
             path=TEST_DATA_LJ,
             sample_rate=24000,
             num_channels=1,
-            encoding="32-bit Floating Point PCM",
-            length=7.583958333333333,
+            encoding=lib.audio.AudioEncoding.PCM_FLOAT_32_BIT,
             bit_rate="768k",
             precision="25-bit",
             num_samples=182015,
@@ -185,12 +180,11 @@ def test_get_audio_metadata__large_batch():
 
 def test_get_audio_metadata__multiple_channels():
     """Test `lib.audio.get_audio_metadata` returns the right metadata for multiple channel audio."""
-    assert lib.audio.get_audio_metadata(TEST_DATA_LJ_MULTI_CHANNEL) == lib.audio.AudioFileMetadata(
+    assert lib.audio.get_audio_metadata(TEST_DATA_LJ_MULTI_CHANNEL) == lib.audio.AudioMetadata(
         path=TEST_DATA_LJ_MULTI_CHANNEL,
         sample_rate=24000,
         num_channels=2,
-        encoding="32-bit Floating Point PCM",
-        length=7.583958333333333,
+        encoding=lib.audio.AudioEncoding.PCM_FLOAT_32_BIT,
         bit_rate="1.54M",
         precision="25-bit",
         num_samples=182015,
@@ -346,7 +340,7 @@ def test_normalize_suffix():
 def test_normalize_audio__assert_audio_normalized():
     """Test `lib.audio.normalize_audio` normalizes audio and `lib.audio.assert_audio_normalized`
     checks."""
-    sox_encoding = "16-bit Signed Integer PCM"
+    sox_encoding = lib.audio.AudioEncoding.PCM_INT_16_BIT
     ffmpeg_encoding = "pcm_s16le"
     sample_rate = 8000
     num_channels = 2
@@ -370,8 +364,8 @@ def test_normalize_audio__assert_audio_normalized():
             audio_filter,
         )
         metadata = lib.audio.get_audio_metadata(audio_path)
-        new_metadata = lib.audio.AudioFileMetadata(
-            new_audio_path, sample_rate, num_channels, sox_encoding, 7.584, "256k", "16-bit", 60672
+        new_metadata = lib.audio.AudioMetadata(
+            new_audio_path, sample_rate, num_channels, sox_encoding, "256k", "16-bit", 60672
         )
         assert lib.audio.get_audio_metadata(new_audio_path) == new_metadata
     lib.audio.assert_audio_normalized(new_metadata, suffix, sox_encoding, sample_rate, num_channels)

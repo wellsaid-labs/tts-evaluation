@@ -1,0 +1,261 @@
+import collections
+import contextlib
+import logging
+import math
+import random
+import time
+import typing
+
+import altair as alt
+import numpy as np
+import pandas as pd
+import streamlit as st
+import torch
+import tqdm
+from librosa.util import utils as librosa_utils
+from torchnlp.random import fork_rng
+
+import lib
+from lib.audio import amplitude_to_db, signal_to_rms
+from lib.datasets import Passage, Span
+from lib.utils import clamp, flatten_2d, round_, seconds_to_str
+from run._config import Dataset
+from run._streamlit import fast_grapheme_to_phoneme, read_wave_audio_slice
+
+logger = logging.getLogger(__name__)
+
+
+ALIGNMENT_PRECISION = 0.1
+
+
+@contextlib.contextmanager
+def st_expander(label):
+    with st.beta_expander(label):
+        try:
+            start = time.time()
+            logger.info("Visualizing '%s'...", label)
+            yield label
+            elapsed = seconds_to_str(time.time() - start)
+            logger.info("`%s` ran for %s", label, elapsed)
+        except GeneratorExit:
+            pass
+
+
+_RandomSampleVar = typing.TypeVar("_RandomSampleVar")
+
+
+def random_sample(
+    list_: typing.List[_RandomSampleVar], max_samples: int, seed: int = 123
+) -> typing.List[_RandomSampleVar]:
+    """ Deterministic random sample. """
+    with fork_rng(seed):
+        return random.sample(list_, min(len(list_), max_samples))
+
+
+def _ngrams(list_: typing.Sequence, n: int) -> typing.Iterator[slice]:
+    """ Learn more: https://en.wikipedia.org/wiki/N-gram. """
+    yield from (slice(i, i + n) for i in range(len(list_) - n + 1))
+
+
+def _amp_to_db(amp: float) -> float:
+    return typing.cast(float, amplitude_to_db(torch.tensor(amp)).item())
+
+
+def _signal_to_db_rms_level(signal: np.ndarray) -> float:
+    """ Get the dB RMS level of `signal`."""
+    if signal.shape[0] == 0:
+        return math.nan
+    return round(_amp_to_db(float(signal_to_rms(signal))), 1)
+
+
+def _signal_to_loudness(signal: np.ndarray, sample_rate: int, block_size: float = 0.4) -> float:
+    """Get the loudness in LUFS of `signal`."""
+    meter = lib.audio.get_pyloudnorm_meter(block_size=block_size, sample_rate=sample_rate)
+    if signal.shape[0] >= lib.audio.seconds_to_samples(block_size, sample_rate):
+        return round(meter.integrated_loudness(signal), 1)
+    return math.nan
+
+
+def _visualize_signal(
+    signal: np.ndarray,
+    sample_rate: int,
+    rules: typing.List[typing.Tuple[str, float]] = [],
+    max_sample_rate: int = 2000,
+    x: str = "seconds",
+    label: str = "label",
+    y: typing.Tuple[str, str] = ("y_min", "y_max"),
+) -> alt.Chart:
+    """Visualize a signal envelope similar to `librosa.display.waveplot`.
+
+    Learn more about envelopes: https://en.wikipedia.org/wiki/Envelope_detector
+
+    Args:
+        ...
+        rules: Add a rule and label, for every point in this list.
+        ...
+    """
+    ratio = sample_rate // max_sample_rate
+    frames = librosa_utils.frame(signal, ratio, ratio, axis=0)  # type: ignore
+    envelope = np.max(np.abs(frames), axis=-1)
+    assert frames.shape[1] == ratio
+    assert frames.shape[0] == envelope.shape[0]
+
+    ticks = np.arange(0, envelope.shape[0] * ratio / sample_rate, ratio / sample_rate)
+    scale = alt.Scale(domain=(-1.0, 1.0))
+    waveform = (
+        alt.Chart(pd.DataFrame({x: ticks, y[0]: -envelope, y[1]: envelope}))
+        .mark_area()
+        .encode(x=f"{x}:Q", y=alt.Y(f"{y[0]}:Q", scale=scale), y2=f"{y[1]}:Q")
+    )
+    labels, lines = zip(*rules)
+    rules_ = alt.Chart(pd.DataFrame({x: lines, label: labels})).mark_rule().encode(x=x, color=label)
+    return (waveform + rules_).interactive()
+
+
+def bucket_and_chart(
+    iterable: typing.Iterable[typing.Union[float, int]],
+    bucket_size: float = 1,
+    ndigits: int = 7,
+    x: str = "Buckets",
+    y: str = "Count",
+) -> alt.Chart:
+    """ Bucket `iterable` and create a bar chart. """
+    buckets = collections.defaultdict(int)
+    nan_count = 0
+    for item in iterable:
+        if math.isnan(item):
+            nan_count += 1
+        else:
+            buckets[round(round_(item, bucket_size), ndigits)] += 1
+    if nan_count > 0:
+        logger.warning("Ignoring %d NaNs...", nan_count)
+
+    df = pd.DataFrame({x: buckets.keys(), y: buckets.values()})
+    return alt.Chart(df).mark_bar().encode(x=x, y=y, tooltip=[x, y]).interactive()
+
+
+def _dataset_passages(dataset: Dataset) -> typing.Iterator[Passage]:
+    """ Get all passages in `dataset`. """
+    for _, passages in dataset.items():
+        yield from passages
+
+
+def dataset_audio_files(dataset: Dataset) -> typing.Set[lib.audio.AudioMetadata]:
+    return set(flatten_2d([[p.audio_file for p in v] for v in dataset.values()]))
+
+
+def dataset_total_aligned_audio(dataset: Dataset) -> float:
+    return sum(flatten_2d([[p.aligned_audio_length() for p in v] for v in dataset.values()]))
+
+
+def dataset_total_audio(dataset: Dataset) -> float:
+    return sum([m.length for m in dataset_audio_files(dataset)])
+
+
+def dataset_pause_lengths_in_seconds(dataset: Dataset) -> typing.Iterator[float]:
+    """ Get every pause in `dataset` between alignments. """
+    for passage in _dataset_passages(dataset):
+        for prev, next in zip(passage.alignments, passage.alignments[1:]):
+            yield next.audio[0] - prev.audio[1]
+
+
+def passages_alignment_ngrams(passages: typing.List[Passage], n: int = 1) -> typing.Iterator[Span]:
+    """ Get ngram `Span`s with `n` alignments. """
+    for passage in tqdm.tqdm(passages):
+        yield from (Span(passage, s) for s in _ngrams(passage.alignments, n=n))
+
+
+def dataset_num_alignments(dataset: Dataset) -> int:
+    """ Get number of `Alignment`s in `dataset`. """
+    return sum([len(p.alignments) for p in _dataset_passages(dataset)])
+
+
+def dataset_coverage(dataset: Dataset, spans: typing.List[Span]) -> float:
+    """ Get the percentage of the `dataset` these `spans` cover. """
+    logger.info("Getting span coverage of dataset...")
+    alignments = set()
+    for span in spans:
+        alignments.update((span.passage, i) for i in range(span.slice.start, span.slice.stop))
+    return len(alignments) / dataset_num_alignments(dataset)
+
+
+def _has_alnum(s: str):
+    return any(c.isalnum() for c in s)
+
+
+def span_mistranscriptions(span: Span) -> typing.List[typing.Tuple[str, str]]:
+    """ Get a slices of script and transcript that were not aligned. """
+    return [(a.strip(), b.strip()) for a, b, _ in span.script_nonalignments() if _has_alnum(a + b)]
+
+
+def span_pauses(span: Span) -> typing.List[float]:
+    """ Get the length of pauses between alignments in `span`. """
+    return [(b - a) for _, _, (a, b) in span.script_nonalignments()[1:-1]]
+
+
+def span_total_silence(span: Span) -> float:
+    return sum(span_pauses(span))
+
+
+def span_audio(span: Span) -> np.ndarray:
+    """Get `span` audio using cached `read_audio_slice`."""
+    start = span.passage.alignments[span.slice][0].audio[0]
+    return read_wave_audio_slice(span.passage.audio_file, start, span.audio_length)
+
+
+def span_audio_slice(span: Span, second: float, lengths: typing.Tuple[float, float]) -> np.ndarray:
+    """ Get the audio at `second`. """
+    clamp_ = lambda x: clamp(x, min_=0, max_=span.passage.audio_file.length)
+    second = span.passage.alignments[span.slice][0].audio[0] + second
+    start = clamp_(second - lengths[0])
+    end = clamp_(second + lengths[1])
+    return read_wave_audio_slice(span.passage.audio_file, start, end - start)
+
+
+def span_audio_boundary_rms_level(
+    span: Span,
+    lengths: typing.Tuple[float, float] = (ALIGNMENT_PRECISION / 2, ALIGNMENT_PRECISION / 2),
+) -> typing.Tuple[float, float]:
+    """ Get the audio RMS level at the boundaries. """
+    return (span_audio_left_rms_level(span, lengths), span_audio_right_rms_level(span, lengths))
+
+
+def span_audio_left_rms_level(
+    span: Span,
+    lengths: typing.Tuple[float, float] = (ALIGNMENT_PRECISION / 2, ALIGNMENT_PRECISION / 2),
+) -> float:
+    """ Get the audio RMS level at the left boundary. """
+    return _signal_to_db_rms_level(span_audio_slice(span, 0, lengths))
+
+
+def span_audio_right_rms_level(
+    span: Span,
+    lengths: typing.Tuple[float, float] = (ALIGNMENT_PRECISION / 2, ALIGNMENT_PRECISION / 2),
+) -> float:
+    """ Get the audio RMS level at the right boundary. """
+    return _signal_to_db_rms_level(span_audio_slice(span, span.audio_length, lengths))
+
+
+def span_audio_rms_level(span: Span) -> float:
+    return _signal_to_db_rms_level(span_audio(span))
+
+
+def span_audio_loudness(span: Span) -> float:
+    return _signal_to_loudness(span_audio(span), span.audio_file.sample_rate)
+
+
+def span_visualize_signal(span: Span, alignment_label="alignment") -> alt.Chart:
+    """ Visualize `span` signal as a waveform chart with lines for alignments. """
+    rules = [(alignment_label, t) for a in span.alignments for t in a.audio]
+    return _visualize_signal(span_audio(span), span.audio_file.sample_rate, rules)
+
+
+def span_sec_per_char(span: Span):
+    """ Get the aligned seconds per character. """
+    return round(sum(a.audio[-1] - a.audio[0] for a in span.alignments) / len(span.script), 2)
+
+
+def span_sec_per_phon(span: Span):
+    """ Get the aligned seconds per character. """
+    phonemes = fast_grapheme_to_phoneme(span.script)
+    return sum(a.audio[-1] - a.audio[0] for a in span.alignments) / len(phonemes.split("|"))

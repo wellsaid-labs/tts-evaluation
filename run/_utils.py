@@ -98,9 +98,9 @@ def get_dataset(
         path: Directory to cache the dataset.
     """
     logger.info("Loading dataset...")
+    load_data = lambda s, d: (s, [handle_passage(p) for p in d(path) if include_passage(p)])
     with multiprocessing.pool.ThreadPool() as pool:
-        load_data = lambda i: (i[0], [handle_passage(p) for p in i[1](path) if include_passage(p)])
-        items = list(pool.map(load_data, datasets.items()))
+        items = list(pool.starmap(load_data, datasets.items()))
     dataset = {k: v for k, v in items}
     dataset = run._utils.normalize_audio(dataset)
     return dataset

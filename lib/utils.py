@@ -196,17 +196,17 @@ def split(
         yield list_[index:]
 
 
-def seconds_to_string(seconds: float) -> str:
+def seconds_to_str(seconds: float) -> str:
     """Rewrite seconds as a string.
 
     Example:
-        >>> seconds_to_string(123)
+        >>> seconds_to_str(123)
         '2m 3s 0ms'
-        >>> seconds_to_string(123.100)
+        >>> seconds_to_str(123.100)
         '2m 3s 100ms'
-        >>> seconds_to_string(86400)
+        >>> seconds_to_str(86400)
         '1d 0h 0m 0s 0ms'
-        >>> seconds_to_string(3600)
+        >>> seconds_to_str(3600)
         '1h 0m 0s 0ms'
     """
     assert seconds >= 0, "Seconds must be positive."
@@ -237,7 +237,7 @@ def log_runtime(function: _LogRuntimeFunction) -> _LogRuntimeFunction:
     def decorator(*args, **kwargs):
         start = time.time()
         result = function(*args, **kwargs)
-        elapsed = seconds_to_string(time.time() - start)
+        elapsed = seconds_to_str(time.time() - start)
         logger.info("`%s` ran for %s", function.__qualname__, elapsed)
         return result
 

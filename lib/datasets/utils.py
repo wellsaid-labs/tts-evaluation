@@ -21,7 +21,7 @@ import torch
 from third_party import LazyLoader
 
 import lib
-from lib.audio import AudioFileMetadata, get_audio_metadata
+from lib.audio import AudioMetadata, get_audio_metadata
 from lib.utils import flatten_2d, list_to_tuple
 
 if typing.TYPE_CHECKING:  # pragma: no cover
@@ -120,7 +120,7 @@ class Passage:
         other_metadata: Additional metadata associated with this passage.
     """
 
-    audio_file: AudioFileMetadata
+    audio_file: AudioMetadata
     speaker: Speaker
     script: str
     transcript: str
@@ -292,6 +292,9 @@ class Span:
         else:
             raise TypeError("Invalid argument type: {}".format(type(key)))
 
+    def __iter__(self: SpanType) -> typing.Iterator[SpanType]:
+        return (self.__getitem__(i) for i in range(self.slice.stop - self.slice.start))
+
     def check_invariants(self):
         """ Check datastructure invariants. """
         self.passage.check_invariants()
@@ -313,7 +316,7 @@ def _merge(
 
 def make_nonalignments(
     curr: UnprocessedPassage,
-    audio_metadata: AudioFileMetadata,
+    audio_metadata: AudioMetadata,
     prev: UnprocessedPassage = None,
     next: UnprocessedPassage = None,
     **kwargs,
@@ -746,7 +749,7 @@ def update_conventional_passage_script(passage: Passage, script: str) -> Passage
     return dataclasses.replace(passage, script=script, transcript=script, alignments=alignments_)
 
 
-def _clamp(alignment: Alignment, audio_file: AudioFileMetadata) -> Alignment:
+def _clamp(alignment: Alignment, audio_file: AudioMetadata) -> Alignment:
     """ Helped function for `update_passage_audio`. """
     if alignment.audio[-1] <= audio_file.length:
         return alignment
@@ -754,14 +757,12 @@ def _clamp(alignment: Alignment, audio_file: AudioFileMetadata) -> Alignment:
     return alignment._replace(audio=new)
 
 
-def update_passage_audio(
-    passage: Passage, audio_file: AudioFileMetadata, eps: float = 1e-4
-) -> Passage:
+def update_passage_audio(passage: Passage, audio_file: AudioMetadata, eps: float = 1e-4) -> Passage:
     """Update `passage.audio_file` with a new `audio_file` that has a similar length to the old
     audio file."""
     message = "The audio files must have similar length."
     assert abs(passage.audio_file.length - audio_file.length) < eps, message
-    if passage.alignments[-1].audio[-1] <= audio_file.length:
+    if len(passage.alignments) == 0 or passage.alignments[-1].audio[-1] <= audio_file.length:
         return dataclasses.replace(passage, audio_file=audio_file)
     updated = lib.utils.Tuples([_clamp(a, audio_file) for a in passage.alignments], alignment_dtype)
     return dataclasses.replace(passage, alignments=updated, audio_file=audio_file)

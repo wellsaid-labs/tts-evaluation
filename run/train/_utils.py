@@ -39,7 +39,7 @@ import lib
 import run
 from lib.distributed import is_master
 from lib.environment import load, load_most_recent_file
-from lib.utils import dataclass_as_dict, flatten_2d, seconds_to_string
+from lib.utils import dataclass_as_dict, flatten_2d, seconds_to_str
 from run._config import (
     Cadence,
     Dataset,
@@ -346,7 +346,7 @@ def _get_dataset_stats(
             stats[label("num_audio_files")] = len(set(p.audio_file for p in passages))
             stats[label("num_passages")] = len(passages)
             stats[label("num_characters")] = sum(len(p.script) for p in passages)
-            num_seconds = seconds_to_string(sum(p.aligned_audio_length() for p in passages))
+            num_seconds = seconds_to_str(sum(p.aligned_audio_length() for p in passages))
             stats[label("num_seconds")] = num_seconds
     return stats
 
@@ -674,8 +674,8 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
         https://github.com/PyTorchLightning/lightning-bolts/pull/127
         https://github.com/NVIDIA/apex/issues/304
         """
-            assert self.iter is not None
-            self.next: DataLoaderVar = next(self.iter).apply(self.process_tensor)
+        assert self.iter is not None
+        self.next: DataLoaderVar = next(self.iter).apply(self.process_tensor)
 
     def __iter__(self) -> typing.Iterator[DataLoaderVar]:
         if self.iter is None:

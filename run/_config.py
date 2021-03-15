@@ -210,7 +210,7 @@ def _configure_audio_processing():
     num_channels = 1  # NOTE: The signal model output is 1-channel, similar to Tacotron-2.
     # NOTE: The SoX and FFmpeg encodings are the same.
     # NOTE: The signal model output is 32-bit.
-    sox_encoding = "32-bit Floating Point PCM"
+    sox_encoding = lib.audio.AudioEncoding.PCM_FLOAT_32_BIT
     ffmpeg_encoding = "pcm_f32le"
     suffix = ".wav"
 
