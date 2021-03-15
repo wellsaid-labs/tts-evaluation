@@ -56,7 +56,7 @@ def make_instance(
     gpu_count: int = typer.Option(...),
     disk_size: int = typer.Option(...),
     disk_type: str = typer.Option(...),
-    image_project: str = typer.Option(...),
+    image_project: str = typer.Option(project),
     image_family: str = typer.Option(...),
     metadata: typing.List[str] = typer.Option([]),
     metadata_from_file: typing.List[str] = typer.Option([]),
@@ -251,13 +251,21 @@ def image_and_delete(
 
     NOTE: This will remove the instance from it's managed group, and it cannot be put back.
     """
+    lib.environment.set_basic_logging_config()
+    try:
+        compute.images().get(project=project, image=image_name).execute()
+        logger.error("The image '%s' already exists.", image_name)
+        return
+    except googleapiclient.errors.HttpError:
+        pass
+
     api = "gcloud compute"
     suffix = f"--zone={zone}"
     commands = [
         f"{api} instance-groups managed abandon-instances {name} --instances={vm_name} {suffix}",
         f"{api} instances stop {vm_name} {suffix}",
         f"{api} images create {image_name} --family={image_family} "
-        f"--source-disk={vm_name} --source-disk-zone={zone} --storage-location=us --verbosity=info",
+        f"--source-disk={vm_name} --source-disk-zone={zone} --storage-location=us",
     ]
     for command in commands:
         typer.echo(subprocess.check_output(command, shell=True).decode().strip())
