@@ -97,13 +97,13 @@ def _parse_audio_metadata(metadata: str) -> AudioMetadata:
     assert splits[4].split()[3] == "samples"
     sample_rate = int(splits[2])
     num_samples = int(splits[4].split()[2])
-    name = next((e for e in AudioEncoding if e.value == splits[7]), None)
-    assert name is not None, f"Format '{splits[7]}' isn't supported."
+    encoding = next((e for e in AudioEncoding if e.value == splits[7]), None)
+    assert encoding is not None, f"Format '{splits[7]}' isn't supported."
     return AudioMetadata(
         path=Path(str(splits[0][1:-1])),
         sample_rate=sample_rate,
         num_channels=int(splits[1]),
-        encoding=name,
+        encoding=encoding,
         bit_rate=splits[6],
         precision=splits[3],
         num_samples=num_samples,
@@ -244,17 +244,14 @@ def read_wave_audio(metadata: AudioMetadata, start: float = 0, length: float = -
     """ Fast read and seek WAVE file (for supported formats). """
     assert metadata.path.suffix == ".wav"
     assert metadata.num_channels == 1
-    if metadata.encoding is AudioEncoding.PCM_FLOAT_32_BIT:
-        dtype = np.float32
-    elif metadata.encoding is AudioEncoding.PCM_INT_32_BIT:
-        dtype = np.int32
-    elif metadata.encoding is AudioEncoding.PCM_INT_16_BIT:
-        dtype = np.int16
-    elif metadata.encoding is AudioEncoding.PCM_INT_8_BIT:
-        dtype = np.int8
-    else:
-        raise TypeError(f"Encoding '{metadata.encoding}' is not supported.")
-
+    lookup = {
+        AudioEncoding.PCM_FLOAT_32_BIT.name: np.float32,
+        AudioEncoding.PCM_INT_32_BIT.name: np.int32,
+        AudioEncoding.PCM_INT_16_BIT.name: np.int16,
+        AudioEncoding.PCM_INT_8_BIT.name: np.int8,
+    }
+    assert metadata.encoding.name in lookup, f"Encoding '{metadata.encoding}' is not supported."
+    dtype = lookup[metadata.encoding.name]
     num_bytes_per_sample = np.dtype(dtype).itemsize
     sample_rate = metadata.sample_rate
     header_size = os.path.getsize(metadata.path) - num_bytes_per_sample * metadata.num_samples

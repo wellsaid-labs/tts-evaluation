@@ -20,7 +20,6 @@ nltk
 # Audio Library
 librosa
 pyloudnorm
-webrtcvad
 
 # Visualization Library
 matplotlib

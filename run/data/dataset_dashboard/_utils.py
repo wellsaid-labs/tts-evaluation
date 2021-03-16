@@ -7,7 +7,6 @@ import time
 import typing
 
 import altair as alt
-import librosa.util
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -20,7 +19,13 @@ from lib.audio import amplitude_to_db, signal_to_rms
 from lib.datasets import Passage, Span
 from lib.utils import clamp, flatten_2d, round_, seconds_to_str
 from run._config import Dataset
-from run._streamlit import fast_grapheme_to_phoneme, read_wave_audio, span_audio
+from run._streamlit import (
+    fast_grapheme_to_phoneme,
+    make_interval_chart,
+    make_signal_chart,
+    read_wave_audio,
+    span_audio,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -74,42 +79,6 @@ def _signal_to_loudness(signal: np.ndarray, sample_rate: int, block_size: float 
     if signal.shape[0] >= lib.audio.seconds_to_samples(block_size, sample_rate):
         return round(meter.integrated_loudness(signal), 1)
     return math.nan
-
-
-def _visualize_signal(
-    signal: np.ndarray,
-    sample_rate: int,
-    rules: typing.List[typing.Tuple[str, float]] = [],
-    max_sample_rate: int = 2000,
-    x: str = "seconds",
-    label: str = "label",
-    y: typing.Tuple[str, str] = ("y_min", "y_max"),
-) -> alt.Chart:
-    """Visualize a signal envelope similar to `librosa.display.waveplot`.
-
-    Learn more about envelopes: https://en.wikipedia.org/wiki/Envelope_detector
-
-    Args:
-        ...
-        rules: Add a rule and label, for every point in this list.
-        ...
-    """
-    ratio = sample_rate // max_sample_rate
-    frames = librosa.util.frame(signal, ratio, ratio, axis=0)  # type: ignore
-    envelope = np.max(np.abs(frames), axis=-1)
-    assert frames.shape[1] == ratio
-    assert frames.shape[0] == envelope.shape[0]
-
-    ticks = np.arange(0, envelope.shape[0] * ratio / sample_rate, ratio / sample_rate)
-    scale = alt.Scale(domain=(-1.0, 1.0))
-    waveform = (
-        alt.Chart(pd.DataFrame({x: ticks, y[0]: -envelope, y[1]: envelope}))
-        .mark_area()
-        .encode(x=f"{x}:Q", y=alt.Y(f"{y[0]}:Q", scale=scale), y2=f"{y[1]}:Q")
-    )
-    labels, lines = zip(*rules)
-    rules_ = alt.Chart(pd.DataFrame({x: lines, label: labels})).mark_rule().encode(x=x, color=label)
-    return (waveform + rules_).interactive()
 
 
 def bucket_and_chart(
@@ -238,10 +207,13 @@ def span_audio_loudness(span: Span) -> float:
     return _signal_to_loudness(span_audio(span), span.audio_file.sample_rate)
 
 
-def span_visualize_signal(span: Span, alignment_label="alignment") -> alt.Chart:
+def span_visualize_signal(span: Span) -> alt.Chart:
     """ Visualize `span` signal as a waveform chart with lines for alignments. """
-    rules = [(alignment_label, t) for a in span.alignments for t in a.audio]
-    return _visualize_signal(span_audio(span), span.audio_file.sample_rate, rules)
+    signal_chart = make_signal_chart(span_audio(span), span.audio_file.sample_rate)
+    x_min = [a.audio[0] for a in span.alignments]
+    x_max = [a.audio[1] for a in span.alignments]
+    interval_chart = make_interval_chart(np.array(x_min), np.array(x_max))
+    return (signal_chart + interval_chart).interactive()
 
 
 def span_sec_per_char(span: Span):

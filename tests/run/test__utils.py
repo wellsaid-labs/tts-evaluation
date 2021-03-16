@@ -24,6 +24,16 @@ def run_around_tests():
     hparams.clear_config()
 
 
+def test_normalized_audio_path():
+    """Test `run._utils.test_normalized_audio_path` handles basic cases."""
+    path = Path("audio.wav")
+    kwargs = dict(encoding="pcm_s16le", sample_rate=8000, num_channels=1)
+    normalized = run._utils.normalized_audio_path(path, **kwargs)
+    kwargs_ = ",".join([f"{k}={v}" for k, v in kwargs.items()])
+    assert normalized == Path(f"{run._config.TTS_DISK_CACHE_NAME}/ffmpeg(audio,{kwargs_}).wav")
+    assert normalized == run._utils.normalized_audio_path(path, "pcm_s16le", 8000, 1)
+
+
 def test_normalize_audio():
     """Test `run._utils.normalize_audio` normalizes audio in `dataset`."""
     sample_rate = 8000

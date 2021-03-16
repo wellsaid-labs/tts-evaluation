@@ -47,7 +47,13 @@ def normalized_audio_path(
     """Get a unique filename based on a couple of audio normalization parameters."""
     kwargs = dict(encoding=encoding, sample_rate=sample_rate, num_channels=num_channels)
     kwargs_ = ",".join([f"{k}={v}" for k, v in kwargs.items()])
-    return path.parent / run._config.TTS_DISK_CACHE_NAME / f"ffmpeg({path.stem},{kwargs_}).wav"
+    suffix = f",{kwargs_}).wav"
+    prefix = "ffmpeg("
+    parent_name = run._config.TTS_DISK_CACHE_NAME
+    if path.name.startswith(prefix) and path.name.endswith(suffix) and path.parent == parent_name:
+        return path
+    parent = path.parent / parent_name if path.parent.name != parent_name else path.parent
+    return parent / f"{prefix}{path.stem}{suffix}"
 
 
 def _normalize_audio(

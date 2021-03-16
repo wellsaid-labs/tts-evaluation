@@ -7,7 +7,10 @@ import os
 import pathlib
 import typing
 
+import altair as alt
+import librosa.util
 import numpy as np
+import pandas as pd
 import streamlit as st
 import tqdm
 from streamlit.server.server import Server
@@ -159,3 +162,63 @@ def get_dataset(speaker_labels: typing.FrozenSet[str]) -> run._config.Dataset:
 def fast_grapheme_to_phoneme(text: str):
     """Fast grapheme to phoneme, cached."""
     return lib.text._line_grapheme_to_phoneme([text], separator="|")[0]
+
+
+def integer_signal_to_floating(signal: np.ndarray) -> np.ndarray:
+    """Transform `signal` from an integer data type to floating data type."""
+    is_floating = np.issubdtype(signal.dtype, np.floating)
+    return signal / (1.0 if is_floating else np.abs(np.iinfo(signal.dtype).min))
+
+
+def make_signal_chart(
+    signal: np.ndarray,
+    sample_rate: int,
+    max_sample_rate: int = 2000,
+    x: str = "seconds",
+    y: typing.Tuple[str, str] = ("y_min", "y_max"),
+) -> alt.Chart:
+    """Make `altair.Chart` for `signal` similar to `librosa.display.waveplot`.
+
+    Learn more about envelopes: https://en.wikipedia.org/wiki/Envelope_detector
+    """
+    signal = integer_signal_to_floating(signal)
+    ratio = sample_rate // max_sample_rate
+    frames = librosa.util.frame(signal, ratio, ratio, axis=0)  # type: ignore
+    envelope = np.max(np.abs(frames), axis=-1)
+    assert frames.shape[1] == ratio
+    assert frames.shape[0] == envelope.shape[0]
+    ticks = np.arange(0, envelope.shape[0] * ratio / sample_rate, ratio / sample_rate)
+    return (
+        alt.Chart(pd.DataFrame({x: ticks, y[0]: -envelope, y[1]: envelope}))
+        .mark_area()
+        .encode(
+            x=alt.X(x, type="quantitative"),
+            y=alt.Y(y[0], scale=alt.Scale(domain=(-1.0, 1.0)), type="quantitative"),
+            y2=alt.Y2(y[1]),
+        )
+    )
+
+
+def make_interval_chart(
+    x_min: np.ndarray,
+    x_max: np.ndarray,
+    opacity=0.3,
+    color="#85C5A6",
+    stroke="#000",
+    strokeWidth=1,
+    strokeOpacity=0.3,
+    **kwargs,
+):
+    """Make `altair.Chart` for the intervals between `x_min` and `x_max`."""
+    return (
+        alt.Chart(pd.DataFrame({"x_min": x_min, "x_max": x_max}))
+        .mark_rect(
+            opacity=opacity,
+            color=color,
+            stroke=stroke,
+            strokeWidth=strokeWidth,
+            strokeOpacity=strokeOpacity,
+            **kwargs,
+        )
+        .encode(x=alt.X("x_min", type="quantitative"), x2=alt.X2("x_max"))
+    )
