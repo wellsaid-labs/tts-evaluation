@@ -7,6 +7,10 @@ from lib.datasets.utils import Passage, Speaker, dataset_loader
 # TODO: Consider not using the actors realnames in the codebase in an effort to protect their
 # privacy.
 
+##############
+# E-LEARNING #
+##############
+
 ADRIENNE_WALKER_HELLER = Speaker("adrienne_walker_heller", "Adrienne Walker-Heller")
 ALICIA_HARRIS = Speaker("alicia_harris", "Alicia Harris")
 ALICIA_HARRIS__MANUAL_POST = Speaker(
@@ -25,13 +29,29 @@ JACK_RUTKOWSKI__MANUAL_POST = Speaker(
     "jack_rutkowski__manual_post", "Jack Rutkowski (Manual Post Processing)"
 )
 JOHN_HUNERLACH__NARRATION = Speaker("john_hunerlach__narration", "John Hunerlach (Narration)")
-JOHN_HUNERLACH__RADIO = Speaker("john_hunerlach__radio", "John Hunerlach (Radio)")
 MARK_ATHERLAY = Speaker("mark_atherlay", "Mark Atherlay")
 MEGAN_SINCLAIR = Speaker("megan_sinclair", "Megan Sinclair")
 SAM_SCHOLL = Speaker("sam_scholl", "Sam Scholl")
 SAM_SCHOLL__MANUAL_POST = Speaker("sam_scholl__manual_post", "Sam Scholl (Manual Post Processing)")
 STEVEN_WAHLBERG = Speaker("steven_wahlberg", "Steven Wahlberg")
 SUSAN_MURPHY = Speaker("susan_murphy", "Susan Murphy")
+
+###############
+# PROMOTIONAL #
+###############
+ADRIENNE_WALKER_HELLER__PROMO = Speaker("adrienne_walker__promo", "Adrienne Walker-Heller (Promo)")
+DAMON_PAPADOPOULOS__PROMO = Speaker("damon_papadopoulos__promo", "Damon Papadopoulos (Promo)")
+DANA_HURLEY__PROMO = Speaker("dana_hurley__promo", "Dana Hurley (Promo)")
+ED_LACOMB__PROMO = Speaker("ed_lacomb__promo", "Ed LaComb (Promo)")
+JOHN_HUNERLACH__RADIO = Speaker("john_hunerlach__radio", "John Hunerlach (Radio)")
+LINSAY_ROUSSEAU__PROMO = Speaker("linsay_rousseau__promo", "Linsay Rousseau (Promo)")
+SAM_SCHOLL__PROMO = Speaker("sam_scholl__promo", "Sam Scholl (Promo)")
+
+#########
+# OTHER #
+#########
+MARI_MONGE__PROMO = Speaker("mari_monge__promo", "Mari Monge (Promo)")
+OTIS_JIRY__STORY = Speaker("otis_jiry__promo", "Otis Jiry (Story-Telling)")
 
 
 def _dataset_loader(directory: Path, speaker: Speaker, **kwargs) -> typing.List[Passage]:
