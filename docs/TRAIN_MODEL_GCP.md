@@ -111,7 +111,9 @@ Setup your local development environment by following [these instructions](LOCAL
    python -m pip install -r requirements.txt --upgrade
 
    # NOTE: Set a flag to restart training if the instance is rebooted
-   touch /opt/wellsaid-labs/AUTO_START_FROM_CHECKPOINT
+   # NOTE: Learn more about this command:
+   # https://askubuntu.com/questions/21556/how-to-create-an-empty-file-from-command-line
+   :>> /opt/wellsaid-labs/AUTO_START_FROM_CHECKPOINT
    ```
 
    💡 TIP: After setting up your VM, you may want to
