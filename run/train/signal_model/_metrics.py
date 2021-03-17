@@ -139,7 +139,7 @@ class Metrics(_utils.Metrics):
         """
         values: typing.Dict[str, float] = collections.defaultdict(float)
         assert fft_length in self.fft_lengths
-        prefix = f"{fft_length}/"
+        prefixes = ["", f"{fft_length}/"]
         for index, fake_pred, real_pred, gen_pred, real_loss, fake_loss, gen_loss in zip(
             batch.indicies,
             self._to_list(torch.sigmoid(fake_logits) > threshold),
@@ -151,7 +151,7 @@ class Metrics(_utils.Metrics):
         ):
             span = batch.batch.spans[index]
             assert span.speaker in self.speakers
-            for suffix in [f"/{span.speaker.label}", ""]:
+            for prefix, suffix in itertools.product(prefixes, ["", f"/{span.speaker.label}"]):
                 format_ = lambda s: f"{prefix}{s}{suffix}"
                 values[format_(self.DISCRIM_NUM_FAKE_CORRECT)] += fake_pred == fake_label
                 values[format_(self.DISCRIM_FAKE_LOSS_SUM)] += fake_loss
@@ -180,7 +180,7 @@ class Metrics(_utils.Metrics):
         """
         values: typing.Dict[str, float] = collections.defaultdict(float)
         assert fft_length in self.fft_lengths
-        prefix = f"{fft_length}/"
+        prefixes = ["", f"{fft_length}/"]
         for index, l1_loss, mse_loss in zip(
             batch.indicies,
             self._to_list(l1_losses),
@@ -188,7 +188,7 @@ class Metrics(_utils.Metrics):
         ):
             span = batch.batch.spans[index]
             assert span.speaker in self.speakers
-            for suffix in [f"/{span.speaker.label}", ""]:
+            for prefix, suffix in itertools.product(prefixes, ["", f"/{span.speaker.label}"]):
                 format_ = lambda s: f"{prefix}{s}{suffix}"
                 values[format_(self.L1_LOSS_SUM)] += l1_loss
                 values[format_(self.MSE_LOSS_SUM)] += mse_loss
@@ -217,6 +217,7 @@ class Metrics(_utils.Metrics):
         metrics = {}
         for fft_length, speaker, suffix, _, div in self._iter_permutations(select, is_verbose):
             num_slices = self._reduce(f"{self.NUM_SLICES}{suffix}", select=select)
+            num_slices = len(self.fft_lengths) * num_slices if fft_length is None else num_slices
             update = {
                 self.DISCRIM_FAKE_ACCURACY: div(self.DISCRIM_NUM_FAKE_CORRECT, num_slices),
                 self.DISCRIM_REAL_ACCURACY: div(self.DISCRIM_NUM_REAL_CORRECT, num_slices),
@@ -225,7 +226,7 @@ class Metrics(_utils.Metrics):
                 self.GENERATOR_LOSS: div(self.GENERATOR_LOSS_SUM, num_slices),
                 self.GENERATOR_ACCURACY: div(self.GENERATOR_NUM_CORRECT, num_slices),
             }
-            kwargs = dict(speaker=speaker, fft_length=fft_length)
+            kwargs = dict(speaker=speaker, fft_length="multi" if fft_length is None else fft_length)
             metrics.update({partial(k, **kwargs): v for k, v in update.items()})
         return metrics
 
@@ -233,11 +234,12 @@ class Metrics(_utils.Metrics):
         metrics = {}
         for fft_length, speaker, suffix, _, div in self._iter_permutations(select, is_verbose):
             num_slices = self._reduce(f"{self.NUM_SLICES}{suffix}", select=select)
+            num_slices = len(self.fft_lengths) * num_slices if fft_length is None else num_slices
             update = {
                 self.L1_LOSS: div(self.L1_LOSS_SUM, num_slices),
                 self.MSE_LOSS: div(self.MSE_LOSS_SUM, num_slices),
             }
-            kwargs = dict(speaker=speaker, fft_length=fft_length)
+            kwargs = dict(speaker=speaker, fft_length="multi" if fft_length is None else fft_length)
             metrics.update({partial(k, **kwargs): v for k, v in update.items()})
         return metrics
 
