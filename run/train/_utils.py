@@ -816,12 +816,15 @@ class Metrics(lib.distributed.DictStore):
         assert all(not math.isnan(val) for val in flat), f"Encountered NaN value for metric {key}."
         return math.nan if len(flat) == 0 else op(flat)
 
-    def _div(self, num: str, denom: str, **kwargs) -> float:
+    def _div(
+        self, num: typing.Union[str, float], denom: typing.Union[str, float], **kwargs
+    ) -> float:
         """ Reduce and divide `self.data[num] / self.data[denom]`. """
-        reduced_denom = self._reduce(denom, **kwargs)
+        reduced_denom = self._reduce(denom, **kwargs) if isinstance(denom, str) else denom
         if reduced_denom == 0:
             return math.nan
-        return self._reduce(num, **kwargs) / reduced_denom
+        reduced_num = self._reduce(num, **kwargs) if isinstance(num, str) else num
+        return reduced_num / reduced_denom
 
     def log_optim_metrics(
         self,

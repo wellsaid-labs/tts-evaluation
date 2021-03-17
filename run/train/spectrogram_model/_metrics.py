@@ -337,10 +337,12 @@ class Metrics(_utils.Metrics):
         """
         for speaker in itertools.chain([None], self.speakers if is_verbose else []):
             suffix = "" if speaker is None else f"/{speaker.label}"
-            format_ = lambda s: f"{s}{suffix}"
-            reduce = lambda k: self._reduce(format_(k), select=select)
+            format_ = lambda s: f"{s}{suffix}" if isinstance(s, str) else s
+            reduce_: typing.Callable[[str], float]
+            reduce_ = lambda k: self._reduce(format_(k), select=select)
+            div: typing.Callable[[typing.Union[float, str], typing.Union[float, str]], float]
             div = lambda n, d: self._div(format_(n), format_(d), select=select)
-            yield speaker, reduce, div
+            yield speaker, reduce_, div
 
     @configurable
     def _get_model_metrics(

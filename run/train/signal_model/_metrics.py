@@ -158,7 +158,7 @@ class Metrics(_utils.Metrics):
                 values[format_(self.DISCRIM_NUM_REAL_CORRECT)] += real_pred == real_label
                 values[format_(self.DISCRIM_REAL_LOSS_SUM)] += real_loss
                 values[format_(self.GENERATOR_NUM_CORRECT)] += gen_pred == fake_label
-                values[format_(self.GENERATOR_LOSS)] += gen_loss
+                values[format_(self.GENERATOR_LOSS_SUM)] += gen_loss
 
         return dict(values)
 
@@ -202,25 +202,28 @@ class Metrics(_utils.Metrics):
             is_verbose: If `True`, iterate over more permutations.
         """
         speakers = itertools.chain([None], self.speakers if is_verbose else [])
-        fft_lengths = itertools.chain([None], self.fft_lengths if is_verbose else [])
+        fft_lengths = itertools.chain([None], self.fft_lengths)
         for fft_length, speaker in itertools.product(fft_lengths, speakers):
             suffix = "" if speaker is None else f"/{speaker.label}"
             prefix = "" if fft_length is None else f"{fft_length}/"
-            format_ = lambda s: f"{prefix}{s}{suffix}"
-            reduce = lambda k: self._reduce(format_(k), select=select)
+            format_ = lambda s: f"{prefix}{s}{suffix}" if isinstance(s, str) else s
+            reduce_: typing.Callable[[str], float]
+            reduce_ = lambda k: self._reduce(format_(k), select=select)
+            div: typing.Callable[[typing.Union[float, str], typing.Union[float, str]], float]
             div = lambda n, d: self._div(format_(n), format_(d), select=select)
-            yield fft_length, speaker, reduce, div
+            yield fft_length, speaker, suffix, reduce_, div
 
     def _get_discrim_metrics(self, select: _utils.MetricsSelect, is_verbose: bool) -> _GetMetrics:
         metrics = {}
-        for fft_length, speaker, _, div in self._iter_permutations(select, is_verbose):
+        for fft_length, speaker, suffix, _, div in self._iter_permutations(select, is_verbose):
+            num_slices = self._reduce(f"{self.NUM_SLICES}{suffix}", select=select)
             update = {
-                self.DISCRIM_FAKE_ACCURACY: div(self.DISCRIM_NUM_FAKE_CORRECT, self.NUM_SLICES),
-                self.DISCRIM_REAL_ACCURACY: div(self.DISCRIM_NUM_REAL_CORRECT, self.NUM_SLICES),
-                self.DISCRIM_FAKE_LOSS: div(self.DISCRIM_FAKE_LOSS_SUM, self.NUM_SLICES),
-                self.DISCRIM_REAL_LOSS: div(self.DISCRIM_REAL_LOSS_SUM, self.NUM_SLICES),
-                self.GENERATOR_LOSS: div(self.GENERATOR_LOSS_SUM, self.NUM_SLICES),
-                self.GENERATOR_ACCURACY: div(self.GENERATOR_NUM_CORRECT, self.NUM_SLICES),
+                self.DISCRIM_FAKE_ACCURACY: div(self.DISCRIM_NUM_FAKE_CORRECT, num_slices),
+                self.DISCRIM_REAL_ACCURACY: div(self.DISCRIM_NUM_REAL_CORRECT, num_slices),
+                self.DISCRIM_FAKE_LOSS: div(self.DISCRIM_FAKE_LOSS_SUM, num_slices),
+                self.DISCRIM_REAL_LOSS: div(self.DISCRIM_REAL_LOSS_SUM, num_slices),
+                self.GENERATOR_LOSS: div(self.GENERATOR_LOSS_SUM, num_slices),
+                self.GENERATOR_ACCURACY: div(self.GENERATOR_NUM_CORRECT, num_slices),
             }
             kwargs = dict(speaker=speaker, fft_length=fft_length)
             metrics.update({partial(k, **kwargs): v for k, v in update.items()})
@@ -228,10 +231,11 @@ class Metrics(_utils.Metrics):
 
     def _get_model_metrics(self, select: _utils.MetricsSelect, is_verbose: bool) -> _GetMetrics:
         metrics = {}
-        for fft_length, speaker, _, div in self._iter_permutations(select, is_verbose):
+        for fft_length, speaker, suffix, _, div in self._iter_permutations(select, is_verbose):
+            num_slices = self._reduce(f"{self.NUM_SLICES}{suffix}", select=select)
             update = {
-                self.L1_LOSS: div(self.L1_LOSS_SUM, self.NUM_SLICES),
-                self.MSE_LOSS: div(self.MSE_LOSS_SUM, self.NUM_SLICES),
+                self.L1_LOSS: div(self.L1_LOSS_SUM, num_slices),
+                self.MSE_LOSS: div(self.MSE_LOSS_SUM, num_slices),
             }
             kwargs = dict(speaker=speaker, fft_length=fft_length)
             metrics.update({partial(k, **kwargs): v for k, v in update.items()})
@@ -247,7 +251,7 @@ class Metrics(_utils.Metrics):
 
         total_frames = reduce(self.NUM_FRAMES)
         total_seconds = reduce(self.NUM_SAMPLES)
-        for _, speaker, _reduce, _ in self._iter_permutations(select, is_verbose):
+        for _, speaker, _, _reduce, _ in self._iter_permutations(select, is_verbose):
             update = {
                 self.FREQUENCY_NUM_SAMPLES: _reduce(self.NUM_FRAMES) / total_frames,
                 self.FREQUENCY_NUM_SECONDS: _reduce(self.NUM_SAMPLES) / total_seconds,

@@ -200,6 +200,9 @@ Slice = slice
 class Span:
     """A span of the voiced passage.
 
+    NOTE: The first and last `Alignment`s are cached for performance. The goal is to avoid
+    accessing `self.passage.alignments` due to it's mediocre performance.
+
     Args:
         passage: The original passage, for context.
         slice: A `slice` of `passage.alignments`.
@@ -207,19 +210,22 @@ class Span:
 
     passage: Passage
     slice: Slice
-    _first: Alignment = dataclasses.field(init=False)
-    _last: Alignment = dataclasses.field(init=False)
+    _first_cache: Alignment = dataclasses.field(init=False, repr=False, compare=False)
+    _last_cache: Alignment = dataclasses.field(init=False, repr=False, compare=False)
 
-    @staticmethod
-    def _subtract(a: typing.Tuple[float, float], b: typing.Tuple[float, float]):
-        return tuple([a[0] - b[0], a[1] - b[0]])
+    @property
+    def _first(self) -> Alignment:
+        if not hasattr(self, "_first_cache"):
+            object.__setattr__(self, "_first_cache", self.passage.alignments[self.slice.start])
+        return self._first_cache
 
-    def __post_init__(self):
-        # NOTE: The first and last `Alignment`s are made easily accessible for performance. The
-        # goal is to avoid accessing `self.passage.alignments` due to it's mediocre performance.
-        set = object.__setattr__
-        set(self, "_first", self.passage.alignments[self.slice.start])
-        set(self, "_last", self.passage.alignments[self.slice.stop - 1])
+    @property
+    def _last(self) -> Alignment:
+        if self.slice.stop - 1 == self.slice.start:
+            return self._first
+        if not hasattr(self, "_last_cache"):
+            object.__setattr__(self, "_last_cache", self.passage.alignments[self.slice.stop - 1])
+        return self._last_cache
 
     @property
     def speaker(self):
@@ -253,11 +259,21 @@ class Span:
     def transcript(self):
         return self.passage.transcript[self.transcript_slice]
 
+    @staticmethod
+    def _offset_helper(a: typing.Tuple[float, float], b: typing.Tuple[float, float]):
+        return (a[0] - b[0], a[1] - b[0])
+
+    def _offset(self, alignment: Alignment):
+        return alignment._replace(
+            script=self._offset_helper(alignment.script, self._first.script),
+            transcript=self._offset_helper(alignment.transcript, self._first.transcript),
+            audio=self._offset_helper(alignment.audio, self._first.audio),
+        )
+
     @property
     def alignments(self):
         alignments = self.passage.alignments[self.slice]
-        ret = [tuple([self._subtract(a, b) for a, b in zip(a, self._first)]) for a in alignments]
-        return lib.utils.Tuples([Alignment(*a) for a in ret], dtype=alignment_dtype)
+        return lib.utils.Tuples([self._offset(a) for a in alignments], dtype=alignment_dtype)
 
     @property
     def audio_length(self):
