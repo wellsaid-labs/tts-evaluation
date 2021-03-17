@@ -78,6 +78,7 @@ def _make_interval_chart(
 
 def _stt_alignments_vad(passage: Passage, audio: np.ndarray):
     st.markdown("### Google Speech-to-Text (STT) API")
+    st.write("Use dataset alignments to detect voice activity.")
 
     with st.spinner("Visualizing..."):
         pauses = [a for s, t, a in passage.script_nonalignments() if not has_alnum(s + t)]
@@ -88,6 +89,49 @@ def _stt_alignments_vad(passage: Passage, audio: np.ndarray):
             + _make_interval_chart(passage, mistrascriptions, color="#c58585")
         )
         st.altair_chart(chart.interactive(), use_container_width=True)
+
+
+def _baseline_vad(audio: np.ndarray, sample_rate: int):
+    st.markdown("### Baseline Voice Activity Detection (VAD)")
+    st.write("Use an RMS threshold to detect voice activity.")
+
+    question = "What is the frame size in milliseconds?"
+    milli_frame_size: int = st.slider(question, min_value=0, max_value=250, value=100, step=1)
+    sec_frame_size: float = milli_frame_size / 1000
+    frame_size: int = int(round(sec_frame_size * sample_rate))
+
+    question = "What is the stide size in samples?"
+    stride_size: int = st.slider(
+        question,
+        min_value=1,
+        max_value=int(round(10 / 1000 * sample_rate)),
+        value=int(round(1 / 1000 * sample_rate)),
+        step=1,
+    )
+
+    question = "What is the threshold for silence in decibels?"
+    threshold: int = st.slider(question, min_value=-100, max_value=0, value=-60, step=1)
+
+    with st.spinner("Detecting voice activity..."):
+        padded = np.pad(integer_signal_to_floating(audio), (0, frame_size - 1))
+        frames = sliding_window_view(padded, frame_size)[::stride_size]
+        indicies = sliding_window_view(np.arange(padded.shape[0]), frame_size)[::stride_size]
+        rms_level_power = np.mean(np.abs(frames) ** 2, axis=1)
+        rms_level_db = 10.0 * np.log10(np.clip(rms_level_power, 1e-10, None))
+        is_pause = (rms_level_db < threshold).tolist()
+
+    with st.spinner("Grouping segments..."):
+        x_min, x_max = [], []
+        for is_pause_, group in itertools.groupby(zip(is_pause, indicies), key=lambda i: i[0]):
+            group = list(group)
+            if is_pause_:
+                x_min.append(float(group[0][1][0]) / sample_rate)
+                x_max.append(float(group[-1][1][-1]) / sample_rate)
+
+    with st.spinner("Visualizing..."):
+        signal_chart = make_signal_chart(audio, sample_rate)
+        pausing_chart = make_interval_chart(np.array(x_min), np.array(x_max), strokeWidth=0)
+        st.altair_chart((signal_chart + pausing_chart).interactive(), use_container_width=True)
 
 
 def _webrtc_vad(audio: np.ndarray, sample_rate: int):
@@ -174,7 +218,7 @@ def _silero_vad(passage: Passage, audio: np.ndarray):
 
 
 def _get_challenging_passages(
-    dataset: run._config.Dataset, threshold: float = 10
+    dataset: run._config.Dataset, threshold: float = 20
 ) -> typing.Set[Passage]:
     """Get challenging passages for VAD. So far, we have defined challenging passages as ones
     that have long segments without pausing based on `alignments`."""
@@ -200,7 +244,7 @@ def _get_challenging_passages(
 def main():
     run._config.configure()
 
-    st.title("VAD Analysis")
+    st.title("Voice Activity Detection (VAD) Workbook")
     st.write("Analyze an audio file with voice activity detection (VAD).")
 
     if st.sidebar.button("Clear Session Cache"):
@@ -235,6 +279,9 @@ def main():
 
     with st.spinner("Visualizing Google Speech-to-Text Alignments..."):
         _stt_alignments_vad(passage, audio)
+
+    with st.spinner("Running Baseline VAD..."):
+        _baseline_vad(audio, passage.audio_file.sample_rate)
 
     with st.spinner("Running Google WebRTC VAD..."):
         _webrtc_vad(audio, passage.audio_file.sample_rate)
