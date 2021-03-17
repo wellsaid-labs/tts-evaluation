@@ -54,10 +54,10 @@ def make_metadata(
 
 
 def make_passage(
-    alignments: lib.utils.Tuples[lib.datasets.Alignment] = lib.utils.Tuples(
+    alignments: lib.utils.Tuple[lib.datasets.Alignment] = lib.utils.stow(
         [], lib.datasets.alignment_dtype
     ),
-    nonalignments: lib.utils.Tuples[lib.datasets.Alignment] = lib.utils.Tuples(
+    nonalignments: lib.utils.Tuple[lib.datasets.Alignment] = lib.utils.stow(
         [], lib.datasets.alignment_dtype
     ),
     speaker: lib.datasets.Speaker = lib.datasets.Speaker(""),

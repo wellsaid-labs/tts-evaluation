@@ -97,7 +97,7 @@ def test_split_dataset__deduplication(_):
     speaker_c = lib.datasets.Speaker("c")
     speaker_d = lib.datasets.Speaker("d")
     groups = [set([speaker_a, speaker_b, speaker_c, speaker_d])]
-    alignments = lib.utils.Tuples(
+    alignments = lib.utils.stow(
         [lib.datasets.Alignment((0, 1), (0, 1), (0, 1))], lib.datasets.alignment_dtype
     )
     passage = lambda script, speaker: make_passage(
@@ -159,7 +159,7 @@ def test_split_dataset__order(_):
     speaker_a = lib.datasets.Speaker("a")
     speaker_b = lib.datasets.Speaker("b")
     groups = [set([speaker_a, speaker_b])]
-    alignments = lib.utils.Tuples(
+    alignments = lib.utils.stow(
         [lib.datasets.Alignment((0, 1), (0, 1), (0, 1))], lib.datasets.alignment_dtype
     )
     passage = lambda script, speaker: make_passage(
@@ -192,7 +192,7 @@ def test_split_dataset__groups(_):
     """ Test `run._config.split_dataset` handles independent speakers. """
     speaker_a = lib.datasets.Speaker("a")
     speaker_b = lib.datasets.Speaker("b")
-    alignments = lib.utils.Tuples(
+    alignments = lib.utils.stow(
         [lib.datasets.Alignment((0, 1), (0, 1), (0, 1))], lib.datasets.alignment_dtype
     )
     passage = lambda script, speaker: make_passage(

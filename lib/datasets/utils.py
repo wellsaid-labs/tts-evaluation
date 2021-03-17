@@ -22,7 +22,7 @@ from third_party import LazyLoader
 
 import lib
 from lib.audio import AudioMetadata, get_audio_metadata
-from lib.utils import flatten_2d, list_to_tuple
+from lib.utils import Tuple, flatten_2d, list_to_tuple, stow
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import pandas
@@ -78,12 +78,12 @@ class UnprocessedPassage:
     speaker: Speaker
     script: str
     transcript: str
-    alignments: typing.Optional[lib.utils.Tuples[Alignment]] = None
+    alignments: typing.Optional[Tuple[Alignment]] = None
     other_metadata: typing.Dict = dataclasses.field(default_factory=dict)
 
 
 def _script_alignments(
-    script: str, transcript: str, alignments: lib.utils.Tuples[Alignment]
+    script: str, transcript: str, alignments: Tuple[Alignment]
 ) -> typing.List[typing.Tuple[str, str, typing.Tuple[float, float]]]:
     """ Get `script` and `transcript` slices given `alignments` with the related `audio` slice. """
     return_ = []
@@ -124,8 +124,8 @@ class Passage:
     speaker: Speaker
     script: str
     transcript: str
-    alignments: lib.utils.Tuples[Alignment]
-    nonalignments: lib.utils.Tuples[Alignment] = dataclasses.field(compare=False, hash=False)
+    alignments: Tuple[Alignment]
+    nonalignments: Tuple[Alignment] = dataclasses.field(compare=False, hash=False)
     other_metadata: typing.Dict = dataclasses.field(default_factory=dict, compare=False, hash=False)
 
     def audio(self):
@@ -273,7 +273,7 @@ class Span:
     @property
     def alignments(self):
         alignments = self.passage.alignments[self.slice]
-        return lib.utils.Tuples([self._offset(a) for a in alignments], dtype=alignment_dtype)
+        return stow([self._offset(a) for a in alignments], dtype=alignment_dtype)
 
     @property
     def audio_length(self):
@@ -336,7 +336,7 @@ def make_nonalignments(
     prev: UnprocessedPassage = None,
     next: UnprocessedPassage = None,
     **kwargs,
-) -> lib.utils.Tuples[Alignment]:
+) -> Tuple[Alignment]:
     """Get nonalignments in between `data.alignments`, and in between
     `[prev.alignments[-1], data.alignments, next.alignments[0]]`.
 
@@ -375,7 +375,7 @@ def make_nonalignments(
             audio=(prev_.audio[-1], next_.audio[0]),
         )
         nonalignments.append(nonalignment)
-    return lib.utils.Tuples(nonalignments, dtype=alignment_dtype)
+    return stow(nonalignments, dtype=alignment_dtype)
 
 
 def _exists(path: Path) -> bool:
@@ -412,7 +412,7 @@ def make_passages(
                 alignment = Alignment(
                     (0, len(curr.script)), (0.0, audio_file.length), (0, len(curr.transcript))
                 )
-                alignments = lib.utils.Tuples([alignment], dtype=alignment_dtype)
+                alignments = stow([alignment], dtype=alignment_dtype)
                 curr = dataclasses.replace(curr, alignments=alignments)
                 prev, next_ = None, None
             else:
@@ -426,7 +426,7 @@ def make_passages(
                 speaker=curr.speaker,
                 script=curr.script,
                 transcript=curr.transcript,
-                alignments=typing.cast(lib.utils.Tuples[Alignment], curr.alignments),
+                alignments=typing.cast(lib.utils.Tuple[Alignment], curr.alignments),
                 nonalignments=make_nonalignments(curr, audio_file, prev, next_, **kwargs),
                 other_metadata=curr.other_metadata,
             )
@@ -691,7 +691,7 @@ def dataset_loader(
                 speaker=speaker,
                 script=script[text_column],
                 transcript=json_["transcript"],
-                alignments=lib.utils.Tuples(
+                alignments=stow(
                     [Alignment(*a) for a in list_to_tuple(alignments)], dtype=alignment_dtype
                 ),
                 other_metadata={k: v for k, v in script.items() if k not in (text_column,)},
@@ -761,7 +761,7 @@ def update_conventional_passage_script(passage: Passage, script: str) -> Passage
     assert len(passage.alignments) == 1
     slice = (0, len(script))
     alignments = [passage.alignments[0]._replace(script=slice, transcript=slice)]
-    alignments_ = lib.utils.Tuples(alignments, dtype=alignment_dtype)
+    alignments_ = stow(alignments, dtype=alignment_dtype)
     return dataclasses.replace(passage, script=script, transcript=script, alignments=alignments_)
 
 
@@ -780,5 +780,5 @@ def update_passage_audio(passage: Passage, audio_file: AudioMetadata, eps: float
     assert abs(passage.audio_file.length - audio_file.length) < eps, message
     if len(passage.alignments) == 0 or passage.alignments[-1].audio[-1] <= audio_file.length:
         return dataclasses.replace(passage, audio_file=audio_file)
-    updated = lib.utils.Tuples([_clamp(a, audio_file) for a in passage.alignments], alignment_dtype)
+    updated = stow([_clamp(a, audio_file) for a in passage.alignments], alignment_dtype)
     return dataclasses.replace(passage, alignments=updated, audio_file=audio_file)

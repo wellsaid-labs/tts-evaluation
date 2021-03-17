@@ -48,7 +48,7 @@ def test__random_nonoverlapping_alignments():
     """Test `_data._random_nonoverlapping_alignments` samples uniformly given a uniform
     distribution of alignments."""
     make = lambda a, b: Alignment((a, b), (a, b), (a, b))
-    alignments = lib.utils.Tuples(
+    alignments = lib.utils.stow(
         [make(0, 1), make(1, 2), make(2, 3), make(3, 4), make(4, 5)],
         dtype=lib.datasets.alignment_dtype,
     )
@@ -63,7 +63,7 @@ def test__random_nonoverlapping_alignments():
 
 def test__random_nonoverlapping_alignments__empty():
     """Test `_data._random_nonoverlapping_alignments` handles empty list. """
-    input_ = lib.utils.Tuples([])
+    input_ = lib.utils.stow([])
     assert _data._random_nonoverlapping_alignments(input_, 3) == tuple()
 
 
@@ -71,7 +71,7 @@ def test__random_nonoverlapping_alignments__large_max():
     """Test `_data._random_nonoverlapping_alignments` handles a large maximum. """
     make = lambda a, b: Alignment((a, b), (a, b), (a, b))
     with torchnlp.random.fork_rng(1234):
-        alignments = lib.utils.Tuples(
+        alignments = lib.utils.stow(
             [make(0, 1), make(1, 2), make(2, 3), make(3, 4), make(4, 5)],
             dtype=lib.datasets.alignment_dtype,
         )

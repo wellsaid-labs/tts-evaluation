@@ -25,7 +25,7 @@ def test_m_ailabs_speech_dataset(mock_urlretrieve, mock_get_audio_metadata, _):
         assert sum([len(r.script) for r in data]) == 226649
         path = directory / archive.parent.name / "en_US/by_book/female/judy_bieber"
         path = path / "dorothy_and_wizard_oz/wavs/dorothy_and_wizard_oz_01_f000001.wav"
-        alignments = lib.utils.Tuples(
+        alignments = lib.utils.stow(
             [lib.datasets.Alignment((0, 14), (0.0, 0.0), (0, 14))],
             lib.datasets.alignment_dtype,
         )
@@ -33,7 +33,7 @@ def test_m_ailabs_speech_dataset(mock_urlretrieve, mock_get_audio_metadata, _):
             lib.datasets.Alignment(script=(0, 0), audio=(0.0, 0.0), transcript=(0, 0)),
             lib.datasets.Alignment(script=(14, 14), audio=(0.0, 0.0), transcript=(14, 14)),
         ]
-        nonalignments = lib.utils.Tuples(nonalignments_, lib.datasets.alignment_dtype)
+        nonalignments = lib.utils.stow(nonalignments_, lib.datasets.alignment_dtype)
         assert data[0] == lib.datasets.Passage(
             audio_file=_utils.make_metadata(path),
             speaker=lib.datasets.JUDY_BIEBER,

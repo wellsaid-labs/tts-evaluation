@@ -84,7 +84,7 @@ def test__get_dataset_stats():
     """ Test `run.train._utils.get_dataset_stats` measures dataset statistics correctly. """
     _alignment = lambda a, b: Alignment((a, b), (a * 10, b * 10), (a, b))
     _passage = lambda a, b, s: make_passage(
-        lib.utils.Tuples([_alignment(a, b)], lib.datasets.alignment_dtype), s
+        lib.utils.stow([_alignment(a, b)], lib.datasets.alignment_dtype), s
     )
     a = lib.datasets.Speaker("a")
     b = lib.datasets.Speaker("b")

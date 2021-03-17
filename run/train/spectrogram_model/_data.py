@@ -137,7 +137,7 @@ class InputEncoder(Encoder):
 
 
 def _random_nonoverlapping_alignments(
-    alignments: lib.utils.Tuples[lib.datasets.Alignment], max_alignments: int
+    alignments: lib.utils.Tuple[lib.datasets.Alignment], max_alignments: int
 ) -> typing.Tuple[lib.datasets.Alignment, ...]:
     """Generate a random set of non-overlapping alignments, such that every point in the
     time-series has an equal probability of getting sampled inside an alignment.

@@ -391,22 +391,22 @@ def test_mapped_iterator__out_of_order():
     assert map[2] == 2
 
 
-def test_tuples():
-    """ Test `Tuples` can store and retrieve `tuple`s. """
+def test__tuple():
+    """ Test `Tuple` can store and retrieve `tuple`s. """
     dtype = numpy.dtype([("f0", str, 1), ("f1", numpy.float32)])
     dtype = numpy.dtype([("f0", numpy.int32), ("f1", dtype)])
     data = [(1, ("a", 1.0)), (2, ("b", 2.0)), (3, ("c", 3.0))]
-    tuples = lib.utils.Tuples(data, dtype=dtype)
-    assert tuples[0] == data[0]
-    assert len(tuples) == 3
-    assert data[1] in tuples
-    assert data[0] not in tuples[1:]
-    assert all(d == t for d, t in zip(data, tuples))
-    assert all(d == t for d, t in zip(data[1:2], tuples[1:2]))
-    assert tuples[:] == tuples
-    assert hash(tuples) == hash(tuples[:])
-    assert str(tuples) == "((1, ('a', 1.0)), (2, ('b', 2.0)), (3, ('c', 3.0)))"
-    assert repr(tuples) == "((1, ('a', 1.0)), (2, ('b', 2.0)), (3, ('c', 3.0)))"
+    items = lib.utils._Tuple(data, dtype=dtype)
+    assert items[0] == data[0]
+    assert len(items) == 3
+    assert data[1] in items
+    assert data[0] not in items[1:]
+    assert all(d == t for d, t in zip(data, items))
+    assert all(d == t for d, t in zip(data[1:2], items[1:2]))
+    assert items[:] == items
+    assert hash(items) == hash(items[:])
+    assert str(items) == "((1, ('a', 1.0)), (2, ('b', 2.0)), (3, ('c', 3.0)))"
+    assert repr(items) == "((1, ('a', 1.0)), (2, ('b', 2.0)), (3, ('c', 3.0)))"
 
 
 class TestNamedTuple(typing.NamedTuple):
@@ -415,8 +415,8 @@ class TestNamedTuple(typing.NamedTuple):
     default: int = 1
 
 
-def test_tuples__named():
-    """ Test `Tuples` can store and retrieve `NamedTuple`s. """
+def test__tuple__named():
+    """ Test `Tuple` can store and retrieve `NamedTuple`s. """
     dtype = numpy.dtype([("f0", numpy.float32), ("f1", numpy.int32)])
     dtype = numpy.dtype([("string", str, 1), ("tuple", dtype), ("default", numpy.int32)])
     data = [
@@ -424,27 +424,27 @@ def test_tuples__named():
         TestNamedTuple("b", (2.0, 2), 2),
         TestNamedTuple("c", (3.0, 3), 3),
     ]
-    tuples = lib.utils.Tuples(data, dtype=dtype)
-    assert tuples[0] == data[0]
-    assert tuples[0].tuple == data[0].tuple
-    assert tuples[0].tuple[0] == 1.0
-    assert type(tuples[0].tuple[0]) is float
-    assert len(tuples) == 3
-    assert data[1] in tuples
-    assert all(d == t for d, t in zip(data, tuples))
-    assert all(d == t for d, t in zip(data[1:2], tuples[1:2]))
+    items = lib.utils._Tuple(data, dtype=dtype)
+    assert items[0] == data[0]
+    assert items[0].tuple == data[0].tuple
+    assert items[0].tuple[0] == 1.0
+    assert type(items[0].tuple[0]) is float
+    assert len(items) == 3
+    assert data[1] in items
+    assert all(d == t for d, t in zip(data, items))
+    assert all(d == t for d, t in zip(data[1:2], items[1:2]))
 
 
-def test_tuples__empty():
-    """ Test `Tuples` can store no data. """
-    tuples = lib.utils.Tuples([])
+def test__tuple__empty():
+    """ Test `Tuple` can store no data. """
+    items = lib.utils._Tuple([])
 
     with pytest.raises(IndexError):
-        tuples[0]
+        items[0]
 
-    assert tuples[0:0] == tuples
-    assert "test" not in tuples
-    assert list(tuples) == []
+    assert items[0:0] == items
+    assert "test" not in items
+    assert list(items) == []
 
 
 def test_corrected_random_choice():

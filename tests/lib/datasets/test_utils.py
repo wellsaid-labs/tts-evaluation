@@ -27,9 +27,9 @@ def _make_alignment(script=(0, 0), transcript=(0, 0), audio=(0.0, 0.0)):
 
 def _make_alignments(
     alignments=typing.Tuple[typing.Tuple[int, int]]
-) -> lib.utils.Tuples[lib.datasets.Alignment]:
+) -> lib.utils.Tuple[lib.datasets.Alignment]:
     """ Make a tuple of `Alignment`(s) for testing. """
-    return lib.utils.Tuples([_make_alignment(a, a, a) for a in alignments], alignment_dtype)
+    return lib.utils.stow([_make_alignment(a, a, a) for a in alignments], alignment_dtype)
 
 
 def test_span_generator():
@@ -129,7 +129,7 @@ def test_span_generator__multiple_unequal_passages__large_max_seconds():
     iterator = lib.datasets.SpanGenerator(dataset, max_seconds=1000000)
 
     alignments_counter: typing.Counter[Alignment] = Counter()
-    spans_counter: typing.Counter[lib.utils.Tuples[Alignment]] = Counter()
+    spans_counter: typing.Counter[lib.utils.Tuple[Alignment]] = Counter()
     num_passages = 10000
     for _ in range(num_passages):
         span = next(iterator)
@@ -224,8 +224,8 @@ def test_dataset_loader(mock_run, mock_get_audio_metadata):
         "author of the danger Trail Philip Steels Etc. Not at this particular case Tom "
         "apologized Whitmore for the 20th time that evening the two men shook hands"
     )
-    assert passages[0].alignments == lib.utils.Tuples(alignments, alignment_dtype)
-    assert passages[0].nonalignments == lib.utils.Tuples(nonalignments, alignment_dtype)
+    assert passages[0].alignments == lib.utils.stow(alignments, alignment_dtype)
+    assert passages[0].nonalignments == lib.utils.stow(nonalignments, alignment_dtype)
     assert passages[0].other_metadata == {"Index": 0, "Source": "CMU", "Title": "CMU"}
     assert passages[1].script == "Not at this particular case, Tom, apologized Whittemore."
 
@@ -245,8 +245,8 @@ def test_passage_span__identity():
         speaker=lib.datasets.LINDA_JOHNSON,
         script=script,
         transcript=script,
-        alignments=lib.utils.Tuples([alignment], alignment_dtype),
-        nonalignments=lib.utils.Tuples([alignment], alignment_dtype),
+        alignments=lib.utils.stow([alignment], alignment_dtype),
+        nonalignments=lib.utils.stow([alignment], alignment_dtype),
         other_metadata={"chapter": 37},
     )
     span = passage[:]
@@ -285,7 +285,7 @@ def _make_unprocessed_passage(
         speaker=lib.datasets.Speaker(""),
         script=script,
         transcript=transcript,
-        alignments=lib.utils.Tuples([_make_alignment(*arg) for arg in found], alignment_dtype),
+        alignments=lib.utils.stow([_make_alignment(*arg) for arg in found], alignment_dtype),
     )
 
 

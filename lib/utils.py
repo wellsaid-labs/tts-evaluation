@@ -12,6 +12,7 @@ import random
 import statistics
 import time
 import typing
+from abc import abstractmethod
 from contextlib import contextmanager
 
 import numpy as np
@@ -412,32 +413,54 @@ class MappedIterator(typing.Mapping[int, _MappedIteratorItem], typing.Generic[_M
         raise NotImplementedError()
 
 
-_TuplesVar = typing.TypeVar("_TuplesVar")
-_TuplesType = typing.TypeVar("_TuplesType", bound="Tuples")
+_TupleVar = typing.TypeVar("_TupleVar")
 
 
-class Tuples(typing.Generic[_TuplesVar]):
-    """Datastructure for efficiently storing, and retrieving tuples.
+class Tuple(typing.Hashable, typing.Sequence[_TupleVar]):
+    """Abstract class for a `tuple`."""
 
+    @abstractmethod
+    def __getitem__(self, index):
+        raise NotImplementedError
+
+    @abstractmethod
+    def __eq__(self, other):
+        raise NotImplementedError
+
+
+def stow(
+    items: typing.Sequence[_TupleVar], dtype: typing.Optional[np.dtype] = None
+) -> Tuple[_TupleVar]:
+    """Make a data structure for storing `items` efficiently with a `Tuple` inferface."""
+    return typing.cast(Tuple[_TupleVar], tuple(items)) if len(items) < 2 else _Tuple(items, dtype)
+
+
+__TupleType = typing.TypeVar("__TupleType", bound="_Tuple")
+
+
+class _Tuple(Tuple[_TupleVar]):
+    """Datastructure for efficiently storing, and retrieving data.
+
+    NOTE: Learn more about reducing memory usage: https://habr.com/en/post/458518/
     NOTE: This will not error if the data type doesn't accurately represent the data. For example:
     ```
     >>> import numpy as np
     >>> np.array([10000000], np.int16)
     array([-27008], dtype=int16)
     ```
-    NOTE: This doesn't support tuples with `numpy` objects.
+    NOTE: This doesn't support items with `numpy` objects.
     """
 
     __slots__ = "storage", "type"
 
     def __init__(
         self,
-        items: typing.Union[typing.List[_TuplesVar], np.ndarray],
+        items: typing.Union[typing.Sequence[_TupleVar], np.ndarray],
         dtype: typing.Optional[np.dtype] = None,
-        type_: typing.Optional[typing.Type[_TuplesVar]] = None,
+        type_: typing.Optional[typing.Type[_TupleVar]] = None,
     ):
-        self.storage = np.array([]) if len(items) == 0 else np.array(items, dtype=dtype)
-
+        self.storage = np.array(items, dtype=dtype)
+        self.type: typing.Optional[typing.Type[_TupleVar]]
         if isinstance(items, np.ndarray):
             self.type = type_
         elif isinstance(items, list) and len(items) > 0:
@@ -447,50 +470,56 @@ class Tuples(typing.Generic[_TuplesVar]):
         else:
             raise TypeError("Unsupported arguments.")
 
-    def _convert(self, item: typing.Tuple) -> _TuplesVar:
+    def _convert(self, item: typing.Tuple) -> _TupleVar:
         """ Convert numpy `item()` to `self.type`. """
-        return item if self.type is tuple else self.type(*item)
+        assert self.type is not None
+        if self.type is tuple:
+            return typing.cast(_TupleVar, item)
+        return self.type(*item)
 
     @typing.overload
-    def __getitem__(self: _TuplesType, key: int) -> _TuplesVar:
+    def __getitem__(self, index: int) -> _TupleVar:
         ...
 
     @typing.overload
-    def __getitem__(self: _TuplesType, key: slice) -> _TuplesType:
+    def __getitem__(self: __TupleType, index: slice) -> __TupleType:
         ...
 
-    def __getitem__(self, key):
-        if isinstance(key, slice):
-            return self.__class__(self.storage[key], dtype=self.storage.dtype, type_=self.type)
-        elif isinstance(key, int):
-            return self._convert(self.storage[key].item())
+    def __getitem__(self, index):
+        if isinstance(index, slice):
+            return self.__class__(self.storage[index], dtype=self.storage.dtype, type_=self.type)
+        elif isinstance(index, int):
+            return self._convert(self.storage[index].item())
         else:
-            raise TypeError("Invalid argument type: {}".format(type(key)))
+            raise TypeError("Invalid argument type: {}".format(type(index)))
 
     def __len__(self) -> int:
         return len(self.storage)
 
-    def __iter__(self) -> typing.Iterator[_TuplesVar]:
+    def __iter__(self) -> typing.Iterator[_TupleVar]:
         return (self._convert(i) for i in self.storage.tolist())
 
-    def __contains__(self, item: _TuplesVar) -> bool:
+    def __contains__(self, item: _TupleVar) -> bool:
         if len(self.storage) == 0:
             return False
         return np.array(item, dtype=self.storage.dtype) in self.storage
 
+    def _to_tuple(self):
+        return tuple(iter(self))
+
     def __eq__(self, other):
         if type(other) is type(self):
-            return tuple(iter(other)) == tuple(iter(self))
+            return other._to_tuple() == self._to_tuple()
         return False
 
     def __hash__(self):
-        return hash(tuple(iter(self)))
+        return hash(self._to_tuple())
 
     def __str__(self):
-        return str(tuple(iter(self)))
+        return str(self._to_tuple())
 
     def __repr__(self):
-        return repr(tuple(iter(self)))
+        return repr(self._to_tuple())
 
 
 def mazel_tov() -> str:
