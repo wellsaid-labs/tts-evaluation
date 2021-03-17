@@ -97,18 +97,20 @@ def _static_symlink(target: pathlib.Path) -> pathlib.Path:
     return static / target
 
 
-def _audio_to_base64(audio: np.ndarray) -> str:
+def _audio_to_base64(audio: np.ndarray, **kwargs) -> str:
     """Encode audio into a `base64` string."""
     in_memory_file = io.BytesIO()
-    lib.audio.write_audio(in_memory_file, audio)
+    lib.audio.write_audio(in_memory_file, audio, **kwargs)
     return base64.b64encode(in_memory_file.read()).decode("utf-8")
 
 
-def audio_to_html(audio: typing.Union[np.ndarray, pathlib.Path]) -> str:
+def audio_to_html(audio: typing.Union[np.ndarray, pathlib.Path], **kwargs) -> str:
     """Create an `audio` HTML element."""
     if isinstance(audio, pathlib.Path):
         return f'<audio controls src="/{_static_symlink(audio)}"></audio>'
-    return f'<audio controls src="data:audio/wav;base64,{_audio_to_base64(audio)}"></audio>'
+    return (
+        f'<audio controls src="data:audio/wav;base64,{_audio_to_base64(audio, **kwargs)}"></audio>'
+    )
 
 
 _MapInputVar = typing.TypeVar("_MapInputVar")
@@ -169,13 +171,14 @@ def fast_grapheme_to_phoneme(text: str):
 def integer_signal_to_floating(signal: np.ndarray) -> np.ndarray:
     """Transform `signal` from an integer data type to floating data type."""
     is_floating = np.issubdtype(signal.dtype, np.floating)
-    return signal / (1.0 if is_floating else np.abs(np.iinfo(signal.dtype).min))
+    divisor = 1.0 if is_floating else np.abs(np.iinfo(signal.dtype).min)
+    return (signal / divisor).astype(np.float32)
 
 
 def make_signal_chart(
     signal: np.ndarray,
     sample_rate: int,
-    max_sample_rate: int = 2000,
+    max_sample_rate: int = 1000,
     x: str = "seconds",
     y: typing.Tuple[str, str] = ("y_min", "y_max"),
 ) -> alt.Chart:

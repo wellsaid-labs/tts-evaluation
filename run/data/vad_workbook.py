@@ -14,27 +14,35 @@ TODO:
 Usage:
     $ python -m pip install webrtcvad
     $ python -m pip install torchaudio torch==1.7.1
-    $ PYTHONPATH=. streamlit run run/data/vad_analysis.py --runner.magicEnabled=false
+    $ PYTHONPATH=. streamlit run run/data/vad_workbook.py --runner.magicEnabled=false
 """
 import itertools
 import logging
+import math
 import random
 import typing
 
+import altair as alt
 import numpy as np
+import pandas as pd
 import streamlit as st
 import torch
 import torch.hub
 from numpy.lib.stride_tricks import sliding_window_view
+from scipy import signal
 from third_party import LazyLoader
+from torchnlp.random import fork_rng
 
 import lib
 import run
 from lib.datasets import DATASETS, Passage
+from lib.utils import seconds_to_str
 from run._streamlit import (
+    audio_to_html,
     clear_session_cache,
     dataset_passages,
     get_dataset,
+    get_session_state,
     has_alnum,
     integer_signal_to_floating,
     make_interval_chart,
@@ -91,34 +99,79 @@ def _stt_alignments_vad(passage: Passage, audio: np.ndarray):
         st.altair_chart(chart.interactive(), use_container_width=True)
 
 
+def _butter_bandpass(lowcut, highcut, fs, order=5):
+    nyq = 0.5 * fs
+    low = lowcut / nyq
+    high = highcut / nyq
+    sos = signal.butter(order, [low, high], analog=False, btype="band", output="sos")
+    return sos
+
+
+def _butter_bandpass_filter(data, lowcut, highcut, fs, order=5):
+    """
+    Original:
+    https://stackoverflow.com/questions/12093594/how-to-implement-band-pass-butterworth-filter-with-scipy-signal-butter
+    """
+    sos = _butter_bandpass(lowcut, highcut, fs, order=order)
+    return signal.sosfiltfilt(sos, data)
+
+
+def _median(x: np.ndarray) -> float:
+    """ Get the median value of a sorted array. """
+    return x[math.floor(len(x) / 2) : math.ceil(len(x) / 2) + 1].mean().item()
+
+
 def _baseline_vad(audio: np.ndarray, sample_rate: int):
     st.markdown("### Baseline Voice Activity Detection (VAD)")
-    st.write("Use an RMS threshold to detect voice activity.")
+    st.write("Use an RMS threshold with a bandpass filter to detect voice activity.")
 
+    col = st.beta_columns([1, 1])
     question = "What is the frame size in milliseconds?"
-    milli_frame_size: int = st.slider(question, min_value=0, max_value=250, value=100, step=1)
+    milli_frame_size: int = col[0].slider(question, min_value=0, max_value=250, value=50, step=1)
     sec_frame_size: float = milli_frame_size / 1000
     frame_size: int = int(round(sec_frame_size * sample_rate))
 
     question = "What is the stide size in samples?"
-    stride_size: int = st.slider(
+    stride_size: int = col[1].slider(
         question,
         min_value=1,
-        max_value=int(round(10 / 1000 * sample_rate)),
-        value=int(round(1 / 1000 * sample_rate)),
+        max_value=int(round(250 / 1000 * sample_rate)),
+        value=int(round(5 / 1000 * sample_rate)),
         step=1,
     )
 
     question = "What is the threshold for silence in decibels?"
     threshold: int = st.slider(question, min_value=-100, max_value=0, value=-60, step=1)
 
+    col = st.beta_columns([1, 1])
+    nyq_freq = int(sample_rate / 2)
+    question = "What is the low frequency cutoff in Hz?"
+    low_cut: int = col[0].slider(question, min_value=1, max_value=nyq_freq - 1, value=300, step=1)
+
+    question = "What is the high frequency cutoff in Hz?"
+    high_cut: int = col[1].slider(
+        question, min_value=1, max_value=nyq_freq - 1, value=nyq_freq - 1, step=1
+    )
+
     with st.spinner("Detecting voice activity..."):
-        padded = np.pad(integer_signal_to_floating(audio), (0, frame_size - 1))
-        frames = sliding_window_view(padded, frame_size)[::stride_size]
-        indicies = sliding_window_view(np.arange(padded.shape[0]), frame_size)[::stride_size]
+        audio = integer_signal_to_floating(audio)
+        filtered = _butter_bandpass_filter(audio, low_cut, high_cut, sample_rate)
+        frames = sliding_window_view(filtered, frame_size)[::stride_size]
+        indicies = sliding_window_view(np.arange(filtered.shape[0]), frame_size)[::stride_size]
         rms_level_power = np.mean(np.abs(frames) ** 2, axis=1)
         rms_level_db = 10.0 * np.log10(np.clip(rms_level_power, 1e-10, None))
         is_pause = (rms_level_db < threshold).tolist()
+        st.write("RMS level in decibels")
+        ticks = np.array([_median(i) / sample_rate for i in indicies])
+        chart = (
+            alt.Chart(pd.DataFrame({"seconds": ticks, "decibels": rms_level_db}))
+            .mark_area()
+            .encode(
+                x=alt.X("seconds", type="quantitative"),
+                y=alt.Y("decibels", scale=alt.Scale(domain=(-100.0, 0)), type="quantitative"),
+            )
+        )
+        st.altair_chart(chart.interactive(), use_container_width=True)
 
     with st.spinner("Grouping segments..."):
         x_min, x_max = [], []
@@ -241,6 +294,15 @@ def _get_challenging_passages(
     return passages
 
 
+def _init_random_seed(key="random_seed", default_value=123) -> int:
+    """ Create a persistent state for the random seed. """
+    state = get_session_state()
+    value = st.sidebar.number_input("Random Seed", value=default_value)
+    if key not in state or value != default_value:
+        state[key] = default_value
+    return key
+
+
 def main():
     run._config.configure()
 
@@ -249,6 +311,9 @@ def main():
 
     if st.sidebar.button("Clear Session Cache"):
         clear_session_cache()
+
+    state = get_session_state()
+    random_seed_key = _init_random_seed()
 
     speakers: typing.List[str] = [k.label for k in DATASETS.keys()]
     question = "Which dataset do you want to sample from?"
@@ -259,32 +324,42 @@ def main():
 
     use_challenging = st.checkbox("Find Challenging Passage", value=True)
     passages = _get_challenging_passages(dataset) if use_challenging else list(dataset.values())[0]
-    _ = st.button("New Passage")
-    passage = random.choice(list(passages))
-    audio_length = passage.alignments[-1].audio[-1] - passage.alignments[0].audio[0]
+    state[random_seed_key] += int(st.button("New Passage"))
+    with fork_rng(state[random_seed_key]):
+        passage = random.choice(list(passages))
+    start = passage.alignments[0].audio[0]
+    end = passage.alignments[-1].audio[-1]
+    audio_length = end - start
     st.info(
         "### Randomly Choosen Passage\n"
+        "#### Random Seed\n"
+        f"{state[random_seed_key]}\n"
         "#### Audio File\n"
         f"`{passage.audio_file.path.relative_to(lib.environment.ROOT_PATH)}`\n\n"
-        "#### Audio Length\n"
-        f"{lib.utils.seconds_to_str(audio_length)}\n\n"
+        "#### Audio Slice\n"
+        f"{seconds_to_str(audio_length)} ({seconds_to_str(start)}, {seconds_to_str(end)})\n\n"
         "#### Script\n"
         f"{passage.script}\n\n"
     )
     with st.spinner("Normalizing audio..."):
         passage = _normalize_audio(passage)
+        sample_rate = passage.audio_file.sample_rate
 
     with st.spinner("Loading audio..."):
         audio = passage_audio(passage)
+
+    st.markdown("### Audio")
+    html = audio_to_html(integer_signal_to_floating(audio), sample_rate=sample_rate)
+    st.markdown(html, unsafe_allow_html=True)
 
     with st.spinner("Visualizing Google Speech-to-Text Alignments..."):
         _stt_alignments_vad(passage, audio)
 
     with st.spinner("Running Baseline VAD..."):
-        _baseline_vad(audio, passage.audio_file.sample_rate)
+        _baseline_vad(audio, sample_rate)
 
     with st.spinner("Running Google WebRTC VAD..."):
-        _webrtc_vad(audio, passage.audio_file.sample_rate)
+        _webrtc_vad(audio, sample_rate)
 
     with st.spinner("Running Silero VAD..."):
         _silero_vad(passage, audio)
