@@ -18,6 +18,8 @@ from third_party import session_state
 
 import lib
 import run
+from lib.datasets import Passage
+from run._config import Dataset
 
 logger = logging.getLogger(__name__)
 
@@ -222,3 +224,13 @@ def make_interval_chart(
         )
         .encode(x=alt.X("x_min", type="quantitative"), x2=alt.X2("x_max"))
     )
+
+
+def has_alnum(s: str):
+    return any(c.isalnum() for c in s)
+
+
+def dataset_passages(dataset: Dataset) -> typing.Iterator[Passage]:
+    """ Get all passages in `dataset`. """
+    for _, passages in dataset.items():
+        yield from passages

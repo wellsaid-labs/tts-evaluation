@@ -20,7 +20,9 @@ from lib.datasets import Passage, Span
 from lib.utils import clamp, flatten_2d, round_, seconds_to_str
 from run._config import Dataset
 from run._streamlit import (
+    dataset_passages,
     fast_grapheme_to_phoneme,
+    has_alnum,
     make_interval_chart,
     make_signal_chart,
     read_wave_audio,
@@ -103,12 +105,6 @@ def bucket_and_chart(
     return alt.Chart(df).mark_bar().encode(x=x, y=y, tooltip=[x, y]).interactive()
 
 
-def _dataset_passages(dataset: Dataset) -> typing.Iterator[Passage]:
-    """ Get all passages in `dataset`. """
-    for _, passages in dataset.items():
-        yield from passages
-
-
 def dataset_audio_files(dataset: Dataset) -> typing.Set[lib.audio.AudioMetadata]:
     return set(flatten_2d([[p.audio_file for p in v] for v in dataset.values()]))
 
@@ -123,7 +119,7 @@ def dataset_total_audio(dataset: Dataset) -> float:
 
 def dataset_pause_lengths_in_seconds(dataset: Dataset) -> typing.Iterator[float]:
     """ Get every pause in `dataset` between alignments. """
-    for passage in _dataset_passages(dataset):
+    for passage in dataset_passages(dataset):
         for prev, next in zip(passage.alignments, passage.alignments[1:]):
             yield next.audio[0] - prev.audio[1]
 
@@ -136,7 +132,7 @@ def passages_alignment_ngrams(passages: typing.List[Passage], n: int = 1) -> typ
 
 def dataset_num_alignments(dataset: Dataset) -> int:
     """ Get number of `Alignment`s in `dataset`. """
-    return sum([len(p.alignments) for p in _dataset_passages(dataset)])
+    return sum([len(p.alignments) for p in dataset_passages(dataset)])
 
 
 def dataset_coverage(dataset: Dataset, spans: typing.List[Span]) -> float:
@@ -148,13 +144,9 @@ def dataset_coverage(dataset: Dataset, spans: typing.List[Span]) -> float:
     return len(alignments) / dataset_num_alignments(dataset)
 
 
-def _has_alnum(s: str):
-    return any(c.isalnum() for c in s)
-
-
 def span_mistranscriptions(span: Span) -> typing.List[typing.Tuple[str, str]]:
     """ Get a slices of script and transcript that were not aligned. """
-    return [(a.strip(), b.strip()) for a, b, _ in span.script_nonalignments() if _has_alnum(a + b)]
+    return [(a.strip(), b.strip()) for a, b, _ in span.script_nonalignments() if has_alnum(a + b)]
 
 
 def span_pauses(span: Span) -> typing.List[float]:

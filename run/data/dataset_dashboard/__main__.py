@@ -120,7 +120,7 @@ def _analyze_dataset(dataset: Dataset, max_rows: int, run_all: bool):
 
     question = "How many passage(s) do you want to analyze?"
     num_passages: int = st.sidebar.number_input(question, 0, None, 200)
-    passages = utils.random_sample(list(utils._dataset_passages(dataset)), num_passages)
+    passages = utils.random_sample(list(utils.dataset_passages(dataset)), num_passages)
     unigrams = list(utils.passages_alignment_ngrams(passages, 1))
     trigrams = list(utils.passages_alignment_ngrams(passages, 3))
     st.markdown(

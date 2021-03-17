@@ -33,7 +33,9 @@ import run
 from lib.datasets import DATASETS, Passage
 from run._streamlit import (
     clear_session_cache,
+    dataset_passages,
     get_dataset,
+    has_alnum,
     integer_signal_to_floating,
     make_interval_chart,
     make_signal_chart,
@@ -63,22 +65,29 @@ def _normalize_audio(passage: Passage, sample_rate=16000, encoding="pcm_s16le") 
     return lib.datasets.update_passage_audio(passage, metadata)
 
 
-def _has_alnum(s: str):
-    return any(c.isalnum() for c in s)
+def _make_interval_chart(
+    passage: Passage, alignments: typing.List[typing.Tuple[float, float]], **kwargs
+):
+    """Make an interval chart from audio alignments."""
+    start = passage.alignments[0].audio[0]
+    end = passage.alignments[-1].audio[-1]
+    x_min = [max(a - start, 0) for a, _ in alignments]
+    x_max = [min(b - start, end - start) for _, b in alignments]
+    return make_interval_chart(np.array(x_min), np.array(x_max), strokeWidth=0, **kwargs)
 
 
 def _stt_alignments_vad(passage: Passage, audio: np.ndarray):
     st.markdown("### Google Speech-to-Text (STT) API")
 
     with st.spinner("Visualizing..."):
-        signal_chart = make_signal_chart(audio, passage.audio_file.sample_rate)
-        nonalignments = [a for s, t, a in passage.script_nonalignments() if not _has_alnum(s + t)]
-        start = passage.alignments[0].audio[0]
-        end = passage.alignments[-1].audio[-1]
-        x_min = [max(a - start, 0) for a, _ in nonalignments]
-        x_max = [min(b - start, end - start) for _, b in nonalignments]
-        interval_chart = make_interval_chart(np.array(x_min), np.array(x_max), strokeWidth=0)
-        st.altair_chart((signal_chart + interval_chart).interactive(), use_container_width=True)
+        pauses = [a for s, t, a in passage.script_nonalignments() if not has_alnum(s + t)]
+        mistrascriptions = [a for s, t, a in passage.script_nonalignments() if has_alnum(s + t)]
+        chart = (
+            make_signal_chart(audio, passage.audio_file.sample_rate)
+            + _make_interval_chart(passage, pauses)
+            + _make_interval_chart(passage, mistrascriptions, color="#c58585")
+        )
+        st.altair_chart(chart.interactive(), use_container_width=True)
 
 
 def _webrtc_vad(audio: np.ndarray, sample_rate: int):
@@ -164,6 +173,30 @@ def _silero_vad(passage: Passage, audio: np.ndarray):
         st.altair_chart((signal_chart + interval_chart).interactive(), use_container_width=True)
 
 
+def _get_challenging_passages(
+    dataset: run._config.Dataset, threshold: float = 10
+) -> typing.Set[Passage]:
+    """Get challenging passages for VAD. So far, we have defined challenging passages as ones
+    that have long segments without pausing based on `alignments`."""
+    passages = set()
+    all_passages = list(dataset_passages(dataset))
+    for passage in all_passages:
+        start = passage.alignments[0].audio[0]
+        for script, transcript, audio in passage.script_nonalignments()[1:-1]:
+            if not has_alnum(script + transcript) and audio[1] - audio[0] > 0:
+                if audio[0] - start > threshold:
+                    passages.add(passage)
+                    break
+                start = audio[1]
+        if passage.alignments[-1].audio[-1] - start > threshold:
+            passages.add(passage)
+    st.info(
+        f"Found **{len(passages)}** out of **{len(all_passages)}** "
+        "passages with challenging segments."
+    )
+    return passages
+
+
 def main():
     run._config.configure()
 
@@ -180,7 +213,10 @@ def main():
     with st.spinner("Loading dataset..."):
         dataset = get_dataset(frozenset([speaker]))
 
-    passage = random.choice(list(dataset.values())[0])
+    use_challenging = st.checkbox("Find Challenging Passage", value=True)
+    passages = _get_challenging_passages(dataset) if use_challenging else list(dataset.values())[0]
+    _ = st.button("New Passage")
+    passage = random.choice(list(passages))
     audio_length = passage.alignments[-1].audio[-1] - passage.alignments[0].audio[0]
     st.info(
         "### Randomly Choosen Passage\n"
