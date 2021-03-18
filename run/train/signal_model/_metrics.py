@@ -63,8 +63,8 @@ class Metrics(_utils.Metrics):
 
     DISCRIM_FAKE_ACCURACY = partial(get_model_label, f"{_prefix}discriminator_fake_accuracy")
     DISCRIM_REAL_ACCURACY = partial(get_model_label, f"{_prefix}discriminator_real_accuracy")
-    DISCRIM_FAKE_LOSS = partial(get_model_label, f"{_prefix}discriminator_loss")
-    DISCRIM_REAL_LOSS = partial(get_model_label, f"{_prefix}discriminator_loss")
+    DISCRIM_FAKE_LOSS = partial(get_model_label, f"{_prefix}discriminator_fake_loss")
+    DISCRIM_REAL_LOSS = partial(get_model_label, f"{_prefix}discriminator_real_loss")
     GENERATOR_LOSS = partial(get_model_label, f"{_prefix}generator_loss")
     GENERATOR_ACCURACY = partial(get_model_label, f"{_prefix}generator_accuracy")
     L1_LOSS = partial(get_model_label, f"{_prefix}l1_loss")
