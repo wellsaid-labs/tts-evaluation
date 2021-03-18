@@ -427,7 +427,10 @@ def _run_step(args: _HandleBatchArgs):
         )
 
     args.timer.record_event(args.timer.MEASURE_METRICS)
-    values: _utils.MetricsValues = {k: v for p in get_values for k, v in p().items()}
+    values: _utils.MetricsValues = {}
+    for func in get_values:
+        for key, value in func().items():
+            values[key] = values[key] + value if key in values else value
     values.update(args.metrics.get_dataset_values(args.batch))
     values.update(args.metrics.get_data_loader_values(args.data_loader))
     args.timer.record_event(args.timer.GATHER_METRICS)
