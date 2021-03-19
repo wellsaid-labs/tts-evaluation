@@ -140,12 +140,19 @@ def _chart_alignments_and_pauses(
     span = passage[:]
     alignments_x_min = [a.audio[0] for a in span.alignments]
     alignments_x_max = [a.audio[1] for a in span.alignments]
-    data = {"interval": ["pauses"] * len(x_min), "start": x_min, "end": x_max}
-    return (
-        alt.Chart(pd.DataFrame(data))
+    mistrascriptions = [a for s, t, a in passage.script_nonalignments() if has_alnum(s + t)]
+    chart = (
+        alt.Chart(pd.DataFrame({"interval": ["pauses"] * len(x_min), "start": x_min, "end": x_max}))
         .mark_bar(stroke="#000", strokeWidth=1, strokeOpacity=0.3)
         .encode(x="start", x2="end", y="interval", color="interval")
-    ) + make_interval_chart(alignments_x_min, alignments_x_max, color="gray", strokeOpacity=1.0)
+    )
+    chart += make_interval_chart(
+        alignments_x_min, alignments_x_max, color="gray", strokeOpacity=1.0
+    )
+    chart += make_interval_chart(
+        *_audio_intervals(passage, mistrascriptions), color="darkred", strokeOpacity=1.0
+    )
+    return chart
 
 
 def _filter_pauses(passage: Passage, x_min: typing.List[float], x_max: typing.List[float]):
@@ -237,7 +244,7 @@ def _baseline_vad(passage: Passage, audio: np.ndarray):
     with st.spinner("Visualizing..."):
         st.write("**Pauses**")
         signal_chart = make_signal_chart(audio, sample_rate)
-        pausing_chart = make_interval_chart(x_min, x_max, strokeWidth=0, opacity=0.6)
+        pausing_chart = make_interval_chart(x_min, x_max, strokeWidth=0, opacity=0.8)
         st.altair_chart((signal_chart + pausing_chart).interactive(), use_container_width=True)
 
 
