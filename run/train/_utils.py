@@ -284,7 +284,7 @@ class CometMLExperiment:
         items.extend([f"<p><b>{param_to_label(k)}:</b> {v}</p>" for k, v in kwargs.items()])
         for key, data in audio.items():
             name = param_to_label(key)
-            file_name = f"step={self.curr_step},name={name},experiment={self.get_key()}"
+            file_name = f"step={self.curr_step},name={name},experiment={self.get_key()}.wav"
             url = self._upload_audio(file_name, data)
             items.append(f"<p><b>{name}:</b></p>")
             items.append(f'<audio controls preload="metadata" src="{url}"></audio>')

@@ -98,7 +98,7 @@ class Metrics(_utils.Metrics):
                 values[format_(self.NUM_SAMPLES)] += num_samples
                 values[format_(self.NUM_SLICES)] += 1
                 label = format_(self.NUM_SAMPLES_MIN_)
-                values[label] += min(values[label], num_samples) if label in values else num_samples
+                values[label] = min(values[label], num_samples) if label in values else num_samples
 
         return dict(values)
 

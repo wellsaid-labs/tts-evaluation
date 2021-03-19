@@ -29,6 +29,7 @@ from run._config import (
     Dataset,
     DatasetType,
     configurable_,
+    get_config_label,
     get_dataset_label,
     get_model_label,
 )
@@ -179,6 +180,17 @@ class _State:
     def models(self) -> typing.Tuple[torch.nn.Module]:
         return tuple([self.model] + self.discrims)
 
+    @staticmethod
+    def load_spectrogram_model(
+        comet: CometMLExperiment, spectrogram_model_checkpoint_path: pathlib.Path
+    ) -> spectrogram_model._worker.Checkpoint:
+        checkpoint = lib.environment.load(spectrogram_model_checkpoint_path)
+        comet.log_other(
+            get_config_label("spectrogram_model_experiment_key"),
+            checkpoint.comet_experiment_key,
+        )
+        return checkpoint
+
     @classmethod
     def from_checkpoint(
         cls,
@@ -201,7 +213,7 @@ class _State:
             cls._get_signal_to_spectrogram_modules(device),
             discrims,
             checkpoint.discrim_optimizers,
-            lib.environment.load(checkpoint.spectrogram_model_checkpoint_path),
+            cls.load_spectrogram_model(comet, checkpoint.spectrogram_model_checkpoint_path),
             checkpoint.spectrogram_model_checkpoint_path,
             comet,
             device,
@@ -225,7 +237,7 @@ class _State:
             cls._get_signal_to_spectrogram_modules(device),
             discrims,
             cls._get_discrim_optimizers(discrims),
-            lib.environment.load(spectrogram_model_checkpoint_path),
+            cls.load_spectrogram_model(comet, spectrogram_model_checkpoint_path),
             spectrogram_model_checkpoint_path,
             comet,
             device,
