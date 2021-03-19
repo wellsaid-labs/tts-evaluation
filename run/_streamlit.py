@@ -146,8 +146,8 @@ def span_audio(span: lib.datasets.Span) -> np.ndarray:
 
 def passage_audio(passage: lib.datasets.Passage) -> np.ndarray:
     """Get `span` audio using cached `read_audio_slice`."""
-    start = passage.alignments[0].audio[0]
-    end = passage.alignments[-1].audio[-1]
+    start = passage.first.audio[0]
+    end = passage.last.audio[-1]
     return read_wave_audio(passage.audio_file, start, end - start)
 
 

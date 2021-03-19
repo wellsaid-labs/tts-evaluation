@@ -448,7 +448,7 @@ def test__tuple__empty():
 
 
 def test_corrected_random_choice():
-    """ Test `lib.utils.corrected_random_choice` handles a basic cases. """
+    """ Test `lib.utils.corrected_random_choice` handles basic cases. """
     distribution = {i: 0.0 for i in range(10)}
     for _ in range(10000):
         choice = lib.utils.corrected_random_choice(distribution)
@@ -459,3 +459,32 @@ def test_corrected_random_choice():
     total = sum(distribution.values())
     for value in distribution.values():
         assert value / total == pytest.approx(1 / len(distribution), abs=0.01)
+
+
+def test_timeline():
+    """ Test `lib.utils.Timeline` handles basic cases. """
+    intervals = [
+        lib.utils.Interval((0, 1), "a"),
+        lib.utils.Interval((0.5, 1), "b"),  # NOTE: Overlapping
+        lib.utils.Interval((1, 2), "c"),  # NOTE: Independent
+        lib.utils.Interval((3, 4), "a"),
+    ]
+    for i in range(1, 4):
+        timeline: lib.utils.Timeline[str] = lib.utils.Timeline(intervals, step=i / 2)
+        assert tuple(sorted(timeline[0.5])) == ("a", "b")
+        assert tuple(sorted(timeline[0:1])) == ("a", "b", "c")
+        assert tuple(sorted(timeline[-0.5:0.5])) == ("a", "b")
+        assert tuple(sorted(timeline[0.5:1.5])) == ("a", "b", "c")
+        assert tuple(sorted(timeline[1.5:2.5])) == ("c",)
+        assert tuple(sorted(timeline[0:4])) == ("a", "a", "b", "c")
+        assert tuple(sorted(timeline[6:10])) == tuple()
+
+
+def test_timeline__get_indicies():
+    """ Test `lib.utils.Timeline._get_indicies` handles basic cases. """
+    func = lambda s, e: list(range(math.floor(s), math.ceil(e + 0.0001)))
+    timeline: lib.utils.Timeline[str] = lib.utils.Timeline([])
+    for i in [-0.1, 0, 0.1]:
+        for j in [-0.1, 0, 0.1]:
+            assert list(timeline._get_indicies(0 + i, 1 + j)) == func(0 + i, 1 + j)
+            assert list(timeline._get_indicies(-2 + i, -1 + j)) == func(-2 + i, -1 + j)

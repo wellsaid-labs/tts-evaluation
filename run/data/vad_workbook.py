@@ -278,14 +278,14 @@ def _get_challenging_passages(
     passages = set()
     all_passages = list(dataset_passages(dataset))
     for passage in all_passages:
-        start = passage.alignments[0].audio[0]
+        start = passage.first.audio[0]
         for script, transcript, audio in passage.script_nonalignments()[1:-1]:
             if not has_alnum(script + transcript) and audio[1] - audio[0] > 0:
                 if audio[0] - start > threshold:
                     passages.add(passage)
                     break
                 start = audio[1]
-        if passage.alignments[-1].audio[-1] - start > threshold:
+        if passage.last.audio[-1] - start > threshold:
             passages.add(passage)
     st.info(
         f"Found **{len(passages)}** out of **{len(all_passages)}** "
@@ -327,8 +327,8 @@ def main():
     state[random_seed_key] += int(st.button("New Passage"))
     with fork_rng(state[random_seed_key]):
         passage = random.choice(list(passages))
-    start = passage.alignments[0].audio[0]
-    end = passage.alignments[-1].audio[-1]
+    start = passage.first.audio[0]
+    end = passage.last.audio[-1]
     audio_length = end - start
     st.info(
         "### Randomly Choosen Passage\n"

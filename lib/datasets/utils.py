@@ -7,13 +7,13 @@ import dataclasses
 import functools
 import json
 import logging
+import math
 import multiprocessing
 import os
 import pathlib
 import random
 import subprocess
 import typing
-from math import ceil, floor
 from pathlib import Path
 
 import numpy as np
@@ -22,7 +22,7 @@ from third_party import LazyLoader
 
 import lib
 from lib.audio import AudioMetadata, get_audio_metadata
-from lib.utils import Tuple, flatten_2d, list_to_tuple, stow
+from lib.utils import Interval, Timeline, Tuple, flatten_2d, list_to_tuple, stow
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import pandas
@@ -127,12 +127,19 @@ class Passage:
     alignments: Tuple[Alignment]
     nonalignments: Tuple[Alignment] = dataclasses.field(compare=False, hash=False)
     other_metadata: typing.Dict = dataclasses.field(default_factory=dict, compare=False, hash=False)
+    first: Alignment = dataclasses.field(init=False, repr=False, compare=False)
+    last: Alignment = dataclasses.field(init=False, repr=False, compare=False)
+
+    def __post_init__(self):
+        if len(self.alignments) > 0:  # NOTE: Cache `first` and `last`, if they exist.
+            object.__setattr__(self, "first", self.alignments[0])
+            object.__setattr__(self, "last", self.alignments[-1])
 
     def audio(self):
         return lib.audio.read_audio(self.audio_file.path)
 
     def aligned_audio_length(self) -> float:
-        return self.alignments[-1].audio[-1] - self.alignments[0].audio[0]
+        return self.last.audio[-1] - self.first.audio[0]
 
     def script_nonalignments(
         self,
@@ -214,15 +221,15 @@ class Span:
     _last_cache: Alignment = dataclasses.field(init=False, repr=False, compare=False)
 
     @property
-    def _first(self) -> Alignment:
+    def first(self) -> Alignment:
         if not hasattr(self, "_first_cache"):
             object.__setattr__(self, "_first_cache", self.passage.alignments[self.slice.start])
         return self._first_cache
 
     @property
-    def _last(self) -> Alignment:
+    def last(self) -> Alignment:
         if self.slice.stop - 1 == self.slice.start:
-            return self._first
+            return self.first
         if not hasattr(self, "_last_cache"):
             object.__setattr__(self, "_last_cache", self.passage.alignments[self.slice.stop - 1])
         return self._last_cache
@@ -241,15 +248,15 @@ class Span:
 
     @property
     def script_slice(self):
-        return slice(self._first.script[0], self._last.script[-1])
+        return slice(self.first.script[0], self.last.script[-1])
 
     @property
     def audio_slice(self):
-        return slice(self._first.audio[0], self._last.audio[-1])
+        return slice(self.first.audio[0], self.last.audio[-1])
 
     @property
     def transcript_slice(self):
-        return slice(self._first.transcript[0], self._last.transcript[-1])
+        return slice(self.first.transcript[0], self.last.transcript[-1])
 
     @property
     def script(self):
@@ -265,9 +272,9 @@ class Span:
 
     def _offset(self, alignment: Alignment):
         return alignment._replace(
-            script=self._offset_helper(alignment.script, self._first.script),
-            transcript=self._offset_helper(alignment.transcript, self._first.transcript),
-            audio=self._offset_helper(alignment.audio, self._first.audio),
+            script=self._offset_helper(alignment.script, self.first.script),
+            transcript=self._offset_helper(alignment.transcript, self.first.transcript),
+            audio=self._offset_helper(alignment.audio, self.first.audio),
         )
 
     @property
@@ -277,10 +284,10 @@ class Span:
 
     @property
     def audio_length(self):
-        return self._last.audio[-1] - self._first.audio[0]
+        return self.last.audio[-1] - self.first.audio[0]
 
     def audio(self) -> np.ndarray:
-        start = self._first.audio[0]
+        start = self.first.audio[0]
         return lib.audio.read_audio_slice(self.passage.audio_file.path, start, self.audio_length)
 
     def script_nonalignments(
@@ -456,62 +463,30 @@ class SpanGenerator(typing.Iterator[Span]):
     Args:
         passages
         max_seconds: The maximum interval length.
-        step: A lower step size is more performant but uses more memory, and vice versa.
-        eps: Add small number so that the end point is also included within the range.
+        **kwargs: Additional key-word arguments passed `Timeline`.
     """
 
-    def __init__(
-        self, passages: typing.List[Passage], max_seconds: float, step: float = 1.0, eps=1e-8
-    ):
+    def __init__(self, passages: typing.List[Passage], max_seconds: float, **kwargs):
         assert max_seconds > 0, "The maximum interval length must be a positive number."
-        assert step > 0, "Step must be a positive number."
         self.passages = passages
         self.max_seconds = max_seconds
-        self.step = step
-        self.eps = eps
-        self._min = [p.alignments[0].audio[0] for p in passages]
-        self._max = [p.alignments[-1].audio[1] for p in passages]
-        self._weights = torch.tensor([b - a for a, b in zip(self._min, self._max)])
-        self._lookup = None if self.max_seconds == float("inf") else self._make_lookup()
+        self._weights = torch.tensor([p.last.audio[1] - p.first.audio[0] for p in self.passages])
+        make_timeline: typing.Callable[[Passage], Timeline[int]]
+        make_timeline = lambda p: Timeline(
+            [Interval(a.audio, i) for i, a in enumerate(p.alignments)], **kwargs
+        )
+        self._timelines = None if max_seconds == math.inf else [make_timeline(p) for p in passages]
 
     @staticmethod
-    def _overlap(slice: typing.Tuple[float, float], other: typing.Tuple[float, float]) -> float:
-        """ Get the percentage overlap between `slice` and the `other` slice. """
-        if other[-1] == other[0]:
-            return 1.0 if other[0] >= slice[0] and other[-1] <= slice[1] else 0.0
-        return (min(slice[1], other[-1]) - max(slice[0], other[0])) / (other[-1] - other[0])
-
-    def _map(self, i: float, min_: float) -> float:
-        """ Map `i` into a different a positive number space compressed by `self.step`. """
-        return (i - min_) / self.step
-
-    def _start(self, start: float, *args) -> int:
-        """ Get an integer smaller than or equal to `start`. """
-        return int(floor(self._map(start, *args)))
-
-    def _stop(self, stop: float, *args) -> int:
-        """ Get an integer bigger than `stop`. """
-        return int(ceil(self._map(stop, *args) + self.eps))
-
-    def _make_lookup(self) -> typing.Tuple[typing.Tuple[typing.Tuple[int]]]:
-        """ Create a lookup table mapping positive integers to alignments. """
-        lookup_: typing.List[typing.List[typing.List[int]]]
-        lookup_ = [[[] for _ in range(self._stop(b, a))] for a, b in zip(self._min, self._max)]
-        for i, (passage, min_) in enumerate(zip(self.passages, self._min)):
-            for j, alignment in enumerate(passage.alignments):
-                start = self._start(alignment.audio[0], min_)
-                for k in range(start, self._stop(alignment.audio[1], min_)):
-                    lookup_[i][k].append(j)
-        return typing.cast(typing.Tuple[typing.Tuple[typing.Tuple[int]]], list_to_tuple(lookup_))
-
-    def _get(self, index: int, start: int, stop: int) -> typing.Iterator[int]:
-        for items in self._lookup[index][start:stop]:
-            yield from items
+    def _overlap(x1: float, x2: float, y1: float, y2: float) -> float:
+        """ Get the percentage overlap between x and the y slice. """
+        if x2 == x1:
+            return 1.0 if x1 >= y1 and x2 <= y2 else 0.0
+        return (min(x2, y2) - max(x1, y1)) / (x2 - x1)
 
     @functools.lru_cache(maxsize=None)
-    def _is_include(self, start: float, end: float, passage_index: int, alignment_index: int):
-        alignment = self.passages[passage_index].alignments[alignment_index]
-        return SpanGenerator._overlap((start, end), alignment.audio) >= random.random()
+    def _is_include(self, x1: float, x2: float, y1: float, y2: float):
+        return self._overlap(x1, x2, y1, y2) >= random.random()
 
     def __iter__(self) -> typing.Iterator[Span]:
         return self
@@ -531,25 +506,27 @@ class SpanGenerator(typing.Iterator[Span]):
             # NOTE: The `weight` is based on `start` (i.e. the number of spans)
             # NOTE: For some reason, `torch.multinomial(replacement=True)` is faster by a lot.
             index = int(torch.multinomial(self._weights + length, 1, replacement=True).item())
-            passage, min_, max_ = self.passages[index], self._min[index], self._max[index]
+            passage, timeline = self.passages[index], self._timelines[index]
 
             # NOTE: Uniformly sample a span of audio.
-            start = random.uniform(min_ - length, max_)
-            end = min(start + length, max_)
-            start = max(start, min_)
+            start = random.uniform(passage.first.audio[0] - length, passage.last.audio[1])
+            stop = min(start + length, passage.last.audio[1])
+            start = max(start, passage.first.audio[0])
 
             # NOTE: Based on the overlap, decide which alignments to include in the span.
-            part = list(self._get(index, self._start(start, min_), self._stop(end, min_)))
+            overlapping = sorted(list(timeline.get(slice(start, stop))), key=lambda i: i.start)
             self._is_include.cache_clear()
-            _is_include = functools.partial(self._is_include, start, end, index)
-            bounds = (
-                next((i for i in part if _is_include(i)), None),
-                next((i for i in reversed(part) if _is_include(i)), None),
-            )
-            if bounds[0] is not None and bounds[1] is not None and bounds[0] <= bounds[1]:
-                span = passage[bounds[0] : bounds[1] + 1]
-                if span.audio_length > 0 and span.audio_length <= self.max_seconds:
-                    return span
+            _is_include = functools.partial(self._is_include, y1=start, y2=stop)
+            begin: typing.Optional[Interval[int]]
+            begin = next((i for i in overlapping if _is_include(i.start, i.stop)), None)
+            end: typing.Optional[Interval[int]]
+            end = next((i for i in reversed(overlapping) if _is_include(i.start, i.stop)), None)
+            if (
+                (begin is not None and end is not None)
+                and end.stop - begin.start > 0
+                and end.stop - begin.start <= self.max_seconds
+            ):
+                return passage[begin.val : end.val + 1]
 
 
 """

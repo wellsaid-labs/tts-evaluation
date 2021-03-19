@@ -364,16 +364,16 @@ def test_passage_span__script_nonalignments__zero_alignments():
 
 def test__overlap():
     """ Test `_overlap` computes the percentage of overlap between two spans correctly. """
-    assert lib.datasets.SpanGenerator._overlap((0, 1), (1, 2)) == 0.0
-    assert lib.datasets.SpanGenerator._overlap((0, 1), (0, 1)) == 1.0
-    assert lib.datasets.SpanGenerator._overlap((0, 1), (0.5, 0.5)) == 1.0
-    assert lib.datasets.SpanGenerator._overlap((0, 1), (-1, 0)) == 0.0
-    assert lib.datasets.SpanGenerator._overlap((0, 1), (-0.5, 0.5)) == 0.5
-    assert lib.datasets.SpanGenerator._overlap((0, 1), (0.5, 1.5)) == 0.5
-    assert lib.datasets.SpanGenerator._overlap((0.5, 2), (0, 1)) == 0.5
-    assert lib.datasets.SpanGenerator._overlap((0, 2), (0, 1)) == 1.0
-    assert lib.datasets.SpanGenerator._overlap((-1.5, 0.5), (0, 1)) == 0.5
-    assert lib.datasets.SpanGenerator._overlap((-1, 1), (0, 1)) == 1.0
+    assert lib.datasets.SpanGenerator._overlap(1, 2, 0, 1) == 0.0
+    assert lib.datasets.SpanGenerator._overlap(0, 1, 0, 1) == 1.0
+    assert lib.datasets.SpanGenerator._overlap(0.5, 0.5, 0, 1) == 1.0
+    assert lib.datasets.SpanGenerator._overlap(-1, 0, 0, 1) == 0.0
+    assert lib.datasets.SpanGenerator._overlap(-0.5, 0.5, 0, 1) == 0.5
+    assert lib.datasets.SpanGenerator._overlap(0.5, 1.5, 0, 1) == 0.5
+    assert lib.datasets.SpanGenerator._overlap(0, 1, 0.5, 2) == 0.5
+    assert lib.datasets.SpanGenerator._overlap(0, 1, 0, 2) == 1.0
+    assert lib.datasets.SpanGenerator._overlap(0, 1, -1.5, 0.5) == 0.5
+    assert lib.datasets.SpanGenerator._overlap(0, 1, -1, 1) == 1.0
 
 
 # NOTE: `lib.datasets.conventional_dataset_loader` is tested in `lj_speech` as part of loading the

@@ -2,6 +2,7 @@
 # https://stackoverflow.com/questions/33533148/how-do-i-specify-that-the-return-type-of-a-method-is-the-same-as-the-class-itsel
 from __future__ import annotations
 
+import collections
 import dataclasses
 import functools
 import itertools
@@ -546,3 +547,82 @@ def corrected_random_choice(
 def dataclass_as_dict(data):
     """Shallow copy `dataclass` to `dict`."""
     return {f.name: getattr(data, f.name) for f in dataclasses.fields(data) if f.init}
+
+
+_IntervalVar = typing.TypeVar("_IntervalVar")
+
+
+class Interval(typing.Generic[_IntervalVar]):
+    """Timeline item with a corresponding time `span` and value.
+
+    NOTE: This datastructure is more memory efficient than a similar `NamedTuple`.
+    """
+
+    __slots__ = "start", "stop", "val"
+
+    def __init__(self, span: typing.Tuple[float, float], val: _IntervalVar):
+        self.start = span[0]
+        self.stop = span[1]
+        self.val = val
+
+    @property
+    def span(self):
+        return (self.start, self.stop)
+
+
+_TimelineVar = typing.TypeVar("_TimelineVar")
+
+
+class Timeline(typing.Generic[_TimelineVar]):
+    """Timeline is a mapping from a time span to a value.
+
+    Args:
+        intervals: List of intervals and a corresponding value.
+        step: Positive number used to compress or expand the timeline.
+    """
+
+    __slots__ = "step", "_timeline"
+
+    def __init__(self, intervals: typing.List[Interval[_TimelineVar]], step: float = 1):
+        assert step > 0, "`step` must be a positive number."
+        _timeline: typing.Dict[int, typing.List[Interval[_TimelineVar]]]
+        _timeline = collections.defaultdict(list)
+        self.step = step
+        for interval in intervals:
+            for index in self._get_indicies(interval.start, interval.stop):
+                _timeline[index].append(interval)
+        self._timeline: typing.Dict[int, typing.Tuple[Interval[_TimelineVar], ...]]
+        self._timeline = collections.defaultdict(tuple, {k: tuple(v) for k, v in _timeline.items()})
+
+    def _get_indicies(self, start: float, stop: float) -> typing.Iterable[int]:
+        """
+        NOTE: This approach is much faster than:
+        `range(math.floor(start / self.step), math.ceil(stop / self.step + 0.00001))`
+        """
+        return range(int(start // self.step), int((stop / self.step + 1) // 1))
+
+    @staticmethod
+    def is_overlapping(x1: float, x2: float, y1: float, y2: float) -> bool:
+        """
+        NOTE: This approach is much faster than: `max(x1, y1) <= min(x2, y2)`.
+        """
+        max_ = x1 if x1 > y1 else y1
+        min_ = x2 if x2 < y2 else y2
+        return max_ <= min_
+
+    def get(self, k: typing.Union[int, float, slice]) -> typing.Set[Interval[_TimelineVar]]:
+        if isinstance(k, slice):
+            start, stop = k.start, k.stop
+        elif isinstance(k, (int, float)):
+            start, stop = k, k
+        else:
+            raise TypeError("Invalid argument type: {}".format(type(k)))
+
+        is_overlapping = functools.partial(self.is_overlapping, y1=start, y2=stop)
+        indicies = self._get_indicies(start, stop)
+        values = set((val for i in indicies for val in self._timeline[i]))
+        values.difference_update([v for v in values if not is_overlapping(v.start, v.stop)])
+        return values
+
+    def __getitem__(self, k: typing.Union[int, float, slice]) -> typing.Tuple[_TimelineVar]:
+        return tuple(v.val for v in self.get(k))
