@@ -203,8 +203,7 @@ def span_visualize_signal(span: Span) -> alt.Chart:
     signal_chart = make_signal_chart(span_audio(span), span.audio_file.sample_rate)
     x_min = [a.audio[0] for a in span.alignments]
     x_max = [a.audio[1] for a in span.alignments]
-    interval_chart = make_interval_chart(np.array(x_min), np.array(x_max))
-    return (signal_chart + interval_chart).interactive()
+    return (signal_chart + make_interval_chart(x_min, x_max)).interactive()
 
 
 def span_sec_per_char(span: Span):

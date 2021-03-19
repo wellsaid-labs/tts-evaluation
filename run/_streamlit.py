@@ -205,10 +205,10 @@ def make_signal_chart(
 
 
 def make_interval_chart(
-    x_min: np.ndarray,
-    x_max: np.ndarray,
+    x_min: typing.List[float],
+    x_max: typing.List[float],
     opacity=0.3,
-    color="#85C5A6",
+    color="gray",
     stroke="#000",
     strokeWidth=1,
     strokeOpacity=0.3,

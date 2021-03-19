@@ -36,7 +36,7 @@ from torchnlp.random import fork_rng
 import lib
 import run
 from lib.datasets import DATASETS, Passage
-from lib.utils import seconds_to_str
+from lib.utils import Interval, Timeline, seconds_to_str
 from run._streamlit import (
     audio_to_html,
     clear_session_cache,
@@ -73,15 +73,14 @@ def _normalize_audio(passage: Passage, sample_rate=16000, encoding="pcm_s16le") 
     return lib.datasets.update_passage_audio(passage, metadata)
 
 
-def _make_interval_chart(
-    passage: Passage, alignments: typing.List[typing.Tuple[float, float]], **kwargs
-):
-    """Make an interval chart from audio alignments."""
-    start = passage.alignments[0].audio[0]
-    end = passage.alignments[-1].audio[-1]
-    x_min = [max(a - start, 0) for a, _ in alignments]
-    x_max = [min(b - start, end - start) for _, b in alignments]
-    return make_interval_chart(np.array(x_min), np.array(x_max), strokeWidth=0, **kwargs)
+def _audio_intervals(
+    passage: Passage, audio: typing.List[typing.Tuple[float, float]]
+) -> typing.Tuple[typing.List[float], typing.List[float]]:
+    """Bound and normalize `audio` intervals at `passage.first` and `passage.last`."""
+    start = passage.first.audio[0]
+    x_min = [max(a - start, 0.0) for a, _ in audio]
+    x_max = [min(b - start, passage.last.audio[-1] - start) for _, b in audio]
+    return x_min, x_max
 
 
 def _stt_alignments_vad(passage: Passage, audio: np.ndarray):
@@ -91,20 +90,11 @@ def _stt_alignments_vad(passage: Passage, audio: np.ndarray):
     with st.spinner("Visualizing..."):
         pauses = [a for s, t, a in passage.script_nonalignments() if not has_alnum(s + t)]
         mistrascriptions = [a for s, t, a in passage.script_nonalignments() if has_alnum(s + t)]
-        chart = (
-            make_signal_chart(audio, passage.audio_file.sample_rate)
-            + _make_interval_chart(passage, pauses)
-            + _make_interval_chart(passage, mistrascriptions, color="#c58585")
-        )
+        chart = make_signal_chart(audio, passage.audio_file.sample_rate)
+        interval_chart_ = lambda a, **k: make_interval_chart(*_audio_intervals(passage, a), **k)
+        chart += interval_chart_(pauses, strokeWidth=0)
+        chart += interval_chart_(mistrascriptions, strokeWidth=0, color="darkred")
         st.altair_chart(chart.interactive(), use_container_width=True)
-
-
-def _butter_bandpass(lowcut, highcut, fs, order=5):
-    nyq = 0.5 * fs
-    low = lowcut / nyq
-    high = highcut / nyq
-    sos = signal.butter(order, [low, high], analog=False, btype="band", output="sos")
-    return sos
 
 
 def _butter_bandpass_filter(data, lowcut, highcut, fs, order=5):
@@ -112,7 +102,10 @@ def _butter_bandpass_filter(data, lowcut, highcut, fs, order=5):
     Original:
     https://stackoverflow.com/questions/12093594/how-to-implement-band-pass-butterworth-filter-with-scipy-signal-butter
     """
-    sos = _butter_bandpass(lowcut, highcut, fs, order=order)
+    nyq = 0.5 * fs
+    low = lowcut / nyq
+    high = highcut / nyq
+    sos = signal.butter(order, [low, high], analog=False, btype="band", output="sos")
     return signal.sosfiltfilt(sos, data)
 
 
@@ -121,10 +114,72 @@ def _median(x: np.ndarray) -> float:
     return x[math.floor(len(x) / 2) : math.ceil(len(x) / 2) + 1].mean().item()
 
 
-def _baseline_vad(audio: np.ndarray, sample_rate: int):
+def _chart_db_rms(seconds: np.ndarray, rms_level_db: np.ndarray):
+    """
+    Args:
+        ...
+        seconds: The second each frame is located at.
+        rms_level_db: Frame-level RMS levels.
+    """
+    st.write("**dB RMS**")
+    return (
+        alt.Chart(pd.DataFrame({"seconds": seconds, "decibels": rms_level_db}))
+        .mark_area()
+        .encode(
+            x=alt.X("seconds", type="quantitative"),
+            y=alt.Y("decibels", scale=alt.Scale(domain=(-200.0, 0)), type="quantitative"),
+        )
+    )
+
+
+def _chart_alignments_and_pauses(
+    passage: Passage, x_min: typing.List[float], x_max: typing.List[float]
+):
+    """Chart `passage` alignments versus pauses as defined by `x_min` and `x_max`."""
+    st.write("**Alignments and Pauses**")
+    span = passage[:]
+    alignments_x_min = [a.audio[0] for a in span.alignments]
+    alignments_x_max = [a.audio[1] for a in span.alignments]
+    data = {"interval": ["pauses"] * len(x_min), "start": x_min, "end": x_max}
+    return (
+        alt.Chart(pd.DataFrame(data))
+        .mark_bar(stroke="#000", strokeWidth=1, strokeOpacity=0.3)
+        .encode(x="start", x2="end", y="interval", color="interval")
+    ) + make_interval_chart(alignments_x_min, alignments_x_max, color="gray", strokeOpacity=1.0)
+
+
+def _filter_pauses(passage: Passage, x_min: typing.List[float], x_max: typing.List[float]):
+    """Filter pauses at `x_min` and `x_max` based on `passage.alignments`."""
+    span = passage[:]
+    alignments = list(span.alignments)
+    timeline = Timeline([Interval(a.audio, a) for a in alignments])
+    _has_mistranscription = lambda v, a: has_alnum(
+        getattr(span, a)[min((getattr(o, a)[1] for o in v)) : max((getattr(o, a)[0] for o in v))]
+    )
+    for min_, max_ in zip(x_min, x_max):
+        vals = list(timeline[min_:max_])
+        if len(vals) == 0:
+            yield min_, max_
+        elif (
+            len(vals) == 2
+            # NOTE: Ensure there is overlap between the pause and both alignments
+            and min((o.audio[1] for o in vals)) <= max_
+            and max((o.audio[0] for o in vals)) >= min_
+            # NOTE: Ensure alignment(s) are not inside the pause
+            and min((o.audio[0] for o in vals)) <= min_
+            and max((o.audio[1] for o in vals)) >= max_
+            # NOTE: Ensure that there is no mistranscription between the alignments
+            and not _has_mistranscription(vals, "script")
+            and not _has_mistranscription(vals, "transcript")
+        ):
+            yield min_, max_
+
+
+def _baseline_vad(passage: Passage, audio: np.ndarray):
     st.markdown("### Baseline Voice Activity Detection (VAD)")
     st.write("Use an RMS threshold with a bandpass filter to detect voice activity.")
 
+    sample_rate = passage.audio_file.sample_rate
     col = st.beta_columns([1, 1])
     question = "What is the frame size in milliseconds?"
     milli_frame_size: int = col[0].slider(question, min_value=0, max_value=250, value=50, step=1)
@@ -161,16 +216,8 @@ def _baseline_vad(audio: np.ndarray, sample_rate: int):
         rms_level_power = np.mean(np.abs(frames) ** 2, axis=1)
         rms_level_db = 10.0 * np.log10(np.clip(rms_level_power, 1e-10, None))
         is_pause = (rms_level_db < threshold).tolist()
-        st.write("RMS level in decibels")
-        ticks = np.array([_median(i) / sample_rate for i in indicies])
-        chart = (
-            alt.Chart(pd.DataFrame({"seconds": ticks, "decibels": rms_level_db}))
-            .mark_area()
-            .encode(
-                x=alt.X("seconds", type="quantitative"),
-                y=alt.Y("decibels", scale=alt.Scale(domain=(-100.0, 0)), type="quantitative"),
-            )
-        )
+        seconds = np.array([_median(i) / sample_rate for i in indicies])
+        chart = _chart_db_rms(seconds, rms_level_db)
         st.altair_chart(chart.interactive(), use_container_width=True)
 
     with st.spinner("Grouping segments..."):
@@ -180,10 +227,17 @@ def _baseline_vad(audio: np.ndarray, sample_rate: int):
             if is_pause_:
                 x_min.append(float(group[0][1][0]) / sample_rate)
                 x_max.append(float(group[-1][1][-1]) / sample_rate)
+        chart = _chart_alignments_and_pauses(passage, x_min, x_max)
+        st.altair_chart(chart.interactive(), use_container_width=True)
+
+    with st.spinner("Filtering segments..."):
+        x_min, x_max = zip(*list(_filter_pauses(passage, x_min, x_max)))
+        x_min, x_max = list(x_min), list(x_max)
 
     with st.spinner("Visualizing..."):
+        st.write("**Pauses**")
         signal_chart = make_signal_chart(audio, sample_rate)
-        pausing_chart = make_interval_chart(np.array(x_min), np.array(x_max), strokeWidth=0)
+        pausing_chart = make_interval_chart(x_min, x_max, strokeWidth=0, opacity=0.6)
         st.altair_chart((signal_chart + pausing_chart).interactive(), use_container_width=True)
 
 
@@ -230,7 +284,7 @@ def _webrtc_vad(audio: np.ndarray, sample_rate: int):
 
     with st.spinner("Visualizing..."):
         signal_chart = make_signal_chart(audio, sample_rate)
-        interval_chart = make_interval_chart(np.array(x_min), np.array(x_max), strokeWidth=0)
+        interval_chart = make_interval_chart(x_min, x_max, strokeWidth=0)
         st.altair_chart((signal_chart + interval_chart).interactive(), use_container_width=True)
 
 
@@ -266,7 +320,7 @@ def _silero_vad(passage: Passage, audio: np.ndarray):
         intervals = [(a["end"], b["start"]) for a, b in zip(speech_ts, speech_ts[1:])]
         x_min = [a / passage.audio_file.sample_rate for a, _ in intervals]
         x_max = [b / passage.audio_file.sample_rate for _, b in intervals]
-        interval_chart = make_interval_chart(np.array(x_min), np.array(x_max), strokeWidth=0)
+        interval_chart = make_interval_chart(x_min, x_max, strokeWidth=0)
         st.altair_chart((signal_chart + interval_chart).interactive(), use_container_width=True)
 
 
@@ -356,7 +410,7 @@ def main():
         _stt_alignments_vad(passage, audio)
 
     with st.spinner("Running Baseline VAD..."):
-        _baseline_vad(audio, sample_rate)
+        _baseline_vad(passage, audio)
 
     with st.spinner("Running Google WebRTC VAD..."):
         _webrtc_vad(audio, sample_rate)
