@@ -24,6 +24,7 @@ from functools import partial
 
 import hparams.hparams
 import numpy
+import threadpoolctl
 import torch
 import torch.cuda
 import torch.distributed
@@ -578,14 +579,31 @@ class Batch:
         return self.apply(lambda t: t.pin_memory())
 
 
-def _worker_init_fn(_, config, worker_init_fn):
-    # TODO: Add a method for transfering global configuration between processes without private
-    # variables.
-    # TODO: After the global configuration is transfered, the functions need to be rechecked
-    # like for a configuration, just in case the configuration is on a new process.
+def set_num_threads(num_threads: int):
+    """Set number of threads for `torch`, `numpy`, `scipy` and `scikit`."""
+    torch.set_num_threads(num_threads)
+    torch.set_num_interop_threads(num_threads)
+    threadpoolctl.threadpool_limits(limits=num_threads)
+    assert torch.get_num_threads() == num_threads, "Failed to set `num_threads`."
+    assert torch.get_num_interop_threads() == num_threads, "Failed to set `num_threads`."
+    info = threadpoolctl.threadpool_info()
+    assert any("/numpy" in i["filepath"] for i in info), "Failed to find `numpy`."
+    assert any("/scipy" in i["filepath"] for i in info), "Failed to find `scipy`."
+    assert all(i["num_threads"] == num_threads for i in info), "Failed to set `num_threads`."
+
+
+def _worker_init_fn(_, config: typing.Dict, worker_init_fn: typing.Callable, num_threads: int = 1):
+    """
+    TODO: Add a method for transfering global configuration between processes without private
+    variables.
+    TODO: After the global configuration is transfered, the functions need to be rechecked
+    like for a configuration, just in case the configuration is on a new process.
+    NOTE: Set `num_threads` to ensure that these workers share resources with the main process.
+    """
     hparams.hparams._configuration = config
     info = torch.utils.data.get_worker_info()
     lib.environment.set_basic_logging_config()
+    set_num_threads(num_threads)
     logger.info("Worker %d/%d iterator started.", info.id + 1, info.num_workers)
     worker_init_fn()
 
@@ -625,6 +643,7 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
         device: torch.device,
         num_steps_per_epoch: int,
         worker_init_fn: typing.Optional[typing.Callable],
+        cuda_prefetch: int = 16,
         **kwargs,
     ):
         self._set_r_limit()
@@ -642,6 +661,8 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
         )
         self.iter: typing.Optional[_BaseDataLoaderIter] = None
         self.num_steps_per_epoch = num_steps_per_epoch
+        self.prefetched = []
+        self.cuda_prefetch = cuda_prefetch
 
     @staticmethod
     def _set_r_limit(soft_limit=4096):
@@ -670,12 +691,15 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
     def prefetch(self):
         """Prefetch next example, and move it asynchronously to the correct device.
 
+        TODO: Coordinate `num_steps_per_epoch` with `prefetch`.
+
         Learn more:
         https://github.com/PyTorchLightning/lightning-bolts/pull/127
         https://github.com/NVIDIA/apex/issues/304
         """
         assert self.iter is not None
-        self.next: DataLoaderVar = next(self.iter).apply(self.process_tensor)
+        for _ in range(self.cuda_prefetch - len(self.prefetched)):
+            self.prefetched.append(next(self.iter).apply(self.process_tensor))
 
     def __iter__(self) -> typing.Iterator[DataLoaderVar]:
         if self.iter is None:
@@ -686,7 +710,7 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
 
         self.prefetch()
         for _ in range(self.num_steps_per_epoch):
-            next_ = self.next
+            next_ = self.prefetched.pop(0)
             self.prefetch()
             yield next_
 
@@ -879,6 +903,7 @@ class Timer:
             event = torch.cuda.Event(enable_timing=True)
             event.record()
         self.events.append(_TimerEvent(name, time.perf_counter(), event))
+        return self
 
     def get_timers(self, **kwargs) -> typing.Dict[Label, float]:
         self.record_event(self._LAST_EVENT)

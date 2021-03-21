@@ -499,10 +499,9 @@ def _run_steps(
         stack.enter_context(set_epoch(state.comet, step=state.step.item(), **kwargs))
 
         metrics = Metrics(state.comet, state.input_encoder.speaker_encoder.vocab)
+        timer = Timer().record_event(Timer.LOAD_DATA)
         iterator = enumerate(iter(data_loader))
         while True:
-            timer = Timer()
-            timer.record_event(timer.LOAD_DATA)
             item = next(iterator, None)
             if item is None:
                 break
@@ -513,6 +512,8 @@ def _run_steps(
             if Context.TRAIN == context:
                 metrics.log(lambda l: l[-1:], timer, type_=dataset_type, cadence=Cadence.STEP)
                 state.comet.log_metrics(timer.get_timers(cadence=Cadence.STEP))
+
+            timer = Timer().record_event(Timer.LOAD_DATA)
 
         metrics.log(is_verbose=True, type_=dataset_type, cadence=Cadence.MULTI_STEP)
 

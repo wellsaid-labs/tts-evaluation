@@ -12,10 +12,10 @@ import typing
 import torch
 import torch.cuda
 import torch.distributed
+import torch.multiprocessing
 import torch.nn
 import torch.nn.functional
 
-import lib
 from lib.environment import IS_TESTING_ENVIRONMENT
 
 logger = logging.getLogger(__name__)

@@ -555,10 +555,9 @@ def _run_steps(
 
         speakers = state.spectrogram_model_checkpoint.input_encoder.speaker_encoder.vocab
         metrics = Metrics(state.comet, speakers)
+        timer = Timer().record_event(Timer.LOAD_DATA)
         iterator = iter(data_loader)
         while True:
-            timer = Timer()
-            timer.record_event(timer.LOAD_DATA)
             batch = next(iterator, None)
             if batch is None:
                 break
@@ -568,6 +567,8 @@ def _run_steps(
             if Context.TRAIN == context:
                 metrics.log(lambda l: l[-1:], timer, type_=dataset_type, cadence=Cadence.STEP)
                 state.comet.log_metrics(timer.get_timers(cadence=Cadence.STEP))
+
+            timer = Timer().record_event(Timer.LOAD_DATA)
 
         metrics.log(is_verbose=True, type_=dataset_type, cadence=Cadence.MULTI_STEP)
 

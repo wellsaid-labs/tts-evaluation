@@ -9,12 +9,12 @@ import torch
 import torch.utils.data
 from torch.nn import functional
 from torchnlp.encoders.text import SequenceBatch, stack_and_pad_tensors
-from torchnlp.samplers import BucketBatchSampler
 
 import lib
 import run
 import run._config
 import run._utils
+from lib.samplers import BucketBatchSampler
 from run.train import _utils, spectrogram_model
 
 

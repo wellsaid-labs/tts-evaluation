@@ -99,7 +99,7 @@ def _make_configuration(
             train_steps_per_epoch=train_steps_per_epoch,
             dev_steps_per_epoch=dev_steps_per_epoch,
             num_workers=2 if debug else 4,
-            prefetch_factor=2 if debug else 4,
+            prefetch_factor=2 if debug else 16,
         ),
         _worker._State._get_optimizers: HParams(
             optimizer=torch.optim.Adam,
