@@ -409,7 +409,7 @@ def test__tuple():
     assert repr(items) == "((1, ('a', 1.0)), (2, ('b', 2.0)), (3, ('c', 3.0)))"
 
 
-class TestNamedTuple(typing.NamedTuple):
+class MockNamedTuple(typing.NamedTuple):
     string: str
     tuple: typing.Tuple[float, int]
     default: int = 1
@@ -420,9 +420,9 @@ def test__tuple__named():
     dtype = numpy.dtype([("f0", numpy.float32), ("f1", numpy.int32)])
     dtype = numpy.dtype([("string", str, 1), ("tuple", dtype), ("default", numpy.int32)])
     data = [
-        TestNamedTuple("a", (1.0, 1)),
-        TestNamedTuple("b", (2.0, 2), 2),
-        TestNamedTuple("c", (3.0, 3), 3),
+        MockNamedTuple("a", (1.0, 1)),
+        MockNamedTuple("b", (2.0, 2), 2),
+        MockNamedTuple("c", (3.0, 3), 3),
     ]
     items = lib.utils._Tuple(data, dtype=dtype)
     assert items[0] == data[0]
