@@ -163,7 +163,7 @@ class DataProcessor(torch.utils.data.IterableDataset):
         """
         iterator = run._utils.SpanGenerator(dataset)
         iterator = BucketBatchSampler(iterator, span_bucket_size, False, self._sort_key)
-        self.iterator = typing.cast(typing.Iterator[typing.List[lib.datasets.Span]], iterator)
+        self.iterator = typing.cast(typing.Iterator[typing.List[run.data._loader.Span]], iterator)
         self.batch_size = batch_size
         self.slice_padding = slice_padding
         self.slice_size = slice_size
@@ -181,10 +181,10 @@ class DataProcessor(torch.utils.data.IterableDataset):
         )
 
     @staticmethod
-    def _sort_key(span: lib.datasets.Span):
+    def _sort_key(span: run.data._loader.Span):
         return span.audio_length
 
-    def _make_batches(self, spans: typing.List[lib.datasets.Span]) -> typing.Iterable[Batch]:
+    def _make_batches(self, spans: typing.List[run.data._loader.Span]) -> typing.Iterable[Batch]:
         """Sample slices from a batch of predicted spectrograms."""
         batch = self._make_spectrogram_model_batch(spans)
         with torch.no_grad():

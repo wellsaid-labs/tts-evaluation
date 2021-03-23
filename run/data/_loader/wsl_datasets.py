@@ -2,7 +2,7 @@ import typing
 from functools import partial
 from pathlib import Path
 
-from lib.datasets.utils import Passage, Speaker, dataset_loader
+from run.data._loader.utils import Passage, Speaker, dataset_loader
 
 # TODO: Consider not using the actors realnames in the codebase in an effort to protect their
 # privacy.

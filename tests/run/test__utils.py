@@ -47,8 +47,8 @@ def test_normalize_audio():
         audio_path = directory / TEST_DATA_LJ.name
         shutil.copy(TEST_DATA_LJ, audio_path)
         metadata = AudioMetadata(audio_path, *args)
-        passage = make_passage(speaker=lib.datasets.LINDA_JOHNSON, audio_file=metadata)
-        dataset = {lib.datasets.LINDA_JOHNSON: [passage]}
+        passage = make_passage(speaker=run.data._loader.LINDA_JOHNSON, audio_file=metadata)
+        dataset = {run.data._loader.LINDA_JOHNSON: [passage]}
         dataset = run._utils.normalize_audio(
             dataset,
             suffix=suffix,
@@ -57,8 +57,8 @@ def test_normalize_audio():
             num_channels=num_channels,
             audio_filters=lib.audio.AudioFilters(""),
         )
-        assert len(dataset[lib.datasets.LINDA_JOHNSON]) == 1
-        new_path = dataset[lib.datasets.LINDA_JOHNSON][0].audio_file.path
+        assert len(dataset[run.data._loader.LINDA_JOHNSON]) == 1
+        new_path = dataset[run.data._loader.LINDA_JOHNSON][0].audio_file.path
         assert new_path.absolute() != audio_path.absolute()
         assert lib.audio.get_audio_metadata(new_path) == AudioMetadata(new_path, *args)
 
@@ -92,13 +92,13 @@ def test__find_duplicate_passages__no_duplicates():
 @mock.patch("random.shuffle", return_value=None)
 def test_split_dataset__deduplication(_):
     """ Test `run._config.split_dataset` handles deduplication accross multiple speakers. """
-    speaker_a = lib.datasets.Speaker("a")
-    speaker_b = lib.datasets.Speaker("b")
-    speaker_c = lib.datasets.Speaker("c")
-    speaker_d = lib.datasets.Speaker("d")
+    speaker_a = run.data._loader.Speaker("a")
+    speaker_b = run.data._loader.Speaker("b")
+    speaker_c = run.data._loader.Speaker("c")
+    speaker_d = run.data._loader.Speaker("d")
     groups = [set([speaker_a, speaker_b, speaker_c, speaker_d])]
     alignments = lib.utils.stow(
-        [lib.datasets.Alignment((0, 1), (0, 1), (0, 1))], lib.datasets.alignment_dtype
+        [run.data._loader.Alignment((0, 1), (0, 1), (0, 1))], run.data._loader.alignment_dtype
     )
     passage = lambda script, speaker: make_passage(
         script=script, speaker=speaker, alignments=alignments
@@ -156,11 +156,11 @@ def test_split_dataset__deduplication(_):
 @mock.patch("random.shuffle", return_value=None)
 def test_split_dataset__order(_):
     """ Test `run._config.split_dataset` handles different dictionary orderings. """
-    speaker_a = lib.datasets.Speaker("a")
-    speaker_b = lib.datasets.Speaker("b")
+    speaker_a = run.data._loader.Speaker("a")
+    speaker_b = run.data._loader.Speaker("b")
     groups = [set([speaker_a, speaker_b])]
     alignments = lib.utils.stow(
-        [lib.datasets.Alignment((0, 1), (0, 1), (0, 1))], lib.datasets.alignment_dtype
+        [run.data._loader.Alignment((0, 1), (0, 1), (0, 1))], run.data._loader.alignment_dtype
     )
     passage = lambda script, speaker: make_passage(
         script=script, speaker=speaker, alignments=alignments
@@ -190,10 +190,10 @@ def test_split_dataset__order(_):
 @mock.patch("random.shuffle", return_value=None)
 def test_split_dataset__groups(_):
     """ Test `run._config.split_dataset` handles independent speakers. """
-    speaker_a = lib.datasets.Speaker("a")
-    speaker_b = lib.datasets.Speaker("b")
+    speaker_a = run.data._loader.Speaker("a")
+    speaker_b = run.data._loader.Speaker("b")
     alignments = lib.utils.stow(
-        [lib.datasets.Alignment((0, 1), (0, 1), (0, 1))], lib.datasets.alignment_dtype
+        [run.data._loader.Alignment((0, 1), (0, 1), (0, 1))], run.data._loader.alignment_dtype
     )
     passage = lambda script, speaker: make_passage(
         script=script, speaker=speaker, alignments=alignments

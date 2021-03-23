@@ -11,7 +11,7 @@ from matplotlib import pyplot
 
 import lib
 import run
-from lib.datasets import Alignment
+from run.data._loader import Alignment
 from run._config import Cadence, DatasetType, get_dataset_label
 from tests._utils import TEST_DATA_PATH, make_passage
 
@@ -84,10 +84,10 @@ def test__get_dataset_stats():
     """ Test `run.train._utils.get_dataset_stats` measures dataset statistics correctly. """
     _alignment = lambda a, b: Alignment((a, b), (a * 10, b * 10), (a, b))
     _passage = lambda a, b, s: make_passage(
-        lib.utils.stow([_alignment(a, b)], lib.datasets.alignment_dtype), s
+        lib.utils.stow([_alignment(a, b)], run.data._loader.alignment_dtype), s
     )
-    a = lib.datasets.Speaker("a")
-    b = lib.datasets.Speaker("b")
+    a = run.data._loader.Speaker("a")
+    b = run.data._loader.Speaker("b")
     train = {a: [_passage(0, 2, a), _passage(0, 2, a)], b: [_passage(0, 1, a)]}
     stats = run.train._utils._get_dataset_stats(train, {})
     static = Cadence.STATIC

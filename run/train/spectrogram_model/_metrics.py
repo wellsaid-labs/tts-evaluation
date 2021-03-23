@@ -14,6 +14,7 @@ import torch.utils.data
 from hparams import HParam, configurable
 
 import lib
+import run
 from lib.distributed import is_master
 from run._config import GetLabel, get_dataset_label, get_model_label
 from run.train import _utils
@@ -198,7 +199,7 @@ class Metrics(_utils.Metrics):
     def __init__(
         self,
         comet: CometMLExperiment,
-        speakers: typing.List[lib.datasets.Speaker],
+        speakers: typing.List[run.data._loader.Speaker],
         **kwargs,
     ):
         super().__init__(comet, **kwargs)

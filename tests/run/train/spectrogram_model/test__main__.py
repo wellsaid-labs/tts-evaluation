@@ -2,7 +2,7 @@ from unittest import mock
 
 from hparams import add_config
 
-from lib.datasets import JUDY_BIEBER
+from run.data._loader import JUDY_BIEBER
 from run._config import Cadence, DatasetType
 from run.train._utils import Context, Timer, set_context
 from run.train.spectrogram_model.__main__ import _make_configuration

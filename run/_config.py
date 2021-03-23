@@ -12,10 +12,10 @@ from hparams import HParams, add_config, configurable
 from third_party import LazyLoader
 
 import lib
-import lib.datasets.m_ailabs
 import run
-from lib import datasets
-from lib.datasets import DATASETS, Speaker
+import run.data._loader.m_ailabs
+from run.data import _loader
+from run.data._loader import DATASETS, Speaker
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import IPython
@@ -31,8 +31,8 @@ pprinter = pprint.PrettyPrinter(indent=4)
 RANDOM_SEED = 1212212
 PHONEME_SEPARATOR = "|"
 DATASETS = copy.copy(DATASETS)
-del DATASETS[datasets.ELLIOT_MILLER]  # NOTE: Elliot has unannotated character portrayals.
-del DATASETS[datasets.ELIZABETH_KLETT]  # NOTE: Elizabeth has unannotated character portrayals.
+del DATASETS[_loader.ELLIOT_MILLER]  # NOTE: Elliot has unannotated character portrayals.
+del DATASETS[_loader.ELIZABETH_KLETT]  # NOTE: Elizabeth has unannotated character portrayals.
 
 # NOTE: It's theoretically impossible to know all the phonemes eSpeak might predict because
 # the predictions vary with context. We cannot practically generate every possible permutation
@@ -117,7 +117,7 @@ class Device(enum.Enum):
 
 
 Label = typing.NewType("Label", str)
-Dataset = typing.Dict[Speaker, typing.List[datasets.Passage]]
+Dataset = typing.Dict[Speaker, typing.List[_loader.Passage]]
 
 
 class GetLabel(typing.Protocol):
@@ -468,7 +468,7 @@ def _configure_models():
     add_config(config)
 
 
-def _include_passage(passage: datasets.Passage) -> bool:
+def _include_passage(passage: _loader.Passage) -> bool:
     """Return `True` iff `passage` should be included in the dataset."""
     details = passage.to_string("audio_file", "script", "other_metadata")
 
@@ -494,7 +494,7 @@ def _include_passage(passage: datasets.Passage) -> bool:
     # other samples from the same speaker.
     # NOTE: Filter out the North & South book because it uses English in a way that's not consistent
     # with editor usage, for example: "To-morrow, you will-- Come back to-night, John!"
-    books = (datasets.m_ailabs.MIDNIGHT_PASSENGER, datasets.m_ailabs.NORTH_AND_SOUTH)
+    books = (_loader.m_ailabs.MIDNIGHT_PASSENGER, _loader.m_ailabs.NORTH_AND_SOUTH)
     metadata = passage.other_metadata
     if metadata is not None and "books" in metadata and (metadata["books"] in books):
         return False
@@ -502,11 +502,11 @@ def _include_passage(passage: datasets.Passage) -> bool:
     return True
 
 
-def _handle_passage(passage: datasets.Passage) -> datasets.Passage:
+def _handle_passage(passage: _loader.Passage) -> _loader.Passage:
     """Update and/or check `passage`."""
-    if passage.speaker in set([datasets.JUDY_BIEBER, datasets.MARY_ANN, datasets.ELIZABETH_KLETT]):
+    if passage.speaker in set([_loader.JUDY_BIEBER, _loader.MARY_ANN, _loader.ELIZABETH_KLETT]):
         script = lib.text.normalize_vo_script(passage.script)
-        return lib.datasets.update_conventional_passage_script(passage, script)
+        return run.data._loader.update_conventional_passage_script(passage, script)
     assert lib.text.is_normalized_vo_script(passage.script)
     return passage
 
@@ -515,7 +515,7 @@ DIGIT_REGEX = re.compile(r"\d")
 ALPHANUMERIC_REGEX = re.compile(r"[a-zA-Z0-9]")
 
 
-def _include_span(span: datasets.Span):
+def _include_span(span: _loader.Span):
     """Return `True` iff `span` should be included in the dataset.
 
     TODO: The `span` is still cut-off sometimes, and it's difficult to detect if it is. Instead
@@ -546,23 +546,23 @@ def _include_span(span: datasets.Span):
 def _configure_data_processing():
     """ Configure modules that process data, other than audio. """
     dev_speakers = [
-        lib.datasets.ADRIENNE_WALKER_HELLER,
-        lib.datasets.ALICIA_HARRIS__MANUAL_POST,
-        lib.datasets.BETH_CAMERON,
-        lib.datasets.ELISE_RANDALL,
-        lib.datasets.FRANK_BONACQUISTI,
-        lib.datasets.GEORGE_DRAKE_JR,
-        lib.datasets.HANUMAN_WELCH,
-        lib.datasets.HEATHER_DOE,
-        lib.datasets.HILARY_NORIEGA,
-        lib.datasets.JACK_RUTKOWSKI__MANUAL_POST,
-        lib.datasets.JOHN_HUNERLACH__NARRATION,
-        lib.datasets.JOHN_HUNERLACH__RADIO,
-        lib.datasets.MARK_ATHERLAY,
-        lib.datasets.MEGAN_SINCLAIR,
-        lib.datasets.SAM_SCHOLL__MANUAL_POST,
-        lib.datasets.STEVEN_WAHLBERG,
-        lib.datasets.SUSAN_MURPHY,
+        run.data._loader.ADRIENNE_WALKER_HELLER,
+        run.data._loader.ALICIA_HARRIS__MANUAL_POST,
+        run.data._loader.BETH_CAMERON,
+        run.data._loader.ELISE_RANDALL,
+        run.data._loader.FRANK_BONACQUISTI,
+        run.data._loader.GEORGE_DRAKE_JR,
+        run.data._loader.HANUMAN_WELCH,
+        run.data._loader.HEATHER_DOE,
+        run.data._loader.HILARY_NORIEGA,
+        run.data._loader.JACK_RUTKOWSKI__MANUAL_POST,
+        run.data._loader.JOHN_HUNERLACH__NARRATION,
+        run.data._loader.JOHN_HUNERLACH__RADIO,
+        run.data._loader.MARK_ATHERLAY,
+        run.data._loader.MEGAN_SINCLAIR,
+        run.data._loader.SAM_SCHOLL__MANUAL_POST,
+        run.data._loader.STEVEN_WAHLBERG,
+        run.data._loader.SUSAN_MURPHY,
     ]
     config = {
         lib.text.grapheme_to_phoneme: HParams(separator=PHONEME_SEPARATOR),
@@ -573,7 +573,7 @@ def _configure_data_processing():
             handle_passage=_handle_passage,
         ),
         run._utils.split_dataset: HParams(
-            groups=[set(datasets.WSL_DATASETS)],
+            groups=[set(_loader.WSL_DATASETS)],
             dev_speakers=set(dev_speakers),
             approx_dev_length=30 * 60,
             min_similarity=0.9,

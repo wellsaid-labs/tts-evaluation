@@ -5,6 +5,7 @@ import tempfile
 from unittest import mock
 
 import lib
+import run.data._loader
 from tests import _utils
 
 verbalize_test_cases = {
@@ -37,11 +38,11 @@ verbalize_test_cases = {
 }
 
 
-@mock.patch("lib.datasets.utils._exists", return_value=True)
-@mock.patch("lib.datasets.utils.get_audio_metadata")
+@mock.patch("run.data._loader.utils._exists", return_value=True)
+@mock.patch("run.data._loader.utils.get_audio_metadata")
 @mock.patch("urllib.request.urlretrieve")
 def test_lj_speech_dataset(mock_urlretrieve, mock_get_audio_metadata, _):
-    """ Test `lib.datasets.lj_speech_dataset` loads and verbalizes the data. """
+    """ Test `run.data._loader.lj_speech_dataset` loads and verbalizes the data. """
     mock_urlretrieve.side_effect = _utils.first_parameter_url_side_effect
     mock_get_audio_metadata.side_effect = _utils.get_audio_metadata_side_effect
     archive = _utils.TEST_DATA_PATH / "datasets" / "LJSpeech-1.1.tar.bz2"
@@ -49,21 +50,21 @@ def test_lj_speech_dataset(mock_urlretrieve, mock_get_audio_metadata, _):
     with tempfile.TemporaryDirectory() as path:
         directory = pathlib.Path(path)
         shutil.copy(archive, directory / archive.name)
-        data = lib.datasets.lj_speech_dataset(directory=directory)
+        data = run.data._loader.lj_speech_dataset(directory=directory)
         assert len(data) == 13100
         assert sum([len(r.script) for r in data]) == 1310332
         alignments = lib.utils.stow(
-            [lib.datasets.Alignment((0, 151), (0.0, 0.0), (0, 151))],
-            lib.datasets.alignment_dtype,
+            [run.data._loader.Alignment((0, 151), (0.0, 0.0), (0, 151))],
+            run.data._loader.alignment_dtype,
         )
         nonalignments_ = [
-            lib.datasets.Alignment(script=(0, 0), audio=(0.0, 0.0), transcript=(0, 0)),
-            lib.datasets.Alignment(script=(151, 151), audio=(0.0, 0.0), transcript=(151, 151)),
+            run.data._loader.Alignment(script=(0, 0), audio=(0.0, 0.0), transcript=(0, 0)),
+            run.data._loader.Alignment(script=(151, 151), audio=(0.0, 0.0), transcript=(151, 151)),
         ]
-        nonalignments = lib.utils.stow(nonalignments_, lib.datasets.alignment_dtype)
-        assert data[0] == lib.datasets.Passage(
+        nonalignments = lib.utils.stow(nonalignments_, run.data._loader.alignment_dtype)
+        assert data[0] == run.data._loader.Passage(
             audio_file=_utils.make_metadata(directory / "LJSpeech-1.1/wavs/LJ001-0001.wav"),
-            speaker=lib.datasets.LINDA_JOHNSON,
+            speaker=run.data._loader.LINDA_JOHNSON,
             script=(
                 "Printing, in the only sense with which we are at present concerned, differs "
                 "from most if not from all the arts and crafts represented in the Exhibition"

@@ -18,7 +18,7 @@ from third_party import session_state
 
 import lib
 import run
-from lib.datasets import Passage
+from run.data._loader import Passage
 from run._config import Dataset
 
 logger = logging.getLogger(__name__)
@@ -138,13 +138,13 @@ def read_wave_audio(*args, **kwargs) -> np.ndarray:
     return lib.audio.read_wave_audio(*args, **kwargs)
 
 
-def span_audio(span: lib.datasets.Span) -> np.ndarray:
+def span_audio(span: run.data._loader.Span) -> np.ndarray:
     """Get `span` audio using cached `read_audio_slice`."""
     start = span.passage.alignments[span.slice][0].audio[0]
     return read_wave_audio(span.passage.audio_file, start, span.audio_length)
 
 
-def passage_audio(passage: lib.datasets.Passage) -> np.ndarray:
+def passage_audio(passage: run.data._loader.Passage) -> np.ndarray:
     """Get `span` audio using cached `read_audio_slice`."""
     start = passage.first.audio[0]
     end = passage.last.audio[-1]

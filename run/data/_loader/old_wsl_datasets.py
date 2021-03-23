@@ -6,8 +6,8 @@ from pathlib import Path
 from third_party import LazyLoader
 from torchnlp.download import download_file_maybe_extract
 
-from lib.datasets.utils import Passage, Speaker, conventional_dataset_loader, make_passages
-from lib.datasets.wsl_datasets import (
+from run.data._loader.utils import Passage, Speaker, conventional_dataset_loader, make_passages
+from run.data._loader.wsl_datasets import (
     ADRIENNE_WALKER_HELLER,
     ALICIA_HARRIS,
     BETH_CAMERON,

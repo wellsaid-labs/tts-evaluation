@@ -26,7 +26,7 @@ from pathlib import Path
 
 from torchnlp.download import download_file_maybe_extract
 
-from lib.datasets.utils import (
+from run.data._loader.utils import (
     Passage,
     Speaker,
     UnprocessedPassage,

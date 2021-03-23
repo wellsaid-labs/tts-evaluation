@@ -12,7 +12,7 @@ from torchnlp.encoders.text import SequenceBatch
 
 import lib
 import run
-from lib.datasets import Alignment
+from run.data._loader import Alignment
 from run.train.spectrogram_model import _data
 from tests._utils import assert_almost_equal, assert_uniform_distribution
 
@@ -30,9 +30,9 @@ def test_input_encoder():
     graphemes = ["abc", "def"]
     phonemes = ["ˈ|eɪ|b|ˌ|iː|s|ˈ|iː|", "d|ˈ|ɛ|f"]
     phoneme_separator = "|"
-    speakers = [lib.datasets.MARK_ATHERLAY, lib.datasets.MARY_ANN]
+    speakers = [run.data._loader.MARK_ATHERLAY, run.data._loader.MARY_ANN]
     encoder = _data.InputEncoder(graphemes, phonemes, speakers, phoneme_separator)
-    input_ = _data.DecodedInput("a", "ˈ|eɪ", lib.datasets.MARK_ATHERLAY)
+    input_ = _data.DecodedInput("a", "ˈ|eɪ", run.data._loader.MARK_ATHERLAY)
     assert encoder._get_case("A") == encoder._CASE_LABELS[0]
     assert encoder._get_case("a") == encoder._CASE_LABELS[1]
     assert encoder._get_case("1") == encoder._CASE_LABELS[2]
@@ -50,7 +50,7 @@ def test__random_nonoverlapping_alignments():
     make = lambda a, b: Alignment((a, b), (a, b), (a, b))
     alignments = lib.utils.stow(
         [make(0, 1), make(1, 2), make(2, 3), make(3, 4), make(4, 5)],
-        dtype=lib.datasets.alignment_dtype,
+        dtype=run.data._loader.alignment_dtype,
     )
     counter: typing.Counter[int] = collections.Counter()
     for i in range(100000):
@@ -73,7 +73,7 @@ def test__random_nonoverlapping_alignments__large_max():
     with torchnlp.random.fork_rng(1234):
         alignments = lib.utils.stow(
             [make(0, 1), make(1, 2), make(2, 3), make(3, 4), make(4, 5)],
-            dtype=lib.datasets.alignment_dtype,
+            dtype=run.data._loader.alignment_dtype,
         )
         assert len(_data._random_nonoverlapping_alignments(alignments, 1000000)) == 6
 

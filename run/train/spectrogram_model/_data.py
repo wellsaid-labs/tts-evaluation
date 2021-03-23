@@ -31,7 +31,8 @@ import run
 from lib.audio import seconds_to_samples
 from lib.distributed import get_rank, get_world_size, is_initialized
 from lib.samplers import BucketBatchSampler
-from lib.utils import flatten_2d
+from lib.utils import Tuple, flatten_2d
+from run.data._loader import Alignment, Span, Speaker
 from run.train import _utils
 
 if typing.TYPE_CHECKING:  # pragma: no cover
@@ -68,7 +69,7 @@ class DecodedInput(typing.NamedTuple):
 
     graphemes: str
     phonemes: str
-    speaker: lib.datasets.Speaker
+    speaker: Speaker
 
 
 class InputEncoder(Encoder):
@@ -93,7 +94,7 @@ class InputEncoder(Encoder):
         self,
         graphemes: typing.List[str],
         phonemes: typing.List[str],
-        speakers: typing.List[lib.datasets.Speaker],
+        speakers: typing.List[Speaker],
         phoneme_separator: str = HParam(),
         *args,
         **kwargs,
@@ -137,8 +138,8 @@ class InputEncoder(Encoder):
 
 
 def _random_nonoverlapping_alignments(
-    alignments: lib.utils.Tuple[lib.datasets.Alignment], max_alignments: int
-) -> typing.Tuple[lib.datasets.Alignment, ...]:
+    alignments: Tuple[Alignment], max_alignments: int
+) -> typing.Tuple[Alignment, ...]:
     """Generate a random set of non-overlapping alignments, such that every point in the
     time-series has an equal probability of getting sampled inside an alignment.
 
@@ -148,7 +149,7 @@ def _random_nonoverlapping_alignments(
         alignments
         max_alignments: The maximum number of alignments to generate.
     """
-    get_ = lambda a, i: tuple([getattr(a, f)[i] for f in lib.datasets.Alignment._fields])
+    get_ = lambda a, i: tuple([getattr(a, f)[i] for f in Alignment._fields])
     # NOTE: Each of these is a synchronization point along which we can match up the script
     # character, transcript character, and audio sample. We can use any of these points for
     # cutting.
@@ -160,14 +161,14 @@ def _random_nonoverlapping_alignments(
 
     if num_cuts == 1:
         tuple_ = lambda i: (bounds[0][i], bounds[-1][i])
-        alignment = lib.datasets.Alignment(tuple_(0), tuple_(1), tuple_(2))
+        alignment = Alignment(tuple_(0), tuple_(1), tuple_(2))
         return tuple([alignment]) if random.choice((True, False)) else tuple()
 
     # NOTE: Functionally, this is similar to a 50% dropout on intervals.
     # NOTE: Each alignment is expected to be included half of the time.
     intervals = bounds[:1] + random.sample(bounds[1:-1], num_cuts - 1) + bounds[-1:]
     return_ = [
-        lib.datasets.Alignment((a[0], b[0]), (a[1], b[1]), (a[2], b[2]))
+        Alignment((a[0], b[0]), (a[1], b[1]), (a[2], b[2]))
         for a, b in zip(intervals, intervals[1:])
         if random.choice((True, False))
     ]
@@ -177,7 +178,7 @@ def _random_nonoverlapping_alignments(
 @configurable
 def _get_loudness(
     audio: numpy.ndarray,
-    alignment: lib.datasets.Alignment,
+    alignment: Alignment,
     block_size: float = HParam(),
     precision: int = HParam(),
     **kwargs,
@@ -204,10 +205,7 @@ def _get_loudness(
 
 @configurable
 def _random_loudness_annotations(
-    span: lib.datasets.Span,
-    signal: numpy.ndarray,
-    max_annotations: int = HParam(),
-    **kwargs,
+    span: Span, signal: numpy.ndarray, max_annotations: int = HParam(), **kwargs
 ) -> typing.Tuple[torch.Tensor, torch.Tensor]:
     """
     Args:
@@ -227,9 +225,7 @@ def _random_loudness_annotations(
 
 @configurable
 def _random_speed_annotations(
-    span: lib.datasets.Span,
-    max_annotations: int = HParam(),
-    precision: int = HParam(),
+    span: Span, max_annotations: int = HParam(), precision: int = HParam()
 ) -> typing.Tuple[torch.Tensor, torch.Tensor]:
     """
     Args:
@@ -377,7 +373,7 @@ def _make_stop_token(
     return SequenceBatch(stop_token, spectrogram.lengths)
 
 
-def _span_read_audio_slice(span: lib.datasets.Span) -> numpy.ndarray:
+def _span_read_audio_slice(span: Span) -> numpy.ndarray:
     start = span.first.audio[0]
     return lib.audio.read_wave_audio(span.passage.audio_file, start, span.audio_length)
 
@@ -386,7 +382,7 @@ def _span_read_audio_slice(span: lib.datasets.Span) -> numpy.ndarray:
 class Batch(_utils.Batch):
     """Batch of preprocessed `Span` used to training or evaluating the spectrogram model."""
 
-    spans: typing.List[lib.datasets.Span]
+    spans: typing.List[Span]
 
     audio: typing.List[torch.Tensor]
 
@@ -415,7 +411,7 @@ class Batch(_utils.Batch):
 
 
 def make_batch(
-    spans: typing.List[lib.datasets.Span], input_encoder: InputEncoder, max_workers: int = 6
+    spans: typing.List[Span], input_encoder: InputEncoder, max_workers: int = 6
 ) -> Batch:
     """
     NOTE: spaCy splits some (not all) words on apostrophes while AmEPD does not; therefore,
@@ -514,12 +510,12 @@ class DataProcessor(typing.Mapping[int, Batch]):
         iter_ = DeterministicSampler(iter_, run._config.RANDOM_SEED + step, cuda=False)
         if is_initialized():
             iter_ = DistributedBatchSampler(iter_, num_replicas=get_world_size(), rank=get_rank())
-        iter_ = typing.cast(typing.Iterator[typing.List[lib.datasets.Span]], iter_)
+        iter_ = typing.cast(typing.Iterator[typing.List[Span]], iter_)
         self.index_to_spans = lib.utils.MappedIterator(iter_)
         self.input_encoder = input_encoder
 
     @staticmethod
-    def _data_iterator_sort_key(span: lib.datasets.Span):
+    def _data_iterator_sort_key(span: Span):
         return span.audio_length
 
     def __iter__(self):

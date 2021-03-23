@@ -40,6 +40,7 @@ from Levenshtein import distance  # type: ignore
 from tqdm import tqdm
 
 import lib
+import run
 from lib.environment import AnsiCodes
 from lib.utils import get_chunks
 from run._utils import blob_to_gcs_uri, gcs_uri_to_blob
@@ -117,7 +118,7 @@ class Alignments(typing.TypedDict):
     """
 
     transcript: str
-    alignments: typing.List[typing.List[lib.datasets.Alignment]]
+    alignments: typing.List[typing.List[run.data._loader.Alignment]]
 
 
 @dataclasses.dataclass
@@ -455,7 +456,7 @@ def align_stt_with_script(
     for alignment in alignments:
         stt_token = stt_tokens[alignment[1]]
         script_token = script_tokens[alignment[0]]
-        alignment_ = lib.datasets.Alignment(
+        alignment_ = run.data._loader.Alignment(
             script=typing.cast(typing.Tuple[int, int], script_token.slice),
             audio=stt_token.audio,
             transcript=stt_token.slice,

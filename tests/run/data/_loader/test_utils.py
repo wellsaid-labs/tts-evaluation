@@ -8,9 +8,10 @@ import numpy as np
 import pytest
 
 import lib
-from lib.datasets import Alignment, Passage, alignment_dtype
-from lib.datasets.utils import UnprocessedPassage, make_passages
+import run.data._loader
 from lib.utils import flatten_2d
+from run.data._loader import Alignment, Passage, SpanGenerator, alignment_dtype
+from run.data._loader.utils import UnprocessedPassage, make_passages
 from tests._utils import (
     TEST_DATA_PATH,
     assert_uniform_distribution,
@@ -22,21 +23,21 @@ from tests._utils import (
 
 def _make_alignment(script=(0, 0), transcript=(0, 0), audio=(0.0, 0.0)):
     """ Make an `Alignment` for testing. """
-    return lib.datasets.Alignment(script, audio, transcript)
+    return Alignment(script, audio, transcript)
 
 
 def _make_alignments(
     alignments=typing.Tuple[typing.Tuple[int, int]]
-) -> lib.utils.Tuple[lib.datasets.Alignment]:
+) -> lib.utils.Tuple[Alignment]:
     """ Make a tuple of `Alignment`(s) for testing. """
     return lib.utils.stow([_make_alignment(a, a, a) for a in alignments], alignment_dtype)
 
 
 def test_span_generator():
-    """Test `lib.datasets.SpanGenerator` samples uniformly given a uniform distribution of
+    """Test `SpanGenerator` samples uniformly given a uniform distribution of
     alignments."""
     dataset = [make_passage(_make_alignments(((0, 1), (1, 2), (2, 3))))]
-    iterator = lib.datasets.SpanGenerator(dataset, max_seconds=10)
+    iterator = SpanGenerator(dataset, max_seconds=10)
     counter: typing.Counter[Alignment] = Counter()
     for _ in range(10000):
         span = next(iterator)
@@ -46,19 +47,19 @@ def test_span_generator():
 
 
 def test_span_generator__empty():
-    """ Test `lib.datasets.SpanGenerator` handles an empty list. """
-    iterator = lib.datasets.SpanGenerator([], max_seconds=10)
+    """ Test `SpanGenerator` handles an empty list. """
+    iterator = SpanGenerator([], max_seconds=10)
     assert next(iterator, None) is None
 
 
 def test_span_generator__zero():
-    """Test `lib.datasets.SpanGenerator` handles alignments of zero length."""
+    """Test `SpanGenerator` handles alignments of zero length."""
     dataset = [
         make_passage(_make_alignments(((0, 1),))),
         make_passage(_make_alignments(((1, 1),))),
         make_passage(_make_alignments(((1, 2),))),
     ]
-    iterator = lib.datasets.SpanGenerator(dataset, max_seconds=10)
+    iterator = SpanGenerator(dataset, max_seconds=10)
     counter: typing.Counter[Alignment] = Counter()
     for _ in range(10000):
         span = next(iterator)
@@ -70,14 +71,14 @@ def test_span_generator__zero():
 
 
 def test_span_generator__singular():
-    """Test `lib.datasets.SpanGenerator` handles multiple passages with a singular alignment
+    """Test `SpanGenerator` handles multiple passages with a singular alignment
     of varying lengths."""
     dataset = [
         make_passage(_make_alignments(((0, 1),))),
         make_passage(_make_alignments(((0, 10),))),
         make_passage(_make_alignments(((0, 5),))),
     ]
-    iterator = lib.datasets.SpanGenerator(dataset, max_seconds=10)
+    iterator = SpanGenerator(dataset, max_seconds=10)
     counter: typing.Counter[Alignment] = Counter()
     for _ in range(10000):
         span = next(iterator)
@@ -88,13 +89,13 @@ def test_span_generator__singular():
 
 
 def test_span_generator__multiple_multiple():
-    """Test `lib.datasets.SpanGenerator` handles multiple scripts with a uniform alignment
+    """Test `SpanGenerator` handles multiple scripts with a uniform alignment
     distribution."""
     dataset = [
         make_passage(_make_alignments(((0, 1), (1, 2), (2, 3)))),
         make_passage(_make_alignments(((3, 4), (4, 5), (5, 6)))),
     ]
-    iterator = lib.datasets.SpanGenerator(dataset, max_seconds=10)
+    iterator = SpanGenerator(dataset, max_seconds=10)
     counter: typing.Counter[Alignment] = Counter()
     for _ in range(10000):
         span = next(iterator)
@@ -105,9 +106,9 @@ def test_span_generator__multiple_multiple():
 
 
 def test_span_generator__pause():
-    """ Test `lib.datasets.SpanGenerator` samples uniformly despite a large pause. """
+    """ Test `SpanGenerator` samples uniformly despite a large pause. """
     dataset = [make_passage(_make_alignments(((0, 1), (1, 2), (2, 3), (20, 21), (40, 41))))]
-    iterator = lib.datasets.SpanGenerator(dataset, max_seconds=4)
+    iterator = SpanGenerator(dataset, max_seconds=4)
     counter: typing.Counter[Alignment] = Counter()
     for _ in range(10000):
         span = next(iterator)
@@ -117,7 +118,7 @@ def test_span_generator__pause():
 
 
 def test_span_generator__multiple_unequal_passages__large_max_seconds():
-    """Test `lib.datasets.SpanGenerator` samples uniformly despite unequal passage sizes,
+    """Test `SpanGenerator` samples uniformly despite unequal passage sizes,
     and large max seconds.
 
     NOTE: With a large enough `max_seconds`, the entire passage should be sampled most of the time.
@@ -126,7 +127,7 @@ def test_span_generator__multiple_unequal_passages__large_max_seconds():
         make_passage(_make_alignments(((0, 1),))),
         make_passage(_make_alignments(((3, 4), (4, 5), (5, 6)))),
     ]
-    iterator = lib.datasets.SpanGenerator(dataset, max_seconds=1000000)
+    iterator = SpanGenerator(dataset, max_seconds=1000000)
 
     alignments_counter: typing.Counter[Alignment] = Counter()
     spans_counter: typing.Counter[lib.utils.Tuple[Alignment]] = Counter()
@@ -148,9 +149,9 @@ def test_span_generator__multiple_unequal_passages__large_max_seconds():
 
 
 def test_span_generator__unequal_alignment_sizes():
-    """ Test `lib.datasets.SpanGenerator` samples uniformly despite unequal alignment sizes. """
+    """ Test `SpanGenerator` samples uniformly despite unequal alignment sizes. """
     dataset = [make_passage(_make_alignments(((0, 1), (1, 5), (5, 20))))]
-    iterator = lib.datasets.SpanGenerator(dataset, max_seconds=20)
+    iterator = SpanGenerator(dataset, max_seconds=20)
     counter: typing.Counter[Alignment] = Counter()
     for _ in range(10000):
         span = next(iterator)
@@ -160,13 +161,13 @@ def test_span_generator__unequal_alignment_sizes():
 
 
 def test_span_generator__unequal_alignment_sizes__boundary_bias():
-    """Test `lib.datasets.SpanGenerator` is biased at the boundary, in some scenarios.
+    """Test `SpanGenerator` is biased at the boundary, in some scenarios.
 
     NOTE: The `max_seconds` filtering introduces bias by predominately filtering out this sequence:
     `[(1, 2), (2, 3), (3, 11), (11, 12)]`. That leads to an oversampling of `(11, 12)`.
     """
     dataset = [make_passage(_make_alignments(((0, 1), (1, 2), (2, 3), (3, 11), (11, 12))))]
-    iterator = lib.datasets.SpanGenerator(dataset, max_seconds=10)
+    iterator = SpanGenerator(dataset, max_seconds=10)
     counter: typing.Counter[Alignment] = Counter()
     for _ in range(10000):
         span = next(iterator)
@@ -177,16 +178,16 @@ def test_span_generator__unequal_alignment_sizes__boundary_bias():
 
 
 @mock.patch("lib.audio.get_audio_metadata")
-@mock.patch("lib.datasets.utils.subprocess.run", return_value=None)
+@mock.patch("run.data._loader.utils.subprocess.run", return_value=None)
 def test_dataset_loader(mock_run, mock_get_audio_metadata):
-    """ Test `lib.datasets.dataset_loader` loads a dataset. """
+    """ Test `run.data._loader.dataset_loader` loads a dataset. """
     mock_get_audio_metadata.side_effect = get_audio_metadata_side_effect
     mock_run.side_effect = functools.partial(subprocess_run_side_effect, _command="gsutil")
-    passages = lib.datasets.dataset_loader(
+    passages = run.data._loader.dataset_loader(
         TEST_DATA_PATH / "datasets",
         "hilary_noriega",
         "",
-        lib.datasets.HILARY_NORIEGA,
+        run.data._loader.HILARY_NORIEGA,
     )
     alignments = [
         Alignment(a[0], a[1], a[2])
@@ -218,7 +219,7 @@ def test_dataset_loader(mock_run, mock_get_audio_metadata):
 
     path = TEST_DATA_PATH / "datasets/hilary_noriega/recordings/Script 1.wav"
     assert passages[0].audio_file == lib.audio.get_audio_metadata([path])[0]
-    assert passages[0].speaker == lib.datasets.HILARY_NORIEGA
+    assert passages[0].speaker == run.data._loader.HILARY_NORIEGA
     assert passages[0].script == "Author of the danger trail, Philip Steels, etc."
     assert passages[0].transcript == (
         "author of the danger Trail Philip Steels Etc. Not at this particular case Tom "
@@ -231,7 +232,7 @@ def test_dataset_loader(mock_run, mock_get_audio_metadata):
 
 
 def test_passage_span__identity():
-    """Test `lib.datasets.Passage` and `lib.datasets.Span` are the same after a identity
+    """Test `run.data._loader.Passage` and `run.data._loader.Span` are the same after a identity
     operation."""
     audio_path = TEST_DATA_PATH / "audio" / "bit(rate(lj_speech,24000),32).wav"
     metadata = lib.audio.get_audio_metadata(audio_path)
@@ -239,10 +240,12 @@ def test_passage_span__identity():
         "The examination and testimony of the experts enabled the Commission to conclude "
         "that five shots may have been fired,"
     )
-    alignment = lib.datasets.Alignment((0, len(script)), (0.0, metadata.length), (0, len(script)))
+    alignment = Alignment(
+        (0, len(script)), (0.0, metadata.length), (0, len(script))
+    )
     passage = Passage(
         audio_file=metadata,
-        speaker=lib.datasets.LINDA_JOHNSON,
+        speaker=run.data._loader.LINDA_JOHNSON,
         script=script,
         transcript=script,
         alignments=lib.utils.stow([alignment], alignment_dtype),
@@ -282,7 +285,7 @@ def _make_unprocessed_passage(
     found = [(find_script(script, t), find_transcript(transcript, t)) for t in tokens]
     return UnprocessedPassage(
         audio_path=TEST_DATA_PATH / "audio" / "bit(rate(lj_speech,24000),32).wav",
-        speaker=lib.datasets.Speaker(""),
+        speaker=run.data._loader.Speaker(""),
         script=script,
         transcript=transcript,
         alignments=lib.utils.stow([_make_alignment(*arg) for arg in found], alignment_dtype),
@@ -290,7 +293,7 @@ def _make_unprocessed_passage(
 
 
 def test_passage_span__script_nonalignments():
-    """Test `lib.datasets.Passage` and `lib.datasets.Span` get the correct nonalignments under a
+    """Test `run.data._loader.Passage` and `run.data._loader.Span` get the correct nonalignments under a
     variety of circumstances."""
     script = "abcdefghijklmnopqrstuvwxyz"
     make = functools.partial(_make_unprocessed_passage, transcript=script)
@@ -338,7 +341,7 @@ def test_passage_span__script_nonalignments():
 
 
 def test_passage_span__script_nonalignments__zero_alignments():
-    """Test `lib.datasets.Passage` and `lib.datasets.Span` get the correct nonalignments if one
+    """Test `run.data._loader.Passage` and `run.data._loader.Span` get the correct nonalignments if one
     of the passages has zero alignments."""
     script = "abcdef"
     make = functools.partial(_make_unprocessed_passage, transcript=script)
@@ -364,17 +367,17 @@ def test_passage_span__script_nonalignments__zero_alignments():
 
 def test__overlap():
     """ Test `_overlap` computes the percentage of overlap between two spans correctly. """
-    assert lib.datasets.SpanGenerator._overlap(1, 2, 0, 1) == 0.0
-    assert lib.datasets.SpanGenerator._overlap(0, 1, 0, 1) == 1.0
-    assert lib.datasets.SpanGenerator._overlap(0.5, 0.5, 0, 1) == 1.0
-    assert lib.datasets.SpanGenerator._overlap(-1, 0, 0, 1) == 0.0
-    assert lib.datasets.SpanGenerator._overlap(-0.5, 0.5, 0, 1) == 0.5
-    assert lib.datasets.SpanGenerator._overlap(0.5, 1.5, 0, 1) == 0.5
-    assert lib.datasets.SpanGenerator._overlap(0, 1, 0.5, 2) == 0.5
-    assert lib.datasets.SpanGenerator._overlap(0, 1, 0, 2) == 1.0
-    assert lib.datasets.SpanGenerator._overlap(0, 1, -1.5, 0.5) == 0.5
-    assert lib.datasets.SpanGenerator._overlap(0, 1, -1, 1) == 1.0
+    assert SpanGenerator._overlap(1, 2, 0, 1) == 0.0
+    assert SpanGenerator._overlap(0, 1, 0, 1) == 1.0
+    assert SpanGenerator._overlap(0.5, 0.5, 0, 1) == 1.0
+    assert SpanGenerator._overlap(-1, 0, 0, 1) == 0.0
+    assert SpanGenerator._overlap(-0.5, 0.5, 0, 1) == 0.5
+    assert SpanGenerator._overlap(0.5, 1.5, 0, 1) == 0.5
+    assert SpanGenerator._overlap(0, 1, 0.5, 2) == 0.5
+    assert SpanGenerator._overlap(0, 1, 0, 2) == 1.0
+    assert SpanGenerator._overlap(0, 1, -1.5, 0.5) == 0.5
+    assert SpanGenerator._overlap(0, 1, -1, 1) == 1.0
 
 
-# NOTE: `lib.datasets.conventional_dataset_loader` is tested in `lj_speech` as part of loading the
-# dataset.
+# NOTE: `run.data._loader.conventional_dataset_loader` is tested in `lj_speech` as part of loading
+# the dataset.

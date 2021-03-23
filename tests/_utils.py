@@ -9,6 +9,7 @@ import pytest
 import torch
 
 import lib
+import run.data._loader
 
 TEST_DATA_PATH = lib.environment.ROOT_PATH / "tests" / "_test_data"
 
@@ -54,25 +55,25 @@ def make_metadata(
 
 
 def make_passage(
-    alignments: lib.utils.Tuple[lib.datasets.Alignment] = lib.utils.stow(
-        [], lib.datasets.alignment_dtype
+    alignments: lib.utils.Tuple[run.data._loader.Alignment] = lib.utils.stow(
+        [], run.data._loader.alignment_dtype
     ),
-    nonalignments: lib.utils.Tuple[lib.datasets.Alignment] = lib.utils.stow(
-        [], lib.datasets.alignment_dtype
+    nonalignments: lib.utils.Tuple[run.data._loader.Alignment] = lib.utils.stow(
+        [], run.data._loader.alignment_dtype
     ),
-    speaker: lib.datasets.Speaker = lib.datasets.Speaker(""),
+    speaker: run.data._loader.Speaker = run.data._loader.Speaker(""),
     audio_file: lib.audio.AudioMetadata = make_metadata(),
     script: typing.Optional[str] = None,
     transcript: typing.Optional[str] = None,
     **kwargs,
-) -> lib.datasets.Passage:
+) -> run.data._loader.Passage:
     """ Make a `Passage` for testing. """
     max_ = lambda attr: max([getattr(a, attr)[1] for a in alignments])
     make_str: typing.Callable[[str], str]
     make_str = lambda attr: "." * max_(attr) if len(alignments) else ""
     script_ = make_str("script") if script is None else script
     transcript_ = make_str("transcript") if transcript is None else transcript
-    return lib.datasets.Passage(
+    return run.data._loader.Passage(
         audio_file, speaker, script_, transcript_, alignments, nonalignments, **kwargs
     )
 

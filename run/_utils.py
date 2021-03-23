@@ -20,10 +20,10 @@ from third_party import LazyLoader
 from torchnlp.random import fork_rng
 
 import lib
-import lib.datasets.m_ailabs
 import run
-from lib import datasets
+import run.data._loader.m_ailabs
 from run._config import Dataset
+from run.data import _loader
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import librosa
@@ -87,17 +87,17 @@ def normalize_audio(
 
     logger.info("Updating dataset passages with normalized audio...")
     lookup = {p: m for p, m in zip(paths, lib.audio.get_audio_metadata(updated_paths))}
-    update: typing.Callable[[lib.datasets.Passage], lib.datasets.Passage]
-    update = lambda p: lib.datasets.update_passage_audio(p, lookup[p.audio_file.path])
+    update: typing.Callable[[_loader.Passage], _loader.Passage]
+    update = lambda p: _loader.update_passage_audio(p, lookup[p.audio_file.path])
     return {s: [update(p) for p in d] for s, d in dataset.items()}
 
 
 @configurable
 def get_dataset(
-    datasets: typing.Dict[lib.datasets.Speaker, lib.datasets.DataLoader] = HParam(),
+    datasets: typing.Dict[_loader.Speaker, _loader.DataLoader] = HParam(),
     path: pathlib.Path = HParam(),
-    include_passage: typing.Callable[[lib.datasets.Passage], bool] = HParam(),
-    handle_passage: typing.Callable[[lib.datasets.Passage], lib.datasets.Passage] = HParam(),
+    include_passage: typing.Callable[[_loader.Passage], bool] = HParam(),
+    handle_passage: typing.Callable[[_loader.Passage], _loader.Passage] = HParam(),
 ) -> Dataset:
     """Define a TTS dataset.
 
@@ -129,9 +129,9 @@ def _is_duplicate(a: str, b: str, min_similarity: float) -> bool:
 
 def _find_duplicate_passages(
     dev_scripts: typing.Set[str],
-    passages: typing.List[lib.datasets.Passage],
+    passages: typing.List[_loader.Passage],
     min_similarity: float,
-) -> typing.Tuple[typing.List[lib.datasets.Passage], typing.List[lib.datasets.Passage]]:
+) -> typing.Tuple[typing.List[_loader.Passage], typing.List[_loader.Passage]]:
     """Find passages in `passages` that are a duplicate of a passage in `dev_scripts`.
 
     Args:
@@ -160,14 +160,14 @@ def _find_duplicate_passages(
 
 def _split_dataset(
     dataset: Dataset,
-    dev_speakers: typing.Set[lib.datasets.Speaker],
+    dev_speakers: typing.Set[_loader.Speaker],
     approx_dev_length: int,
     min_similarity: float,
     seed: int,
 ) -> typing.Tuple[Dataset, Dataset]:
     logger.info("Splitting `dataset`...")
-    dev: typing.Dict[lib.datasets.Speaker, list] = collections.defaultdict(list)
-    train: typing.Dict[lib.datasets.Speaker, list] = collections.defaultdict(list)
+    dev: typing.Dict[_loader.Speaker, list] = collections.defaultdict(list)
+    train: typing.Dict[_loader.Speaker, list] = collections.defaultdict(list)
     dev_scripts: typing.Set[str] = set()
     len_ = lambda _passage: _passage.aligned_audio_length()
     sum_ = lambda _passages: sum([len_(p) for p in _passages])
@@ -219,10 +219,10 @@ def _split_dataset(
 @configurable
 def split_dataset(
     dataset: Dataset,
-    dev_speakers: typing.Set[lib.datasets.Speaker] = HParam(),
+    dev_speakers: typing.Set[_loader.Speaker] = HParam(),
     approx_dev_length: int = HParam(),
     min_similarity: float = HParam(),
-    groups: typing.Optional[typing.List[typing.Set[lib.datasets.Speaker]]] = None,
+    groups: typing.Optional[typing.List[typing.Set[_loader.Speaker]]] = None,
     seed: int = 123,
 ) -> typing.Tuple[Dataset, Dataset]:
     """Split the dataset into a train set and development set.
@@ -268,7 +268,7 @@ def split_dataset(
     return train, dev
 
 
-class SpanGenerator(typing.Iterator[datasets.Span]):
+class SpanGenerator(typing.Iterator[_loader.Span]):
     """Define the dataset generator to train and evaluate the TTS models on.
 
     NOTE: For datasets that are conventional with only one alignment per passage, `SpanGenerator`
@@ -285,22 +285,22 @@ class SpanGenerator(typing.Iterator[datasets.Span]):
         self,
         dataset: Dataset,
         max_seconds: int = HParam(),
-        include_span: typing.Callable[[lib.datasets.Span], bool] = HParam(),
+        include_span: typing.Callable[[_loader.Span], bool] = HParam(),
     ):
         self.max_seconds = max_seconds
         self.dataset = dataset
-        self.generators: typing.Dict[lib.datasets.Speaker, typing.Iterator[lib.datasets.Span]] = {}
+        self.generators: typing.Dict[_loader.Speaker, typing.Iterator[_loader.Span]] = {}
         for speaker, passages in dataset.items():
             is_singles = all([len(p.alignments) == 1 for p in passages])
             max_seconds_ = math.inf if is_singles else max_seconds
-            self.generators[speaker] = datasets.SpanGenerator(passages, max_seconds_)
+            self.generators[speaker] = _loader.SpanGenerator(passages, max_seconds_)
         self.counter = {s: 0.0 for s in list(dataset.keys())}
         self.include_span = include_span
 
-    def __iter__(self) -> typing.Iterator[datasets.Span]:
+    def __iter__(self) -> typing.Iterator[_loader.Span]:
         return self
 
-    def __next__(self) -> datasets.Span:
+    def __next__(self) -> _loader.Span:
         """ Sample spans with a uniform speaker distribution based on `span.audio_length`. """
         while True:
             speaker = lib.utils.corrected_random_choice(self.counter)

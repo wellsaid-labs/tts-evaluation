@@ -1,4 +1,3 @@
-import lib
 import run
 from run._config import (
     Cadence,
@@ -22,7 +21,7 @@ def test_get_dataset_label():
     expected = Label("static/dataset/train/test")
     assert get_dataset_label("test", Cadence.STATIC, DatasetType.TRAIN) == expected
     expected = Label("static/dataset/dev/sam_scholl/test")
-    result = get_dataset_label("test", Cadence.STATIC, DatasetType.DEV, lib.datasets.SAM_SCHOLL)
+    result = get_dataset_label("test", Cadence.STATIC, DatasetType.DEV, run.data._loader.SAM_SCHOLL)
     assert result == expected
 
 
@@ -31,7 +30,7 @@ def test_get_model_label():
     expected = Label("static/model/test")
     assert get_model_label("test", Cadence.STATIC) == expected
     expected = Label("static/model/sam_scholl/test")
-    assert get_model_label("test", Cadence.STATIC, lib.datasets.SAM_SCHOLL) == expected
+    assert get_model_label("test", Cadence.STATIC, run.data._loader.SAM_SCHOLL) == expected
 
 
 def test_get_config_label():

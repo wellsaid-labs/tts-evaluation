@@ -35,7 +35,7 @@ from torchnlp.random import fork_rng
 
 import lib
 import run
-from lib.datasets import DATASETS, Passage
+from run.data._loader import DATASETS, Passage
 from lib.utils import Interval, Timeline, seconds_to_str
 from run._streamlit import (
     audio_to_html,
@@ -70,7 +70,7 @@ def _normalize_audio(passage: Passage, sample_rate=16000, encoding="pcm_s16le") 
     if not normalized_path.exists():
         lib.audio.normalize_audio(path, normalized_path, **kwargs)
     metadata = lib.audio.get_audio_metadata(normalized_path)
-    return lib.datasets.update_passage_audio(passage, metadata)
+    return run.data._loader.update_passage_audio(passage, metadata)
 
 
 def _audio_intervals(

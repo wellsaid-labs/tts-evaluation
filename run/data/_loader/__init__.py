@@ -1,9 +1,9 @@
 import typing
 from pathlib import Path
 
-from lib.datasets import m_ailabs
-from lib.datasets.lj_speech import LINDA_JOHNSON, lj_speech_dataset
-from lib.datasets.m_ailabs import (
+from run.data._loader import m_ailabs
+from run.data._loader.lj_speech import LINDA_JOHNSON, lj_speech_dataset
+from run.data._loader.m_ailabs import (
     ELIZABETH_KLETT,
     ELLIOT_MILLER,
     JUDY_BIEBER,
@@ -13,8 +13,8 @@ from lib.datasets.m_ailabs import (
     m_ailabs_en_us_judy_bieber_speech_dataset,
     m_ailabs_en_us_mary_ann_speech_dataset,
 )
-from lib.datasets.old_wsl_datasets import OLD_WSL_DATASETS
-from lib.datasets.utils import (
+from run.data._loader.old_wsl_datasets import OLD_WSL_DATASETS
+from run.data._loader.utils import (
     Alignment,
     Passage,
     Span,
@@ -26,7 +26,7 @@ from lib.datasets.utils import (
     update_conventional_passage_script,
     update_passage_audio,
 )
-from lib.datasets.wsl_datasets import (
+from run.data._loader.wsl_datasets import (
     ADRIENNE_WALKER_HELLER,
     ALICIA_HARRIS,
     ALICIA_HARRIS__MANUAL_POST,

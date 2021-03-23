@@ -7,7 +7,7 @@ from third_party import LazyLoader
 from torchnlp.download import download_file_maybe_extract
 
 import lib
-from lib.datasets.utils import (
+from run.data._loader.utils import (
     Passage,
     Speaker,
     conventional_dataset_loader,

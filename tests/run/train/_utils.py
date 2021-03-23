@@ -6,11 +6,10 @@ from unittest import mock
 import torch
 import torch.distributed
 
-import lib
 import run
-from lib.datasets import JUDY_BIEBER, LINDA_JOHNSON, m_ailabs_en_us_judy_bieber_speech_dataset
 from run._config import Cadence, DatasetType
 from run._utils import split_dataset
+from run.data._loader import JUDY_BIEBER, LINDA_JOHNSON, m_ailabs_en_us_judy_bieber_speech_dataset
 from run.train._utils import CometMLExperiment, _get_dataset_stats
 from tests import _utils
 
@@ -26,10 +25,10 @@ def setup_experiment(mock_urlretrieve):
     directory = _utils.TEST_DATA_PATH / "datasets"
     temp_directory = pathlib.Path(tempfile.TemporaryDirectory().name)
     shutil.copytree(directory, temp_directory)
-    books = [lib.datasets.m_ailabs.DOROTHY_AND_WIZARD_OZ]
+    books = [run.data._loader.m_ailabs.DOROTHY_AND_WIZARD_OZ]
     dataset = {
         JUDY_BIEBER: m_ailabs_en_us_judy_bieber_speech_dataset(temp_directory, books=books),
-        LINDA_JOHNSON: lib.datasets.lj_speech_dataset(temp_directory),
+        LINDA_JOHNSON: run.data._loader.lj_speech_dataset(temp_directory),
     }
 
     # Test splitting data

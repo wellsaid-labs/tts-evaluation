@@ -71,7 +71,7 @@ def download(
 ):
     """Download dataset(s). """
     is_include = functools.partial(_is_include, include=include, exclude=exclude)
-    datasets = {k: v for k, v in lib.datasets.DATASETS.items() if is_include(k.label)}
+    datasets = {k: v for k, v in run.data._loader.DATASETS.items() if is_include(k.label)}
     [loader(run._config.DATA_PATH) for loader in datasets.values()]
 
 

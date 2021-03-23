@@ -17,10 +17,10 @@ from torchnlp.random import fork_rng
 
 import lib
 import run
-from lib.datasets import DATASETS, Span
 from lib.utils import flatten_2d, mazel_tov, seconds_to_str
 from run._config import Dataset
 from run._streamlit import audio_to_html, clear_session_cache, get_dataset, map_
+from run.data._loader import DATASETS, Span
 from run.data.dataset_dashboard import _utils as utils
 
 lib.environment.set_basic_logging_config(reset=True)

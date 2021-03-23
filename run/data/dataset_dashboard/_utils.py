@@ -16,7 +16,7 @@ from torchnlp.random import fork_rng
 
 import lib
 from lib.audio import amplitude_to_db, signal_to_rms
-from lib.datasets import Passage, Span
+from run.data._loader import Passage, Span
 from lib.utils import clamp, flatten_2d, round_, seconds_to_str
 from run._config import Dataset
 from run._streamlit import (

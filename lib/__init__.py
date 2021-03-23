@@ -3,13 +3,12 @@
 from lib import utils  # isort: skip
 from lib import environment  # isort: skip
 from lib import audio  # isort: skip
-from lib import datasets, distributed, optimizers, signal_model, spectrogram_model, text, visualize
+from lib import distributed, optimizers, signal_model, spectrogram_model, text, visualize
 
 __all__ = [
     "utils",
     "environment",
     "audio",
-    "datasets",
     "distributed",
     "optimizers",
     "signal_model",
