@@ -118,6 +118,10 @@ except NameError:
     logger.info("Ignoring optional `matplotlib` dependency.")
 
 
+def _to_numpy(array: typing.Union[torch.Tensor, np.ndarray]) -> np.ndarray:
+    return array.detach().cpu().numpy() if isinstance(array, torch.Tensor) else array
+
+
 def plot_alignments(alignment: typing.Union[torch.Tensor, np.ndarray]) -> matplotlib.figure.Figure:
     """Plot an alignment of two sequences.
 
@@ -125,8 +129,7 @@ def plot_alignments(alignment: typing.Union[torch.Tensor, np.ndarray]) -> matplo
         alignment (numpy.ndarray or torch.Tensor [decoded_sequence, encoded_sequence]): Alignment
             weights between two sequences.
     """
-    alignment = alignment.detach().cpu().numpy() if torch.is_tensor(alignment) else alignment
-    alignment = np.transpose(alignment)
+    alignment = np.transpose(_to_numpy(alignment))
     figure, axis = pyplot.subplots()
     im = axis.imshow(  # type: ignore
         alignment,
@@ -150,7 +153,7 @@ def plot_logits(logits: typing.Union[torch.Tensor, np.ndarray]) -> matplotlib.fi
     Args:
         logits (numpy.array or torch.Tensor [sequence_length])
     """
-    logits = logits if torch.is_tensor(logits) else torch.tensor(logits)
+    logits = logits if isinstance(logits, torch.Tensor) else torch.tensor(logits)
     logits = torch.sigmoid(logits)
     logits = logits.detach().cpu().numpy()
     figure = pyplot.figure()
@@ -171,9 +174,8 @@ def plot_waveform(
         signal (torch.Tensor or numpy.array [signal_length]): Signal to plot as a waveform.
         sample_rate: The number of samples or points per second.
     """
-    signal = signal.detach().cpu().numpy() if torch.is_tensor(signal) else signal
     figure = pyplot.figure()
-    librosa_display.waveplot(signal, sr=sample_rate)
+    librosa_display.waveplot(_to_numpy(signal), sr=sample_rate)
     pyplot.ylabel("Amplitude")
     pyplot.xlabel("Time")
     pyplot.ylim(-1.0, 1.0)
@@ -225,10 +227,7 @@ def plot_spectrogram(
     """
     assert len(spectrogram.shape) == 2, "Spectrogram must be 2-dimensional."
     figure = pyplot.figure()
-    spectrogram = (
-        spectrogram.detach().cpu().numpy() if torch.is_tensor(spectrogram) else spectrogram
-    )
-    spectrogram = np.transpose(spectrogram)
+    spectrogram = np.transpose(_to_numpy(spectrogram))
     fmax = fmax if fmax is None else min(fmax, float(sample_rate) / 2)
     librosa_display.specshow(
         spectrogram,
