@@ -320,8 +320,7 @@ def test_format_ffmpeg_audio_filter():
 def test_format_ffmpeg_audio_filters():
     """Test `lib.audio.format_ffmpeg_audio_filters` parameterizes an `ffmpeg` audio
     filter, with multiple filters, correctly."""
-    result = lib.audio.format_ffmpeg_audio_filters(
-        [
+    filters = [
             lib.audio.format_ffmpeg_audio_filter(
                 "acompressor",
                 threshold=0.032,
@@ -337,7 +336,7 @@ def test_format_ffmpeg_audio_filters():
                 "loudnorm", i=-21, lra=4, tp=-6.1, print_format="summary"
             ),
         ]
-    )
+    result = lib.audio.format_ffmpeg_audio_filters(filters)
     assert result == lib.audio.AudioFilters(
         "acompressor=threshold=0.032:ratio=12:attack=325:release=390:knee=6:detection=rms:makeup=4,"
         "equalizer=f=200:t=q:w=0.6:g=-2.4,loudnorm=i=-21:lra=4:tp=-6.1:print_format=summary"

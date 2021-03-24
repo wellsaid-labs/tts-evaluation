@@ -581,6 +581,17 @@ def test_is_normalized_vo_script__unnormalized():
     # fmt: on
 
 
+def test_is_voiced():
+    """ Test `lib.text.is_voiced` handles all characters and an empty string. """
+    assert lib.text.is_voiced("123")
+    assert lib.text.is_voiced("abc")
+    assert lib.text.is_voiced("ABC")
+    for char in "@#$%&+=*".split():
+        assert lib.text.is_voiced(char)
+    assert not lib.text.is_voiced("!^()_{[}]:;\"'<>?/~`|\\")
+    assert not lib.text.is_voiced("")
+
+
 def test_add_space_between_sentences():
     """ Test `lib.text.add_space_between_sentences` adds a space between sentences. """
     nlp = lib.text.load_en_core_web_md(disable=("tagger", "ner"))

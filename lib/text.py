@@ -630,6 +630,23 @@ def is_normalized_vo_script(text: str) -> bool:
     return len(set(text) - _READABLE_CHARACTERS) == 0
 
 
+ALPHANUMERIC_REGEX = re.compile(r"[a-zA-Z0-9@#$%&+=*]")
+
+
+def is_voiced(text: str) -> bool:
+    """Return `True` if any of the text is spoken.
+
+    NOTE: This isn't perfect. For example, this function assumes a "-" isn't voiced; however, it
+    could be a minus sign.
+    NOTE: This assumes that symbols are not dictated.
+    """
+    text = text.strip()
+    if len(text) == 0:
+        return False
+    assert is_normalized_vo_script(text), "Text must be normalized."
+    return ALPHANUMERIC_REGEX.search(text) is not None
+
+
 def add_space_between_sentences(doc: spacy.tokens.Doc) -> str:
     """ Add spaces between sentences which are not separated by a space. """
     if len(doc) <= 2:

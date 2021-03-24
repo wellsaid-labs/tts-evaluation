@@ -10,7 +10,7 @@ import pytest
 import lib
 import run.data._loader
 from lib.utils import flatten_2d
-from run.data._loader import Alignment, Passage, SpanGenerator, alignment_dtype
+from run.data._loader import Alignment, Passage, Span, SpanGenerator, alignment_dtype
 from run.data._loader.utils import UnprocessedPassage, make_passages
 from tests._utils import (
     TEST_DATA_PATH,
@@ -288,9 +288,18 @@ def _make_unprocessed_passage(
     )
 
 
-def test_passage_span__script_nonalignments():
-    """Test `run.data._loader.Passage` and `run.data._loader.Span` get the correct nonalignments under a
-    variety of circumstances."""
+def _get_nonaligned(
+    span: typing.Union[Span, Passage]
+) -> typing.List[typing.Tuple[str, str, typing.Tuple[float, float]]]:
+    return [
+        (s.script, s.transcript, (s.audio_slice.start, s.audio_slice.stop))
+        for s in span.nonalignment_spans()
+    ]
+
+
+def test_passage_span__nonalignment_spans():
+    """Test `run.data._loader.Passage` and `run.data._loader.Span` get the correct nonalignments
+    under a variety of circumstances."""
     script = "abcdefghijklmnopqrstuvwxyz"
     make = functools.partial(_make_unprocessed_passage, transcript=script)
     unprocessed_passages = []
@@ -320,25 +329,25 @@ def test_passage_span__script_nonalignments():
 
     a = (0.0, 0.0)
     expected = [("", "", a), ("", "", a), ("", "", a), ("d", "d", a), ("", "", a), ("", "", a)]
-    assert passages[0].script_nonalignments() == expected
-    assert passages[0][:].script_nonalignments() == passages[0].script_nonalignments()
-    assert passages[1].script_nonalignments() == [("", "", a), ("h", "h", a), ("", "jk", a)]
-    assert passages[1][:].script_nonalignments() == passages[1].script_nonalignments()
-    assert passages[2].script_nonalignments() == [("jk", "jk", a), ("", "", a)]
-    assert passages[3].script_nonalignments() == [("", "", a), ("no", "nop", a)]
-    assert passages[4].script_nonalignments() == [
+    assert _get_nonaligned(passages[0]) == expected
+    assert _get_nonaligned(passages[0][:]) == _get_nonaligned(passages[0])
+    assert _get_nonaligned(passages[1]) == [("", "", a), ("h", "h", a), ("", "jk", a)]
+    assert _get_nonaligned(passages[1][:]) == _get_nonaligned(passages[1])
+    assert _get_nonaligned(passages[2]) == [("jk", "jk", a), ("", "", a)]
+    assert _get_nonaligned(passages[3]) == [("", "", a), ("no", "nop", a)]
+    assert _get_nonaligned(passages[4]) == [
         ("p", "nop", a),
         ("r", "rstuvwxyz", (0.0, 7.583958148956299)),
     ]
 
     # TEST: Test `spans` get the correct span.
-    assert passages[0][2:4][:].script_nonalignments() == [("", "", a), ("d", "d", a), ("", "", a)]
-    assert passages[1][1][:].script_nonalignments() == [("h", "h", a), ("", "jk", a)]
+    assert _get_nonaligned(passages[0][2:4][:]) == [("", "", a), ("d", "d", a), ("", "", a)]
+    assert _get_nonaligned(passages[1][1][:]) == [("h", "h", a), ("", "jk", a)]
 
 
-def test_passage_span__script_nonalignments__zero_alignments():
-    """Test `run.data._loader.Passage` and `run.data._loader.Span` get the correct nonalignments if one
-    of the passages has zero alignments."""
+def test_passage_span__nonalignment_spans__zero_alignments():
+    """Test `run.data._loader.Passage` and `run.data._loader.Span` get the correct nonalignments if
+    one of the passages has zero alignments."""
     script = "abcdef"
     make = functools.partial(_make_unprocessed_passage, transcript=script)
     unprocessed_passages = []
@@ -353,12 +362,9 @@ def test_passage_span__script_nonalignments__zero_alignments():
     passages = list(make_passages([unprocessed_passages], **kwargs))
 
     a = (0.0, 0.0)
-    assert passages[0].script_nonalignments() == [("a", "a", a), ("c", "cd", a)]
-    assert passages[1].script_nonalignments() == [("", "cd", a)]
-    assert passages[2].script_nonalignments() == [
-        ("d", "cd", a),
-        ("f", "f", (0.0, 7.583958148956299)),
-    ]
+    assert _get_nonaligned(passages[0]) == [("a", "a", a), ("c", "cd", a)]
+    assert _get_nonaligned(passages[1]) == [("", "cd", a)]
+    assert _get_nonaligned(passages[2]) == [("d", "cd", a), ("f", "f", (0.0, 7.583958148956299))]
 
 
 def test__overlap():

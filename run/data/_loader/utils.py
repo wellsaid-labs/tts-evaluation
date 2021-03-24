@@ -93,17 +93,6 @@ class UnprocessedPassage:
     other_metadata: typing.Dict = dataclasses.field(default_factory=dict)
 
 
-def _script_alignments(
-    script: str, transcript: str, alignments: Tuple[Alignment]
-) -> typing.List[typing.Tuple[str, str, typing.Tuple[float, float]]]:
-    """ Get `script` and `transcript` slices given `alignments` with the related `audio` slice. """
-    return_ = []
-    for alignment in alignments:
-        script_ = script[alignment.script[0] : alignment.script[-1]]
-        transcript_ = transcript[alignment.transcript[0] : alignment.transcript[-1]]
-        return_.append((script_, transcript_, alignment.audio))
-    return return_
-
 @dataclasses.dataclass(frozen=True)
 class Passage:
     """A voiced passage.
@@ -145,11 +134,13 @@ class Passage:
     def aligned_audio_length(self) -> float:
         return self.last.audio[-1] - self.first.audio[0]
 
-    def script_nonalignments(
-        self,
-    ) -> typing.List[typing.Tuple[str, str, typing.Tuple[float, float]]]:
-        """ Get nonaligned `script` and `transcript` slices. """
-        return _script_alignments(self.script, self.transcript, self.nonalignments)
+    def spans(self, alignments: Tuple[Alignment]) -> typing.Iterable[Span]:
+        """ Get `Span`s for every `Alignment` in `alignments`. """
+        return (Span(self, alignments, slice(i + 1)) for i in range(len(alignments)))
+
+    def nonalignment_spans(self) -> typing.Iterable[Span]:
+        """ Get a `Span` for every `nonalignment`. """
+        return self.spans(self.nonalignments)
 
     def __getitem__(self, key) -> Span:
         if isinstance(key, int):
@@ -157,8 +148,8 @@ class Passage:
             key = slice(key, key + 1)
         if isinstance(key, slice):
             start, stop, step = key.indices(len(self.alignments))
-            assert step == 1, "Step size is not supported."
-            return Span(self, slice(start, stop))
+            assert step == 1, f"Step size {step} is not supported."
+            return Span(self, self.alignments, slice(start, stop))
         else:
             raise TypeError("Invalid argument type: {}".format(type(key)))
 
@@ -209,14 +200,16 @@ class Span:
     """A span of the voiced passage.
 
     NOTE: The first and last `Alignment`s are cached for performance. The goal is to avoid
-    accessing `self.passage.alignments` due to it's mediocre performance.
+    accessing `self.passage_alignments` due to it's mediocre performance.
 
     Args:
         passage: The original passage, for context.
+        passage_alignments: The original passage alignments, for context.
         slice: A `slice` of `passage.alignments`.
     """
 
     passage: Passage
+    passage_alignments: Tuple[Alignment]
     slice: Slice
     _first_cache: Alignment = dataclasses.field(init=False, repr=False, compare=False)
     _last_cache: Alignment = dataclasses.field(init=False, repr=False, compare=False)
@@ -224,7 +217,7 @@ class Span:
     @property
     def first(self) -> Alignment:
         if not hasattr(self, "_first_cache"):
-            object.__setattr__(self, "_first_cache", self.passage.alignments[self.slice.start])
+            object.__setattr__(self, "_first_cache", self.passage_alignments[self.slice.start])
         return self._first_cache
 
     @property
@@ -232,7 +225,7 @@ class Span:
         if self.slice.stop - 1 == self.slice.start:
             return self.first
         if not hasattr(self, "_last_cache"):
-            object.__setattr__(self, "_last_cache", self.passage.alignments[self.slice.stop - 1])
+            object.__setattr__(self, "_last_cache", self.passage_alignments[self.slice.stop - 1])
         return self._last_cache
 
     @property
@@ -280,7 +273,7 @@ class Span:
 
     @property
     def alignments(self):
-        alignments = self.passage.alignments[self.slice]
+        alignments = self.passage_alignments[self.slice]
         return stow([self._offset(a) for a in alignments], dtype=alignment_dtype)
 
     @property
@@ -290,12 +283,9 @@ class Span:
     def audio(self) -> np.ndarray:
         return read_audio(self.passage.audio_file, self._first.audio[0], self.audio_length)
 
-    def script_nonalignments(
-        self,
-    ) -> typing.List[typing.Tuple[str, str, typing.Tuple[float, float]]]:
-        """ Get nonaligned `script` and `transcript` slices. """
+    def nonalignment_spans(self) -> typing.Iterable[Span]:
         nonalignments = self.passage.nonalignments[self.slice.start : self.slice.stop + 1]
-        return _script_alignments(self.passage.script, self.passage.transcript, nonalignments)
+        return self.passage.spans(nonalignments)
 
     def __len__(self) -> int:
         return self.slice.stop - self.slice.start
@@ -304,11 +294,12 @@ class Span:
         if isinstance(key, int):
             key = len(self) + key if key < 0 else key
             key = slice(key, key + 1)
-        offset = self.slice.start
         if isinstance(key, slice):
+            offset = self.slice.start
             start, stop, step = key.indices(len(self))
-            assert step == 1, "Step size is not supported."
-            return self.__class__(self.passage, slice(offset + start, offset + stop))
+            assert step == 1, f"Step size {step} is not supported."
+            slice_ = slice(offset + start, offset + stop)
+            return self.__class__(self.passage, self.passage_alignments, slice_)
         else:
             raise TypeError("Invalid argument type: {}".format(type(key)))
 
@@ -318,9 +309,9 @@ class Span:
     def check_invariants(self):
         """ Check datastructure invariants. """
         self.passage.check_invariants()
-        assert self.slice.stop - self.slice.start, "`Span` must have `Alignments`."
-        assert self.slice.stop <= len(self.passage.alignments) and self.slice.stop >= 0
-        assert self.slice.start < len(self.passage.alignments) and self.slice.start >= 0
+        assert self.slice.stop > self.slice.start, "`Span` must have `Alignments`."
+        assert self.slice.stop <= len(self.passage_alignments) and self.slice.stop >= 0
+        assert self.slice.start < len(self.passage_alignments) and self.slice.start >= 0
 
 
 def _merge(

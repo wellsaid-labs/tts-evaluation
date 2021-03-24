@@ -13,7 +13,7 @@ from third_party import LazyLoader
 
 import lib
 import run
-import run.data._loader.m_ailabs
+from lib.text import is_voiced
 from run.data import _loader
 from run.data._loader import DATASETS, Speaker
 
@@ -515,7 +515,6 @@ def _handle_passage(passage: _loader.Passage) -> _loader.Passage:
 
 
 DIGIT_REGEX = re.compile(r"\d")
-ALPHANUMERIC_REGEX = re.compile(r"[a-zA-Z0-9]")
 
 
 def _include_span(span: _loader.Span):
@@ -537,10 +536,7 @@ def _include_span(span: _loader.Span):
     if is_not_aligned(span[0]) or is_not_aligned(span[-1]):
         return False
 
-    if any(
-        ALPHANUMERIC_REGEX.search(a) or ALPHANUMERIC_REGEX.search(b)
-        for a, b, _ in span.script_nonalignments()
-    ):
+    if any(is_voiced(s.script) or is_voiced(s.transcript) for s in span.nonalignment_spans()):
         return False
 
     return True
