@@ -22,6 +22,8 @@ import lib
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import librosa
+    import librosa.core
+    import librosa.util
     import pyloudnorm
     from scipy import signal as scipy_signal
     from scipy.io import wavfile
@@ -620,7 +622,10 @@ def identity_weighting(frequencies: np.ndarray) -> np.ndarray:
     return np.zeros_like(frequencies)
 
 
-def power_to_db(tensor: torch.Tensor, eps: float = 1e-10) -> torch.Tensor:
+_TensorOrArrayOrFloat = typing.TypeVar("_TensorOrArrayOrFloat", torch.Tensor, np.ndarray, float)
+
+
+def power_to_db(tensor: _TensorOrArrayOrFloat, eps: float = 1e-10) -> _TensorOrArrayOrFloat:
     """Convert power (https://www.dsprelated.com/freebooks/mdft/Decibels.html) units to decibel
     units.
 
@@ -631,10 +636,16 @@ def power_to_db(tensor: torch.Tensor, eps: float = 1e-10) -> torch.Tensor:
         eps (float or torch.FloatTensor): The minimum amplitude to `log` avoiding the discontinuity
             at `log(0)`.
     """
-    return 10.0 * torch.log10(torch.clamp(tensor, min=eps))
+    if isinstance(tensor, torch.Tensor):
+        result = torch.log10(torch.clamp(tensor, min=eps))
+    elif isinstance(tensor, float):
+        result = math.log10(max(tensor, eps))
+    else:
+        result = np.log10(np.clip(tensor, eps, None))
+    return typing.cast(_TensorOrArrayOrFloat, 10 * result)
 
 
-def amplitude_to_db(tensor: torch.Tensor, **kwargs) -> torch.Tensor:
+def amp_to_db(tensor: _TensorOrArrayOrFloat, **kwargs) -> _TensorOrArrayOrFloat:
     """Convert amplitude (https://en.wikipedia.org/wiki/Amplitude) units to decibel units.
 
     Args:
@@ -644,30 +655,32 @@ def amplitude_to_db(tensor: torch.Tensor, **kwargs) -> torch.Tensor:
     return power_to_db(tensor, **kwargs) * 2
 
 
-_TensorOrArray = typing.TypeVar("_TensorOrArray", torch.Tensor, np.ndarray)
-
-
-def amplitude_to_power(tensor: _TensorOrArray) -> _TensorOrArray:
+def amp_to_power(tensor: _TensorOrArrayOrFloat) -> _TensorOrArrayOrFloat:
     """ Convert amplitude (https://en.wikipedia.org/wiki/Amplitude) units to power units. """
     return tensor ** 2
 
 
-def power_to_amplitude(tensor: _TensorOrArray) -> _TensorOrArray:
+def power_to_amp(tensor: _TensorOrArrayOrFloat) -> _TensorOrArrayOrFloat:
     """ Convert power units to amplitude units. """
     return tensor ** 0.5
 
 
-def db_to_power(tensor: _TensorOrArray) -> _TensorOrArray:
+def db_to_power(tensor: _TensorOrArrayOrFloat) -> _TensorOrArrayOrFloat:
     """ Convert decibel units to power units. """
-    return 10 ** (tensor / 10.0)
+    return typing.cast(_TensorOrArrayOrFloat, 10 ** (tensor / 10.0))
 
 
-def db_to_amplitude(tensor: _TensorOrArray) -> _TensorOrArray:
+def db_to_amp(tensor: _TensorOrArrayOrFloat) -> _TensorOrArrayOrFloat:
     """ Convert decibel units to amplitude units. """
     return db_to_power(tensor / 2)
 
 
-def signal_to_rms(signal: np.ndarray) -> np.ndarray:
+def signal_to_rms_power(signal: np.ndarray, axis: int = 0) -> np.ndarray:
+    """Compute the RMS power from a signal."""
+    return np.mean(amp_to_power(np.abs(signal)), axis=axis)  # type: ignore
+
+
+def signal_to_rms(signal: np.ndarray, axis: int = 0) -> np.ndarray:
     """Compute the root mean square from a signal.
 
     Learn more:
@@ -676,23 +689,13 @@ def signal_to_rms(signal: np.ndarray) -> np.ndarray:
       https://github.com/endolith/waveform_analysis/blob/master/waveform_analysis/_common.py#L116
     - Wikipedia on RMS:
       https://en.wikipedia.org/wiki/Root_mean_square
-
-    Args:
-        signal (np.ndarray [signal_length])
-
-    Returns:
-        np.ndarray [1]
     """
-    if signal.shape[0] == 0:
-        return np.array([np.nan])
-    return np.sqrt(np.mean(np.abs(signal) ** 2))  # type: ignore
+    return power_to_amp(signal_to_rms_power(signal, axis=axis))
 
 
 @configurable
 def signal_to_framed_rms(
-    signal: np.ndarray,
-    frame_length: int = HParam(),
-    hop_length: int = HParam(),
+    signal: np.ndarray, frame_length: int = HParam(), hop_length: int = HParam()
 ) -> np.ndarray:
     """Compute the framed root mean square from a signal.
 
@@ -702,14 +705,19 @@ def signal_to_framed_rms(
         hop_length
 
     Returns:
-        np.ndarray [1]
+        np.ndarray [num_frames]
     """
-    frames = librosa.util.frame(  # type: ignore
-        signal,
-        frame_length=frame_length,
-        hop_length=hop_length,
-    )
-    return np.sqrt(np.mean(np.abs(frames ** 2), axis=0))  # type: ignore
+    frames = librosa.util.frame(signal, frame_length=frame_length, hop_length=hop_length)
+    return signal_to_rms(frames, axis=0)  # type: ignore
+
+
+def framed_rms_to_rms(
+    frame_rms: _TensorOrArrayOrFloat, frame_hop: int, signal_length: int
+) -> _TensorOrArrayOrFloat:
+    """ Convert framed RMS to RMS. """
+    rms = amp_to_power(frame_rms) * frame_hop / signal_length
+    rms = rms if isinstance(rms, float) else rms.sum()
+    return power_to_amp(typing.cast(_TensorOrArrayOrFloat, rms))
 
 
 @configurable

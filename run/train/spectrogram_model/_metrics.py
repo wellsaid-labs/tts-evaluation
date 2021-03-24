@@ -15,6 +15,7 @@ from hparams import HParam, configurable
 
 import lib
 import run
+from lib.audio import power_to_db
 from lib.distributed import is_master
 from run._config import GetLabel, get_dataset_label, get_model_label
 from run.train import _utils
@@ -117,7 +118,7 @@ def get_average_db_rms_level(
     """
     num_elements = db_spectrogram.shape[0] if mask is None else mask.sum(dim=0)
     cumulative_power_rms_level = get_power_rms_level_sum(db_spectrogram, mask, **kwargs)
-    return lib.audio.power_to_db(cumulative_power_rms_level / num_elements)
+    return power_to_db(cumulative_power_rms_level / num_elements)
 
 
 _GetMetrics = typing.Dict[GetLabel, float]

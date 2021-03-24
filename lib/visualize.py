@@ -7,7 +7,6 @@ from hparams import HParam, configurable
 from third_party import LazyLoader
 
 if typing.TYPE_CHECKING:  # pragma: no cover
-    import comet_ml
     import matplotlib
     import matplotlib.cm
     import matplotlib.colors
@@ -15,7 +14,6 @@ if typing.TYPE_CHECKING:  # pragma: no cover
     from librosa import display as librosa_display
     from matplotlib import pyplot
 else:
-    comet_ml = LazyLoader("comet_ml", globals(), "comet_ml")
     librosa_display = LazyLoader("librosa_display", globals(), "librosa.display")
     matplotlib = LazyLoader("matplotlib", globals(), "matplotlib")
     pyplot = LazyLoader("pyplot", globals(), "matplotlib.pyplot")

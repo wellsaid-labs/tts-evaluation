@@ -1,5 +1,6 @@
 """ Command-line interface (CLI) for processing data files. """
 import collections
+import dataclasses
 import functools
 import logging
 import math

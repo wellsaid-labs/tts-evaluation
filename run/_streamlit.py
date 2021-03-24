@@ -18,8 +18,8 @@ from third_party import session_state
 
 import lib
 import run
-from run.data._loader import Passage
 from run._config import Dataset
+from run.data._loader import Passage
 
 logger = logging.getLogger(__name__)
 

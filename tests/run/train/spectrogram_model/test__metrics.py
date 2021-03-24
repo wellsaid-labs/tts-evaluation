@@ -45,7 +45,7 @@ def test_get_num_skipped__zero_elements():
 def _get_db_spectrogram(signal, **kwargs) -> torch.Tensor:
     spectrogram = torch.stft(signal.view(1, -1), **kwargs)
     spectrogram = torch.norm(spectrogram.double(), dim=-1)
-    return lib.audio.amplitude_to_db(spectrogram).permute(2, 0, 1)
+    return lib.audio.amp_to_db(spectrogram).permute(2, 0, 1)
 
 
 def test_get_power_rms_level_sum():

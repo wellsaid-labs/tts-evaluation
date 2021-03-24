@@ -1,5 +1,6 @@
 import itertools
 import pathlib
+import random
 import shutil
 import subprocess
 import tempfile
@@ -17,6 +18,14 @@ from hparams import HParams
 from torchnlp.encoders.text import stack_and_pad_tensors
 
 import lib
+from lib.audio import (
+    amp_to_power,
+    db_to_power,
+    framed_rms_to_rms,
+    power_spectrogram_to_framed_rms,
+    power_to_amp,
+    power_to_db,
+)
 from tests import _utils
 
 TEST_DATA_PATH = _utils.TEST_DATA_PATH / "audio"
@@ -34,18 +43,11 @@ def run_around_tests():
     frame_hop = fft_length // 4
     window = librosa.filters.get_window("hann", fft_length)
     hertz_bounds = {"lower_hertz": 20, "upper_hertz": 20000}
-    hparams.add_config(
-        {
-            lib.audio.power_spectrogram_to_framed_rms: HParams(window=torch.tensor(window).float()),
+    config = {
+        power_spectrogram_to_framed_rms: HParams(window=torch.tensor(window).float()),
             lib.audio.signal_to_framed_rms: HParams(frame_length=fft_length, hop_length=frame_hop),
-            lib.audio.pad_remainder: HParams(
-                multiple=frame_hop, mode="constant", constant_values=0.0
-            ),
+        lib.audio.pad_remainder: HParams(multiple=frame_hop, mode="constant", constant_values=0.0),
             lib.audio.write_audio: HParams(sample_rate=sample_rate),
-        }
-    )
-    hparams.add_config(
-        {
             lib.audio.SignalTodBMelSpectrogram.__init__: HParams(
                 sample_rate=sample_rate,
                 frame_hop=frame_hop,
@@ -67,7 +69,7 @@ def run_around_tests():
                 **hertz_bounds,
             ),
         }
-    )
+    hparams.add_config(config)
     yield
     hparams.clear_config()
 
@@ -505,46 +507,53 @@ def test_identity_weighting():
     )
 
 
-def test_power_to_amplitude():
-    """ Test `lib.audio.amplitude_to_power` and `lib.audio.power_to_amplitude` are consistent. """
-    t = torch.abs(torch.randn(100))
-    np.testing.assert_almost_equal(
-        lib.audio.power_to_amplitude(lib.audio.amplitude_to_power(t)).numpy(),
-        t.numpy(),
-        decimal=5,
-    )
+def test_power_to_amp():
+    """ Test `amp_to_power` and `lib.audio.power_to_amp` are consistent. """
+    input_ = torch.abs(torch.randn(100))
+    result = lib.audio.power_to_amp(amp_to_power(input_)).numpy()
+    np.testing.assert_almost_equal(result, input_.numpy(), decimal=5)
 
 
-def test_amplitude_to_db():
-    """ Test `lib.audio.amplitude_to_db` and `lib.audio.db_to_amplitude` are consistent. """
-    t = torch.abs(torch.randn(100))
-    np.testing.assert_almost_equal(
-        lib.audio.db_to_amplitude(lib.audio.amplitude_to_db(t)).numpy(),
-        t.numpy(),
-        decimal=5,
-    )
+def test_amp_to_db():
+    """ Test `lib.audio.amp_to_db` and `lib.audio.db_to_amp` are consistent. """
+    input_ = torch.abs(torch.randn(100))
+    result = lib.audio.db_to_amp(lib.audio.amp_to_db(input_)).numpy()
+    np.testing.assert_almost_equal(result, input_.numpy(), decimal=5)
 
 
 def test_power_to_db():
-    """ Test `lib.audio.power_to_db` and `lib.audio.db_to_power` are consistent. """
-    t = torch.abs(torch.randn(100))
-    np.testing.assert_almost_equal(
-        lib.audio.db_to_power(lib.audio.power_to_db(t)).numpy(), t.numpy(), decimal=5
-    )
+    """ Test `power_to_db` and `db_to_power` are consistent. """
+    input_ = torch.abs(torch.randn(100))
+    result = db_to_power(power_to_db(input_)).numpy()
+    np.testing.assert_almost_equal(result, input_.numpy(), decimal=5)
+
+
+def test_power_to_db__numpy():
+    """ Test `power_to_db` and `db_to_power` are consistent. """
+    input_ = torch.abs(torch.randn(100)).numpy()
+    result = db_to_power(power_to_db(input_))
+    np.testing.assert_almost_equal(result, input_, decimal=5)
+
+
+def test_power_to_db__float():
+    """ Test `power_to_db` and `db_to_power` are consistent. """
+    input_ = abs(random.random())
+    result = db_to_power(power_to_db(input_))
+    np.testing.assert_almost_equal(result, input_, decimal=5)
 
 
 def test_signal_to_rms__full_scale_square_wave():
     """ Test `lib.audio.signal_to_rms` on a standard 0 dBFS signal. """
     rms = lib.audio.signal_to_rms(lib.audio.full_scale_square_wave())
     assert rms == pytest.approx(1.0)
-    assert lib.audio.amplitude_to_db(torch.tensor(rms)).item() == pytest.approx(0.0)
+    assert lib.audio.amp_to_db(rms) == pytest.approx(0.0)
 
 
 def test_signal_to_rms__full_scale_sine_wave():
     """ Test `lib.audio.signal_to_rms` on a standard -3.01 dBFS signal. """
     rms = lib.audio.signal_to_rms(lib.audio.full_scale_sine_wave())
     assert rms == pytest.approx(0.70710677)
-    assert lib.audio.amplitude_to_db(torch.tensor(rms)).item() == pytest.approx(-3.0103001594543457)
+    assert lib.audio.amp_to_db(rms) == pytest.approx(-3.0103001594543457)
 
 
 def test_signal_to_framed_rms__full_scale_square_wave():
@@ -554,8 +563,7 @@ def test_signal_to_framed_rms__full_scale_square_wave():
     signal = lib.audio.full_scale_square_wave()
     padded_signal = np.pad(signal, frame_length, mode="constant", constant_values=0)
     frame_rms = lib.audio.signal_to_framed_rms(padded_signal, frame_length, frame_hop)
-    frame_rms = frame_rms ** 2 * frame_hop
-    assert np.sqrt((frame_rms / signal.shape[0]).sum()) == pytest.approx(1.0)
+    assert framed_rms_to_rms(frame_rms, frame_hop, signal.shape[0]) == pytest.approx(1.0)
 
 
 def test_signal_to_framed_rms__full_scale_sine_wave():
@@ -565,11 +573,10 @@ def test_signal_to_framed_rms__full_scale_sine_wave():
     signal = lib.audio.full_scale_sine_wave()
     padded_signal = np.pad(signal, frame_length, mode="constant", constant_values=0)
     frame_rms = lib.audio.signal_to_framed_rms(padded_signal, frame_length, frame_hop)
-    frame_rms = frame_rms ** 2 * frame_hop
-    assert np.sqrt((frame_rms / signal.shape[0]).sum()) == pytest.approx(0.70710677)
+    assert framed_rms_to_rms(frame_rms, frame_hop, signal.shape[0]) == pytest.approx(0.70710677)
 
 
-def test_signal_to_framed_rms__signal_to_framed_rms():
+def test_signal_to_framed_rms__signal_to_rms():
     """Test `lib.audio.signal_to_rms` and `lib.audio.signal_to_framed_rms` are equal given a
     appropriately padded signal."""
     for frame_length in range(1, 16):
@@ -583,13 +590,12 @@ def test_signal_to_framed_rms__signal_to_framed_rms():
             # only once, for example.
             padded_signal = np.pad(signal, frame_length, mode="constant", constant_values=0)
             frame_rms = lib.audio.signal_to_framed_rms(padded_signal, frame_length, frame_hop)
-            assert lib.audio.signal_to_rms(signal) == pytest.approx(
-                np.sqrt((frame_rms ** 2 * frame_hop / signal.shape[0]).sum())
-            )
+            expected = framed_rms_to_rms(frame_rms, frame_hop, signal.shape[0])
+            assert lib.audio.signal_to_rms(signal) == pytest.approx(expected)
 
 
 def test_power_spectrogram_to_framed_rms__full_scale_square_wave():
-    """ Test `lib.audio.power_spectrogram_to_framed_rms` on a standard 0 dBFS signal. """
+    """ Test `power_spectrogram_to_framed_rms` on a standard 0 dBFS signal. """
     frame_length = 1024
     frame_hop = frame_length // 4
     window = torch.ones(frame_length)
@@ -604,13 +610,13 @@ def test_power_spectrogram_to_framed_rms__full_scale_square_wave():
         center=False,
     )
     spectrogram = torch.norm(spectrogram, dim=-1)
-    power_spectrogram = lib.audio.amplitude_to_power(spectrogram).transpose(0, 1)
-    frame_rms = lib.audio.power_spectrogram_to_framed_rms(power_spectrogram, window=window).numpy()
-    assert np.sqrt((frame_rms ** 2 * frame_hop / signal.shape[0]).sum()) == pytest.approx(1.0)
+    power_spectrogram = amp_to_power(spectrogram).transpose(0, 1)
+    frame_rms = power_spectrogram_to_framed_rms(power_spectrogram, window=window).numpy()
+    assert framed_rms_to_rms(frame_rms, frame_hop, signal.shape[0]) == pytest.approx(1.0)
 
 
 def test_power_spectrogram_to_framed_rms__full_scale_sine_wave__sample_rates():
-    """ Test `lib.audio.power_spectrogram_to_framed_rms` on a standard -3.01 dBFS signal. """
+    """ Test `power_spectrogram_to_framed_rms` on a standard -3.01 dBFS signal. """
     frame_length = 1024
     frame_hop = frame_length // 4
     window = torch.ones(frame_length)
@@ -625,15 +631,13 @@ def test_power_spectrogram_to_framed_rms__full_scale_sine_wave__sample_rates():
         center=False,
     )
     spectrogram = torch.norm(spectrogram.double(), dim=-1)
-    power_spectrogram = lib.audio.amplitude_to_power(spectrogram).transpose(0, 1)
-    frame_rms = lib.audio.power_spectrogram_to_framed_rms(power_spectrogram, window=window).numpy()
-    assert np.sqrt((frame_rms ** 2 * frame_hop / signal.shape[0]).sum()) == pytest.approx(
-        0.70710677
-    )
+    power_spectrogram = amp_to_power(spectrogram).transpose(0, 1)
+    frame_rms = power_spectrogram_to_framed_rms(power_spectrogram, window=window).numpy()
+    assert framed_rms_to_rms(frame_rms, frame_hop, signal.shape[0]) == pytest.approx(0.70710677)
 
 
 def test_power_spectrogram_to_framed_rms__sample_rates():
-    """ Test `lib.audio.power_spectrogram_to_framed_rms` accross multiple sample rates. """
+    """ Test `power_spectrogram_to_framed_rms` accross multiple sample rates. """
     for sample_rate in range(1000, 24000, 1000):
         frame_length = 2048
         frame_hop = frame_length // 4
@@ -649,17 +653,14 @@ def test_power_spectrogram_to_framed_rms__sample_rates():
             center=False,
         )
         spectrogram = torch.norm(spectrogram.double(), dim=-1)
-        power_spectrogram = lib.audio.amplitude_to_power(spectrogram).transpose(0, 1)
-        frame_rms = lib.audio.power_spectrogram_to_framed_rms(
-            power_spectrogram, window=window
-        ).numpy()
-        assert np.sqrt((frame_rms ** 2 * frame_hop / signal.shape[0]).sum()) == (
-            pytest.approx(lib.audio.signal_to_rms(signal))
-        )
+        power_spectrogram = amp_to_power(spectrogram).transpose(0, 1)
+        frame_rms = power_spectrogram_to_framed_rms(power_spectrogram, window=window).numpy()
+        expected = pytest.approx(lib.audio.signal_to_rms(signal))
+        assert framed_rms_to_rms(frame_rms, frame_hop, signal.shape[0]) == expected
 
 
 def test_power_spectrogram_to_framed_rms__window_correction__padding():
-    """Test `lib.audio.power_spectrogram_to_framed_rms` window correction using a hann window
+    """Test `power_spectrogram_to_framed_rms` window correction using a hann window
     and padding larger than `frame_length`.
     """
     for i in range(1, 5):
@@ -677,26 +678,21 @@ def test_power_spectrogram_to_framed_rms__window_correction__padding():
             center=False,
         )
         spectrogram = torch.norm(spectrogram, dim=-1)
-        power_spectrogram = lib.audio.amplitude_to_power(spectrogram).transpose(0, 1)
-        frame_rms = lib.audio.power_spectrogram_to_framed_rms(
-            power_spectrogram, window=window
-        ).numpy()
-        assert np.sqrt((frame_rms ** 2 * frame_hop / signal.shape[0]).sum()) == pytest.approx(
-            0.70710677
-        )
+        power_spectrogram = amp_to_power(spectrogram).transpose(0, 1)
+        frame_rms = power_spectrogram_to_framed_rms(power_spectrogram, window=window).numpy()
+        assert framed_rms_to_rms(frame_rms, frame_hop, signal.shape[0]) == pytest.approx(0.70710677)
 
 
 def test_power_spectrogram_to_framed_rms__batch():
-    """ Test `lib.audio.power_spectrogram_to_framed_rms` on a batch of spectrograms. """
+    """ Test `power_spectrogram_to_framed_rms` on a batch of spectrograms. """
     frame_length = 2048
     frame_hop = frame_length // 4
     window = torch.hann_window(frame_length)
-    batched_signal = torch.stack(
-        [
+    tensors = [
             torch.tensor(lib.audio.full_scale_sine_wave()),
             torch.tensor(lib.audio.full_scale_square_wave()),
         ]
-    )
+    batched_signal = torch.stack(tensors)
     padded_batched_signal = torch.nn.functional.pad(batched_signal, [frame_length, frame_length])
     batched_spectrogram = torch.stft(
         padded_batched_signal,
@@ -707,21 +703,19 @@ def test_power_spectrogram_to_framed_rms__batch():
         center=False,
     )
     batched_spectrogram = torch.norm(batched_spectrogram, dim=-1)
-    batched_power_spectrogram = lib.audio.amplitude_to_power(batched_spectrogram).transpose(1, 2)
-    frame_rms = lib.audio.power_spectrogram_to_framed_rms(batched_power_spectrogram, window=window)
-    assert (
-        frame_rms[0].pow(2) * frame_hop / batched_signal.shape[1]
-    ).sum().sqrt().item() == pytest.approx(0.70710677)
-    assert (
-        frame_rms[1].pow(2) * frame_hop / batched_signal.shape[1]
-    ).sum().sqrt().item() == pytest.approx(1.0)
+    batched_power_spectrogram = amp_to_power(batched_spectrogram).transpose(1, 2)
+    frame_rms = power_spectrogram_to_framed_rms(batched_power_spectrogram, window=window)
+    signal_length = batched_signal.shape[1]
+    partial_ = partial(framed_rms_to_rms, frame_hop=frame_hop, signal_length=signal_length)
+    assert partial_(frame_rms[0]) == pytest.approx(0.70710677)
+    assert partial_(frame_rms[1]) == pytest.approx(1.0)
 
 
 def test_power_spectrogram_to_framed_rms__zero_elements():
-    """ Test `lib.audio.power_spectrogram_to_framed_rms` on a zero frames. """
+    """ Test `power_spectrogram_to_framed_rms` on a zero frames. """
     window = torch.ones(1024)
     power_spectrogram = torch.zeros(64, 0, 1025)
-    frame_rms = lib.audio.power_spectrogram_to_framed_rms(power_spectrogram, window=window).numpy()
+    frame_rms = power_spectrogram_to_framed_rms(power_spectrogram, window=window).numpy()
     assert frame_rms.shape == (64, 0)
 
 
@@ -805,30 +799,17 @@ def test_signal_to_db_mel_spectrogram__intermediate():
     tensor = torch.nn.Parameter(torch.randn(batch_size, 2400))
     db_mel_spectrogram, db_spectrogram, spectrogram = module(tensor, intermediate=True)
 
-    assert spectrogram.shape == (
-        batch_size,
-        db_mel_spectrogram.shape[1],
-        n_fft // 2 + 1,
-    )
-    assert db_spectrogram.shape == (
-        batch_size,
-        db_mel_spectrogram.shape[1],
-        n_fft // 2 + 1,
-    )
+    assert spectrogram.shape == (batch_size, db_mel_spectrogram.shape[1], n_fft // 2 + 1)
+    assert db_spectrogram.shape == (batch_size, db_mel_spectrogram.shape[1], n_fft // 2 + 1)
 
     np.testing.assert_allclose(
-        lib.audio.db_to_power(db_mel_spectrogram).sum(dim=-1).detach().numpy(),
-        lib.audio.db_to_power(db_spectrogram).sum(dim=-1).detach().numpy(),
+        db_to_power(db_mel_spectrogram).sum(dim=-1).detach().numpy(),
+        db_to_power(db_spectrogram).sum(dim=-1).detach().numpy(),
         rtol=1e-2,
     )
 
     expected_spectrogram = torch.stft(
-        tensor,
-        n_fft,
-        hop_length,
-        win_length=n_fft,
-        window=window,
-        center=False,
+        tensor, n_fft, hop_length, win_length=n_fft, window=window, center=False
     )
     expected_spectrogram = torch.norm(expected_spectrogram, dim=-1).transpose(-2, -1)
     np.testing.assert_allclose(
@@ -902,14 +883,14 @@ def test_signal_to_db_mel_spectrogram__alignment():
 
 def _db_spectrogram_to_loudness(db_spectrogram: torch.Tensor, window: torch.Tensor) -> float:
     """ Get loudness as defined by ITU-R BS.1770-4 from a k-weighted dB spectrogram. """
-    power_spectrogram = lib.audio.db_to_power(db_spectrogram)
-    loudness = lib.audio.power_spectrogram_to_framed_rms(power_spectrogram, window=window)
-    loudness = torch.tensor([v for v in loudness if lib.audio.amplitude_to_db(v) >= -70])
+    power_spectrogram = db_to_power(db_spectrogram)
+    loudness = power_spectrogram_to_framed_rms(power_spectrogram, window=window)
+    loudness = torch.tensor([v for v in loudness if lib.audio.amp_to_db(v) >= -70])
     if len(loudness) == 0:
         return -70.0
-    relative_gate = lib.audio.power_to_db(loudness.pow(2).mean()) - 10
-    loudness = torch.tensor([v for v in loudness if lib.audio.amplitude_to_db(v) >= relative_gate])
-    return typing.cast(float, lib.audio.power_to_db(loudness.pow(2).mean()).item())
+    relative_gate = power_to_db(amp_to_power(loudness).mean()) - 10
+    loudness = torch.tensor([v for v in loudness if lib.audio.amp_to_db(v) >= relative_gate])
+    return typing.cast(float, power_to_db(amp_to_power(loudness).mean()).item())
 
 
 def test__loudness():
@@ -972,9 +953,8 @@ def test_griffin_lim():
 
 def test_griffin_lim__large_numbers():
     """ Test that `lib.audio.griffin_lim` produces empty array for large numbers. """
-    assert lib.audio.griffin_lim(np.random.uniform(low=-2000, high=2000, size=(50, 50))).shape == (
-        0,
-    )
+    shape = lib.audio.griffin_lim(np.random.uniform(low=-2000, high=2000, size=(50, 50))).shape
+    assert shape == (0,)
 
 
 def test_griffin_lim__small_array():

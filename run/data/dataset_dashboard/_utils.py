@@ -10,13 +10,11 @@ import altair as alt
 import numpy as np
 import pandas as pd
 import streamlit as st
-import torch
 import tqdm
 from torchnlp.random import fork_rng
 
 import lib
-from lib.audio import amplitude_to_db, signal_to_rms
-from run.data._loader import Passage, Span
+from lib.audio import amp_to_db, signal_to_rms
 from lib.utils import clamp, flatten_2d, round_, seconds_to_str
 from run._config import Dataset
 from run._streamlit import (
@@ -28,6 +26,7 @@ from run._streamlit import (
     read_wave_audio,
     span_audio,
 )
+from run.data._loader import Passage, Span
 
 logger = logging.getLogger(__name__)
 
@@ -63,21 +62,17 @@ def _ngrams(list_: typing.Sequence, n: int) -> typing.Iterator[slice]:
     yield from (slice(i, i + n) for i in range(len(list_) - n + 1))
 
 
-def _amp_to_db(amp: float) -> float:
-    return typing.cast(float, amplitude_to_db(torch.tensor(amp)).item())
-
-
 def _signal_to_db_rms_level(signal: np.ndarray) -> float:
     """ Get the dB RMS level of `signal`."""
     if signal.shape[0] == 0:
         return math.nan
-    return round(_amp_to_db(float(signal_to_rms(signal))), 1)
+    return round(amp_to_db(float(signal_to_rms(signal))), 1)
 
 
 def _signal_to_loudness(signal: np.ndarray, sample_rate: int, block_size: float = 0.4) -> float:
     """Get the loudness in LUFS of `signal`."""
     meter = lib.audio.get_pyloudnorm_meter(block_size=block_size, sample_rate=sample_rate)
-    if signal.shape[0] >= lib.audio.seconds_to_samples(block_size, sample_rate):
+    if signal.shape[0] >= lib.audio.sec_to_sample(block_size, sample_rate):
         return round(meter.integrated_loudness(signal), 1)
     return math.nan
 

@@ -297,7 +297,7 @@ def _configure_audio_processing():
             **hertz_bounds,
         ),
         # NOTE: The `DeMan` loudness implementation of ITU-R BS.1770 is sample rate independent.
-        lib.audio.get_pyloudnorm_meter: HParams(sample_rate=SAMPLE_RATE, filter_class="DeMan"),
+        lib.audio.get_pyloudnorm_meter: HParams(filter_class="DeMan"),
         lib.spectrogram_model.SpectrogramModel.__init__: HParams(
             # NOTE: This is based on one of the slowest legitimate alignments in
             # `dataset_dashboard`. With a sample size of 8192, we found that 0.18 frames per token
