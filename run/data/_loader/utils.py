@@ -104,13 +104,6 @@ def _script_alignments(
         return_.append((script_, transcript_, alignment.audio))
     return return_
 
-
-def _to_string(self: typing.Union[Span, Passage], *fields: str) -> str:
-    """ Create a string representation of a `dataclass` with a limited number of `fields`. """
-    values = ", ".join(f"{f}={getattr(self, f)}" for f in fields)
-    return f"{self.__class__.__name__}({values})"
-
-
 @dataclasses.dataclass(frozen=True)
 class Passage:
     """A voiced passage.
@@ -157,9 +150,6 @@ class Passage:
     ) -> typing.List[typing.Tuple[str, str, typing.Tuple[float, float]]]:
         """ Get nonaligned `script` and `transcript` slices. """
         return _script_alignments(self.script, self.transcript, self.nonalignments)
-
-    def to_string(self, *fields) -> str:
-        return _to_string(self, *fields)
 
     def __getitem__(self, key) -> Span:
         if isinstance(key, int):
@@ -306,9 +296,6 @@ class Span:
         """ Get nonaligned `script` and `transcript` slices. """
         nonalignments = self.passage.nonalignments[self.slice.start : self.slice.stop + 1]
         return _script_alignments(self.passage.script, self.passage.transcript, nonalignments)
-
-    def to_string(self, *fields) -> str:
-        return _to_string(self, *fields)
 
     def __len__(self) -> int:
         return self.slice.stop - self.slice.start

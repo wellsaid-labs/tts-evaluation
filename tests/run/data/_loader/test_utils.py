@@ -262,10 +262,6 @@ def test_passage_span__identity():
     assert passage.aligned_audio_length() == span.audio_length
     assert passage[-1] == span[-1]
     assert passage[0:0] == span[0:-1]
-    assert (
-        passage.to_string("audio_file", "other_metadata")[len(passage.__class__.__name__) :]
-        == span.to_string("audio_file", "other_metadata")[len(span.__class__.__name__) :]
-    )
     np.testing.assert_almost_equal(passage.audio(), span.audio())
     pickle.dumps(passage)
     pickle.dumps(span)

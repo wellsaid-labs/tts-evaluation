@@ -471,21 +471,21 @@ def _configure_models():
     add_config(config)
 
 
-def _include_passage(passage: _loader.Passage) -> bool:
+def _include_passage(passage: Passage) -> bool:
     """Return `True` iff `passage` should be included in the dataset."""
-    details = passage.to_string("audio_file", "script", "other_metadata")
+    repr_ = lib.utils.to_str(passage, "audio_file", "script", "other_metadata")
 
     if len(passage.alignments) == 0:
-        logger.warning("Passage (%s) has little to no alignments.", details)
+        logger.warning("Passage (%s) has little to no alignments.", repr_)
         return False
 
     span = passage[:]
     if span.audio_length == 0.0:
-        logger.warning("Passage (%s) has no aligned audio.", details)
+        logger.warning("Passage (%s) has no aligned audio.", repr_)
         return False
 
     if len(span.script) == 0:
-        logger.warning("Passage (%s) has no aligned text.", details)
+        logger.warning("Passage (%s) has no aligned text.", repr_)
         return False
 
     # NOTE: Filter out passages(s) that don't have a lower case character because it'll make

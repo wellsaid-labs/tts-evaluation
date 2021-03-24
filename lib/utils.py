@@ -551,6 +551,12 @@ def dataclass_as_dict(data):
     return {f.name: getattr(data, f.name) for f in dataclasses.fields(data) if f.init}
 
 
+def to_str(object, *attributes: str) -> str:
+    """ Create a string representation of `object` given it's `attributes`. """
+    values = ", ".join(f"{a}={getattr(object, a)}" for a in attributes)
+    return f"{object.__class__.__name__}({values})"
+
+
 _IntervalVar = typing.TypeVar("_IntervalVar")
 
 
