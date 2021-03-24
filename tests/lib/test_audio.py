@@ -72,6 +72,15 @@ def run_around_tests():
     hparams.clear_config()
 
 
+def test_unit_conversion():
+    """Test unit conversion between seconds, milliseconds, and samples is self consistent."""
+    rate = 8000
+    for i in [0, 0.9, 1, 1.1]:
+        assert lib.audio.sec_to_milli(lib.audio.milli_to_sec(i)) == i
+        assert lib.audio.sample_to_milli(lib.audio.milli_to_sample(i * 10, rate), rate) == i * 10
+        assert lib.audio.sample_to_sec(lib.audio.sec_to_sample(i, rate), rate) == i
+
+
 def test__parse_audio_metadata():
     """ Test `lib.audio._parse_audio_metadata` parses the metadata correctly. """
     metadata = lib.audio._parse_audio_metadata(
@@ -198,11 +207,6 @@ def test_get_audio_metadata__bad_file():
         path.write_text("corrupted")
         with pytest.raises(subprocess.CalledProcessError):
             lib.audio.get_audio_metadata(path)
-
-
-def test_seconds_to_samples():
-    """Test `lib.audio.seconds_to_samples` handles a basic case."""
-    assert lib.audio.seconds_to_samples(1.5, 24000) == 36000
 
 
 def test_read_audio():

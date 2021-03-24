@@ -245,8 +245,6 @@ def _configure_audio_processing():
         logger.info("Ignoring optional `IPython` configurations.")
 
     config = {
-        lib.audio.seconds_to_samples: HParams(sample_rate=SAMPLE_RATE),
-        lib.audio.samples_to_seconds: HParams(sample_rate=SAMPLE_RATE),
         lib.visualize.plot_waveform: HParams(sample_rate=SAMPLE_RATE),
         lib.visualize.plot_spectrogram: HParams(sample_rate=SAMPLE_RATE, frame_hop=FRAME_HOP),
         lib.visualize.plot_mel_spectrogram: HParams(**hertz_bounds),

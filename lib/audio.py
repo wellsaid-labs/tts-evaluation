@@ -34,6 +34,36 @@ else:
 logger = logging.getLogger(__name__)
 
 
+def milli_to_sec(milli: float) -> float:
+    """ Covert milliseconds to seconds. """
+    return milli / 1000
+
+
+def sec_to_milli(sec: float) -> float:
+    """ Covert seconds to milliseconds. """
+    return sec * 1000
+
+
+def milli_to_sample(milli: float, sample_rate: int) -> int:
+    """ Covert milliseconds to samples. """
+    return int(round(milli_to_sec(milli) * sample_rate))
+
+
+def sample_to_milli(sample: int, sample_rate: int) -> float:
+    """ Covert samples to milliseconds. """
+    return sec_to_milli(float(sample) / sample_rate)
+
+
+def sample_to_sec(sample: int, sample_rate: int) -> float:
+    """ Covert samples to seconds. """
+    return float(sample) / sample_rate
+
+
+def sec_to_sample(sec: float, sample_rate: int) -> int:
+    """ Covert seconds to samples. """
+    return int(round(sec * sample_rate))
+
+
 class AudioEncoding(enum.Enum):
     MPEG: typing.Final = "MPEG audio (layer I, II or III)"
     PCM_INT_8_BIT: typing.Final = "8-bit Signed Integer PCM"
@@ -71,7 +101,7 @@ class AudioMetadata(typing.NamedTuple):
 
     @property
     def length(self):
-        return self.num_samples / self.sample_rate
+        return sample_to_sec(self.num_samples, self.sample_rate)
 
 
 def _parse_audio_metadata(metadata: str) -> AudioMetadata:
@@ -166,16 +196,6 @@ def get_audio_metadata(paths, **kwargs):
     is_list = isinstance(paths, list)
     metadatas = list(_get_audio_metadata(*tuple(paths if is_list else [paths]), **kwargs))
     return metadatas if is_list else metadatas[0]
-
-
-@configurable
-def seconds_to_samples(seconds: float, sample_rate: int = HParam()) -> int:
-    return int(round(seconds * sample_rate))
-
-
-@configurable
-def samples_to_seconds(samples: int, sample_rate: int = HParam()) -> float:
-    return float(samples) / sample_rate
 
 
 def clip_waveform(waveform: np.ndarray) -> np.ndarray:
@@ -963,7 +983,7 @@ def get_signal_to_db_mel_spectrogram(*args, **kwargs) -> SignalTodBMelSpectrogra
 
 @configurable
 def get_pyloudnorm_meter(
-    sample_rate: int = HParam(), filter_class: str = HParam(), **kwargs
+    sample_rate: int, filter_class: str = HParam(), **kwargs
 ) -> pyloudnorm.Meter:
     return _get_pyloudnorm_meter(sample_rate=sample_rate, filter_class=filter_class, **kwargs)
 

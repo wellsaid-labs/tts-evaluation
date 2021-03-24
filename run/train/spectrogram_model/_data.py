@@ -28,7 +28,7 @@ from torchnlp.utils import lengths_to_mask
 
 import lib
 import run
-from lib.audio import seconds_to_samples
+from lib.audio import sec_to_sample
 from lib.distributed import get_rank, get_world_size, is_initialized
 from lib.samplers import BucketBatchSampler
 from lib.utils import Tuple, flatten_2d
@@ -178,10 +178,10 @@ def _random_nonoverlapping_alignments(
 @configurable
 def _get_loudness(
     audio: numpy.ndarray,
+    sample_rate: int,
     alignment: Alignment,
     block_size: float = HParam(),
     precision: int = HParam(),
-    **kwargs,
 ) -> typing.Optional[float]:
     """Get the loudness in LUFS for an `alignment` in `audio`.
 
@@ -193,19 +193,17 @@ def _get_loudness(
         precision: The number of decimal places to round LUFS.
         ...
     """
-    meter = lib.audio.get_pyloudnorm_meter(block_size=block_size, **kwargs)
-    if "sample_rate" in kwargs:
-        kwargs = {"sample_rate": kwargs["sample_rate"]}
-    _to_samples = functools.partial(seconds_to_samples, **kwargs)
-    slice_ = audio[_to_samples(alignment.audio[0]) : _to_samples(alignment.audio[1])]
-    if slice_.shape[0] >= _to_samples(block_size):
+    meter = lib.audio.get_pyloudnorm_meter(sample_rate, block_size=block_size)
+    sec_to_sample_ = functools.partial(sec_to_sample, sample_rate=sample_rate)
+    slice_ = audio[sec_to_sample_(alignment.audio[0]) : sec_to_sample_(alignment.audio[1])]
+    if slice_.shape[0] >= sec_to_sample_(block_size):
         return round(meter.integrated_loudness(slice_), precision)
     return None
 
 
 @configurable
 def _random_loudness_annotations(
-    span: Span, signal: numpy.ndarray, max_annotations: int = HParam(), **kwargs
+    span: Span, signal: numpy.ndarray, max_annotations: int = HParam()
 ) -> typing.Tuple[torch.Tensor, torch.Tensor]:
     """
     Args:
@@ -216,7 +214,7 @@ def _random_loudness_annotations(
     loudness_mask = torch.zeros(len(span.script), dtype=torch.bool)
     for alignment in _random_nonoverlapping_alignments(span.alignments, max_annotations):
         slice_ = slice(alignment.script[0], alignment.script[1])
-        loudness_ = _get_loudness(signal, alignment, **kwargs)
+        loudness_ = _get_loudness(signal, span.audio_file.sample_rate, alignment)
         if loudness_ is not None:
             loudness[slice_] = loudness_
             loudness_mask[slice_] = True
