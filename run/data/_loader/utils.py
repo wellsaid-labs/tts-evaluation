@@ -229,15 +229,18 @@ class Span:
     _last_cache: Alignment = dataclasses.field(init=False, repr=False, compare=False)
 
     @property
-    def first(self) -> Alignment:
+    def _first(self) -> Alignment:
+        """NOTE: This property is private because it's not offset correctly similar to
+        `self.alignments`.
+        """
         if not hasattr(self, "_first_cache"):
             object.__setattr__(self, "_first_cache", self.passage_alignments[self.slice.start])
         return self._first_cache
 
     @property
-    def last(self) -> Alignment:
+    def _last(self) -> Alignment:
         if self.slice.stop - 1 == self.slice.start:
-            return self.first
+            return self._first
         if not hasattr(self, "_last_cache"):
             object.__setattr__(self, "_last_cache", self.passage_alignments[self.slice.stop - 1])
         return self._last_cache
@@ -256,15 +259,15 @@ class Span:
 
     @property
     def script_slice(self):
-        return slice(self.first.script[0], self.last.script[-1])
+        return slice(self._first.script[0], self._last.script[-1])
 
     @property
     def audio_slice(self):
-        return slice(self.first.audio[0], self.last.audio[-1])
+        return slice(self._first.audio[0], self._last.audio[-1])
 
     @property
     def transcript_slice(self):
-        return slice(self.first.transcript[0], self.last.transcript[-1])
+        return slice(self._first.transcript[0], self._last.transcript[-1])
 
     @property
     def script(self):
@@ -275,14 +278,14 @@ class Span:
         return self.passage.transcript[self.transcript_slice]
 
     @staticmethod
-    def _offset_helper(a: typing.Tuple[float, float], b: typing.Tuple[float, float]):
-        return (a[0] - b[0], a[1] - b[0])
+    def _offset_helper(a: typing.Tuple[float, float], b: float):
+        return (a[0] - b, a[1] - b)
 
     def _offset(self, alignment: Alignment):
         return alignment._replace(
-            script=self._offset_helper(alignment.script, self.first.script),
-            transcript=self._offset_helper(alignment.transcript, self.first.transcript),
-            audio=self._offset_helper(alignment.audio, self.first.audio),
+            script=self._offset_helper(alignment.script, self._first.script[0]),
+            transcript=self._offset_helper(alignment.transcript, self._first.transcript[0]),
+            audio=self._offset_helper(alignment.audio, self._first.audio[0]),
         )
 
     @property
@@ -291,7 +294,7 @@ class Span:
 
     @property
     def audio_length(self):
-        return self.last.audio[-1] - self.first.audio[0]
+        return self._last.audio[-1] - self._first.audio[0]
 
     def audio(self) -> np.ndarray:
         return read_audio(self.passage.audio_file, self._first.audio[0], self.audio_length)
