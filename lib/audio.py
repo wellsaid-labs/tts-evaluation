@@ -231,28 +231,15 @@ def clip_waveform(waveform: np.ndarray) -> np.ndarray:
     return np.clip(waveform, min_, max_)
 
 
-def read_audio(path: Path, dtype=("f32le", "pcm_f32le", np.float32)) -> np.ndarray:
-    """Read an audio file slice into a `numpy` array.
-
-    NOTE: Audio files with multiple channels will be mixed into a mono channel.
-    NOTE: `ffmpeg` may load audio that's not clipped.
-    NOTE: This doesn't support a `path` with spaces.
-    """
-    command = f"ffmpeg -i {path} -f {dtype[0]} -acodec {dtype[1]} -ac 1 pipe:".split()
-    ndarray = np.frombuffer(subprocess.check_output(command, stderr=subprocess.DEVNULL), dtype[2])
-    return clip_waveform(ndarray)
-
-
-def read_audio_slice(
-    path: Path, start: float, length: float, dtype=("f32le", "pcm_f32le", np.float32)
+def read_audio(
+    path: Path, start: float = 0, length: float = math.inf, dtype=("f32le", "pcm_f32le", np.float32)
 ) -> np.ndarray:
     """Read an audio file slice into a `numpy` array.
 
     NOTE: Audio files with multiple channels will be mixed into a mono channel.
-
+    NOTE: `ffmpeg` may load audio that's not clipped.
     NOTE: Learn more about efficiently selecting a slice of audio with `ffmpeg`:
     https://stackoverflow.com/questions/18444194/cutting-the-videos-based-on-start-and-end-time-using-ffmpeg
-
     NOTE: This doesn't support a `path` with spaces.
 
     TODO: Should we implement automatic gain control?
@@ -265,11 +252,13 @@ def read_audio_slice(
     """
     if length == 0:
         return np.array([], dtype=dtype[2])
+    start_flag = "" if start == 0 else f"-ss {start}"
+    length_flag = "" if math.isinf(length) else f"-t {length}"
     command = (
-        f"ffmpeg -ss {start} -t {length} -i {path} -f {dtype[0]} -acodec {dtype[1]} -ac 1 pipe:"
-    )
-    buffer = subprocess.check_output(command.split(), stderr=subprocess.DEVNULL)
-    ndarray = np.frombuffer(buffer, dtype[2])
+        f"ffmpeg {start_flag} {length_flag} -i {path} "
+        f"-f {dtype[0]} -acodec {dtype[1]} -ac 1 pipe:"
+    ).split()
+    ndarray = np.frombuffer(subprocess.check_output(command, stderr=subprocess.DEVNULL), dtype[2])
     return clip_waveform(ndarray)
 
 
@@ -278,13 +267,13 @@ def read_wave_audio(metadata: AudioMetadata, start: float = 0, length: float = -
     assert metadata.path.suffix == ".wav"
     assert metadata.num_channels == 1
     lookup = {
-        AudioEncoding.PCM_FLOAT_32_BIT.name: np.float32,
-        AudioEncoding.PCM_INT_32_BIT.name: np.int32,
-        AudioEncoding.PCM_INT_16_BIT.name: np.int16,
-        AudioEncoding.PCM_INT_8_BIT.name: np.int8,
+        AudioEncoding.PCM_FLOAT_32_BIT: np.float32,
+        AudioEncoding.PCM_INT_32_BIT: np.int32,
+        AudioEncoding.PCM_INT_16_BIT: np.int16,
+        AudioEncoding.PCM_INT_8_BIT: np.int8,
     }
-    assert metadata.encoding.name in lookup, f"Encoding '{metadata.encoding}' is not supported."
-    dtype = lookup[metadata.encoding.name]
+    assert metadata.encoding in lookup, f"Encoding '{metadata.encoding}' is not supported."
+    dtype = lookup[metadata.encoding]
     num_bytes_per_sample = np.dtype(dtype).itemsize
     sample_rate = metadata.sample_rate
     header_size = os.path.getsize(metadata.path) - num_bytes_per_sample * metadata.num_samples

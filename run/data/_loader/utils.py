@@ -33,6 +33,17 @@ else:
 logger = logging.getLogger(__name__)
 
 
+def read_audio(audio_file: AudioMetadata, *args, **kwargs) -> np.ndarray:
+    """Read `audio_file` into a `np.float32` array."""
+    try:
+        assert audio_file.encoding == AudioEncoding.PCM_FLOAT_32_BIT
+        audio = lib.audio.read_wave_audio(audio_file, *args, **kwargs)
+    except AssertionError:
+        audio = lib.audio.read_audio(audio_file.path, *args, **kwargs)
+    assert audio.dtype == np.float32, "Invariant failed. Audio `dtype` must be `np.float32`."
+    return audio
+
+
 class Alignment(typing.NamedTuple):
     """An aligned `script`, `audio` and `transcript` slice.
 
@@ -136,7 +147,7 @@ class Passage:
             object.__setattr__(self, "last", self.alignments[-1])
 
     def audio(self):
-        return lib.audio.read_audio(self.audio_file.path)
+        return read_audio(self.audio_file)
 
     def aligned_audio_length(self) -> float:
         return self.last.audio[-1] - self.first.audio[0]
@@ -287,8 +298,7 @@ class Span:
         return self.last.audio[-1] - self.first.audio[0]
 
     def audio(self) -> np.ndarray:
-        start = self.first.audio[0]
-        return lib.audio.read_audio_slice(self.passage.audio_file.path, start, self.audio_length)
+        return read_audio(self.passage.audio_file, self._first.audio[0], self.audio_length)
 
     def script_nonalignments(
         self,

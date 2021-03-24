@@ -217,12 +217,12 @@ def test_read_audio():
     assert audio.shape == (metadata.sample_rate * metadata.length,)
 
 
-def test_read_audio_slice():
-    """ Test `lib.audio.read_audio_slice` gets the correct slice. """
+def test_read_audio__slice():
+    """ Test `lib.audio.read_audio` gets the correct slice. """
     metadata = lib.audio.get_audio_metadata(TEST_DATA_LJ)
     start = 1
     length = 2
-    slice_ = lib.audio.read_audio_slice(TEST_DATA_LJ, start, length)
+    slice_ = lib.audio.read_audio(TEST_DATA_LJ, start, length)
     audio = lib.audio.read_audio(TEST_DATA_LJ)
     expected = audio[start * metadata.sample_rate : (start + length) * metadata.sample_rate]
     np.testing.assert_almost_equal(slice_, expected)
@@ -246,10 +246,10 @@ def test_read_wave_audio__slice():
     np.testing.assert_almost_equal(slice_, expected)
 
 
-def test_read_audio_slice__identity():
-    """ Test `lib.audio.read_audio_slice` is consistent with `lib.audio.read_audio`. """
+def test_read_audio__slice_identity():
+    """ Test `lib.audio.read_audio` slice is consistent with no slice. """
     metadata = lib.audio.get_audio_metadata(TEST_DATA_LJ)
-    audio = lib.audio.read_audio_slice(TEST_DATA_LJ, 0.0, metadata.length)
+    audio = lib.audio.read_audio(TEST_DATA_LJ, 0.0, metadata.length)
     np.testing.assert_almost_equal(audio, lib.audio.read_audio(TEST_DATA_LJ))
 
 

@@ -371,11 +371,6 @@ def _make_stop_token(
     return SequenceBatch(stop_token, spectrogram.lengths)
 
 
-def _span_read_audio_slice(span: Span) -> numpy.ndarray:
-    start = span.first.audio[0]
-    return lib.audio.read_wave_audio(span.passage.audio_file, start, span.audio_length)
-
-
 @dataclasses.dataclass(frozen=True)
 class Batch(_utils.Batch):
     """Batch of preprocessed `Span` used to training or evaluating the spectrogram model."""
@@ -460,7 +455,7 @@ def make_batch(
     decoded = [DecodedInput(s.script, p, s.speaker) for s, p in zip(spans, phonemes)]
     encoded = [input_encoder.encode(d) for d in decoded]
     with futures.ThreadPoolExecutor(max_workers=min(max_workers, len(spans))) as pool:
-        signals_ = list(pool.map(_span_read_audio_slice, spans))
+        signals_ = list(pool.map(lambda s: s.audio(), spans))
         signals_ = typing.cast(typing.List[numpy.ndarray], signals_)
     signals = [_pad_and_trim_signal(s) for s in signals_]
     spectrogram, spectrogram_mask = _signals_to_spectrograms(signals)
