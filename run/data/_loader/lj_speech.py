@@ -1,3 +1,4 @@
+import dataclasses
 import logging
 import pathlib
 import re
@@ -10,9 +11,9 @@ import lib
 from run.data._loader.utils import (
     Passage,
     Speaker,
+    UnprocessedPassage,
     conventional_dataset_loader,
     make_passages,
-    update_conventional_passage_script,
 )
 
 if typing.TYPE_CHECKING:  # pragma: no cover
@@ -78,7 +79,8 @@ def lj_speech_dataset(
         **kwargs,
         metadata_text_column=metadata_text_column,
     )
-    return [_process_text(passage, verbalize) for passage in make_passages([passages])]
+    passages = [_process_text(p, verbalize) for p in passages]
+    return list(make_passages([passages]))
 
 
 """
@@ -94,12 +96,12 @@ punctuation.".
 """
 
 
-def _process_text(passage: Passage, verbalize: bool) -> Passage:
+def _process_text(passage: UnprocessedPassage, verbalize: bool) -> UnprocessedPassage:
     script = _normalize_whitespace(passage.script)
     script = _normalize_quotations(script)
 
     if verbalize:
-        script = _verbalize_special_cases(passage.audio_file.path, script)
+        script = _verbalize_special_cases(passage.audio_path, script)
         script = _expand_abbreviations(script)
         script = _verbalize_time_of_day(script)
         script = _verbalize_ordinals(script)
@@ -112,7 +114,7 @@ def _process_text(passage: Passage, verbalize: bool) -> Passage:
 
     # NOTE: Messes up pound sign (£); therefore, this is after `_verbalize_currency`
     script = lib.text.normalize_vo_script(script)
-    return update_conventional_passage_script(passage, script)
+    return dataclasses.replace(passage, script=script, transcript=script)
 
 
 # Reference: https://keithito.com/LJ-Speech-Dataset/
