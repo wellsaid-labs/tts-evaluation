@@ -407,7 +407,6 @@ class Metrics(_utils.Metrics):
         return metrics
 
     def _get_loudness_metrics(self, select: _utils.MetricsSelect, is_verbose: bool) -> _GetMetrics:
-        power_to_db = lambda r: float(lib.audio.power_to_db(torch.tensor(r)).item())
         metrics = {}
         for speaker, _, div in self._iter_permutations(select, is_verbose):
             predicted_rms = power_to_db(div(self.RMS_SUM_PREDICTED, self.NUM_FRAMES_PREDICTED))

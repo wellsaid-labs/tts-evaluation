@@ -415,17 +415,18 @@ class MappedIterator(typing.Mapping[int, _MappedIteratorItem], typing.Generic[_M
 
 
 _TupleVar = typing.TypeVar("_TupleVar")
+_TupleType = typing.TypeVar("_TupleType", bound="Tuple")
 
 
 class Tuple(typing.Hashable, typing.Sequence[_TupleVar]):
     """Abstract class for a `tuple`."""
 
     @abstractmethod
-    def __getitem__(self, index):
+    def __getitem__(self: _TupleType, index) -> _TupleType:
         raise NotImplementedError
 
     @abstractmethod
-    def __eq__(self, other):
+    def __eq__(self, other: typing.Any) -> bool:
         raise NotImplementedError
 
 
@@ -546,6 +547,7 @@ def corrected_random_choice(
 
 def dataclass_as_dict(data):
     """Shallow copy `dataclass` to `dict`."""
+    assert dataclasses.is_dataclass(data), "Argument should be a data class."
     return {f.name: getattr(data, f.name) for f in dataclasses.fields(data) if f.init}
 
 
