@@ -10,6 +10,7 @@ import lib
 import run
 from lib.audio import AudioMetadata
 from run._utils import _find_duplicate_passages, split_dataset
+from run.data._loader import Alignment
 from tests._utils import TEST_DATA_PATH, make_passage
 
 TEST_DATA_PATH = TEST_DATA_PATH / "audio"
@@ -67,9 +68,9 @@ def test__find_duplicate_passages():
     """ Test `run._config._find_duplicate_passages` finds duplicate passages. """
     dev_scripts = set(["This is a test."])
     passages = [
-            make_passage(script="I'm testing this."),
-            make_passage(script="This is a test."),
-            make_passage(script="This is a test!"),
+        make_passage(script="I'm testing this."),
+        make_passage(script="This is a test."),
+        make_passage(script="This is a test!"),
     ]
     duplicates, rest = _find_duplicate_passages(dev_scripts, passages, 0.9)
     assert [p.script for p in rest] == ["I'm testing this."]
@@ -94,9 +95,7 @@ def test_split_dataset__deduplication(_):
     speaker_c = run.data._loader.Speaker("c")
     speaker_d = run.data._loader.Speaker("d")
     groups = [set([speaker_a, speaker_b, speaker_c, speaker_d])]
-    alignments = lib.utils.stow(
-        [run.data._loader.Alignment((0, 1), (0, 1), (0, 1))], run.data._loader.alignment_dtype
-    )
+    alignments = Alignment.stow([Alignment((0, 1), (0, 1), (0, 1))])
     passage = lambda script, speaker: make_passage(
         script=script, speaker=speaker, alignments=alignments
     )
@@ -156,9 +155,7 @@ def test_split_dataset__order(_):
     speaker_a = run.data._loader.Speaker("a")
     speaker_b = run.data._loader.Speaker("b")
     groups = [set([speaker_a, speaker_b])]
-    alignments = lib.utils.stow(
-        [run.data._loader.Alignment((0, 1), (0, 1), (0, 1))], run.data._loader.alignment_dtype
-    )
+    alignments = Alignment.stow([Alignment((0, 1), (0, 1), (0, 1))])
     passage = lambda script, speaker: make_passage(
         script=script, speaker=speaker, alignments=alignments
     )
@@ -189,9 +186,7 @@ def test_split_dataset__groups(_):
     """ Test `run._config.split_dataset` handles independent speakers. """
     speaker_a = run.data._loader.Speaker("a")
     speaker_b = run.data._loader.Speaker("b")
-    alignments = lib.utils.stow(
-        [run.data._loader.Alignment((0, 1), (0, 1), (0, 1))], run.data._loader.alignment_dtype
-    )
+    alignments = Alignment.stow([Alignment((0, 1), (0, 1), (0, 1))])
     passage = lambda script, speaker: make_passage(
         script=script, speaker=speaker, alignments=alignments
     )

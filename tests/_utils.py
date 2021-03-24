@@ -1,4 +1,3 @@
-import math
 import pathlib
 import subprocess
 import typing
@@ -10,6 +9,8 @@ import torch
 
 import lib
 import run.data._loader
+from lib.utils import Tuple
+from run.data._loader import Alignment
 
 TEST_DATA_PATH = lib.environment.ROOT_PATH / "tests" / "_test_data"
 
@@ -43,24 +44,25 @@ def make_metadata(
     sample_rate=1,
     num_channels=0,
     encoding=lib.audio.AudioEncoding.PCM_INT_8_BIT,
-    length=math.inf,
     bit_rate="",
     precision="",
     num_samples=0,
 ) -> lib.audio.AudioMetadata:
     """ Make a `AudioMetadata` for testing. """
     return lib.audio.AudioMetadata(
-        path, sample_rate, num_channels, encoding, bit_rate, precision, num_samples
+        path=path,
+        sample_rate=sample_rate,
+        num_channels=num_channels,
+        encoding=encoding,
+        bit_rate=bit_rate,
+        precision=precision,
+        num_samples=num_samples,
     )
 
 
 def make_passage(
-    alignments: lib.utils.Tuple[run.data._loader.Alignment] = lib.utils.stow(
-        [], run.data._loader.alignment_dtype
-    ),
-    nonalignments: lib.utils.Tuple[run.data._loader.Alignment] = lib.utils.stow(
-        [], run.data._loader.alignment_dtype
-    ),
+    alignments: Tuple[Alignment] = Alignment.stow([]),
+    nonalignments: Tuple[Alignment] = Alignment.stow([]),
     speaker: run.data._loader.Speaker = run.data._loader.Speaker(""),
     audio_file: lib.audio.AudioMetadata = make_metadata(),
     script: typing.Optional[str] = None,

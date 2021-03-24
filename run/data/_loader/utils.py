@@ -22,7 +22,7 @@ from third_party import LazyLoader
 
 import lib
 from lib.audio import AudioMetadata, get_audio_metadata
-from lib.utils import Interval, Timeline, Tuple, flatten_2d, list_to_tuple, stow
+from lib.utils import Interval, Timeline, Tuple, flatten_2d
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import pandas
@@ -44,6 +44,16 @@ def read_audio(audio_file: AudioMetadata, *args, **kwargs) -> np.ndarray:
     return audio
 
 
+
+
+_alignment_dtype = [
+    ("script", np.dtype([("start", np.uint32), ("stop", np.uint32)])),
+    ("audio", np.dtype([("start", np.float32), ("stop", np.float32)])),
+    ("transcript", np.dtype([("start", np.uint32), ("stop", np.uint32)])),
+]
+alignment_dtype = np.dtype(_alignment_dtype)
+
+
 class Alignment(typing.NamedTuple):
     """An aligned `script`, `audio` and `transcript` slice.
 
@@ -57,13 +67,20 @@ class Alignment(typing.NamedTuple):
     audio: typing.Tuple[float, float]
     transcript: typing.Tuple[int, int]
 
+    def to_json(self):
+        return [list(self.script), list(self.audio), list(self.transcript)]
 
-_alignment_dtype = [
-    ("script", np.dtype([("start", np.uint32), ("stop", np.uint32)])),
-    ("audio", np.dtype([("start", np.float32), ("stop", np.float32)])),
-    ("transcript", np.dtype([("start", np.uint32), ("stop", np.uint32)])),
-]
-alignment_dtype = np.dtype(_alignment_dtype)
+    @classmethod
+    def from_json(cls, args: typing.List[typing.List[float]]):
+        return cls(
+            script=tuple(args[0]),
+            audio=tuple(args[1]),
+            transcript=tuple(args[2]),
+        )
+
+    @staticmethod
+    def stow(alignments: typing.Sequence[Alignment]) -> Tuple[Alignment]:
+        return lib.utils.stow(alignments, dtype=alignment_dtype)
 
 
 class Speaker(typing.NamedTuple):
@@ -89,7 +106,7 @@ class UnprocessedPassage:
     speaker: Speaker
     script: str
     transcript: str
-    alignments: typing.Optional[Tuple[Alignment]] = None
+    alignments: typing.Optional[typing.Tuple[Alignment, ...]] = None
     other_metadata: typing.Dict = dataclasses.field(default_factory=dict)
 
 
@@ -153,12 +170,9 @@ class Passage:
         else:
             raise TypeError("Invalid argument type: {}".format(type(key)))
 
-    def _get(self, field) -> typing.List[float]:
+    def _get(self, field: str) -> typing.List[float]:
         """Get the values for `field` in `self.alignments`."""
-        Number = typing.Union[float, int]
-        values: typing.List[typing.Tuple[Number, Number]]
-        values = [getattr(a, field) for a in self.alignments]
-        return flatten_2d([list(v) for v in values])
+        return [typing.cast(float, v) for a in self.alignments for v in getattr(a, field)]
 
     @staticmethod
     def _no_white_space(s: str) -> bool:
@@ -273,8 +287,7 @@ class Span:
 
     @property
     def alignments(self):
-        alignments = self.passage_alignments[self.slice]
-        return stow([self._offset(a) for a in alignments], dtype=alignment_dtype)
+        return Alignment.stow([self._offset(a) for a in self.passage_alignments[self.slice]])
 
     @property
     def audio_length(self):
@@ -370,7 +383,7 @@ def make_nonalignments(
             audio=(prev_.audio[-1], next_.audio[0]),
         )
         nonalignments.append(nonalignment)
-    return stow(nonalignments, dtype=alignment_dtype)
+    return Alignment.stow(nonalignments)
 
 
 def _exists(path: Path) -> bool:
@@ -407,8 +420,8 @@ def make_passages(
                 alignment = Alignment(
                     (0, len(curr.script)), (0.0, audio_file.length), (0, len(curr.transcript))
                 )
-                alignments = stow([alignment], dtype=alignment_dtype)
-                curr = dataclasses.replace(curr, alignments=alignments)
+                curr = dataclasses.replace(curr, alignments=(alignment,))
+                assert curr.alignments is not None
                 prev, next_ = None, None
             else:
                 # NOTE: While not explicit, this function will error if there is a mix of
@@ -421,7 +434,7 @@ def make_passages(
                 speaker=curr.speaker,
                 script=curr.script,
                 transcript=curr.transcript,
-                alignments=typing.cast(lib.utils.Tuple[Alignment], curr.alignments),
+                alignments=Alignment.stow(curr.alignments),
                 nonalignments=make_nonalignments(curr, audio_file, prev, next_, **kwargs),
                 other_metadata=curr.other_metadata,
             )
@@ -550,22 +563,22 @@ file is around 72,000 and the precision of the alignments is 0.1, so it should b
 
 
 def _temporary_fix_for_transcript_offset(
-    transcript: str, alignments: typing.List[typing.List]
-) -> typing.List[typing.List]:
+    transcript: str, alignments: typing.List[typing.List[typing.List[float]]]
+) -> typing.List[typing.List[typing.List[float]]]:
     """Temporary fix for a bug in `sync_script_with_audio.py`.
 
     TODO: Remove after datasets are reprocessed.
     """
     return_ = []
     for alignment_ in alignments:
-        alignment = Alignment(*list_to_tuple(alignment_))
+        alignment = Alignment.from_json(alignment_)
         word = transcript[alignment.transcript[0] : alignment.transcript[1]]
         if word.strip() != word:
             update = (alignment.transcript[0] - 1, alignment.transcript[1] - 1)
             alignment = alignment._replace(transcript=update)
             corrected = transcript[alignment.transcript[0] : alignment.transcript[1]]
             logger.warning("Corrected '%s' to '%s'.", word, corrected)
-        return_.append(lib.utils.tuple_to_list(alignment))
+        return_.append(alignment.to_json())
     return return_
 
 
@@ -654,11 +667,9 @@ def dataset_loader(
             passage = UnprocessedPassage(
                 audio_path=recording_path,
                 speaker=speaker,
-                script=script[text_column],
+                script=typing.cast(str, script[text_column]),
                 transcript=json_["transcript"],
-                alignments=stow(
-                    [Alignment(*a) for a in list_to_tuple(alignments)], dtype=alignment_dtype
-                ),
+                alignments=tuple(Alignment.from_json(a) for a in alignments),
                 other_metadata={k: v for k, v in script.items() if k not in (text_column,)},
             )
             document.append(passage)

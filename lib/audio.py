@@ -89,11 +89,11 @@ class AudioFormat:
     Learn more: http://sox.sourceforge.net/soxi.html
 
     Args:
-      sample_rate: The sample rate of the audio.
-      num_channels: The number of audio channels in the audio file.
-      encoding: The encoding of the audio file (e.g. "32-bit Floating Point PCM").
-      bit_rate: The number of bits per second.
-      precision: The estimated sample precision in bits.
+        sample_rate: The sample rate of the audio.
+        num_channels: The number of audio channels in the audio file.
+        encoding: The encoding of the audio file (e.g. "32-bit Floating Point PCM").
+        bit_rate: The number of bits per second.
+        precision: The estimated sample precision in bits.
     """
 
     sample_rate: int

@@ -4,8 +4,8 @@ import shutil
 import tempfile
 from unittest import mock
 
-import lib
 import run.data._loader
+from run.data._loader import Alignment
 from tests import _utils
 
 verbalize_test_cases = {
@@ -53,15 +53,10 @@ def test_lj_speech_dataset(mock_urlretrieve, mock_get_audio_metadata, _):
         data = run.data._loader.lj_speech_dataset(directory=directory)
         assert len(data) == 13100
         assert sum([len(r.script) for r in data]) == 1310332
-        alignments = lib.utils.stow(
-            [run.data._loader.Alignment((0, 151), (0.0, 0.0), (0, 151))],
-            run.data._loader.alignment_dtype,
-        )
         nonalignments_ = [
-            run.data._loader.Alignment(script=(0, 0), audio=(0.0, 0.0), transcript=(0, 0)),
-            run.data._loader.Alignment(script=(151, 151), audio=(0.0, 0.0), transcript=(151, 151)),
+            Alignment(script=(0, 0), audio=(0.0, 0.0), transcript=(0, 0)),
+            Alignment(script=(151, 151), audio=(0.0, 0.0), transcript=(151, 151)),
         ]
-        nonalignments = lib.utils.stow(nonalignments_, run.data._loader.alignment_dtype)
         assert data[0] == run.data._loader.Passage(
             audio_file=_utils.make_metadata(directory / "LJSpeech-1.1/wavs/LJ001-0001.wav"),
             speaker=run.data._loader.LINDA_JOHNSON,
@@ -73,8 +68,8 @@ def test_lj_speech_dataset(mock_urlretrieve, mock_get_audio_metadata, _):
                 "Printing, in the only sense with which we are at present concerned, differs "
                 "from most if not from all the arts and crafts represented in the Exhibition"
             ),
-            alignments=alignments,
-            nonalignments=nonalignments,
+            alignments=Alignment.stow([Alignment((0, 151), (0.0, 0.0), (0, 151))]),
+            nonalignments=Alignment.stow(nonalignments_),
             other_metadata={
                 2: (  # type: ignore
                     "Printing, in the only sense with which we are at present concerned, differs "

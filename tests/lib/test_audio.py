@@ -45,30 +45,30 @@ def run_around_tests():
     hertz_bounds = {"lower_hertz": 20, "upper_hertz": 20000}
     config = {
         power_spectrogram_to_framed_rms: HParams(window=torch.tensor(window).float()),
-            lib.audio.signal_to_framed_rms: HParams(frame_length=fft_length, hop_length=frame_hop),
+        lib.audio.signal_to_framed_rms: HParams(frame_length=fft_length, hop_length=frame_hop),
         lib.audio.pad_remainder: HParams(multiple=frame_hop, mode="constant", constant_values=0.0),
-            lib.audio.write_audio: HParams(sample_rate=sample_rate),
-            lib.audio.SignalTodBMelSpectrogram.__init__: HParams(
-                sample_rate=sample_rate,
-                frame_hop=frame_hop,
-                window=torch.tensor(window).float(),
-                fft_length=fft_length,
-                num_mel_bins=num_mel_bins,
-                min_decibel=-50.0,
-                get_weighting=lib.audio.iso226_weighting,
-                **hertz_bounds,
-            ),
-            lib.audio.griffin_lim: HParams(
-                frame_hop=frame_hop,
-                fft_length=fft_length,
-                window=window,
-                sample_rate=sample_rate,
-                power=1.20,
-                iterations=30,
-                get_weighting=lib.audio.iso226_weighting,
-                **hertz_bounds,
-            ),
-        }
+        lib.audio.write_audio: HParams(sample_rate=sample_rate),
+        lib.audio.SignalTodBMelSpectrogram.__init__: HParams(
+            sample_rate=sample_rate,
+            frame_hop=frame_hop,
+            window=torch.tensor(window).float(),
+            fft_length=fft_length,
+            num_mel_bins=num_mel_bins,
+            min_decibel=-50.0,
+            get_weighting=lib.audio.iso226_weighting,
+            **hertz_bounds,
+        ),
+        lib.audio.griffin_lim: HParams(
+            frame_hop=frame_hop,
+            fft_length=fft_length,
+            window=window,
+            sample_rate=sample_rate,
+            power=1.20,
+            iterations=30,
+            get_weighting=lib.audio.iso226_weighting,
+            **hertz_bounds,
+        ),
+    }
     hparams.add_config(config)
     yield
     hparams.clear_config()
@@ -321,21 +321,21 @@ def test_format_ffmpeg_audio_filters():
     """Test `lib.audio.format_ffmpeg_audio_filters` parameterizes an `ffmpeg` audio
     filter, with multiple filters, correctly."""
     filters = [
-            lib.audio.format_ffmpeg_audio_filter(
-                "acompressor",
-                threshold=0.032,
-                ratio=12,
-                attack=325,
-                release=390,
-                knee=6,
-                detection="rms",
-                makeup=4,
-            ),
-            lib.audio.format_ffmpeg_audio_filter("equalizer", f=200, t="q", w=0.6, g=-2.4),
-            lib.audio.format_ffmpeg_audio_filter(
-                "loudnorm", i=-21, lra=4, tp=-6.1, print_format="summary"
-            ),
-        ]
+        lib.audio.format_ffmpeg_audio_filter(
+            "acompressor",
+            threshold=0.032,
+            ratio=12,
+            attack=325,
+            release=390,
+            knee=6,
+            detection="rms",
+            makeup=4,
+        ),
+        lib.audio.format_ffmpeg_audio_filter("equalizer", f=200, t="q", w=0.6, g=-2.4),
+        lib.audio.format_ffmpeg_audio_filter(
+            "loudnorm", i=-21, lra=4, tp=-6.1, print_format="summary"
+        ),
+    ]
     result = lib.audio.format_ffmpeg_audio_filters(filters)
     assert result == lib.audio.AudioFilters(
         "acompressor=threshold=0.032:ratio=12:attack=325:release=390:knee=6:detection=rms:makeup=4,"
@@ -688,9 +688,9 @@ def test_power_spectrogram_to_framed_rms__batch():
     frame_hop = frame_length // 4
     window = torch.hann_window(frame_length)
     tensors = [
-            torch.tensor(lib.audio.full_scale_sine_wave()),
-            torch.tensor(lib.audio.full_scale_square_wave()),
-        ]
+        torch.tensor(lib.audio.full_scale_sine_wave()),
+        torch.tensor(lib.audio.full_scale_square_wave()),
+    ]
     batched_signal = torch.stack(tensors)
     padded_batched_signal = torch.nn.functional.pad(batched_signal, [frame_length, frame_length])
     batched_spectrogram = torch.stft(

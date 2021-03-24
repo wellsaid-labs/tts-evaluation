@@ -10,7 +10,7 @@ import pytest
 import lib
 import run.data._loader
 from lib.utils import flatten_2d
-from run.data._loader import Alignment, Passage, Span, SpanGenerator, alignment_dtype
+from run.data._loader import Alignment, Passage, Span, SpanGenerator
 from run.data._loader.utils import UnprocessedPassage, make_passages
 from tests._utils import (
     TEST_DATA_PATH,
@@ -26,11 +26,9 @@ def _make_alignment(script=(0, 0), transcript=(0, 0), audio=(0.0, 0.0)):
     return Alignment(script, audio, transcript)
 
 
-def _make_alignments(
-    alignments=typing.Tuple[typing.Tuple[int, int]]
-) -> lib.utils.Tuple[Alignment]:
+def _make_alignments(alignments=typing.Tuple[typing.Tuple[int, int]]) -> lib.utils.Tuple[Alignment]:
     """ Make a tuple of `Alignment`(s) for testing. """
-    return lib.utils.stow([_make_alignment(a, a, a) for a in alignments], alignment_dtype)
+    return Alignment.stow([_make_alignment(a, a, a) for a in alignments])
 
 
 def test_span_generator():
@@ -225,8 +223,8 @@ def test_dataset_loader(mock_run, mock_get_audio_metadata):
         "author of the danger Trail Philip Steels Etc. Not at this particular case Tom "
         "apologized Whitmore for the 20th time that evening the two men shook hands"
     )
-    assert passages[0].alignments == lib.utils.stow(alignments, alignment_dtype)
-    assert passages[0].nonalignments == lib.utils.stow(nonalignments, alignment_dtype)
+    assert passages[0].alignments == Alignment.stow(alignments)
+    assert passages[0].nonalignments == Alignment.stow(nonalignments)
     assert passages[0].other_metadata == {"Index": 0, "Source": "CMU", "Title": "CMU"}
     assert passages[1].script == "Not at this particular case, Tom, apologized Whittemore."
 
@@ -240,16 +238,14 @@ def test_passage_span__identity():
         "The examination and testimony of the experts enabled the Commission to conclude "
         "that five shots may have been fired,"
     )
-    alignment = Alignment(
-        (0, len(script)), (0.0, metadata.length), (0, len(script))
-    )
+    alignment = Alignment((0, len(script)), (0.0, metadata.length), (0, len(script)))
     passage = Passage(
         audio_file=metadata,
         speaker=run.data._loader.LINDA_JOHNSON,
         script=script,
         transcript=script,
-        alignments=lib.utils.stow([alignment], alignment_dtype),
-        nonalignments=lib.utils.stow([alignment], alignment_dtype),
+        alignments=Alignment.stow([alignment]),
+        nonalignments=Alignment.stow([alignment]),
         other_metadata={"chapter": 37},
     )
     span = passage[:]
@@ -284,7 +280,7 @@ def _make_unprocessed_passage(
         speaker=run.data._loader.Speaker(""),
         script=script,
         transcript=transcript,
-        alignments=lib.utils.stow([_make_alignment(*arg) for arg in found], alignment_dtype),
+        alignments=tuple(_make_alignment(*arg) for arg in found),
     )
 
 
