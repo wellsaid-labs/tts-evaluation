@@ -960,3 +960,30 @@ def test_griffin_lim__large_numbers():
 def test_griffin_lim__small_array():
     """ Test that `lib.audio.griffin_lim` produces empty array for a small array. """
     assert lib.audio.griffin_lim(np.random.uniform(low=-1, high=1, size=(1, 1))).shape == (0,)
+
+
+def test_highpass_filter():
+    """ Test that `lib.audio.highpass_filter` creates an array of the right shape. """
+    sample_rate = 8000
+    signal = np.random.uniform(low=-1, high=1, size=(sample_rate,))
+    filtered = lib.audio.highpass_filter(signal, 300, sample_rate=sample_rate)
+    assert filtered.shape == signal.shape
+
+
+def test_get_non_speech_segments():
+    """Test that `lib.audio.get_non_speech_segments` gets the correct non speech segments in audio
+    file."""
+    low_cut = 300
+    frame_length = 50
+    hop_length = 5
+    threshold = -60
+    metadata = lib.audio.get_audio_metadata(TEST_DATA_LJ)
+    audio = lib.audio.read_audio(TEST_DATA_LJ)
+    segments = lib.audio.get_non_speech_segments(
+        audio, metadata, low_cut, frame_length, hop_length, threshold
+    )
+    assert segments == [
+        (2.75, 2.984958333333333),
+        (4.885, 5.289958333333334),
+        (7.38, 7.569958333333333),
+    ]

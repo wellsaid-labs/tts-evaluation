@@ -66,15 +66,12 @@ def test_normalize_audio():
 def test__find_duplicate_passages():
     """ Test `run._config._find_duplicate_passages` finds duplicate passages. """
     dev_scripts = set(["This is a test."])
-    duplicates, rest = _find_duplicate_passages(
-        dev_scripts,
-        [
+    passages = [
             make_passage(script="I'm testing this."),
             make_passage(script="This is a test."),
             make_passage(script="This is a test!"),
-        ],
-        0.9,
-    )
+    ]
+    duplicates, rest = _find_duplicate_passages(dev_scripts, passages, 0.9)
     assert [p.script for p in rest] == ["I'm testing this."]
     assert [p.script for p in duplicates] == ["This is a test.", "This is a test!"]
 

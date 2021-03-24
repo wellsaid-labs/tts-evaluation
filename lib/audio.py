@@ -1,12 +1,13 @@
 import dataclasses
 import enum
+import itertools
 import logging
 import math
 import multiprocessing.pool
 import os
 import subprocess
 import typing
-from functools import lru_cache
+from functools import lru_cache, partial
 from pathlib import Path
 
 import numpy as np
@@ -1110,3 +1111,66 @@ def griffin_lim(
         # NOTE: Return no audio for valid inputs that fail due to an overflow error or a small
         # spectrogram.
         return np.array([], dtype=np.float32)  # type: ignore
+
+
+def highpass_filter(signal: np.ndarray, freq: int, sample_rate: int, order: int = 5) -> np.ndarray:
+    """A high-pass filter passes signals with a frequency higher than `freq` and attenuates signals
+    with frequencies lower than `freq`.
+
+    Based on:
+    https://stackoverflow.com/questions/12093594/how-to-implement-band-pass-butterworth-filter-with-scipy-signal-butter
+    """
+    nyquist = 0.5 * sample_rate
+    sos = scipy_signal.butter(order, freq / nyquist, analog=False, btype="highpass", output="sos")
+    return scipy_signal.sosfiltfilt(sos, signal).astype(signal.dtype)
+
+
+_VADIterator = typing.Iterable[typing.Tuple[bool, typing.List[int]]]
+
+
+@configurable
+def get_non_speech_segments(
+    audio: np.ndarray,
+    audio_file: AudioMetadata,
+    low_cut: int = HParam(),
+    frame_length: float = HParam(),
+    hop_length: float = HParam(),
+    threshold: float = HParam(),
+) -> typing.List[typing.Tuple[float, float]]:
+    """Get non-speech segments in `audio`.
+
+    Args:
+        ...
+        low_cut: This attenuates frequencies lower than `low_cut`.
+        frame_length: The `audio` is sliced into overlapping `frame_length` milliseconds frames.
+        hop_length: The number of milliseconds to advance between each frame.
+        threshold: This is a decision threshold, in decibels, for deciding if a frame is to be
+            classified as speech, or non-speech.
+
+    Returns: This returns an iterable of `audio` slices in seconds.
+    """
+    assert audio.dtype == np.float32
+    sample_rate = audio_file.sample_rate
+    milli_to_sample_ = partial(milli_to_sample, sample_rate=sample_rate)
+    frame = partial(
+        librosa.util.frame,
+        frame_length=milli_to_sample_(frame_length),
+        hop_length=milli_to_sample_(hop_length),
+        axis=0,
+    )
+    audio = highpass_filter(audio, low_cut, sample_rate)  # NOTE: Noise reduction
+    indicies = frame(np.arange(audio.shape[0]))
+    rms_level_db = power_to_db(signal_to_rms_power(frame(audio), axis=1))
+    iterator: _VADIterator = zip(rms_level_db > threshold, indicies)
+    groups: typing.Iterable[typing.Tuple[bool, _VADIterator]]
+    groups = itertools.groupby(iterator, key=lambda i: i[0])
+    non_speech_segments = []
+    for is_speech, group in groups:
+        group = list(group)
+        if not is_speech:
+            segment = (
+                sample_to_sec(group[0][1][0], audio_file.sample_rate),
+                sample_to_sec(group[-1][1][-1], audio_file.sample_rate),
+            )
+            non_speech_segments.append(segment)
+    return non_speech_segments

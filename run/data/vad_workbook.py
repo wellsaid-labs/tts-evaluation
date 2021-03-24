@@ -10,6 +10,7 @@ TODO:
 - Add smoothing to `webrtcvad` results (either a tigger based approach or median window)
 - Try this simple approach: https://maelfabien.github.io/project/Speech_proj/#rolling-window
 - Try Kaldi VAD: https://github.com/pykaldi/pykaldi/tree/master/examples/setups/ltsv-based-vad
+- Update workbook with `lib.audio.get_non_speech_segments`.
 
 Usage:
     $ python -m pip install webrtcvad
