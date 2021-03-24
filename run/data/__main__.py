@@ -3,7 +3,6 @@ import collections
 import functools
 import logging
 import math
-import multiprocessing
 import pathlib
 import re
 import shlex
@@ -202,43 +201,20 @@ def loudness(paths: typing.List[pathlib.Path] = typer.Argument(..., exists=True,
     typer.echo(tabulate.tabulate(sorted(results), headers=["LUFS", "Path"]))
 
 
-class _SharedAudioMetadata(typing.NamedTuple):
-    sample_rate: int
-    num_channels: int
-    encoding: lib.audio.AudioEncoding
-    bit_rate: str
-    precision: str
-
-
-def _metadata(path: pathlib.Path) -> typing.Tuple[pathlib.Path, _SharedAudioMetadata]:
-    """ Helper for the `metadata` command."""
-    metadata = lib.audio.get_audio_metadata(path)
-    return path, _SharedAudioMetadata(
-        sample_rate=metadata.sample_rate,
-        num_channels=metadata.num_channels,
-        encoding=metadata.encoding,
-        bit_rate=metadata.bit_rate,
-        precision=metadata.precision,
-    )
-
-
 @audio_app.command()
-def metadata(
-    paths: typing.List[pathlib.Path] = typer.Argument(..., exists=True, dir_okay=False),
-    max_parallel: int = typer.Option(16),
+def print_format(
+    paths: typing.List[pathlib.Path] = typer.Argument(..., exists=True, dir_okay=False)
 ):
-    """Print the metadata for each file in PATHS."""
-    num_parallel = lib.utils.clamp(len(paths), max_=max_parallel)
-    with multiprocessing.pool.ThreadPool(num_parallel) as pool:
-        results: typing.List[typing.Tuple[pathlib.Path, _SharedAudioMetadata]]
-        results = list(tqdm.tqdm(pool.imap_unordered(_metadata, paths), total=len(paths)))
-
+    """Print the format for each file in PATHS."""
+    metadatas = lib.audio.get_audio_metadata(paths)
     groups = collections.defaultdict(list)
-    for path, metadata in results:
-        groups[metadata].append(path)
-    for metadata, paths in groups.items():
+    for metadata in metadatas:
+        fields = dataclasses.fields(lib.audio.AudioFormat)
+        format_ = lib.audio.AudioFormat(**{f.name: getattr(metadata, f.name) for f in fields})
+        groups[format_].append(metadata.path)
+    for format_, paths in groups.items():
         list_ = "\n".join([str(p.relative_to(p.parent.parent)) for p in paths])
-        logger.info("Found %d files with `%s` metadata:\n%s", len(paths), metadata, list_)
+        logger.info("Found %d file(s) with `%s` audio file format:\n%s", len(paths), format_, list_)
 
 
 @audio_app.command("normalize")

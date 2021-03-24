@@ -175,10 +175,10 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
       $(python -m run.utils.prefix --script $SCRIPTS)
    ```
 
-1. (Optional) Review dataset audio file metadata for inconsistencies...
+1. (Optional) Review dataset audio file format(s) for inconsistencies...
 
    ```bash
-   python -m run.data audio metadata $ROOT/recordings/*$ENCODING
+   python -m run.data audio print-format $ROOT/recordings/*$ENCODING
    ```
 
 1. Normalize audio file format...

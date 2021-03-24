@@ -1,3 +1,4 @@
+import dataclasses
 import enum
 import logging
 import math
@@ -73,7 +74,10 @@ class AudioEncoding(enum.Enum):
     PCM_FLOAT_32_BIT: typing.Final = "32-bit Floating Point PCM"
 
 
-class AudioMetadata(typing.NamedTuple):
+
+
+@dataclasses.dataclass(frozen=True)
+class AudioFormat:
     """
     TODO: The `sample_rate` does not change in porportion to the number of channels; therefore, the
     `sample_rate` should technically be called the `frame_rate` because it measures the number of
@@ -82,21 +86,30 @@ class AudioMetadata(typing.NamedTuple):
     Learn more: http://sox.sourceforge.net/soxi.html
 
     Args:
-      path: The audio file path.
       sample_rate: The sample rate of the audio.
       num_channels: The number of audio channels in the audio file.
       encoding: The encoding of the audio file (e.g. "32-bit Floating Point PCM").
       bit_rate: The number of bits per second.
       precision: The estimated sample precision in bits.
-      num_samples: The duration of the audio file in samples.
     """
 
-    path: Path
     sample_rate: int
     num_channels: int
     encoding: AudioEncoding
     bit_rate: str
     precision: str
+
+
+@dataclasses.dataclass(frozen=True)
+class AudioMetadata(AudioFormat):
+    """
+    Args:
+        ...
+        path: The audio file path.
+        num_samples: The duration of the audio file in samples.
+    """
+
+    path: Path
     num_samples: int
 
     @property
