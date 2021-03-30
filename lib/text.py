@@ -627,7 +627,7 @@ _READABLE_CHARACTERS = set(normalize_vo_script(chr(i), strip=False) for i in ran
 
 def is_normalized_vo_script(text: str) -> bool:
     """ Return `True` if `text` has been normalized to a small set of characters. """
-    return len(set(text) - _READABLE_CHARACTERS) == 0
+    return all(c in _READABLE_CHARACTERS for c in text)
 
 
 ALPHANUMERIC_REGEX = re.compile(r"[a-zA-Z0-9@#$%&+=*]")
