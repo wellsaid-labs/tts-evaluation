@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 
 
 def is_streamlit_running() -> bool:
+    """ Check if `streamlit` server has been initialized. """
     try:
         Server.get_current()
         return True
@@ -37,7 +38,8 @@ def is_streamlit_running() -> bool:
         return False
 
 
-def get_session_state():
+def get_session_state() -> dict:
+    """Get a reference to a session state represented as a `dict`. """
     return session_state.get(cache={})
 
 
@@ -79,6 +81,7 @@ def session_cache(func: typing.Optional[typing.Callable] = None, **kwargs):
 
 
 def clear_session_cache():
+    """Clear the cache for `session_cache`."""
     logger.info("Clearing cache...")
     [v.cache_clear() for v in get_session_state()["cache"].values()]
 
@@ -151,8 +154,7 @@ def span_audio(span: run.data._loader.Span) -> np.ndarray:
 def passage_audio(passage: run.data._loader.Passage) -> np.ndarray:
     """Get `span` audio using cached `read_wave_audio`."""
     start = passage.first.audio[0]
-    end = passage.last.audio[-1]
-    return read_wave_audio(passage.audio_file, start, end - start)
+    return read_wave_audio(passage.audio_file, start, passage.aligned_audio_length())
 
 
 @lib.utils.log_runtime
