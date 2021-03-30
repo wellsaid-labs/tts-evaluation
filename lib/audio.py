@@ -243,7 +243,6 @@ def read_audio(
     NOTE: `ffmpeg` may load audio that's not clipped.
     NOTE: Learn more about efficiently selecting a slice of audio with `ffmpeg`:
     https://stackoverflow.com/questions/18444194/cutting-the-videos-based-on-start-and-end-time-using-ffmpeg
-    NOTE: This doesn't support a `path` with spaces.
 
     TODO: Should we implement automatic gain control?
     https://en.wikipedia.org/wiki/Automatic_gain_control
@@ -255,12 +254,10 @@ def read_audio(
     """
     if length == 0:
         return np.array([], dtype=dtype[2])
-    start_flag = "" if start == 0 else f"-ss {start}"
-    length_flag = "" if math.isinf(length) else f"-t {length}"
-    command = (
-        f"ffmpeg {start_flag} {length_flag} -i {path} "
-        f"-f {dtype[0]} -acodec {dtype[1]} -ac 1 pipe:"
-    ).split()
+    command = ["ffmpeg"]
+    command += [] if start == 0 else ["-ss", start]
+    command += [] if math.isinf(length) else ["-t", length]
+    command += ["-i", str(path), "-f", dtype[0], "-acodec", dtype[1], "-ac", "1", "pipe:"]
     ndarray = np.frombuffer(subprocess.check_output(command, stderr=subprocess.DEVNULL), dtype[2])
     return clip_waveform(ndarray)
 
@@ -269,14 +266,16 @@ def read_wave_audio(metadata: AudioMetadata, start: float = 0, length: float = -
     """ Fast read and seek WAVE file (for supported formats). """
     assert metadata.path.suffix == ".wav"
     assert metadata.num_channels == 1
+    # NOTE: Use `.value` because of this bug:
+    # https://github.com/streamlit/streamlit/issues/2379
     lookup = {
-        AudioEncoding.PCM_FLOAT_32_BIT: np.float32,
-        AudioEncoding.PCM_INT_32_BIT: np.int32,
-        AudioEncoding.PCM_INT_16_BIT: np.int16,
-        AudioEncoding.PCM_INT_8_BIT: np.int8,
+        AudioEncoding.PCM_FLOAT_32_BIT.value: np.float32,
+        AudioEncoding.PCM_INT_32_BIT.value: np.int32,
+        AudioEncoding.PCM_INT_16_BIT.value: np.int16,
+        AudioEncoding.PCM_INT_8_BIT.value: np.int8,
     }
-    assert metadata.encoding in lookup, f"Encoding '{metadata.encoding}' is not supported."
-    dtype = lookup[metadata.encoding]
+    assert metadata.encoding.value in lookup, f"Metadata encoding '{metadata}' is not supported."
+    dtype = lookup[metadata.encoding.value]
     num_bytes_per_sample = np.dtype(dtype).itemsize
     sample_rate = metadata.sample_rate
     header_size = os.path.getsize(metadata.path) - num_bytes_per_sample * metadata.num_samples
