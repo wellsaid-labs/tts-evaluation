@@ -287,10 +287,10 @@ def read_wave_audio(
     assert metadata.encoding.value in lookup, f"Metadata encoding '{metadata}' is not supported."
     dtype = lookup[metadata.encoding.value]
     bytes_per_sample = np.dtype(dtype).itemsize
-    sample_rate = metadata.sample_rate
+    sec_to_sample_ = partial(sec_to_sample, sample_rate=metadata.sample_rate)
     header_size = os.path.getsize(metadata.path) - bytes_per_sample * metadata.num_samples
-    start = lib.utils.round_(sample_rate * start * bytes_per_sample, bytes_per_sample)
-    length = sample_rate * length if length > 0 else metadata.num_samples - sample_rate * start
+    start = lib.utils.round_(sec_to_sample_(start) * bytes_per_sample, bytes_per_sample)
+    length = sec_to_sample_(length) if length > 0 else metadata.num_samples - sec_to_sample_(start)
     if memmap:
         ndarray = np.memmap(metadata.path, dtype=dtype, shape=(length,), offset=start + header_size)
     else:
