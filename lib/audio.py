@@ -249,8 +249,9 @@ def read_audio(
 
     Args:
         path: Path to load.
-        start: The start of the audio segment.
-        length: The length of the audio segment.
+        start: The start of the audio segment, in seconds.
+        length: The length of the audio segment, in seconds.
+        dtype: The output `dtype` with the corresponding ffmpeg audio codec.
     """
     if length == 0:
         return np.array([], dtype=dtype[2])
@@ -262,8 +263,17 @@ def read_audio(
     return clip_waveform(ndarray)
 
 
-def read_wave_audio(metadata: AudioMetadata, start: float = 0, length: float = -1) -> np.ndarray:
-    """ Fast read and seek WAVE file (for supported formats). """
+def read_wave_audio(
+    metadata: AudioMetadata, start: float = 0, length: float = -1, memmap=False
+) -> np.ndarray:
+    """Fast read and seek WAVE file (for supported formats).
+
+    Args:
+        metadata: The audio file to load.
+        start: The start of the audio segment, in seconds.
+        length: The length of the audio segment, in seconds.
+        memmap: Load audio into memory mapped storage.
+    """
     assert metadata.path.suffix == ".wav"
     assert metadata.num_channels == 1
     # NOTE: Use `.value` because of this bug:
@@ -276,12 +286,15 @@ def read_wave_audio(metadata: AudioMetadata, start: float = 0, length: float = -
     }
     assert metadata.encoding.value in lookup, f"Metadata encoding '{metadata}' is not supported."
     dtype = lookup[metadata.encoding.value]
-    num_bytes_per_sample = np.dtype(dtype).itemsize
+    bytes_per_sample = np.dtype(dtype).itemsize
     sample_rate = metadata.sample_rate
-    header_size = os.path.getsize(metadata.path) - num_bytes_per_sample * metadata.num_samples
-    start = lib.utils.round_(sample_rate * start * num_bytes_per_sample, num_bytes_per_sample)
-    length = lib.utils.round_(sample_rate * length, num_bytes_per_sample) if length > 0 else length
-    ndarray = np.fromfile(metadata.path, dtype=dtype, count=length, offset=start + header_size)
+    header_size = os.path.getsize(metadata.path) - bytes_per_sample * metadata.num_samples
+    start = lib.utils.round_(sample_rate * start * bytes_per_sample, bytes_per_sample)
+    length = sample_rate * length if length > 0 else metadata.num_samples - sample_rate * start
+    if memmap:
+        ndarray = np.memmap(metadata.path, dtype=dtype, shape=(length,), offset=start + header_size)
+    else:
+        ndarray = np.fromfile(metadata.path, dtype=dtype, count=length, offset=start + header_size)
     return clip_waveform(ndarray)
 
 

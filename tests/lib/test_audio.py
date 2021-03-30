@@ -237,12 +237,30 @@ def test_read_wave_audio():
     np.testing.assert_almost_equal(audio, lib.audio.read_audio(TEST_DATA_LJ))
 
 
+def test_read_wave_audio__memmap():
+    """ Test `lib.audio.read_wave_audio` reads the full audio, correctly, into a memory map. """
+    metadata = lib.audio.get_audio_metadata(TEST_DATA_LJ)
+    audio = lib.audio.read_wave_audio(metadata, memmap=True)
+    np.testing.assert_almost_equal(audio, lib.audio.read_audio(TEST_DATA_LJ))
+
+
 def test_read_wave_audio__slice():
     """ Test `lib.audio.read_wave_audio` gets the correct slice. """
     metadata = lib.audio.get_audio_metadata(TEST_DATA_LJ)
     start = 1
     length = 2
     slice_ = lib.audio.read_wave_audio(metadata, start, length)
+    audio = lib.audio.read_audio(TEST_DATA_LJ)
+    expected = audio[start * metadata.sample_rate : (start + length) * metadata.sample_rate]
+    np.testing.assert_almost_equal(slice_, expected)
+
+
+def test_read_wave_audio__slice__memmap():
+    """ Test `lib.audio.read_wave_audio` puts the correct slice into a memory map. """
+    metadata = lib.audio.get_audio_metadata(TEST_DATA_LJ)
+    start = 1
+    length = 2
+    slice_ = lib.audio.read_wave_audio(metadata, start, length, memmap=True)
     audio = lib.audio.read_audio(TEST_DATA_LJ)
     expected = audio[start * metadata.sample_rate : (start + length) * metadata.sample_rate]
     np.testing.assert_almost_equal(slice_, expected)
