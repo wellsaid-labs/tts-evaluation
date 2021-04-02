@@ -452,20 +452,20 @@ def test_corrected_random_choice():
 def test_timeline():
     """ Test `lib.utils.Timeline` handles basic cases. """
     intervals = [
+        lib.utils.Interval((3, 4), "a"),  # NOTE: Out of order
         lib.utils.Interval((0, 1), "a"),
         lib.utils.Interval((0.5, 1), "b"),  # NOTE: Overlapping
         lib.utils.Interval((1, 2), "c"),  # NOTE: Independent
-        lib.utils.Interval((3, 4), "a"),
     ]
     for i in range(1, 4):
         timeline: lib.utils.Timeline[str] = lib.utils.Timeline(intervals, step=i / 2)
-        assert tuple(sorted(timeline[0.5])) == ("a", "b")
-        assert tuple(sorted(timeline[0:1])) == ("a", "b", "c")
-        assert tuple(sorted(timeline[-0.5:0.5])) == ("a", "b")
-        assert tuple(sorted(timeline[0.5:1.5])) == ("a", "b", "c")
-        assert tuple(sorted(timeline[1.5:2.5])) == ("c",)
-        assert tuple(sorted(timeline[0:4])) == ("a", "a", "b", "c")
-        assert tuple(sorted(timeline[6:10])) == tuple()
+        assert timeline[0.5] == ("a", "b")
+        assert timeline[0:1] == ("a", "b", "c")
+        assert timeline[-0.5:0.5] == ("a", "b")
+        assert timeline[0.5:1.5] == ("a", "b", "c")
+        assert timeline[1.5:2.5] == ("c",)
+        assert timeline[0:4] == ("a", "b", "c", "a")
+        assert timeline[6:10] == tuple()
 
 
 def test_timeline__get_indicies():

@@ -14,6 +14,7 @@ import pathlib
 import random
 import subprocess
 import typing
+from functools import partial
 from pathlib import Path
 
 import numpy as np
@@ -518,9 +519,9 @@ class SpanGenerator(typing.Iterator[Span]):
             start = max(start, passage.first.audio[0])
 
             # NOTE: Based on the overlap, decide which alignments to include in the span.
-            overlapping = sorted(list(timeline.get(slice(start, stop))), key=lambda i: i.start)
+            overlapping = timeline.get(slice(start, stop))
             self._is_include.cache_clear()
-            _is_include = functools.partial(self._is_include, y1=start, y2=stop)
+            _is_include = partial(self._is_include, y1=start, y2=stop)
             begin: typing.Optional[Interval[int]]
             begin = next((i for i in overlapping if _is_include(i.start, i.stop)), None)
             end: typing.Optional[Interval[int]]

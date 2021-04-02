@@ -393,8 +393,18 @@ _TupleType = typing.TypeVar("_TupleType", bound="Tuple")
 class Tuple(typing.Hashable, typing.Sequence[_TupleVar]):
     """Abstract class for a `tuple`."""
 
+    @typing.overload
     @abstractmethod
-    def __getitem__(self: _TupleType, index) -> _TupleType:
+    def __getitem__(self, index: int) -> _TupleVar:
+        ...
+
+    @typing.overload
+    @abstractmethod
+    def __getitem__(self: _TupleType, index: slice) -> _TupleType:
+        ...
+
+    @abstractmethod
+    def __getitem__(self, index):
         raise NotImplementedError
 
     @abstractmethod
@@ -433,6 +443,7 @@ class _Tuple(Tuple[_TupleVar]):
         dtype: typing.Optional[np.dtype] = None,
         type_: typing.Optional[typing.Type[_TupleVar]] = None,
     ):
+        items = items if isinstance(items, np.ndarray) else list(items)
         self.storage = np.array(items, dtype=dtype)
         self.type: typing.Optional[typing.Type[_TupleVar]]
         if isinstance(items, np.ndarray):
@@ -543,6 +554,7 @@ class Interval(typing.Generic[_IntervalVar]):
     def __init__(self, span: typing.Tuple[float, float], val: _IntervalVar):
         self.start = span[0]
         self.stop = span[1]
+        assert self.start <= self.stop, "Start must be smaller than stop."
         self.val = val
 
     @property
@@ -568,7 +580,7 @@ class Timeline(typing.Generic[_TimelineVar]):
         _timeline: typing.Dict[int, typing.List[Interval[_TimelineVar]]]
         _timeline = collections.defaultdict(list)
         self.step = step
-        for interval in intervals:
+        for interval in sorted(intervals, key=lambda k: k.start):
             for index in self._get_indicies(interval.start, interval.stop):
                 _timeline[index].append(interval)
         self._timeline: typing.Dict[int, typing.Tuple[Interval[_TimelineVar], ...]]
@@ -590,7 +602,7 @@ class Timeline(typing.Generic[_TimelineVar]):
         min_ = x2 if x2 < y2 else y2
         return max_ <= min_
 
-    def get(self, k: typing.Union[int, float, slice]) -> typing.Set[Interval[_TimelineVar]]:
+    def get(self, k: typing.Union[int, float, slice]) -> typing.Tuple[Interval[_TimelineVar]]:
         if isinstance(k, slice):
             start, stop = k.start, k.stop
         elif isinstance(k, (int, float)):
@@ -599,10 +611,14 @@ class Timeline(typing.Generic[_TimelineVar]):
             raise TypeError("Invalid argument type: {}".format(type(k)))
 
         is_overlapping = functools.partial(self.is_overlapping, y1=start, y2=stop)
-        indicies = self._get_indicies(start, stop)
-        values = set((val for i in indicies for val in self._timeline[i]))
-        values.difference_update([v for v in values if not is_overlapping(v.start, v.stop)])
-        return values
+        seen = set()
+        results = []
+        for index in self._get_indicies(start, stop):
+            for value in self._timeline[index]:
+                if value not in seen and is_overlapping(value.start, value.stop):
+                    results.append(value)
+                seen.add(value)
+        return tuple(results)
 
     def __getitem__(self, k: typing.Union[int, float, slice]) -> typing.Tuple[_TimelineVar]:
         return tuple(v.val for v in self.get(k))
