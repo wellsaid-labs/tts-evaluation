@@ -570,28 +570,37 @@ class Timeline(typing.Generic[_TimelineVar]):
 
     Args:
         intervals: List of intervals and a corresponding value.
-        step: Positive number used to compress or expand the timeline.
     """
 
-    __slots__ = "step", "_timeline"
+    __slots__ = "_bucket_size", "_timeline"
 
-    def __init__(self, intervals: typing.List[Interval[_TimelineVar]], step: float = 1):
-        assert step > 0, "`step` must be a positive number."
+    def __init__(self, intervals: typing.List[Interval[_TimelineVar]]):
+        assert len(intervals) > 0
         _timeline: typing.Dict[int, typing.List[Interval[_TimelineVar]]]
         _timeline = collections.defaultdict(list)
-        self.step = step
-        for interval in sorted(intervals, key=lambda k: k.start):
+        intervals = sorted(intervals, key=lambda k: k.start)
+        self._bucket_size = self._get_average_interval_spacing(intervals)
+        for interval in intervals:
             for index in self._get_indicies(interval.start, interval.stop):
                 _timeline[index].append(interval)
         self._timeline: typing.Dict[int, typing.Tuple[Interval[_TimelineVar], ...]]
         self._timeline = collections.defaultdict(tuple, {k: tuple(v) for k, v in _timeline.items()})
 
+    @staticmethod
+    def _get_average_interval_spacing(intervals: typing.List[Interval[_TimelineVar]]) -> float:
+        """Get the average spacing between interval points."""
+        ticks = sorted([t for i in intervals for t in (i.start, i.stop)])
+        diffs = [b - a for a, b in zip(ticks, ticks[1:])]
+        return sum(diffs) / len(diffs)
+
     def _get_indicies(self, start: float, stop: float) -> typing.Iterable[int]:
         """
         NOTE: This approach is much faster than:
-        `range(math.floor(start / self.step), math.ceil(stop / self.step + 0.00001))`
+        ```
+        range(math.floor(start / self._bucket_size), math.ceil(stop / self._bucket_size + 0.00001))
+        ```
         """
-        return range(int(start // self.step), int((stop / self.step + 1) // 1))
+        return range(int(start // self._bucket_size), int((stop / self._bucket_size + 1) // 1))
 
     @staticmethod
     def is_overlapping(x1: float, x2: float, y1: float, y2: float) -> bool:
