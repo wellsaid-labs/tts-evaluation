@@ -81,20 +81,20 @@ UK_BOOKS = [b for b in BOOKS if b.dataset == UK_DATASET]
 US_BOOKS = [b for b in BOOKS if b.dataset == US_DATASET]
 
 
-def m_ailabs_en_us_judy_bieber_speech_dataset(*args, books=JUDY_BIEBER_BOOKS):
-    return m_ailabs_en_us_speech_dataset(*args, books=books)  # type: ignore
+def m_ailabs_en_us_judy_bieber_speech_dataset(*args, books=JUDY_BIEBER_BOOKS, **kwargs):
+    return m_ailabs_en_us_speech_dataset(*args, books=books, **kwargs)  # type: ignore
 
 
-def m_ailabs_en_us_mary_ann_speech_dataset(*args, books=MARY_ANN_BOOKS):
-    return m_ailabs_en_us_speech_dataset(*args, books=books)  # type: ignore
+def m_ailabs_en_us_mary_ann_speech_dataset(*args, books=MARY_ANN_BOOKS, **kwargs):
+    return m_ailabs_en_us_speech_dataset(*args, books=books, **kwargs)  # type: ignore
 
 
-def m_ailabs_en_us_elliot_miller_speech_dataset(*args, books=ELLIOT_MILLER_BOOKS):
-    return m_ailabs_en_us_speech_dataset(*args, books=books)  # type: ignore
+def m_ailabs_en_us_elliot_miller_speech_dataset(*args, books=ELLIOT_MILLER_BOOKS, **kwargs):
+    return m_ailabs_en_us_speech_dataset(*args, books=books, **kwargs)  # type: ignore
 
 
-def m_ailabs_en_uk_elizabeth_klett_speech_dataset(*args, books=ELIZABETH_KLETT_BOOKS):
-    return m_ailabs_en_uk_speech_dataset(*args, books=books)  # type: ignore
+def m_ailabs_en_uk_elizabeth_klett_speech_dataset(*args, books=ELIZABETH_KLETT_BOOKS, **kwargs):
+    return m_ailabs_en_uk_speech_dataset(*args, books=books, **kwargs)  # type: ignore
 
 
 def m_ailabs_en_us_speech_dataset(

@@ -14,15 +14,17 @@ import pathlib
 import random
 import subprocess
 import typing
+from dataclasses import field
 from functools import partial
 from pathlib import Path
 
 import numpy as np
 import torch
+from hparams import HParam, configurable
 from third_party import LazyLoader
 
 import lib
-from lib.audio import AudioMetadata, get_audio_metadata
+from lib.audio import AudioDataType, AudioEncoding, AudioFormat, AudioMetadata, get_audio_metadata
 from lib.utils import Interval, Timeline, Tuple, flatten_2d
 
 if typing.TYPE_CHECKING:  # pragma: no cover
@@ -32,6 +34,10 @@ else:
 
 
 logger = logging.getLogger(__name__)
+
+FloatFloat = typing.Tuple[float, float]
+IntInt = typing.Tuple[int, int]
+Slice = slice  # NOTE: `pylance` is buggy if we use `slice` directly for typing.
 
 
 def read_audio(audio_file: AudioMetadata, *args, **kwargs) -> np.ndarray:
@@ -170,9 +176,9 @@ class Alignment(typing.NamedTuple):
         transcript: The start and end of a trasnscript slice in characters.
     """
 
-    script: typing.Tuple[int, int]
-    audio: typing.Tuple[float, float]
-    transcript: typing.Tuple[int, int]
+    script: IntInt
+    audio: FloatFloat
+    transcript: IntInt
 
     def to_json(self):
         return [list(self.script), list(self.audio), list(self.transcript)]
@@ -214,7 +220,7 @@ class UnprocessedPassage:
     script: str
     transcript: str
     alignments: typing.Optional[typing.Tuple[Alignment, ...]] = None
-    other_metadata: typing.Dict = dataclasses.field(default_factory=dict)
+    other_metadata: typing.Dict = field(default_factory=dict)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -242,10 +248,10 @@ class Passage:
     script: str
     transcript: str
     alignments: Tuple[Alignment]
-    nonalignments: Tuple[Alignment] = dataclasses.field(compare=False, hash=False)
-    other_metadata: typing.Dict = dataclasses.field(default_factory=dict, compare=False, hash=False)
-    first: Alignment = dataclasses.field(init=False, repr=False, compare=False)
-    last: Alignment = dataclasses.field(init=False, repr=False, compare=False)
+    other_metadata: typing.Dict = field(default_factory=dict, compare=False, hash=False)
+    nonalignments: Tuple[Alignment] = field(init=False, repr=False, compare=False)
+    first: Alignment = field(init=False, repr=False, compare=False)
+    last: Alignment = field(init=False, repr=False, compare=False)
 
     def __post_init__(self):
         if len(self.alignments) > 0:  # NOTE: Cache `first` and `last`, if they exist.
@@ -285,7 +291,7 @@ class Passage:
     def _no_white_space(s: str) -> bool:
         return s.strip() == s
 
-    def check_invariants(self, eps=1e-6):
+    def check_invariants(self, eps: float=1e-6):
         """Check datastructure invariants."""
         assert all(a.script[0] <= a.script[1] for a in self.alignments)
         assert all(a.audio[0] <= a.audio[1] for a in self.alignments)
@@ -300,7 +306,7 @@ class Passage:
         assert all(a.script[1] <= b.script[0] for a, b in pairs)
         assert all(a.transcript[1] <= b.transcript[0] for a, b in pairs)
         # NOTE: The `audio` alignments may overlap by a little bit, at the edges.
-        assert all(a.audio[0] <= b.audio[1] for a, b in pairs)
+        assert all(a.audio[0] < b.audio[1] for a, b in pairs)
 
         if len(self.alignments) != 0:
             # NOTE: `eps` allows for minor rounding errors.
@@ -310,6 +316,8 @@ class Passage:
             assert min(self._get("audio")) >= 0
             assert min(self._get("script")) >= 0
             assert min(self._get("transcript")) >= 0
+
+        return self
 
 
 SpanType = typing.TypeVar("SpanType", bound="Span")
@@ -329,11 +337,11 @@ class Span:
         slice: A `slice` of `passage.alignments`.
     """
 
-    passage: Passage
-    passage_alignments: Tuple[Alignment]
+    passage: Passage = field(repr=False)
+    passage_alignments: Tuple[Alignment] = field(repr=False)
     slice: Slice
-    _first_cache: Alignment = dataclasses.field(init=False, repr=False, compare=False)
-    _last_cache: Alignment = dataclasses.field(init=False, repr=False, compare=False)
+    _first_cache: Alignment = field(init=False, repr=False, compare=False)
+    _last_cache: Alignment = field(init=False, repr=False, compare=False)
 
     @property
     def _first(self) -> Alignment:
@@ -361,6 +369,15 @@ class Span:
         return self.passage.audio_file
 
     @property
+    def alignment(self):
+        """Get `Span` as a singular `Alignment`."""
+        return Alignment(
+            script=(self._first.script[0], self._last.script[-1]),
+            audio=(self._first.audio[0], self._last.audio[-1]),
+            transcript=(self._first.transcript[0], self._last.transcript[-1]),
+        )
+
+    @property
     def other_metadata(self):
         return self.passage.other_metadata
 
@@ -385,7 +402,7 @@ class Span:
         return self.passage.transcript[self.transcript_slice]
 
     @staticmethod
-    def _offset_helper(a: typing.Tuple[float, float], b: float):
+    def _offset_helper(a: FloatFloat, b: float):
         return (a[0] - b, a[1] - b)
 
     def _offset(self, alignment: Alignment):
@@ -435,12 +452,16 @@ class Span:
         assert self.slice.stop > self.slice.start, "`Span` must have `Alignments`."
         assert self.slice.stop <= len(self.passage_alignments) and self.slice.stop >= 0
         assert self.slice.start < len(self.passage_alignments) and self.slice.start >= 0
+        return self
 
 
 def _merge(
     a: Alignment, b: Alignment, script: bool = False, transcript: bool = False, audio: bool = False
 ) -> Alignment:
     """Merge alignments `a` and `b` iff they are connected."""
+    if not script and not transcript and not audio:
+        return a
+
     return a._replace(
         script=(b if script else a).script,
         transcript=(b if transcript else a).transcript,
