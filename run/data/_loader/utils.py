@@ -321,7 +321,6 @@ class Passage:
 
 
 SpanType = typing.TypeVar("SpanType", bound="Span")
-Slice = slice
 
 
 @dataclasses.dataclass(frozen=True)
@@ -335,11 +334,14 @@ class Span:
         passage: The original passage, for context.
         passage_alignments: The original passage alignments, for context.
         slice: A `slice` of `passage.alignments`.
+        audio_slice_: By default, the `audio_slice` is based on `passage_alignments`. This allows
+            `audio_slice_` to be set to something else.
     """
 
     passage: Passage = field(repr=False)
     passage_alignments: Tuple[Alignment] = field(repr=False)
     slice: Slice
+    audio_slice_: typing.Optional[Slice] = None
     _first_cache: Alignment = field(init=False, repr=False, compare=False)
     _last_cache: Alignment = field(init=False, repr=False, compare=False)
 
@@ -353,12 +355,20 @@ class Span:
         return self._first_cache
 
     @property
+    def audio_start(self):
+        return self._first.audio[0] if self.audio_slice_ is None else self.audio_slice_.start
+
+    @property
     def _last(self) -> Alignment:
         if self.slice.stop - 1 == self.slice.start:
             return self._first
         if not hasattr(self, "_last_cache"):
             object.__setattr__(self, "_last_cache", self.passage_alignments[self.slice.stop - 1])
         return self._last_cache
+
+    @property
+    def audio_stop(self):
+        return self._last.audio[-1] if self.audio_slice_ is None else self.audio_slice_.stop
 
     @property
     def speaker(self):
@@ -373,7 +383,7 @@ class Span:
         """Get `Span` as a singular `Alignment`."""
         return Alignment(
             script=(self._first.script[0], self._last.script[-1]),
-            audio=(self._first.audio[0], self._last.audio[-1]),
+            audio=(self.audio_start, self.audio_stop),
             transcript=(self._first.transcript[0], self._last.transcript[-1]),
         )
 
@@ -387,7 +397,7 @@ class Span:
 
     @property
     def audio_slice(self):
-        return slice(self._first.audio[0], self._last.audio[-1])
+        return slice(self.audio_start, self.audio_stop)
 
     @property
     def transcript_slice(self):
@@ -409,7 +419,7 @@ class Span:
         return alignment._replace(
             script=self._offset_helper(alignment.script, self._first.script[0]),
             transcript=self._offset_helper(alignment.transcript, self._first.transcript[0]),
-            audio=self._offset_helper(alignment.audio, self._first.audio[0]),
+            audio=self._offset_helper(alignment.audio, self.audio_start),
         )
 
     @property
@@ -418,10 +428,10 @@ class Span:
 
     @property
     def audio_length(self):
-        return self._last.audio[-1] - self._first.audio[0]
+        return self.audio_stop - self.audio_start
 
     def audio(self) -> np.ndarray:
-        return read_audio(self.passage.audio_file, self._first.audio[0], self.audio_length)
+        return read_audio(self.passage.audio_file, self.audio_start, self.audio_length)
 
     def nonalignment_spans(self) -> typing.Iterable[Span]:
         nonalignments = self.passage.nonalignments[self.slice.start : self.slice.stop + 1]
@@ -452,6 +462,10 @@ class Span:
         assert self.slice.stop > self.slice.start, "`Span` must have `Alignments`."
         assert self.slice.stop <= len(self.passage_alignments) and self.slice.stop >= 0
         assert self.slice.start < len(self.passage_alignments) and self.slice.start >= 0
+        assert self.audio_slice_ is None or (
+            self.audio_slice_.start <= self._first.audio[0]
+            and self.audio_slice_.stop >= self._last.audio[-1]
+        )
         return self
 
 
