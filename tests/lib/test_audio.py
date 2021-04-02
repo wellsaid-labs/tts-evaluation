@@ -23,7 +23,6 @@ from lib.audio import (
     db_to_power,
     framed_rms_to_rms,
     power_spectrogram_to_framed_rms,
-    power_to_amp,
     power_to_db,
 )
 from tests import _utils
@@ -326,6 +325,37 @@ def test_write_audio__bounds():
             lib.audio.write_audio(path, np.array([1.1, 1.2, -3.0, -2.0], dtype=np.float64))
 
 
+def test_normalize_audio():
+    """Test `lib.audio.normalize_audio` normalizes audio."""
+    data_type = lib.audio.AudioDataType.SIGNED_INTEGER
+    suffix = ".wav"
+    bits = 16
+    format_ = lib.audio.AudioFormat(
+        sample_rate=8000,
+        num_channels=2,
+        encoding=lib.audio.AudioEncoding.PCM_INT_16_BIT,
+        bit_rate="256k",
+        precision=f"{bits}-bit",
+    )
+    temp_dir = tempfile.TemporaryDirectory()
+    directory = pathlib.Path(temp_dir.name)
+    audio_path = directory / TEST_DATA_LJ.name
+    dest_audio_path = directory / ("dest_" + TEST_DATA_LJ.name)
+    shutil.copy(TEST_DATA_LJ, audio_path)
+    lib.audio.normalize_audio(
+        source=audio_path,
+        destination=dest_audio_path,
+        suffix=suffix,
+        data_type=data_type,
+        bits=bits,
+        sample_rate=format_.sample_rate,
+        num_channels=format_.num_channels,
+    )
+    assert lib.audio.get_audio_metadata(dest_audio_path) == lib.audio.AudioMetadata(
+        path=dest_audio_path, num_samples=60672, **lib.utils.dataclass_as_dict(format_)
+    )
+
+
 def test_format_ffmpeg_audio_filter():
     """Test `lib.audio.format_ffmpeg_audio_filter` parameterizes an `ffmpeg` audio
     filter correctly."""
@@ -361,46 +391,22 @@ def test_format_ffmpeg_audio_filters():
     )
 
 
-def test_normalize_suffix():
-    """Test `lib.audio.normalize_suffix` normalizes suffix."""
-    expected = pathlib.Path("directory/test.wav")
-    assert lib.audio.normalize_suffix(pathlib.Path("directory/test.mp3"), ".wav") == expected
-
-
-def test_normalize_audio__assert_audio_normalized():
-    """Test `lib.audio.normalize_audio` normalizes audio and `lib.audio.assert_audio_normalized`
-    checks."""
-    sox_encoding = lib.audio.AudioEncoding.PCM_INT_16_BIT
-    ffmpeg_encoding = "pcm_s16le"
-    sample_rate = 8000
-    num_channels = 2
+def test_apply_audio_filters():
+    """Test `lib.audio.apply_audio_filters` applies audio filters."""
     loudnorm = lib.audio.format_ffmpeg_audio_filter(
         "loudnorm", i=-21, lra=4, tp=-6.1, print_format="summary"
     )
-    suffix = ".wav"
     audio_filter = lib.audio.format_ffmpeg_audio_filters([loudnorm])
-    with tempfile.TemporaryDirectory() as path:
-        directory = pathlib.Path(path)
-        audio_path = directory / TEST_DATA_LJ.name
-        shutil.copy(TEST_DATA_LJ, audio_path)
-        new_audio_path = directory / ("new_" + TEST_DATA_LJ.name)
-        lib.audio.normalize_audio(
-            audio_path,
-            new_audio_path,
-            suffix,
-            ffmpeg_encoding,
-            sample_rate,
-            num_channels,
-            audio_filter,
-        )
-        metadata = lib.audio.get_audio_metadata(audio_path)
-        new_metadata = lib.audio.AudioMetadata(
-            new_audio_path, sample_rate, num_channels, sox_encoding, "256k", "16-bit", 60672
-        )
-        assert lib.audio.get_audio_metadata(new_audio_path) == new_metadata
-    lib.audio.assert_audio_normalized(new_metadata, suffix, sox_encoding, sample_rate, num_channels)
-    with pytest.raises(AssertionError):
-        lib.audio.assert_audio_normalized(metadata, suffix, sox_encoding, sample_rate, num_channels)
+    temp_dir = tempfile.TemporaryDirectory()
+    directory = pathlib.Path(temp_dir.name)
+    audio_path = directory / TEST_DATA_LJ.name
+    dest_audio_path = directory / ("dest_" + TEST_DATA_LJ.name)
+    shutil.copy(TEST_DATA_LJ, audio_path)
+    metadata = lib.audio.get_audio_metadata(audio_path)
+    lib.audio.apply_audio_filters(metadata, dest_audio_path, audio_filter)
+    assert lib.audio.get_audio_metadata(dest_audio_path) == lib.audio.AudioMetadata(
+        **{**lib.utils.dataclass_as_dict(metadata), **dict(path=dest_audio_path)}
+    )
 
 
 def test_pad_remainder():

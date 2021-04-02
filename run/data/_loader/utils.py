@@ -45,6 +45,112 @@ def read_audio(audio_file: AudioMetadata, *args, **kwargs) -> np.ndarray:
     return audio
 
 
+@configurable
+def normalize_audio_suffix(path: Path, suffix: str = HParam()) -> Path:
+    """ Normalize the last suffix to `suffix` in `path`. """
+    assert len(path.suffixes) == 1, "`path` has multiple suffixes."
+    return path.parent / (path.stem + suffix)
+
+
+@configurable
+def normalize_audio(
+    source: Path,
+    destination: Path,
+    suffix: str = HParam(),
+    data_type: AudioDataType = HParam(),
+    bits: int = HParam(),
+    sample_rate: int = HParam(),
+    num_channels: int = HParam(),
+):
+    return lib.audio.normalize_audio(
+        source, destination, suffix, data_type, bits, sample_rate, num_channels
+    )
+
+
+@configurable
+def is_normalized_audio_file(
+    audio_file: AudioMetadata, audio_format: AudioFormat = HParam(), suffix: str = HParam()
+):
+    """Check if `audio_file` is normalized to `audio_format`."""
+    attrs = [f.name for f in dataclasses.fields(AudioFormat) if f.name != "encoding"]
+    bool_ = audio_file.path.suffix == suffix
+    # NOTE: Use `.name` because of this bug:
+    # https://github.com/streamlit/streamlit/issues/2379
+    bool_ = bool_ and audio_file.encoding.name == audio_format.encoding.name
+    return bool_ and all(getattr(audio_format, a) == getattr(audio_file, a) for a in attrs)
+
+
+@configurable
+def _cache_path(
+    original: pathlib.Path, prefix: str, suffix: str, cache_dir=HParam(), **kwargs
+) -> pathlib.Path:
+    """Make `Path` for caching results given the `original` file.
+
+    Args:
+        ...
+        cache_dir: Relative or absolute path to a directory dedicated for caching.
+        ...
+    """
+    params = ",".join(f"{k}={v}" for k, v in kwargs.items())
+    parent = original.parent if original.parent.stem == cache_dir else original.parent / cache_dir
+    cache_path = parent / f"{prefix}({original.stem},{params}){suffix}"
+    cache_path.parent.mkdir(exist_ok=True)
+    return cache_path
+
+
+@configurable
+def maybe_normalize_audio_and_cache(
+    audio_file: AudioMetadata,
+    suffix: str = HParam(),
+    data_type: AudioDataType = HParam(),
+    bits: int = HParam(),
+    sample_rate: int = HParam(),
+    num_channels: int = HParam(),
+    **kwargs,
+) -> pathlib.Path:
+    """Normalize `audio_file`, if it's not already normalized, and cache the results."""
+    if is_normalized_audio_file(audio_file):
+        return audio_file.path
+    kwargs_ = dict(
+        suffix=suffix,
+        bits=bits,
+        sample_rate=sample_rate,
+        num_channels=num_channels,
+        data_type=data_type,
+    )
+    name = maybe_normalize_audio_and_cache.__wrapped__.__name__
+    cache = _cache_path(audio_file.path, name, **kwargs_, **kwargs)
+    if not cache.exists():
+        lib.audio.normalize_audio(audio_file.path, cache, **kwargs_)
+    return cache
+
+
+@configurable
+def get_non_speech_segments_and_cache(
+    audio_file: AudioMetadata,
+    low_cut: int = HParam(),
+    frame_length: float = HParam(),
+    hop_length: float = HParam(),
+    threshold: float = HParam(),
+    **kwargs,
+) -> Timeline[FloatFloat]:
+    """Get non-speech segments in `audio_file` and cache."""
+    format: typing.Callable[[typing.Iterable[FloatFloat]], Timeline[FloatFloat]]
+    format = lambda l: Timeline([Interval(s, s) for s in l])
+    kwargs_ = dict(
+        low_cut=low_cut, frame_length=frame_length, hop_length=hop_length, threshold=threshold
+    )
+    name = get_non_speech_segments_and_cache.__wrapped__.__name__
+    cache_path = _cache_path(audio_file.path, name, ".npy", **kwargs_, **kwargs)
+    if cache_path.exists():
+        return format(tuple(t) for t in np.load(cache_path, allow_pickle=False))
+
+    audio = read_audio(audio_file, memmap=True)
+    vad: typing.List[FloatFloat] = lib.audio.get_non_speech_segments(audio, audio_file, **kwargs_)
+    np.save(cache_path, np.array(vad), allow_pickle=False)
+    return format(vad)
+
+
 
 
 _alignment_dtype = [

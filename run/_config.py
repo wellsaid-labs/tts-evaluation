@@ -13,9 +13,10 @@ from third_party import LazyLoader
 
 import lib
 import run
+import run.data._loader.utils
 from lib.text import is_voiced
 from run.data import _loader
-from run.data._loader import DATASETS, Speaker
+from run.data._loader import DATASETS, Passage, Span, Speaker
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import IPython
@@ -117,7 +118,7 @@ class Device(enum.Enum):
 
 
 Label = typing.NewType("Label", str)
-Dataset = typing.Dict[Speaker, typing.List[_loader.Passage]]
+Dataset = typing.Dict[Speaker, typing.List[Passage]]
 
 
 class GetLabel(typing.Protocol):
@@ -207,12 +208,19 @@ torch.nn.LayerNorm.__init__ = configurable_(torch.nn.LayerNorm.__init__)
 
 def _configure_audio_processing():
     """ Configure modules that process audio. """
-    num_channels = 1  # NOTE: The signal model output is 1-channel, similar to Tacotron-2.
     # NOTE: The SoX and FFmpeg encodings are the same.
     # NOTE: The signal model output is 32-bit.
-    sox_encoding = lib.audio.AudioEncoding.PCM_FLOAT_32_BIT
-    ffmpeg_encoding = "pcm_f32le"
     suffix = ".wav"
+    data_type = lib.audio.AudioDataType.FLOATING_POINT
+    bits = 32
+    format_ = lib.audio.AudioFormat(
+        sample_rate=SAMPLE_RATE,
+        num_channels=1,  # NOTE: The signal model output is 1-channel, similar to Tacotron-2.
+        encoding=lib.audio.AudioEncoding.PCM_FLOAT_32_BIT,
+        bit_rate="768k",
+        precision="25-bit",
+    )
+    non_speech_segment_frame_length = 50
 
     # NOTE: A "hann window" is standard for calculating an FFT, it's even mentioned as a "popular
     # window" on Wikipedia (https://en.wikipedia.org/wiki/Window_function).
@@ -240,32 +248,23 @@ def _configure_audio_processing():
         logger.info("Ignoring optional `librosa` configurations.")
 
     try:
-        add_config({IPython.display.Audio.__init__: HParams(rate=SAMPLE_RATE)})
+        add_config({IPython.display.Audio.__init__: HParams(rate=format_.sample_rate)})
     except ImportError:
         logger.info("Ignoring optional `IPython` configurations.")
 
     config = {
-        lib.visualize.plot_waveform: HParams(sample_rate=SAMPLE_RATE),
-        lib.visualize.plot_spectrogram: HParams(sample_rate=SAMPLE_RATE, frame_hop=FRAME_HOP),
+        lib.visualize.plot_waveform: HParams(sample_rate=format_.sample_rate),
+        lib.visualize.plot_spectrogram: HParams(
+            sample_rate=format_.sample_rate, frame_hop=FRAME_HOP
+        ),
         lib.visualize.plot_mel_spectrogram: HParams(**hertz_bounds),
-        lib.audio.write_audio: HParams(sample_rate=SAMPLE_RATE),
-        lib.audio.normalize_audio: HParams(
-            suffix=suffix,
-            encoding=ffmpeg_encoding,
-            sample_rate=SAMPLE_RATE,
-            num_channels=num_channels,
-            audio_filters=lib.audio.AudioFilters(""),
-        ),
-        lib.audio.normalize_suffix: HParams(suffix=suffix),
-        lib.audio.assert_audio_normalized: HParams(
-            suffix=suffix, encoding=sox_encoding, sample_rate=SAMPLE_RATE, num_channels=num_channels
-        ),
+        lib.audio.write_audio: HParams(sample_rate=format_.sample_rate),
         lib.audio.pad_remainder: HParams(multiple=FRAME_HOP, mode="constant", constant_values=0.0),
         lib.audio.signal_to_framed_rms: HParams(frame_length=FRAME_SIZE, hop_length=FRAME_HOP),
         lib.audio.SignalTodBMelSpectrogram.__init__: HParams(
             fft_length=FFT_LENGTH,
             frame_hop=FRAME_HOP,
-            sample_rate=SAMPLE_RATE,
+            sample_rate=format_.sample_rate,
             num_mel_bins=NUM_FRAME_CHANNELS,
             # SOURCE (Tacotron 2):
             # Prior to log compression, the filterbank output magnitudes are clipped to a
@@ -282,7 +281,7 @@ def _configure_audio_processing():
             **hertz_bounds,
         ),
         lib.audio.griffin_lim: HParams(
-            sample_rate=SAMPLE_RATE,
+            sample_rate=format_.sample_rate,
             fft_length=FFT_LENGTH,
             frame_hop=FRAME_HOP,
             # SOURCE (Tacotron 1):
@@ -298,24 +297,40 @@ def _configure_audio_processing():
         ),
         # NOTE: The `DeMan` loudness implementation of ITU-R BS.1770 is sample rate independent.
         lib.audio.get_pyloudnorm_meter: HParams(filter_class="DeMan"),
-        # NOTE: `get_non_speech_segments` parameters are set based on `vad_workbook.py`. They
-        # are applicable to most datasets with little to no noise.
-        lib.audio.get_non_speech_segments: HParams(
-            low_cut=300, frame_length=50, hop_length=5, threshold=-60
-        ),
         lib.spectrogram_model.SpectrogramModel.__init__: HParams(
             # NOTE: This is based on one of the slowest legitimate alignments in
             # `dataset_dashboard`. With a sample size of 8192, we found that 0.18 frames per token
             # included everything but 3 alignments. The last three alignments were 0.19 "or",
             # 0.21 "or", and 0.24 "EEOC". The slowest alignment was the acronym "EEOC" with the
             # last letter taking 0.5 seconds.
-            max_frames_per_token=(0.18 / (FRAME_HOP / SAMPLE_RATE)),
+            max_frames_per_token=(0.18 / (FRAME_HOP / format_.sample_rate)),
         ),
         lib.signal_model.SignalModel.__init__: HParams(
             ratios=[2] * int(math.log2(FRAME_HOP)),
         ),
-        run._utils.normalized_audio_path: HParams(
-            encoding=ffmpeg_encoding, sample_rate=SAMPLE_RATE, num_channels=num_channels
+        run.data._loader.utils.normalize_audio_suffix: HParams(suffix=suffix),
+        run.data._loader.utils.normalize_audio: HParams(
+            suffix=suffix,
+            data_type=data_type,
+            bits=bits,
+            sample_rate=format_.sample_rate,
+            num_channels=format_.num_channels,
+        ),
+        run.data._loader.utils.is_normalized_audio_file: HParams(
+            audio_format=format_, suffix=suffix
+        ),
+        run.data._loader.utils._cache_path: HParams(cache_dir=TTS_DISK_CACHE_NAME),
+        # NOTE: `get_non_speech_segments` parameters are set based on `vad_workbook.py`. They
+        # are applicable to most datasets with little to no noise.
+        run.data._loader.utils.get_non_speech_segments_and_cache: HParams(
+            low_cut=300, frame_length=non_speech_segment_frame_length, hop_length=5, threshold=-60
+        ),
+        run.data._loader.utils.maybe_normalize_audio_and_cache: HParams(
+            suffix=suffix,
+            data_type=data_type,
+            bits=bits,
+            sample_rate=format_.sample_rate,
+            num_channels=format_.num_channels,
         ),
         # NOTE: A 0.400 `block_size` is standard for ITU-R BS.1770.
         run.train.spectrogram_model._data._get_loudness: HParams(block_size=0.400, precision=0),
@@ -517,7 +532,7 @@ def _handle_passage(passage: _loader.Passage) -> _loader.Passage:
 DIGIT_REGEX = re.compile(r"\d")
 
 
-def _include_span(span: _loader.Span):
+def _include_span(span: Span):
     """Return `True` iff `span` should be included in the dataset.
 
     TODO: The `span` is still cut-off sometimes, and it's difficult to detect if it is. Instead

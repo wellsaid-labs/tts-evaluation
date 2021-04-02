@@ -37,62 +37,6 @@ logger = logging.getLogger(__name__)
 
 
 @configurable
-def normalized_audio_path(
-    path: pathlib.Path,
-    encoding: str = HParam(),
-    sample_rate: int = HParam(),
-    num_channels: int = HParam(),
-    **_,
-):
-    """Get a unique filename based on a couple of audio normalization parameters."""
-    kwargs = dict(encoding=encoding, sample_rate=sample_rate, num_channels=num_channels)
-    kwargs_ = ",".join([f"{k}={v}" for k, v in kwargs.items()])
-    suffix = f",{kwargs_}).wav"
-    prefix = "ffmpeg("
-    parent_name = run._config.TTS_DISK_CACHE_NAME
-    if path.name.startswith(prefix) and path.name.endswith(suffix) and path.parent == parent_name:
-        return path
-    parent = path.parent / parent_name if path.parent.name != parent_name else path.parent
-    return parent / f"{prefix}{path.stem}{suffix}"
-
-
-def _normalize_audio(
-    args: typing.Tuple[pathlib.Path, pathlib.Path], call: typing.Callable[..., None], **kwargs
-):
-    """ Helper function for `normalize_audio`. """
-    source, destination = args
-    destination.parent.mkdir(exist_ok=True, parents=True)
-    call(source, destination, **kwargs)
-
-
-@lib.utils.log_runtime
-def normalize_audio(
-    dataset: Dataset,
-    num_processes: int = typing.cast(int, os.cpu_count()),
-    **kwargs,
-) -> Dataset:
-    """Normalize audio with ffmpeg in `dataset`.
-
-    TODO: In order to better estimate the performance, we could measure progress based on audio
-    file length.
-    TODO: In order to encourage parallelism, the longest files should be normalized first.
-    """
-    logger.info("Normalizing dataset audio...")
-    paths = list(set([p.audio_file.path for v in dataset.values() for p in v]))
-    updated_paths = [normalized_audio_path(p, **kwargs) for p in paths]
-    normalize = functools.partial(_normalize_audio, call=lib.audio.normalize_audio, **kwargs)
-    args = [(p, u) for p, u in zip(paths, updated_paths) if not u.exists()]
-    with multiprocessing.pool.ThreadPool(num_processes) as pool:
-        list(tqdm.tqdm(pool.imap_unordered(normalize, args), total=len(args)))
-
-    logger.info("Updating dataset passages with normalized audio...")
-    lookup = {p: m for p, m in zip(paths, lib.audio.get_audio_metadata(updated_paths))}
-    update: typing.Callable[[_loader.Passage], _loader.Passage]
-    update = lambda p: _loader.update_passage_audio(p, lookup[p.audio_file.path])
-    return {s: [update(p) for p in d] for s, d in dataset.items()}
-
-
-@configurable
 def get_dataset(
     datasets: typing.Dict[_loader.Speaker, _loader.DataLoader] = HParam(),
     path: pathlib.Path = HParam(),
@@ -112,7 +56,6 @@ def get_dataset(
     with multiprocessing.pool.ThreadPool() as pool:
         items = list(pool.starmap(load_data, datasets.items()))
     dataset = {k: v for k, v in items}
-    dataset = run._utils.normalize_audio(dataset)
     return dataset
 
 

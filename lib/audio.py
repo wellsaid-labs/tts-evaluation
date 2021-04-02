@@ -77,6 +77,10 @@ class AudioEncoding(enum.Enum):
     PCM_FLOAT_32_BIT: typing.Final = "32-bit Floating Point PCM"
 
 
+class AudioDataType(enum.Enum):
+    SIGNED_INTEGER: typing.Final = "signed-integer"
+    UNSIGNED_INTEGER: typing.Final = "unsigned-integer"
+    FLOATING_POINT: typing.Final = "floating-point"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -324,6 +328,35 @@ def write_audio(
     wavfile.write(path, sample_rate, audio)
 
 
+def normalize_audio(
+    source: Path,
+    destination: Path,
+    suffix: str,
+    data_type: AudioDataType,
+    bits: int,
+    sample_rate: int,
+    num_channels: int,
+):
+    """Create a new file at `destination` with an updated audio file format.
+
+    NOTE: SoX tends to be better than ffmpeg, especially the resampler. SoX also includes
+    features like guard that ffmpeg does not include. Learn more:
+    https://trac.ffmpeg.org/wiki/FFmpeg%20and%20the%20SoX%20Resampler
+    https://www.reddit.com/r/audiophile/comments/308023/highest_quality_resampling_and_bit_depth/
+    https://transcoding.wordpress.com/2011/11/16/careful-with-audio-resampling-using-ffmpeg/
+    https://forum.kodi.tv/showthread.php?tid=318686
+
+    Args:
+        ...
+        suffix: The expected `suffix` of `destination`.
+        ...
+    """
+    assert destination.suffix == suffix, f'The normalized file must be of type "{suffix}".'
+    command = ["sox", "-G", source.absolute(), "-e", data_type.value, "-b", bits]
+    command += [destination.absolute(), "rate", sample_rate, "channels", num_channels]
+    subprocess.run([str(c) for c in command], check=True)
+
+
 AudioFilter = typing.NewType("AudioFilter", str)
 
 
@@ -340,63 +373,26 @@ def format_ffmpeg_audio_filters(filters: typing.List[AudioFilter]) -> AudioFilte
     return typing.cast(AudioFilters, ",".join(filters))
 
 
-@configurable
-def normalize_suffix(path: Path, suffix: str = HParam()) -> Path:
-    """ Normalize the final suffix to `suffix`. """
-    assert len(path.suffixes) == 1, "`path` has multiple suffixes."
-    return path.parent / (path.stem + suffix)
+def apply_audio_filters(source: AudioMetadata, destination: Path, audio_filters: AudioFilters):
+    """Apply `audio_filters` to `source` and save at `destination`.
 
-
-@configurable
-def normalize_audio(
-    source: Path,
-    destination: Path,
-    suffix: str = HParam(),
-    encoding: str = HParam(),
-    sample_rate: int = HParam(),
-    num_channels: int = HParam(),
-    audio_filters: AudioFilters = HParam(),
-):
-    """Normalize the audio `encoding`, `sample_rate` and `num_channels`. Additionally, this
-    can apply `audio_filters`.
-
-    Learn more about `-hide_banner`, `-loglevel` and `-nostats`:
+    NOTE: Learn more about `-hide_banner`, `-loglevel` and `-nostats`:
     https://superuser.com/questions/326629/how-can-i-make-ffmpeg-be-quieter-less-verbose
-
-    TODO: If the `source` is already normalized, could the performance of this function be
-    improved? For example, if the `source` is already normalized can we link `destination` to
-    `source`?
-
-    TODO: Can we use this function to measure, and reduce clipping? For example, SoX has a clipping
-    guard that can be turned on, and it warns about clipping.
-
-    TODO: SoX is considered to have a better resampler than ffmpeg. Should we use the SoX resampler
-    along with guard? Learn more:
-    https://trac.ffmpeg.org/wiki/FFmpeg%20and%20the%20SoX%20Resampler
-    https://www.reddit.com/r/audiophile/comments/308023/highest_quality_resampling_and_bit_depth/
+    NOTE: Audio filters may change audio metadata, learn more:
+    https://trac.ffmpeg.org/ticket/6570
+    https://superuser.com/questions/1218471/converting-and-normalizing-audio-file-creates-unusable-file
+    NOTE: Learn more about `ffprobe`:
+    https://stackoverflow.com/questions/5618363/is-there-a-way-to-use-ffmpeg-to-determine-the-encoding-of-a-file-before-transcod/5619907
     """
-    assert destination.suffix == suffix, f'The normalized file must be of type "{suffix}".'
-    command = "" if len(audio_filters) == 0 else f"-af {audio_filters}"
-    command = (
-        f"ffmpeg -hide_banner -loglevel error -nostats -i {source.absolute()} -acodec {encoding} "
-        f"-ar {sample_rate} -ac {num_channels} {command} {destination.absolute()}"
-    )
-    subprocess.run(command.split(), check=True)
+    command = "ffprobe -hide_banner -stats -i".split() + [str(source.path.absolute())]
+    command += "-show_entries stream=codec_name -of default=nokey=1:noprint_wrappers=1".split()
+    command += ["-v", "error"]
+    acodec = subprocess.check_output([str(c) for c in command]).decode()
 
-
-@configurable
-def assert_audio_normalized(
-    metadata: AudioMetadata,
-    suffix: str = HParam(),
-    encoding: AudioEncoding = HParam(),
-    sample_rate: int = HParam(),
-    num_channels: int = HParam(),
-):
-    """Assert audio `metadata` was normalized. """
-    assert metadata.path.suffix == suffix
-    assert metadata.sample_rate == sample_rate
-    assert metadata.num_channels == num_channels
-    assert metadata.encoding == encoding
+    command = "ffmpeg -hide_banner -loglevel error -nostats -i".split()
+    command += [source.path.absolute(), "-acodec", acodec, "-ar", source.sample_rate, "-af"]
+    command += [audio_filters, destination.absolute()]
+    subprocess.run([str(c) for c in command], check=True)
 
 
 @configurable
