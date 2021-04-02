@@ -200,7 +200,7 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
    ```bash
    mkdir -p $PROCESSED/speech_to_text
    python -m run.data audio normalize $ROOT/recordings/*$ENCODING $PROCESSED/speech_to_text \
-                                      --encoding='pcm_s16le'
+                                      --data-type='signed-integer' --bits=16
    ```
 
 1. Normalize CSV file text...

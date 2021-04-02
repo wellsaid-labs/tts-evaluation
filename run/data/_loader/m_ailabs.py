@@ -156,6 +156,7 @@ def _m_ailabs_speech_dataset(
     check_files: typing.List[str],
     root_directory_name: str = "M-AILABS",
     metadata_pattern: str = "**/metadata.csv",
+    add_tqdm: bool = False,
 ) -> typing.List[Passage]:
     """Download, extract, and process a M-AILABS dataset.
 
@@ -171,8 +172,10 @@ def _m_ailabs_speech_dataset(
         root_directory_name: Name of the dataset directory.
         metadata_pattern: Pattern for all `metadata.csv` files containing (filename, text)
             information.
+        add_tqdm
     """
-    logger.info('Loading "M-AILABS %s" speech dataset...', extracted_name)
+    name = f"{root_directory_name} {extracted_name}"
+    logger.info(f"Loading {name} speech dataset...")
     directory = directory / root_directory_name
     directory.mkdir(exist_ok=True)
     download_file_maybe_extract(url=url, directory=str(directory), check_files=check_files)
@@ -189,4 +192,4 @@ def _m_ailabs_speech_dataset(
             metadata_path.parent, book.speaker, additional_metadata={"book": book}
         )
         passages.append(loaded)
-    return list(make_passages(passages))
+    return list(make_passages(name, passages, add_tqdm=add_tqdm))

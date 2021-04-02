@@ -34,6 +34,7 @@ def lj_speech_dataset(
     speaker: Speaker = LINDA_JOHNSON,
     verbalize: bool = True,
     metadata_text_column: typing.Union[str, int] = 1,
+    add_tqdm: bool = False,
     **kwargs,
 ) -> typing.List[Passage]:
     """Load the Linda Johnson (LJ) Speech dataset.
@@ -69,9 +70,11 @@ def lj_speech_dataset(
         url: URL of the dataset `tar.gz` file.
         speaker
         verbalize: If `True`, verbalize the text.
+        metadata_text_column
+        add_tqdm
         **kwargs: Key word arguments passed to `conventional_dataset_loader`.
     """
-    logger.info('Loading "LJSpeech-1.1" speech dataset...')
+    logger.info(f'Loading "{root_directory_name}" speech dataset...')
     download_file_maybe_extract(url, str(directory.absolute()), check_files=check_files)
     passages = conventional_dataset_loader(
         directory / root_directory_name,
@@ -80,7 +83,7 @@ def lj_speech_dataset(
         metadata_text_column=metadata_text_column,
     )
     passages = [_process_text(p, verbalize) for p in passages]
-    return list(make_passages([passages]))
+    return list(make_passages(root_directory_name, [passages], add_tqdm=add_tqdm))
 
 
 """

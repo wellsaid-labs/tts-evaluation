@@ -5,7 +5,6 @@ import logging
 import math
 import multiprocessing
 import multiprocessing.pool
-import os
 import pathlib
 import random
 import typing
@@ -20,8 +19,6 @@ from third_party import LazyLoader
 from torchnlp.random import fork_rng
 
 import lib
-import run
-import run.data._loader.m_ailabs
 from run._config import Dataset
 from run.data import _loader
 
@@ -42,21 +39,25 @@ def get_dataset(
     path: pathlib.Path = HParam(),
     include_passage: typing.Callable[[_loader.Passage], bool] = HParam(),
     handle_passage: typing.Callable[[_loader.Passage], _loader.Passage] = HParam(),
+    max_workers: int = 0,
 ) -> Dataset:
     """Define a TTS dataset.
 
-    TODO: `normalize_audio` could be used replicate datasets with different audio processing.
+    TODO: `apply_audio_filters` could be used replicate datasets with different audio processing.
 
     Args:
         datasets: Dictionary of datasets to load.
         path: Directory to cache the dataset.
+        ...
     """
     logger.info("Loading dataset...")
-    load_data = lambda s, d: (s, [handle_passage(p) for p in d(path) if include_passage(p)])
-    with multiprocessing.pool.ThreadPool() as pool:
-        items = list(pool.starmap(load_data, datasets.items()))
-    dataset = {k: v for k, v in items}
-    return dataset
+    load = lambda s, d, **k: (s, [handle_passage(p) for p in d(path, **k) if include_passage(p)])
+    if max_workers > 0:
+        with multiprocessing.pool.ThreadPool(processes=min(max_workers, len(datasets))) as pool:
+            items = list(pool.starmap(load, datasets.items()))
+    else:
+        items = [load(s, d, add_tqdm=True) for s, d in datasets.items()]
+    return {k: v for k, v in items}
 
 
 @functools.lru_cache(maxsize=None)

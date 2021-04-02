@@ -1,7 +1,7 @@
 import typing
 from pathlib import Path
 
-from run.data._loader import m_ailabs
+from run.data._loader import m_ailabs, utils
 from run.data._loader.lj_speech import LINDA_JOHNSON, lj_speech_dataset
 from run.data._loader.m_ailabs import (
     ELIZABETH_KLETT,
@@ -16,6 +16,7 @@ from run.data._loader.m_ailabs import (
 from run.data._loader.old_wsl_datasets import OLD_WSL_DATASETS
 from run.data._loader.utils import (
     Alignment,
+    NonalignmentSpans,
     Passage,
     Span,
     SpanGenerator,
@@ -24,11 +25,13 @@ from run.data._loader.utils import (
     conventional_dataset_loader,
     dataset_loader,
     get_non_speech_segments_and_cache,
+    has_a_mistranscription,
     is_normalized_audio_file,
     maybe_normalize_audio_and_cache,
     normalize_audio,
     normalize_audio_suffix,
     read_audio,
+    voiced_nonalignment_spans,
 )
 from run.data._loader.wsl_datasets import (
     ADRIENNE_WALKER_HELLER,
@@ -69,8 +72,9 @@ DATASETS[ELIZABETH_KLETT] = m_ailabs_en_uk_elizabeth_klett_speech_dataset
 
 
 __all__ = [
+    "utils",
     "Alignment",
-    "IsConnected",
+    "NonalignmentSpans",
     "Passage",
     "Span",
     "SpanGenerator",
@@ -79,11 +83,13 @@ __all__ = [
     "conventional_dataset_loader",
     "dataset_loader",
     "get_non_speech_segments_and_cache",
+    "has_a_mistranscription",
     "is_normalized_audio_file",
     "maybe_normalize_audio_and_cache",
     "normalize_audio",
     "normalize_audio_suffix",
     "read_audio",
+    "voiced_nonalignment_spans",
     "lj_speech_dataset",
     "m_ailabs",
     "m_ailabs_en_us_judy_bieber_speech_dataset",

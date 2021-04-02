@@ -482,7 +482,7 @@ def test_timeline__get_average_interval_spacing():
     assert Timeline._get_average_interval_spacing([Interval((0, 1), None)]) == 1.0
 
     intervals = [Interval((0, 2.5), None), Interval((0, 2.5), None)]
-    assert Timeline._get_average_interval_spacing(intervals) == 0.8333333333333334
+    assert Timeline._get_average_interval_spacing(intervals) == 1.25
 
     intervals = [Interval((0, 2.5), None), Interval((-2.5, 0), None)]
-    assert Timeline._get_average_interval_spacing(intervals) == 1.6666666666666667
+    assert Timeline._get_average_interval_spacing(intervals) == 2.5

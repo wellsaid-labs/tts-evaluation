@@ -211,7 +211,7 @@ def _dataset_loader(
         metadata_kwargs=metadata_kwargs,
         audio_path_template=audio_path_template,
     )
-    return list(make_passages([passages]))
+    return list(make_passages(root_directory_name, [passages]))
 
 
 OLD_WSL_DATASETS = {

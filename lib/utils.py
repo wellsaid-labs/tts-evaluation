@@ -561,6 +561,17 @@ class Interval(typing.Generic[_IntervalVar]):
     def span(self):
         return (self.start, self.stop)
 
+    def __eq__(self, other):
+        if isinstance(other, Interval):
+            return self.start == other.start and self.stop == other.stop and self.val == other.val
+        raise NotImplementedError()
+
+    def __hash__(self):
+        return hash((self.start, self.stop, self.val))
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}(({self.start}, {self.stop}), {self.val})"
+
 
 _TimelineVar = typing.TypeVar("_TimelineVar")
 
@@ -575,7 +586,6 @@ class Timeline(typing.Generic[_TimelineVar]):
     __slots__ = "_bucket_size", "_timeline"
 
     def __init__(self, intervals: typing.List[Interval[_TimelineVar]]):
-        assert len(intervals) > 0
         _timeline: typing.Dict[int, typing.List[Interval[_TimelineVar]]]
         _timeline = collections.defaultdict(list)
         intervals = sorted(intervals, key=lambda k: k.start)
@@ -587,11 +597,19 @@ class Timeline(typing.Generic[_TimelineVar]):
         self._timeline = collections.defaultdict(tuple, {k: tuple(v) for k, v in _timeline.items()})
 
     @staticmethod
-    def _get_average_interval_spacing(intervals: typing.List[Interval[_TimelineVar]]) -> float:
-        """Get the average spacing between interval points."""
-        ticks = sorted([t for i in intervals for t in (i.start, i.stop)])
-        diffs = [b - a for a, b in zip(ticks, ticks[1:])]
-        return sum(diffs) / len(diffs)
+    def _get_average_interval_spacing(
+        intervals: typing.List[Interval[_TimelineVar]], default: float = 1.0
+    ) -> float:
+        """Get the average spacing between interval points.
+
+        TODO: This is an average, and it'll be negatively impacted by outliers. We should consider
+        getting a median, instead.
+        """
+        if len(intervals) == 0:
+            return default
+
+        length = max(i.stop for i in intervals) - min(i.start for i in intervals)
+        return default if length == 0 else length / len(intervals)
 
     def _get_indicies(self, start: float, stop: float) -> typing.Iterable[int]:
         """
@@ -631,3 +649,6 @@ class Timeline(typing.Generic[_TimelineVar]):
 
     def __getitem__(self, k: typing.Union[int, float, slice]) -> typing.Tuple[_TimelineVar]:
         return tuple(v.val for v in self.get(k))
+
+    def intervals(self) -> typing.Set[Interval[_TimelineVar]]:
+        return set(i for v in self._timeline.values() for i in v)

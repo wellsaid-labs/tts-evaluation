@@ -1,4 +1,8 @@
-""" Command-line interface (CLI) for processing data files. """
+""" Command-line interface (CLI) for processing data files.
+
+TODO: Should we add a tool to check for noise floors? We could report back the lowest decibel
+seen in a similar way to `lib.audio.get_non_speech_segments`.
+"""
 import collections
 import dataclasses
 import functools
@@ -22,6 +26,7 @@ from third_party import LazyLoader
 import lib
 import run
 from run._utils import gcs_uri_to_blob
+from run.data import _loader
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import Levenshtein
@@ -222,21 +227,22 @@ def print_format(
 def audio_normalize(
     paths: typing.List[pathlib.Path] = typer.Argument(..., exists=True, dir_okay=False),
     dest: pathlib.Path = typer.Argument(..., exists=True, file_okay=False),
-    encoding: typing.Optional[str] = typer.Option(None),
+    data_type: typing.Optional[lib.audio.AudioDataType] = typer.Option(None),
+    bits: typing.Optional[int] = typer.Option(None),
 ):
     """ Normalize audio file format(s) in PATHS and save to directory DEST. """
-    params = hparams.HParams(audio_filters=lib.audio.AudioFilters(""))
-    if encoding is not None:
-        params.update(encoding=encoding)
-    hparams.add_config({lib.audio.normalize_audio: params})
+    if bits is not None:
+        hparams.add_config({_loader.normalize_audio: hparams.HParams(bits=bits)})
+    if data_type is not None:
+        hparams.add_config({_loader.normalize_audio: hparams.HParams(data_type=data_type)})
 
     progress_bar = tqdm.tqdm(total=round(_get_total_length(paths)))
     for path in paths:
-        dest_path = lib.audio.normalize_suffix(dest / path.name)
+        dest_path = _loader.normalize_audio_suffix(dest / path.name)
         if dest_path.exists():
             logger.error("Skipping, file already exists: %s", dest_path)
         else:
-            lib.audio.normalize_audio(path, dest_path)
+            _loader.normalize_audio(path, dest_path)
             progress_bar.update(round(lib.audio.get_audio_metadata(path).length))
 
 

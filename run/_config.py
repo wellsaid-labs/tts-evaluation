@@ -325,6 +325,9 @@ def _configure_audio_processing():
         run.data._loader.utils.get_non_speech_segments_and_cache: HParams(
             low_cut=300, frame_length=non_speech_segment_frame_length, hop_length=5, threshold=-60
         ),
+        run.data._loader.utils._make_speech_segments: HParams(
+            padding=lib.audio.milli_to_sec(non_speech_segment_frame_length / 2)
+        ),
         run.data._loader.utils.maybe_normalize_audio_and_cache: HParams(
             suffix=suffix,
             data_type=data_type,
@@ -520,15 +523,6 @@ def _include_passage(passage: Passage) -> bool:
     return True
 
 
-def _handle_passage(passage: _loader.Passage) -> _loader.Passage:
-    """Update and/or check `passage`."""
-    if passage.speaker in set([_loader.JUDY_BIEBER, _loader.MARY_ANN, _loader.ELIZABETH_KLETT]):
-        script = lib.text.normalize_vo_script(passage.script)
-        return run.data._loader.update_conventional_passage_script(passage, script)
-    assert lib.text.is_normalized_vo_script(passage.script)
-    return passage
-
-
 DIGIT_REGEX = re.compile(r"\d")
 
 
@@ -584,7 +578,7 @@ def _configure_data_processing():
             datasets=DATASETS,
             path=DATA_PATH,
             include_passage=_include_passage,
-            handle_passage=_handle_passage,
+            handle_passage=lib.utils.identity,
         ),
         run._utils.split_dataset: HParams(
             groups=[set(_loader.WSL_DATASETS)],
