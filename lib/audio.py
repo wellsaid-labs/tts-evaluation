@@ -1132,6 +1132,10 @@ def highpass_filter(signal: np.ndarray, freq: int, sample_rate: int, order: int 
 
     Based on:
     https://stackoverflow.com/questions/12093594/how-to-implement-band-pass-butterworth-filter-with-scipy-signal-butter
+
+    NOTE: This isn't memory efficient:
+    https://github.com/scipy/scipy/issues/6669
+    https://dsp.stackexchange.com/questions/73937/memory-efficient-filtering-with-scipy-signal-in-python
     """
     nyquist = 0.5 * sample_rate
     sos = scipy_signal.butter(order, freq / nyquist, analog=False, btype="highpass", output="sos")
