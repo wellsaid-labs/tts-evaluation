@@ -334,8 +334,8 @@ class Span:
         passage: The original passage, for context.
         passage_alignments: The original passage alignments, for context.
         slice: A `slice` of `passage.alignments`.
-        audio_slice_: By default, the `audio_slice` is based on `passage_alignments`. This allows
-            `audio_slice_` to be set to something else.
+        audio_slice_: By default, the `audio_slice` is based on `passage_alignments[slice]`. This
+            allows `audio_slice_` to be customized.
     """
 
     passage: Passage = field(repr=False)
