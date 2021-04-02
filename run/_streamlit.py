@@ -9,6 +9,8 @@ import logging
 import multiprocessing
 import os
 import pathlib
+import shutil
+import tempfile
 import typing
 
 import altair as alt
@@ -26,6 +28,18 @@ from run._config import Dataset
 from run.data._loader import Passage
 
 logger = logging.getLogger(__name__)
+
+# Learn more:
+# https://github.com/streamlit/streamlit/issues/400#issuecomment-648580840
+# https://github.com/streamlit/streamlit/issues/1567
+STREAMLIT_WEB_ROOT_PATH = pathlib.Path(st.__file__).parent / "static"
+STREAMLIT_STATIC_PATH = STREAMLIT_WEB_ROOT_PATH / "static"
+assert STREAMLIT_STATIC_PATH.exists() and (STREAMLIT_STATIC_PATH / "media").exists()
+
+# NOTE: These are the WSL TTS directories served by Streamlit.
+STREAMLIT_STATIC_PRIVATE_PATH = STREAMLIT_STATIC_PATH / "_wsl_tts"
+STREAMLIT_STATIC_TEMP_PATH = STREAMLIT_STATIC_PRIVATE_PATH / "temp"
+STREAMLIT_STATIC_SYMLINK_PATH = STREAMLIT_STATIC_PRIVATE_PATH / "symlink"
 
 
 def is_streamlit_running() -> bool:
@@ -86,22 +100,14 @@ def clear_session_cache():
     [v.cache_clear() for v in get_session_state()["cache"].values()]
 
 
-def _static_symlink(target: pathlib.Path) -> pathlib.Path:
-    """System link `target` to `root / static`, and return the linked location.
-
-    Learn more:
-    https://github.com/st/st/issues/400#issuecomment-648580840
-    https://github.com/st/st/issues/1567
-    """
-    root = pathlib.Path(st.__file__).parent / "static"
-    static = pathlib.Path("static") / "_private"
-    assert root.exists()
-    (root / static).mkdir(exist_ok=True)
-    target = target.relative_to(lib.environment.ROOT_PATH)
-    if not (root / static / target).exists():
-        (root / static / target.parent).mkdir(exist_ok=True, parents=True)
-        (root / static / target).symlink_to(lib.environment.ROOT_PATH / target)
-    return static / target
+def make_symlink(target: pathlib.Path) -> pathlib.Path:
+    """System link `target` to `STREAMLIT_STATIC_SYMLINK_PATH` and return the linked location."""
+    STREAMLIT_STATIC_SYMLINK_PATH.mkdir(exist_ok=True, parents=True)
+    path = STREAMLIT_STATIC_SYMLINK_PATH / target.relative_to(lib.environment.ROOT_PATH)
+    if not path.exists():
+        path.parent.mkdir(exist_ok=True, parents=True)
+        path.symlink_to(target)
+    return path.relative_to(STREAMLIT_WEB_ROOT_PATH)
 
 
 def _audio_to_base64(audio: np.ndarray, **kwargs) -> str:
@@ -111,13 +117,31 @@ def _audio_to_base64(audio: np.ndarray, **kwargs) -> str:
     return base64.b64encode(in_memory_file.read()).decode("utf-8")
 
 
-def audio_to_html(audio: typing.Union[np.ndarray, pathlib.Path], **kwargs) -> str:
-    """Create an `audio` HTML element."""
-    if isinstance(audio, pathlib.Path):
-        return f'<audio controls src="/{_static_symlink(audio)}"></audio>'
-    return (
-        f'<audio controls src="data:audio/wav;base64,{_audio_to_base64(audio, **kwargs)}"></audio>'
-    )
+def rmtree_streamlit_static_temp_dir():
+    """Destroy the our Streamlit temporary directory."""
+    assert pathlib.Path(st.__file__).parent in STREAMLIT_STATIC_TEMP_PATH.parents
+    if STREAMLIT_STATIC_TEMP_PATH.exists():
+        shutil.rmtree(STREAMLIT_STATIC_TEMP_PATH)
+
+
+def audio_path_to_html(audio: pathlib.Path, attrs="controls") -> str:
+    """Create an audio HTML element from an audio path."""
+    return f'<audio {attrs} src="/{make_symlink(audio)}"></audio>'
+
+
+def audio_to_base64_html(audio: np.ndarray, attrs="controls", **kwargs) -> str:
+    """Create an audio HTML element from a numpy array."""
+    data = _audio_to_base64(audio, **kwargs)
+    return f'<audio {attrs} src="data:audio/wav;base64,{data}"></audio>'
+
+
+def audio_to_html(audio: np.ndarray, attrs="controls", **kwargs) -> str:
+    """Create an audio HTML element from a numpy array."""
+    STREAMLIT_STATIC_TEMP_PATH.mkdir(exist_ok=True, parents=True)
+    temp_dir = pathlib.Path(tempfile.mkdtemp(dir=STREAMLIT_STATIC_TEMP_PATH))
+    temp_file = temp_dir / "audio.wav"
+    lib.audio.write_audio(temp_file, audio, **kwargs)
+    return f'<audio {attrs} src="/{temp_file.relative_to(STREAMLIT_WEB_ROOT_PATH)}"></audio>'
 
 
 _MapInputVar = typing.TypeVar("_MapInputVar")
