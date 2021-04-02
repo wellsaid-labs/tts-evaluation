@@ -170,6 +170,7 @@ def _get_audio_metadata(
     *paths: Path,
     max_arg_length: int = 2 ** 16,
     max_parallel: int = typing.cast(int, os.cpu_count()),
+    add_tqdm: bool = False,
 ) -> typing.Iterator[AudioMetadata]:
     """
     NOTE: It's difficult to determine the bash maximum argument length, learn more:
@@ -190,7 +191,7 @@ def _get_audio_metadata(
     else:
         message = "Getting audio metadata for %d audio files in %d chunks..."
         logger.info(message, len(paths), len(chunks))
-        with tqdm(total=len(paths)) as progress_bar:
+        with tqdm(total=len(paths), disable=not add_tqdm) as progress_bar:
             with multiprocessing.pool.ThreadPool(min(max_parallel, len(chunks))) as pool:
                 for result in pool.imap(_get_audio_metadata_helper, chunks):
                     yield from result
