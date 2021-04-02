@@ -1142,17 +1142,68 @@ def highpass_filter(signal: np.ndarray, freq: int, sample_rate: int, order: int 
     return scipy_signal.sosfiltfilt(sos, signal).astype(signal.dtype)
 
 
-_VADIterator = typing.Iterable[typing.Tuple[bool, typing.List[int]]]
+_GroupAudioFramesVar = typing.TypeVar("_GroupAudioFramesVar")
+_GroupAudioFramesIterator = typing.Iterator[typing.Tuple[_GroupAudioFramesVar, typing.List[int]]]
 
 
-@configurable
+def group_audio_frames(
+    sample_rate: int,
+    classifications: typing.Iterable[_GroupAudioFramesVar],
+    indicies: typing.Iterable[typing.List[int]],
+    is_include: typing.Callable[[_GroupAudioFramesVar], bool],
+) -> typing.List[typing.Tuple[float, float]]:
+    """Group audio frames by `classification`.
+
+    Args:
+        ...
+        classification: A classification for each frame.
+        indicies: The sample indicies represented in each frame.
+        is_include: Callable to determine if to include a class.
+    """
+    iterator: _GroupAudioFramesIterator[_GroupAudioFramesVar] = zip(classifications, indicies)
+    groups = typing.cast(
+        typing.Iterable[typing.Tuple[_GroupAudioFramesVar, _GroupAudioFramesIterator]],
+        itertools.groupby(iterator, key=lambda i: i[0]),
+    )
+    results = []
+    for classification, group in groups:
+        group = list(group)
+        if is_include(classification):
+            start = sample_to_sec(group[0][1][0], sample_rate)
+            stop = sample_to_sec(group[-1][1][-1], sample_rate)
+            results.append((start, stop))
+    return results
+
+
+def _get_non_speech_segments_helper(
+    audio: np.ndarray,
+    audio_file: AudioMetadata,
+    low_cut: int,
+    frame_length: float,
+    hop_length: float,
+):
+    """Get non-speech segments in `audio` helper for framing, and measuring RMS."""
+    assert audio.dtype == np.float32
+    sample_rate = audio_file.sample_rate
+    milli_to_sample_ = partial(milli_to_sample, sample_rate=sample_rate)
+    hop_length = milli_to_sample_(hop_length)
+    frame_length = milli_to_sample_(frame_length)
+    frame = partial(librosa.util.frame, frame_length=frame_length, hop_length=hop_length, axis=0)
+    audio = highpass_filter(audio, low_cut, sample_rate)  # NOTE: Noise reduction
+    rms_level_power = signal_to_rms_power(frame(audio), axis=1)
+    min_indicies = np.arange(0, len(audio), hop_length)[: len(rms_level_power)]
+    max_indicies = np.arange(frame_length - 1, len(audio), hop_length)[: len(rms_level_power)]
+    indicies = np.stack([min_indicies, max_indicies], axis=1)
+    return indicies, rms_level_power
+
+
 def get_non_speech_segments(
     audio: np.ndarray,
     audio_file: AudioMetadata,
-    low_cut: int = HParam(),
-    frame_length: float = HParam(),
-    hop_length: float = HParam(),
-    threshold: float = HParam(),
+    low_cut: int,
+    frame_length: float,
+    hop_length: float,
+    threshold: float,
 ) -> typing.List[typing.Tuple[float, float]]:
     """Get non-speech segments in `audio`.
 
@@ -1164,30 +1215,12 @@ def get_non_speech_segments(
         threshold: This is a decision threshold, in decibels, for deciding if a frame is to be
             classified as speech, or non-speech.
 
-    Returns: This returns an iterable of `audio` slices in seconds.
+    Returns: This returns an iterable of `audio` slices in seconds representing non-speech segments.
     """
-    assert audio.dtype == np.float32
-    sample_rate = audio_file.sample_rate
-    milli_to_sample_ = partial(milli_to_sample, sample_rate=sample_rate)
-    frame = partial(
-        librosa.util.frame,
-        frame_length=milli_to_sample_(frame_length),
-        hop_length=milli_to_sample_(hop_length),
-        axis=0,
+    indicies, rms_level_power = _get_non_speech_segments_helper(
+        audio, audio_file, low_cut, frame_length, hop_length
     )
-    audio = highpass_filter(audio, low_cut, sample_rate)  # NOTE: Noise reduction
-    indicies = frame(np.arange(audio.shape[0]))
-    rms_level_db = power_to_db(signal_to_rms_power(frame(audio), axis=1))
-    iterator: _VADIterator = zip(rms_level_db > threshold, indicies)
-    groups: typing.Iterable[typing.Tuple[bool, _VADIterator]]
-    groups = itertools.groupby(iterator, key=lambda i: i[0])
-    non_speech_segments = []
-    for is_speech, group in groups:
-        group = list(group)
-        if not is_speech:
-            segment = (
-                sample_to_sec(group[0][1][0], audio_file.sample_rate),
-                sample_to_sec(group[-1][1][-1], audio_file.sample_rate),
-            )
-            non_speech_segments.append(segment)
-    return non_speech_segments
+    power_threshold = db_to_power(threshold)
+    is_not_speech: typing.Callable[[bool], bool] = lambda is_speech: not is_speech
+    is_speech: typing.List[bool] = list(rms_level_power > power_threshold)
+    return group_audio_frames(audio_file.sample_rate, is_speech, indicies, is_not_speech)
