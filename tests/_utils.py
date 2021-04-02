@@ -120,6 +120,12 @@ def get_audio_metadata_side_effect(
     return metadatas if is_list else metadatas[0]
 
 
+def maybe_normalize_audio_and_cache_side_effect(metadata: lib.audio.AudioMetadata):
+    """`run.data._loader.normalize_audio_and_cache.side_effect` that returns the path without
+    normalization."""
+    return metadata.path
+
+
 # NOTE: `unittest.mock.side_effect` for functions with a second parameter url.
 second_parameter_url_side_effect = lambda _, *args, **kwargs: first_parameter_url_side_effect(
     *args, **kwargs

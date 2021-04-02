@@ -38,13 +38,15 @@ verbalize_test_cases = {
 }
 
 
-@mock.patch("run.data._loader.utils._exists", return_value=True)
-@mock.patch("run.data._loader.utils.get_audio_metadata")
+@mock.patch("run.data._loader.data_structures._exists", return_value=True)
+@mock.patch("run.data._loader.data_structures.get_audio_metadata")
+@mock.patch("run.data._loader.utils.maybe_normalize_audio_and_cache")
 @mock.patch("urllib.request.urlretrieve")
-def test_lj_speech_dataset(mock_urlretrieve, mock_get_audio_metadata, _):
+def test_lj_speech_dataset(mock_urlretrieve, mock_normalize_and_cache, mock_get_audio_metadata, _):
     """ Test `run.data._loader.lj_speech_dataset` loads and verbalizes the data. """
     mock_urlretrieve.side_effect = _utils.first_parameter_url_side_effect
     mock_get_audio_metadata.side_effect = _utils.get_audio_metadata_side_effect
+    mock_normalize_and_cache.side_effect = _utils.maybe_normalize_audio_and_cache_side_effect
     archive = _utils.TEST_DATA_PATH / "datasets" / "LJSpeech-1.1.tar.bz2"
 
     with tempfile.TemporaryDirectory() as path:
@@ -53,10 +55,6 @@ def test_lj_speech_dataset(mock_urlretrieve, mock_get_audio_metadata, _):
         data = run.data._loader.lj_speech_dataset(directory=directory)
         assert len(data) == 13100
         assert sum([len(r.script) for r in data]) == 1310332
-        nonalignments_ = [
-            Alignment(script=(0, 0), audio=(0.0, 0.0), transcript=(0, 0)),
-            Alignment(script=(151, 151), audio=(0.0, 0.0), transcript=(151, 151)),
-        ]
         assert data[0] == run.data._loader.Passage(
             audio_file=_utils.make_metadata(directory / "LJSpeech-1.1/wavs/LJ001-0001.wav"),
             speaker=run.data._loader.LINDA_JOHNSON,
@@ -69,7 +67,6 @@ def test_lj_speech_dataset(mock_urlretrieve, mock_get_audio_metadata, _):
                 "from most if not from all the arts and crafts represented in the Exhibition"
             ),
             alignments=Alignment.stow([Alignment((0, 151), (0.0, 0.0), (0, 151))]),
-            nonalignments=Alignment.stow(nonalignments_),
             other_metadata={
                 2: (  # type: ignore
                     "Printing, in the only sense with which we are at present concerned, differs "

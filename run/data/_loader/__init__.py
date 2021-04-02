@@ -1,7 +1,16 @@
 import typing
-from pathlib import Path
 
-from run.data._loader import m_ailabs, utils
+from run.data._loader import data_structures, m_ailabs, utils
+from run.data._loader.data_structures import (
+    Alignment,
+    NonalignmentSpans,
+    Passage,
+    Span,
+    Speaker,
+    alignment_dtype,
+    has_a_mistranscription,
+    voiced_nonalignment_spans,
+)
 from run.data._loader.lj_speech import LINDA_JOHNSON, lj_speech_dataset
 from run.data._loader.m_ailabs import (
     ELIZABETH_KLETT,
@@ -15,23 +24,15 @@ from run.data._loader.m_ailabs import (
 )
 from run.data._loader.old_wsl_datasets import OLD_WSL_DATASETS
 from run.data._loader.utils import (
-    Alignment,
-    NonalignmentSpans,
-    Passage,
-    Span,
-    SpanGenerator,
-    Speaker,
-    alignment_dtype,
+    DataLoader,
     conventional_dataset_loader,
     dataset_loader,
     get_non_speech_segments_and_cache,
-    has_a_mistranscription,
     is_normalized_audio_file,
     maybe_normalize_audio_and_cache,
     normalize_audio,
     normalize_audio_suffix,
     read_audio,
-    voiced_nonalignment_spans,
 )
 from run.data._loader.wsl_datasets import (
     ADRIENNE_WALKER_HELLER,
@@ -62,7 +63,6 @@ from run.data._loader.wsl_datasets import (
 # and upload them faster. It'll also give us protection, if the datasets are deleted.
 
 
-DataLoader = typing.Callable[[Path], typing.List[Passage]]
 DATASETS = typing.cast(typing.Dict[Speaker, DataLoader], WSL_DATASETS.copy())
 DATASETS[LINDA_JOHNSON] = lj_speech_dataset  # type: ignore
 DATASETS[JUDY_BIEBER] = m_ailabs_en_us_judy_bieber_speech_dataset
@@ -72,30 +72,29 @@ DATASETS[ELIZABETH_KLETT] = m_ailabs_en_uk_elizabeth_klett_speech_dataset
 
 
 __all__ = [
+    "data_structures",
+    "m_ailabs",
     "utils",
     "Alignment",
     "NonalignmentSpans",
     "Passage",
     "Span",
-    "SpanGenerator",
     "Speaker",
     "alignment_dtype",
+    "has_a_mistranscription",
+    "voiced_nonalignment_spans",
+    "m_ailabs_en_uk_elizabeth_klett_speech_dataset",
+    "m_ailabs_en_us_elliot_miller_speech_dataset",
+    "m_ailabs_en_us_judy_bieber_speech_dataset",
+    "m_ailabs_en_us_mary_ann_speech_dataset",
     "conventional_dataset_loader",
     "dataset_loader",
     "get_non_speech_segments_and_cache",
-    "has_a_mistranscription",
     "is_normalized_audio_file",
     "maybe_normalize_audio_and_cache",
     "normalize_audio",
     "normalize_audio_suffix",
     "read_audio",
-    "voiced_nonalignment_spans",
-    "lj_speech_dataset",
-    "m_ailabs",
-    "m_ailabs_en_us_judy_bieber_speech_dataset",
-    "m_ailabs_en_us_mary_ann_speech_dataset",
-    "m_ailabs_en_us_elliot_miller_speech_dataset",
-    "m_ailabs_en_uk_elizabeth_klett_speech_dataset",
     "ADRIENNE_WALKER_HELLER",
     "ALICIA_HARRIS__MANUAL_POST",
     "ALICIA_HARRIS",
