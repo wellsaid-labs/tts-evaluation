@@ -125,7 +125,7 @@ def test_signal_model__no_batch__odd():
 def test_signal_model__batch_invariance():
     """ Test `lib.signal_model.SignalModel` output doesn't vary with batch size. """
     model, spectrogram, _ = _make_small_signal_model()
-    _utils.assert_almost_equal(model(spectrogram)[0], model(spectrogram[0]))
+    _utils.assert_almost_equal(model(spectrogram)[0], model(spectrogram[0]), decimal=5)
 
 
 def test_signal_model__padding_invariance():

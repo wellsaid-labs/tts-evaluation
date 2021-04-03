@@ -263,7 +263,8 @@ def read_audio(
     command = ["ffmpeg"]
     command += [] if start == 0 else ["-ss", start]
     command += [] if math.isinf(length) else ["-t", length]
-    command += ["-i", str(path), "-f", dtype[0], "-acodec", dtype[1], "-ac", "1", "pipe:"]
+    command += ["-i", path, "-f", dtype[0], "-acodec", dtype[1], "-ac", "1", "pipe:"]
+    command = [str(c) for c in command]
     ndarray = np.frombuffer(subprocess.check_output(command, stderr=subprocess.DEVNULL), dtype[2])
     return clip_waveform(ndarray)
 
@@ -387,7 +388,7 @@ def apply_audio_filters(source: AudioMetadata, destination: Path, audio_filters:
     command = "ffprobe -hide_banner -stats -i".split() + [str(source.path.absolute())]
     command += "-show_entries stream=codec_name -of default=nokey=1:noprint_wrappers=1".split()
     command += ["-v", "error"]
-    acodec = subprocess.check_output([str(c) for c in command]).decode()
+    acodec = subprocess.check_output([str(c) for c in command]).decode().strip()
 
     command = "ffmpeg -hide_banner -loglevel error -nostats -i".split()
     command += [source.path.absolute(), "-acodec", acodec, "-ar", source.sample_rate, "-af"]
