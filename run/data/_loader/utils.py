@@ -21,6 +21,7 @@ from lib.audio import AudioDataType, AudioEncoding, AudioFormat, AudioMetadata
 from lib.utils import Timeline
 from run.data._loader.data_structures import (
     Alignment,
+    IsLinked,
     Passage,
     Span,
     Speaker,
@@ -407,7 +408,8 @@ def dataset_loader(
             )
             document.append(passage)
         dataset.append(document)
-    return make_passages(root_directory_name, dataset, add_tqdm, transcript=True, audio=True)
+    is_linked = IsLinked(transcript=True, audio=True)
+    return make_passages(root_directory_name, dataset, is_linked=is_linked, add_tqdm=add_tqdm)
 
 
 def conventional_dataset_loader(

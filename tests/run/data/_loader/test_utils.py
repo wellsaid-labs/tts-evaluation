@@ -86,9 +86,11 @@ def test_get_non_speech_segments_and_cache():
     kwargs = dict(low_cut=300, frame_length=50, hop_length=5, threshold=-60)
     segments = get_non_speech_segments_and_cache(metadata, **kwargs)
     intervals = [
-        (2.75, 2.984958333333333),
+        (0, 0.009958333333333333),
+        (2.75, 2.9849583333333336),
         (4.885, 5.289958333333334),
         (7.38, 7.569958333333333),
+        (7.55, 7.583958333333333),
     ]
     assert segments.intervals() == intervals
 

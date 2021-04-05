@@ -1214,10 +1214,13 @@ def get_non_speech_segments(
 
     Returns: This returns an iterable of `audio` slices in seconds representing non-speech segments.
     """
+    audio = np.pad(audio, milli_to_sample(frame_length, sample_rate=audio_file.sample_rate))
     indicies, rms_level_power = _get_non_speech_segments_helper(
         audio, audio_file, low_cut, frame_length, hop_length
     )
     power_threshold = db_to_power(threshold)
     is_not_speech: typing.Callable[[bool], bool] = lambda is_speech: not is_speech
     is_speech: typing.List[bool] = list(rms_level_power > power_threshold)
-    return group_audio_frames(audio_file.sample_rate, is_speech, indicies, is_not_speech)
+    segments = group_audio_frames(audio_file.sample_rate, is_speech, indicies, is_not_speech)
+    offset = lambda a: lib.utils.clamp(a - milli_to_sec(frame_length), 0, audio_file.length)
+    return [(offset(a), offset(b)) for a, b in segments]

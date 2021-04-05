@@ -12,6 +12,7 @@ from run.data import _loader
 from run.data._loader.data_structures import (
     Alignment,
     IntInt,
+    IsLinked,
     Passage,
     Span,
     Speaker,
@@ -24,7 +25,7 @@ from run.data._loader.data_structures import (
     make_passages,
 )
 from run.data._loader.utils import get_non_speech_segments_and_cache
-from tests._utils import TEST_DATA_PATH, make_passage, make_unprocessed_passage
+from tests._utils import TEST_DATA_PATH, make_unprocessed_passage
 
 TEST_DATA_LJ = TEST_DATA_PATH / "audio" / "bit(rate(lj_speech,24000),32).wav"
 
@@ -39,7 +40,7 @@ def test__maybe_normalize_vo_script():
 
 def test__filter_non_speech_segments():
     """Test `_filter_non_speech_segments` against various word alignment and pausing intervals."""
-    alignments = ((0, 1), (1, 2), (1.9, 3), (4, 5), (4.8, 5), (5, 6))
+    alignments = [(0, 1), (1, 2), (1.9, 3), (4, 5), (4.8, 5), (5, 6)]
     non_speech_segments = {
         # CASE: Pause envelopes 0 alignment(s) and overlaps 0 alignment(s)
         (3.1, 3.9): True,
@@ -70,22 +71,14 @@ def test__filter_non_speech_segments():
         # CASE: 2 alignment(s) envelopes pause
         (1.9, 2): False,
     }
-    script = "".join([str(i) for i in range(max(a[1] for a in alignments))])
-    alignments_ = [Alignment((int(a[0]), int(a[1])), a, (int(a[0]), int(a[1]))) for a in alignments]
-    passage = make_passage(script=script, transcript=script, alignments=Alignment.stow(alignments_))
-    timeline = Timeline([a.audio for a in passage.alignments])
     slices = [slice(*k) for k in non_speech_segments.keys()]
-    filtered = _filter_non_speech_segments(passage, timeline, slices)
+    filtered = _filter_non_speech_segments(alignments, Timeline(alignments), slices)
     results = set(((f.start, f.stop) for f in filtered))
     assert results == {k for k, v in non_speech_segments.items() if v}
 
 
 def test__make_speech_segments():
     """Test `_make_speech_segments` against various word alignment and pausing intervals."""
-    script = (
-        "The examination and testimony of the experts enabled the Commission to conclude"
-        " that five shots may have been fired,"
-    )
     audio_alignments = [
         (0, 0.2),  # The
         (0.2, 0.8),  # examination
@@ -107,52 +100,103 @@ def test__make_speech_segments():
         (6.6, 6.8),  # been
         (6.9, 7.4),  # fired,
     ]
-    offset = 0
-    script_alignments = []
-    for split in script.split():
-        script_alignments.append((offset, offset + len(split)))
-        offset += len(split) + 1
-    passage = Passage(
-        audio_file=lib.audio.get_audio_metadata(TEST_DATA_LJ),
-        speaker=_loader.LINDA_JOHNSON,
-        script=script,
-        transcript=script,
-        alignments=Alignment.stow(
-            [Alignment(s, a, s) for a, s in zip(audio_alignments, script_alignments)]
-        ),
-    )
+    prev_alignment = (0, 0)
+    audio_file = lib.audio.get_audio_metadata(TEST_DATA_LJ)
+    next_alignment = (audio_file.length, audio_file.length)
+    args = (audio_alignments, prev_alignment, next_alignment, audio_file.length)
+    make = lambda t: _make_speech_segments(*args, t)
+
     speech_segments = (
-        passage.span(slice(0, 7), slice(0.0, 2.775)),
-        passage.span(slice(7, 12), slice(2.9599583333333332, 4.91)),
-        passage.span(slice(12, len(script_alignments)), slice(5.264958333333333, 7.405)),
+        (slice(0, 7), slice(0.0, 2.775)),
+        (slice(7, 12), slice(2.9599583333333337, 4.91)),
+        (slice(12, len(audio_alignments)), slice(5.264958333333333, 7.405)),
+    )
+    timeline = get_non_speech_segments_and_cache(audio_file)
+    assert make(timeline) == speech_segments
+    timeline = get_non_speech_segments_and_cache(audio_file, threshold=-1000)
+    assert make(timeline) == tuple()
+    timeline = get_non_speech_segments_and_cache(audio_file, threshold=0)
+    assert make(timeline) == tuple()
+    timeline = get_non_speech_segments_and_cache(audio_file, threshold=-40)
+    assert make(timeline) == (
+        (slice(0, 5, None), slice(0.009958333333333326, 1.7699999999999998, None)),
+        (slice(5, 7, None), slice(1.7949583333333334, 2.62, None)),
+        (slice(7, 8, None), slice(2.9649583333333336, 3.42, None)),
+        (slice(8, 9, None), slice(3.4599583333333337, 3.5500000000000003, None)),
+        (slice(9, 11, None), slice(3.6399583333333334, 4.195, None)),
+        (slice(11, 12, None), slice(4.279958333333333, 4.825, None)),
+        (slice(12, 13, None), slice(5.279958333333333, 5.48, None)),
+        (slice(13, 17, None), slice(5.5499583333333335, 6.5600000000000005, None)),
+        (slice(17, 18, None), slice(6.599958333333333, 6.755000000000001, None)),
+        (slice(18, 19, None), slice(6.8849583333333335, 7.36, None)),
     )
 
-    timeline = get_non_speech_segments_and_cache(passage.audio_file)
-    assert _make_speech_segments(passage, timeline) == speech_segments
 
-    timeline = get_non_speech_segments_and_cache(passage.audio_file, threshold=-1000)
-    assert _make_speech_segments(passage, timeline) == (
-        passage.span(slice(0, len(script_alignments))),
+def test__make_speech_segments__partial():
+    """Test `_make_speech_segments` where `non_speech_segments` overlap an alignment partially."""
+    speech_segments = _make_speech_segments(
+        alignments=[(0, 1), (1, 2)],
+        prev_alignment=(0, 0),
+        next_alignment=(2, 2),
+        max_length=2,
+        nss_timeline=Timeline([(0.0, 0.0), (0.0, 0.0)]),
+    )
+    assert speech_segments == tuple()
+
+
+def test__make_speech_segments__overlap():
+    """Test `_make_speech_segments` where `non_speech_segments` overlap each other."""
+    pad = 25 / 1000
+    speech_segments = _make_speech_segments(
+        alignments=[(0.25, 1), (2, 2.75)],
+        prev_alignment=(0, 0),
+        next_alignment=(3, 3),
+        max_length=3,
+        nss_timeline=Timeline([(0, 0.25), (0.5, 1.75), (1.25, 2.5), (2.75, 3)]),
+        pad=pad,
+    )
+    assert speech_segments == (
+        (slice(0, 1, None), slice(0.25 - pad, 0.5 + pad, None)),
+        (slice(1, 2, None), slice(2.5 - pad, 2.75 + pad, None)),
     )
 
-    timeline = get_non_speech_segments_and_cache(passage.audio_file, threshold=0)
-    assert _make_speech_segments(passage, timeline) == (
-        passage.span(slice(0, len(script_alignments))),
-    )
 
-    timeline = get_non_speech_segments_and_cache(passage.audio_file, threshold=-40)
-    assert _make_speech_segments(passage, timeline) == (
-        passage.span(slice(0, 5), slice(0.0, 1.77)),
-        passage.span(slice(5, 7), slice(1.7949583333333334, 2.62)),
-        passage.span(slice(7, 8), slice(2.9649583333333336, 3.42)),
-        passage.span(slice(8, 9), slice(3.4599583333333332, 3.55)),
-        passage.span(slice(9, 11), slice(3.6149583333333335, 4.195)),
-        passage.span(slice(11, 12), slice(4.279958333333333, 4.825)),
-        passage.span(slice(12, 13), slice(5.279958333333333, 5.48)),
-        passage.span(slice(13, 17), slice(5.549958333333333, 6.5600000000000005)),
-        passage.span(slice(17, 18), slice(6.599958333333333, 6.755000000000001)),
-        passage.span(slice(18, 19), slice(6.884958333333333, 7.36)),
+def test__make_speech_segments__prev_alignment():
+    """Test `_make_speech_segments` where `alignments` and `prev_alignment` overlap."""
+    speech_segments = _make_speech_segments(
+        alignments=[(0.25, 1)],
+        prev_alignment=(0, 0.5),
+        next_alignment=(1.5, 1.5),
+        max_length=1.5,
+        nss_timeline=Timeline([(0.0, 0.2), (0.3, 0.75), (1.0, 1.5)]),
     )
+    assert speech_segments == tuple()
+
+
+def test__make_speech_segments__next_alignment():
+    """Test `_make_speech_segments` where there is no pause between `alignments` and
+    `next_alignment`."""
+    speech_segments = _make_speech_segments(
+        alignments=[(0.25, 1)],
+        prev_alignment=(0, 0),
+        next_alignment=(1.5, 1.75),
+        max_length=2.0,
+        nss_timeline=Timeline([(0.0, 0.2), (1.75, 2.0)]),
+    )
+    assert speech_segments == tuple()
+
+
+def test__make_speech_segments__padding():
+    """Test `_make_speech_segments` where padding goes past the edges."""
+    speech_segments = _make_speech_segments(
+        alignments=[(0.1, 0.9)],
+        prev_alignment=(0, 0),
+        next_alignment=(1, 1),
+        max_length=1.0,
+        nss_timeline=Timeline([(0.0, 0.1), (0.9, 1.0)]),
+        pad=2.0,
+    )
+    assert speech_segments == ((slice(0, 1, None), slice(0.0, 1.0, None)),)
 
 
 @mock.patch("run.data._loader.data_structures.logger.error")
@@ -273,8 +317,8 @@ def test_passage_span__nonalignment_spans():
     split, script = script[:3], script[3:]
     unprocessed_passages.append(make(split, ["q"]))  # NOTE: split='pqr'
 
-    kwargs = {"script": False, "transcript": True, "audio": True}
-    passages = list(make_passages("", [unprocessed_passages], **kwargs))
+    is_linked = IsLinked(transcript=True, audio=True)
+    passages = list(make_passages("", [unprocessed_passages], is_linked=is_linked))
 
     a = (0.0, 0.0)
     empty = ("", "", a)
@@ -308,13 +352,62 @@ def test_passage_span__nonalignment_spans__zero_alignments():
     split, script = script[:3], script[3:]
     unprocessed_passages.append(make(split, ["e"]))  # NOTE: split='def'
 
-    kwargs = {"script": False, "transcript": True, "audio": True}
-    passages = list(make_passages("", [unprocessed_passages], **kwargs))
+    is_linked = IsLinked(transcript=True, audio=True)
+    passages = list(make_passages("", [unprocessed_passages], is_linked=is_linked))
 
     a = (0.0, 0.0)
     assert _get_nonaligned(passages[0]) == [("a", "a", a), ("c", "cd", a)]
     assert _get_nonaligned(passages[1]) == [("", "cd", a)]
     assert _get_nonaligned(passages[2]) == [("d", "cd", a), ("f", "f", (0.0, 7.583958148956299))]
+
+
+def test_passage_linking():
+    """Test `Passage` links `prev`, `next`, `_prev_alignment` and `_next_alignment`."""
+    unprocessed_passages = [
+        make_unprocessed_passage(
+            audio_path=TEST_DATA_LJ,
+            script=s,
+            transcript="abc",
+            alignments=(Alignment((0, 1), a, a),),
+        )
+        for s, a in (("a", (0, 1)), ("b", (1, 2)), ("c", (2, 3)))
+    ]
+    is_linked = IsLinked(transcript=True, audio=True)
+    passages = make_passages("", [unprocessed_passages], is_linked=is_linked)
+    assert passages[0].prev is None
+    assert passages[0].next == passages[1]
+    assert passages[0]._prev_alignment() == Alignment((0, 0), (0.0, 0.0), (0, 0))
+    assert passages[0]._next_alignment() == Alignment((1, 1), (1, 2), (1, 2))
+    assert passages[1].prev == passages[0]
+    assert passages[1].next == passages[2]
+    assert passages[1]._prev_alignment() == Alignment((0, 0), (0, 1), (0, 1))
+    assert passages[1]._next_alignment() == Alignment((1, 1), (2, 3), (2, 3))
+    assert passages[2].prev == passages[1]
+    assert passages[2].next is None
+    assert passages[2]._prev_alignment() == Alignment((0, 0), (1, 2), (1, 2))
+    length = passages[2].audio_file.length
+    assert passages[2]._next_alignment() == Alignment((1, 1), (length, length), (3, 3))
+
+
+def test_passage_linking__no_links():
+    """Test `Passage` links `prev`, `next`, `_prev_alignment` and `_next_alignment` if no passages
+    are linked."""
+    unprocessed_passages = [
+        make_unprocessed_passage(
+            audio_path=TEST_DATA_LJ,
+            script=s,
+            transcript=s,
+            alignments=(Alignment((0, 1), a, a),),
+        )
+        for s, a in (("a", (0, 1)), ("b", (0, 1)))
+    ]
+    passages = make_passages("", [[p] for p in unprocessed_passages])
+    length = passages[0].audio_file.length
+    for passage in passages:
+        assert passage.prev is None
+        assert passage.next is None
+        assert passage._prev_alignment() == Alignment((0, 0), (0, 0), (0, 0))
+        assert passage._next_alignment() == Alignment((1, 1), (length, length), (1, 1))
 
 
 def _has_a_mistranscription(
@@ -358,22 +451,23 @@ def test_has_a_mistranscription():
 
 def test_has_a_mistranscription__multiple_passages():
     """Test `has_a_mistranscription` with multiple passages."""
+    is_linked = IsLinked(transcript=True)
     passages = [
         ("", "abc", tuple()),
         ("b", "abc", (((0, 1), (1, 2)),)),
         ("c", "abc", (((0, 1), (2, 3)),)),
     ]
-    assert _has_a_mistranscription(passages, transcript=True) == [True, True, False]
+    assert _has_a_mistranscription(passages, is_linked=is_linked) == [True, True, False]
 
     passages = [
         ("a", "abc", (((0, 1), (0, 1)),)),
         ("c", "abc", (((0, 1), (2, 3)),)),
     ]
-    assert all(_has_a_mistranscription(passages, transcript=True))
+    assert all(_has_a_mistranscription(passages, is_linked=is_linked))
 
     passages = [
         ("a", "ac", (((0, 1), (0, 1)),)),
         ("b", "ac", tuple()),
         ("c", "ac", (((0, 1), (1, 2)),)),
     ]
-    assert all(_has_a_mistranscription(passages, transcript=True))
+    assert all(_has_a_mistranscription(passages, is_linked=is_linked))

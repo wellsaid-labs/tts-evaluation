@@ -32,14 +32,16 @@ class NonalignmentSpans(typing.NamedTuple):
     """Nonalignments for a `Passage` or `Span`.
 
     Args:
+        passage: The passage for `spans`.
+        spans: Nonalignments from the current passage, or span.
         prev: The last nonalignment from the previous passage.
         next: The first nonalignment from the next passage.
-        spans: Nonalignments from the current passage, or span.
     """
 
+    passage: Passage
+    spans: typing.List[Span]
     prev: typing.Optional[Span]
     next: typing.Optional[Span]
-    spans: typing.List[Span]
 
 
 def voiced_nonalignment_spans(
@@ -49,12 +51,13 @@ def voiced_nonalignment_spans(
     probably.
 
     NOTE: This assumes that the `transcript` and `script` from the previous and next passage
-    affect mistranscriptions in the current passage.
+    affect mistranscriptions in the current passage if their `transcript`s are linked.
     """
     spans = span.nonalignment_spans()
     text = [s.script + s.transcript for s in spans.spans]
-    text[0] += "" if spans.prev is None else spans.prev.script + spans.prev.transcript
-    text[-1] += "" if spans.next is None else spans.next.script + spans.next.transcript
+    if spans.passage.is_linked.transcript:
+        text[0] += "" if spans.prev is None else spans.prev.script + spans.prev.transcript
+        text[-1] += "" if spans.next is None else spans.next.script + spans.next.transcript
     return spans, [lib.text.is_voiced(t) for t in text]
 
 
@@ -67,8 +70,9 @@ def has_a_mistranscription(span: typing.Union[Passage, Span]) -> bool:
     span = span.passage if isinstance(span, Span) else span
     cut = lambda x: slice(x, x + 1)
     slices = [(span, slice_)]
-    slices += [] if span.prev is None else [(span.prev, cut(len(span.prev.nonalignments) - 1))]
-    slices += [] if span.next is None else [(span.next, cut(0))]
+    if span.is_linked.transcript:
+        slices += [] if span.prev is None else [(span.prev, cut(len(span.prev.nonalignments) - 1))]
+        slices += [] if span.next is None else [(span.next, cut(0))]
     for _span, _slice in slices:
         nonalignments = _span.nonalignments[_slice]
         if any(
@@ -144,6 +148,12 @@ class UnprocessedPassage:
     other_metadata: typing.Dict = field(default_factory=dict)
 
 
+class IsLinked(typing.NamedTuple):
+    script: bool = False
+    transcript: bool = False
+    audio: bool = False
+
+
 @dataclasses.dataclass(frozen=True)
 class Passage:
     """A voiced passage.
@@ -176,6 +186,7 @@ class Passage:
     transcript: str
     alignments: Tuple[Alignment]
     other_metadata: typing.Dict = field(default_factory=dict, compare=False, hash=False)
+    is_linked: IsLinked = field(default_factory=IsLinked)
     nonalignments: Tuple[Alignment] = field(init=False, repr=False, compare=False)
     speech_segments: typing.Tuple[Span, ...] = field(
         init=False, repr=False, compare=False, hash=False
@@ -212,10 +223,58 @@ class Passage:
         cut = lambda x: slice(x, x + 1)
         prev = self.prev
         return NonalignmentSpans(
+            self,
+            [self.nonalignment_span(cut(i)) for i in range(len(self.nonalignments))],
             None if prev is None else prev.nonalignment_span(cut(len(prev.nonalignments) - 1)),
             None if self.next is None else self.next.nonalignment_span(cut(0)),
-            [self.nonalignment_span(cut(i)) for i in range(len(self.nonalignments))],
         )
+
+    def _first_alignment(self) -> Alignment:
+        """Get the zero length first alignment iff this is the first `Passage`."""
+        return Alignment(script=(0, 0), audio=(0.0, 0.0), transcript=(0, 0))
+
+    def _last_alignment(self) -> Alignment:
+        """Get the zero length last alignment iff this is the last `Passage`."""
+        return Alignment(
+            script=(len(self.script), len(self.script)),
+            audio=(self.audio_file.length, self.audio_file.length),
+            transcript=(len(self.transcript), len(self.transcript)),
+        )
+
+    def _merge(self, a: Alignment, b: Alignment) -> Alignment:
+        """Merge alignments `a` and `b` iff they are linked."""
+        if all(not getattr(self.is_linked, f) for f in IsLinked._fields):
+            return a
+
+        return a._replace(
+            script=(b if self.is_linked.script else a).script,
+            transcript=(b if self.is_linked.transcript else a).transcript,
+            audio=(b if self.is_linked.audio else a).audio,
+        )
+
+    def _prev_alignment(self) -> Alignment:
+        """Get an alignment representing a left boundary.
+
+        NOTE: The aligned `transcript`, `script`, and `audio` may not match due to the constraints
+        of `is_linked`.
+        """
+        if self.prev is None:
+            return self._first_alignment()
+        prev = self.prev
+        alignment = prev.alignments[-1] if len(prev.alignments) > 0 else prev._prev_alignment()
+        return self._merge(self._first_alignment(), alignment)
+
+    def _next_alignment(self) -> Alignment:
+        """Get an alignment representing a right boundary.
+
+        NOTE: The aligned `transcript`, `script`, and `audio` may not match due to the constraints
+        of `is_linked`.
+        """
+        if self.next is None:
+            return self._last_alignment()
+        next = self.next
+        alignment = next.alignments[0] if len(next.alignments) > 0 else next._next_alignment()
+        return self._merge(self._last_alignment(), alignment)
 
     def __getitem__(self, key) -> Span:
         if isinstance(key, int):
@@ -246,11 +305,12 @@ class Passage:
 
         assert self.prev is None or self == self.prev.next
         assert self.next is None or self == self.next.prev
+        assert self.prev is None or self.is_linked == self.prev.is_linked
+        assert self.next is None or self.is_linked == self.next.is_linked
         assert len(self.nonalignments) == len(self.alignments) + 1
-        assert len(self.alignments) == 0 or len(self.speech_segments) > 0
 
-        # NOTE: `self` must align something.
-        fields = Alignment._fields
+        # NOTE: `self` must align some `transcript` or `script`.
+        fields = ("transcript", "script")
         if len(self.alignments) == 0:
             get_ = lambda f: getattr(self.nonalignments[0], f)
             assert any(get_(f)[0] != get_(f)[1] for f in fields)
@@ -420,9 +480,10 @@ class Span:
         assert self.passage_alignments is self.passage.alignments
         spans = self.passage.nonalignment_spans()
         return NonalignmentSpans(
+            passage=self.passage,
+            spans=spans.spans[self.slice.start : self.slice.stop + 1],
             prev=spans.prev if self.slice.start == 0 else None,
             next=spans.next if self.slice.stop == len(self.passage_alignments) else None,
-            spans=spans.spans[self.slice.start : self.slice.stop + 1],
         )
 
     def __len__(self) -> int:
@@ -458,49 +519,12 @@ class Span:
         return self
 
 
-def _merge(
-    a: Alignment, b: Alignment, script: bool = False, transcript: bool = False, audio: bool = False
-) -> Alignment:
-    """Merge alignments `a` and `b` iff they are connected."""
-    if not script and not transcript and not audio:
-        return a
-
-    return a._replace(
-        script=(b if script else a).script,
-        transcript=(b if transcript else a).transcript,
-        audio=(b if audio else a).audio,
-    )
-
-
-def _make_nonalignments(doc: typing.List[Passage], index: int, **kwargs) -> Tuple[Alignment]:
+def _make_nonalignments(passage: Passage) -> Tuple[Alignment]:
     """Get nonalignments in between `data.alignments`, and in between
     `[prev.alignments[-1], data.alignments, next.alignments[0]]`.
-
-    Args:
-        curr: The current passage.
-        audio_metadata: Audio metadata for the current passage.
-        prev: The last passage.
-        next: The next passage.
-        **kwargs: Keyword arguments passed to `_merge`. They determine the connection between
-            `prev`, `curr`, and `next`.
     """
-    prev = next((p for p in reversed(doc[:index]) if len(p.alignments) > 0), None)
-    next_ = next((p for p in doc[index + 1 :] if len(p.alignments) > 0), None)
-    curr = doc[index]
-
-    prev_alignment = Alignment(script=(0, 0), audio=(0.0, 0.0), transcript=(0, 0))
-    if prev is not None:
-        prev_alignment = _merge(prev_alignment, prev.alignments[-1], **kwargs)
-
-    next_alignment = Alignment(
-        script=(len(curr.script), len(curr.script)),
-        audio=(curr.audio_file.length, curr.audio_file.length),
-        transcript=(len(curr.transcript), len(curr.transcript)),
-    )
-    if next_ is not None:
-        next_alignment = _merge(next_alignment, next_.alignments[0], **kwargs)
-
-    alignments = [prev_alignment] + list(curr.alignments) + [next_alignment]
+    alignments = [passage._prev_alignment()] + list(passage.alignments)
+    alignments += [passage._next_alignment()]
     nonalignments = []
     for prev_, next_ in zip(alignments, alignments[1:]):
         assert prev_.script[-1] <= next_.script[0], "Alignments shouldn't overlap."
@@ -520,19 +544,24 @@ def _exists(path: Path) -> bool:
 
 
 def _filter_non_speech_segments(
-    passage: Passage, timeline: Timeline, non_speech_segments: typing.Iterable[slice]
+    alignments: typing.List[FloatFloat],
+    alignments_timeline: Timeline,
+    non_speech_segments: typing.Iterable[slice],
 ) -> typing.Iterable[slice]:
     """Filter out `non_speech_segments` which are not in between alignments.
 
     NOTE: To better understand the various cases, take a look at the unit tests for this function.
     """
     for slice_ in non_speech_segments:
-        indicies = list(timeline.indicies(slice_))
+        indicies = list(alignments_timeline.indicies(slice_))
 
         # NOTE: Check if any interval is inside any other interval.
-        intervals = [passage.alignments[i].audio for i in indicies]
+        intervals = [alignments[i] for i in indicies]
         permutations = itertools.permutations(intervals + [(slice_.start, slice_.stop)], 2)
-        if any(a[0] <= b[0] and b[1] <= a[1] for a, b in permutations):
+        if any(
+            (a[0] < b[0] and b[1] < a[1]) or (a[0] == b[0] and b[1] == a[1])
+            for a, b in permutations
+        ):
             continue
 
         # NOTE: Check if any alignment intervals overlap.
@@ -548,60 +577,48 @@ def _filter_non_speech_segments(
 
 @configurable
 def _make_speech_segments(
-    passage: Passage, nss_timeline: typing.Optional[Timeline], pad: float = HParam()
-) -> typing.Tuple[Span, ...]:
+    alignments: typing.List[FloatFloat],
+    prev_alignment: FloatFloat,
+    next_alignment: FloatFloat,
+    max_length: float,
+    nss_timeline: Timeline,
+    pad: float = HParam(),
+) -> typing.Tuple[typing.Tuple[slice, ...], ...]:
     """Make a list of `Span`s that start and end with silence.
-
-    TODO: Include `non_speech_segments` in `Passage` metadata. It'd be useful to have this info
-    down stream. For example:
-    - We could use it to filter out bad alignments
-    - We could use it for a better calculation of the speakers speed.
-    TODO: Instead of including the start and end of the `passage` by default, we should consider
-    looking for pauses slightly before and after the `passage`. This could help ensure that
-    speech segments on the boundaries, start and end with a silence, as well.
-    - Instead of including start and end, use `passage.prev` and `passage.next` to the get
-    the previous and next alignments. We can use those alignments as boundaries for finding
-    pauses.
 
     Args:
         ...
         nss_timeline: Timeline for looking up non-speech segments (NSS) an interval of audio.
         pad: Seconds to add to either side of the speech segment.
     """
-    if len(passage.alignments) == 0:
+    if len(alignments) == 0:
         return tuple()
-    if len(passage.alignments) == 1:
-        return (passage.span(slice(0, 1)),)
 
-    start, stop = passage.alignments[0].audio[0], passage.alignments[-1].audio[-1]
+    alignments_ = [prev_alignment] + alignments + [next_alignment]
+    start, stop = alignments_[0][0], alignments_[-1][-1]
+    assert stop <= max_length
+    alignments_timeline = Timeline(alignments_)
 
-    assert nss_timeline is not None
-    non_speech_segments = [slice(s[0], s[1]) for s in nss_timeline[start:stop]]
-    timeline = Timeline([a.audio for a in passage.alignments])
-    non_speech_segments = list(_filter_non_speech_segments(passage, timeline, non_speech_segments))
-    if len(non_speech_segments) == 0:
-        return (passage.span(slice(0, len(passage.alignments))),)
+    nss = [slice(s[0], s[1]) for s in nss_timeline[start:stop]]
+    nss = list(_filter_non_speech_segments(alignments_, alignments_timeline, nss))
+    if len(nss) == 0:
+        return tuple()
 
-    clamp = partial(lib.utils.clamp, min_=start, max_=stop)
-    non_speech_segments = [slice(clamp(s.start), clamp(s.stop)) for s in non_speech_segments]
-    non_speech_segments = [slice(start, start)] + non_speech_segments + [slice(stop, stop)]
-    speech_segments: typing.List[Span] = []
-    for prev, next_ in zip(non_speech_segments, non_speech_segments[1:]):
-        if prev.stop > next_.start:  # NOTE: In rare cases, the pauses may overlap.
-            continue
-
-        indicies = list(timeline.indicies(slice(prev.stop, next_.start)))
+    speech_segments: typing.List[typing.Tuple[slice, ...]] = []
+    pairs = [i for i in zip(nss, nss[1:]) if i[0].stop <= i[1].start]  # NOTE: Pauses may overlap.
+    for a, b in pairs:
+        idx = list(alignments_timeline.indicies(slice(a.stop, b.start)))
         if (
-            len(indicies) != 0
+            len(idx) != 0
             # NOTE: The pauses must contain all the alignments fully, not just partially.
-            and prev.start <= passage.alignments[indicies[0]].audio[0]
-            and next_.stop >= passage.alignments[indicies[-1]].audio[1]
+            and (a.start <= alignments_[idx[0]][0] or b.stop >= alignments_[idx[-1]][1])
+            # NOTE: The speech segment must only contain `alignments`.
+            and (0 not in idx and len(alignments_) - 1 not in idx)
         ):
-            max_length = passage.audio_file.length
-            audio_slice = slice(max(prev.stop - pad, 0.0), min(next_.start + pad, max_length))
-            speech_segments.append(passage.span(slice(indicies[0], indicies[-1] + 1), audio_slice))
+            idx = [i - 1 for i in idx]
+            audio_slice = slice(max(a.stop - pad, 0.0), min(b.start + pad, max_length))
+            speech_segments.append((slice(idx[0], idx[-1] + 1), audio_slice))
 
-    assert all(a.slice.stop <= b.slice.start for a, b in zip(speech_segments, speech_segments[1:]))
     return tuple(speech_segments)
 
 
@@ -613,13 +630,17 @@ def _maybe_normalize_vo_script(script: str) -> str:
 
 
 def _check_updated_script_helper(name: str, label: str, original: str, updated: str):
+    """ Helper function for `_check_updated_script`. """
     diff = [o for o, u in zip(original, updated) if o != u]
     lib.utils.call_once(logger.error, f"[{name}] `{label}` was not normalized: {diff}")
     assert len(original) == len(updated), "Alignments and script are out-of-sync."
 
 
 def _check_updated_script(
-    name: str, passage: UnprocessedPassage, updated_script: str, updated_transcript: str
+    name: str,
+    passage: UnprocessedPassage,
+    updated_script: str,
+    updated_transcript: str,
 ):
     """Check if updated script and transcript is compatible with `passage.alignments`."""
     updates = (
@@ -644,10 +665,12 @@ def make_passages(
     items at once as possible.
     TODO: In order to encourage parallelism, the longest files should be run through
     `_maybe_normalize_audio_and_cache` first.
+    TODO: Add `check_invariants` to `UnprocessedPassage`, so that, we can enforce invariants
+    that this code relies on.
 
     Args:
         dataset: Dataset with a list of documents each with a list of passsages.
-        **kwargs: Keyword arguments passed to `_make_nonalignments`.
+        **kwargs: Keyword arguments passed to `Passage`.
     """
     executor = futures.ThreadPoolExecutor()
     tqdm_ = partial(tqdm, disable=not add_tqdm)
@@ -657,11 +680,16 @@ def make_passages(
     audio_files = get_audio_metadata_(audio_paths)
 
     logger.info(f"[{name}] Normalizing audio files...")
-    iterator = executor.map(_loader.utils.maybe_normalize_audio_and_cache, audio_files)
-    normal_audio_paths = list(tqdm_(iterator, total=len(audio_files)))
+    generator = executor.map(_loader.utils.maybe_normalize_audio_and_cache, audio_files)
+    normal_audio_paths = list(tqdm_(generator, total=len(audio_files)))
     normal_audio_files = {
         a: n for a, n in zip(audio_paths, get_audio_metadata_(normal_audio_paths))
     }
+
+    logger.info(f"[{name}] Getting non-speech segments...")
+    audio_paths = list(set(p.audio_path for l in dataset for p in l if p.alignments is not None))
+    audio_files = [normal_audio_files[a] for a in audio_paths]
+    nss_timelines = {a: _loader.utils.get_non_speech_segments_and_cache(a) for a in audio_files}
 
     logger.info(f"[{name}] Normalizing scripts...")
     scripts = set(s for l in dataset for p in l for s in (p.script, p.transcript))
@@ -669,9 +697,9 @@ def make_passages(
 
     logger.info(f"[{name}] Making passages...")
     passages: typing.List[typing.List[Passage]] = [[] for _ in range(len(dataset))]
-    iter_: typing.Iterable[typing.Tuple[int, UnprocessedPassage]]
-    iter_ = iter(tqdm_([(i, p) for i, d in enumerate(dataset) for p in d]))
-    for i, item in iter_:
+    unprocessed_passages: typing.Iterable[typing.Tuple[int, UnprocessedPassage]]
+    unprocessed_passages = iter(tqdm_([(i, p) for i, d in enumerate(dataset) for p in d]))
+    for i, item in unprocessed_passages:
         if item.audio_path not in normal_audio_files:
             logger.warning(f"[{name}] Skipping, audio path (%s) isn't a file.", item.audio_path)
             continue
@@ -682,16 +710,16 @@ def make_passages(
         _check_updated_script(name, item, script, transcript)
         args = ((0, len(script)), (0.0, audio_file.length), (0, len(transcript)))
         alignments = (Alignment(*args),) if item.alignments is None else item.alignments
-        alignments = typing.cast(Tuple[Alignment], alignments)
-        speaker, other_metadata = item.speaker, item.other_metadata
-        passage = Passage(audio_file, speaker, script, transcript, alignments, other_metadata)
+        passage = Passage(
+            audio_file,
+            item.speaker,
+            script,
+            transcript,
+            typing.cast(Tuple[Alignment], alignments),
+            item.other_metadata,
+            **kwargs,
+        )
         passages[i].append(passage)
-
-    logger.info(f"[{name}] Getting non-speech segments...")
-    audio_files = list(set(p.audio_file for l in passages for p in l if len(p.alignments) > 1))
-    nss_timelines = {
-        a: _loader.utils.get_non_speech_segments_and_cache(a) for a in tqdm_(audio_files)
-    }
 
     logger.info(f"[{name}] Updating passages...")
     for doc in typing.cast(typing.List[typing.List[Passage]], tqdm_(passages)):
@@ -700,9 +728,21 @@ def make_passages(
         for i, (prev, curr, next_) in enumerate(zip(buffer + doc_, doc, doc_[1:] + buffer)):
             object.__setattr__(curr, "prev", prev)
             object.__setattr__(curr, "next", next_)
-            object.__setattr__(curr, "nonalignments", _make_nonalignments(doc, i, **kwargs))
-            nss_timeline = nss_timelines.get(curr.audio_file, None)
-            object.__setattr__(curr, "speech_segments", _make_speech_segments(curr, nss_timeline))
+
+        for passage in doc:
+            object.__setattr__(passage, "nonalignments", _make_nonalignments(passage))
+            if passage.audio_file not in nss_timelines:
+                speech_segments = [passage[:]]
+            else:
+                speech_segments = _make_speech_segments(
+                    [a.audio for a in passage.alignments],
+                    passage._prev_alignment().audio,
+                    passage._next_alignment().audio,
+                    passage.audio_file.length,
+                    nss_timelines[passage.audio_file],
+                )
+                speech_segments = [passage.span(*s) for s in speech_segments]
+            object.__setattr__(passage, "speech_segments", speech_segments)
 
     logger.info(f"[{name}] Checking invariants and packing...")
     for doc in tqdm_(passages):

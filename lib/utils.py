@@ -455,7 +455,11 @@ class _Tuple(Tuple[_TupleVar]):
             raise TypeError("Unsupported arguments.")
 
     def _convert(self, item: typing.Tuple) -> _TupleVar:
-        """ Convert numpy `item()` to `self.type`. """
+        """Convert numpy `item()` to `self.type`.
+
+        TODO: `_convert` is slow. Instead of creating an object, we should consider using
+        `recarray`. It behaves similarly to a `NamedTuple`.
+        """
         assert self.type is not None
         if self.type is tuple:
             return typing.cast(_TupleVar, item)
