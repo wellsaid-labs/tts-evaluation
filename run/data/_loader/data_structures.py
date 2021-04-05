@@ -555,6 +555,9 @@ def _filter_non_speech_segments(
     for slice_ in non_speech_segments:
         indicies = list(alignments_timeline.indicies(slice_))
 
+        if len(indicies) >= 3:
+            continue
+
         # NOTE: Check if any interval is inside any other interval.
         intervals = [alignments[i] for i in indicies]
         permutations = itertools.permutations(intervals + [(slice_.start, slice_.stop)], 2)
@@ -568,7 +571,6 @@ def _filter_non_speech_segments(
         if any(sum(max(a[0], b[0]) < min(a[1], b[1]) for b in intervals) > 1 for a in intervals):
             continue
 
-        assert len(indicies) < 3, "It should be impossible to overlap three alignments."
         message = "Alignments should be back-to-back."
         assert len(indicies) != 2 or abs(indicies[0] - indicies[1]) == 1, message
 
@@ -688,7 +690,7 @@ def make_passages(
 
     logger.info(f"[{name}] Getting non-speech segments...")
     audio_paths = list(set(p.audio_path for l in dataset for p in l if p.alignments is not None))
-    audio_files = [normal_audio_files[a] for a in audio_paths]
+    audio_files = tqdm_([normal_audio_files[a] for a in audio_paths])
     nss_timelines = {a: _loader.utils.get_non_speech_segments_and_cache(a) for a in audio_files}
 
     logger.info(f"[{name}] Normalizing scripts...")

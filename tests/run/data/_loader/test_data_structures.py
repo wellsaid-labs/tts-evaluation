@@ -40,7 +40,7 @@ def test__maybe_normalize_vo_script():
 
 def test__filter_non_speech_segments():
     """Test `_filter_non_speech_segments` against various word alignment and pausing intervals."""
-    alignments = [(0, 1), (1, 2), (1.9, 3), (4, 5), (4.8, 5), (5, 6)]
+    alignments = [(0, 0), (0, 1), (1, 1), (1, 2), (1.9, 3), (4, 5), (4.8, 5), (5, 6)]
     non_speech_segments = {
         # CASE: Pause envelopes 0 alignment(s) and overlaps 0 alignment(s)
         (3.1, 3.9): True,
@@ -50,6 +50,8 @@ def test__filter_non_speech_segments():
         (3.1, 4.1): True,
         # CASE: Pause envelopes 0 alignment(s) and overlaps 2 alignment(s)
         (2.9, 4.1): True,
+        # CASE: Pause envelopes 0 alignment(s) and overlaps 2 alignment(s)
+        (0, 0.1): True,
         # CASE: Pause envelopes 0 alignment(s) and overlaps 2 alignment(s)
         (1.95, 3.1): False,
         # CASE: Pause envelopes 0 alignment(s) and overlaps 3 alignment(s)
@@ -70,6 +72,8 @@ def test__filter_non_speech_segments():
         (1.9, 3): False,
         # CASE: 2 alignment(s) envelopes pause
         (1.9, 2): False,
+        # CASE: Pause envelopes 0 alignment(s) and overlaps 3 alignment(s)
+        (1, 1.1): False,
     }
     slices = [slice(*k) for k in non_speech_segments.keys()]
     filtered = _filter_non_speech_segments(alignments, Timeline(alignments), slices)
