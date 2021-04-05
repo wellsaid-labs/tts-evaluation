@@ -67,7 +67,11 @@ def has_a_mistranscription(span: typing.Union[Passage, Span]) -> bool:
     NOTE: This is equivalent and ~3x faster than: `any(voiced_nonalignment_spans(span)[1])`
     """
     slice_ = slice(span.slice.start, span.slice.stop + 1) if isinstance(span, Span) else slice(None)
-    span = span.passage if isinstance(span, Span) else span
+    # NOTE: Use duck typing because of this issue:
+    # https://github.com/streamlit/streamlit/issues/2379
+    span = (
+        typing.cast(Span, span).passage if hasattr(span, "passage") else typing.cast(Passage, span)
+    )
     cut = lambda x: slice(x, x + 1)
     slices = [(span, slice_)]
     if span.is_linked.transcript:
