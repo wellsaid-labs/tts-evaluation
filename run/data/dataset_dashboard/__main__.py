@@ -93,27 +93,29 @@ def _span_metric(
     spans: typing.List[Span],
     func: typing.Callable[[Span], float],
     name: str,
-    unit: str,
+    unit_x: str,
     bucket_size: float,
+    unit_y: str,
     max_rows: int,
     run_all: bool,
 ):
     """Visualize a span metric."""
-    with utils.st_expander(f"Survey of {name} (in {unit.lower()})") as label:
+    with utils.st_expander(f"Survey of {name} (in {unit_x.lower()})") as label:
         if not st.checkbox("Analyze", key=label, value=run_all):
             return
 
-        st.write("The alignment count for each bucket:")
+        st.write(f"The {unit_y} count for each bucket:")
         results = map_(spans, func)
-        chart = utils.bucket_and_chart(results, bucket_size, x=unit)
+        chart = utils.bucket_and_chart(results, bucket_size, x=unit_x)
         st.altair_chart(chart, use_container_width=True)
         filtered = [(s, r) for s, r in zip(spans, results) if not math.isnan(r)]
         sorted_ = lambda **k: sorted(filtered, key=lambda i: i[1], **k)[:max_rows]
-        for label, data in (("smallest", sorted_()), ("largest", sorted_(reverse=True))):
-            st.write(f"The {label} valued alignments:")
-            other_columns = {"value": [r[1] for r in data]}
-            _write_span_table([r[0] for r in data], other_columns=other_columns)
-            st.text("")
+        for label_, data in (("smallest", sorted_()), ("largest", sorted_(reverse=True))):
+            text = f"Show the {label_} valued {unit_y}s."
+            if st.checkbox(text, key=label + label_, value=run_all):
+                other_columns = {"value": [r[1] for r in data]}
+                _write_span_table([r[0] for r in data], other_columns=other_columns)
+                st.text("")
 
 
 @lib.utils.log_runtime
@@ -187,7 +189,8 @@ def _analyze_dataset(dataset: Dataset, max_rows: int, run_all: bool):
         (utils.span_audio_left_rms_level, "Alignment Onset Loudness", "Decibels", 5),
         (utils.span_audio_right_rms_level, "Alignment Outset Loudness", "Decibels", 5),
     ]
-    [_span_metric(samples, *args, max_rows=max_rows, run_all=run_all) for args in sections]
+    for args in sections:
+        _span_metric(samples, *args, unit_y="Alignment", max_rows=max_rows, run_all=run_all)
 
     with utils.st_expander("Random Sample of Filtered Alignments"):
         is_include: typing.Callable[[Span], bool]
@@ -232,7 +235,8 @@ def _analyze_spans(dataset: Dataset, spans: typing.List[Span], max_rows: int, ru
         (utils.span_sec_per_char, "Span Speed", "Seconds per character", 0.01),
         (utils.span_sec_per_phon, "Span Speed", "Seconds per phone", 0.01),
     ]
-    [_span_metric(spans, *args, max_rows=max_rows, run_all=run_all) for args in sections]
+    for args in sections:
+        _span_metric(spans, *args, unit_y="Span", max_rows=max_rows, run_all=run_all)
 
     logger.info(f"Finished analyzing spans! {mazel_tov()}")
 
@@ -281,7 +285,8 @@ def _analyze_filtered_spans(
         (utils.span_audio_loudness, "Filtered Span Loudness", "LUFS", 1),
         (utils.span_sec_per_char, "Filtered Span Speed", "Seconds per character", 0.01),
     ]
-    [_span_metric(included, *args, max_rows=max_rows, run_all=run_all) for args in sections]
+    for args in sections:
+        _span_metric(included, *args, unit_y="Span", max_rows=max_rows, run_all=run_all)
 
 
 def main():
