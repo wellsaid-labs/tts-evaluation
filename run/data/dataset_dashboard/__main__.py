@@ -19,8 +19,14 @@ import lib
 import run
 from lib.utils import flatten_2d, mazel_tov, seconds_to_str
 from run._config import Dataset
-from run._streamlit import audio_to_html, clear_session_cache, get_dataset, map_
-from run.data._loader import DATASETS, Span
+from run._streamlit import (
+    audio_to_html,
+    clear_session_cache,
+    get_dataset,
+    map_,
+    rmtree_streamlit_static_temp_dir,
+)
+from run.data._loader import DATASETS, Span, voiced_nonalignment_spans
 from run.data.dataset_dashboard import _utils as utils
 
 lib.environment.set_basic_logging_config(reset=True)
@@ -44,10 +50,12 @@ _Columns = typing.Dict[str, typing.List[typing.Any]]
 
 
 def _default_span_columns(spans: typing.List[Span]) -> _Columns:
-    """ Get default columns for `_span_table`. """
+    """ Get default columns for `_write_span_table`. """
     logger.info("Getting %d generic span columns...", len(spans))
     columns = [
         ("script", [s.script for s in spans]),
+        ("audio slice", [(s.audio_start, s.audio_stop) for s in spans]),
+        ("file", [s.audio_file.path.name for s in spans]),
         ("length", [s.audio_length for s in spans]),
         ("mistranscriptions", [utils.span_mistranscriptions(s) for s in spans]),
         ("seconds", [[round(i.audio_length, 2) for i in s] for s in spans]),
@@ -56,12 +64,12 @@ def _default_span_columns(spans: typing.List[Span]) -> _Columns:
     return collections.OrderedDict(columns)
 
 
-def _span_table(
+def _write_span_table(
     spans: typing.List[Span],
     other_columns: typing.Dict[str, typing.List[typing.Any]] = {},
     default_columns: typing.Callable[[typing.List[Span]], _Columns] = _default_span_columns,
     audio_column="audio",
-) -> str:
+):
     """Visualize spans as a table with a couple metadata columns."""
     assert len(spans) < 250, "Large tables are slow to visualize"
     if len(spans) == 0:
@@ -70,11 +78,15 @@ def _span_table(
     dfs = [pd.DataFrame.from_dict(default_columns(spans)), pd.DataFrame.from_dict(other_columns)]
     df = pd.concat(dfs, axis=1)
     assert audio_column not in df.columns
-    df.insert(0, audio_column, map_(spans, utils.span_audio))
-    formatters = {audio_column: audio_to_html}
-    html = df.to_html(formatters=formatters, escape=False, justify="left", index=False)
+    lib.utils.call_once(rmtree_streamlit_static_temp_dir)
+    get_audio = lambda s: audio_to_html(utils.span_audio(s))
+    df.insert(0, audio_column, map_(spans, get_audio))
+    df = df.replace({"\n": "<br>"}, regex=True)
+    # NOTE: Temporary fix based on this issue / pr: https://github.com/streamlit/streamlit/pull/3038
+    html = "<style>tr{background-color: transparent !important;}</style>"
+    st.markdown(html, unsafe_allow_html=True)
     logger.info(f"Finished visualizing spans! {mazel_tov()}")
-    return html
+    st.markdown(df.to_markdown(index=False), unsafe_allow_html=True)
 
 
 def _span_metric(
@@ -100,8 +112,7 @@ def _span_metric(
         for label, data in (("smallest", sorted_()), ("largest", sorted_(reverse=True))):
             st.write(f"The {label} valued alignments:")
             other_columns = {"value": [r[1] for r in data]}
-            table = _span_table([r[0] for r in data], other_columns=other_columns)
-            st.markdown(table, unsafe_allow_html=True)
+            _write_span_table([r[0] for r in data], other_columns=other_columns)
             st.text("")
 
 
@@ -152,7 +163,7 @@ def _analyze_dataset(dataset: Dataset, max_rows: int, run_all: bool):
         pauses = list(utils.dataset_pause_lengths_in_seconds(dataset))
         chart = utils.bucket_and_chart(pauses, utils.ALIGNMENT_PRECISION, x="Seconds")
         st.altair_chart(chart, use_container_width=True)
-        ratio = sum([p > 0 for p in pauses]) / len(pauses)
+        ratio = 0 if len(pauses) == 0 else sum([p > 0 for p in pauses]) / len(pauses)
         st.write(f"**{ratio:.2%}** of pauses are longer than zero.")
 
     question = "How many alignment(s) do you want to analyze?"
@@ -165,7 +176,7 @@ def _analyze_dataset(dataset: Dataset, max_rows: int, run_all: bool):
     )
 
     with utils.st_expander("Random Sample of Alignments (Tabular)"):
-        st.markdown(_span_table(samples[:max_rows]), unsafe_allow_html=True)
+        _write_span_table(samples[:max_rows])
 
     sections: typing.List[typing.Tuple[typing.Callable[[Span], float], str, str, float]] = [
         (lambda s: s.audio_length, "Alignment Length", "Seconds", utils.ALIGNMENT_PRECISION),
@@ -183,7 +194,7 @@ def _analyze_dataset(dataset: Dataset, max_rows: int, run_all: bool):
         is_include = lambda s: s.audio_length > 0.1 and utils.span_sec_per_char(s) >= 0.04
         filtered = [s for s in samples if is_include(s)]
         st.write(f"Filtered out {1 - (len(filtered) / len(samples)):.2%} of alignments.")
-        st.markdown(_span_table(filtered[:max_rows]), unsafe_allow_html=True)
+        _write_span_table(filtered[:max_rows])
 
     logger.info(f"Finished analyzing dataset! {mazel_tov()}")
 
@@ -201,7 +212,7 @@ def _analyze_spans(dataset: Dataset, spans: typing.List[Span], max_rows: int, ru
     )
 
     with utils.st_expander("Random Sample of Spans"):
-        st.markdown(_span_table(spans[:max_rows]), unsafe_allow_html=True)
+        _write_span_table(spans[:max_rows])
 
     with utils.st_expander("Survey of Span Mistranscriptions") as label:
         if not st.checkbox("Analyze", key=label, value=run_all):
@@ -261,10 +272,10 @@ def _analyze_filtered_spans(
     )
 
     with utils.st_expander("Random Sample of Included Spans"):
-        st.markdown(_span_table(included[:max_rows]), unsafe_allow_html=True)
+        _write_span_table(included[:max_rows])
 
     with utils.st_expander("Random Sample of Excluded Spans"):
-        st.markdown(_span_table(excluded[:max_rows]), unsafe_allow_html=True)
+        _write_span_table(excluded[:max_rows])
 
     sections: typing.List[typing.Tuple[typing.Callable[[Span], float], str, str, float]] = [
         (utils.span_audio_loudness, "Filtered Span Loudness", "LUFS", 1),
@@ -306,7 +317,7 @@ def main():
         spans = _get_spans(dataset, num_samples=num_samples)
 
     question = "What is the maximum number of rows per table?"
-    max_rows: int = sidebar.number_input(question, 0, None, 25)
+    max_rows: int = sidebar.number_input(question, 0, None, 50)
 
     with st.spinner("Analyzing dataset..."):
         _analyze_dataset(dataset, max_rows, run_all)

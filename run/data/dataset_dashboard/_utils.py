@@ -20,13 +20,12 @@ from run._config import Dataset
 from run._streamlit import (
     dataset_passages,
     fast_grapheme_to_phoneme,
-    has_alnum,
     make_interval_chart,
     make_signal_chart,
     read_wave_audio,
     span_audio,
 )
-from run.data._loader import Passage, Span
+from run.data._loader import Passage, Span, voiced_nonalignment_spans
 
 logger = logging.getLogger(__name__)
 
@@ -121,7 +120,8 @@ def dataset_pause_lengths_in_seconds(dataset: Dataset) -> typing.Iterator[float]
 def passages_alignment_ngrams(passages: typing.List[Passage], n: int = 1) -> typing.Iterator[Span]:
     """ Get ngram `Span`s with `n` alignments. """
     for passage in tqdm.tqdm(passages):
-        yield from (Span(passage, s) for s in _ngrams(passage.alignments, n=n))
+        passage: Passage
+        yield from (passage.span(s) for s in _ngrams(passage.alignments, n=n))
 
 
 def dataset_num_alignments(dataset: Dataset) -> int:
@@ -140,12 +140,13 @@ def dataset_coverage(dataset: Dataset, spans: typing.List[Span]) -> float:
 
 def span_mistranscriptions(span: Span) -> typing.List[typing.Tuple[str, str]]:
     """ Get a slices of script and transcript that were not aligned. """
-    return [(a.strip(), b.strip()) for a, b, _ in span.script_nonalignments() if has_alnum(a + b)]
+    spans, spans_is_voiced = voiced_nonalignment_spans(span)
+    return [(s.script, s.transcript) for s, i in zip(spans.spans, spans_is_voiced) if i]
 
 
 def span_pauses(span: Span) -> typing.List[float]:
     """ Get the length of pauses between alignments in `span`. """
-    return [(b - a) for _, _, (a, b) in span.script_nonalignments()[1:-1]]
+    return [s.audio_length for s in span.nonalignment_spans().spans[1:-1]]
 
 
 def span_total_silence(span: Span) -> float:
@@ -196,9 +197,8 @@ def span_audio_loudness(span: Span) -> float:
 def span_visualize_signal(span: Span) -> alt.Chart:
     """ Visualize `span` signal as a waveform chart with lines for alignments. """
     signal_chart = make_signal_chart(span_audio(span), span.audio_file.sample_rate)
-    x_min = [a.audio[0] for a in span.alignments]
-    x_max = [a.audio[1] for a in span.alignments]
-    return (signal_chart + make_interval_chart(x_min, x_max)).interactive()
+    intervals = [a.audio for a in span.alignments]
+    return (signal_chart + make_interval_chart(intervals)).interactive()
 
 
 def span_sec_per_char(span: Span):

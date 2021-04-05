@@ -1,7 +1,3 @@
-"""
-TODO: Replace `has_alnum` with `lib.text.is_voiced`. It's a more generic function for determining
-if the text has any spoken characters.
-"""
 import base64
 import functools
 import io
