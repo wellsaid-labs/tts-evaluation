@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 import lib
-from lib.utils import Interval, Timeline
+from lib.utils import Timeline
 from run.data import _loader
 from run.data._loader.data_structures import (
     Alignment,
@@ -71,17 +71,11 @@ def test__filter_non_speech_segments():
         (1.9, 2): False,
     }
     script = "".join([str(i) for i in range(max(a[1] for a in alignments))])
-    passage = make_passage(
-        script=script,
-        transcript=script,
-        alignments=Alignment.stow(
-            [Alignment((int(a[0]), int(a[1])), a, (int(a[0]), int(a[1]))) for a in alignments]
-        ),
-        nonalignments=Alignment.stow([]),
-    )
-    timeline = Timeline([Interval(a.audio, (i, a)) for i, a in enumerate(passage.alignments)])
+    alignments_ = [Alignment((int(a[0]), int(a[1])), a, (int(a[0]), int(a[1]))) for a in alignments]
+    passage = make_passage(script=script, transcript=script, alignments=Alignment.stow(alignments_))
+    timeline = Timeline([a.audio for a in passage.alignments])
     slices = [slice(*k) for k in non_speech_segments.keys()]
-    filtered = _filter_non_speech_segments(timeline, slices)
+    filtered = _filter_non_speech_segments(passage, timeline, slices)
     results = set(((f.start, f.stop) for f in filtered))
     assert results == {k for k, v in non_speech_segments.items() if v}
 

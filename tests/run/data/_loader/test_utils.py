@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 import lib
-from lib.utils import Interval, flatten_2d
+from lib.utils import flatten_2d
 from run.data import _loader
 from run.data._loader.data_structures import Alignment
 from run.data._loader.utils import SpanGenerator, get_non_speech_segments_and_cache
@@ -90,7 +90,7 @@ def test_get_non_speech_segments_and_cache():
         (4.885, 5.289958333333334),
         (7.38, 7.569958333333333),
     ]
-    assert segments.intervals() == set([Interval(s, s) for s in intervals])
+    assert segments.intervals() == intervals
 
     with mock.patch("lib.audio.get_non_speech_segments") as module:
         # NOTE: `get_non_speech_segments` doesn't need to be called because the result is cached.

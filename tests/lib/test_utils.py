@@ -8,7 +8,7 @@ import torch.nn
 from torchnlp.random import fork_rng
 
 import lib
-from lib.utils import Interval, Timeline, pad_tensor
+from lib.utils import Timeline, TimelineMap, pad_tensor
 from tests._utils import assert_almost_equal
 
 
@@ -451,13 +451,43 @@ def test_corrected_random_choice():
 
 def test_timeline():
     """ Test `Timeline` handles basic cases. """
+    intervals = [(0, 1), (0.5, 1), (1, 2)]
+    timeline = Timeline(intervals, dtype=numpy.float64)
+    assert timeline.intervals() == intervals
+    for i in range(len(intervals)):
+        assert intervals[i][0] == timeline.start(i)
+        assert intervals[i][1] == timeline.stop(i)
+    assert timeline._intervals[0].data.contiguous and timeline._intervals[0].dtype == numpy.float64
+    assert timeline._intervals[1].data.contiguous and timeline._intervals[1].dtype == numpy.float64
+    assert timeline[0.5].tolist() == [[0, 1], [0.5, 1]]
+    assert [intervals[i] for i in timeline.indicies(0.5)] == [(0, 1), (0.5, 1)]
+    assert timeline.intervals(0.5) == [(0, 1), (0.5, 1)]
+    assert timeline[0.5:1.5].tolist() == [[0, 1], [0.5, 1], [1, 2]]
+    assert timeline[6:10].tolist() == []
+
+
+def test_timeline__zero():
+    """ Test `Timeline` handles zero intervals. """
+    timeline = Timeline([], dtype=numpy.float64)
+    assert timeline.intervals() == []
+    with pytest.raises(IndexError):
+        timeline.start(0)
+        timeline.stop(0)
+    assert timeline[0.5].tolist() == []
+    assert list(timeline.indicies(0.5)) == []
+    assert timeline.intervals(0.5) == []
+    assert timeline[0.5:1.5].tolist() == []
+
+
+def test_timeline_map():
+    """ Test `TimelineMap` handles basic cases. """
     intervals = [
-        Interval((3, 4), "a"),  # NOTE: Out of order
-        Interval((0, 1), "a"),
-        Interval((0.5, 1), "b"),  # NOTE: Overlapping
-        Interval((1, 2), "c"),  # NOTE: Independent
+        ((3, 4), "a"),  # NOTE: Out of order
+        ((0, 1), "a"),
+        ((0.5, 1), "b"),  # NOTE: Overlapping
+        ((1, 2), "c"),  # NOTE: Independent
     ]
-    timeline: Timeline[str] = Timeline(intervals)
+    timeline: TimelineMap[str] = TimelineMap(intervals)
     assert timeline[0.5] == ("a", "b")
     assert timeline[0:1] == ("a", "b", "c")
     assert timeline[-0.5:0.5] == ("a", "b")
@@ -465,24 +495,3 @@ def test_timeline():
     assert timeline[1.5:2.5] == ("c",)
     assert timeline[0:4] == ("a", "b", "c", "a")
     assert timeline[6:10] == tuple()
-
-
-def test_timeline__get_indicies():
-    """ Test `Timeline._get_indicies` handles basic cases. """
-    func = lambda s, e: list(range(math.floor(s), math.ceil(e + 0.0001)))
-    timeline: Timeline[None] = Timeline([Interval((0, 1), None)])
-    for i in [-0.1, 0, 0.1]:
-        for j in [-0.1, 0, 0.1]:
-            assert list(timeline._get_indicies(0 + i, 1 + j)) == func(0 + i, 1 + j)
-            assert list(timeline._get_indicies(-2 + i, -1 + j)) == func(-2 + i, -1 + j)
-
-
-def test_timeline__get_average_interval_spacing():
-    """ Test `Timeline._get_average_interval_spacing` handles basic cases. """
-    assert Timeline._get_average_interval_spacing([Interval((0, 1), None)]) == 1.0
-
-    intervals = [Interval((0, 2.5), None), Interval((0, 2.5), None)]
-    assert Timeline._get_average_interval_spacing(intervals) == 1.25
-
-    intervals = [Interval((0, 2.5), None), Interval((-2.5, 0), None)]
-    assert Timeline._get_average_interval_spacing(intervals) == 2.5

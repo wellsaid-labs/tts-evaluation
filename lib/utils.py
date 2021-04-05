@@ -2,7 +2,6 @@
 # https://stackoverflow.com/questions/33533148/how-do-i-specify-that-the-return-type-of-a-method-is-the-same-as-the-class-itsel
 from __future__ import annotations
 
-import collections
 import dataclasses
 import functools
 import itertools
@@ -444,7 +443,7 @@ class _Tuple(Tuple[_TupleVar]):
         type_: typing.Optional[typing.Type[_TupleVar]] = None,
     ):
         items = items if isinstance(items, np.ndarray) else list(items)
-        self.storage = np.array(items, dtype=dtype)
+        self.storage = np.asarray(items, dtype=dtype)
         self.type: typing.Optional[typing.Type[_TupleVar]]
         if isinstance(items, np.ndarray):
             self.type = type_
@@ -540,115 +539,93 @@ def to_str(object, *attributes: str) -> str:
     return f"{object.__class__.__name__}({values})"
 
 
-_IntervalVar = typing.TypeVar("_IntervalVar")
+FloatFloat = typing.Tuple[float, float]
 
 
-class Interval(typing.Generic[_IntervalVar]):
-    """Timeline item with a corresponding time `span` and value.
+class Timeline:
+    """Store and query a sequence of sorted `intervals`.
 
-    NOTE: This datastructure is more memory efficient than a similar `NamedTuple`.
+    NOTE: This is optimized for the case where the intervals can be sorted. There are other more
+    general interval data structures like:
+    - https://pandas.pydata.org/docs/reference/api/pandas.Interval.html
+    - https://github.com/chaimleib/intervaltree
+    - https://github.com/brentp/quicksect
+    - Our previous implementation which bucketed intervals into a `dict`.
     """
 
-    __slots__ = "start", "stop", "val"
+    __slots__ = "_intervals", "dtype"
 
-    def __init__(self, span: typing.Tuple[float, float], val: _IntervalVar):
-        self.start = span[0]
-        self.stop = span[1]
-        assert self.start <= self.stop, "Start must be smaller than stop."
-        self.val = val
+    def __init__(self, intervals: typing.List[FloatFloat], dtype=np.float64):
+        intervals = sorted(intervals, key=lambda k: k[0])
+        message = "Timeline only accepts ordered intervals."
+        assert all(a[0] <= b[0] and a[1] <= b[1] for a, b in zip(intervals, intervals[1:])), message
+        self.dtype = dtype
+        self._intervals = np.array(intervals, dtype=self.dtype).T.reshape(2, len(intervals))
+        self._intervals = np.ascontiguousarray(self._intervals)
 
-    @property
-    def span(self):
-        return (self.start, self.stop)
+    def start(self, index: int) -> np.ndarray:
+        """ Get the start of the interval at `index`. """
+        return self._intervals[0, index]
 
-    def __eq__(self, other):
-        if isinstance(other, Interval):
-            return self.start == other.start and self.stop == other.stop and self.val == other.val
-        raise NotImplementedError()
+    def stop(self, index: int) -> np.ndarray:
+        """ Get the stop of the interval at `index`. """
+        return self._intervals[1, index]
 
-    def __hash__(self):
-        return hash((self.start, self.stop, self.val))
+    def make_slice(self, interval: typing.Union[int, float, slice]) -> slice:
+        """Get a `slice` of intervals overlapping `interval`.
 
-    def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(({self.start}, {self.stop}), {self.val})"
+        TODO: For short slices, instead of calling `searchsorted` twice, we can call it once. If
+        we know how many elements `np.where` can traverse in the same time it takes
+        `np.searchsorted` to run, then we can proactively check if the `length` is within that
+        number of elements. If so, we'd call `np.where` instead of `np.searchsorted`.
+
+        NOTE: Learn more about the performance of `searchsorted`:
+        https://github.com/numpy/numpy/issues/13566
+        http://sociograph.blogspot.com/2011/12/gotcha-with-numpys-searchsorted.html
+        https://github.com/numpy/numpy/issues/5370
+        https://stackoverflow.com/questions/15139299/performance-of-numpy-searchsorted-is-poor-on-structured-arrays
+
+        NOTE: Learn more about the performance of `transpose`:
+        https://stackoverflow.com/questions/48509674/numpy-transpose-functions-speed-and-use-cases
+        """
+        if isinstance(interval, slice):
+            start, stop = interval.start, interval.stop
+        elif isinstance(interval, (int, float)):
+            start, stop = interval, interval
+        else:
+            raise TypeError("Invalid argument type: {}".format(type(interval)))
+        assert start <= stop, "Start must be smaller than stop."
+        start_ = self._intervals[1].searchsorted(self.dtype(start), side="left")
+        length = self._intervals[0][start_:].searchsorted(self.dtype(stop), side="right")
+        return slice(start_, start_ + length)
+
+    def indicies(self, interval: typing.Union[int, float, slice]) -> typing.Iterable[int]:
+        """Similar to `make_slice` except this returns an `Iterable` of indicies."""
+        return range(*self.make_slice(interval).indices(self._intervals.shape[1]))
+
+    def __getitem__(self, interval: typing.Union[int, float, slice]) -> np.ndarray:
+        """Get the intervals overlapping `interval`. """
+        return self._intervals[:, self.make_slice(interval)].T
+
+    def intervals(
+        self, interval: typing.Optional[typing.Union[int, float, slice]] = None
+    ) -> typing.List[FloatFloat]:
+        array = self._intervals.T if interval is None else self[interval]
+        return [(float(i[0]), float(i[1])) for i in array]
 
 
 _TimelineVar = typing.TypeVar("_TimelineVar")
 
 
-class Timeline(typing.Generic[_TimelineVar]):
-    """Timeline is a mapping from a time span to a value.
+class TimelineMap(Timeline, typing.Generic[_TimelineVar]):
+    """A mapping from `intervals` to values."""
 
-    Args:
-        intervals: List of intervals and a corresponding value.
-    """
+    __slots__ = "intervals", "dtype", "vals"
 
-    __slots__ = "_bucket_size", "_timeline"
+    def __init__(self, intervals: typing.List[typing.Tuple[FloatFloat, _TimelineVar]]):
+        intervals = sorted(intervals, key=lambda k: k[0])
+        super().__init__([i[0] for i in intervals])
+        self.vals = tuple(i[1] for i in intervals)
 
-    def __init__(self, intervals: typing.List[Interval[_TimelineVar]]):
-        _timeline: typing.Dict[int, typing.List[Interval[_TimelineVar]]]
-        _timeline = collections.defaultdict(list)
-        intervals = sorted(intervals, key=lambda k: k.start)
-        self._bucket_size = self._get_average_interval_spacing(intervals)
-        for interval in intervals:
-            for index in self._get_indicies(interval.start, interval.stop):
-                _timeline[index].append(interval)
-        self._timeline: typing.Dict[int, typing.Tuple[Interval[_TimelineVar], ...]]
-        self._timeline = collections.defaultdict(tuple, {k: tuple(v) for k, v in _timeline.items()})
-
-    @staticmethod
-    def _get_average_interval_spacing(
-        intervals: typing.List[Interval[_TimelineVar]], default: float = 1.0
-    ) -> float:
-        """Get the average spacing between interval points.
-
-        TODO: This is an average, and it'll be negatively impacted by outliers. We should consider
-        getting a median, instead.
-        """
-        if len(intervals) == 0:
-            return default
-
-        length = max(i.stop for i in intervals) - min(i.start for i in intervals)
-        return default if length == 0 else length / len(intervals)
-
-    def _get_indicies(self, start: float, stop: float) -> typing.Iterable[int]:
-        """
-        NOTE: This approach is much faster than:
-        ```
-        range(math.floor(start / self._bucket_size), math.ceil(stop / self._bucket_size + 0.00001))
-        ```
-        """
-        return range(int(start // self._bucket_size), int((stop / self._bucket_size + 1) // 1))
-
-    @staticmethod
-    def is_overlapping(x1: float, x2: float, y1: float, y2: float) -> bool:
-        """
-        NOTE: This approach is much faster than: `max(x1, y1) <= min(x2, y2)`.
-        """
-        max_ = x1 if x1 > y1 else y1
-        min_ = x2 if x2 < y2 else y2
-        return max_ <= min_
-
-    def get(self, k: typing.Union[int, float, slice]) -> typing.Tuple[Interval[_TimelineVar]]:
-        if isinstance(k, slice):
-            start, stop = k.start, k.stop
-        elif isinstance(k, (int, float)):
-            start, stop = k, k
-        else:
-            raise TypeError("Invalid argument type: {}".format(type(k)))
-
-        is_overlapping = functools.partial(self.is_overlapping, y1=start, y2=stop)
-        seen = set()
-        results = []
-        for index in self._get_indicies(start, stop):
-            for value in self._timeline[index]:
-                if value not in seen and is_overlapping(value.start, value.stop):
-                    results.append(value)
-                seen.add(value)
-        return tuple(results)
-
-    def __getitem__(self, k: typing.Union[int, float, slice]) -> typing.Tuple[_TimelineVar]:
-        return tuple(v.val for v in self.get(k))
-
-    def intervals(self) -> typing.Set[Interval[_TimelineVar]]:
-        return set(i for v in self._timeline.values() for i in v)
+    def __getitem__(self, key: typing.Union[int, float, slice]) -> typing.Tuple[_TimelineVar, ...]:
+        return self.vals[self.make_slice(key)]

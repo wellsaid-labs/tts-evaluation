@@ -9,7 +9,6 @@ import pathlib
 import random
 import subprocess
 import typing
-from functools import partial
 from pathlib import Path
 
 import numpy as np
@@ -19,7 +18,7 @@ from third_party import LazyLoader
 
 import lib
 from lib.audio import AudioDataType, AudioEncoding, AudioFormat, AudioMetadata
-from lib.utils import Interval, Timeline
+from lib.utils import Timeline
 from run.data._loader.data_structures import (
     Alignment,
     Passage,
@@ -144,22 +143,24 @@ def get_non_speech_segments_and_cache(
     hop_length: float = HParam(),
     threshold: float = HParam(),
     **kwargs,
-) -> Timeline[FloatFloat]:
+) -> Timeline:
     """Get non-speech segments in `audio_file` and cache."""
-    format: typing.Callable[[typing.Iterable[FloatFloat]], Timeline[FloatFloat]]
-    format = lambda l: Timeline([Interval(s, s) for s in l])
     kwargs_ = dict(
         low_cut=low_cut, frame_length=frame_length, hop_length=hop_length, threshold=threshold
     )
     name = get_non_speech_segments_and_cache.__wrapped__.__name__
     cache_path = _cache_path(audio_file.path, name, ".npy", **kwargs_, **kwargs)
     if cache_path.exists():
-        return format(tuple(t) for t in np.load(cache_path, allow_pickle=False))
+        loaded = np.load(cache_path, allow_pickle=False)
+        return Timeline(list(typing.cast(FloatFloat, tuple(t)) for t in loaded))
 
     audio = read_audio(audio_file, memmap=True)
     vad: typing.List[FloatFloat] = lib.audio.get_non_speech_segments(audio, audio_file, **kwargs_)
     np.save(cache_path, np.array(vad), allow_pickle=False)
-    return format(vad)
+    return Timeline(vad)
+
+
+_Float = typing.Union[np.floating, float]
 
 
 class SpanGenerator(typing.Iterator[Span]):
@@ -192,23 +193,21 @@ class SpanGenerator(typing.Iterator[Span]):
         self.passages = passages
         self.max_seconds = max_seconds
         self._weights = torch.tensor([p.last.audio[1] - p.first.audio[0] for p in self.passages])
-        get_interval: typing.Callable[[Span], FloatFloat]
-        get_interval = lambda s: (s.audio_start, s.audio_stop)
-        make_timeline: typing.Callable[[Passage], Timeline[int]]
+        make_timeline: typing.Callable[[Passage], Timeline]
         make_timeline = lambda p: Timeline(
-            [Interval(get_interval(s), i) for i, s in enumerate(p.speech_segments)], **kwargs
+            [(s.audio_start, s.audio_stop) for s in p.speech_segments], **kwargs
         )
         self._timelines = None if max_seconds == math.inf else [make_timeline(p) for p in passages]
 
     @staticmethod
-    def _overlap(x1: float, x2: float, y1: float, y2: float) -> float:
+    def _overlap(x1: _Float, x2: _Float, y1: _Float, y2: _Float) -> _Float:
         """ Get the percentage overlap between x and the y slice. """
         if x2 == x1:
             return 1.0 if x1 >= y1 and x2 <= y2 else 0.0
         return (min(x2, y2) - max(x1, y1)) / (x2 - x1)
 
     @functools.lru_cache(maxsize=None)
-    def _is_include(self, x1: float, x2: float, y1: float, y2: float):
+    def _is_include(self, x1: _Float, x2: _Float, y1: _Float, y2: _Float) -> bool:
         return self._overlap(x1, x2, y1, y2) >= random.random()
 
     def __iter__(self) -> typing.Iterator[Span]:
@@ -237,19 +236,23 @@ class SpanGenerator(typing.Iterator[Span]):
             start = max(start, passage.first.audio[0])
 
             # NOTE: Based on the overlap, decide which alignments to include in the span.
-            overlapping = timeline.get(slice(start, stop))
+            indicies = list(timeline.indicies(slice(start, stop)))
             self._is_include.cache_clear()
-            _is_include = partial(self._is_include, y1=start, y2=stop)
-            begin: typing.Optional[Interval[int]]
-            begin = next((i for i in overlapping if _is_include(i.start, i.stop)), None)
-            end: typing.Optional[Interval[int]]
-            end = next((i for i in reversed(overlapping) if _is_include(i.start, i.stop)), None)
-            if (
-                (begin is not None and end is not None)
-                and end.stop - begin.start > 0
-                and end.stop - begin.start <= self.max_seconds
-            ):
-                segments = passage.speech_segments[begin.val : end.val + 1]
+            _is_include = lambda i: self._is_include(
+                timeline.start(i), timeline.stop(i), start, stop
+            )
+            begin = typing.cast(
+                typing.Optional[int], next((i for i in indicies if _is_include(i)), None)
+            )
+            end = typing.cast(
+                typing.Optional[int], next((i for i in reversed(indicies) if _is_include(i)), None)
+            )
+            if begin is None or end is None:
+                continue
+
+            length = timeline.stop(end) - timeline.start(begin)
+            if length > 0 and length <= self.max_seconds:
+                segments = passage.speech_segments[begin : end + 1]
                 slice_ = slice(segments[0].slice.start, segments[-1].slice.stop)
                 audio_slice = slice(segments[0].audio_start, segments[-1].audio_stop)
                 return passage.span(slice_, audio_slice)
@@ -288,23 +291,22 @@ file is around 72,000 and the precision of the alignments is 0.1, so it should b
 
 
 def _temporary_fix_for_transcript_offset(
-    transcript: str, alignments: typing.List[typing.List[typing.List[float]]]
-) -> typing.List[typing.List[typing.List[float]]]:
+    transcript: str, alignments: typing.Tuple[Alignment, ...]
+) -> typing.Tuple[Alignment, ...]:
     """Temporary fix for a bug in `sync_script_with_audio.py`.
 
     TODO: Remove after datasets are reprocessed.
     """
-    return_ = []
-    for alignment_ in alignments:
-        alignment = Alignment.from_json(alignment_)
+    return_: typing.List[Alignment] = []
+    for alignment in alignments:
         word = transcript[alignment.transcript[0] : alignment.transcript[1]]
         if word.strip() != word:
             update = (alignment.transcript[0] - 1, alignment.transcript[1] - 1)
             alignment = alignment._replace(transcript=update)
             corrected = transcript[alignment.transcript[0] : alignment.transcript[1]]
             logger.warning("Corrected '%s' to '%s'.", word, corrected)
-        return_.append(alignment.to_json())
-    return return_
+        return_.append(alignment)
+    return tuple(return_)
 
 
 DataLoader = typing.Callable[[Path], typing.List[Passage]]
@@ -393,13 +395,14 @@ def dataset_loader(
         assert len(scripts) == len(json_["alignments"]), error
         document = []
         for (_, script), alignments in zip(scripts.iterrows(), json_["alignments"]):
-            alignments = _temporary_fix_for_transcript_offset(json_["transcript"], alignments)
+            alignments_ = tuple(Alignment.from_json(a) for a in alignments)
+            alignments_ = _temporary_fix_for_transcript_offset(json_["transcript"], alignments_)
             passage = UnprocessedPassage(
                 audio_path=recording_path,
                 speaker=speaker,
                 script=typing.cast(str, script[text_column]),
                 transcript=json_["transcript"],
-                alignments=tuple(Alignment.from_json(a) for a in alignments),
+                alignments=alignments_,
                 other_metadata={k: v for k, v in script.items() if k not in (text_column,)},
             )
             document.append(passage)

@@ -42,7 +42,7 @@ def run_around_tests():
             low_cut=300, frame_length=non_speech_segment_frame_length, hop_length=5, threshold=-60
         ),
         _loader.data_structures._make_speech_segments: HParams(
-            padding=(non_speech_segment_frame_length / 2) / 1000
+            pad=(non_speech_segment_frame_length / 2) / 1000
         ),
         _loader.utils.maybe_normalize_audio_and_cache: HParams(
             suffix=suffix,
