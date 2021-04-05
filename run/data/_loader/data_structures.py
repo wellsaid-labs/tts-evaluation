@@ -690,7 +690,7 @@ def make_passages(
 
     logger.info(f"[{name}] Getting non-speech segments...")
     audio_paths = list(set(p.audio_path for l in dataset for p in l if p.alignments is not None))
-    audio_files = tqdm_([normal_audio_files[a] for a in audio_paths])
+    audio_files = tqdm_([normal_audio_files[p] for p in audio_paths])
     nss_timelines = {a: _loader.utils.get_non_speech_segments_and_cache(a) for a in audio_files}
 
     logger.info(f"[{name}] Normalizing scripts...")

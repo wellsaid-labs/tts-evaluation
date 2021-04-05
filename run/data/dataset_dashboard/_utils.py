@@ -156,9 +156,8 @@ def span_total_silence(span: Span) -> float:
 def span_audio_slice(span: Span, second: float, lengths: typing.Tuple[float, float]) -> np.ndarray:
     """ Get the audio at `second`. """
     clamp_ = lambda x: clamp(x, min_=0, max_=span.passage.audio_file.length)
-    second = span.passage.alignments[span.slice][0].audio[0] + second
-    start = clamp_(second - lengths[0])
-    end = clamp_(second + lengths[1])
+    start = clamp_(span.audio_start + second - lengths[0])
+    end = clamp_(span.audio_start + second + lengths[1])
     return read_wave_audio(span.passage.audio_file, start, end - start)
 
 
@@ -202,7 +201,10 @@ def span_visualize_signal(span: Span) -> alt.Chart:
 
 
 def span_sec_per_char(span: Span):
-    """ Get the aligned seconds per character. """
+    """Get the aligned seconds per character.
+
+    TODO: Consider using `non_speech_segments` to remove silences from this calculation.
+    """
     return round(sum(a.audio[-1] - a.audio[0] for a in span.alignments) / len(span.script), 2)
 
 

@@ -167,8 +167,7 @@ def read_wave_audio(*args, **kwargs) -> np.ndarray:
 
 def span_audio(span: run.data._loader.Span) -> np.ndarray:
     """Get `span` audio using cached `read_wave_audio`."""
-    start = span.passage.alignments[span.slice][0].audio[0]
-    return read_wave_audio(span.passage.audio_file, start, span.audio_length)
+    return read_wave_audio(span.passage.audio_file, span.audio_start, span.audio_length)
 
 
 def passage_audio(passage: run.data._loader.Passage) -> np.ndarray:
