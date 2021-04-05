@@ -198,13 +198,6 @@ def fast_grapheme_to_phoneme(text: str):
     return lib.text._line_grapheme_to_phoneme([text], separator="|")[0]
 
 
-def integer_signal_to_floating(signal: np.ndarray) -> np.ndarray:
-    """Transform `signal` from an integer data type to floating data type."""
-    is_floating = np.issubdtype(signal.dtype, np.floating)
-    divisor = 1.0 if is_floating else np.abs(np.iinfo(signal.dtype).min)
-    return (signal / divisor).astype(np.float32)
-
-
 def make_signal_chart(
     signal: np.ndarray,
     sample_rate: int,
@@ -216,7 +209,6 @@ def make_signal_chart(
 
     Learn more about envelopes: https://en.wikipedia.org/wiki/Envelope_detector
     """
-    signal = integer_signal_to_floating(signal)
     ratio = sample_rate // max_sample_rate
     frames = librosa.util.frame(signal, ratio, ratio, axis=0)  # type: ignore
     envelope = np.max(np.abs(frames), axis=-1)

@@ -1,7 +1,8 @@
 """ Streamlit application for analyzing an audio file with voice activity detection (VAD).
 
+NOTE: This workbook is optimized for `streamlit`s dark theme.
+
 TODO:
-- Question: Do we need to use a sophisiticated VAD, or can we use a basic loudness threshold?
 - Once https://github.com/streamlit/streamlit/issues/2263 is resolved, it'd be nice to be able
   to hear the segmented audio.
 - Look into NVIDIA Nemo VAD, here:
@@ -10,18 +11,18 @@ TODO:
 - Add smoothing to `webrtcvad` results (either a tigger based approach or median window)
 - Try this simple approach: https://maelfabien.github.io/project/Speech_proj/#rolling-window
 - Try Kaldi VAD: https://github.com/pykaldi/pykaldi/tree/master/examples/setups/ltsv-based-vad
-- Update workbook with `lib.audio.get_non_speech_segments`.
+- Add audio padding to Baseline VAD.
 
 Usage:
     $ python -m pip install webrtcvad
     $ python -m pip install torchaudio torch==1.7.1
     $ PYTHONPATH=. streamlit run run/data/vad_workbook.py --runner.magicEnabled=false
 """
-import itertools
 import logging
 import math
 import random
 import typing
+from functools import partial
 
 import altair as alt
 import numpy as np
@@ -30,25 +31,41 @@ import streamlit as st
 import torch
 import torch.hub
 from numpy.lib.stride_tricks import sliding_window_view
-from scipy import signal
 from third_party import LazyLoader
 from torchnlp.random import fork_rng
 
 import lib
 import run
-from run.data._loader import DATASETS, Passage
-from lib.utils import Interval, Timeline, seconds_to_str
+from lib.audio import (
+    AudioDataType,
+    AudioEncoding,
+    AudioMetadata,
+    _get_non_speech_segments_helper,
+    get_audio_metadata,
+    group_audio_frames,
+    milli_to_sample,
+    sample_to_milli,
+    sample_to_sec,
+)
+from lib.utils import Timeline, seconds_to_str
 from run._streamlit import (
     audio_to_html,
     clear_session_cache,
     dataset_passages,
     get_dataset,
     get_session_state,
-    has_alnum,
-    integer_signal_to_floating,
     make_interval_chart,
     make_signal_chart,
     passage_audio,
+    read_wave_audio,
+)
+from run.data import _loader
+from run.data._loader import (
+    DATASETS,
+    Passage,
+    Span,
+    maybe_normalize_audio_and_cache,
+    voiced_nonalignment_spans,
 )
 
 if typing.TYPE_CHECKING:  # pragma: no cover
@@ -62,52 +79,50 @@ st.set_page_config(layout="wide")
 logger = logging.getLogger(__name__)
 
 
-def _normalize_audio(passage: Passage, sample_rate=16000, encoding="pcm_s16le") -> Passage:
-    """Normalize `passage` audio to `sample_rate`."""
-    path = passage.audio_file.path
-    kwargs = dict(sample_rate=sample_rate, encoding=encoding)
-    normalized_path = run._utils.normalized_audio_path(path, **kwargs)
-    normalized_path.parent.mkdir(exist_ok=True, parents=False)
-    if not normalized_path.exists():
-        lib.audio.normalize_audio(path, normalized_path, **kwargs)
-    metadata = lib.audio.get_audio_metadata(normalized_path)
-    return run.data._loader.update_passage_audio(passage, metadata)
+def _normalize_cache_read_audio(
+    passage: Passage, **kwargs
+) -> typing.Tuple[AudioMetadata, np.ndarray]:
+    """Normalize, cache, and read passage audio."""
+    other_audio_path = maybe_normalize_audio_and_cache(passage.audio_file, **kwargs)
+    other_audio_metadata = get_audio_metadata(other_audio_path)
+    other_audio_length = passage.aligned_audio_length()
+    other_audio = read_wave_audio(other_audio_metadata, passage.first.audio[0], other_audio_length)
+    return other_audio_metadata, other_audio
 
 
 def _audio_intervals(
-    passage: Passage, audio: typing.List[typing.Tuple[float, float]]
-) -> typing.Tuple[typing.List[float], typing.List[float]]:
-    """Bound and normalize `audio` intervals at `passage.first` and `passage.last`."""
+    passage: Passage, spans: typing.List[Span]
+) -> typing.List[typing.Tuple[float, float]]:
+    """Bound and normalize span audio intervals with `passage.first` and `passage.last`."""
     start = passage.first.audio[0]
-    x_min = [max(a - start, 0.0) for a, _ in audio]
-    x_max = [min(b - start, passage.last.audio[-1] - start) for _, b in audio]
-    return x_min, x_max
+    audio = [s.alignment.audio for s in spans]
+    return [(max(a - start, 0.0), min(b - start, passage.last.audio[-1] - start)) for a, b in audio]
 
 
-def _stt_alignments_vad(passage: Passage, audio: np.ndarray):
-    st.markdown("### Google Speech-to-Text (STT) API")
-    st.write("Use dataset alignments to detect voice activity.")
-
-    with st.spinner("Visualizing..."):
-        pauses = [a for s, t, a in passage.script_nonalignments() if not has_alnum(s + t)]
-        mistrascriptions = [a for s, t, a in passage.script_nonalignments() if has_alnum(s + t)]
-        chart = make_signal_chart(audio, passage.audio_file.sample_rate)
-        interval_chart_ = lambda a, **k: make_interval_chart(*_audio_intervals(passage, a), **k)
-        chart += interval_chart_(pauses, strokeWidth=0)
-        chart += interval_chart_(mistrascriptions, strokeWidth=0, color="darkred")
-        st.altair_chart(chart.interactive(), use_container_width=True)
-
-
-def _butter_bandpass_filter(data, lowcut, highcut, fs, order=5):
-    """
-    Original:
-    https://stackoverflow.com/questions/12093594/how-to-implement-band-pass-butterworth-filter-with-scipy-signal-butter
-    """
-    nyq = 0.5 * fs
-    low = lowcut / nyq
-    high = highcut / nyq
-    sos = signal.butter(order, [low, high], analog=False, btype="band", output="sos")
-    return signal.sosfiltfilt(sos, data)
+def _chart_alignments_and_non_speech_segments(
+    passage: Passage, non_speech_segments: typing.Sequence[typing.Tuple[float, float]]
+):
+    """Chart `passage` alignments and nonalignments versus `non_speech_segments`."""
+    st.write("**Alignments and Non-Speech Segments**")
+    alignment_audio_intervals = [a.audio for a in passage[:].alignments]
+    spans, is_voiced = voiced_nonalignment_spans(passage)
+    mistranscriptions = [s for s, i in zip(spans.spans, is_voiced) if i]
+    nonalignment_audio_intervals = _audio_intervals(passage, mistranscriptions)
+    source = {
+        "interval": ["non_speech_segments"] * len(non_speech_segments),
+        "start": [s[0] for s in non_speech_segments],
+        "end": [s[1] for s in non_speech_segments],
+    }
+    chart = (
+        alt.Chart(pd.DataFrame(source))
+        .mark_bar(stroke="#000", strokeWidth=1, strokeOpacity=0.3)
+        .encode(x="start", x2="end", y="interval", color="interval")
+    )
+    chart += make_interval_chart(nonalignment_audio_intervals, color="darkred", strokeWidth=0)
+    chart += make_interval_chart(
+        alignment_audio_intervals, color="white", fillOpacity=0.1, strokeOpacity=1.0, opacity=1.0
+    )
+    return chart
 
 
 def _median(x: np.ndarray) -> float:
@@ -118,7 +133,6 @@ def _median(x: np.ndarray) -> float:
 def _chart_db_rms(seconds: np.ndarray, rms_level_db: np.ndarray):
     """
     Args:
-        ...
         seconds: The second each frame is located at.
         rms_level_db: Frame-level RMS levels.
     """
@@ -133,54 +147,21 @@ def _chart_db_rms(seconds: np.ndarray, rms_level_db: np.ndarray):
     )
 
 
-def _chart_alignments_and_pauses(
-    passage: Passage, x_min: typing.List[float], x_max: typing.List[float]
-):
-    """Chart `passage` alignments versus pauses as defined by `x_min` and `x_max`."""
-    st.write("**Alignments and Pauses**")
-    span = passage[:]
-    alignments_x_min = [a.audio[0] for a in span.alignments]
-    alignments_x_max = [a.audio[1] for a in span.alignments]
-    mistrascriptions = [a for s, t, a in passage.script_nonalignments() if has_alnum(s + t)]
-    chart = (
-        alt.Chart(pd.DataFrame({"interval": ["pauses"] * len(x_min), "start": x_min, "end": x_max}))
-        .mark_bar(stroke="#000", strokeWidth=1, strokeOpacity=0.3)
-        .encode(x="start", x2="end", y="interval", color="interval")
-    )
-    chart += make_interval_chart(
-        alignments_x_min, alignments_x_max, color="gray", strokeOpacity=1.0
-    )
-    chart += make_interval_chart(
-        *_audio_intervals(passage, mistrascriptions), color="darkred", strokeOpacity=1.0
-    )
-    return chart
+def _stt_alignments_vad(passage: Passage, audio: np.ndarray):
+    st.markdown("### Google Speech-to-Text (STT) API")
+    st.write("Use dataset alignments to detect voice activity.")
 
+    interval_chart_: typing.Callable[[typing.List[Span]], None]
+    interval_chart_ = lambda a, **k: make_interval_chart(_audio_intervals(passage, a), **k)
 
-def _filter_pauses(passage: Passage, x_min: typing.List[float], x_max: typing.List[float]):
-    """Filter pauses at `x_min` and `x_max` based on `passage.alignments`."""
-    span = passage[:]
-    alignments = list(span.alignments)
-    timeline = Timeline([Interval(a.audio, a) for a in alignments])
-    _has_mistranscription = lambda v, a: has_alnum(
-        getattr(span, a)[min((getattr(o, a)[1] for o in v)) : max((getattr(o, a)[0] for o in v))]
-    )
-    for min_, max_ in zip(x_min, x_max):
-        vals = list(timeline[min_:max_])
-        if len(vals) == 0:
-            yield min_, max_
-        elif (
-            len(vals) == 2
-            # NOTE: Ensure there is overlap between the pause and both alignments
-            and min((o.audio[1] for o in vals)) <= max_
-            and max((o.audio[0] for o in vals)) >= min_
-            # NOTE: Ensure alignment(s) are not inside the pause
-            and min((o.audio[0] for o in vals)) <= min_
-            and max((o.audio[1] for o in vals)) >= max_
-            # NOTE: Ensure that there is no mistranscription between the alignments
-            and not _has_mistranscription(vals, "script")
-            and not _has_mistranscription(vals, "transcript")
-        ):
-            yield min_, max_
+    with st.spinner("Visualizing..."):
+        spans, is_voiced = voiced_nonalignment_spans(passage)
+        mistranscriptions = [s for s, i in zip(spans.spans, is_voiced) if i]
+        rest = [s for s, i in zip(spans.spans, is_voiced) if not i]
+        chart = make_signal_chart(audio, passage.audio_file.sample_rate)
+        chart += interval_chart_(rest, strokeWidth=0)
+        chart += interval_chart_(mistranscriptions, strokeWidth=0, color="red")
+        st.altair_chart(chart.interactive(), use_container_width=True)
 
 
 def _baseline_vad(passage: Passage, audio: np.ndarray):
@@ -189,110 +170,98 @@ def _baseline_vad(passage: Passage, audio: np.ndarray):
 
     sample_rate = passage.audio_file.sample_rate
     col = st.beta_columns([1, 1])
-    question = "What is the frame size in milliseconds?"
-    milli_frame_size: int = col[0].slider(question, min_value=0, max_value=250, value=50, step=1)
-    sec_frame_size: float = milli_frame_size / 1000
-    frame_size: int = int(round(sec_frame_size * sample_rate))
+    label = "What is the frame size in milliseconds?"
+    milli_frame_size: int = col[0].slider(label, min_value=0, max_value=250, value=50, step=1)
 
-    question = "What is the stide size in samples?"
-    stride_size: int = col[1].slider(
-        question,
-        min_value=1,
-        max_value=int(round(250 / 1000 * sample_rate)),
-        value=int(round(5 / 1000 * sample_rate)),
-        step=1,
-    )
+    label = "What is the stide size in samples?"
+    max_value = milli_to_sample(250, sample_rate)
+    value = milli_to_sample(5, sample_rate)
+    stride_size: int = col[1].slider(label, min_value=1, max_value=max_value, value=value, step=1)
+    milli_stride_size = sample_to_milli(stride_size, sample_rate)
 
-    question = "What is the threshold for silence in decibels?"
-    threshold: int = st.slider(question, min_value=-100, max_value=0, value=-60, step=1)
+    label = "What is the threshold for silence in decibels?"
+    threshold: int = st.slider(label, min_value=-100, max_value=0, value=-60, step=1)
 
-    col = st.beta_columns([1, 1])
     nyq_freq = int(sample_rate / 2)
-    question = "What is the low frequency cutoff in Hz?"
-    low_cut: int = col[0].slider(question, min_value=1, max_value=nyq_freq - 1, value=300, step=1)
+    label = "What is the low frequency cutoff in Hz?"
+    low_cut: int = st.slider(label, min_value=1, max_value=nyq_freq - 1, value=300, step=1)
 
-    question = "What is the high frequency cutoff in Hz?"
-    high_cut: int = col[1].slider(
-        question, min_value=1, max_value=nyq_freq - 1, value=nyq_freq - 1, step=1
-    )
-
-    with st.spinner("Detecting voice activity..."):
-        audio = integer_signal_to_floating(audio)
-        filtered = _butter_bandpass_filter(audio, low_cut, high_cut, sample_rate)
-        frames = sliding_window_view(filtered, frame_size)[::stride_size]
-        indicies = sliding_window_view(np.arange(filtered.shape[0]), frame_size)[::stride_size]
-        rms_level_power = np.mean(np.abs(frames) ** 2, axis=1)
-        rms_level_db = 10.0 * np.log10(np.clip(rms_level_power, 1e-10, None))
-        is_pause = (rms_level_db < threshold).tolist()
+    with st.spinner("Measuring RMS..."):
+        kwargs = dict(low_cut=low_cut, frame_length=milli_frame_size, hop_length=milli_stride_size)
+        audio_file = passage.audio_file
+        indicies, rms_level_power = _get_non_speech_segments_helper(audio, audio_file, **kwargs)
+        rms_level_db = lib.audio.power_to_db(rms_level_power)
         seconds = np.array([_median(i) / sample_rate for i in indicies])
         chart = _chart_db_rms(seconds, rms_level_db)
         st.altair_chart(chart.interactive(), use_container_width=True)
 
-    with st.spinner("Grouping segments..."):
-        x_min, x_max = [], []
-        for is_pause_, group in itertools.groupby(zip(is_pause, indicies), key=lambda i: i[0]):
-            group = list(group)
-            if is_pause_:
-                x_min.append(float(group[0][1][0]) / sample_rate)
-                x_max.append(float(group[-1][1][-1]) / sample_rate)
-        chart = _chart_alignments_and_pauses(passage, x_min, x_max)
+    with st.spinner("Grouping and filtering..."):
+        is_not_speech: typing.Callable[[bool], bool] = lambda is_speech: not is_speech
+        is_speech: typing.List[bool] = list(rms_level_db > threshold)
+        non_speech_segments = group_audio_frames(sample_rate, is_speech, indicies, is_not_speech)
+        intervals = [a.audio for a in passage[:].alignments]
+        length = len(non_speech_segments)
+        non_speech_segments = _loader.data_structures._filter_non_speech_segments(
+            intervals, Timeline(intervals), [slice(*s) for s in non_speech_segments]
+        )
+        non_speech_segments = list([(s.start, s.stop) for s in non_speech_segments])
+        num_removed = length - len(non_speech_segments)
+        st.info(f"Filtered **{num_removed}** of **{length}** non-speech segments.")
+        chart = _chart_alignments_and_non_speech_segments(passage, non_speech_segments)
         st.altair_chart(chart.interactive(), use_container_width=True)
 
-    with st.spinner("Filtering segments..."):
-        x_min, x_max = zip(*list(_filter_pauses(passage, x_min, x_max)))
-        x_min, x_max = list(x_min), list(x_max)
-
     with st.spinner("Visualizing..."):
-        st.write("**Pauses**")
-        signal_chart = make_signal_chart(audio, sample_rate)
-        pausing_chart = make_interval_chart(x_min, x_max, strokeWidth=0, opacity=0.8)
-        st.altair_chart((signal_chart + pausing_chart).interactive(), use_container_width=True)
+        st.write("**Non-Speech Segments**")
+        non_speech_segments_chart = make_interval_chart(non_speech_segments, strokeWidth=0)
+        chart = make_signal_chart(audio, sample_rate) + non_speech_segments_chart
+        st.altair_chart(chart.interactive(), use_container_width=True)
 
 
-def _webrtc_vad(audio: np.ndarray, sample_rate: int):
+def _webrtc_vad(passage: Passage, audio: np.ndarray, sample_rate: int = 16000):
     st.markdown("### Google WebRTC Voice Activity Detection (VAD) module")
     if not st.checkbox("Run", key=_webrtc_vad.__qualname__):
         return
 
     question = "What is the frame size in milliseconds?"
     milli_frame_size: int = st.slider(question, min_value=0, max_value=30, value=20, step=10)
-    sec_frame_size: float = milli_frame_size / 1000
-    frame_size: int = int(round(sec_frame_size * sample_rate))
+    frame_size = milli_to_sample(milli_frame_size, sample_rate)
 
     question = "What is the stide size in samples?"
-    stride_size: int = st.slider(
-        question,
-        min_value=1,
-        max_value=int(round(30 / 1000 * sample_rate)),
-        value=int(round(1 / 1000 * sample_rate)),
-        step=1,
-    )
+    max_value = milli_to_sample(30, sample_rate)
+    value = milli_to_sample(1, sample_rate)
+    stride_size: int = st.slider(question, min_value=1, max_value=max_value, value=value, step=1)
 
     question = "How sensitive should voice activity detection be?"
     mode: int = st.slider(question, min_value=0, max_value=3, value=1, step=1)
     vad = webrtcvad.Vad(mode)
 
+    with st.spinner("Normalizing audio..."):
+        _, norm_audio = _normalize_cache_read_audio(
+            passage,
+            sample_rate=sample_rate,
+            bits=16,
+            data_type=AudioDataType.SIGNED_INTEGER,
+            encoding=AudioEncoding.PCM_INT_16_BIT,
+            bit_rate="364k",
+            precision="16-bit",
+        )
+
     with st.spinner("Detecting voice activity..."):
         bar = st.progress(0)
         is_speech: typing.List[bool] = []
-        padded = np.pad(audio, (0, frame_size - 1))
+        padded = np.pad(norm_audio, (0, frame_size - 1))
         frames = sliding_window_view(padded, frame_size)[::stride_size]
         indicies = sliding_window_view(np.arange(padded.shape[0]), frame_size)[::stride_size]
         for i, frame in enumerate(frames):
             is_speech.append(vad.is_speech(frame.tobytes(), sample_rate))
             bar.progress(i / len(frames))
-
-    with st.spinner("Grouping segments..."):
-        x_min, x_max = [], []
-        for is_speech_, group in itertools.groupby(zip(is_speech, indicies), key=lambda i: i[0]):
-            group = list(group)
-            if not is_speech_:
-                x_min.append(float(group[0][1][0]) / sample_rate)
-                x_max.append(float(group[-1][1][-1]) / sample_rate)
+        bar.empty()
+        is_not_speech: typing.Callable[[bool], bool] = lambda is_speech: not is_speech
+        non_speech_segments = group_audio_frames(sample_rate, is_speech, indicies, is_not_speech)
 
     with st.spinner("Visualizing..."):
-        signal_chart = make_signal_chart(audio, sample_rate)
-        interval_chart = make_interval_chart(x_min, x_max, strokeWidth=0)
+        signal_chart = make_signal_chart(audio, passage.audio_file.sample_rate)
+        interval_chart = make_interval_chart(non_speech_segments, strokeWidth=0)
         st.altair_chart((signal_chart + interval_chart).interactive(), use_container_width=True)
 
 
@@ -301,52 +270,52 @@ class _SpeechTs(typing.TypedDict):
     end: float
 
 
-def _silero_vad(passage: Passage, audio: np.ndarray):
+def _silero_vad(passage: Passage, audio: np.ndarray, sample_rate: int = 16000):
     st.markdown("### Silero Voice Activity Detection (VAD) model")
     if not st.checkbox("Run", key=_silero_vad.__qualname__):
         return
 
-    assert passage.audio_file.sample_rate == 16000
-    repo = "snakers4/silero-vad"
-    model, utils = torch.hub.load(repo_or_dir=repo, model="silero_vad_micro", force_reload=True)
-    get_speech_ts, _, _, _, _, _ = utils
-    speech_ts: typing.List[_SpeechTs]
-    tensor = torch.tensor(integer_signal_to_floating(audio)).float()
-    torch.set_num_threads(1)
-    speech_ts = get_speech_ts(
-        tensor,
-        model,
-        min_speech_samples=160,
-        min_silence_samples=160,
-    )
-    speech_ts = (
-        [_SpeechTs(start=0, end=0)] + speech_ts + [_SpeechTs(start=len(audio), end=len(audio))]
-    )
+    repo: str = st.text_input("Github Repository", value="snakers4/silero-vad")
+    model: str = st.text_input("Model", value="silero_vad_micro")
+
+    with st.spinner("Loading Model..."):
+        model, utils = torch.hub.load(repo_or_dir=repo, model=model, force_reload=True)
+        get_speech_ts, _, _, _, _, _ = utils
+
+    with st.spinner("Normalizing audio..."):
+        speech_ts: typing.List[_SpeechTs]
+        torch.set_num_threads(1)
+        kwargs = dict(min_speech_samples=160, min_silence_samples=160)
+        _, norm_audio = _normalize_cache_read_audio(passage, sample_rate=sample_rate)
+
+    with st.spinner("Predicting..."):
+        speech_ts = get_speech_ts(torch.tensor(norm_audio), model, **kwargs)
+        length = len(norm_audio)
+        speech_ts = [_SpeechTs(start=0, end=0)] + speech_ts + [_SpeechTs(start=length, end=length)]
+        pairs = zip(speech_ts, speech_ts[1:])
+        sample_to_sec_ = partial(sample_to_sec, sample_rate=sample_rate)
+        intervals = [(sample_to_sec_(a["end"]), sample_to_sec_(b["start"])) for a, b in pairs]
 
     with st.spinner("Visualizing..."):
         signal_chart = make_signal_chart(audio, passage.audio_file.sample_rate)
-        intervals = [(a["end"], b["start"]) for a, b in zip(speech_ts, speech_ts[1:])]
-        x_min = [a / passage.audio_file.sample_rate for a, _ in intervals]
-        x_max = [b / passage.audio_file.sample_rate for _, b in intervals]
-        interval_chart = make_interval_chart(x_min, x_max, strokeWidth=0)
+        interval_chart = make_interval_chart(intervals, strokeWidth=0)
         st.altair_chart((signal_chart + interval_chart).interactive(), use_container_width=True)
 
 
-def _get_challenging_passages(
-    dataset: run._config.Dataset, threshold: float = 20
-) -> typing.Set[Passage]:
-    """Get challenging passages for VAD. So far, we have defined challenging passages as ones
-    that have long segments without pausing based on `alignments`."""
+def _get_hard_passages(dataset: run._config.Dataset, threshold: float = 20) -> typing.Set[Passage]:
+    """Get hards passages for Google STT. So far, we have defined hard passages as ones that have
+    long segments without pausing based on `alignments`."""
     passages = set()
     all_passages = list(dataset_passages(dataset))
     for passage in all_passages:
         start = passage.first.audio[0]
-        for script, transcript, audio in passage.script_nonalignments()[1:-1]:
-            if not has_alnum(script + transcript) and audio[1] - audio[0] > 0:
-                if audio[0] - start > threshold:
+        spans, spans_is_voiced = voiced_nonalignment_spans(passage)
+        for span, is_voiced in zip(spans.spans, spans_is_voiced):
+            if not is_voiced and span.audio_length > 0:
+                if span.audio_slice.start - start > threshold:
                     passages.add(passage)
                     break
-                start = audio[1]
+                start = span.audio_slice.stop
         if passage.last.audio[-1] - start > threshold:
             passages.add(passage)
     st.info(
@@ -356,7 +325,7 @@ def _get_challenging_passages(
     return passages
 
 
-def _init_random_seed(key="random_seed", default_value=123) -> int:
+def _init_random_seed(key="random_seed", default_value: int = 123) -> int:
     """ Create a persistent state for the random seed. """
     state = get_session_state()
     value = st.sidebar.number_input("Random Seed", value=default_value)
@@ -384,47 +353,33 @@ def main():
     with st.spinner("Loading dataset..."):
         dataset = get_dataset(frozenset([speaker]))
 
-    use_challenging = st.checkbox("Find Challenging Passage", value=True)
-    passages = _get_challenging_passages(dataset) if use_challenging else list(dataset.values())[0]
+    use_hard = st.checkbox("Find Challenging Passage", value=True)
+    passages = _get_hard_passages(dataset) if use_hard else list(dataset.values())[0]
     state[random_seed_key] += int(st.button("New Passage"))
     with fork_rng(state[random_seed_key]):
         passage = random.choice(list(passages))
     start = passage.first.audio[0]
     end = passage.last.audio[-1]
-    audio_length = end - start
     st.info(
         "### Randomly Choosen Passage\n"
-        "#### Random Seed\n"
-        f"{state[random_seed_key]}\n"
-        "#### Audio File\n"
-        f"`{passage.audio_file.path.relative_to(lib.environment.ROOT_PATH)}`\n\n"
+        f"#### Random Seed\n{state[random_seed_key]}\n"
+        f"#### Audio File\n`{passage.audio_file.path.relative_to(lib.environment.ROOT_PATH)}`\n\n"
         "#### Audio Slice\n"
-        f"{seconds_to_str(audio_length)} ({seconds_to_str(start)}, {seconds_to_str(end)})\n\n"
-        "#### Script\n"
-        f"{passage.script}\n\n"
+        f"{seconds_to_str(end - start)} ({seconds_to_str(start)}, {seconds_to_str(end)})\n\n"
+        f"#### Script\n{passage.script}\n\n"
     )
-    with st.spinner("Normalizing audio..."):
-        passage = _normalize_audio(passage)
-        sample_rate = passage.audio_file.sample_rate
 
     with st.spinner("Loading audio..."):
         audio = passage_audio(passage)
 
     st.markdown("### Audio")
-    html = audio_to_html(integer_signal_to_floating(audio), sample_rate=sample_rate)
+    html = audio_to_html(audio, sample_rate=passage.audio_file.sample_rate)
     st.markdown(html, unsafe_allow_html=True)
 
-    with st.spinner("Visualizing Google Speech-to-Text Alignments..."):
-        _stt_alignments_vad(passage, audio)
-
-    with st.spinner("Running Baseline VAD..."):
-        _baseline_vad(passage, audio)
-
-    with st.spinner("Running Google WebRTC VAD..."):
-        _webrtc_vad(audio, sample_rate)
-
-    with st.spinner("Running Silero VAD..."):
-        _silero_vad(passage, audio)
+    _stt_alignments_vad(passage, audio)
+    _baseline_vad(passage, audio)
+    _webrtc_vad(passage, audio)
+    _silero_vad(passage, audio)
 
 
 if __name__ == "__main__":
