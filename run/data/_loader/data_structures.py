@@ -59,9 +59,25 @@ def voiced_nonalignment_spans(
 
 
 def has_a_mistranscription(span: typing.Union[Passage, Span]) -> bool:
-    """Return `True` if `span` contains a mistranscription, probably."""
-    _, is_voiced = voiced_nonalignment_spans(span)
-    return any(is_voiced)
+    """Return `True` if `span` contains a mistranscription, probably.
+
+    NOTE: This is equivalent and ~3x faster than: `any(voiced_nonalignment_spans(span)[1])`
+    """
+    slice_ = slice(span.slice.start, span.slice.stop + 1) if isinstance(span, Span) else slice(None)
+    span = span.passage if isinstance(span, Span) else span
+    cut = lambda x: slice(x, x + 1)
+    slices = [(span, slice_)]
+    slices += [] if span.prev is None else [(span.prev, cut(len(span.prev.nonalignments) - 1))]
+    slices += [] if span.next is None else [(span.next, cut(0))]
+    for _span, _slice in slices:
+        nonalignments = _span.nonalignments[_slice]
+        if any(
+            lib.text.is_voiced(_span.script[a.script[0] : a.script[-1]])
+            or lib.text.is_voiced(_span.transcript[a.transcript[0] : a.transcript[-1]])
+            for a in nonalignments
+        ):
+            return True
+    return False
 
 
 _alignment_dtype = [
@@ -401,7 +417,7 @@ class Span:
 
     def nonalignment_spans(self) -> NonalignmentSpans:
         """See `self.passage.nonalignment_spans()` docs."""
-        assert self.passage_alignments == self.passage.alignments
+        assert self.passage_alignments is self.passage.alignments
         spans = self.passage.nonalignment_spans()
         return NonalignmentSpans(
             prev=spans.prev if self.slice.start == 0 else None,

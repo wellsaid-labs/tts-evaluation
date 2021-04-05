@@ -25,6 +25,7 @@ from run.data._loader.m_ailabs import (
 from run.data._loader.old_wsl_datasets import OLD_WSL_DATASETS
 from run.data._loader.utils import (
     DataLoader,
+    SpanGenerator,
     conventional_dataset_loader,
     dataset_loader,
     get_non_speech_segments_and_cache,
@@ -87,6 +88,8 @@ __all__ = [
     "m_ailabs_en_us_elliot_miller_speech_dataset",
     "m_ailabs_en_us_judy_bieber_speech_dataset",
     "m_ailabs_en_us_mary_ann_speech_dataset",
+    "DataLoader",
+    "SpanGenerator",
     "conventional_dataset_loader",
     "dataset_loader",
     "get_non_speech_segments_and_cache",
