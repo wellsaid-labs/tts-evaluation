@@ -227,20 +227,20 @@ def make_signal_chart(
 
 
 def make_interval_chart(
-    x_min: typing.List[float],
-    x_max: typing.List[float],
-    opacity=0.3,
-    color="gray",
-    stroke="#000",
-    strokeWidth=1,
-    strokeOpacity=0.3,
+    intervals: typing.List[typing.Tuple[float, float]],
+    fillOpacity=0.3,
+    color="white",
+    stroke="white",
+    strokeWidth=3,
+    strokeOpacity=0.8,
     **kwargs,
 ):
-    """Make `altair.Chart` for the intervals between `x_min` and `x_max`."""
+    """Make `altair.Chart` for the `intervals`."""
+    source = {"x_min": [i[0] for i in intervals], "x_max": [i[1] for i in intervals]}
     return (
-        alt.Chart(pd.DataFrame({"x_min": x_min, "x_max": x_max}))
+        alt.Chart(pd.DataFrame(source))
         .mark_rect(
-            opacity=opacity,
+            fillOpacity=fillOpacity,
             color=color,
             stroke=stroke,
             strokeWidth=strokeWidth,
@@ -249,10 +249,6 @@ def make_interval_chart(
         )
         .encode(x=alt.X("x_min", type="quantitative"), x2=alt.X2("x_max"))
     )
-
-
-def has_alnum(s: str):
-    return any(c.isalnum() for c in s)
 
 
 def dataset_passages(dataset: Dataset) -> typing.Iterator[Passage]:

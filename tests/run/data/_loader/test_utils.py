@@ -115,6 +115,9 @@ def test__maybe_normalize_audio_and_cache():
         bits=16,
         sample_rate=metadata.sample_rate,
         num_channels=metadata.num_channels,
+        encoding=metadata.encoding,
+        bit_rate=metadata.bit_rate,
+        precision=metadata.precision,
     )
     path = _loader.utils.maybe_normalize_audio_and_cache(metadata, **kwargs)
     assert path == metadata.path

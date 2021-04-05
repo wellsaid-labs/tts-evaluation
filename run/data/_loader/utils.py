@@ -117,11 +117,25 @@ def maybe_normalize_audio_and_cache(
     bits: int = HParam(),
     sample_rate: int = HParam(),
     num_channels: int = HParam(),
+    encoding: lib.audio.AudioEncoding = HParam(),
+    bit_rate: str = HParam(),
+    precision: str = HParam(),
     **kwargs,
 ) -> pathlib.Path:
-    """Normalize `audio_file`, if it's not already normalized, and cache the results."""
-    if is_normalized_audio_file(audio_file):
+    """Normalize `audio_file`, if it's not already normalized, and cache the results.
+
+    TODO: Remove redundancy in parameters.
+    """
+    format_ = AudioFormat(
+        sample_rate=sample_rate,
+        num_channels=num_channels,
+        encoding=encoding,
+        bit_rate=bit_rate,
+        precision=precision,
+    )
+    if is_normalized_audio_file(audio_file, format_, suffix):
         return audio_file.path
+
     kwargs_ = dict(
         suffix=suffix,
         bits=bits,

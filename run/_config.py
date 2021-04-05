@@ -1,4 +1,5 @@
 import copy
+import dataclasses
 import enum
 import logging
 import math
@@ -331,8 +332,7 @@ def _configure_audio_processing():
             suffix=suffix,
             data_type=data_type,
             bits=bits,
-            sample_rate=format_.sample_rate,
-            num_channels=format_.num_channels,
+            **{f.name: getattr(format_, f.name) for f in dataclasses.fields(format_)},
         ),
         # NOTE: A 0.400 `block_size` is standard for ITU-R BS.1770.
         run.train.spectrogram_model._data._get_loudness: HParams(block_size=0.400, precision=0),
