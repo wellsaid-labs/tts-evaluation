@@ -133,8 +133,11 @@ def dataset_coverage(dataset: Dataset, spans: typing.List[Span]) -> float:
     """ Get the percentage of the `dataset` these `spans` cover. """
     logger.info("Getting span coverage of dataset...")
     alignments = set()
+    passage_ids = set(id(p) for d in dataset.values() for p in d)
     for span in spans:
-        alignments.update((span.passage, i) for i in range(span.slice.start, span.slice.stop))
+        passage_id = id(span.passage)
+        assert passage_id in passage_ids, "Passage not found in `dataset`."
+        alignments.update((passage_id, i) for i in range(span.slice.start, span.slice.stop))
     return len(alignments) / dataset_num_alignments(dataset)
 
 
