@@ -414,11 +414,11 @@ def test_passage_linking__no_links():
         assert passage._next_alignment() == Alignment((1, 1), (length, length), (1, 1))
 
 
-def _has_a_mistranscription(
+def _has_a_mistranscription_helper(
     args: typing.Sequence[typing.Tuple[str, str, typing.Sequence[typing.Tuple[IntInt, IntInt]]]],
     **kwargs,
-) -> typing.List[bool]:
-    """ Helper function for `test_has_a_mistranscription`. """
+) -> typing.List[Passage]:
+    """ Helper function for `_has_a_mistranscription`. """
     unprocessed_passages = [
         make_unprocessed_passage(
             audio_path=TEST_DATA_LJ,
@@ -428,8 +428,12 @@ def _has_a_mistranscription(
         )
         for s, t, a in args
     ]
-    passages = make_passages("", [unprocessed_passages], **kwargs)
-    return [has_a_mistranscription(p) for p in passages]
+    return make_passages("", [unprocessed_passages], **kwargs)
+
+
+def _has_a_mistranscription(*args, **kwargs) -> typing.List[bool]:
+    """ Helper function for `test_has_a_mistranscription`. """
+    return [has_a_mistranscription(p) for p in _has_a_mistranscription_helper(*args, **kwargs)]
 
 
 def test_has_a_mistranscription():
@@ -475,3 +479,18 @@ def test_has_a_mistranscription__multiple_passages():
         ("c", "ac", (((0, 1), (1, 2)),)),
     ]
     assert all(_has_a_mistranscription(passages, is_linked=is_linked))
+
+
+def test_has_a_mistranscription__span():
+    """Test `has_a_mistranscription` with spans."""
+    is_linked = IsLinked(transcript=True)
+    passages = [
+        ("abc", "abcdef", (((0, 1), (0, 1)), ((1, 2), (1, 2)), ((2, 3), (2, 3)))),
+        ("def", "abcdef", (((1, 2), (4, 5)), ((2, 3), (5, 6)))),
+    ]
+    passages = _has_a_mistranscription_helper(passages, is_linked=is_linked)
+    assert has_a_mistranscription(passages[0][:])
+    assert not has_a_mistranscription(passages[0][:-1])
+    assert has_a_mistranscription(passages[0][1:])
+    assert has_a_mistranscription(passages[1][:])
+    assert not has_a_mistranscription(passages[1][1:])

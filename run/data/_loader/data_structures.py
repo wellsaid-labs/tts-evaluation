@@ -66,17 +66,25 @@ def has_a_mistranscription(span: typing.Union[Passage, Span]) -> bool:
 
     NOTE: This is equivalent and ~3x faster than: `any(voiced_nonalignment_spans(span)[1])`
     """
-    slice_ = slice(span.slice.start, span.slice.stop + 1) if isinstance(span, Span) else slice(None)
     # NOTE: Use duck typing because of this issue:
     # https://github.com/streamlit/streamlit/issues/2379
-    span = (
-        typing.cast(Span, span).passage if hasattr(span, "passage") else typing.cast(Passage, span)
-    )
-    cut = lambda x: slice(x, x + 1)
+    is_span = hasattr(span, "passage")
+    if is_span:
+        span = typing.cast(Span, span)
+        slice_ = span.nonalignments_slice
+        span = span.passage
+    else:
+        span = typing.cast(Passage, span)
+        slice_ = slice(0, len(span.nonalignments))
+
     slices = [(span, slice_)]
-    if span.is_linked.transcript:
-        slices += [] if span.prev is None else [(span.prev, cut(len(span.prev.nonalignments) - 1))]
-        slices += [] if span.next is None else [(span.next, cut(0))]
+    is_linked = span.is_linked.transcript
+    if is_linked and span.prev is not None and slice_.start == 0:
+        length = len(span.prev.nonalignments)
+        slices += [(span.prev, slice(length - 1, length))]
+    if is_linked and span.next is not None and slice_.stop == len(span.nonalignments):
+        slices += [(span.next, slice(0, 1))]
+
     for _span, _slice in slices:
         nonalignments = _span.nonalignments[_slice]
         if any(
@@ -439,13 +447,18 @@ class Span:
 
     @property
     def audio_slice(self):
-        """Slice of script in `self.audio_file`."""
+        """Slice of audio in `self.audio_file`."""
         return slice(self.audio_start, self.audio_stop)
 
     @property
     def transcript_slice(self):
-        """Slice of script in `self.passage.transcript`."""
+        """Slice of transcript in `self.passage.transcript`."""
         return slice(self._first.transcript[0], self._last.transcript[-1])
+
+    @property
+    def nonalignments_slice(self):
+        """Slice of `Alignment`s in `self.passage.nonalignments`."""
+        return slice(self.slice.start, self.slice.stop + 1)
 
     @property
     def script(self):
@@ -485,7 +498,7 @@ class Span:
         spans = self.passage.nonalignment_spans()
         return NonalignmentSpans(
             passage=self.passage,
-            spans=spans.spans[self.slice.start : self.slice.stop + 1],
+            spans=spans.spans[self.nonalignments_slice],
             prev=spans.prev if self.slice.start == 0 else None,
             next=spans.next if self.slice.stop == len(self.passage_alignments) else None,
         )
