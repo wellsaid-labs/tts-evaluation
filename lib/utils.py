@@ -21,6 +21,7 @@ import torch.multiprocessing
 import torch.nn
 import torch.nn.functional
 import torch.utils.data
+from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
 
@@ -649,3 +650,11 @@ def triplets(items: typing.List[_TripletsVar]) -> typing.Iterator[_TripletsItem[
     items_ = typing.cast(typing.List[typing.Optional[_TripletsVar]], items)
     none = typing.cast(typing.List[typing.Optional[_TripletsVar]], [None])
     return zip(none + items_[:-1], items, items_[1:] + none)
+
+
+_TqdmVar = typing.TypeVar("_TqdmVar")
+
+
+def tqdm_(iterator: typing.Iterable[_TqdmVar], **kwargs) -> typing.Iterable[_TqdmVar]:
+    """ `tqdm` with typing. """
+    return tqdm(iterator, **kwargs)
