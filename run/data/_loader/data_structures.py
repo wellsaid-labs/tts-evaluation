@@ -720,12 +720,16 @@ def make_passages(
     unprocessed_passages = iter(tqdm_([(i, p) for i, d in enumerate(dataset) for p in d]))
     for i, item in unprocessed_passages:
         if item.audio_path not in normal_audio_files:
-            logger.warning(f"[{name}] Skipping, audio path (%s) isn't a file.", item.audio_path)
+            logger.warning(f"[{name}] Skipping, audio path ({item.audio_path.name}) isn't a file.")
             continue
 
         audio_file = normal_audio_files[item.audio_path]
         script = normal_scripts[item.script]
         transcript = normal_scripts[item.transcript]
+        if len(script) == 0 and len(transcript) == 0:
+            logger.error(f"[{name}] Skipping, passage ({item.audio_path.name}) has no content.")
+            continue
+
         _check_updated_script(name, item, script, transcript)
         args = ((0, len(script)), (0.0, audio_file.length), (0, len(transcript)))
         alignments = (Alignment(*args),) if item.alignments is None else item.alignments
