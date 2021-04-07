@@ -19,7 +19,7 @@ from run.data._loader.data_structures import (
     UnprocessedPassage,
     _check_updated_script,
     _filter_non_speech_segments,
-    _make_speech_segments,
+    _make_speech_segments_helper,
     _maybe_normalize_vo_script,
     has_a_mistranscription,
     make_passages,
@@ -81,8 +81,8 @@ def test__filter_non_speech_segments():
     assert results == {k for k, v in non_speech_segments.items() if v}
 
 
-def test__make_speech_segments():
-    """Test `_make_speech_segments` against various word alignment and pausing intervals."""
+def test__make_speech_segments_helper():
+    """Test `_make_speech_segments_helper` against various word alignment and pausing intervals."""
     audio_alignments = [
         (0, 0.2),  # The
         (0.2, 0.8),  # examination
@@ -108,7 +108,7 @@ def test__make_speech_segments():
     audio_file = lib.audio.get_audio_metadata(TEST_DATA_LJ)
     next_alignment = (audio_file.length, audio_file.length)
     args = (audio_alignments, prev_alignment, next_alignment, audio_file.length)
-    make = lambda t: _make_speech_segments(*args, t)
+    make = lambda t: _make_speech_segments_helper(*args, t)
 
     speech_segments = (
         (slice(0, 7), slice(0.0, 2.775)),
@@ -136,9 +136,10 @@ def test__make_speech_segments():
     )
 
 
-def test__make_speech_segments__partial():
-    """Test `_make_speech_segments` where `non_speech_segments` overlap an alignment partially."""
-    speech_segments = _make_speech_segments(
+def test__make_speech_segments_helper__partial():
+    """Test `_make_speech_segments_helper` where `non_speech_segments` overlap an alignment
+    partially."""
+    speech_segments = _make_speech_segments_helper(
         alignments=[(0, 1), (1, 2)],
         prev_alignment=(0, 0),
         next_alignment=(2, 2),
@@ -148,10 +149,10 @@ def test__make_speech_segments__partial():
     assert speech_segments == tuple()
 
 
-def test__make_speech_segments__overlap():
-    """Test `_make_speech_segments` where `non_speech_segments` overlap each other."""
+def test__make_speech_segments_helper__overlap():
+    """Test `_make_speech_segments_helper` where `non_speech_segments` overlap each other."""
     pad = 25 / 1000
-    speech_segments = _make_speech_segments(
+    speech_segments = _make_speech_segments_helper(
         alignments=[(0.25, 1), (2, 2.75)],
         prev_alignment=(0, 0),
         next_alignment=(3, 3),
@@ -165,9 +166,9 @@ def test__make_speech_segments__overlap():
     )
 
 
-def test__make_speech_segments__prev_alignment():
-    """Test `_make_speech_segments` where `alignments` and `prev_alignment` overlap."""
-    speech_segments = _make_speech_segments(
+def test__make_speech_segments_helper__prev_alignment():
+    """Test `_make_speech_segments_helper` where `alignments` and `prev_alignment` overlap."""
+    speech_segments = _make_speech_segments_helper(
         alignments=[(0.25, 1)],
         prev_alignment=(0, 0.5),
         next_alignment=(1.5, 1.5),
@@ -177,10 +178,10 @@ def test__make_speech_segments__prev_alignment():
     assert speech_segments == tuple()
 
 
-def test__make_speech_segments__next_alignment():
-    """Test `_make_speech_segments` where there is no pause between `alignments` and
+def test__make_speech_segments_helper__next_alignment():
+    """Test `_make_speech_segments_helper` where there is no pause between `alignments` and
     `next_alignment`."""
-    speech_segments = _make_speech_segments(
+    speech_segments = _make_speech_segments_helper(
         alignments=[(0.25, 1)],
         prev_alignment=(0, 0),
         next_alignment=(1.5, 1.75),
@@ -190,9 +191,9 @@ def test__make_speech_segments__next_alignment():
     assert speech_segments == tuple()
 
 
-def test__make_speech_segments__padding():
-    """Test `_make_speech_segments` where padding goes past the edges."""
-    speech_segments = _make_speech_segments(
+def test__make_speech_segments_helper__padding():
+    """Test `_make_speech_segments_helper` where padding goes past the edges."""
+    speech_segments = _make_speech_segments_helper(
         alignments=[(0.1, 0.9)],
         prev_alignment=(0, 0),
         next_alignment=(1, 1),

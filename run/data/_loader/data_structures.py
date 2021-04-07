@@ -5,7 +5,6 @@ from __future__ import annotations
 import dataclasses
 import itertools
 import logging
-import pathlib
 import typing
 from concurrent import futures
 from dataclasses import field
@@ -14,11 +13,10 @@ from pathlib import Path
 
 import numpy as np
 from hparams import HParam, configurable
-from tqdm import tqdm
 
 import lib
 from lib.audio import AudioMetadata, get_audio_metadata
-from lib.utils import Timeline, Tuple, flatten_2d
+from lib.utils import Timeline, Tuple, flatten_2d, tqdm_
 from run.data import _loader
 
 logger = logging.getLogger(__name__)
@@ -152,7 +150,7 @@ class UnprocessedPassage:
         other_metadata: Additional metadata associated with this passage.
     """
 
-    audio_path: pathlib.Path
+    audio_path: Path
     speaker: Speaker
     script: str
     transcript: str
@@ -197,12 +195,11 @@ class Passage:
     script: str
     transcript: str
     alignments: Tuple[Alignment]
-    other_metadata: typing.Dict = field(default_factory=dict, compare=False, hash=False)
+    other_metadata: typing.Dict = field(default_factory=dict, compare=False)
     is_linked: IsLinked = field(default_factory=IsLinked)
     nonalignments: Tuple[Alignment] = field(init=False, repr=False, compare=False)
-    speech_segments: typing.Tuple[Span, ...] = field(
-        init=False, repr=False, compare=False, hash=False
-    )
+    speech_segments: typing.Tuple[Span, ...] = field(init=False, repr=False, compare=False)
+    non_speech_segments: Timeline = field(init=False, repr=False, compare=False)
     first: Alignment = field(init=False, repr=False, compare=False)
     last: Alignment = field(init=False, repr=False, compare=False)
     prev: typing.Optional[Passage] = field(default=None, init=False, repr=False, compare=False)
@@ -595,7 +592,7 @@ def _filter_non_speech_segments(
 
 
 @configurable
-def _make_speech_segments(
+def _make_speech_segments_helper(
     alignments: typing.List[FloatFloat],
     prev_alignment: FloatFloat,
     next_alignment: FloatFloat,
@@ -648,42 +645,128 @@ def _maybe_normalize_vo_script(script: str) -> str:
     return script
 
 
-def _check_updated_script_helper(name: str, label: str, original: str, updated: str):
+def _check_updated_script_helper(label: str, attr: str, original: str, updated: str):
     """ Helper function for `_check_updated_script`. """
     diff = [o for o, u in zip(original, updated) if o != u]
-    lib.utils.call_once(logger.error, f"[{name}] `{label}` was not normalized: {diff}")
+    lib.utils.call_once(logger.error, f"[{label}] `{attr}` was not normalized: {diff}")
     assert len(original) == len(updated), "Alignments and script are out-of-sync."
 
 
 def _check_updated_script(
-    name: str,
-    passage: UnprocessedPassage,
-    updated_script: str,
-    updated_transcript: str,
+    label: str, passage: UnprocessedPassage, updated_script: str, updated_transcript: str
 ):
     """Check if updated script and transcript is compatible with `passage.alignments`."""
     updates = (
         ("script", passage.script, updated_script),
         ("transcript", passage.transcript, updated_transcript),
     )
-    for label, original, updated in updates:
+    for attr, original, updated in updates:
         if passage.alignments is not None and original != updated:
-            lib.utils.call_once(_check_updated_script_helper, name, label, original, updated)
+            lib.utils.call_once(_check_updated_script_helper, label, attr, original, updated)
 
 
 UnprocessedDataset = typing.List[typing.List[UnprocessedPassage]]
 
 
+def _normalize_audio_files(
+    dataset: UnprocessedDataset, no_tqdm: bool
+) -> typing.Dict[Path, AudioMetadata]:
+    """Map every audio file to a normalized audio file.
+
+    TODO: In order to encourage parallelism, the longest files should be run through
+    `maybe_normalize_audio_and_cache` first.
+    """
+    executor = futures.ThreadPoolExecutor()
+    get_audio_metadata_ = partial(get_audio_metadata, add_tqdm=not no_tqdm)
+    audio_paths = list(set(p.audio_path for l in dataset for p in l))
+    audio_paths = [a for a, e in zip(audio_paths, executor.map(_exists, audio_paths)) if e]
+    audio_files = get_audio_metadata_(audio_paths)
+    generator = executor.map(_loader.utils.maybe_normalize_audio_and_cache, audio_files)
+    normal_audio_paths = list(tqdm_(generator, total=len(audio_files), disable=no_tqdm))
+    return {a: n for a, n in zip(audio_paths, get_audio_metadata_(normal_audio_paths))}
+
+
+def _get_non_speech_segments(
+    dataset: UnprocessedDataset,
+    normalized_audio_files: typing.Dict[Path, AudioMetadata],
+    no_tqdm: bool,
+    threshold: int = 5 * 60,
+) -> typing.Dict[AudioMetadata, Timeline]:
+    """Map every audio file to a non speech segments `Timeline`.
+
+    Args:
+        ...
+        threshold: If all `audio_file`s are smaller than `threshold`, use multithreading.
+            This is a naive method for controlling memory usage.
+    """
+    audio_paths = list(set(p.audio_path for l in dataset for p in l))
+    audio_files = [normalized_audio_files[p] for p in audio_paths if p in normalized_audio_files]
+    if max([f.length for f in audio_files]) > threshold:
+        iterator = tqdm_(audio_files, disable=no_tqdm)
+        return {a: _loader.utils.get_non_speech_segments_and_cache(a) for a in iterator}
+
+    executor = futures.ThreadPoolExecutor()
+    generator = executor.map(_loader.utils.get_non_speech_segments_and_cache, audio_files)
+    non_speech_segments = list(tqdm_(generator, total=len(audio_files), disable=no_tqdm))
+    return {a: n for a, n in zip(audio_files, non_speech_segments)}
+
+
+def _normalize_scripts(
+    label: str, dataset: UnprocessedDataset, no_tqdm: bool
+) -> UnprocessedDataset:
+    """Normalize `transcript` and `script` in `dataset`.
+
+    TODO: Support `Passage`s with no content. At the moment `Passage` requires some content.
+    """
+    scripts = set(s for l in dataset for p in l for s in (p.script, p.transcript))
+    new_scripts = {s: _maybe_normalize_vo_script(s) for s in tqdm_(scripts, disable=no_tqdm)}
+    new_dataset: UnprocessedDataset = [[] for _ in range(len(dataset))]
+    iterator = tqdm_([(p, n) for d, n in zip(dataset, new_dataset) for p in d], disable=no_tqdm)
+    for passage, new_document in iterator:
+        if len(passage.script) == 0 and len(passage.transcript) == 0:
+            message = f"[{label}] Skipping, passage ({passage.audio_path.name}) has no content."
+            logger.error(message)
+            continue
+        script = new_scripts[passage.script]
+        transcript = new_scripts[passage.transcript]
+        _check_updated_script(label, passage, script, transcript)
+        new_document.append(dataclasses.replace(passage, script=script, transcript=transcript))
+    return new_dataset
+
+
+def _normalize_alignments(
+    passage: UnprocessedPassage, audio_file: AudioMetadata
+) -> Tuple[Alignment]:
+    """Normalize `passage.alignments`."""
+    alignments = passage.alignments
+    args = ((0, len(passage.script)), (0.0, audio_file.length), (0, len(passage.transcript)))
+    default_alignments = (Alignment(*args),)
+    return typing.cast(Tuple[Alignment], default_alignments if alignments is None else alignments)
+
+
+def _make_speech_segments(passage: Passage) -> typing.List[Span]:
+    """Make `speech_segments` for `passage`."""
+    length = passage.audio_file.length
+    if len(passage.alignments) == 1 and passage.alignments[0].audio == (0, length):
+        return [passage[:]]
+    speech_segments = _make_speech_segments_helper(
+        [a.audio for a in passage.alignments],
+        passage._prev_alignment().audio,
+        passage._next_alignment().audio,
+        passage.audio_file.length,
+        passage.non_speech_segments,
+    )
+    return [passage.span(*s) for s in speech_segments]
+
+
 @lib.utils.log_runtime
 def make_passages(
-    name: str, dataset: UnprocessedDataset, add_tqdm: bool = False, **kwargs
+    label: str, dataset: UnprocessedDataset, add_tqdm: bool = False, **kwargs
 ) -> typing.List[Passage]:
     """Process `UnprocessedPassage` and return a list of `Passage`s.
 
     NOTE: This function processes passages in a batch; therefore, it'd be ideal to pass as many
     items at once as possible.
-    TODO: In order to encourage parallelism, the longest files should be run through
-    `_maybe_normalize_audio_and_cache` first.
     TODO: Add `check_invariants` to `UnprocessedPassage`, so that, we can enforce invariants
     that this code relies on.
 
@@ -691,89 +774,48 @@ def make_passages(
         dataset: Dataset with a list of documents each with a list of passsages.
         **kwargs: Keyword arguments passed to `Passage`.
     """
-    executor = futures.ThreadPoolExecutor()
-    tqdm_ = partial(tqdm, disable=not add_tqdm)
-    get_audio_metadata_ = partial(get_audio_metadata, add_tqdm=add_tqdm)
-    audio_paths = list(set(p.audio_path for l in dataset for p in l))
-    audio_paths = [a for a, e in zip(audio_paths, executor.map(_exists, audio_paths)) if e]
-    audio_files = get_audio_metadata_(audio_paths)
+    no_tqdm = not add_tqdm
 
-    logger.info(f"[{name}] Normalizing audio files...")
-    generator = executor.map(_loader.utils.maybe_normalize_audio_and_cache, audio_files)
-    normal_audio_paths = list(tqdm_(generator, total=len(audio_files)))
-    normal_audio_files = {
-        a: n for a, n in zip(audio_paths, get_audio_metadata_(normal_audio_paths))
-    }
+    logger.info(f"[{label}] Normalizing audio files...")
+    normalized_audio_files = _normalize_audio_files(dataset, no_tqdm)
 
-    logger.info(f"[{name}] Getting non-speech segments...")
-    audio_paths = list(set(p.audio_path for l in dataset for p in l if p.alignments is not None))
-    audio_files = tqdm_([normal_audio_files[p] for p in audio_paths])
-    nss_timelines = {a: _loader.utils.get_non_speech_segments_and_cache(a) for a in audio_files}
+    logger.info(f"[{label}] Getting non-speech segments...")
+    non_speech_segments = _get_non_speech_segments(dataset, normalized_audio_files, no_tqdm)
 
-    logger.info(f"[{name}] Normalizing scripts...")
-    scripts = set(s for l in dataset for p in l for s in (p.script, p.transcript))
-    normal_scripts = {s: _maybe_normalize_vo_script(s) for s in tqdm_(scripts)}
+    logger.info(f"[{label}] Normalizing scripts...")
+    dataset = _normalize_scripts(label, dataset, no_tqdm)
 
-    logger.info(f"[{name}] Making passages...")
-    passages: typing.List[typing.List[Passage]] = [[] for _ in range(len(dataset))]
-    unprocessed_passages: typing.Iterable[typing.Tuple[int, UnprocessedPassage]]
-    unprocessed_passages = iter(tqdm_([(i, p) for i, d in enumerate(dataset) for p in d]))
-    for i, item in unprocessed_passages:
-        if item.audio_path not in normal_audio_files:
-            logger.warning(f"[{name}] Skipping, audio path ({item.audio_path.name}) isn't a file.")
+    logger.info(f"[{label}] Making passages...")
+    documents: typing.List[typing.List[Passage]] = [[] for _ in range(len(dataset))]
+    iterator = tqdm_([(i, p) for i, d in enumerate(dataset) for p in d], disable=no_tqdm)
+    for i, item in iterator:
+        if item.audio_path not in normalized_audio_files:
+            logger.warning(f"[{label}] Skipping, audio path ({item.audio_path.name}) isn't a file.")
             continue
+        kwargs = {**kwargs, "speaker": item.speaker, "script": item.script}
+        kwargs = {**kwargs, "transcript": item.transcript, "other_metadata": item.other_metadata}
+        audio_file = normalized_audio_files[item.audio_path]
+        alignments = _normalize_alignments(item, audio_file)
+        documents[i].append(Passage(audio_file=audio_file, alignments=alignments, **kwargs))
 
-        audio_file = normal_audio_files[item.audio_path]
-        script = normal_scripts[item.script]
-        transcript = normal_scripts[item.transcript]
-        if len(script) == 0 and len(transcript) == 0:
-            logger.error(f"[{name}] Skipping, passage ({item.audio_path.name}) has no content.")
-            continue
-
-        _check_updated_script(name, item, script, transcript)
-        args = ((0, len(script)), (0.0, audio_file.length), (0, len(transcript)))
-        alignments = (Alignment(*args),) if item.alignments is None else item.alignments
-        passage = Passage(
-            audio_file,
-            item.speaker,
-            script,
-            transcript,
-            typing.cast(Tuple[Alignment], alignments),
-            item.other_metadata,
-            **kwargs,
-        )
-        passages[i].append(passage)
-
-    logger.info(f"[{name}] Updating passages...")
-    for doc in typing.cast(typing.List[typing.List[Passage]], tqdm_(passages)):
-        doc_ = typing.cast(typing.List[typing.Optional[Passage]], doc)
-        buffer = typing.cast(typing.List[typing.Optional[Passage]], [None])
-        for i, (prev, curr, next_) in enumerate(zip(buffer + doc_, doc, doc_[1:] + buffer)):
+    logger.info(f"[{label}] Linking passages...")
+    for doc in tqdm_(documents, disable=no_tqdm):
+        for prev, curr, next_ in lib.utils.triplets(doc):
             object.__setattr__(curr, "prev", prev)
             object.__setattr__(curr, "next", next_)
 
-        for passage in doc:
-            object.__setattr__(passage, "nonalignments", _make_nonalignments(passage))
-            if passage.audio_file not in nss_timelines:
-                speech_segments = [passage[:]]
-            else:
-                speech_segments = _make_speech_segments(
-                    [a.audio for a in passage.alignments],
-                    passage._prev_alignment().audio,
-                    passage._next_alignment().audio,
-                    passage.audio_file.length,
-                    nss_timelines[passage.audio_file],
-                )
-                speech_segments = [passage.span(*s) for s in speech_segments]
-            object.__setattr__(passage, "speech_segments", speech_segments)
+    flat = flatten_2d(documents)
+    logger.info(f"[{label}] Making nonalignments and speech segments...")
+    for passage in tqdm_(flat, disable=no_tqdm):
+        object.__setattr__(passage, "nonalignments", _make_nonalignments(passage))
+        object.__setattr__(passage, "non_speech_segments", non_speech_segments[passage.audio_file])
+        object.__setattr__(passage, "speech_segments", _make_speech_segments(passage))
 
-    logger.info(f"[{name}] Checking invariants and packing...")
-    for doc in tqdm_(passages):
-        for passage in doc:
-            passage.check_invariants()
-            object.__setattr__(passage, "alignments", Alignment.stow(passage.alignments))
-            object.__setattr__(passage, "nonalignments", Alignment.stow(passage.nonalignments))
+    logger.info(f"[{label}] Checking invariants and packing...")
+    for passage in tqdm_(flat, disable=no_tqdm):
+        passage.check_invariants()
+        object.__setattr__(passage, "alignments", Alignment.stow(passage.alignments))
+        object.__setattr__(passage, "nonalignments", Alignment.stow(passage.nonalignments))
 
-    logger.info(f"[{name}] Done! {lib.utils.mazel_tov()}")
-
-    return flatten_2d(passages)
+    logger.info(f"[{label}] Done! {lib.utils.mazel_tov()}")
+    return flat

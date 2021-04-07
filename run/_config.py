@@ -325,7 +325,7 @@ def _configure_audio_processing():
         run.data._loader.utils.get_non_speech_segments_and_cache: HParams(
             low_cut=300, frame_length=non_speech_segment_frame_length, hop_length=5, threshold=-60
         ),
-        run.data._loader.data_structures._make_speech_segments: HParams(
+        run.data._loader.data_structures._make_speech_segments_helper: HParams(
             pad=lib.audio.milli_to_sec(non_speech_segment_frame_length / 2)
         ),
         run.data._loader.utils.maybe_normalize_audio_and_cache: HParams(
