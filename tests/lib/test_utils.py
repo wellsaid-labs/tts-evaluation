@@ -495,3 +495,12 @@ def test_timeline_map():
     assert timeline[1.5:2.5] == ("c",)
     assert timeline[0:4] == ("a", "b", "c", "a")
     assert timeline[6:10] == tuple()
+
+
+def test_triplets():
+    """ Test `triplets`. """
+    assert list(lib.utils.triplets(["a", "b", "c"])) == [
+        (None, "a", "b"),
+        ("a", "b", "c"),
+        ("b", "c", None),
+    ]

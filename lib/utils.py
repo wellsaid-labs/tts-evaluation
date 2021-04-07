@@ -633,3 +633,16 @@ class TimelineMap(Timeline, typing.Generic[_TimelineVar]):
 
     def __getitem__(self, key: typing.Union[int, float, slice]) -> typing.Tuple[_TimelineVar, ...]:
         return self.vals[self.make_slice(key)]
+
+
+_TripletsVar = typing.TypeVar("_TripletsVar")
+_TripletsItem = typing.Tuple[
+    typing.Optional[_TripletsVar], typing.Optional[_TripletsVar], typing.Optional[_TripletsVar]
+]
+
+
+def triplets(items: typing.List[_TripletsVar]) -> typing.Iterator[_TripletsItem[_TripletsVar]]:
+    """Get triples of `items` bounded by `None`."""
+    items_ = typing.cast(typing.List[typing.Optional[_TripletsVar]], items)
+    none = typing.cast(typing.List[typing.Optional[_TripletsVar]], [None])
+    return zip(none + items_[:-1], items, items_[1:] + none)
