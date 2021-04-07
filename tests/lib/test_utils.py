@@ -464,6 +464,7 @@ def test_timeline():
     assert timeline.intervals(0.5) == [(0, 1), (0.5, 1)]
     assert timeline[0.5:1.5].tolist() == [[0, 1], [0.5, 1], [1, 2]]
     assert timeline[6:10].tolist() == []
+    assert timeline.num_intervals() == 3
 
 
 def test_timeline__zero():
@@ -477,6 +478,7 @@ def test_timeline__zero():
     assert list(timeline.indicies(0.5)) == []
     assert timeline.intervals(0.5) == []
     assert timeline[0.5:1.5].tolist() == []
+    assert timeline.num_intervals() == 0
 
 
 def test_timeline_map():

@@ -617,6 +617,9 @@ class Timeline:
         array = self._intervals.T if interval is None else self[interval]
         return [(float(i[0]), float(i[1])) for i in array]
 
+    def num_intervals(self) -> int:
+        return self._intervals.shape[1]
+
 
 _TimelineVar = typing.TypeVar("_TimelineVar")
 
