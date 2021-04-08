@@ -5,6 +5,7 @@ Usage:
 """
 
 import collections
+import functools
 import logging
 import math
 import typing
@@ -17,7 +18,7 @@ from torchnlp.random import fork_rng
 
 import lib
 import run
-from lib.utils import flatten_2d, mazel_tov, seconds_to_str
+from lib.utils import flatten_2d, mazel_tov, round_, seconds_to_str
 from run._config import Dataset
 from run._streamlit import (
     audio_to_html,
@@ -26,7 +27,7 @@ from run._streamlit import (
     map_,
     rmtree_streamlit_static_temp_dir,
 )
-from run.data._loader import DATASETS, Span, voiced_nonalignment_spans
+from run.data._loader import DATASETS, Span, has_a_mistranscription, voiced_nonalignment_spans
 from run.data.dataset_dashboard import _utils as utils
 
 lib.environment.set_basic_logging_config(reset=True)
@@ -99,17 +100,20 @@ def _span_metric(
     unit_y: str,
     max_rows: int,
     run_all: bool,
+    note: str = "",
 ):
     """Visualize a span metric."""
     with utils.st_expander(f"Survey of {name} (in {unit_x.lower()})") as label:
         if not st.checkbox("Analyze", key=label, value=run_all):
             return
 
-        st.write(f"The {unit_y} count for each bucket:")
+        st.write(f"The {unit_y.lower()} count for each bucket:")
         results = map_(spans, func)
         labels = [s.speaker.label for s in spans]
         chart = utils.bucket_and_chart(results, labels, bucket_size, x=unit_x, y=unit_y + " Count")
         st.altair_chart(chart, use_container_width=True)
+        if len(note) > 0:
+            st.write(note)
         filtered = [(s, r) for s, r in zip(spans, results) if not math.isnan(r)]
         sorted_ = lambda **k: sorted(filtered, key=lambda i: i[1], **k)[:max_rows]
         for label_, data in (("smallest", sorted_()), ("largest", sorted_(reverse=True))):
@@ -143,6 +147,8 @@ def _analyze_dataset(dataset: Dataset, max_rows: int, run_all: bool):
         f"{len(unigrams):,} alignments..."
     )
 
+    span_metric_ = functools.partial(_span_metric, max_rows=max_rows, run_all=run_all)
+
     with utils.st_expander("Random Sample of Alignments") as label:
         if not st.checkbox("Analyze", key=label, value=run_all):
             raise GeneratorExit()
@@ -162,13 +168,67 @@ def _analyze_dataset(dataset: Dataset, max_rows: int, run_all: bool):
                 unsafe_allow_html=True,
             )
 
-    with utils.st_expander("Survey of Pause Lengths (in seconds)"):
-        st.write("The pause count for each length bucket:")
-        pauses = list(utils.dataset_pause_lengths_in_seconds(dataset))
-        chart = utils.bucket_and_chart(pauses, utils.ALIGNMENT_PRECISION, x="Seconds")
-        st.altair_chart(chart, use_container_width=True)
-        ratio = 0 if len(pauses) == 0 else sum([p > 0 for p in pauses]) / len(pauses)
-        st.write(f"**{ratio:.2%}** of pauses are longer than zero.")
+    nonalignment_spans = [s for p in passages for s in p.nonalignment_spans().spans[1:-1]]
+    ratio = sum([s.audio_length > 0 for s in nonalignment_spans]) / len(nonalignment_spans)
+    span_metric_(
+        nonalignment_spans,
+        lambda s: s.audio_length,
+        "Nonalignment Length",
+        "Second(s)",
+        utils.ALIGNMENT_PRECISION,
+        "Nonalignment",
+        note=f"**{ratio:.2%}** of pauses are longer than zero.",
+    )
+
+    segments = [s for p in passages for s in utils.passage_alignment_speech_segments(p)]
+    threshold = 10
+    max_length = max(s.audio_length for s in segments)
+    above_threshold = sum(s.audio_length for s in segments if s.audio_length > threshold)
+    total_seconds = sum(s.audio_length for s in segments)
+    span_metric_(
+        segments,
+        lambda s: s.audio_length,
+        "Alignment Speech Segments Length",
+        "Second(s)",
+        utils.ALIGNMENT_PRECISION,
+        "Speech Segment",
+        note=(
+            f"The maximum length, without pauses, is **{max_length:.2f}** seconds.\n\n"
+            f"The sum of segments without a pause, longer than {threshold} seconds, "
+            f"is **{above_threshold:.2f}** out of **{total_seconds:.2f}** seconds."
+        ),
+    )
+
+    with utils.st_expander("Survey of Pause Lengths (in seconds)") as label:
+        if st.checkbox("Analyze", key=label, value=run_all):
+            st.write("The pause count for each length bucket:")
+            passages, pauses = utils.dataset_pause_lengths_in_seconds(dataset)
+            labels = [p.speaker.label for p in passages]
+            chart = utils.bucket_and_chart(pauses, labels, utils.ALIGNMENT_PRECISION, x="Seconds")
+            st.altair_chart(chart, use_container_width=True)
+            ratio = 0 if len(pauses) == 0 else sum([p > 0 for p in pauses]) / len(pauses)
+            st.write(f"**{ratio:.2%}** of pauses are longer than zero.")
+            lengths = []
+            labels = []
+            for passage in utils.dataset_passages(dataset):
+                start = passage.first.audio[0]
+                spans, spans_is_voiced = voiced_nonalignment_spans(passage)
+                for span, is_voiced in zip(spans.spans, spans_is_voiced):
+                    if not is_voiced and span.audio_length > 0:
+                        lengths.append(span.audio_slice.start - start)
+                        labels.append(passage.speaker.label)
+                        start = span.audio_slice.stop
+                lengths.append(passage.last.audio[-1] - start)
+                labels.append(passage.speaker.label)
+            st.write("The length of segments between pauses:")
+            chart = utils.bucket_and_chart(lengths, labels, utils.ALIGNMENT_PRECISION, x="Seconds")
+            st.altair_chart(chart, use_container_width=True)
+            st.write(f"The maximum length, without pauses, is **{max(lengths):.2f}** seconds.")
+            count = sum([l for l in lengths if l > 10])
+            st.write(
+                "The sum of segments without a pause, longer than 10 seconds, "
+                f"is **{count:.2f}** out of **{sum(lengths):.2f}** seconds."
+            )
 
     question = "How many alignment(s) do you want to analyze?"
     num_alignments: int = st.sidebar.number_input(question, 0, None, 200)
@@ -194,7 +254,7 @@ def _analyze_dataset(dataset: Dataset, max_rows: int, run_all: bool):
         (utils.span_audio_right_rms_level, "Alignment Outset Loudness", "Decibel(s)", 5),
     ]
     for args in sections:
-        _span_metric(samples, *args, unit_y="Alignment", max_rows=max_rows, run_all=run_all)
+        span_metric_(samples, *args, unit_y="Alignment")
 
     with utils.st_expander("Random Sample of Filtered Alignments"):
         is_include: typing.Callable[[Span], bool]
@@ -236,7 +296,8 @@ def _analyze_spans(dataset: Dataset, spans: typing.List[Span], max_rows: int, ru
         st.table([{"script": m[0], "transcript": m[1]} for m in flatten_2d(mistranscriptions)])
 
     sections: typing.List[typing.Tuple[typing.Callable[[Span], float], str, str, float]] = [
-        (utils.span_total_silence, "Span Silence", "Seconds", utils.ALIGNMENT_PRECISION),
+        (utils.span_total_silence, "Span Total Silence", "Seconds", utils.ALIGNMENT_PRECISION),
+        (utils.span_max_silence, "Span Max Silence", "Seconds", utils.ALIGNMENT_PRECISION),
         (utils.span_sec_per_char, "Span Speed", "Seconds per character", 0.01),
         (utils.span_sec_per_phon, "Span Speed", "Seconds per phone", 0.01),
     ]

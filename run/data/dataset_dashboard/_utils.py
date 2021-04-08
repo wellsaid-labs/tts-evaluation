@@ -126,11 +126,40 @@ def dataset_total_audio(dataset: Dataset) -> float:
     return sum([m.length for m in dataset_audio_files(dataset)])
 
 
-def dataset_pause_lengths_in_seconds(dataset: Dataset) -> typing.Iterator[float]:
+def dataset_pause_lengths_in_seconds(
+    dataset: Dataset,
+) -> typing.Tuple[typing.List[Passage], typing.List[float]]:
     """ Get every pause in `dataset` between alignments. """
+    passages = []
+    pauses = []
     for passage in dataset_passages(dataset):
         for prev, next in zip(passage.alignments, passage.alignments[1:]):
-            yield next.audio[0] - prev.audio[1]
+            passages.append(passage)
+            pauses.append(next.audio[0] - prev.audio[1])
+    return passages, pauses
+
+
+def passage_alignment_speech_segments(passage: Passage) -> typing.List[Span]:
+    """Get `passage` speech segments seperated by alignment pauses."""
+    start = 0
+    segments: typing.List[Span] = []
+    spans, spans_is_voiced = voiced_nonalignment_spans(passage)
+    for i, (span, is_voiced) in enumerate(zip(spans.spans[1:-1], spans_is_voiced[1:-1])):
+        if not is_voiced and span.audio_length > 0:
+            segments.append(passage.span(slice(start, i + 1)))
+            start = i + 1
+    segments.append(passage.span(slice(start, len(passage.alignments))))
+
+    # NOTE: Verify the output is correct.
+    expected = list(range(0, len(passage.alignments)))
+    message = "Every alignment must be included."
+    assert [i for s in segments for i in range(s.slice.start, s.slice.stop)] == expected, message
+    if len(segments) > 0:
+        message = "Every speech segment needs to be seperated by a non speech segment."
+        pairs = zip(segments, segments[1:])
+        assert all(b.audio_start - a.audio_stop > 0 for a, b in pairs), message
+
+    return segments
 
 
 def passages_alignment_ngrams(passages: typing.List[Passage], n: int = 1) -> typing.Iterator[Span]:
@@ -170,6 +199,11 @@ def span_pauses(span: Span) -> typing.List[float]:
 
 def span_total_silence(span: Span) -> float:
     return sum(span_pauses(span))
+
+
+def span_max_silence(span: Span) -> float:
+    pauses = span_pauses(span)
+    return max(pauses) if len(pauses) > 0 else 0.0
 
 
 def span_audio_slice(span: Span, second: float, lengths: typing.Tuple[float, float]) -> np.ndarray:
