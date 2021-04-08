@@ -50,7 +50,7 @@ from run._streamlit import (
     map_,
     rmtree_streamlit_static_temp_dir,
 )
-from run.data._loader import DATASETS, Span, has_a_mistranscription, voiced_nonalignment_spans
+from run.data._loader import DATASETS, Span, has_a_mistranscription
 from run.data.dataset_dashboard import _utils as utils
 
 lib.environment.set_basic_logging_config(reset=True)
@@ -197,7 +197,7 @@ def _analyze_dataset(dataset: Dataset, max_rows: int, run_all: bool):
         nonalignment_spans,
         lambda s: s.audio_length,
         "Nonalignment Length",
-        "Second(s)",
+        "Seconds",
         utils.ALIGNMENT_PRECISION,
         "Nonalignment",
         note=f"**{ratio:.2%}** of pauses are longer than zero.",
@@ -212,7 +212,7 @@ def _analyze_dataset(dataset: Dataset, max_rows: int, run_all: bool):
         segments,
         lambda s: s.audio_length,
         "Alignment Speech Segments Length",
-        "Second(s)",
+        "Seconds",
         utils.ALIGNMENT_PRECISION,
         "Speech Segment",
         note=(
@@ -237,13 +237,13 @@ def _analyze_dataset(dataset: Dataset, max_rows: int, run_all: bool):
         _write_span_table(samples[:max_rows])
 
     sections: typing.List[typing.Tuple[typing.Callable[[Span], float], str, str, float]] = [
-        (lambda s: s.audio_length, "Alignment Length", "Second(s)", utils.ALIGNMENT_PRECISION),
-        (lambda s: len(s.script), "Alignment Length", "Character(s)", 1),
-        (utils.span_sec_per_char, "Alignment Speed", "Second(s) per character", 0.01),
-        (utils.span_sec_per_phon, "Alignment Speed", "Second(s) per phoneme", 0.01),
-        (utils.span_audio_rms_level, "Alignment Loudness", "Decibel(s)", 1),
-        (utils.span_audio_left_rms_level, "Alignment Onset Loudness", "Decibel(s)", 5),
-        (utils.span_audio_right_rms_level, "Alignment Outset Loudness", "Decibel(s)", 5),
+        (lambda s: s.audio_length, "Alignment Length", "Seconds", utils.ALIGNMENT_PRECISION),
+        (lambda s: len(s.script), "Alignment Length", "Characters", 1),
+        (utils.span_sec_per_char, "Alignment Speed", "Seconds per character", 0.01),
+        (utils.span_sec_per_phon, "Alignment Speed", "Seconds per phoneme", 0.01),
+        (utils.span_audio_rms_level, "Alignment Loudness", "Decibels", 1),
+        (utils.span_audio_left_rms_level, "Alignment Onset Loudness", "Decibels", 5),
+        (utils.span_audio_right_rms_level, "Alignment Outset Loudness", "Decibels", 5),
     ]
     for args in sections:
         span_metric_(samples, *args, unit_y="Alignment")
@@ -282,7 +282,7 @@ def _analyze_spans(dataset: Dataset, spans: typing.List[Span], max_rows: int, ru
         st.write(f"Note that **{ratio:.2%}** spans have one or more mistranscriptions.")
         items = [(s, t) for m, s in zip(mistranscriptions, spans) for t in m if len(t[0]) > 0]
         values, labels = [len(m[0]) for _, m in items], [s.speaker.label for s, _ in items]
-        chart = utils.bucket_and_chart(values, labels, x="Char(s)")
+        chart = utils.bucket_and_chart(values, labels, x="Chars")
         st.altair_chart(chart, use_container_width=True)
         st.write("A random sample of mistranscriptions:")
         st.table([{"script": m[0], "transcript": m[1]} for m in flatten_2d(mistranscriptions)])
@@ -340,6 +340,8 @@ def _analyze_filtered_spans(
         _write_span_table(excluded[:max_rows])
 
     sections: typing.List[typing.Tuple[typing.Callable[[Span], float], str, str, float]] = [
+        (utils.span_total_silence, "Filtered Span Total Silence", "Seconds", 0.1),
+        (utils.span_max_silence, "Filtered Span Max Silence", "Seconds", 0.1),
         (utils.span_audio_loudness, "Filtered Span Loudness", "LUFS", 1),
         (utils.span_sec_per_char, "Filtered Span Speed", "Seconds per character", 0.01),
     ]
