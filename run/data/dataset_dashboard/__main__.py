@@ -199,37 +199,6 @@ def _analyze_dataset(dataset: Dataset, max_rows: int, run_all: bool):
         ),
     )
 
-    with utils.st_expander("Survey of Pause Lengths (in seconds)") as label:
-        if st.checkbox("Analyze", key=label, value=run_all):
-            st.write("The pause count for each length bucket:")
-            passages, pauses = utils.dataset_pause_lengths_in_seconds(dataset)
-            labels = [p.speaker.label for p in passages]
-            chart = utils.bucket_and_chart(pauses, labels, utils.ALIGNMENT_PRECISION, x="Seconds")
-            st.altair_chart(chart, use_container_width=True)
-            ratio = 0 if len(pauses) == 0 else sum([p > 0 for p in pauses]) / len(pauses)
-            st.write(f"**{ratio:.2%}** of pauses are longer than zero.")
-            lengths = []
-            labels = []
-            for passage in utils.dataset_passages(dataset):
-                start = passage.first.audio[0]
-                spans, spans_is_voiced = voiced_nonalignment_spans(passage)
-                for span, is_voiced in zip(spans.spans, spans_is_voiced):
-                    if not is_voiced and span.audio_length > 0:
-                        lengths.append(span.audio_slice.start - start)
-                        labels.append(passage.speaker.label)
-                        start = span.audio_slice.stop
-                lengths.append(passage.last.audio[-1] - start)
-                labels.append(passage.speaker.label)
-            st.write("The length of segments between pauses:")
-            chart = utils.bucket_and_chart(lengths, labels, utils.ALIGNMENT_PRECISION, x="Seconds")
-            st.altair_chart(chart, use_container_width=True)
-            st.write(f"The maximum length, without pauses, is **{max(lengths):.2f}** seconds.")
-            count = sum([l for l in lengths if l > 10])
-            st.write(
-                "The sum of segments without a pause, longer than 10 seconds, "
-                f"is **{count:.2f}** out of **{sum(lengths):.2f}** seconds."
-            )
-
     question = "How many alignment(s) do you want to analyze?"
     num_alignments: int = st.sidebar.number_input(question, 0, None, 200)
     if st.sidebar.checkbox("Only single word alignments", key="single-word-alignments", value=True):

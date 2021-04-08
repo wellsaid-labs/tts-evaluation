@@ -126,19 +126,6 @@ def dataset_total_audio(dataset: Dataset) -> float:
     return sum([m.length for m in dataset_audio_files(dataset)])
 
 
-def dataset_pause_lengths_in_seconds(
-    dataset: Dataset,
-) -> typing.Tuple[typing.List[Passage], typing.List[float]]:
-    """ Get every pause in `dataset` between alignments. """
-    passages = []
-    pauses = []
-    for passage in dataset_passages(dataset):
-        for prev, next in zip(passage.alignments, passage.alignments[1:]):
-            passages.append(passage)
-            pauses.append(next.audio[0] - prev.audio[1])
-    return passages, pauses
-
-
 def passage_alignment_speech_segments(passage: Passage) -> typing.List[Span]:
     """Get `passage` speech segments seperated by alignment pauses."""
     start = 0
