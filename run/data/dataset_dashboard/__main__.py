@@ -1,5 +1,28 @@
 """ Streamlit application for reviewing the dataset.
 
+TODO:
+- Add an analysis of `speech_segments`.
+  - How long are speech segments? Are any speech segments... too long? Do all speakers have
+    good cuts for speech segments?
+  - How much of the dataset do they cover? Are they missing parts of the dataset?
+- Add an analysis of `non_speech_segments`.
+  - Can we use them to filter out bad alignments?
+  - Are there any examples with extensive silences? Would those silences cause issues?
+  - What's the longest a speaker will go without a `non_speech_segments`?
+    Does that vary per speaker?
+  - Could we more accurately calculate "speed" by removing `non_speech_segments`? Is this method
+    inclusive of speakers that have more background noise which would have less
+    `non_speech_segments`? Could we use it for a more accurate filter on alignments that are too
+    fast?
+- Add an analysis of `lib.utils.is_voiced`.
+  - What are the longest nonalignments that are not considered "voiced"? Are they actually, voiced?
+  - Is `is_voiced` accurate? Does it miss anything that is voiced?
+- Where could errors be hiding that could cause poor performance?
+  - Could long alignments with multiple words be suspect?
+  - Could alignments with long pauses in them be suspect?
+  - Could spans with long pauses in them be suspect? Does it matter how we calculate those pauses?
+    We could calculate pauses with `non_speech_segments` or `alignments`?
+
 Usage:
     $ PYTHONPATH=. streamlit run run/data/dataset_dashboard/__main__.py --runner.magicEnabled=false
 """
