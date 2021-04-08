@@ -52,11 +52,12 @@ _Columns = typing.Dict[str, typing.List[typing.Any]]
 def _default_span_columns(spans: typing.List[Span]) -> _Columns:
     """ Get default columns for `_write_span_table`. """
     logger.info("Getting %d generic span columns...", len(spans))
+    _round: typing.Callable[[float, Span], float]
+    _round = lambda a, s: round_(a, 1 / s.audio_file.sample_rate)
     columns = [
         ("script", [s.script for s in spans]),
-        ("audio slice", [(s.audio_start, s.audio_stop) for s in spans]),
-        ("file", [s.audio_file.path.name for s in spans]),
-        ("length", [s.audio_length for s in spans]),
+        ("speaker", [s.speaker.label for s in spans]),
+        ("length", [_round(s.audio_length, s) for s in spans]),
         ("mistranscriptions", [utils.span_mistranscriptions(s) for s in spans]),
         ("seconds", [[round(i.audio_length, 2) for i in s] for s in spans]),
         ("speed", [[utils.span_sec_per_char(i) for i in s] for s in spans]),
@@ -106,12 +107,13 @@ def _span_metric(
 
         st.write(f"The {unit_y} count for each bucket:")
         results = map_(spans, func)
-        chart = utils.bucket_and_chart(results, bucket_size, x=unit_x)
+        labels = [s.speaker.label for s in spans]
+        chart = utils.bucket_and_chart(results, labels, bucket_size, x=unit_x, y=unit_y + " Count")
         st.altair_chart(chart, use_container_width=True)
         filtered = [(s, r) for s, r in zip(spans, results) if not math.isnan(r)]
         sorted_ = lambda **k: sorted(filtered, key=lambda i: i[1], **k)[:max_rows]
         for label_, data in (("smallest", sorted_()), ("largest", sorted_(reverse=True))):
-            text = f"Show the {label_} valued {unit_y}s."
+            text = f"Show the {label_} valued {unit_y.lower()}(s)."
             if st.checkbox(text, key=label + label_, value=run_all):
                 other_columns = {"value": [r[1] for r in data]}
                 _write_span_table([r[0] for r in data], other_columns=other_columns)
@@ -170,6 +172,8 @@ def _analyze_dataset(dataset: Dataset, max_rows: int, run_all: bool):
 
     question = "How many alignment(s) do you want to analyze?"
     num_alignments: int = st.sidebar.number_input(question, 0, None, 200)
+    if st.sidebar.checkbox("Only single word alignments", key="single-word-alignments", value=True):
+        unigrams = [u for u in unigrams if " " not in u.script]
     samples = utils.random_sample(unigrams, num_alignments)
     st.text("")
     st.markdown(
@@ -181,13 +185,13 @@ def _analyze_dataset(dataset: Dataset, max_rows: int, run_all: bool):
         _write_span_table(samples[:max_rows])
 
     sections: typing.List[typing.Tuple[typing.Callable[[Span], float], str, str, float]] = [
-        (lambda s: s.audio_length, "Alignment Length", "Seconds", utils.ALIGNMENT_PRECISION),
-        (lambda s: len(s.script), "Alignment Length", "Characters", 1),
-        (utils.span_sec_per_char, "Alignment Speed", "Seconds per character", 0.01),
-        (utils.span_sec_per_phon, "Alignment Speed", "Seconds per phoneme", 0.01),
-        (utils.span_audio_rms_level, "Alignment Loudness", "Decibels", 1),
-        (utils.span_audio_left_rms_level, "Alignment Onset Loudness", "Decibels", 5),
-        (utils.span_audio_right_rms_level, "Alignment Outset Loudness", "Decibels", 5),
+        (lambda s: s.audio_length, "Alignment Length", "Second(s)", utils.ALIGNMENT_PRECISION),
+        (lambda s: len(s.script), "Alignment Length", "Character(s)", 1),
+        (utils.span_sec_per_char, "Alignment Speed", "Second(s) per character", 0.01),
+        (utils.span_sec_per_phon, "Alignment Speed", "Second(s) per phoneme", 0.01),
+        (utils.span_audio_rms_level, "Alignment Loudness", "Decibel(s)", 1),
+        (utils.span_audio_left_rms_level, "Alignment Onset Loudness", "Decibel(s)", 5),
+        (utils.span_audio_right_rms_level, "Alignment Outset Loudness", "Decibel(s)", 5),
     ]
     for args in sections:
         _span_metric(samples, *args, unit_y="Alignment", max_rows=max_rows, run_all=run_all)
@@ -222,13 +226,14 @@ def _analyze_spans(dataset: Dataset, spans: typing.List[Span], max_rows: int, ru
             raise GeneratorExit()
         st.write("The span mistranscription count for each length bucket:")
         mistranscriptions = [utils.span_mistranscriptions(s) for s in spans]
-        flat = flatten_2d(mistranscriptions)
         ratio = len([m for m in mistranscriptions if len(m) > 0]) / len(spans)
         st.write(f"Note that **{ratio:.2%}** spans have one or more mistranscriptions.")
-        chart = utils.bucket_and_chart([len(m[0]) for m in flat if len(m[0]) > 0], x="Char(s)")
+        items = [(s, t) for m, s in zip(mistranscriptions, spans) for t in m if len(t[0]) > 0]
+        values, labels = [len(m[0]) for _, m in items], [s.speaker.label for s, _ in items]
+        chart = utils.bucket_and_chart(values, labels, x="Char(s)")
         st.altair_chart(chart, use_container_width=True)
         st.write("A random sample of mistranscriptions:")
-        st.table([{"script": m[0], "transcript": m[1]} for m in flat])
+        st.table([{"script": m[0], "transcript": m[1]} for m in flatten_2d(mistranscriptions)])
 
     sections: typing.List[typing.Tuple[typing.Callable[[Span], float], str, str, float]] = [
         (utils.span_total_silence, "Span Silence", "Seconds", utils.ALIGNMENT_PRECISION),
@@ -263,7 +268,7 @@ def _analyze_filtered_spans(
     _is_include = lambda s: s.audio_length > 0.1 and utils.span_sec_per_char(s) >= 0.04
     is_include: typing.Callable[[Span], bool]
     is_include = lambda s: (
-        len(utils.span_mistranscriptions(s)) == 0 and (_is_include(s[0]) and _is_include(s[-1]))
+        not has_a_mistranscription(s) and (_is_include(s[0]) and _is_include(s[-1]))
     )
     results = map_(spans, is_include)
     excluded = [s for s, i in zip(spans, results) if not i]

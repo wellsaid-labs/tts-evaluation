@@ -15,7 +15,7 @@ from torchnlp.random import fork_rng
 
 import lib
 from lib.audio import amp_to_db, signal_to_rms
-from lib.utils import clamp, flatten_2d, round_, seconds_to_str
+from lib.utils import clamp, flatten_2d, seconds_to_str
 from run._config import Dataset
 from run._streamlit import (
     dataset_passages,
@@ -77,25 +77,41 @@ def _signal_to_loudness(signal: np.ndarray, sample_rate: int, block_size: float 
 
 
 def bucket_and_chart(
-    iterable: typing.Iterable[typing.Union[float, int]],
+    values: typing.Union[typing.List[float], typing.List[int]],
+    labels: typing.List[str],
     bucket_size: float = 1,
-    ndigits: int = 7,
     x: str = "Buckets",
     y: str = "Count",
+    ndigits: int = 7,
 ) -> alt.Chart:
-    """ Bucket `iterable` and create a bar chart. """
+    """ Bucket `values` and create a bar chart. """
+    assert len(values) == len(labels)
+    data = [(v, l) for v, l in zip(values, labels) if not math.isnan(v)]
+    if len(data) != len(values):
+        logger.warning("Ignoring %d NaNs...", len(values) - len(data))
     buckets = collections.defaultdict(int)
-    nan_count = 0
-    for item in iterable:
-        if math.isnan(item):
-            nan_count += 1
-        else:
-            buckets[round(round_(item, bucket_size), ndigits)] += 1
-    if nan_count > 0:
-        logger.warning("Ignoring %d NaNs...", nan_count)
-
-    df = pd.DataFrame({x: buckets.keys(), y: buckets.values()})
-    return alt.Chart(df).mark_bar().encode(x=x, y=y, tooltip=[x, y]).interactive()
+    for value, label in data:
+        buckets[(round(lib.utils.round_(value, bucket_size), ndigits), label)] += 1
+    data = sorted([(l, b, v) for (b, l), v in buckets.items()])
+    df = pd.DataFrame(data, columns=["label", "bucket", "count"])
+    # NOTE: x-axis is "quantitative" due to this warning by Vega-Lite, in the online editor:
+    # "[Warning] Scale bindings are currently only supported for scales with unbinned,
+    #  continuous domains."
+    # NOTE: We perform aggregation outside of `altair` due to this warning by Vega-Lite, in the
+    # online editor:
+    # "[Warning] Cannot project a selection on encoding channel "y" as it uses an aggregate
+    #  function ("sum")."
+    return (
+        alt.Chart(df)
+        .mark_bar()
+        .encode(
+            x=alt.X("bucket", type="quantitative", title=x + " (binned)"),
+            y=alt.Y(field="count", type="quantitative", title=y, stack=True),
+            color=alt.Color(field="label", type="nominal", title="Label"),
+            tooltip=["label", "bucket", "count"],
+        )
+        .interactive()
+    )
 
 
 def dataset_audio_files(dataset: Dataset) -> typing.Set[lib.audio.AudioMetadata]:
