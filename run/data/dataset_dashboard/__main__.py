@@ -14,9 +14,6 @@ TODO:
     inclusive of speakers that have more background noise which would have less
     `non_speech_segments`? Could we use it for a more accurate filter on alignments that are too
     fast?
-- Add an analysis of `lib.utils.is_voiced`.
-  - What are the longest nonalignments that are not considered "voiced"? Are they actually, voiced?
-  - Is `is_voiced` accurate? Does it miss anything that is voiced?
 - Where could errors be hiding that could cause poor performance?
   - Could long alignments with multiple words be suspect?
   - Could alignments with long pauses in them be suspect?
@@ -211,21 +208,36 @@ def _analyze_speech_segments(passages: typing.List[Passage], **kwargs):
     )
 
 
-def _analyze_nonalignments(passages: typing.List[Passage], **kwargs):
+def _analyze_nonalignments(passages: typing.List[Passage], max_rows: int, run_all: bool):
     """ Analyze the distribution of nonalignments. """
     st.markdown("### Nonalignment Analysis")
-    nonalignment_spans = [s for p in passages for s in p.nonalignment_spans().spans[1:-1]]
-    ratio = sum([s.audio_length > 0 for s in nonalignment_spans]) / len(nonalignment_spans)
+    nonalignments = [s for p in passages for s in p.nonalignment_spans().spans]
+
     _span_metric(
-        nonalignment_spans,
+        nonalignments,
         lambda s: s.audio_length,
         "Length",
         "Seconds",
         0.1,
         "Nonalignment",
-        note=f"- **{ratio:.2%}** of pauses are longer than zero.",
-        **kwargs,
+        note=(
+            f"- **{sum([s.audio_length > 0 for s in nonalignments]) / len(nonalignments):.2%}** "
+            "of pauses are longer than zero."
+        ),
+        max_rows=max_rows,
+        run_all=run_all,
     )
+
+    with utils.st_expander("Survey of Unvoiced Nonalignment Mistranscriptions") as label:
+        if not st.checkbox("Analyze", key=label, value=run_all):
+            raise GeneratorExit()
+        is_voiced = [
+            any(lib.text.is_voiced(t) for t in (s.script, s.transcript)) for s in nonalignments
+        ]
+        iterator = list(zip(is_voiced, nonalignments))
+        data = list(set((s.script.strip(), s.transcript.strip()) for i, s in iterator if not i))
+        st.write("These mistranscriptions are not considered 'voiced':")
+        st.table(pd.DataFrame(data[:max_rows], columns=["script", "transcript"]))
 
 
 def _analyze_alignments(passages: typing.List[Passage], max_rows: int, run_all: bool):
@@ -238,21 +250,23 @@ def _analyze_alignments(passages: typing.List[Passage], max_rows: int, run_all: 
         unigrams = [u for u in unigrams if " " not in u.script]
 
     with utils.st_expander("Random Sample of Alignments") as label:
-        if st.checkbox("Analyze", key=label, value=run_all):
-            for span in utils.random_sample(trigrams, max_rows):
-                cols = st.beta_columns([2, 1, 1])
-                cols[0].altair_chart(utils.span_visualize_signal(span), use_container_width=True)
-                cols[1].markdown(
-                    f"- Script: **{span.script}**\n"
-                    f"- Loudness: **{utils.span_audio_rms_level(span[1])}**\n"
-                    f"- Edge loudness: **{utils.span_audio_boundary_rms_level(span[1])}**\n"
-                    f"- Audio length: **{round(span[1].audio_length, 2)}**\n"
-                    f"- Num characters: **{len(span[1].script)}**\n"
-                )
-                cols[2].markdown(
-                    "\n\n".join([audio_to_html(utils.span_audio(s)) for s in [span[1], span]]),
-                    unsafe_allow_html=True,
-                )
+        if not st.checkbox("Analyze", key=label, value=run_all):
+            raise GeneratorExit()
+
+        for span in utils.random_sample(trigrams, max_rows):
+            cols = st.beta_columns([2, 1, 1])
+            cols[0].altair_chart(utils.span_visualize_signal(span), use_container_width=True)
+            cols[1].markdown(
+                f"- Script: **{span.script}**\n"
+                f"- Loudness: **{utils.span_audio_rms_level(span[1])}**\n"
+                f"- Edge loudness: **{utils.span_audio_boundary_rms_level(span[1])}**\n"
+                f"- Audio length: **{round(span[1].audio_length, 2)}**\n"
+                f"- Num characters: **{len(span[1].script)}**\n"
+            )
+            cols[2].markdown(
+                "\n\n".join([audio_to_html(utils.span_audio(s)) for s in [span[1], span]]),
+                unsafe_allow_html=True,
+            )
 
     with utils.st_expander("Random Sample of Alignments (Tabular)"):
         _write_span_table(unigrams[:max_rows])
