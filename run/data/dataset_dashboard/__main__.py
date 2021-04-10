@@ -77,7 +77,6 @@ def _default_span_columns(spans: typing.List[Span]) -> _Columns:
     logger.info("Getting %d generic span columns...", len(spans))
     _round: typing.Callable[[float, Span], float]
     _round = lambda a, s: round_(a, 1 / s.audio_file.sample_rate)
-    is_nonalignments = any(s.passage_alignments is s.passage.nonalignments for s in spans)
     columns = [
         ("script", [s.script for s in spans]),
         ("speaker", [s.speaker.label for s in spans]),
@@ -85,7 +84,7 @@ def _default_span_columns(spans: typing.List[Span]) -> _Columns:
         ("seconds", [[round(i.audio_length, 2) for i in s] for s in spans]),
         ("speed", [[utils.span_sec_per_char(i) for i in s] for s in spans]),
     ]
-    if not is_nonalignments:
+    if all(s.passage_alignments is s.passage.alignments for s in spans):
         columns.append(("mistranscriptions", [utils.span_mistranscriptions(s) for s in spans]))
     return collections.OrderedDict(columns)
 
@@ -154,6 +153,30 @@ def _analyze_alignment_speech_segments(passages: typing.List[Passage], **kwargs)
     (i.e. alignments with no pauses in between)."""
     st.markdown("### Alignment Speech Segments Analysis")
     segments = [s for p in passages for s in utils.passage_alignment_speech_segments(p)]
+    threshold = 10
+    max_length = max(s.audio_length for s in segments)
+    above_threshold = sum(s.audio_length for s in segments if s.audio_length > threshold)
+    total_seconds = sum(s.audio_length for s in segments)
+    _span_metric(
+        segments,
+        lambda s: s.audio_length,
+        "Length",
+        "Seconds",
+        utils.ALIGNMENT_PRECISION,
+        "Alignment Speech Segment",
+        note=(
+            f"- The maximum length, without pauses, is **{max_length:.2f}** seconds.\n\n"
+            f"- The sum of segments without a pause, longer than {threshold} seconds, "
+            f"is **{above_threshold:.2f}** out of **{total_seconds:.2f}** seconds."
+        ),
+        **kwargs,
+    )
+
+
+def _analyze_speech_segments(passages: typing.List[Passage], **kwargs):
+    """Analyze the distribution of speech segments."""
+    st.markdown("### Speech Segments Analysis")
+    segments = [s for p in passages for s in p.speech_segments]
     threshold = 10
     max_length = max(s.audio_length for s in segments)
     above_threshold = sum(s.audio_length for s in segments if s.audio_length > threshold)
@@ -245,15 +268,18 @@ def _analyze_dataset(dataset: Dataset, max_rows: int, run_all: bool):
     logger.info("Analyzing dataset...")
     st.header("Raw Dataset Analysis")
     st.markdown("In this section, we analyze the dataset prior to segmentation.")
+    total_passages = sum(len(d) for d in dataset.values())
     st.markdown(
         f"At a high-level, this dataset has:\n"
+        f"- **{total_passages:,}** passages\n"
         f"- **{seconds_to_str(utils.dataset_total_audio(dataset))}** of audio\n"
         f"- **{seconds_to_str(utils.dataset_total_aligned_audio(dataset))}** of aligned audio\n"
         f"- **{utils.dataset_num_alignments(dataset):,}** alignments.\n"
     )
     question = "How many passage(s) do you want to analyze?"
-    num_passages: int = st.sidebar.number_input(question, 0, None, 25)
-    passages = utils.random_sample(list(utils.dataset_passages(dataset)), num_passages)
+    sampled: int = st.sidebar.number_input(question, 0, None, 25)
+    passages = list(utils.dataset_passages(dataset))
+    passages = utils.random_sample(passages, sampled) if sampled < total_passages else passages
     st.markdown(
         f"Below this analyzes a random sample of **{len(passages):,} passages** with "
         f"**{sum(len(p.alignments) for p in passages):,}** alignments..."
@@ -261,6 +287,7 @@ def _analyze_dataset(dataset: Dataset, max_rows: int, run_all: bool):
 
     _analyze_alignments(passages, max_rows, run_all)
     _analyze_nonalignments(passages, max_rows=max_rows, run_all=run_all)
+    _analyze_speech_segments(passages, max_rows=max_rows, run_all=run_all)
     _analyze_alignment_speech_segments(passages, max_rows=max_rows, run_all=run_all)
 
     logger.info(f"Finished analyzing dataset! {mazel_tov()}")
