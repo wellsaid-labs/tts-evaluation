@@ -156,14 +156,24 @@ def passages_alignment_ngrams(passages: typing.List[Passage], n: int = 1) -> typ
         yield from (passage.span(s) for s in _ngrams(passage.alignments, n=n))
 
 
+def passages_coverage(passages: typing.List[Passage], spans: typing.List[Span]) -> float:
+    """ Get the percentage of the `passages` these `spans` cover. """
+    alignments = set()
+    passage_ids = set(id(p) for p in passages)
+    for span in spans:
+        passage_id = id(span.passage)
+        assert passage_id in passage_ids, "Passage not found in `passages`."
+        alignments.update((passage_id, i) for i in range(span.slice.start, span.slice.stop))
+    return len(alignments) / sum(len(p.alignments) for p in passages)
+
+
 def dataset_num_alignments(dataset: Dataset) -> int:
     """ Get number of `Alignment`s in `dataset`. """
-    return sum([len(p.alignments) for p in dataset_passages(dataset)])
+    return sum(len(p.alignments) for p in dataset_passages(dataset))
 
 
 def dataset_coverage(dataset: Dataset, spans: typing.List[Span]) -> float:
     """ Get the percentage of the `dataset` these `spans` cover. """
-    logger.info("Getting span coverage of dataset...")
     alignments = set()
     passage_ids = set(id(p) for d in dataset.values() for p in d)
     for span in spans:

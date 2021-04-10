@@ -1,10 +1,6 @@
 """ Streamlit application for reviewing the dataset.
 
 TODO:
-- Add an analysis of `speech_segments`.
-  - How long are speech segments? Are any speech segments... too long? Do all speakers have
-    good cuts for speech segments?
-  - How much of the dataset do they cover? Are they missing parts of the dataset?
 - Add an analysis of `non_speech_segments`.
   - Can we use them to filter out bad alignments?
   - Are there any examples with extensive silences? Would those silences cause issues?
@@ -186,25 +182,24 @@ def _analyze_alignment_speech_segments(passages: typing.List[Passage], **kwargs)
 def _analyze_speech_segments(passages: typing.List[Passage], **kwargs):
     """Analyze the distribution of speech segments."""
     st.markdown("### Speech Segments Analysis")
+
     segments = [s for p in passages for s in p.speech_segments]
-    threshold = 10
-    max_length = max(s.audio_length for s in segments)
-    above_threshold = sum(s.audio_length for s in segments if s.audio_length > threshold)
     total_seconds = sum(s.audio_length for s in segments)
+    audio_length = seconds_to_str(total_seconds)
+    num_mistranscription = sum(s.audio_length for s in segments if has_a_mistranscription(s))
+    threshold = 15
+    above_threshold = sum(s.audio_length for s in segments if s.audio_length > threshold)
+    st.markdown(
+        f"There are **{len(segments):,} ({audio_length})** spans to analyze, representing of "
+        f"**{utils.passages_coverage(passages, segments):.2%}** all alignments in passages. "
+        f"At a high-level:\n\n"
+        f"- **{num_mistranscription / total_seconds:.2%}** has a mistranscription\n\n"
+        f"- **{above_threshold / total_seconds:.2%}** is longer than {threshold} seconds\n\n"
+        f"- **{max(s.audio_length for s in segments):.2f}** seconds is the longest segment\n\n"
+    )
+
     _span_metric(
-        segments,
-        lambda s: s.audio_length,
-        "Length",
-        "Seconds",
-        utils.ALIGNMENT_PRECISION,
-        "Speech Segment",
-        note=(
-            f"- The maximum length, without pauses, is **{max_length:.2f}** seconds.\n\n"
-            f"- The sum of segments without a pause, longer than {threshold} seconds, "
-            f"is **{above_threshold:.2f}** out of **{total_seconds:.2f}** seconds "
-            f"(**{above_threshold / total_seconds:.1%}**)."
-        ),
-        **kwargs,
+        segments, lambda s: s.audio_length, "Length", "Seconds", 0.1, "Speech Segment", **kwargs
     )
 
 
@@ -245,7 +240,7 @@ def _analyze_alignments(passages: typing.List[Passage], max_rows: int, run_all: 
     trigrams = list(utils.passages_alignment_ngrams(passages, 3))
     unigrams = list(utils.passages_alignment_ngrams(passages, 1))
     if st.sidebar.checkbox(
-        "Only single word alignments", key="single world alignments", value=True
+        "Analyze only single word alignments", key="single world alignments", value=True
     ):
         unigrams = [u for u in unigrams if " " not in u.script]
 
@@ -283,7 +278,10 @@ def _analyze_alignments(passages: typing.List[Passage], max_rows: int, run_all: 
     for args in sections:
         _span_metric(unigrams, *args, unit_y="Alignment", max_rows=max_rows, run_all=run_all)
 
-    with utils.st_expander("Random Sample of Filtered Alignments"):
+    with utils.st_expander("Random Sample of Filtered Alignments") as label:
+        if not st.checkbox("Analyze", key=label, value=run_all):
+            raise GeneratorExit()
+
         is_include: typing.Callable[[Span], bool]
         is_include = lambda s: s.audio_length > 0.10001 and utils.span_sec_per_char(s) >= 0.04
         filtered = [s for s in unigrams if is_include(s)]
@@ -309,7 +307,7 @@ def _analyze_dataset(dataset: Dataset, max_rows: int, run_all: bool):
     passages = list(utils.dataset_passages(dataset))
     passages = utils.random_sample(passages, sampled) if sampled < total_passages else passages
     st.markdown(
-        f"Below this analyzes a random sample of **{len(passages):,} passages** with "
+        f"Below this analyzes a random sample of **{len(passages):,}** passages with "
         f"**{sum(len(p.alignments) for p in passages):,}** alignments..."
     )
 
