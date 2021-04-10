@@ -125,7 +125,19 @@ def _span_metric(
     run_all: bool,
     note: str = "",
 ):
-    """Visualize a span metric."""
+    """Visualize a span metric.
+
+    Args:
+        ...
+        func: Get a measurement for a `Span`.
+        name: The title of the analysis.
+        unit_x: The name of the measurement unit for `func`.
+        bucket_size: The size of each bin in a bar chart showing the distribution of measurements.
+        unit_y: A label for each `Span` in `spans`.
+        max_rows: The maximum number of values to show in a table.
+        run_all: Iff `run_all`, then run all analyses.
+        note: Any additional notes to add to this section.
+    """
     with utils.st_expander(f"Survey of {unit_y} {name} (in {unit_x.lower()})") as label:
         if not st.checkbox("Analyze", key=label, value=run_all):
             return
@@ -167,7 +179,8 @@ def _analyze_alignment_speech_segments(passages: typing.List[Passage], **kwargs)
         note=(
             f"- The maximum length, without pauses, is **{max_length:.2f}** seconds.\n\n"
             f"- The sum of segments without a pause, longer than {threshold} seconds, "
-            f"is **{above_threshold:.2f}** out of **{total_seconds:.2f}** seconds."
+            f"is **{above_threshold:.2f}** out of **{total_seconds:.2f}** seconds "
+            f"(**{above_threshold / total_seconds:.1%}**)."
         ),
         **kwargs,
     )
@@ -191,7 +204,8 @@ def _analyze_speech_segments(passages: typing.List[Passage], **kwargs):
         note=(
             f"- The maximum length, without pauses, is **{max_length:.2f}** seconds.\n\n"
             f"- The sum of segments without a pause, longer than {threshold} seconds, "
-            f"is **{above_threshold:.2f}** out of **{total_seconds:.2f}** seconds."
+            f"is **{above_threshold:.2f}** out of **{total_seconds:.2f}** seconds "
+            f"(**{above_threshold / total_seconds:.1%}**)."
         ),
         **kwargs,
     )
