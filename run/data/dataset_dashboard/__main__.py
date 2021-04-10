@@ -73,6 +73,8 @@ def _default_span_columns(spans: typing.List[Span]) -> _Columns:
     columns = [
         ("script", [s.script for s in spans]),
         ("speaker", [s.speaker.label for s in spans]),
+        ("filename", [s.audio_file.path.name for s in spans]),
+        ("slice", [(s.audio_slice.start, s.audio_slice.stop) for s in spans]),
         ("length", [_round(s.audio_length, s) for s in spans]),
         ("seconds", [[round(i.audio_length, 2) for i in s] for s in spans]),
         ("speed", [[utils.span_sec_per_char(i) for i in s] for s in spans]),
@@ -263,7 +265,9 @@ def _analyze_alignments(passages: typing.List[Passage], max_rows: int, run_all: 
                 unsafe_allow_html=True,
             )
 
-    with utils.st_expander("Random Sample of Alignments (Tabular)"):
+    with utils.st_expander("Random Sample of Alignments (Tabular)") as label:
+        if not st.checkbox("Analyze", key=label, value=run_all):
+            raise GeneratorExit()
         _write_span_table(unigrams[:max_rows])
 
     sections: typing.List[typing.Tuple[typing.Callable[[Span], float], str, str, float]] = [
@@ -283,7 +287,7 @@ def _analyze_alignments(passages: typing.List[Passage], max_rows: int, run_all: 
             raise GeneratorExit()
 
         is_include: typing.Callable[[Span], bool]
-        is_include = lambda s: s.audio_length > 0.10001 and utils.span_sec_per_char(s) >= 0.04
+        is_include = lambda s: s.audio_length > 0.11 and utils.span_sec_per_char(s) >= 0.04
         filtered = [s for s in unigrams if is_include(s)]
         st.write(f"Filtered out {1 - (len(filtered) / len(unigrams)):.2%} of alignments.")
         _write_span_table(filtered[:max_rows])
@@ -331,7 +335,9 @@ def _analyze_spans(dataset: Dataset, spans: typing.List[Span], max_rows: int, ru
         f"**{utils.dataset_coverage(dataset, spans):.2%}** all alignments."
     )
 
-    with utils.st_expander("Random Sample of Spans"):
+    with utils.st_expander("Random Sample of Spans") as label:
+        if not st.checkbox("Analyze", key=label, value=run_all):
+            raise GeneratorExit()
         _write_span_table(spans[:max_rows])
 
     with utils.st_expander("Survey of Span Mistranscriptions") as label:
@@ -379,10 +385,13 @@ def _analyze_filtered_spans(
     st.spinner("Analyzing spans...")
 
     _is_include: typing.Callable[[Span], bool]
-    _is_include = lambda s: s.audio_length > 0.10001 and utils.span_sec_per_char(s) >= 0.04
+    _is_include = lambda s: s.audio_length > 0.11 and utils.span_sec_per_char(s) >= 0.04
     is_include: typing.Callable[[Span], bool]
     is_include = lambda s: (
-        not has_a_mistranscription(s) and (_is_include(s[0]) and _is_include(s[-1]))
+        not has_a_mistranscription(s)
+        and (_is_include(s[0]) and _is_include(s[-1]))
+        and s.audio_length / len(s.script) >= 0.035
+        and s.audio_length >= 0.3
     )
     results = map_(spans, is_include)
     excluded = [s for s, i in zip(spans, results) if not i]
@@ -394,13 +403,18 @@ def _analyze_filtered_spans(
         f"representing of **{utils.dataset_coverage(dataset, included):.2%}** all alignments."
     )
 
-    with utils.st_expander("Random Sample of Included Spans"):
+    with utils.st_expander("Random Sample of Included Spans") as label:
+        if not st.checkbox("Analyze", key=label, value=run_all):
+            raise GeneratorExit()
         _write_span_table(included[:max_rows])
 
-    with utils.st_expander("Random Sample of Excluded Spans"):
+    with utils.st_expander("Random Sample of Excluded Spans") as label:
+        if not st.checkbox("Analyze", key=label, value=run_all):
+            raise GeneratorExit()
         _write_span_table(excluded[:max_rows])
 
     sections: typing.List[typing.Tuple[typing.Callable[[Span], float], str, str, float]] = [
+        (lambda s: s.audio_length, "Length", "Seconds", 1.0),
         (utils.span_total_silence, "Total Silence", "Seconds", 0.1),
         (utils.span_max_silence, "Max Silence", "Seconds", 0.1),
         (utils.span_audio_loudness, "Loudness", "LUFS", 1),
