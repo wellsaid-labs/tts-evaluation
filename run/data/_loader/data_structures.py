@@ -522,6 +522,7 @@ class Span:
     def check_invariants(self):
         """ Check datastructure invariants. """
         self.passage.check_invariants()
+        assert self.passage_alignments in (self.passage.nonalignments, self.passage.alignments)
         assert self.slice.stop > self.slice.start, "`Span` must have `Alignments`."
         assert self.slice.stop <= len(self.passage_alignments) and self.slice.stop >= 0
         assert self.slice.start < len(self.passage_alignments) and self.slice.start >= 0
@@ -816,6 +817,8 @@ def make_passages(
         passage.check_invariants()
         object.__setattr__(passage, "alignments", Alignment.stow(passage.alignments))
         object.__setattr__(passage, "nonalignments", Alignment.stow(passage.nonalignments))
+        for span in passage.speech_segments:
+            object.__setattr__(span, "passage_alignments", passage.alignments)
 
     logger.info(f"[{label}] Done! {lib.utils.mazel_tov()}")
     return flat
