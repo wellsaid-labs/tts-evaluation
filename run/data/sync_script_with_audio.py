@@ -203,6 +203,16 @@ def _grapheme_to_phoneme(grapheme: str):
 def is_sound_alike(a: str, b: str) -> bool:
     """Return `True` if `str` `a` and `str` `b` sound a-like.
 
+    TODO: If the strings have the same voiced characters, in the same order, regardless of spaces,
+    can we consider them aligned? For example, these didn't align:
+    " Smallbone ", "small bone"
+    " backlit ", "black-lit"
+    " misjudgments, ", "Miss judgments"
+    " Dreamfields. ", "dream Fields"
+    " Fireside ", "fire site"
+    " Pre-game ", "pregame"
+    TODO: If the strings have the same set of characters, can we conisder them aligned?
+
     Example:
         >>> is_sound_alike("Hello-you've", "Hello. You've")
         True
@@ -517,6 +527,12 @@ def _run_stt(
 
     NOTE: Speech context helps speech recognition, a lot, and it decreases timestamp accuracy,
     a lot. See this issue: https://issuetracker.google.com/u/1/issues/174239874
+    TODO: Speech context might be important for verbalized numbers. Google will return
+    numbers in a standard format which will not align with the verbalized format. For example,
+    these didn't align:
+    " three hundred and seventy-five ", "375"
+    " one hundred dollars ", "$100"
+    " one hundred percent ", "100%"
     """
     operations = []
     for audio_blob, script, dest_blob in zip(audio_blobs, scripts, dest_blobs):

@@ -28,7 +28,6 @@ Usage:
 """
 
 import collections
-import functools
 import logging
 import math
 import typing
@@ -50,7 +49,7 @@ from run._streamlit import (
     map_,
     rmtree_streamlit_static_temp_dir,
 )
-from run.data._loader import DATASETS, Span, has_a_mistranscription
+from run.data._loader import DATASETS, Passage, Span, has_a_mistranscription
 from run.data.dataset_dashboard import _utils as utils
 
 lib.environment.set_basic_logging_config(reset=True)
@@ -78,14 +77,16 @@ def _default_span_columns(spans: typing.List[Span]) -> _Columns:
     logger.info("Getting %d generic span columns...", len(spans))
     _round: typing.Callable[[float, Span], float]
     _round = lambda a, s: round_(a, 1 / s.audio_file.sample_rate)
+    is_nonalignments = any(s.passage_alignments is s.passage.nonalignments for s in spans)
     columns = [
         ("script", [s.script for s in spans]),
         ("speaker", [s.speaker.label for s in spans]),
         ("length", [_round(s.audio_length, s) for s in spans]),
-        ("mistranscriptions", [utils.span_mistranscriptions(s) for s in spans]),
         ("seconds", [[round(i.audio_length, 2) for i in s] for s in spans]),
         ("speed", [[utils.span_sec_per_char(i) for i in s] for s in spans]),
     ]
+    if not is_nonalignments:
+        columns.append(("mistranscriptions", [utils.span_mistranscriptions(s) for s in spans]))
     return collections.OrderedDict(columns)
 
 
@@ -126,7 +127,7 @@ def _span_metric(
     note: str = "",
 ):
     """Visualize a span metric."""
-    with utils.st_expander(f"Survey of {name} (in {unit_x.lower()})") as label:
+    with utils.st_expander(f"Survey of {unit_y} {name} (in {unit_x.lower()})") as label:
         if not st.checkbox("Analyze", key=label, value=run_all):
             return
 
@@ -136,7 +137,8 @@ def _span_metric(
         chart = utils.bucket_and_chart(results, labels, bucket_size, x=unit_x, y=unit_y + " Count")
         st.altair_chart(chart, use_container_width=True)
         if len(note) > 0:
-            st.write(note)
+            st.write(f"**Note(s):**\n\n{note}")
+            st.write("")
         filtered = [(s, r) for s, r in zip(spans, results) if not math.isnan(r)]
         sorted_ = lambda **k: sorted(filtered, key=lambda i: i[1], **k)[:max_rows]
         for label_, data in (("smallest", sorted_()), ("largest", sorted_(reverse=True))):
@@ -147,113 +149,119 @@ def _span_metric(
                 st.text("")
 
 
+def _analyze_alignment_speech_segments(passages: typing.List[Passage], **kwargs):
+    """Analyze the distribution of speech segments as defined by alignments
+    (i.e. alignments with no pauses in between)."""
+    st.markdown("### Alignment Speech Segments Analysis")
+    segments = [s for p in passages for s in utils.passage_alignment_speech_segments(p)]
+    threshold = 10
+    max_length = max(s.audio_length for s in segments)
+    above_threshold = sum(s.audio_length for s in segments if s.audio_length > threshold)
+    total_seconds = sum(s.audio_length for s in segments)
+    _span_metric(
+        segments,
+        lambda s: s.audio_length,
+        "Length",
+        "Seconds",
+        utils.ALIGNMENT_PRECISION,
+        "Speech Segment",
+        note=(
+            f"- The maximum length, without pauses, is **{max_length:.2f}** seconds.\n\n"
+            f"- The sum of segments without a pause, longer than {threshold} seconds, "
+            f"is **{above_threshold:.2f}** out of **{total_seconds:.2f}** seconds."
+        ),
+        **kwargs,
+    )
+
+
+def _analyze_nonalignments(passages: typing.List[Passage], **kwargs):
+    """ Analyze the distribution of nonalignments. """
+    st.markdown("### Nonalignment Analysis")
+    nonalignment_spans = [s for p in passages for s in p.nonalignment_spans().spans[1:-1]]
+    ratio = sum([s.audio_length > 0 for s in nonalignment_spans]) / len(nonalignment_spans)
+    _span_metric(
+        nonalignment_spans,
+        lambda s: s.audio_length,
+        "Length",
+        "Seconds",
+        0.1,
+        "Nonalignment",
+        note=f"- **{ratio:.2%}** of pauses are longer than zero.",
+        **kwargs,
+    )
+
+
+def _analyze_alignments(passages: typing.List[Passage], max_rows: int, run_all: bool):
+    st.markdown("### Alignment Analysis")
+    trigrams = list(utils.passages_alignment_ngrams(passages, 3))
+    unigrams = list(utils.passages_alignment_ngrams(passages, 1))
+    if st.sidebar.checkbox(
+        "Only single word alignments", key="single world alignments", value=True
+    ):
+        unigrams = [u for u in unigrams if " " not in u.script]
+
+    with utils.st_expander("Random Sample of Alignments") as label:
+        if st.checkbox("Analyze", key=label, value=run_all):
+            for span in utils.random_sample(trigrams, max_rows):
+                cols = st.beta_columns([2, 1, 1])
+                cols[0].altair_chart(utils.span_visualize_signal(span), use_container_width=True)
+                cols[1].markdown(
+                    f"- Script: **{span.script}**\n"
+                    f"- Loudness: **{utils.span_audio_rms_level(span[1])}**\n"
+                    f"- Edge loudness: **{utils.span_audio_boundary_rms_level(span[1])}**\n"
+                    f"- Audio length: **{round(span[1].audio_length, 2)}**\n"
+                    f"- Num characters: **{len(span[1].script)}**\n"
+                )
+                cols[2].markdown(
+                    "\n\n".join([audio_to_html(utils.span_audio(s)) for s in [span[1], span]]),
+                    unsafe_allow_html=True,
+                )
+
+    with utils.st_expander("Random Sample of Alignments (Tabular)"):
+        _write_span_table(unigrams[:max_rows])
+
+    sections: typing.List[typing.Tuple[typing.Callable[[Span], float], str, str, float]] = [
+        (lambda s: s.audio_length, "Length", "Seconds", utils.ALIGNMENT_PRECISION),
+        (lambda s: len(s.script), "Length", "Characters", 1),
+        (utils.span_sec_per_char, "Speed", "Seconds per character", 0.01),
+        (utils.span_sec_per_phon, "Speed", "Seconds per phoneme", 0.01),
+        (utils.span_audio_rms_level, "Loudness", "Decibels", 1),
+        (utils.span_audio_left_rms_level, "Onset Loudness", "Decibels", 5),
+        (utils.span_audio_right_rms_level, "Outset Loudness", "Decibels", 5),
+    ]
+    for args in sections:
+        _span_metric(unigrams, *args, unit_y="Alignment", max_rows=max_rows, run_all=run_all)
+
+    with utils.st_expander("Random Sample of Filtered Alignments"):
+        is_include: typing.Callable[[Span], bool]
+        is_include = lambda s: s.audio_length > 0.10001 and utils.span_sec_per_char(s) >= 0.04
+        filtered = [s for s in unigrams if is_include(s)]
+        st.write(f"Filtered out {1 - (len(filtered) / len(unigrams)):.2%} of alignments.")
+        _write_span_table(filtered[:max_rows])
+
+
 @lib.utils.log_runtime
 def _analyze_dataset(dataset: Dataset, max_rows: int, run_all: bool):
     logger.info("Analyzing dataset...")
     st.header("Raw Dataset Analysis")
     st.markdown("In this section, we analyze the dataset prior to segmentation.")
-
     st.markdown(
         f"At a high-level, this dataset has:\n"
         f"- **{seconds_to_str(utils.dataset_total_audio(dataset))}** of audio\n"
         f"- **{seconds_to_str(utils.dataset_total_aligned_audio(dataset))}** of aligned audio\n"
         f"- **{utils.dataset_num_alignments(dataset):,}** alignments.\n"
     )
-
     question = "How many passage(s) do you want to analyze?"
-    num_passages: int = st.sidebar.number_input(question, 0, None, 200)
+    num_passages: int = st.sidebar.number_input(question, 0, None, 25)
     passages = utils.random_sample(list(utils.dataset_passages(dataset)), num_passages)
-    unigrams = list(utils.passages_alignment_ngrams(passages, 1))
-    trigrams = list(utils.passages_alignment_ngrams(passages, 3))
     st.markdown(
-        f"Below this analyzes a random sample of **{len(passages):,}** passages with "
-        f"{len(unigrams):,} alignments..."
+        f"Below this analyzes a random sample of **{len(passages):,} passages** with "
+        f"**{sum(len(p.alignments) for p in passages):,}** alignments..."
     )
 
-    span_metric_ = functools.partial(_span_metric, max_rows=max_rows, run_all=run_all)
-
-    with utils.st_expander("Random Sample of Alignments") as label:
-        if not st.checkbox("Analyze", key=label, value=run_all):
-            raise GeneratorExit()
-
-        for span in utils.random_sample(trigrams, max_rows):
-            cols = st.beta_columns([2, 1, 1])
-            cols[0].altair_chart(utils.span_visualize_signal(span), use_container_width=True)
-            cols[1].markdown(
-                f"- Script: **{span.script}**\n"
-                f"- Loudness: **{utils.span_audio_rms_level(span[1])}**\n"
-                f"- Edge loudness: **{utils.span_audio_boundary_rms_level(span[1])}**\n"
-                f"- Audio length: **{round(span[1].audio_length, 2)}**\n"
-                f"- Num characters: **{len(span[1].script)}**\n"
-            )
-            cols[2].markdown(
-                "\n\n".join([audio_to_html(utils.span_audio(s)) for s in [span[1], span]]),
-                unsafe_allow_html=True,
-            )
-
-    nonalignment_spans = [s for p in passages for s in p.nonalignment_spans().spans[1:-1]]
-    ratio = sum([s.audio_length > 0 for s in nonalignment_spans]) / len(nonalignment_spans)
-    span_metric_(
-        nonalignment_spans,
-        lambda s: s.audio_length,
-        "Nonalignment Length",
-        "Seconds",
-        utils.ALIGNMENT_PRECISION,
-        "Nonalignment",
-        note=f"**{ratio:.2%}** of pauses are longer than zero.",
-    )
-
-    segments = [s for p in passages for s in utils.passage_alignment_speech_segments(p)]
-    threshold = 10
-    max_length = max(s.audio_length for s in segments)
-    above_threshold = sum(s.audio_length for s in segments if s.audio_length > threshold)
-    total_seconds = sum(s.audio_length for s in segments)
-    span_metric_(
-        segments,
-        lambda s: s.audio_length,
-        "Alignment Speech Segments Length",
-        "Seconds",
-        utils.ALIGNMENT_PRECISION,
-        "Speech Segment",
-        note=(
-            f"The maximum length, without pauses, is **{max_length:.2f}** seconds.\n\n"
-            f"The sum of segments without a pause, longer than {threshold} seconds, "
-            f"is **{above_threshold:.2f}** out of **{total_seconds:.2f}** seconds."
-        ),
-    )
-
-    question = "How many alignment(s) do you want to analyze?"
-    num_alignments: int = st.sidebar.number_input(question, 0, None, 200)
-    if st.sidebar.checkbox("Only single word alignments", key="single-word-alignments", value=True):
-        unigrams = [u for u in unigrams if " " not in u.script]
-    samples = utils.random_sample(unigrams, num_alignments)
-    st.text("")
-    st.markdown(
-        f"Below this analyzes a random sample of **{len(samples):,}** alignments "
-        f"of {len(unigrams):,} alignments..."
-    )
-
-    with utils.st_expander("Random Sample of Alignments (Tabular)"):
-        _write_span_table(samples[:max_rows])
-
-    sections: typing.List[typing.Tuple[typing.Callable[[Span], float], str, str, float]] = [
-        (lambda s: s.audio_length, "Alignment Length", "Seconds", utils.ALIGNMENT_PRECISION),
-        (lambda s: len(s.script), "Alignment Length", "Characters", 1),
-        (utils.span_sec_per_char, "Alignment Speed", "Seconds per character", 0.01),
-        (utils.span_sec_per_phon, "Alignment Speed", "Seconds per phoneme", 0.01),
-        (utils.span_audio_rms_level, "Alignment Loudness", "Decibels", 1),
-        (utils.span_audio_left_rms_level, "Alignment Onset Loudness", "Decibels", 5),
-        (utils.span_audio_right_rms_level, "Alignment Outset Loudness", "Decibels", 5),
-    ]
-    for args in sections:
-        span_metric_(samples, *args, unit_y="Alignment")
-
-    with utils.st_expander("Random Sample of Filtered Alignments"):
-        is_include: typing.Callable[[Span], bool]
-        is_include = lambda s: s.audio_length > 0.1 and utils.span_sec_per_char(s) >= 0.04
-        filtered = [s for s in samples if is_include(s)]
-        st.write(f"Filtered out {1 - (len(filtered) / len(samples)):.2%} of alignments.")
-        _write_span_table(filtered[:max_rows])
+    _analyze_alignments(passages, max_rows, run_all)
+    _analyze_nonalignments(passages, max_rows=max_rows, run_all=run_all)
+    _analyze_alignment_speech_segments(passages, max_rows=max_rows, run_all=run_all)
 
     logger.info(f"Finished analyzing dataset! {mazel_tov()}")
 
@@ -288,10 +296,10 @@ def _analyze_spans(dataset: Dataset, spans: typing.List[Span], max_rows: int, ru
         st.table([{"script": m[0], "transcript": m[1]} for m in flatten_2d(mistranscriptions)])
 
     sections: typing.List[typing.Tuple[typing.Callable[[Span], float], str, str, float]] = [
-        (utils.span_total_silence, "Span Total Silence", "Seconds", utils.ALIGNMENT_PRECISION),
-        (utils.span_max_silence, "Span Max Silence", "Seconds", utils.ALIGNMENT_PRECISION),
-        (utils.span_sec_per_char, "Span Speed", "Seconds per character", 0.01),
-        (utils.span_sec_per_phon, "Span Speed", "Seconds per phone", 0.01),
+        (utils.span_total_silence, "Total Silence", "Seconds", utils.ALIGNMENT_PRECISION),
+        (utils.span_max_silence, "Max Silence", "Seconds", utils.ALIGNMENT_PRECISION),
+        (utils.span_sec_per_char, "Speed", "Seconds per character", 0.01),
+        (utils.span_sec_per_phon, "Speed", "Seconds per phone", 0.01),
     ]
     for args in sections:
         _span_metric(spans, *args, unit_y="Span", max_rows=max_rows, run_all=run_all)
@@ -318,7 +326,7 @@ def _analyze_filtered_spans(
     st.spinner("Analyzing spans...")
 
     _is_include: typing.Callable[[Span], bool]
-    _is_include = lambda s: s.audio_length > 0.1 and utils.span_sec_per_char(s) >= 0.04
+    _is_include = lambda s: s.audio_length > 0.10001 and utils.span_sec_per_char(s) >= 0.04
     is_include: typing.Callable[[Span], bool]
     is_include = lambda s: (
         not has_a_mistranscription(s) and (_is_include(s[0]) and _is_include(s[-1]))
@@ -340,13 +348,13 @@ def _analyze_filtered_spans(
         _write_span_table(excluded[:max_rows])
 
     sections: typing.List[typing.Tuple[typing.Callable[[Span], float], str, str, float]] = [
-        (utils.span_total_silence, "Filtered Span Total Silence", "Seconds", 0.1),
-        (utils.span_max_silence, "Filtered Span Max Silence", "Seconds", 0.1),
-        (utils.span_audio_loudness, "Filtered Span Loudness", "LUFS", 1),
-        (utils.span_sec_per_char, "Filtered Span Speed", "Seconds per character", 0.01),
+        (utils.span_total_silence, "Total Silence", "Seconds", 0.1),
+        (utils.span_max_silence, "Max Silence", "Seconds", 0.1),
+        (utils.span_audio_loudness, "Loudness", "LUFS", 1),
+        (utils.span_sec_per_char, "Speed", "Seconds per character", 0.01),
     ]
     for args in sections:
-        _span_metric(included, *args, unit_y="Span", max_rows=max_rows, run_all=run_all)
+        _span_metric(included, *args, unit_y="Included Span", max_rows=max_rows, run_all=run_all)
 
 
 def main():

@@ -250,5 +250,8 @@ def span_sec_per_char(span: Span):
 
 def span_sec_per_phon(span: Span):
     """ Get the aligned seconds per character. """
-    phonemes = fast_grapheme_to_phoneme(span.script)
+    try:
+        phonemes = fast_grapheme_to_phoneme(span.script)
+    except AssertionError:
+        return math.nan
     return sum(a.audio[-1] - a.audio[0] for a in span.alignments) / len(phonemes.split("|"))
