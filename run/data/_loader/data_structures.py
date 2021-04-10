@@ -318,6 +318,12 @@ class Passage:
         assert self.next is None or self.is_linked == self.next.is_linked
         assert len(self.nonalignments) == len(self.alignments) + 1
 
+        # NOTE: `speech_segments` must cover all alignments except edges, in some cases.
+        if len(self.speech_segments) > 0:
+            segments = self.speech_segments
+            included = (i for s in segments for i in range(s.slice.start, s.slice.stop))
+            assert set(included) == set(range(segments[0].slice.start, segments[-1].slice.stop))
+
         # NOTE: `self` must align some `transcript` or `script`.
         fields = ("transcript", "script")
         if len(self.alignments) == 0:
