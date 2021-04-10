@@ -73,8 +73,6 @@ def _default_span_columns(spans: typing.List[Span]) -> _Columns:
     columns = [
         ("script", [s.script for s in spans]),
         ("speaker", [s.speaker.label for s in spans]),
-        ("filename", [s.audio_file.path.name for s in spans]),
-        ("slice", [(s.audio_slice.start, s.audio_slice.stop) for s in spans]),
         ("length", [_round(s.audio_length, s) for s in spans]),
         ("seconds", [[round(i.audio_length, 2) for i in s] for s in spans]),
         ("speed", [[utils.span_sec_per_char(i) for i in s] for s in spans]),
