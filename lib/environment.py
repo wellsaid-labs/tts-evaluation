@@ -603,7 +603,7 @@ def get_total_physical_memory() -> typing.Optional[int]:
 
 
 def enable_fault_handler():
-    """ This module contains functions to dump Python tracebacks explicitly, on a fault, after a
+    """This module contains functions to dump Python tracebacks explicitly, on a fault, after a
     timeout, or on a user signal.
 
     NOTE: In order to debug a running process, signal the application with: `kill -SIGUSR1 {pid}`.

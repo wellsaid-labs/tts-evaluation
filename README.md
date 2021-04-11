@@ -31,3 +31,4 @@ Learn more:
 - https://www.destroyallsoftware.com/screencasts/catalog/functional-core-imperative-shell
 - https://www.javiercasas.com/articles/functional-programming-patterns-functional-core-imperative-shell
 - https://github.com/kbilsted/Functional-core-imperative-shell/blob/master/README.md
+- https://en.wikipedia.org/wiki/Pure_function

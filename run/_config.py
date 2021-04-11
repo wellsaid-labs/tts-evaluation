@@ -490,19 +490,21 @@ def _configure_models():
 
 def _include_passage(passage: Passage) -> bool:
     """Return `True` iff `passage` should be included in the dataset."""
-    repr_ = lib.utils.to_str(passage, "audio_file", "script", "other_metadata")
+    repr_ = f"{passage.__class__.__name__}("
+    repr_ += f"{passage.audio_file.path.relative_to(DATA_PATH)},"
+    repr_ += f" {(passage.script[:50] + '...') if len(passage.script) > 50 else passage.script})"
 
     if len(passage.alignments) == 0:
-        logger.warning("Passage (%s) has little to no alignments.", repr_)
+        logger.warning("%s has zero alignments.", repr_)
         return False
 
     span = passage[:]
     if span.audio_length == 0.0:
-        logger.warning("Passage (%s) has no aligned audio.", repr_)
+        logger.warning("%s has no aligned audio.", repr_)
         return False
 
     if len(span.script) == 0:
-        logger.warning("Passage (%s) has no aligned text.", repr_)
+        logger.warning("%s has no aligned text.", repr_)
         return False
 
     # NOTE: Filter out passages(s) that don't have a lower case character because it'll make
@@ -526,11 +528,7 @@ DIGIT_REGEX = re.compile(r"\d")
 
 
 def _include_span(span: Span):
-    """Return `True` iff `span` should be included in the dataset.
-
-    TODO: The `span` is still cut-off sometimes, and it's difficult to detect if it is. Instead
-    of cutting `span`s via `Alignment`s, we should cut `span`s based on pausing.
-    """
+    """Return `True` iff `span` should be included in the dataset."""
     if "<" in span.script or ">" in span.script:
         return False
 
@@ -540,6 +538,7 @@ def _include_span(span: Span):
     if DIGIT_REGEX.search(span.script):
         return False
 
+    # NOTE: `Span`s which end with a short, or fast `Span`, tend to be error prone.
     is_not_aligned = lambda s: s.audio_length < 0.2 or (s.audio_length / len(s.script)) < 0.04
     if is_not_aligned(span[0]) or is_not_aligned(span[-1]):
         return False

@@ -108,6 +108,10 @@ class CometMLExperiment:
     """Create a `comet_ml.Experiment` or `comet_ml.ExistingExperiment` object with several
     adjustments.
 
+    TODO: `auto_output_logging` and `RecordStandardStreams` will mutate `sys.stdout`. This can also
+    cause issues where the logs are cut off. Create a toggle to avoid this mutation during
+    debugging.
+
     Args:
         project_name
         experiment_key: Existing experiment identifier.
@@ -592,7 +596,13 @@ def set_num_threads(num_threads: int):
     assert all(i["num_threads"] == num_threads for i in info), "Failed to set `num_threads`."
 
 
-def _worker_init_fn(_, config: typing.Dict, worker_init_fn: typing.Callable, num_threads: int = 1):
+def _worker_init_fn(
+    _,
+    config: typing.Dict,
+    worker_init_fn: typing.Optional[typing.Callable],
+    rank: int,
+    num_threads: int = 1,
+):
     """
     TODO: Add a method for transfering global configuration between processes without private
     variables.
@@ -604,8 +614,9 @@ def _worker_init_fn(_, config: typing.Dict, worker_init_fn: typing.Callable, num
     info = torch.utils.data.get_worker_info()
     lib.environment.set_basic_logging_config()
     set_num_threads(num_threads)
-    logger.info("Worker %d/%d iterator started.", info.id + 1, info.num_workers)
-    worker_init_fn()
+    logger.info("Worker %d/%d started for rank %d.", info.id + 1, info.num_workers, rank)
+    if worker_init_fn is not None:
+        worker_init_fn()
 
 
 DataLoaderVar = typing.TypeVar("DataLoaderVar", bound=Batch)
@@ -654,7 +665,10 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
             pin_memory=True,
             batch_size=typing.cast(int, None),
             worker_init_fn=functools.partial(
-                _worker_init_fn, config=copy.deepcopy(get_config()), worker_init_fn=worker_init_fn
+                _worker_init_fn,
+                config=copy.deepcopy(get_config()),
+                worker_init_fn=worker_init_fn,
+                rank=lib.distributed.get_rank(),
             ),
             collate_fn=lib.utils.identity,
             **kwargs,
@@ -783,9 +797,9 @@ def run_workers(
     TODO: Remove `copy.deepcopy` after this issue is fixed:
     https://github.com/pytorch/pytorch/issues/51849
     """
-    logger.info("Spawning workers %s", lib.utils.mazel_tov())
     partial_ = functools.partial(CometMLExperiment, experiment_key=comet.get_key())
     args = (partial_, copy.deepcopy(get_config()), checkpoint, run_worker, *args)
+    logger.info("Spawning workers %s", lib.utils.mazel_tov())
     return lib.distributed.spawn(_run_workers_helper, args=args)  # type: ignore
 
 

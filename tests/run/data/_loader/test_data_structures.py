@@ -247,6 +247,8 @@ def test_passage_span__identity():
     ]
     object.__setattr__(passage, "nonalignments", Alignment.stow(nonalignments))
     object.__setattr__(passage, "speech_segments", passage.span(slice(0, 1)))
+    object.__setattr__(passage, "passages", [passage])
+    object.__setattr__(passage, "index", 0)
     span = passage[:]
     assert passage.script == span.script
     assert passage.transcript == span.transcript
@@ -379,14 +381,17 @@ def test_passage_linking():
     ]
     is_linked = IsLinked(transcript=True, audio=True)
     passages = make_passages("", [unprocessed_passages], is_linked=is_linked)
+    assert len(passages[0].passages) == 3
     assert passages[0].prev is None
     assert passages[0].next == passages[1]
     assert passages[0]._prev_alignment() == Alignment((0, 0), (0.0, 0.0), (0, 0))
     assert passages[0]._next_alignment() == Alignment((1, 1), (1, 2), (1, 2))
+    assert len(passages[1].passages) == 3
     assert passages[1].prev == passages[0]
     assert passages[1].next == passages[2]
     assert passages[1]._prev_alignment() == Alignment((0, 0), (0, 1), (0, 1))
     assert passages[1]._next_alignment() == Alignment((1, 1), (2, 3), (2, 3))
+    assert len(passages[2].passages) == 3
     assert passages[2].prev == passages[1]
     assert passages[2].next is None
     assert passages[2]._prev_alignment() == Alignment((0, 0), (1, 2), (1, 2))
@@ -409,6 +414,7 @@ def test_passage_linking__no_links():
     passages = make_passages("", [[p] for p in unprocessed_passages])
     length = passages[0].audio_file.length
     for passage in passages:
+        assert len(passage.passages) == 1
         assert passage.prev is None
         assert passage.next is None
         assert passage._prev_alignment() == Alignment((0, 0), (0, 0), (0, 0))

@@ -202,13 +202,25 @@ class Passage:
     non_speech_segments: Timeline = field(init=False, repr=False, compare=False)
     first: Alignment = field(init=False, repr=False, compare=False)
     last: Alignment = field(init=False, repr=False, compare=False)
-    prev: typing.Optional[Passage] = field(default=None, init=False, repr=False, compare=False)
-    next: typing.Optional[Passage] = field(default=None, init=False, repr=False, compare=False)
+    passages: typing.List[Passage] = field(init=False, repr=False, compare=False)
+    index: int = field(init=False, repr=False, compare=False)
 
     def __post_init__(self):
         if len(self.alignments) > 0:  # NOTE: Cache `first` and `last`, if they exist.
             object.__setattr__(self, "first", self.alignments[0])
             object.__setattr__(self, "last", self.alignments[-1])
+
+        # NOTE: Error if `dataclasses.replace` is run on a linked `Passage`.
+        if hasattr(self, "passages"):
+            assert self is self.passages[self.index]
+
+    @property
+    def prev(self):
+        return None if self.index == 0 else self.passages[self.index - 1]
+
+    @property
+    def next(self):
+        return None if self.index == len(self.passages) - 1 else self.passages[self.index + 1]
 
     def audio(self):
         return _loader.utils.read_audio(self.audio_file)
@@ -309,9 +321,10 @@ class Passage:
         """Check datastructure invariants."""
         assert hasattr(self, "nonalignments")
         assert hasattr(self, "speech_segments")
-        assert hasattr(self, "prev")
-        assert hasattr(self, "next")
+        assert hasattr(self, "passages")
+        assert hasattr(self, "index")
 
+        assert self is self.passages[self.index]
         assert self.prev is None or self == self.prev.next
         assert self.next is None or self == self.next.prev
         assert self.prev is None or self.is_linked == self.prev.is_linked
@@ -801,9 +814,9 @@ def make_passages(
 
     logger.info(f"[{label}] Linking passages...")
     for doc in tqdm_(documents, disable=no_tqdm):
-        for prev, curr, next_ in lib.utils.triplets(doc):
-            object.__setattr__(curr, "prev", prev)
-            object.__setattr__(curr, "next", next_)
+        for i, passage in enumerate(doc):
+            object.__setattr__(passage, "passages", doc)
+            object.__setattr__(passage, "index", i)
 
     flat = flatten_2d(documents)
     logger.info(f"[{label}] Making nonalignments and speech segments...")

@@ -40,5 +40,5 @@ def run_before_test():
             yield
     try:
         torch.distributed.destroy_process_group()
-    except RuntimeError:
+    except (RuntimeError, AssertionError):
         pass

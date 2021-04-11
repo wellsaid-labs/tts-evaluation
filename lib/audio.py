@@ -142,7 +142,7 @@ def _parse_audio_metadata(metadata: str) -> AudioMetadata:
         "File Size",
         "Bit Rate",
         "Sample Encoding",
-    ]
+    ], f"This `metadata` is incompatible with `AudioMetadata`: {metadata}"
     splits = [s.split(":", maxsplit=1)[1].strip() for s in lines]
     assert splits[4].split()[3] == "samples"
     sample_rate = int(splits[2])

@@ -9,6 +9,7 @@ import pathlib
 import random
 import subprocess
 import typing
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -133,8 +134,11 @@ def maybe_normalize_audio_and_cache(
         bit_rate=bit_rate,
         precision=precision,
     )
-    if is_normalized_audio_file(audio_file, format_, suffix):
-        return audio_file.path
+    with warnings.catch_warnings():
+        message = r".*Overwriting configured argument.*"
+        warnings.filterwarnings("ignore", module=r".*hparams", message=message)
+        if is_normalized_audio_file(audio_file, format_, suffix):
+            return audio_file.path
 
     kwargs_ = dict(
         suffix=suffix,
