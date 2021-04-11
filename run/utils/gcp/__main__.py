@@ -152,7 +152,7 @@ def watch_instance(
         else:
             message = "Instance group manager is '%s' '%s'."
             logger.info(message, instance["currentAction"], instance["instance"].split("/")[-1])
-            if len(instance["lastAttempt"]) > 0:
+            if "lastAttempt" in instance and len(instance["lastAttempt"]) > 0:
                 message = instance["lastAttempt"]["errors"]["errors"][0]["message"]
                 logger.warning("The last attempt failed because... '%s'", message)
         time.sleep(poll_interval)
