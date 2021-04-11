@@ -118,7 +118,7 @@ class _State:
     @configurable
     def _get_optimizers(
         model: torch.nn.Module,
-        optimizer: typing.Type[torch.optim.Adam] = HParam(),
+        optimizer: typing.Callable[..., torch.optim.Adam] = HParam(),
         lr_multiplier_schedule: typing.Callable[[int], float] = HParam(),
     ) -> typing.Tuple[
         torch.optim.Adam,
@@ -140,6 +140,13 @@ class _State:
         device: torch.device,
         kwargs: typing.List[typing.Dict] = HParam(),
     ) -> typing.List[SignalTodBMelSpectrogram]:
+        """
+        TODO: How can we prevent this warning?
+        - Can we move `configurable` functions outside of `lib`?
+        - Can we make `hparams` less strict? Especially, for default values, like this one.
+        - Can we, instead of configuring `SignalTodBMelSpectrogram`, configure a different
+          function?
+        """
         with warnings.catch_warnings():
             message = r".*Overwriting configured argument.*"
             warnings.filterwarnings("ignore", module=r".*hparams", message=message)

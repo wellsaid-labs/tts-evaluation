@@ -102,7 +102,7 @@ def _make_configuration(
             prefetch_factor=2 if debug else 16,
         ),
         _worker._State._get_optimizers: HParams(
-            optimizer=torch.optim.Adam,
+            optimizer=partial(torch.optim.Adam, lr=10 ** -4, amsgrad=False, betas=(0.9, 0.999)),
             # NOTE: We employ a small warmup because the model can be unstable
             # at the start of it's training.
             lr_multiplier_schedule=partial(
@@ -124,11 +124,6 @@ def _make_configuration(
         ),
         _metrics.Metrics.get_discrim_values: HParams(
             real_label=real_label, fake_label=fake_label, threshold=threshold
-        ),
-        torch.optim.Adam.__init__: HParams(
-            lr=10 ** -4,
-            amsgrad=False,
-            betas=(0.9, 0.999),
         ),
     }
 
