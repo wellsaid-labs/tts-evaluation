@@ -4,7 +4,7 @@ scipy
 
 # NOTE: For optimized `torch` install, visit https://pytorch.org and follow the "Get Started"
 # guide.
-torch==1.7.1
+torch==1.8.1
 
 # Language Library
 git+https://github.com/PetrochukM/PyTorch-NLP.git
@@ -23,7 +23,7 @@ pyloudnorm
 
 # Visualization Library
 matplotlib
-comet-ml[cpu_logging]==3.3.2
+comet-ml[cpu_logging]==3.8.0
 tabulate
 streamlit
 altair
