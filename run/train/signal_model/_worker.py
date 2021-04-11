@@ -184,7 +184,7 @@ class _State:
         )
 
     @property
-    def models(self) -> typing.Tuple[torch.nn.Module]:
+    def models(self) -> typing.Tuple[torch.nn.Module, ...]:
         return tuple([self.model] + self.discrims)
 
     @staticmethod

@@ -1,14 +1,9 @@
-import shutil
-import tempfile
-from pathlib import Path
 from unittest import mock
 
 import hparams
 import pytest
 
-import lib
 import run
-from lib.audio import AudioMetadata
 from run._utils import _find_duplicate_passages, split_dataset
 from run.data._loader import Alignment
 from tests._utils import TEST_DATA_PATH, make_passage
@@ -23,45 +18,6 @@ def run_around_tests():
     run._config.configure()
     yield
     hparams.clear_config()
-
-
-def test_normalized_audio_path():
-    """Test `run._utils.test_normalized_audio_path` handles basic cases."""
-    path = Path("audio.wav")
-    kwargs = dict(encoding="pcm_s16le", sample_rate=8000, num_channels=1)
-    normalized = run._utils.normalized_audio_path(path, **kwargs)
-    kwargs_ = ",".join([f"{k}={v}" for k, v in kwargs.items()])
-    assert normalized == Path(f"{run._config.TTS_DISK_CACHE_NAME}/ffmpeg(audio,{kwargs_}).wav")
-    assert normalized == run._utils.normalized_audio_path(path, "pcm_s16le", 8000, 1)
-
-
-def test_normalize_audio():
-    """Test `run._utils.normalize_audio` normalizes audio in `dataset`."""
-    sample_rate = 8000
-    num_channels = 2
-    ffmpeg_encoding = "pcm_s16le"
-    sox_encoding = lib.audio.AudioEncoding.PCM_INT_16_BIT
-    suffix = ".wav"
-    args = (sample_rate, num_channels, sox_encoding, "256k", "16-bit", 60672)
-    with tempfile.TemporaryDirectory() as path:
-        directory = Path(path)
-        audio_path = directory / TEST_DATA_LJ.name
-        shutil.copy(TEST_DATA_LJ, audio_path)
-        metadata = AudioMetadata(audio_path, *args)
-        passage = make_passage(speaker=run.data._loader.LINDA_JOHNSON, audio_file=metadata)
-        dataset = {run.data._loader.LINDA_JOHNSON: [passage]}
-        dataset = run._utils.normalize_audio(
-            dataset,
-            suffix=suffix,
-            encoding=ffmpeg_encoding,
-            sample_rate=sample_rate,
-            num_channels=num_channels,
-            audio_filters=lib.audio.AudioFilters(""),
-        )
-        assert len(dataset[run.data._loader.LINDA_JOHNSON]) == 1
-        new_path = dataset[run.data._loader.LINDA_JOHNSON][0].audio_file.path
-        assert new_path.absolute() != audio_path.absolute()
-        assert lib.audio.get_audio_metadata(new_path) == AudioMetadata(new_path, *args)
 
 
 def test__find_duplicate_passages():

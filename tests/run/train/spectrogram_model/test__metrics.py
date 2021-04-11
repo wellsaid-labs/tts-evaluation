@@ -1,6 +1,7 @@
 import torch
 
 import lib
+import run
 from run.train.spectrogram_model import _data, _metrics
 from tests._utils import TEST_DATA_PATH, assert_almost_equal
 
@@ -100,7 +101,7 @@ def test_get_average_db_rms_level():
     a test file."""
     audio_path = TEST_DATA_PATH / "audio" / "bit(rate(lj_speech,24000),32).wav"
     metadata = lib.audio.get_audio_metadata(audio_path)
-    lib.audio.assert_audio_normalized(metadata)
+    run.data._loader.is_normalized_audio_file(metadata)
     audio = lib.audio.read_audio(audio_path)
     audio = _data._pad_and_trim_signal(audio)
     signal_to_spectrogram = lambda s, **k: _data._signals_to_spectrograms([s], **k)[0].tensor

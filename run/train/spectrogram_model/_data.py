@@ -180,6 +180,7 @@ def _get_loudness(
     alignment: Alignment,
     block_size: float = HParam(),
     precision: int = HParam(),
+    **kwargs,
 ) -> typing.Optional[float]:
     """Get the loudness in LUFS for an `alignment` in `audio`.
 
@@ -191,7 +192,7 @@ def _get_loudness(
         precision: The number of decimal places to round LUFS.
         ...
     """
-    meter = lib.audio.get_pyloudnorm_meter(sample_rate, block_size=block_size)
+    meter = lib.audio.get_pyloudnorm_meter(sample_rate, block_size=block_size, **kwargs)
     sec_to_sample_ = functools.partial(sec_to_sample, sample_rate=sample_rate)
     slice_ = audio[sec_to_sample_(alignment.audio[0]) : sec_to_sample_(alignment.audio[1])]
     if slice_.shape[0] >= sec_to_sample_(block_size):
@@ -437,9 +438,6 @@ def make_batch(
     _make_mask = functools.partial(torch.ones, dtype=torch.bool)
 
     assert len(spans) > 0, "Batch must have at least one item."
-
-    for span in spans:
-        lib.audio.assert_audio_normalized(span.audio_file)
 
     nlp = lib.text.load_en_core_web_md(disable=("parser", "ner"))
     docs: typing.List[spacy.tokens.Doc] = list(nlp.pipe([s.passage.script for s in spans]))
