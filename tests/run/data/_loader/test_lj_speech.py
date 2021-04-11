@@ -4,6 +4,7 @@ import shutil
 import tempfile
 from unittest import mock
 
+import lib
 import run.data._loader
 from run.data._loader import Alignment
 from tests import _utils
@@ -40,13 +41,21 @@ verbalize_test_cases = {
 
 @mock.patch("run.data._loader.data_structures._exists", return_value=True)
 @mock.patch("run.data._loader.data_structures.get_audio_metadata")
-@mock.patch("run.data._loader.utils.maybe_normalize_audio_and_cache")
+@mock.patch("run.data._loader.data_structures._loader.utils.maybe_normalize_audio_and_cache")
+@mock.patch("run.data._loader.data_structures._loader.utils.get_non_speech_segments_and_cache")
 @mock.patch("urllib.request.urlretrieve")
-def test_lj_speech_dataset(mock_urlretrieve, mock_normalize_and_cache, mock_get_audio_metadata, _):
+def test_lj_speech_dataset(
+    mock_urlretrieve,
+    mock_get_non_speech_segments_and_cache,
+    mock_normalize_and_cache,
+    mock_get_audio_metadata,
+    _,
+):
     """ Test `run.data._loader.lj_speech_dataset` loads and verbalizes the data. """
     mock_urlretrieve.side_effect = _utils.first_parameter_url_side_effect
     mock_get_audio_metadata.side_effect = _utils.get_audio_metadata_side_effect
     mock_normalize_and_cache.side_effect = _utils.maybe_normalize_audio_and_cache_side_effect
+    mock_get_non_speech_segments_and_cache.side_effect = lambda *a, **k: lib.utils.Timeline([])
     archive = _utils.TEST_DATA_PATH / "datasets" / "LJSpeech-1.1.tar.bz2"
 
     with tempfile.TemporaryDirectory() as path:

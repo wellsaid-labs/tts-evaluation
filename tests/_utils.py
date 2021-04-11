@@ -10,7 +10,7 @@ import torch
 import lib
 import run.data._loader
 from lib.utils import Tuple
-from run.data._loader import Alignment
+from run.data._loader import Alignment, Span
 
 TEST_DATA_PATH = lib.environment.ROOT_PATH / "tests" / "_test_data"
 
@@ -67,7 +67,7 @@ def make_passage(
     audio_file: lib.audio.AudioMetadata = make_metadata(),
     script: typing.Optional[str] = None,
     transcript: typing.Optional[str] = None,
-    speech_segments: typing.Optional[typing.Tuple[slice, ...]] = None,
+    speech_segments: typing.Optional[typing.Tuple[Span, ...]] = None,
     **kwargs,
 ) -> run.data._loader.Passage:
     """Make a `Passage` for testing.
