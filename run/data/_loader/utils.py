@@ -247,6 +247,7 @@ class SpanGenerator(typing.Iterator[Span]):
             # NOTE: The `weight` is based on `start` (i.e. the number of spans)
             # NOTE: For some reason, `torch.multinomial(replacement=True)` is faster by a lot.
             index = int(torch.multinomial(self._weights + length, 1, replacement=True).item())
+            assert self._timelines is not None
             passage, timeline = self.passages[index], self._timelines[index]
 
             # NOTE: Uniformly sample a span of audio.
@@ -257,15 +258,9 @@ class SpanGenerator(typing.Iterator[Span]):
             # NOTE: Based on the overlap, decide which alignments to include in the span.
             indicies = list(timeline.indicies(slice(start, stop)))
             self._is_include.cache_clear()
-            _is_include = lambda i: self._is_include(
-                timeline.start(i), timeline.stop(i), start, stop
-            )
-            begin = typing.cast(
-                typing.Optional[int], next((i for i in indicies if _is_include(i)), None)
-            )
-            end = typing.cast(
-                typing.Optional[int], next((i for i in reversed(indicies) if _is_include(i)), None)
-            )
+            _filter = lambda i: self._is_include(timeline.start(i), timeline.stop(i), start, stop)
+            begin = next((i for i in iter(indicies) if _filter(i)), None)
+            end = next((i for i in reversed(indicies) if _filter(i)), None)
             if begin is None or end is None:
                 continue
 
@@ -475,8 +470,8 @@ def conventional_dataset_loader(
         UnprocessedPassage(
             audio_path=get_audio_path(row[metadata_audio_column]),
             speaker=speaker,
-            script=row[metadata_text_column].strip(),
-            transcript=row[metadata_text_column].strip(),
+            script=typing.cast(str, row[metadata_text_column]).strip(),
+            transcript=typing.cast(str, row[metadata_text_column]).strip(),
             alignments=None,
             other_metadata={**get_other_metadata(row), **additional_metadata},
         )

@@ -249,7 +249,7 @@ class SpanGenerator(typing.Iterator[_loader.Span]):
         while True:
             speaker = lib.utils.corrected_random_choice(self.counter)
             span = next(self.generators[speaker])
-            if span.audio_length < self.max_seconds and self.include_span(span):
+            if span.audio_length <= self.max_seconds and self.include_span(span):
                 self.counter[span.speaker] += span.audio_length
                 return span
 
