@@ -10,6 +10,8 @@ TODO:
     inclusive of speakers that have more background noise which would have less
     `non_speech_segments`? Could we use it for a more accurate filter on alignments that are too
     fast?
+  - What if we change the parameters for `non_speech_segments`? There are many segments which end
+    on a word whose pronunciation depends on the next word. Could that be reduced?
 - Where could errors be hiding that could cause poor performance?
   - Could long alignments with multiple words be suspect?
   - Could alignments with long pauses in them be suspect?
@@ -334,9 +336,8 @@ def _analyze_spans(dataset: Dataset, spans: typing.List[Span], max_rows: int, ru
     )
 
     with utils.st_expander("Random Sample of Spans") as label:
-        if not st.checkbox("Analyze", key=label, value=run_all):
-            raise GeneratorExit()
-        _write_span_table(spans[:max_rows])
+        if st.checkbox("Analyze", key=label, value=run_all):
+            _write_span_table(spans[:max_rows])
 
     with utils.st_expander("Survey of Span Mistranscriptions") as label:
         if not st.checkbox("Analyze", key=label, value=run_all):
@@ -402,14 +403,12 @@ def _analyze_filtered_spans(
     )
 
     with utils.st_expander("Random Sample of Included Spans") as label:
-        if not st.checkbox("Analyze", key=label, value=run_all):
-            raise GeneratorExit()
-        _write_span_table(included[:max_rows])
+        if st.checkbox("Analyze", key=label, value=run_all):
+            _write_span_table(included[:max_rows])
 
     with utils.st_expander("Random Sample of Excluded Spans") as label:
-        if not st.checkbox("Analyze", key=label, value=run_all):
-            raise GeneratorExit()
-        _write_span_table(excluded[:max_rows])
+        if st.checkbox("Analyze", key=label, value=run_all):
+            _write_span_table(excluded[:max_rows])
 
     sections: typing.List[typing.Tuple[typing.Callable[[Span], float], str, str, float]] = [
         (lambda s: s.audio_length, "Length", "Seconds", 1.0),

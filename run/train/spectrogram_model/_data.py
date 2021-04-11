@@ -39,12 +39,10 @@ if typing.TYPE_CHECKING:  # pragma: no cover
     import librosa
     import spacy.tokens
     from scipy import ndimage
-    from spacy.lang import en as spacy_en
 else:
     librosa = LazyLoader("librosa", globals(), "librosa")
     ndimage = LazyLoader("ndimage", globals(), "scipy.ndimage")
     spacy = LazyLoader("spacy", globals(), "spacy")
-    spacy_en = LazyLoader("spacy_en", globals(), "spacy.lang.en")
 
 
 logger = logging.getLogger(__name__)
