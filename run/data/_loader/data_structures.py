@@ -216,6 +216,9 @@ class Passage:
 
     @property
     def prev(self):
+        # NOTE: Our linked list uses a underlying `list` because recursive data structures are hard
+        # to pickle, learn more:
+        # https://stackoverflow.com/questions/2912841/python-pickling-highly-recursive-objects-without-using-setrecursionlimit
         return None if self.index == 0 else self.passages[self.index - 1]
 
     @property
