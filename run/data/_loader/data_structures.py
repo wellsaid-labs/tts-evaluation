@@ -59,6 +59,17 @@ def voiced_nonalignment_spans(
     return spans, [lib.text.is_voiced(t) for t in text]
 
 
+def _is_alignment_voiced(passage: Passage, alignment: Alignment) -> bool:
+    """Return `True` if a `passage` voiced at `alignment`."""
+    for attr in ("script", "transcript"):
+        interval = getattr(alignment, attr)
+        if interval[0] < interval[-1] and lib.text.is_voiced(
+            getattr(passage, attr)[interval[0] : interval[-1]]
+        ):
+            return True
+    return False
+
+
 def has_a_mistranscription(span: typing.Union[Passage, Span]) -> bool:
     """Return `True` if `span` contains a mistranscription, probably.
 
@@ -78,20 +89,11 @@ def has_a_mistranscription(span: typing.Union[Passage, Span]) -> bool:
     slices = [(span, slice_)]
     is_linked = span.is_linked.transcript
     if is_linked and span.prev is not None and slice_.start == 0:
-        length = len(span.prev.nonalignments)
-        slices += [(span.prev, slice(length - 1, length))]
+        slices.append((span.prev, slice(-1, None)))
     if is_linked and span.next is not None and slice_.stop == len(span.nonalignments):
-        slices += [(span.next, slice(0, 1))]
+        slices.append((span.next, slice(0, 1)))
 
-    for _span, _slice in slices:
-        nonalignments = _span.nonalignments[_slice]
-        if any(
-            lib.text.is_voiced(_span.script[a.script[0] : a.script[-1]])
-            or lib.text.is_voiced(_span.transcript[a.transcript[0] : a.transcript[-1]])
-            for a in nonalignments
-        ):
-            return True
-    return False
+    return any(_is_alignment_voiced(p, a) for p, s in slices for a in p.nonalignments[s])
 
 
 _alignment_dtype = [
