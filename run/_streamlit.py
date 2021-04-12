@@ -30,7 +30,6 @@ logger = logging.getLogger(__name__)
 # https://github.com/streamlit/streamlit/issues/1567
 STREAMLIT_WEB_ROOT_PATH = pathlib.Path(st.__file__).parent / "static"
 STREAMLIT_STATIC_PATH = STREAMLIT_WEB_ROOT_PATH / "static"
-assert STREAMLIT_STATIC_PATH.exists() and (STREAMLIT_STATIC_PATH / "media").exists()
 
 # NOTE: These are the WSL TTS directories served by Streamlit.
 STREAMLIT_STATIC_PRIVATE_PATH = STREAMLIT_STATIC_PATH / "_wsl_tts"

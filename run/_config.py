@@ -58,16 +58,6 @@ TEMP_PATH = DISK_PATH / "temp"
 SAMPLES_PATH = DISK_PATH / "samples"
 SIGNAL_MODEL_EXPERIMENTS_PATH = EXPERIMENTS_PATH / "signal_model"
 SPECTROGRAM_MODEL_EXPERIMENTS_PATH = EXPERIMENTS_PATH / "spectrogram_model"
-for directory in [
-    DISK_PATH,
-    DATA_PATH,
-    EXPERIMENTS_PATH,
-    TEMP_PATH,
-    SAMPLES_PATH,
-    SIGNAL_MODEL_EXPERIMENTS_PATH,
-    SPECTROGRAM_MODEL_EXPERIMENTS_PATH,
-]:
-    directory.mkdir(exist_ok=True)
 
 # TODO: Instead of using global variables, can we use `hparams`, easily?
 
@@ -594,6 +584,17 @@ def _configure_data_processing():
 
 def configure():
     """ Configure modules required for `run`. """
+    for directory in [
+        DISK_PATH,
+        DATA_PATH,
+        EXPERIMENTS_PATH,
+        TEMP_PATH,
+        SAMPLES_PATH,
+        SIGNAL_MODEL_EXPERIMENTS_PATH,
+        SPECTROGRAM_MODEL_EXPERIMENTS_PATH,
+    ]:
+        directory.mkdir(exist_ok=True)
+
     _configure_audio_processing()
     _configure_models()
     _configure_data_processing()
