@@ -160,11 +160,11 @@ class CometMLExperiment:
 
         kwargs.update({"project_name": project_name, "workspace": workspace})
         if experiment_key is None:
-            self._experiment = comet_ml.Experiment(**kwargs, display_summary_level=0)
+            self._experiment = comet_ml.Experiment(display_summary_level=0, **kwargs)
             self._experiment.log_html(self._BASE_HTML_STYLING)
         else:
             self._experiment = comet_ml.ExistingExperiment(
-                previous_experiment=experiment_key, **kwargs, display_summary_level=0
+                previous_experiment=experiment_key, display_summary_level=0, **kwargs
             )
 
         self.log_asset = self._experiment.log_asset
