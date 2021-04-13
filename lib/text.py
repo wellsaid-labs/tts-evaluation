@@ -747,6 +747,10 @@ def normalize_non_standard_words(text: str, variety: str = "AmE", **kwargs) -> s
          https://prodi.gy/docs/named-entity-recognition#manual-model
        - Adopt Google's commercial "sparrowhawk" or the latest grammar
          "TextNormalizationCoveringGrammars" for text normalization.
+       - Look into NVIDIA's recent text normalization and denormalization:
+         https://arxiv.org/abs/2104.05055
+         https://docs.nvidia.com/deeplearning/nemo/user-guide/docs/en/stable/tools/text_normalization.html
+         https://github.com/NVIDIA/NeMo/pull/1797/files
     """
     for dependency in (
         "brown",

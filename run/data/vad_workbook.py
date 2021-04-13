@@ -12,6 +12,7 @@ TODO:
 - Try this simple approach: https://maelfabien.github.io/project/Speech_proj/#rolling-window
 - Try Kaldi VAD: https://github.com/pykaldi/pykaldi/tree/master/examples/setups/ltsv-based-vad
 - Add audio padding to Baseline VAD.
+- Trying this VAD: https://github.com/pyannote/pyannote-audio-hub
 
 Usage:
     $ python -m pip install webrtcvad

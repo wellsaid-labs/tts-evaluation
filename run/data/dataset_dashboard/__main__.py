@@ -12,6 +12,10 @@ TODO:
     fast?
   - What if we change the parameters for `non_speech_segments`? There are many segments which end
     on a word whose pronunciation depends on the next word. Could that be reduced?
+  - What is the length distribution of `non_speech_segments`? What about the length distribution of
+    legitimate `non_speech_segments`? Can we set a minimum pause length per speaker? Can we use
+    the speakers speed to set a minimum pause length? Can we we the length distribution to set
+    a pause length?
 - Where could errors be hiding that could cause poor performance?
   - Could long alignments with multiple words be suspect?
   - Could alignments with long pauses in them be suspect?
