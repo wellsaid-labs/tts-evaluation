@@ -155,7 +155,9 @@ def _span_metric(
                 st.text("")
 
 
-def _analyze_alignment_speech_segments(passages: typing.List[Passage], **kwargs):
+def _analyze_alignment_speech_segments(
+    passages: typing.List[Passage], max_rows: int, run_all: bool
+):
     """Analyze the distribution of speech segments as defined by alignments
     (i.e. alignments with no pauses in between)."""
     st.markdown("### Alignment Speech Segments Analysis")
@@ -177,8 +179,21 @@ def _analyze_alignment_speech_segments(passages: typing.List[Passage], **kwargs)
             f"is **{above_threshold:.2f}** out of **{total_seconds:.2f}** seconds "
             f"(**{above_threshold / total_seconds:.1%}**)."
         ),
-        **kwargs,
+        max_rows=max_rows,
+        run_all=run_all,
     )
+
+    with utils.st_expander("Random Sample of Alignment Speech Segments") as label:
+        if not st.checkbox("Analyze", key=label, value=run_all):
+            raise GeneratorExit()
+        sample = segments[:max_rows]
+        edges = []
+        for segment in sample:
+            start = segment.passage.nonalignments[segment.nonalignments_slice.start].audio
+            end = segment.passage.nonalignments[segment.nonalignments_slice.stop - 1].audio
+            edges.append((start[-1] - start[0], end[-1] - end[0]))
+        other_columns = {"edges": edges, "transcript": [s.transcript for s in sample]}
+        _write_span_table(sample, other_columns=other_columns)
 
 
 def _analyze_speech_segments(passages: typing.List[Passage], **kwargs):
