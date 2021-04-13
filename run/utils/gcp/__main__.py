@@ -4,6 +4,7 @@ TODO:
 - Add a script for creating a batch of instances.
 - Add a script for updating a machine's start up script for signal model training, like so:
 https://cloud.google.com/compute/docs/instance-groups/rolling-out-updates-to-managed-instance-groups
+- Support non-preemtible instances for timed jobs.
 """
 import logging
 import math

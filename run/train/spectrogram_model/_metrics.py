@@ -158,6 +158,7 @@ class Metrics(_utils.Metrics):
         ALIGNMENT_NUM_SKIPS,
         ALIGNMENT_STD_SUM,
         DATA_QUEUE_SIZE,
+        MAX_FRAMES_PER_TOKEN,
         NUM_CORRECT_STOP_TOKEN,
         NUM_FRAMES_MAX,
         NUM_FRAMES_PREDICTED,
@@ -178,6 +179,8 @@ class Metrics(_utils.Metrics):
     AVERAGE_NUM_FRAMES = partial(get_dataset_label, "average_num_frames")
     AVERAGE_RMS_LEVEL = partial(get_dataset_label, "average_rms_level")
     MAX_NUM_FRAMES = partial(get_dataset_label, "max_num_frames")
+    AVERAGE_FRAMES_PER_TOKEN = partial(get_dataset_label, "average_frames_per_token")
+    MAX_FRAMES_PER_TOKEN_ = partial(get_dataset_label, "max_frames_per_token")
     MIN_DATA_LOADER_QUEUE_SIZE = partial(get_dataset_label, "min_data_loader_queue_size")
     FREQUENCY_NUM_FRAMES = partial(get_dataset_label, "frequency/num_frames")
     FREQUENCY_NUM_SECONDS = partial(get_dataset_label, "frequency/num_seconds")
@@ -239,6 +242,9 @@ class Metrics(_utils.Metrics):
                     values[format_(self.NUM_FRAMES)] += num_frames
                     values[format_(self.NUM_SECONDS)] += span.audio_length
                     values[format_(self.NUM_TOKENS)] += num_tokens
+                    label = format_(self.MAX_FRAMES_PER_TOKEN)
+                    ratio = num_frames / num_tokens
+                    values[label] = max(ratio, values[label]) if label in values else ratio
 
         return dict(values)
 
@@ -341,9 +347,9 @@ class Metrics(_utils.Metrics):
             suffix = "" if speaker is None else f"/{speaker.label}"
             format_ = lambda s: f"{s}{suffix}" if isinstance(s, str) else s
             reduce_: typing.Callable[[str], float]
-            reduce_ = lambda k: self._reduce(format_(k), select=select)
+            reduce_ = lambda a, **k: self._reduce(format_(a), select=select, **k)
             div: typing.Callable[[typing.Union[float, str], typing.Union[float, str]], float]
-            div = lambda n, d: self._div(format_(n), format_(d), select=select)
+            div = lambda n, d, **k: self._div(format_(n), format_(d), select=select, **k)
             yield speaker, reduce_, div
 
     @configurable
@@ -386,6 +392,8 @@ class Metrics(_utils.Metrics):
         for speaker, _reduce, _div in self._iter_permutations(select, is_verbose):
             update = {
                 self.AVERAGE_NUM_FRAMES: _div(self.NUM_FRAMES, self.NUM_SPANS),
+                self.AVERAGE_FRAMES_PER_TOKEN: _div(self.NUM_FRAMES, self.NUM_TOKENS),
+                self.MAX_FRAMES_PER_TOKEN_: _reduce(self.MAX_FRAMES_PER_TOKEN, op=max),
                 self.FREQUENCY_NUM_FRAMES: _reduce(self.NUM_FRAMES) / total_frames,
                 self.FREQUENCY_NUM_SECONDS: _reduce(self.NUM_SECONDS) / total_seconds,
                 self.NUM_SPANS_: _reduce(self.NUM_SPANS),

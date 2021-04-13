@@ -600,6 +600,8 @@ def run_stt(
 
     TODO: Look into how many requests are made every poll, in order to better calibrate against
     Google's quota.
+    TODO: Look into `set(dest_blobs)` and the following `upload_from_string`. This line got called
+    multiple times for a single log file, and it caused the program to exceeds Google's quota.
 
     Args:
         audio_blobs: List of GCS voice-over blobs.
