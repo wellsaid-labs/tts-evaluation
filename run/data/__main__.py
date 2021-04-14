@@ -2,6 +2,7 @@
 
 TODO: Should we add a tool to check for noise floors? We could report back the lowest decibel
 seen in a similar way to `lib.audio.get_non_speech_segments`.
+TODO: Ensure that CSV column names are consistent in the various data processing modules.
 """
 import collections
 import dataclasses
@@ -290,6 +291,7 @@ def csv_normalize(
     paths: typing.List[pathlib.Path] = typer.Argument(..., exists=True, dir_okay=False),
     dest: pathlib.Path = typer.Argument(..., exists=True, file_okay=False),
     tab_separated: bool = typer.Option(False, help="Parse this file as a TSV."),
+    expected_columns: typing.List[str] = typer.Option(["Source", "Title", "Content"]),
 ):
     """Normalize csv file(s) in PATHS and save to directory DEST."""
     nlp = lib.text.load_en_core_web_md(disable=("tagger", "ner"))
@@ -310,8 +312,18 @@ def csv_normalize(
             logger.warning(message, text.count("\t"), path)
 
         separator = "\t" if tab_separated else ","
-        data_frame = typing.cast(pandas.DataFrame, pandas.read_csv(path, sep=separator))
+        data_frame = pandas.read_csv(path, sep=separator, keep_default_na=False)
+        data_frame = typing.cast(pandas.DataFrame, data_frame)
         data_frame = data_frame.applymap(partial)
+        dropped = list(set(data_frame.columns) - set(expected_columns))
+        if len(dropped) > 0:
+            logger.warning("[%s] Dropping extra columns: %s", path.name, dropped)
+        data_frame = data_frame.drop(columns=dropped)
+        for column in expected_columns:
+            if column not in data_frame.columns:
+                logger.warning("[%s] Adding missing column: '%s'", path.name, column)
+                data_frame[column] = ""
+        data_frame = data_frame[list(expected_columns)]
         data_frame.to_csv(dest_path, index=False)
 
         # TODO: Count the number of alphanumeric edits instead of punctuation mark edits.
