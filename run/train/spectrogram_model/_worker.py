@@ -324,7 +324,7 @@ def _run_step(
     """
     args.timer.record_event(args.timer.MODEL_FORWARD)
     preds = args.state.model(
-        tokens=args.batch.encoded_phonemes.tensor,
+        tokens=args.batch.phonemes,
         speaker=args.batch.encoded_speaker.tensor,
         target_frames=args.batch.spectrogram.tensor,
         num_tokens=args.batch.encoded_phonemes.lengths,

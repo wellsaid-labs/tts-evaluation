@@ -25,7 +25,6 @@ from run.train._utils import (
     start_experiment,
 )
 from run.train.spectrogram_model import _worker
-from run.train.spectrogram_model._data import InputEncoder
 from run.train.spectrogram_model._metrics import Metrics
 
 logger = logging.getLogger(__name__)
@@ -96,7 +95,6 @@ def _make_configuration(
             amsgrad=True,
             betas=(0.9, 0.999),
         ),
-        InputEncoder.__init__: HParams(phoneme_separator=PHONEME_SEPARATOR),
     }
 
 

@@ -306,11 +306,9 @@ class SpectrogramModel(torch.nn.Module):
 
     def _forward(
         self,
-        tokens: torch.Tensor,
-        speaker: torch.Tensor,
+        tokens: typing.Union[typing.List[str], typing.List[typing.List[str]]],
+        speaker: typing.Union[str, typing.List[str]],
         target_frames: torch.Tensor,
-        num_tokens: typing.Optional[torch.Tensor] = None,
-        tokens_mask: typing.Optional[torch.Tensor] = None,
         target_mask: typing.Optional[torch.Tensor] = None,
     ) -> Forward:
         """Propagate the model forward for training.
@@ -346,10 +344,8 @@ class SpectrogramModel(torch.nn.Module):
 
     def _generate(
         self,
-        tokens: torch.Tensor,
-        speaker: torch.Tensor,
-        num_tokens: typing.Optional[torch.Tensor] = None,
-        tokens_mask: typing.Optional[torch.Tensor] = None,
+        tokens: typing.Union[typing.List[str], typing.List[typing.List[str]]],
+        speaker: typing.Union[str, typing.List[str]],
         split_size: float = 32,
         use_tqdm: bool = False,
         token_skip_warning: float = math.inf,
@@ -390,10 +386,9 @@ class SpectrogramModel(torch.nn.Module):
     @typing.overload
     def __call__(
         self,
-        tokens: torch.Tensor,
+        tokens: typing.Union[typing.List[typing.List[str]], typing.List[str]],
         speaker: torch.Tensor,
         target_frames: torch.Tensor,
-        num_tokens: typing.Optional[torch.Tensor] = None,
         tokens_mask: typing.Optional[torch.Tensor] = None,
         target_mask: typing.Optional[torch.Tensor] = None,
         mode: typing.Literal[Mode.FORWARD] = Mode.FORWARD,
@@ -403,9 +398,8 @@ class SpectrogramModel(torch.nn.Module):
     @typing.overload
     def __call__(
         self,
-        tokens: torch.Tensor,
+        tokens: typing.Union[typing.List[typing.List[str]], typing.List[str]],
         speaker: torch.Tensor,
-        num_tokens: typing.Optional[torch.Tensor] = None,
         tokens_mask: typing.Optional[torch.Tensor] = None,
         use_tqdm: bool = False,
         token_skip_warning: float = math.inf,
@@ -416,9 +410,8 @@ class SpectrogramModel(torch.nn.Module):
     @typing.overload
     def __call__(
         self,
-        tokens: torch.Tensor,
+        tokens: typing.Union[typing.List[typing.List[str]], typing.List[str]],
         speaker: torch.Tensor,
-        num_tokens: typing.Optional[torch.Tensor] = None,
         tokens_mask: typing.Optional[torch.Tensor] = None,
         split_size: float = 32,
         use_tqdm: bool = False,

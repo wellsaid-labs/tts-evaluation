@@ -17,11 +17,14 @@ from contextlib import contextmanager
 
 import numpy as np
 import torch
+import torch.distributed
 import torch.multiprocessing
 import torch.nn
 import torch.nn.functional
 import torch.utils.data
 from tqdm import tqdm
+
+import lib.distributed
 
 logger = logging.getLogger(__name__)
 
@@ -340,6 +343,69 @@ class LSTMCell(torch.nn.LSTMCell):
                 self.initial_cell_state.expand(input.shape[0], -1).contiguous(),
             )
         return super().forward(input, hx=hx)
+
+
+class LazyEmbedding(torch.nn.Module):
+    def __init__(self, num_embeddings: int, *args, **kwargs):
+        """
+        Args:
+            num_embeddings: The maximum number of embeddings needed.
+        """
+        super().__init__()
+        self.pad_idx = 0
+        self.unk_idx = 1
+        self.pad_token = "pad"
+        self.unk_token = "unk"
+        self.vocab: typing.Dict[str, int] = {}
+        self.vocab[self.pad_token] = self.pad_idx
+        self.vocab[self.unk_token] = self.unk_idx
+        num_embeddings = len(self.vocab) + num_embeddings
+        self.embed = torch.nn.Embedding(num_embeddings, *args, padding_idx=self.pad_idx, **kwargs)
+        self._new_tokens = set()
+        self.register_buffer("_unk_embedding_hash", torch.tensor(0))
+
+    def _get_unk_embedding_hash(self) -> torch.Tensor:
+        idx = torch.tensor(self.vocab[self.unk_token], device=self.embed.weight.device)
+        return self.embed(idx).sum().detach().clone().requires_grad_(False)
+
+    def _update_vocab(self, eps=0.0001):
+        """Update `self.vocab` if there are new tokens."""
+        new_unk_embedding_hash = self._get_unk_embedding_hash()
+        if (self._unk_embedding_hash - new_unk_embedding_hash).abs() > eps:
+            outputs = [None for _ in range(lib.distributed.get_world_size())]
+            new_tokens = sorted(list(self._new_tokens))
+            torch.distributed.all_gather_object(outputs, new_tokens)
+            outputs = typing.cast(typing.List[typing.List[str]], outputs)
+            for output in outputs:
+                for token in output:
+                    self.vocab[token] = len(self.vocab)
+            self._unk_embedding_hash = new_unk_embedding_hash
+            self._new_tokens = set()
+
+    def _token_to_idx(self, token: str, allow_unk_on_eval: bool = False) -> int:
+        if (
+            not allow_unk_on_eval
+            and not self.training
+            and token not in self.vocab
+            and token not in self._new_tokens
+        ):
+            raise KeyError(f"Token not found: {token}")
+        return self.vocab.get(token, self.vocab[self.unk_token])
+
+    def forward(self, tokens: typing.List[typing.List[str]], **kwargs) -> torch.Tensor:
+        """
+        Args:
+            tokens ([batch_size, num_tokens]): List of sequences with tokens represented as strings.
+
+        Returns: torch.FloatTensor([num_tokens, batch_size, embedding_dim])
+        """
+        if self.training:
+            self._new_tokens.update([t for s in tokens for t in s if t not in self.vocab])
+            self._update_vocab()
+        indices = [[self._token_to_idx(t, **kwargs) for t in s] for s in tokens]
+        device = self.embed.weight.device
+        sequences = [torch.tensor(s, device=device, dtype=torch.long) for s in indices]
+        return self.embed(torch.nn.utils.rnn.pad_sequence(sequences))
 
 
 _ClampReturnType = typing.TypeVar("_ClampReturnType")

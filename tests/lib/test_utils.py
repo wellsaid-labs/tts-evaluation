@@ -1,9 +1,13 @@
+import functools
 import math
+import tempfile
 import typing
+from unittest import mock
 
 import numpy
 import pytest
 import torch
+import torch.distributed
 import torch.nn
 from torchnlp.random import fork_rng
 
@@ -325,6 +329,87 @@ def test_lstm_cell__hidden_state():
 
     assert_almost_equal(updated_hidden_state[0], other_updated_hidden_state[0])
     assert_almost_equal(updated_hidden_state[1], other_updated_hidden_state[1])
+
+
+def _lazy_embedding_helper(rank, nprocs, file_name):
+    """ Helper function for `test_lazy_embedding`. """
+    torch.distributed.init_process_group(
+        backend="gloo", init_method=f"file://{file_name}", world_size=nprocs, rank=rank
+    )
+    model = lib.utils.LazyEmbedding(100, 16)
+    model = torch.nn.parallel.DistributedDataParallel(model)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+    for i in range(3):
+        model = model.train(mode=True)
+        optimizer.zero_grad()
+        input_ = [[str(j) for j in range(100 * rank, 100 * rank + i + 1)]]
+        out = model(input_)
+        out.sum().backward()
+        optimizer.step()
+        model = model.train(mode=False)
+        model(input_)
+    expected = {"pad": 0, "unk": 1, "0": 2, "100": 3, "1": 4, "2": 5, "101": 6, "102": 7}
+    assert typing.cast(lib.utils.LazyEmbedding, model.module).vocab == expected
+    assert len(typing.cast(lib.utils.LazyEmbedding, model.module)._new_tokens) == 0
+
+
+def test_lazy_embedding():
+    """ Test `LazyEmbedding` in a basic training case. """
+    nprocs = 2
+    file_name = tempfile.mkstemp()[1]
+    partial = functools.partial(_lazy_embedding_helper, nprocs=nprocs, file_name=file_name)
+    torch.multiprocessing.spawn(partial, nprocs=nprocs)
+
+
+def _lazy_embedding_no_update_helper(rank, nprocs, file_name):
+    """ Helper function for `test_lazy_embedding__no_update`. """
+    torch.distributed.init_process_group(
+        backend="gloo", init_method=f"file://{file_name}", world_size=nprocs, rank=rank
+    )
+    model = lib.utils.LazyEmbedding(100, 16)
+    model = torch.nn.parallel.DistributedDataParallel(model)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+    side_effect = torch.distributed.all_gather_object
+    with mock.patch("lib.utils.torch.distributed.all_gather_object") as all_gather_mock:
+        all_gather_mock.side_effect = lambda *a, **k: side_effect(*a, **k)
+
+        model([["a"]]).sum().backward()
+        optimizer.step()
+        assert all_gather_mock.call_count == 1
+
+        model = model.train(mode=False)
+        model([["a"]]).sum().backward()
+        optimizer.step()
+        assert all_gather_mock.call_count == 1
+
+        model = model.train(mode=True)
+        model([["a"]]).sum().backward()
+        optimizer.step()
+        assert all_gather_mock.call_count == 1
+
+
+def test_lazy_embedding__no_update():
+    """ Test `LazyEmbedding` does not unnecessarily call `torch.distributed.all_gather_object`. """
+    nprocs = 2
+    file_name = tempfile.mkstemp()[1]
+    part = functools.partial(_lazy_embedding_no_update_helper, nprocs=nprocs, file_name=file_name)
+    torch.multiprocessing.spawn(part, nprocs=nprocs)
+
+
+def test_lazy_embedding__eval_unk():
+    """ Test `LazyEmbedding` does not, unless specified, allow for unknown tokens during eval. """
+    model = lib.utils.LazyEmbedding(100, 16)
+    model.train(mode=False)
+    model([["a"]], allow_unk_on_eval=True)
+    with pytest.raises(KeyError):
+        model([["a"]], allow_unk_on_eval=False)
+
+
+def test_lazy_embedding__zero_length():
+    """ Test `LazyEmbedding` can handle a zero length sequence. """
+    model = lib.utils.LazyEmbedding(100, 16)
+    model.train(mode=False)
+    assert model([[]]).shape == (0, 1, 16)
 
 
 def test_clamp():

@@ -48,93 +48,6 @@ else:
 logger = logging.getLogger(__name__)
 
 
-class EncodedInput(typing.NamedTuple):
-    """
-    Args:
-        graphemes (torch.LongTensor [num_graphemes])
-        letter_cases (torch.LongTensor [num_graphemes])
-        phonemes (torch.LongTensor [num_phonemes])
-        speaker (torch.LongTensor [1])
-    """
-
-    graphemes: torch.Tensor
-    letter_cases: torch.Tensor
-    phonemes: torch.Tensor
-    speaker: torch.Tensor
-
-
-class DecodedInput(typing.NamedTuple):
-
-    graphemes: str
-    phonemes: str
-    speaker: Speaker
-
-
-class InputEncoder(Encoder):
-    """Handles encoding and decoding input to the spectrogram model.
-
-    Args:
-        ....
-        phoneme_separator: Deliminator to split phonemes.
-        **args: Additional arguments passed to `super()`.
-        **kwargs: Additional key-word arguments passed to `super()`.
-    """
-
-    _CASE_LABELS_TYPE = typing.Literal["upper", "lower", "other"]
-    _CASE_LABELS: typing.Final[typing.List[_CASE_LABELS_TYPE]] = [
-        "upper",
-        "lower",
-        "other",
-    ]
-
-    @configurable
-    def __init__(
-        self,
-        graphemes: typing.List[str],
-        phonemes: typing.List[str],
-        speakers: typing.List[Speaker],
-        phoneme_separator: str = HParam(),
-        *args,
-        **kwargs,
-    ):
-        super().__init__(*args, **kwargs)
-        graphemes = [g.lower() for g in graphemes]
-        self.grapheme_encoder = CharacterEncoder(graphemes, enforce_reversible=True)
-        self.phoneme_separator = phoneme_separator
-        self.phoneme_encoder = DelimiterEncoder(
-            phoneme_separator, phonemes, enforce_reversible=True
-        )
-        self.case_encoder = LabelEncoder(
-            self._CASE_LABELS, reserved_labels=[], enforce_reversible=True
-        )
-        self.speaker_encoder = LabelEncoder(speakers, reserved_labels=[], enforce_reversible=True)
-
-    def _get_case(self, c: str) -> _CASE_LABELS_TYPE:
-        if c.isupper():
-            return self._CASE_LABELS[0]
-        return self._CASE_LABELS[1] if c.islower() else self._CASE_LABELS[2]
-
-    def encode(self, decoded: DecodedInput) -> EncodedInput:
-        assert len(decoded.graphemes) > 0, "Graphemes cannot be empty."
-        assert len(decoded.phonemes) > 0, "Phonemes cannot be empty."
-        return EncodedInput(
-            self.grapheme_encoder.encode(decoded.graphemes.lower()),
-            self.case_encoder.batch_encode([self._get_case(c) for c in decoded.graphemes]),
-            self.phoneme_encoder.encode(decoded.phonemes),
-            self.speaker_encoder.encode(decoded.speaker).view(1),
-        )
-
-    def decode(self, encoded: EncodedInput) -> DecodedInput:
-        graphemes = self.grapheme_encoder.decode(encoded.graphemes)
-        cases = self.case_encoder.decode(encoded.letter_cases)
-        iterator = zip(graphemes, cases)
-        return DecodedInput(
-            "".join([g.upper() if c == self._CASE_LABELS[0] else g for g, c in iterator]),
-            self.phoneme_encoder.decode(encoded.phonemes),
-            self.speaker_encoder.decode(encoded.speaker.squeeze()),
-        )
-
-
 def _random_nonoverlapping_alignments(
     alignments: Tuple[Alignment], max_alignments: int
 ) -> typing.Tuple[Alignment, ...]:
@@ -389,6 +302,8 @@ class Batch(_utils.Batch):
     # SequenceBatch[torch.FloatTensor [num_frames, batch_size], torch.LongTensor [1, batch_size])
     stop_token: SequenceBatch
 
+    phonemes: typing.List[typing.List[str]]
+
     # SequenceBatch[torch.LongTensor [1, batch_size], torch.LongTensor [1, batch_size])
     encoded_speaker: SequenceBatch
 
@@ -402,9 +317,7 @@ class Batch(_utils.Batch):
         return len(self.spans)
 
 
-def make_batch(
-    spans: typing.List[Span], input_encoder: InputEncoder, max_workers: int = 6
-) -> Batch:
+def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
     """
     NOTE: spaCy splits some (not all) words on apostrophes while AmEPD does not; therefore,
     those words will not be found in AmEPD. The options are:
@@ -464,6 +377,7 @@ def make_batch(
         spectrogram=spectrogram,
         spectrogram_mask=spectrogram_mask,
         stop_token=_make_stop_token(spectrogram),
+        phonemes=[p.split(run._config.PHONEME_SEPARATOR) for p in phonemes],
         encoded_speaker=_stack([s.speaker for s in encoded]),
         encoded_phonemes=_stack([s.phonemes for s in encoded]),
         encoded_phonemes_mask=_stack([_make_mask(e.phonemes.shape[0]) for e in encoded]),
