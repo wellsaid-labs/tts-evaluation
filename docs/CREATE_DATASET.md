@@ -93,7 +93,7 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
 1. In another terminal window, run `lsyncd` to sync your local files to your virtual machine...
 
    ```zsh
-   VM_NAME=$(python -m run.utils.gcp most-recent --filter $USER)
+   VM_NAME=$(python -m run.utils.gcp most-recent --filter "dataset-processing")
    VM_ZONE=$(python -m run.utils.gcp zone --name $VM_NAME)
    VM_IP=$(python -m run.utils.gcp ip --name $VM_NAME --zone=$VM_ZONE)
    VM_USER=$(python -m run.utils.gcp user --name $VM_NAME --zone=$VM_ZONE)
