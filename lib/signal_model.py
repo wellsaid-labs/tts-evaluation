@@ -346,6 +346,8 @@ class SignalModel(torch.nn.Module):
         # NOTE: We initialize the convolution parameters before weight norm factorizes them.
         self.reset_parameters()
 
+        # NOTE: Learn more about `weight_norm` compatibility with DDP:
+        # https://github.com/pytorch/pytorch/issues/35191
         for module in self._get_weight_norm_modules():
             torch.nn.utils.weight_norm(module)
 
