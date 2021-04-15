@@ -222,8 +222,8 @@ def get_audio_metadata(paths, **kwargs):
 def clip_waveform(waveform: np.ndarray) -> np.ndarray:
     """Clip audio at the maximum and minimum amplitude.
 
-    TODO: In SoX, they implemented `--guard`, which: "Automatically invoke the gain effect to guard
-    against clipping". We could do the same.
+    TODO: Now that `SoX` is used to preprocess the data, let's change `logger.debug` to
+    `logger.warning`.
 
     NOTE: Clipping will cause distortion to the waveform, learn more:
     https://en.wikipedia.org/wiki/Clipping_(audio)
