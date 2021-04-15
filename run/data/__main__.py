@@ -2,7 +2,8 @@
 
 TODO: Should we add a tool to check for noise floors? We could report back the lowest decibel
 seen in a similar way to `lib.audio.get_non_speech_segments`.
-TODO: Ensure that CSV column names are consistent in the various data processing modules.
+TODO: Ensure that CSV column names are consistent in the various Python data processing modules.
+TODO: Automatically detect if a file is of TSV or CSV format in `csv_normalize`.
 """
 import collections
 import dataclasses
