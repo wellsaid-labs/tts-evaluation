@@ -81,29 +81,18 @@ class Decoder(torch.nn.Module):
         self.speaker_embedding_size = speaker_embedding_size
         self.lstm_hidden_size = lstm_hidden_size
         self.encoder_output_size = encoder_output_size
-
-        initial_state_input_size = speaker_embedding_size + encoder_output_size
+        input_size = speaker_embedding_size + encoder_output_size
         initial_state_ouput_size = num_frame_channels + 1 + encoder_output_size
         self.initial_state = torch.nn.Sequential(
-            torch.nn.Linear(initial_state_input_size, initial_state_input_size),
+            torch.nn.Linear(input_size, input_size),
             torch.nn.ReLU(),
-            torch.nn.Linear(initial_state_input_size, initial_state_ouput_size),
+            torch.nn.Linear(input_size, initial_state_ouput_size),
         )
-
         self.pre_net = PreNet(num_frame_channels=num_frame_channels, size=pre_net_size)
-        self.lstm_layer_one = LSTMCell(
-            input_size=pre_net_size + self.encoder_output_size + speaker_embedding_size,
-            hidden_size=lstm_hidden_size,
-        )
-        self.lstm_layer_two = LSTM(
-            input_size=lstm_hidden_size + self.encoder_output_size + speaker_embedding_size,
-            hidden_size=lstm_hidden_size,
-        )
+        self.lstm_layer_one = LSTMCell(pre_net_size + input_size, lstm_hidden_size)
+        self.lstm_layer_two = LSTM(lstm_hidden_size + input_size, lstm_hidden_size)
         self.attention = Attention(query_hidden_size=lstm_hidden_size)
-        self.linear_out = torch.nn.Linear(
-            in_features=lstm_hidden_size + self.encoder_output_size + speaker_embedding_size,
-            out_features=num_frame_channels,
-        )
+        self.linear_out = torch.nn.Linear(lstm_hidden_size + input_size, num_frame_channels)
         self.linear_stop_token = torch.nn.Sequential(
             torch.nn.Dropout(stop_net_dropout),
             torch.nn.Linear(lstm_hidden_size, 1),
