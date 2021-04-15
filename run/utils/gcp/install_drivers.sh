@@ -8,7 +8,7 @@
 # Run these commands, and one of the "solutions" worked for me.
 # ```
 # $ sudo apt-get install aptitude
-# $ sudo aptitude linux-modules-nvidia-460-gcp-edge
+# $ sudo aptitude install linux-modules-nvidia-460-gcp-edge
 # ```
 sudo add-apt-repository ppa:graphics-drivers/ppa -y
 sudo apt update -y

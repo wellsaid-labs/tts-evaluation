@@ -37,10 +37,10 @@ def test_input_encoder():
     assert encoder._get_case("a") == encoder._CASE_LABELS[1]
     assert encoder._get_case("1") == encoder._CASE_LABELS[2]
     encoded = encoder.encode(input_)
-    assert torch.equal(encoded[0], torch.tensor([5]))
-    assert torch.equal(encoded[1], torch.tensor([1]))
-    assert torch.equal(encoded[2], torch.tensor([5, 6]))
-    assert torch.equal(encoded[3], torch.tensor([0]))
+    assert torch.equal(encoded.graphemes, torch.tensor([5]))
+    assert torch.equal(encoded.letter_cases, torch.tensor([1]))
+    assert torch.equal(encoded.phonemes, torch.tensor([5, 6]))
+    assert torch.equal(encoded.speaker, torch.tensor([0]))
     assert encoder.decode(encoded) == input_
 
 
