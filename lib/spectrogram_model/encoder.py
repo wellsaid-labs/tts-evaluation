@@ -49,6 +49,9 @@ def _roll(tensor: torch.Tensor, shift: torch.Tensor, dim: int = -1) -> torch.Ten
     return torch.gather(tensor, dim, indices)
 
 
+_RecurrentNeuralNetwork = typing.Union[torch.nn.LSTM, torch.nn.GRU]
+
+
 class _RightMaskedBiRNN(torch.nn.Module):
     """A bidirectional RNN that ignores any masked input on the right side of the sequence.
 
@@ -128,11 +131,10 @@ class _RightMaskedBiRNN(torch.nn.Module):
             (torch.FloatTensor [seq_len, batch_size, hidden_size * 2]): Output features predicted
                 by the RNN.
         """
-        RecurrentNeuralNetwork = typing.Union[torch.nn.LSTM, torch.nn.GRU]
         output = tokens
         tokens_mask_expanded = tokens_mask.view(tokens_mask.shape[0], tokens_mask.shape[1], 1)
         tokens_mask = tokens_mask.view(tokens_mask.shape[0], tokens_mask.shape[1])
-        Iterable = typing.Iterable[typing.Tuple[RecurrentNeuralNetwork, RecurrentNeuralNetwork]]
+        Iterable = typing.Iterable[typing.Tuple[_RecurrentNeuralNetwork, _RecurrentNeuralNetwork]]
         for forward_rnn, backward_rnn in typing.cast(Iterable, iter(self.rnn_layers)):
             # [seq_len, batch_size, input_size or hidden_size * 2] →
             # [seq_len, batch_size, hidden_size * 2]
