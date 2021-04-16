@@ -268,8 +268,8 @@ class SpanGenerator(typing.Iterator[Span]):
                 audio_slice = slice(segments[0].audio_start, segments[-1].audio_stop)
                 return passage.span(slice_, audio_slice)
 
-    def __next__(self) -> Span:
-        return self.next(random.uniform(0, self.max_seconds))
+    def __next__(self, eps: float = 0.01) -> Span:
+        return self.next(random.uniform(eps, self.max_seconds))
 
     def __iter__(self) -> typing.Iterator[Span]:
         return self
