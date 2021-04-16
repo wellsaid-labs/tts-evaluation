@@ -175,14 +175,13 @@ def passage_audio(passage: run.data._loader.Passage) -> np.ndarray:
     return read_wave_audio(passage.audio_file, start, passage.aligned_audio_length())
 
 
-@lib.utils.log_runtime
 @session_cache(maxsize=None)
 def get_dataset(speaker_labels: typing.FrozenSet[str]) -> run._config.Dataset:
     """Load dataset subset, and cache. """
     logger.info("Loading dataset...")
     datasets = {k: v for k, v in run._config.DATASETS.items() if k.label in speaker_labels}
     dataset = run._utils.get_dataset(datasets)
-    logger.info(f"Finished loading dataset! {lib.utils.mazel_tov()}")
+    logger.info(f"Finished loading {set(speaker_labels)} dataset(s)! {lib.utils.mazel_tov()}")
     return dataset
 
 

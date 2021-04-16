@@ -95,7 +95,7 @@ def _write_span_table(
     audio_column="audio",
 ):
     """Visualize spans as a table with a couple metadata columns."""
-    assert len(spans) < 250, "Large tables are slow to visualize"
+    assert len(spans) < 1001, "Large tables are slow to visualize"
     if len(spans) == 0:
         return "No Data."
     logger.info("Visualizing %d spans..." % len(spans))
@@ -217,6 +217,7 @@ def _analyze_speech_segments(passages: typing.List[Passage], **kwargs):
         f"- **{num_mistranscription / total_seconds:.2%}** has a mistranscription\n\n"
         f"- **{above_threshold / total_seconds:.2%}** is longer than {threshold} seconds\n\n"
         f"- **{max(s.audio_length for s in segments):.2f}** seconds is the longest segment\n\n"
+        f"- **{min(s.audio_length for s in segments):.2f}** seconds is the shortest segment\n\n"
     )
 
     _span_metric(
@@ -325,11 +326,25 @@ def _analyze_dataset(dataset: Dataset, max_rows: int, run_all: bool):
         f"- **{seconds_to_str(utils.dataset_total_aligned_audio(dataset))}** of aligned audio\n"
         f"- **{utils.dataset_num_alignments(dataset):,}** alignments.\n"
     )
+
+    st.markdown("### Passage Analysis")
+    _span_metric(
+        [p[:] for d in dataset.values() for p in d],
+        lambda p: p.audio_length,
+        "Length",
+        "Seconds",
+        5,
+        "Passage",
+        max_rows=max_rows,
+        run_all=run_all,
+    )
+
     question = "How many passage(s) do you want to analyze?"
     sampled: int = st.sidebar.number_input(question, 0, None, 25)
     passages = list(utils.dataset_passages(dataset))
     passages = utils.random_sample(passages, sampled) if sampled < total_passages else passages
-    st.markdown(
+    st.write("")
+    st.info(
         f"Below this analyzes a random sample of **{len(passages):,}** passages with "
         f"**{sum(len(p.alignments) for p in passages):,}** alignments..."
     )
@@ -349,9 +364,13 @@ def _analyze_spans(dataset: Dataset, spans: typing.List[Span], max_rows: int, ru
     st.markdown("In this section, we analyze the dataset after segmentation via `Span`s. ")
 
     audio_length = seconds_to_str(sum([s.audio_length for s in spans]))
+    average_length = sum([s.audio_length for s in spans]) / len(spans)
+    coverage = utils.dataset_coverage(dataset, spans)
     st.markdown(
-        f"There are **{len(spans)} ({audio_length})** spans to analyze, representing of "
-        f"**{utils.dataset_coverage(dataset, spans):.2%}** all alignments."
+        f"At a high-level:\n\n"
+        f"- There are **{len(spans)} ({audio_length})** spans to analyze.\n\n"
+        f"- The spans represent **{coverage:.2%}** all alignments.\n\n"
+        f"- The average length is **{average_length:.2}** seconds.\n\n"
     )
 
     with utils.st_expander("Random Sample of Spans") as label:
@@ -373,6 +392,7 @@ def _analyze_spans(dataset: Dataset, spans: typing.List[Span], max_rows: int, ru
         st.table([{"script": m[0], "transcript": m[1]} for m in flatten_2d(mistranscriptions)])
 
     sections: typing.List[typing.Tuple[typing.Callable[[Span], float], str, str, float]] = [
+        (lambda s: s.audio_length, "Length", "Seconds", 1.0),
         (utils.span_total_silence, "Total Silence", "Seconds", utils.ALIGNMENT_PRECISION),
         (utils.span_max_silence, "Max Silence", "Seconds", utils.ALIGNMENT_PRECISION),
         (utils.span_sec_per_char, "Speed", "Seconds per character", 0.01),
@@ -414,11 +434,15 @@ def _analyze_filtered_spans(
     results = map_(spans, is_include)
     excluded = [s for s, i in zip(spans, results) if not i]
     included = [s for s, i in zip(spans, results) if i]
+    average_length = sum([s.audio_length for s in included]) / len(included)
+    audio_length = seconds_to_str(sum([s.audio_length for s in included]))
+    coverage = utils.dataset_coverage(dataset, included)
     st.markdown(
-        f"The filtered segmentations represent **{len(included) / len(spans):.2%}** of the "
-        f"original spans. In total, there are **{len(included)} "
-        f"({seconds_to_str(sum([s.audio_length for s in included]))})** spans to analyze, "
-        f"representing of **{utils.dataset_coverage(dataset, included):.2%}** all alignments."
+        f"At a high-level:\n\n"
+        f"- There are **{len(included)} ({audio_length})** spans to analyze.\n\n"
+        f"- The spans represent **{len(included) / len(spans):.2%}** of the original spans.\n\n"
+        f"- The spans represent **{coverage:.2%}** all alignments.\n\n"
+        f"- The average length is **{average_length:.2}** seconds.\n\n"
     )
 
     with utils.st_expander("Random Sample of Included Spans") as label:
@@ -468,7 +492,7 @@ def main():
     num_samples: int = sidebar.number_input(question, 0, None, 100)
 
     with st.spinner("Loading dataset..."):
-        dataset = get_dataset(frozenset(speakers))
+        dataset = {k: v for s in speakers for k, v in get_dataset(frozenset([s])).items()}
     with st.spinner("Generating spans..."):
         spans = _get_spans(dataset, num_samples=num_samples)
 

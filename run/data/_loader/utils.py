@@ -229,10 +229,7 @@ class SpanGenerator(typing.Iterator[Span]):
     def _is_include(self, x1: _Float, x2: _Float, y1: _Float, y2: _Float) -> bool:
         return self._overlap(x1, x2, y1, y2) >= random.random()
 
-    def __iter__(self) -> typing.Iterator[Span]:
-        return self
-
-    def __next__(self) -> Span:
+    def next(self, length: float) -> Span:
         if len(self.passages) == 0:
             raise StopIteration()
 
@@ -241,9 +238,9 @@ class SpanGenerator(typing.Iterator[Span]):
         if self.max_seconds == float("inf"):
             return random.choice(self.passages)[:]
 
-        while True:
-            length = random.uniform(0, self.max_seconds)
+        assert length > 0, "Length must be a positive number."
 
+        while True:
             # NOTE: The `weight` is based on `start` (i.e. the number of spans)
             # NOTE: For some reason, `torch.multinomial(replacement=True)` is faster by a lot.
             index = int(torch.multinomial(self._weights + length, 1, replacement=True).item())
@@ -270,6 +267,12 @@ class SpanGenerator(typing.Iterator[Span]):
                 slice_ = slice(segments[0].slice.start, segments[-1].slice.stop)
                 audio_slice = slice(segments[0].audio_start, segments[-1].audio_stop)
                 return passage.span(slice_, audio_slice)
+
+    def __next__(self) -> Span:
+        return self.next(random.uniform(0, self.max_seconds))
+
+    def __iter__(self) -> typing.Iterator[Span]:
+        return self
 
 
 """
