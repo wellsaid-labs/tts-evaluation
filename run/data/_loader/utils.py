@@ -211,7 +211,11 @@ class SpanGenerator(typing.Iterator[Span]):
         assert max_seconds > 0, "The maximum interval length must be a positive number."
         self.passages = passages
         self.max_seconds = max_seconds
-        self._weights = torch.tensor([p.last.audio[1] - p.first.audio[0] for p in self.passages])
+        lengths = [
+            p.speech_segments[-1].audio_stop - p.speech_segments[0].audio_start
+            for p in self.passages
+        ]
+        self._weights = torch.tensor(lengths)
         make_timeline: typing.Callable[[Passage], Timeline]
         make_timeline = lambda p: Timeline(
             [(s.audio_start, s.audio_stop) for s in p.speech_segments], **kwargs
@@ -229,7 +233,7 @@ class SpanGenerator(typing.Iterator[Span]):
     def _is_include(self, x1: _Float, x2: _Float, y1: _Float, y2: _Float) -> bool:
         return self._overlap(x1, x2, y1, y2) >= random.random()
 
-    def next(self, length: float) -> Span:
+    def next(self, length: float) -> typing.Optional[Span]:
         if len(self.passages) == 0:
             raise StopIteration()
 
@@ -240,36 +244,38 @@ class SpanGenerator(typing.Iterator[Span]):
 
         assert length > 0, "Length must be a positive number."
 
+        # NOTE: The `weight` is based on `start` (i.e. the number of spans)
+        # NOTE: For some reason, `torch.multinomial(replacement=True)` is faster by a lot.
+        index = int(torch.multinomial(self._weights + length, 1, replacement=True).item())
+        assert self._timelines is not None
+        passage, timeline = self.passages[index], self._timelines[index]
+
+        # NOTE: Uniformly sample a span of audio.
+        start = random.uniform(passage.first.audio[0] - length, passage.last.audio[1])
+        stop = min(start + length, passage.last.audio[1])
+        start = max(start, passage.first.audio[0])
+
+        # NOTE: Based on the overlap, decide which alignments to include in the span.
+        indicies = list(timeline.indicies(slice(start, stop)))
+        self._is_include.cache_clear()
+        _filter = lambda i: self._is_include(timeline.start(i), timeline.stop(i), start, stop)
+        begin = next((i for i in iter(indicies) if _filter(i)), None)
+        end = next((i for i in reversed(indicies) if _filter(i)), None)
+        if begin is None or end is None:
+            return
+
+        length = timeline.stop(end) - timeline.start(begin)
+        if length > 0 and length <= self.max_seconds:
+            segments = passage.speech_segments[begin : end + 1]
+            slice_ = slice(segments[0].slice.start, segments[-1].slice.stop)
+            audio_slice = slice(segments[0].audio_start, segments[-1].audio_stop)
+            return passage.span(slice_, audio_slice)
+
+    def __next__(self) -> Span:
         while True:
-            # NOTE: The `weight` is based on `start` (i.e. the number of spans)
-            # NOTE: For some reason, `torch.multinomial(replacement=True)` is faster by a lot.
-            index = int(torch.multinomial(self._weights + length, 1, replacement=True).item())
-            assert self._timelines is not None
-            passage, timeline = self.passages[index], self._timelines[index]
-
-            # NOTE: Uniformly sample a span of audio.
-            start = random.uniform(passage.first.audio[0] - length, passage.last.audio[1])
-            stop = min(start + length, passage.last.audio[1])
-            start = max(start, passage.first.audio[0])
-
-            # NOTE: Based on the overlap, decide which alignments to include in the span.
-            indicies = list(timeline.indicies(slice(start, stop)))
-            self._is_include.cache_clear()
-            _filter = lambda i: self._is_include(timeline.start(i), timeline.stop(i), start, stop)
-            begin = next((i for i in iter(indicies) if _filter(i)), None)
-            end = next((i for i in reversed(indicies) if _filter(i)), None)
-            if begin is None or end is None:
-                continue
-
-            length = timeline.stop(end) - timeline.start(begin)
-            if length > 0 and length <= self.max_seconds:
-                segments = passage.speech_segments[begin : end + 1]
-                slice_ = slice(segments[0].slice.start, segments[-1].slice.stop)
-                audio_slice = slice(segments[0].audio_start, segments[-1].audio_stop)
-                return passage.span(slice_, audio_slice)
-
-    def __next__(self, eps: float = 0.01) -> Span:
-        return self.next(random.uniform(eps, self.max_seconds))
+            span = self.next(random.uniform(0, self.max_seconds))
+            if span is not None:
+                return span
 
     def __iter__(self) -> typing.Iterator[Span]:
         return self

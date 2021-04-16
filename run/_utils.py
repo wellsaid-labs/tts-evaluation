@@ -221,7 +221,6 @@ class SpanGenerator(typing.Iterator[_loader.Span]):
     Args:
         dataset
         max_seconds: The maximum seconds delimited by an `Span`.
-        eps: A small positive number for choosing sample lengths.
     """
 
     @lib.utils.log_runtime
@@ -230,7 +229,6 @@ class SpanGenerator(typing.Iterator[_loader.Span]):
         self,
         dataset: Dataset,
         max_seconds: int = HParam(),
-        eps: float = 0.5,
         include_span: typing.Callable[[_loader.Span], bool] = HParam(),
     ):
         self.max_seconds = max_seconds
@@ -242,7 +240,6 @@ class SpanGenerator(typing.Iterator[_loader.Span]):
             self.generators[speaker] = _loader.SpanGenerator(passages, max_seconds_)
         self.counter = {s: 0.0 for s in list(dataset.keys())}
         self.include_span = include_span
-        self.eps = eps
 
     def __iter__(self) -> typing.Iterator[_loader.Span]:
         return self
@@ -251,7 +248,7 @@ class SpanGenerator(typing.Iterator[_loader.Span]):
         """ Sample spans with a uniform speaker distribution based on `span.audio_length`. """
         while True:
             speaker = lib.utils.corrected_random_choice(self.counter)
-            span = self.generators[speaker].next(random.uniform(self.eps, self.max_seconds))
+            span = next(self.generators[speaker])
             if span.audio_length <= self.max_seconds and self.include_span(span):
                 self.counter[span.speaker] += span.audio_length
                 return span
