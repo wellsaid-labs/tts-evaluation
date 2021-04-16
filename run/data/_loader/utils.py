@@ -242,8 +242,6 @@ class SpanGenerator(typing.Iterator[Span]):
         if self.max_seconds == float("inf"):
             return random.choice(self.passages)[:]
 
-        assert length > 0, "Length must be a positive number."
-
         # NOTE: The `weight` is based on `start` (i.e. the number of spans)
         # NOTE: For some reason, `torch.multinomial(replacement=True)` is faster by a lot.
         index = int(torch.multinomial(self._weights + length, 1, replacement=True).item())
