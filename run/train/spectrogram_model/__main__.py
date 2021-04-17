@@ -45,7 +45,10 @@ def _make_configuration(
     batch_size_ratio = 4
     dev_batch_size = train_batch_size * batch_size_ratio
     dev_steps_per_epoch = 1 if debug else 128
-    train_steps_per_epoch = 1 if debug else dev_steps_per_epoch * batch_size_ratio * round(ratio)
+    dev_oversample_ratio = 4
+    # NOTE: Oversample the development dataset in order to reduce the variance of the results.
+    dev_steps_to_train_steps = batch_size_ratio * round(ratio) / dev_oversample_ratio
+    train_steps_per_epoch = 1 if debug else dev_steps_per_epoch * dev_steps_to_train_steps
     assert train_batch_size % lib.distributed.get_device_count() == 0
     assert dev_batch_size % lib.distributed.get_device_count() == 0
 

@@ -51,7 +51,8 @@ Setup your local development environment by following [these instructions](LOCAL
    ❓ LEARN MORE: See our machine type benchmarks [here](./TRAIN_MODEL_GCP_BENCHMARKS.md).
 
    💡 TIP: The output of the startup script will be saved on the VM here:
-   `/var/log/syslog`
+   `/var/log/syslog`. The relevant logs will start after
+    "Starting Google Compute Engine Startup Scripts..." is logged.
 
 1. SSH into the instance...
 
