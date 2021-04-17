@@ -75,7 +75,7 @@ def get_num_jumps(
     alignments = alignments.masked_fill(~tokens_mask.transpose(0, 1).unsqueeze(0), 0)
     # [num_frames, batch_size, num_tokens] → [token_mask, batch_size]
     indices = alignments.max(dim=2).indices
-    start = torch.cat([torch.zeros(1, alignments.shape[1]), indices[:-1]])
+    start = torch.cat([torch.zeros(1, alignments.shape[1], device=alignments.device), indices[:-1]])
     skip_size = indices - start
     skip_size = skip_size.masked_fill(~spectrogram_mask, 0)
     num_jumps = (skip_size.abs() > 1).float()
