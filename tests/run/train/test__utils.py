@@ -12,7 +12,7 @@ from matplotlib import pyplot
 import lib
 import run
 from run._config import Cadence, DatasetType, get_dataset_label
-from run.data._loader import Alignment
+from run.data._loader import Alignment, Speaker
 from tests._utils import TEST_DATA_PATH, make_passage
 
 TEST_DATA_PATH = TEST_DATA_PATH / "audio"
@@ -123,6 +123,7 @@ def test_comet_ml_experiment():
         comet.log_html_audio(
             metadata="random metadata",
             audio={"predicted_audio": torch.rand(100), "gold_audio": torch.rand(100)},
+            speaker=Speaker(""),
         )
         figure = pyplot.figure()
         pyplot.close(figure)

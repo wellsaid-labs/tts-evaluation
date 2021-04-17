@@ -43,6 +43,46 @@ def test_get_num_skipped__zero_elements():
     assert _metrics.get_num_skipped(*args).shape == (0,)
 
 
+def test_get_num_jumps():
+    """ Test `_metrics.get_num_jumps` counts jumps correctly. """
+    alignments_ = [
+        [[1, 0, 0], [0, 1, 0], [0, 0, 1]],  # Test no jumps
+        [[1, 0, 0], [0, 0, 1], [0, 0, 1]],  # Test one jump
+        [[0, 0, 1], [1, 0, 0], [0, 0, 1]],  # Test three jumps, including backwards jumps
+        [[1, 0, 0], [0, 0.25, 0.75], [0, 0.25, 0.75]],  # Test masked token with no jumps
+        [[1, 0, 0], [1, 0, 0], [0, 0, 1]],  # Test masked frame with no jumps
+    ]
+    alignments = torch.tensor(alignments_).transpose(0, 1).float()
+    spectrogram_mask_ = [
+        [1, 1, 1],
+        [1, 1, 1],
+        [1, 1, 1],
+        [1, 1, 1],
+        [1, 1, 0],  # Test that a masked frame is ignored
+    ]
+    spectrogram_mask = torch.tensor(spectrogram_mask_).transpose(0, 1).bool()
+    token_mask_ = [
+        [1, 1, 1],
+        [1, 1, 1],
+        [1, 1, 1],
+        [1, 1, 0],  # Test that a masked token cannot be selected
+        [1, 1, 1],
+    ]
+    token_mask = torch.tensor(token_mask_).transpose(0, 1).bool()
+    num_skips = _metrics.get_num_jumps(alignments, token_mask, spectrogram_mask)
+    assert num_skips.tolist() == [0.0, 1.0, 3.0, 0.0, 0.0]
+
+
+def test_get_num_jumps__zero_elements():
+    """ Test `_metrics.get_num_jumps` handles zero elements correctly. """
+    args = (
+        torch.empty(1024, 0, 1024),
+        torch.empty(1024, 0, dtype=torch.bool),
+        torch.empty(1024, 0, dtype=torch.bool),
+    )
+    assert _metrics.get_num_jumps(*args).shape == (0,)
+
+
 def _get_db_spectrogram(signal, **kwargs) -> torch.Tensor:
     spectrogram = torch.stft(signal.view(1, -1), **kwargs)
     spectrogram = torch.norm(spectrogram.double(), dim=-1)

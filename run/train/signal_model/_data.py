@@ -188,26 +188,30 @@ class DataProcessor(torch.utils.data.IterableDataset):
         """Sample slices from a batch of predicted spectrograms."""
         batch = self._make_spectrogram_model_batch(spans)
         with torch.no_grad():
-            spectrograms, _, _ = self.spectrogram_model(
+            params = lib.spectrogram_model.Params(
                 tokens=batch.encoded_phonemes.tensor,
                 speaker=batch.encoded_speaker.tensor,
-                target_frames=batch.spectrogram.tensor,
+                session=batch.encoded_session.tensor,
                 num_tokens=batch.encoded_phonemes.lengths,
                 tokens_mask=batch.encoded_phonemes_mask.tensor,
+            )
+            preds = self.spectrogram_model(
+                params=params,
+                target_frames=batch.spectrogram.tensor,
                 target_mask=batch.spectrogram_mask.tensor,
                 mode=lib.spectrogram_model.Mode.FORWARD,
             )
         num_frames = batch.spectrogram.lengths.sum().item()
         weights = batch.spectrogram.lengths.view(-1).float()
         num_batches = int(math.floor(num_frames / self.slice_size / self.batch_size))
-        get_spectrogram = lambda i: spectrograms[: batch.spectrogram.lengths[:, i], i]
+        get_spectrogram = lambda i: preds.frames[: batch.spectrogram.lengths[:, i], i]
         for _ in range(num_batches):
             indicies = torch.multinomial(weights, self.batch_size, replacement=True).tolist()
             slices = [self._slice(get_spectrogram(i), batch.audio[i]) for i in indicies]
             yield Batch(
                 batch=SpectrogramModelBatch(
                     **lib.utils.dataclass_as_dict(batch),
-                    predicted_spectrogram=SequenceBatch(spectrograms, batch.spectrogram.lengths),
+                    predicted_spectrogram=SequenceBatch(preds.frames, batch.spectrogram.lengths),
                 ),
                 indicies=indicies,
                 spectrogram=self._stack([s.spectrogram for s in slices]),

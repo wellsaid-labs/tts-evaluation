@@ -275,6 +275,7 @@ class CometMLExperiment:
 
     def log_html_audio(
         self,
+        speaker: run.data._loader.Speaker,
         audio: typing.Dict[str, typing.Union[numpy.ndarray, torch.Tensor]] = {},
         **kwargs,
     ):
@@ -289,7 +290,8 @@ class CometMLExperiment:
         items.extend([f"<p><b>{param_to_label(k)}:</b> {v}</p>" for k, v in kwargs.items()])
         for key, data in audio.items():
             name = param_to_label(key)
-            file_name = f"step={self.curr_step},name={name},experiment={self.get_key()}.wav"
+            file_name = f"step={self.curr_step},speaker={speaker},"
+            file_name += f"name={name},experiment={self.get_key()}.wav"
             url = self._upload_audio(file_name, data)
             items.append(f"<p><b>{name}:</b></p>")
             items.append(f'<audio controls preload="metadata" src="{url}"></audio>')

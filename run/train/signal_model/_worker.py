@@ -508,12 +508,14 @@ def _visualize_inferred_end_to_end(
     num_tokens = batch.batch.encoded_phonemes.lengths[:, item]
     spectrogram_model = state.spectrogram_model_checkpoint.model
     spectrogram_model = spectrogram_model.train(False)
-    predicted_spectrogram, predicted_stop_token, predicted_alignments, _, _ = spectrogram_model(
+    params = lib.spectrogram_model.Params(
         tokens=batch.batch.encoded_phonemes.tensor[:num_tokens, item],
         speaker=batch.batch.encoded_speaker.tensor[:, item],
-        mode=lib.spectrogram_model.Mode.INFER,
+        session=batch.batch.encoded_session.tensor[:, item],
     )
-    splits = predicted_spectrogram.to(state.device).split(split_size)
+    preds = spectrogram_model(params=params, mode=lib.spectrogram_model.Mode.INFER)
+    preds = typing.cast(lib.spectrogram_model.Infer, preds)
+    splits = preds.frames.to(state.device).split(split_size)
     predicted = list(generate_waveform(state.model.module, splits))
     predicted = typing.cast(torch.Tensor, torch.cat(predicted, dim=-1))
     target = batch.batch.audio[item]
@@ -523,13 +525,13 @@ def _visualize_inferred_end_to_end(
     gold_spectrogram = batch.batch.spectrogram.tensor[:num_frames, item]
     figures = {
         dataset_label_("gold_spectrogram"): plot_mel_spectrogram(gold_spectrogram),
-        model_label_("predicted_spectrogram"): plot_mel_spectrogram(predicted_spectrogram),
-        model_label_("alignment"): lib.visualize.plot_alignments(predicted_alignments),
-        model_label_("stop_token"): lib.visualize.plot_logits(predicted_stop_token),
+        model_label_("predicted_spectrogram"): plot_mel_spectrogram(preds.frames),
+        model_label_("alignment"): lib.visualize.plot_alignments(preds.alignments),
+        model_label_("stop_token"): lib.visualize.plot_logits(preds.stop_tokens),
     }
     state.comet.log_figures(figures)
     audio = {
-        "predicted_griffin_lim_audio": lib.audio.griffin_lim(predicted_spectrogram.numpy()),
+        "predicted_griffin_lim_audio": lib.audio.griffin_lim(preds.frames.numpy()),
         "gold_griffin_lim_audio": lib.audio.griffin_lim(gold_spectrogram.numpy()),
         "predicted_signal_model_audio": predicted.cpu().numpy(),
         "gold_audio": target.numpy(),

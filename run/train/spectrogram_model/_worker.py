@@ -5,6 +5,7 @@ import logging
 import math
 import pathlib
 import random
+import types
 import typing
 from functools import partial
 from itertools import chain
@@ -43,7 +44,11 @@ from run.train._utils import (
     set_run_seed,
 )
 from run.train.spectrogram_model._data import Batch, DataProcessor, InputEncoder
-from run.train.spectrogram_model._metrics import Metrics, get_average_db_rms_level
+from run.train.spectrogram_model._metrics import (
+    Metrics,
+    get_alignment_norm,
+    get_average_db_rms_level,
+)
 
 logger = logging.getLogger(__name__)
 torch.optim.Adam.__init__ = configurable_(torch.optim.Adam.__init__)
@@ -100,7 +105,7 @@ class _State:
             [p.script for p in passages],
             DATASET_PHONETIC_CHARACTERS,
             list(train_dataset.keys()) + list(dev_dataset.keys()),
-            [(p.speaker, p.session)for p in passages],
+            [(p.speaker, p.session) for p in passages],
         )
 
         label = partial(get_dataset_label, cadence=Cadence.STATIC, type_=DatasetType.TRAIN)
@@ -425,7 +430,42 @@ def _run_step(
     args.metrics.update(values)
 
 
-def _visualize_inferred(args: _HandleBatchArgs, preds: lib.spectrogram_model.Infer):
+def _min_alignment_norm(
+    args: _HandleBatchArgs, preds: lib.spectrogram_model.Infer, spectrogram_mask: torch.Tensor
+) -> int:
+    """ Get the index of the prediction that has the smallest alignment norm."""
+    tokens_mask = args.batch.encoded_phonemes_mask.tensor
+    return int(torch.argmin(get_alignment_norm(preds.alignments, tokens_mask, spectrogram_mask)))
+
+
+def _max_num_frames_diff(args: _HandleBatchArgs, preds: lib.spectrogram_model.Infer, *_) -> int:
+    """ Get the index of the prediction that most deviates from the original spectrogram length."""
+    return int(torch.argmax((args.batch.spectrogram.lengths - preds.lengths).abs()))
+
+
+def _random_sequence(args: _HandleBatchArgs, *_) -> int:
+    """ Get a random batch index. """
+    return random.randint(0, len(args.batch) - 1)
+
+
+class _Pick(typing.Protocol):
+    """ Get a batch index given the arguments and predictions. """
+
+    def __call__(
+        self,
+        args: _HandleBatchArgs,
+        preds: lib.spectrogram_model.Infer,
+        spectrogram_mask: torch.Tensor,
+    ) -> int:
+        ...
+
+
+def _visualize_inferred(
+    args: _HandleBatchArgs,
+    preds: lib.spectrogram_model.Infer,
+    spectrogram_mask: torch.Tensor,
+    pick: _Pick = _random_sequence,
+):
     """Run in inference mode and visualize results.
 
     TODO: Visualize any related text annotations.
@@ -433,7 +473,8 @@ def _visualize_inferred(args: _HandleBatchArgs, preds: lib.spectrogram_model.Inf
     if not is_master():
         return
 
-    item = random.randint(0, len(args.batch) - 1)
+    pick_label = typing.cast(types.MethodType, pick).__name__
+    item = pick(args, preds, spectrogram_mask)
     num_frames = int(args.batch.spectrogram.lengths[0, item].item())
     num_frames_predicted = int(preds.lengths[0, item].item())
     text_length = int(args.batch.encoded_phonemes.lengths[0, item].item())
@@ -444,8 +485,10 @@ def _visualize_inferred(args: _HandleBatchArgs, preds: lib.spectrogram_model.Inf
     predicted_alignments = preds.alignments[:num_frames_predicted, item, :text_length]
     predicted_stop_token = preds.stop_tokens[:num_frames_predicted, item]
 
-    model = partial(get_model_label, cadence=args.cadence)
-    dataset = partial(get_dataset_label, cadence=args.cadence, type_=args.dataset_type)
+    model = lambda n: get_model_label(f"{n}/{pick_label}", cadence=args.cadence)
+    dataset = lambda n: get_dataset_label(
+        f"{n}/{pick_label}", cadence=args.cadence, type_=args.dataset_type
+    )
     figures = {
         dataset("gold_spectrogram"): lib.visualize.plot_mel_spectrogram(gold_spectrogram),
         model("predicted_spectrogram"): lib.visualize.plot_mel_spectrogram(predicted_spectrogram),
@@ -466,11 +509,16 @@ def _visualize_inferred(args: _HandleBatchArgs, preds: lib.spectrogram_model.Inf
         session=args.batch.spans[item].session,
         predicted_loudness=get_average_db_rms_level(predicted_spectrogram.unsqueeze(1)).item(),
         gold_loudness=get_average_db_rms_level(gold_spectrogram.unsqueeze(1)).item(),
+        pick_function=pick_label,
     )
 
 
 def _run_inference(args: _HandleBatchArgs):
-    """Run the model in inference mode, and measure it's results."""
+    """Run the model in inference mode, and measure it's results.
+
+    TODO: Over multiple steps, track the example with the smallest `_min_alignment_norm` or largest
+    `_max_num_frames_diff`, and visualize it.
+    """
     args.timer.record_event(args.timer.MODEL_FORWARD)
     params = lib.spectrogram_model.Params(
         tokens=args.batch.encoded_phonemes.tensor,
@@ -481,13 +529,14 @@ def _run_inference(args: _HandleBatchArgs):
     )
     preds = args.state.model.module(params, mode=lib.spectrogram_model.Mode.INFER)
     preds = typing.cast(lib.spectrogram_model.Infer, preds)
+    mask = lengths_to_mask(preds.lengths, device=preds.lengths.device).transpose(0, 1)
 
     if args.visualize:
         args.timer.record_event(args.timer.VISUALIZE_PREDICTIONS)
-        _visualize_inferred(args, preds)
+        for pick in [_random_sequence, _max_num_frames_diff, _min_alignment_norm]:
+            _visualize_inferred(args, preds, mask, pick)
 
     args.timer.record_event(args.timer.MEASURE_METRICS)
-    mask = lengths_to_mask(preds.lengths, device=preds.lengths.device).transpose(0, 1)
     values: _utils.MetricsValues = {
         **args.metrics.get_dataset_values(args.batch, preds.reached_max),
         **args.metrics.get_alignment_values(
