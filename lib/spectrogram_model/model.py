@@ -21,6 +21,8 @@ class Mode(enum.Enum):
 
 
 class Forward(typing.NamedTuple):
+    """The model forward pass return value."""
+
     # Spectrogram frames.
     # torch.FloatTensor [num_frames, batch_size (optional), num_frame_channels]
     frames: torch.Tensor
@@ -35,6 +37,8 @@ class Forward(typing.NamedTuple):
 
 
 class Infer(typing.NamedTuple):
+    """The model inference return value."""
+
     # Spectrogram frames.
     # torch.FloatTensor [num_frames, batch_size (optional), num_frame_channels]
     frames: torch.Tensor
@@ -60,6 +64,8 @@ Generator = typing.Iterator[Infer]
 
 
 class Inputs(typing.NamedTuple):
+    """Normalized tensors input tensors."""
+
     # Sequences
     # torch.LongTensor [batch_size, num_tokens]
     tokens: torch.Tensor
@@ -78,11 +84,33 @@ class Inputs(typing.NamedTuple):
 
 
 class Targets(typing.NamedTuple):
+    """Normalized tensors target tensors."""
+
     # torch.FloatTensor [num_frames, batch_size, num_frame_channels]
     frames: torch.Tensor
 
     # torch.BoolTensor [num_frames, batch_size]
     mask: torch.Tensor
+
+
+class Params(typing.NamedTuple):
+    """Tensor inputs for running the model."""
+
+    # tokens (torch.LongTensor [num_tokens, batch_size (optional)]): Sequences.
+    tokens: torch.Tensor
+
+    # speaker (torch.LongTensor [1, batch_size (optional)]): Speaker encodings.
+    speaker: torch.Tensor
+
+    # speaker (torch.LongTensor [1, batch_size (optional)]): Speaker recording session encodings.
+    session: torch.Tensor
+
+    # num_tokens (torch.LongTensor [1, batch_size (optional)] or None): Number of tokens in each
+    #     sequence.
+    num_tokens: typing.Optional[torch.Tensor] = None
+
+    # tokens_mask (torch.BoolTensor [num_tokens, batch_size (optional)])
+    tokens_mask: typing.Optional[torch.Tensor] = None
 
 
 class SpectrogramModel(torch.nn.Module):
@@ -112,7 +140,9 @@ class SpectrogramModel(torch.nn.Module):
     Args:
         vocab_size: Maximum size of the vocabulary used to encode `tokens`.
         num_speakers
-        speaker_embedding_size: Size of the speaker embedding dimensions.
+        num_sessions: The number of recording sessions.
+        speaker_embedding_size: Size of the speaker embedding dimensions. The speaker embedding
+            is composed of a speaker identifier and a recording session identifier.
         num_frame_channels: Number of channels in each frame (sometimes refered to as
             "Mel-frequency bins" or "FFT bins" or "FFT bands").
         max_frames_per_token: The maximum sequential predictions to make before stopping.
@@ -127,6 +157,7 @@ class SpectrogramModel(torch.nn.Module):
         self,
         vocab_size: int,
         num_speakers: int,
+        num_sessions: int,
         speaker_embedding_size: int = HParam(),
         num_frame_channels: int = HParam(),
         max_frames_per_token: float = HParam(),
@@ -135,17 +166,16 @@ class SpectrogramModel(torch.nn.Module):
         stop_threshold: float = HParam(),
     ):
         super().__init__()
-
+        assert speaker_embedding_size % 2 == 0, "This must be even."
         self.max_frames_per_token = max_frames_per_token
         self.num_frame_channels = num_frame_channels
         self.stop_threshold = stop_threshold
         self.vocab_size = vocab_size
         self.num_speakers = num_speakers
-
-        self.embed_speaker = torch.nn.Sequential(
-            torch.nn.Embedding(num_speakers, speaker_embedding_size),
-            torch.nn.Dropout(speaker_embed_dropout),
-        )
+        self.num_sessions = num_sessions
+        self.embed_speaker = torch.nn.Embedding(num_speakers, speaker_embedding_size // 2)
+        self.embed_session = torch.nn.Embedding(num_sessions, speaker_embedding_size // 2)
+        self.speaker_embed_dropout = torch.nn.Dropout(speaker_embed_dropout)
         self.encoder = encoder.Encoder(vocab_size, speaker_embedding_size)
         self.decoder = decoder.Decoder(num_frame_channels, speaker_embedding_size)
         self.stop_sigmoid = torch.nn.Sigmoid()
@@ -252,36 +282,39 @@ class SpectrogramModel(torch.nn.Module):
         if use_tqdm:
             progress_bar.close()
 
-    def _make_inputs(
-        self,
-        tokens: torch.Tensor,
-        speaker: torch.Tensor,
-        num_tokens: typing.Optional[torch.Tensor] = None,
-        tokens_mask: typing.Optional[torch.Tensor] = None,
-    ) -> Inputs:
-        assert tokens.dtype == torch.long
-        assert tokens.shape[0] != 0, "`tokens` cannot be empty."
+    def _make_inputs(self, params: Params) -> Inputs:
+        assert params.tokens.dtype == torch.long
+        assert params.tokens.shape[0] != 0, "`tokens` cannot be empty."
         # [num_tokens, batch_size] or [num_tokens] → [batch_size, num_tokens]
-        tokens = tokens.view(tokens.shape[0], -1).transpose(0, 1)
+        tokens = params.tokens.view(params.tokens.shape[0], -1).transpose(0, 1)
 
-        if num_tokens is None:
+        if params.num_tokens is None:
             assert tokens.shape[0] == 1, "Must provide `num_tokens` unless batch size is 1."
             num_tokens = torch.full((1,), tokens.shape[1], device=tokens.device, dtype=torch.long)
         else:
-            assert num_tokens.dtype == torch.long
-            num_tokens = num_tokens.view(-1)  # [1, batch_size] or [batch_size] or [] → [batch_size]
+            assert params.num_tokens.dtype == torch.long
+            # [1, batch_size] or [batch_size] or [] → [batch_size]
+            num_tokens = params.num_tokens.view(-1)
 
-        if tokens_mask is None:
+        if params.tokens_mask is None:
             # NOTE: `lengths_to_mask` may cause a gpu-cpu synchronization, which may take sometime.
             # [batch_size, num_tokens]
             tokens_mask = lengths_to_mask(num_tokens, device=tokens.device)
         else:
             # [num_tokens] or [num_tokens, batch_size] → [batch_size, num_tokens]
-            tokens_mask = tokens_mask.view(tokens.shape[1], -1).transpose(0, 1)
+            tokens_mask = params.tokens_mask.view(tokens.shape[1], -1).transpose(0, 1)
 
-        assert speaker.dtype == torch.long
-        speaker = speaker.view(-1)  # [1, batch_size] or [batch_size] or [] → [batch_size]
-        speaker = self.embed_speaker(speaker)  # [batch_size] → [batch_size, speaker_embedding_size]
+        assert params.speaker.dtype == torch.long
+        speaker = params.speaker.view(-1)  # [1, batch_size] or [batch_size] or [] → [batch_size]
+        assert params.session.dtype == torch.long
+        session = params.session.view(-1)  # [1, batch_size] or [batch_size] or [] → [batch_size]
+
+        # [batch_size] → [batch_size, speaker_embedding_size // 2]
+        speaker = self.embed_speaker(speaker)
+        # [batch_size] → [batch_size, speaker_embedding_size // 2]
+        session = self.embed_session(session)
+        speaker = self.speaker_embed_dropout(torch.cat([speaker, session], dim=1))
+
         return Inputs(tokens, speaker, num_tokens, tokens_mask)
 
     def _make_targets(
@@ -306,11 +339,8 @@ class SpectrogramModel(torch.nn.Module):
 
     def _forward(
         self,
-        tokens: torch.Tensor,
-        speaker: torch.Tensor,
+        params: Params,
         target_frames: torch.Tensor,
-        num_tokens: typing.Optional[torch.Tensor] = None,
-        tokens_mask: typing.Optional[torch.Tensor] = None,
         target_mask: typing.Optional[torch.Tensor] = None,
     ) -> Forward:
         """Propagate the model forward for training.
@@ -318,17 +348,13 @@ class SpectrogramModel(torch.nn.Module):
         TODO: Explore speeding up training with `JIT`.
 
         Args:
-            tokens (torch.LongTensor [num_tokens, batch_size (optional)]): Sequences.
-            speaker (torch.LongTensor [1, batch_size (optional)]): Speaker encodings.
+            ...
             target_frames (torch.FloatTensor [num_frames, batch_size (optional),
                 num_frame_channels]): Ground truth frames for "teacher forcing" and loss.
-            num_tokens (torch.LongTensor [1, batch_size (optional)] or None): Number of tokens in
-                each sequence.
-            tokens_mask (torch.BoolTensor [num_tokens, batch_size (optional)])
             target_mask (torch.BoolTensor [num_frames, batch_size (optional)])
         """
-        include_batch_dim = len(tokens.shape) == 2
-        inputs = self._make_inputs(tokens, speaker, num_tokens, tokens_mask)
+        include_batch_dim = len(params.tokens.shape) == 2
+        inputs = self._make_inputs(params)
         targets = self._make_targets(target_frames, target_mask)
         out = self.decoder(
             self.encoder(inputs),
@@ -346,10 +372,7 @@ class SpectrogramModel(torch.nn.Module):
 
     def _generate(
         self,
-        tokens: torch.Tensor,
-        speaker: torch.Tensor,
-        num_tokens: typing.Optional[torch.Tensor] = None,
-        tokens_mask: typing.Optional[torch.Tensor] = None,
+        params: Params,
         split_size: float = 32,
         use_tqdm: bool = False,
         token_skip_warning: float = math.inf,
@@ -357,23 +380,19 @@ class SpectrogramModel(torch.nn.Module):
         """Generate frames from the decoder until a stop is predicted or `max_lengths` is reached.
 
         Args:
-            tokens (torch.LongTensor [num_tokens, batch_size (optional)]): Sequences.
-            speaker (torch.LongTensor [1, batch_size (optional)]): Speaker encodings.
-            num_tokens (torch.LongTensor [1, batch_size (optional)] or None): Number of tokens in
-                each sequence.
-            tokens_mask (torch.BoolTensor [num_tokens, batch_size (optional)])
+            ...
             split_size: The maximum length of a sequence returned by the generator.
             use_tqdm: If `True` then this adds a `tqdm` progress bar.
             token_skip_warning: If the attention skips more than `token_skip_warning`, then
                 a `logger.warning` will be logged.
         """
-        inputs = self._make_inputs(tokens, speaker, num_tokens, tokens_mask)
+        inputs = self._make_inputs(params)
         return self._infer_generator(
             inputs=inputs,
             encoded_tokens=self.encoder(inputs),
             split_size=split_size,
             use_tqdm=use_tqdm,
-            include_batch_dim=len(tokens.shape) == 2,
+            include_batch_dim=len(params.tokens.shape) == 2,
             token_skip_warning=token_skip_warning,
         )
 
@@ -390,11 +409,8 @@ class SpectrogramModel(torch.nn.Module):
     @typing.overload
     def __call__(
         self,
-        tokens: torch.Tensor,
-        speaker: torch.Tensor,
+        params: Params,
         target_frames: torch.Tensor,
-        num_tokens: typing.Optional[torch.Tensor] = None,
-        tokens_mask: typing.Optional[torch.Tensor] = None,
         target_mask: typing.Optional[torch.Tensor] = None,
         mode: typing.Literal[Mode.FORWARD] = Mode.FORWARD,
     ) -> Forward:
@@ -403,10 +419,7 @@ class SpectrogramModel(torch.nn.Module):
     @typing.overload
     def __call__(
         self,
-        tokens: torch.Tensor,
-        speaker: torch.Tensor,
-        num_tokens: typing.Optional[torch.Tensor] = None,
-        tokens_mask: typing.Optional[torch.Tensor] = None,
+        params: Params,
         use_tqdm: bool = False,
         token_skip_warning: float = math.inf,
         mode: typing.Literal[Mode.INFER] = Mode.INFER,
@@ -416,10 +429,7 @@ class SpectrogramModel(torch.nn.Module):
     @typing.overload
     def __call__(
         self,
-        tokens: torch.Tensor,
-        speaker: torch.Tensor,
-        num_tokens: typing.Optional[torch.Tensor] = None,
-        tokens_mask: typing.Optional[torch.Tensor] = None,
+        params: Params,
         split_size: float = 32,
         use_tqdm: bool = False,
         token_skip_warning: float = math.inf,

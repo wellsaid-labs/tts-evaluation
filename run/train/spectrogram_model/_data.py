@@ -55,12 +55,14 @@ class EncodedInput(typing.NamedTuple):
         letter_cases (torch.LongTensor [num_graphemes])
         phonemes (torch.LongTensor [num_phonemes])
         speaker (torch.LongTensor [1])
+        session (torch.LongTensor [1])
     """
 
     graphemes: torch.Tensor
     letter_cases: torch.Tensor
     phonemes: torch.Tensor
     speaker: torch.Tensor
+    session: torch.Tensor
 
 
 class DecodedInput(typing.NamedTuple):
@@ -68,6 +70,7 @@ class DecodedInput(typing.NamedTuple):
     graphemes: str
     phonemes: str
     speaker: Speaker
+    session: str
 
 
 class InputEncoder(Encoder):
@@ -93,6 +96,7 @@ class InputEncoder(Encoder):
         graphemes: typing.List[str],
         phonemes: typing.List[str],
         speakers: typing.List[Speaker],
+        sessions: typing.List[str],
         phoneme_separator: str = HParam(),
         *args,
         **kwargs,
@@ -108,6 +112,7 @@ class InputEncoder(Encoder):
             self._CASE_LABELS, reserved_labels=[], enforce_reversible=True
         )
         self.speaker_encoder = LabelEncoder(speakers, reserved_labels=[], enforce_reversible=True)
+        self.session_encoder = LabelEncoder(sessions, reserved_labels=[], enforce_reversible=True)
 
     def _get_case(self, c: str) -> _CASE_LABELS_TYPE:
         if c.isupper():
@@ -122,6 +127,7 @@ class InputEncoder(Encoder):
             self.case_encoder.batch_encode([self._get_case(c) for c in decoded.graphemes]),
             self.phoneme_encoder.encode(decoded.phonemes),
             self.speaker_encoder.encode(decoded.speaker).view(1),
+            self.session_encoder.encode(decoded.session).view(1),
         )
 
     def decode(self, encoded: EncodedInput) -> DecodedInput:
@@ -132,6 +138,7 @@ class InputEncoder(Encoder):
             "".join([g.upper() if c == self._CASE_LABELS[0] else g for g, c in iterator]),
             self.phoneme_encoder.decode(encoded.phonemes),
             self.speaker_encoder.decode(encoded.speaker.squeeze()),
+            self.session_encoder.decode(encoded.session.squeeze()),
         )
 
 
@@ -275,6 +282,7 @@ def _pad_and_trim_signal(signal: numpy.ndarray) -> torch.Tensor:
     padding does not affect the spectrogram due to overlap between the padding and the
     real audio.
     TODO: Instead of padding with zeros, we should consider padding with real-data.
+    TODO: Add some randomness to the audio file trimming so that the stop token cannot overfit.
     """
     signal = lib.audio.pad_remainder(signal)
     _, trim = librosa.effects.trim(signal)
@@ -392,6 +400,9 @@ class Batch(_utils.Batch):
     # SequenceBatch[torch.LongTensor [1, batch_size], torch.LongTensor [1, batch_size])
     encoded_speaker: SequenceBatch
 
+    # SequenceBatch[torch.LongTensor [1, batch_size], torch.LongTensor [1, batch_size])
+    encoded_session: SequenceBatch
+
     # SequenceBatch[torch.LongTensor [num_phonemes, batch_size], torch.LongTensor [1, batch_size])
     encoded_phonemes: SequenceBatch
 
@@ -448,7 +459,7 @@ def make_batch(
         docs[i] = span.as_doc()
 
     phonemes = typing.cast(typing.List[str], lib.text.grapheme_to_phoneme(docs))
-    decoded = [DecodedInput(s.script, p, s.speaker) for s, p in zip(spans, phonemes)]
+    decoded = [DecodedInput(s.script, p, s.speaker, s.session) for s, p in zip(spans, phonemes)]
     encoded = [input_encoder.encode(d) for d in decoded]
     with futures.ThreadPoolExecutor(max_workers=min(max_workers, len(spans))) as pool:
         signals_ = list(pool.map(lambda s: s.audio(), spans))
@@ -465,6 +476,7 @@ def make_batch(
         spectrogram_mask=spectrogram_mask,
         stop_token=_make_stop_token(spectrogram),
         encoded_speaker=_stack([s.speaker for s in encoded]),
+        encoded_session=_stack([s.session for s in encoded]),
         encoded_phonemes=_stack([s.phonemes for s in encoded]),
         encoded_phonemes_mask=_stack([_make_mask(e.phonemes.shape[0]) for e in encoded]),
     )

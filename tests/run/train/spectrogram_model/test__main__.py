@@ -36,6 +36,7 @@ def test_integration():
     assert speakers == list(train_dataset.keys())
     assert state.model.vocab_size == state.input_encoder.phoneme_encoder.vocab_size
     assert state.model.num_speakers == state.input_encoder.speaker_encoder.vocab_size
+    assert state.model.num_sessions == state.input_encoder.session_encoder.vocab_size
 
     batch_size = 1
     train_loader, dev_loader = _get_data_loaders(

@@ -148,6 +148,11 @@ def _metadata_path_to_book(metadata_path: Path, root: Path) -> Book:
     return Book(Dataset(root.name), speaker, book_title)
 
 
+def _get_session(passage: UnprocessedPassage):
+    """For the M-AILABS speech dataset, we define each chapter as an individual recording session."""
+    return str(passage.audio_path.parent / passage.audio_path.stem.rsplit("_", 1)[0])
+
+
 def _m_ailabs_speech_dataset(
     directory: Path,
     extracted_name: str,
@@ -157,6 +162,7 @@ def _m_ailabs_speech_dataset(
     root_directory_name: str = "M-AILABS",
     metadata_pattern: str = "**/metadata.csv",
     add_tqdm: bool = False,
+    get_session: typing.Callable[[UnprocessedPassage], str] = _get_session,
 ) -> typing.List[Passage]:
     """Download, extract, and process a M-AILABS dataset.
 
@@ -172,6 +178,7 @@ def _m_ailabs_speech_dataset(
         root_directory_name: Name of the dataset directory.
         metadata_pattern: Pattern for all `metadata.csv` files containing (filename, text)
             information.
+        get_session
         add_tqdm
     """
     name = f"{root_directory_name} {extracted_name}"
@@ -192,4 +199,4 @@ def _m_ailabs_speech_dataset(
             metadata_path.parent, book.speaker, additional_metadata={"book": book}
         )
         passages.append(loaded)
-    return list(make_passages(name, passages, add_tqdm=add_tqdm))
+    return list(make_passages(name, passages, add_tqdm, get_session))

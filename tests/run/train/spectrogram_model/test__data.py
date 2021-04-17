@@ -31,8 +31,9 @@ def test_input_encoder():
     phonemes = ["ˈ|eɪ|b|ˌ|iː|s|ˈ|iː|", "d|ˈ|ɛ|f"]
     phoneme_separator = "|"
     speakers = [run.data._loader.MARK_ATHERLAY, run.data._loader.MARY_ANN]
-    encoder = _data.InputEncoder(graphemes, phonemes, speakers, phoneme_separator)
-    input_ = _data.DecodedInput("a", "ˈ|eɪ", run.data._loader.MARK_ATHERLAY)
+    sessions = ["mark", "mary"]
+    encoder = _data.InputEncoder(graphemes, phonemes, speakers, sessions, phoneme_separator)
+    input_ = _data.DecodedInput("a", "ˈ|eɪ", run.data._loader.MARK_ATHERLAY, "mark")
     assert encoder._get_case("A") == encoder._CASE_LABELS[0]
     assert encoder._get_case("a") == encoder._CASE_LABELS[1]
     assert encoder._get_case("1") == encoder._CASE_LABELS[2]
@@ -41,6 +42,7 @@ def test_input_encoder():
     assert torch.equal(encoded.letter_cases, torch.tensor([1]))
     assert torch.equal(encoded.phonemes, torch.tensor([5, 6]))
     assert torch.equal(encoded.speaker, torch.tensor([0]))
+    assert torch.equal(encoded.session, torch.tensor([0]))
     assert encoder.decode(encoded) == input_
 
 

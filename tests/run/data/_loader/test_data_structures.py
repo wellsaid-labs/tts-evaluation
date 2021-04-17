@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 import lib
-from lib.utils import Timeline
+from lib.utils import Timeline, Tuple
 from run.data import _loader
 from run.data._loader.data_structures import (
     Alignment,
@@ -25,7 +25,7 @@ from run.data._loader.data_structures import (
     make_passages,
 )
 from run.data._loader.utils import get_non_speech_segments_and_cache
-from tests._utils import TEST_DATA_PATH, make_unprocessed_passage
+from tests._utils import TEST_DATA_PATH, make_metadata, make_unprocessed_passage
 
 TEST_DATA_LJ = TEST_DATA_PATH / "audio" / "bit(rate(lj_speech,24000),32).wav"
 
@@ -220,6 +220,15 @@ def test__check_updated_script(mock_error):
         _check_updated_script("", passage, "ab", "ab")
 
 
+def test_passage__duplicate_session():
+    """Test `Passage` ensures multiple speakers cannot have the same session."""
+    alignments = typing.cast(Tuple[Alignment], tuple())
+    Passage(make_metadata(), "session_linda", _loader.LINDA_JOHNSON, "", "", alignments)
+    Passage(make_metadata(), "session_judy", _loader.JUDY_BIEBER, "", "", alignments)
+    with pytest.raises(AssertionError):
+        Passage(make_metadata(), "session_linda", _loader.JUDY_BIEBER, "", "", alignments)
+
+
 def test_passage_span__identity():
     """Test `Passage` and `Span` are the same after a identity operation."""
     audio_path = TEST_DATA_LJ
@@ -231,6 +240,7 @@ def test_passage_span__identity():
     alignment = Alignment((0, len(script)), (0.0, metadata.length), (0, len(script)))
     passage = Passage(
         audio_file=metadata,
+        session=str(audio_path),
         speaker=_loader.LINDA_JOHNSON,
         script=script,
         transcript=script,

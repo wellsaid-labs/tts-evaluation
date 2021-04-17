@@ -166,6 +166,9 @@ class IsLinked(typing.NamedTuple):
     audio: bool = False
 
 
+_SESSIONS = {}
+
+
 @dataclasses.dataclass(frozen=True)
 class Passage:
     """A voiced passage.
@@ -173,9 +176,12 @@ class Passage:
     TODO: Create a `ConventionalPassage` or `ConventionalSpan` for storing tens of thousands
     of single alignment pre-cut spans. We could more efficiently and accurately handle script
     and audio updates. We could more efficiently create a `ConventionalSpan`.
+    TODO: Guarantee that the `session` is unique per speaker by creating a `Session` object that
+    include both the speaker, and the session label.
 
     Args:
         audio_file: A voice-over of the `script`.
+        session: A label used to group passages recorded together.
         speaker: An identifier of the voice.
         script: The `script` the `speaker` was reading from.
         transcript: The `transcript` of the `audio`.
@@ -193,6 +199,7 @@ class Passage:
     """
 
     audio_file: AudioMetadata
+    session: str
     speaker: Speaker
     script: str
     transcript: str
@@ -215,6 +222,11 @@ class Passage:
         # NOTE: Error if `dataclasses.replace` is run on a linked `Passage`.
         if hasattr(self, "passages"):
             assert self is self.passages[self.index]
+
+        if self.session in _SESSIONS:
+            assert _SESSIONS[self.session] == self.speaker
+        else:
+            _SESSIONS[self.session] = self.speaker
 
     @property
     def prev(self):
@@ -437,6 +449,10 @@ class Span:
     @property
     def speaker(self):
         return self.passage.speaker
+
+    @property
+    def session(self):
+        return self.passage.session
 
     @property
     def audio_file(self):
@@ -778,9 +794,18 @@ def _make_speech_segments(passage: Passage) -> typing.List[Span]:
     return [passage.span(*s) for s in speech_segments]
 
 
+def _default_session(passage: UnprocessedPassage):
+    """By default, this assumes that each audio file was recorded, individually."""
+    return str(passage.audio_path)
+
+
 @lib.utils.log_runtime
 def make_passages(
-    label: str, dataset: UnprocessedDataset, add_tqdm: bool = False, **kwargs
+    label: str,
+    dataset: UnprocessedDataset,
+    add_tqdm: bool = False,
+    get_session: typing.Callable[[UnprocessedPassage], str] = _default_session,
+    **kwargs,
 ) -> typing.List[Passage]:
     """Process `UnprocessedPassage` and return a list of `Passage`s.
 
@@ -813,6 +838,7 @@ def make_passages(
             continue
         kwargs = {**kwargs, "speaker": item.speaker, "script": item.script}
         kwargs = {**kwargs, "transcript": item.transcript, "other_metadata": item.other_metadata}
+        kwargs = {**kwargs, "session": get_session(item)}
         audio_file = normalized_audio_files[item.audio_path]
         alignments = _normalize_alignments(item, audio_file)
         documents[i].append(Passage(audio_file=audio_file, alignments=alignments, **kwargs))

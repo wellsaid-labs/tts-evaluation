@@ -1,3 +1,4 @@
+import collections
 import contextlib
 import dataclasses
 import logging
@@ -82,6 +83,7 @@ class _State:
         assert set(p.data_ptr() for p in self.clipper.parameters) == ptrs
         assert self.model.module.vocab_size == self.input_encoder.phoneme_encoder.vocab_size
         assert self.model.module.num_speakers == self.input_encoder.speaker_encoder.vocab_size
+        assert self.model.module.num_sessions == self.input_encoder.session_encoder.vocab_size
 
     @staticmethod
     def _get_input_encoder(
@@ -93,11 +95,12 @@ class _State:
 
         TODO: For some reason, Comet doesn't log: "phoneme_vocab".
         """
-        passages = chain(*tuple(chain(train_dataset.values(), dev_dataset.values())))
+        passages = list(chain(*tuple(chain(train_dataset.values(), dev_dataset.values()))))
         input_encoder = InputEncoder(
             [p.script for p in passages],
             DATASET_PHONETIC_CHARACTERS,
             list(train_dataset.keys()) + list(dev_dataset.keys()),
+            [p.session for p in passages],
         )
 
         label = partial(get_dataset_label, cadence=Cadence.STATIC, type_=DatasetType.TRAIN)
@@ -108,8 +111,17 @@ class _State:
             label("phoneme_vocab"): sorted(input_encoder.phoneme_encoder.vocab),
             label("num_speakers"): input_encoder.speaker_encoder.vocab_size,
             label("speakers"): sorted([s.label for s in input_encoder.speaker_encoder.vocab]),
+            label("num_sessions"): input_encoder.session_encoder.vocab_size,
+            label("sessions"): sorted([s for s in input_encoder.session_encoder.vocab]),
         }
         comet.log_parameters(stats)
+
+        sessions = collections.defaultdict(set)
+        for passage in passages:
+            sessions[passage.speaker].add(passage.session)
+        for speaker, sessions in sessions.items():
+            comet.log_parameter(label("num_sessions", speaker=speaker), len(sessions))
+            comet.log_parameter(label("sessions", speaker=speaker), sessions)
 
         label = partial(label, type_=DatasetType.DEV)
         stats = {
@@ -128,8 +140,9 @@ class _State:
     ) -> lib.spectrogram_model.SpectrogramModel:
         """Initialize a model onto `device`."""
         model = lib.spectrogram_model.SpectrogramModel(
-            input_encoder.phoneme_encoder.vocab_size,
-            input_encoder.speaker_encoder.vocab_size,
+            vocab_size=input_encoder.phoneme_encoder.vocab_size,
+            num_speakers=input_encoder.speaker_encoder.vocab_size,
+            num_sessions=input_encoder.session_encoder.vocab_size,
         ).to(device, non_blocking=True)
         comet.set_model_graph(str(model))
         label = get_model_label("num_parameters", Cadence.STATIC)
@@ -323,12 +336,16 @@ def _run_step(
             to normalize the loss magnitude.
     """
     args.timer.record_event(args.timer.MODEL_FORWARD)
-    preds = args.state.model(
+    params = lib.spectrogram_model.Params(
         tokens=args.batch.encoded_phonemes.tensor,
         speaker=args.batch.encoded_speaker.tensor,
-        target_frames=args.batch.spectrogram.tensor,
+        session=args.batch.encoded_session.tensor,
         num_tokens=args.batch.encoded_phonemes.lengths,
         tokens_mask=args.batch.encoded_phonemes_mask.tensor,
+    )
+    preds = args.state.model(
+        params=params,
+        target_frames=args.batch.spectrogram.tensor,
         target_mask=args.batch.spectrogram_mask.tensor,
         mode=lib.spectrogram_model.Mode.FORWARD,
     )
@@ -446,6 +463,7 @@ def _visualize_inferred(args: _HandleBatchArgs, preds: lib.spectrogram_model.Inf
         context=args.state.comet.context,
         text=args.batch.spans[item].script,
         speaker=args.batch.spans[item].speaker,
+        session=args.batch.spans[item].session,
         predicted_loudness=get_average_db_rms_level(predicted_spectrogram.unsqueeze(1)).item(),
         gold_loudness=get_average_db_rms_level(gold_spectrogram.unsqueeze(1)).item(),
     )
@@ -454,12 +472,14 @@ def _visualize_inferred(args: _HandleBatchArgs, preds: lib.spectrogram_model.Inf
 def _run_inference(args: _HandleBatchArgs):
     """Run the model in inference mode, and measure it's results."""
     args.timer.record_event(args.timer.MODEL_FORWARD)
-    preds = args.state.model.module(
-        args.batch.encoded_phonemes.tensor,
-        args.batch.encoded_speaker.tensor,
-        args.batch.encoded_phonemes.lengths,
-        mode=lib.spectrogram_model.Mode.INFER,
+    params = lib.spectrogram_model.Params(
+        tokens=args.batch.encoded_phonemes.tensor,
+        speaker=args.batch.encoded_speaker.tensor,
+        session=args.batch.encoded_session.tensor,
+        num_tokens=args.batch.encoded_phonemes.lengths,
+        tokens_mask=args.batch.encoded_phonemes_mask.tensor,
     )
+    preds = args.state.model.module(params, mode=lib.spectrogram_model.Mode.INFER)
     preds = typing.cast(lib.spectrogram_model.Infer, preds)
 
     if args.visualize:
