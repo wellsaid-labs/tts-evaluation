@@ -209,7 +209,9 @@ class SpanGenerator(typing.Iterator[Span]):
 
     def __init__(self, passages: typing.List[Passage], max_seconds: float, **kwargs):
         assert max_seconds > 0, "The maximum interval length must be a positive number."
-        self.passages = passages
+        self.passages = [p for p in passages if len(p.speech_segments) > 0]
+        message = "Filtered out %d of %d passages without speech segments."
+        logger.warning(message, len(passages) - len(self.passages), len(passages))
         self.max_seconds = max_seconds
         lengths = [
             p.speech_segments[-1].audio_stop - p.speech_segments[0].audio_start
@@ -220,7 +222,9 @@ class SpanGenerator(typing.Iterator[Span]):
         make_timeline = lambda p: Timeline(
             [(s.audio_start, s.audio_stop) for s in p.speech_segments], **kwargs
         )
-        self._timelines = None if max_seconds == math.inf else [make_timeline(p) for p in passages]
+        self._timelines = (
+            None if max_seconds == math.inf else [make_timeline(p) for p in self.passages]
+        )
 
     @staticmethod
     def _overlap(x1: _Float, x2: _Float, y1: _Float, y2: _Float) -> _Float:
