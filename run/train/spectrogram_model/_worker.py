@@ -100,7 +100,7 @@ class _State:
             [p.script for p in passages],
             DATASET_PHONETIC_CHARACTERS,
             list(train_dataset.keys()) + list(dev_dataset.keys()),
-            [p.session for p in passages],
+            [(p.speaker, p.session)for p in passages],
         )
 
         label = partial(get_dataset_label, cadence=Cadence.STATIC, type_=DatasetType.TRAIN)

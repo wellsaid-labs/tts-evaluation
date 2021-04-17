@@ -70,7 +70,7 @@ class DecodedInput(typing.NamedTuple):
     graphemes: str
     phonemes: str
     speaker: Speaker
-    session: str
+    session: typing.Tuple[Speaker, str]
 
 
 class InputEncoder(Encoder):
@@ -96,7 +96,7 @@ class InputEncoder(Encoder):
         graphemes: typing.List[str],
         phonemes: typing.List[str],
         speakers: typing.List[Speaker],
-        sessions: typing.List[str],
+        sessions: typing.List[typing.Tuple[Speaker, str]],
         phoneme_separator: str = HParam(),
         *args,
         **kwargs,
@@ -459,7 +459,10 @@ def make_batch(
         docs[i] = span.as_doc()
 
     phonemes = typing.cast(typing.List[str], lib.text.grapheme_to_phoneme(docs))
-    decoded = [DecodedInput(s.script, p, s.speaker, s.session) for s, p in zip(spans, phonemes)]
+    decoded = [
+        DecodedInput(s.script, p, s.speaker, (s.speaker, s.session))
+        for s, p in zip(spans, phonemes)
+    ]
     encoded = [input_encoder.encode(d) for d in decoded]
     with futures.ThreadPoolExecutor(max_workers=min(max_workers, len(spans))) as pool:
         signals_ = list(pool.map(lambda s: s.audio(), spans))

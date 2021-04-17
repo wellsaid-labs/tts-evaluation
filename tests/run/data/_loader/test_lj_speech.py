@@ -66,7 +66,7 @@ def test_lj_speech_dataset(
         assert sum([len(r.script) for r in data]) == 1310332
         assert data[0] == run.data._loader.Passage(
             audio_file=_utils.make_metadata(directory / "LJSpeech-1.1/wavs/LJ001-0001.wav"),
-            session=str(directory / "LJSpeech-1.1/wavs/LJ001"),
+            session="LJ001",
             speaker=run.data._loader.LINDA_JOHNSON,
             script=(
                 "Printing, in the only sense with which we are at present concerned, differs "

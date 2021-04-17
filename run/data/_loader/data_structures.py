@@ -166,9 +166,6 @@ class IsLinked(typing.NamedTuple):
     audio: bool = False
 
 
-_SESSIONS = {}
-
-
 @dataclasses.dataclass(frozen=True)
 class Passage:
     """A voiced passage.
@@ -176,8 +173,6 @@ class Passage:
     TODO: Create a `ConventionalPassage` or `ConventionalSpan` for storing tens of thousands
     of single alignment pre-cut spans. We could more efficiently and accurately handle script
     and audio updates. We could more efficiently create a `ConventionalSpan`.
-    TODO: Guarantee that the `session` is unique per speaker by creating a `Session` object that
-    include both the speaker, and the session label.
 
     Args:
         audio_file: A voice-over of the `script`.
@@ -222,11 +217,6 @@ class Passage:
         # NOTE: Error if `dataclasses.replace` is run on a linked `Passage`.
         if hasattr(self, "passages"):
             assert self is self.passages[self.index]
-
-        if self.session in _SESSIONS:
-            assert _SESSIONS[self.session] == self.speaker
-        else:
-            _SESSIONS[self.session] = self.speaker
 
     @property
     def prev(self):
@@ -796,7 +786,7 @@ def _make_speech_segments(passage: Passage) -> typing.List[Span]:
 
 def _default_session(passage: UnprocessedPassage):
     """By default, this assumes that each audio file was recorded, individually."""
-    return str(passage.audio_path)
+    return passage.audio_path.name
 
 
 @lib.utils.log_runtime
