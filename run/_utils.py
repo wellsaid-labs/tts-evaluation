@@ -113,7 +113,7 @@ def _split_dataset(
     dev: typing.Dict[_loader.Speaker, list] = collections.defaultdict(list)
     train: typing.Dict[_loader.Speaker, list] = collections.defaultdict(list)
     dev_scripts: typing.Set[str] = set()
-    len_ = lambda _passage: _passage.aligned_audio_length()
+    len_ = lambda _passage: _passage.segmented_audio_length()
     sum_ = lambda _passages: sum([len_(p) for p in _passages])
     with fork_rng(seed=seed):
         iterator = list(sorted(dataset.items(), key=lambda i: (len(i[1]), i[0])))
@@ -175,8 +175,8 @@ def split_dataset(
     different from experiment to experiment.
 
     NOTE: `len_` assumes that the amount of data in each passage can be estimated with
-    `aligned_audio_length`. For example, if there was a long pause within a passage, this estimate
-    wouldn't make sense.
+    `segmented_audio_length`. For example, if there was a long pause within a passage, this
+    estimate wouldn't make sense.
 
     NOTE: Passages are split between the train and development set in groups. The groups are
     dictated by textual similarity. The result of this is that the text in the train and

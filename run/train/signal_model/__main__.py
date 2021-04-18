@@ -33,8 +33,8 @@ def _make_configuration(
 ) -> typing.Dict[typing.Callable, typing.Any]:
     """Make additional configuration for signal model training."""
 
-    train_size = sum([sum([p.aligned_audio_length() for p in d]) for d in train_dataset.values()])
-    dev_size = sum([sum([p.aligned_audio_length() for p in d]) for d in dev_dataset.values()])
+    train_size = sum(sum(p.segmented_audio_length() for p in d) for d in train_dataset.values())
+    dev_size = sum(sum(p.segmented_audio_length() for p in d) for d in dev_dataset.values())
     ratio = train_size / dev_size
     logger.info("The training dataset is approx %fx bigger than the development dataset.", ratio)
     train_batch_size = int((32 if debug else 128) / lib.distributed.get_device_count())

@@ -229,8 +229,19 @@ class Passage:
     def next(self):
         return None if self.index == len(self.passages) - 1 else self.passages[self.index + 1]
 
+    @property
+    def audio_start(self):
+        return self.speech_segments[0].audio_start
+
+    @property
+    def audio_stop(self):
+        return self.speech_segments[-1].audio_stop
+
     def audio(self):
         return _loader.utils.read_audio(self.audio_file)
+
+    def segmented_audio_length(self) -> float:
+        return self.audio_stop - self.audio_start
 
     def aligned_audio_length(self) -> float:
         return self.last.audio[-1] - self.first.audio[0]

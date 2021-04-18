@@ -488,6 +488,10 @@ def _include_passage(passage: Passage) -> bool:
         logger.warning("%s has zero alignments.", repr_)
         return False
 
+    if len(passage.speech_segments) == 0:
+        logger.warning("%s has zero speech segments.", repr_)
+        return False
+
     span = passage[:]
     if span.audio_length == 0.0:
         logger.warning("%s has no aligned audio.", repr_)

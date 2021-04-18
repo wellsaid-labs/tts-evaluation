@@ -213,10 +213,7 @@ class SpanGenerator(typing.Iterator[Span]):
         message = "Filtered out %d of %d passages without speech segments."
         logger.warning(message, len(passages) - len(self.passages), len(passages))
         self.max_seconds = max_seconds
-        lengths = [
-            p.speech_segments[-1].audio_stop - p.speech_segments[0].audio_start
-            for p in self.passages
-        ]
+        lengths = [p.segmented_audio_length() for p in self.passages]
         self._weights = torch.tensor(lengths)
         make_timeline: typing.Callable[[Passage], Timeline]
         make_timeline = lambda p: Timeline(
@@ -253,9 +250,9 @@ class SpanGenerator(typing.Iterator[Span]):
         passage, timeline = self.passages[index], self._timelines[index]
 
         # NOTE: Uniformly sample a span of audio.
-        start = random.uniform(passage.first.audio[0] - length, passage.last.audio[1])
-        stop = min(start + length, passage.last.audio[1])
-        start = max(start, passage.first.audio[0])
+        start = random.uniform(passage.audio_start - length, passage.audio_stop)
+        stop = min(start + length, passage.audio_stop)
+        start = max(start, passage.audio_start)
 
         # NOTE: Based on the overlap, decide which alignments to include in the span.
         indicies = list(timeline.indicies(slice(start, stop)))
