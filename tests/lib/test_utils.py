@@ -449,6 +449,22 @@ def test_corrected_random_choice():
         assert value / total == pytest.approx(1 / len(distribution), abs=0.01)
 
 
+def test_corrected_random_choice__non_uniform():
+    """ Test `lib.utils.corrected_random_choice` handles non-uniform distribution. """
+    distribution = {i: 0.0 for i in range(10)}
+    expected = {i: 1 / (i + 1) for i in range(10)}
+    for _ in range(10000):
+        choice = lib.utils.corrected_random_choice(distribution, expected)
+        # NOTE: Every time we sample `choice`, we add `choice` creating non-uniformity.
+        # `corrected_random_choice` should correct for this non-uniformity.
+        distribution[choice] += choice + 1
+
+    total = sum(distribution.values())
+    total_expected = sum(expected.values())
+    for value, expected in zip(distribution.values(), expected.values()):
+        assert value / total == pytest.approx(expected / total_expected, abs=0.01)
+
+
 def test_timeline():
     """ Test `Timeline` handles basic cases. """
     intervals = [(0, 1), (0.5, 1), (1, 2)]

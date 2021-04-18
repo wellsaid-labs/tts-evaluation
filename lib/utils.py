@@ -519,17 +519,24 @@ _CorrectedRandomChoiceVar = typing.TypeVar("_CorrectedRandomChoiceVar")
 
 
 def corrected_random_choice(
-    distribution: typing.Dict[_CorrectedRandomChoiceVar, float], eps=1
+    distr: typing.Dict[_CorrectedRandomChoiceVar, float],
+    expect: typing.Optional[typing.Dict[_CorrectedRandomChoiceVar, float]] = None,
+    eps=10e-8,
 ) -> _CorrectedRandomChoiceVar:
     """Choose a key in `distribution` that would help even out the distribution.
+
     NOTE: In order to make the `distribution` uniform, we'd need to sample each key
     `max(values) - value` times; therefore, we use that expectation as a `weight`.
     NOTE: `eps` is added to ensure each key has some chance of getting sampled.
     """
-    assert all(v >= 0 for v in distribution.values()), "Must be a valid distribution."
-    keys = list(distribution.keys())
-    max_ = max(distribution.values())
-    return random.choices(keys, [(max_ - v + eps) for v in distribution.values()])[0]
+    vals = list(distr.values())
+    keys = list(distr.keys())
+    assert all(v >= 0 for v in vals), "Must be a valid distribution."
+    expect_ = [1 for _ in keys] if expect is None else [expect[k] for k in keys]
+    ratio = max([b / a for a, b in zip(expect_, vals)])
+    expect_ = [a * ratio for a in expect_]
+    diff = [a - b + eps for a, b in zip(expect_, vals)]
+    return random.choices(keys, diff)[0]
 
 
 def dataclass_as_dict(data):
