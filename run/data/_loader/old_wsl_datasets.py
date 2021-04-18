@@ -9,9 +9,13 @@ from torchnlp.download import download_file_maybe_extract
 from run.data._loader.utils import Passage, Speaker, conventional_dataset_loader, make_passages
 from run.data._loader.wsl_datasets import (
     ADRIENNE_WALKER_HELLER,
+    ADRIENNE_WALKER_HELLER__PROMO,
     ALICIA_HARRIS,
     BETH_CAMERON,
     BETH_CAMERON__CUSTOM,
+    DAMON_PAPADOPOULOS__PROMO,
+    DANA_HURLEY__PROMO,
+    ED_LACOMB__PROMO,
     ELISE_RANDALL,
     FRANK_BONACQUISTI,
     GEORGE_DRAKE_JR,
@@ -19,9 +23,15 @@ from run.data._loader.wsl_datasets import (
     HEATHER_DOE,
     HILARY_NORIEGA,
     JACK_RUTKOWSKI,
+    JOHN_HUNERLACH__NARRATION,
+    JOHN_HUNERLACH__RADIO,
+    LINSAY_ROUSSEAU__PROMO,
+    MARI_MONGE__PROMO,
     MARK_ATHERLAY,
     MEGAN_SINCLAIR,
+    OTIS_JIRY__STORY,
     SAM_SCHOLL,
+    SAM_SCHOLL__PROMO,
     STEVEN_WAHLBERG,
     SUSAN_MURPHY,
 )
@@ -34,6 +44,9 @@ else:
 logger = logging.getLogger(__name__)
 
 _metadata = {
+    ##############
+    # E-LEARNING #
+    ##############
     (
         "Hilary Noriega",
         HILARY_NORIEGA,
@@ -133,6 +146,13 @@ _metadata = {
         True,
     ),
     (
+        "john_hunerlach__narration",
+        JOHN_HUNERLACH__NARRATION,
+        "https://drive.google.com/uc?export=download&id=1-4BxZm6DdF20JmkUdkOdzoZG9j8oeALn",
+        "john_hunerlach__narration.tar.gz",
+        True,
+    ),
+    (
         "MarkAtherlay",
         MARK_ATHERLAY,
         "https://drive.google.com/uc?export=download&id=1qi2nRASZXQlzwsfykoaWXtmR_MYFISC5",
@@ -144,6 +164,75 @@ _metadata = {
         STEVEN_WAHLBERG,
         "https://drive.google.com/uc?export=download&id=1osZFUK7_fcnw5zTrSVhGCb5WBZfnGYdT",
         "StevenWahlberg.tar.gz",
+        True,
+    ),
+    ###############
+    # PROMOTIONAL #
+    ###############
+    (
+        "AdrienneWalker__promo",
+        ADRIENNE_WALKER_HELLER__PROMO,
+        "https://drive.google.com/uc?export=download&id=113DYQm-Axr4CimuorhMLMLG_OUwJEgGr",
+        "AdrienneWalker__promo.tar.gz",
+        True,
+    ),
+    (
+        "DamonPapadopoulos__promo",
+        DAMON_PAPADOPOULOS__PROMO,
+        "https://drive.google.com/uc?export=download&id=10T0_9AO967rx6gs-9wVB5r-9Uwe8vu_O",
+        "DamonPapadopoulos__promo.tar.gz",
+        True,
+    ),
+    (
+        "DanaHurley__promo",
+        DANA_HURLEY__PROMO,
+        "https://drive.google.com/uc?export=download&id=10omgmnmoEjdB0YoIzPgSoClpj5s_ha40",
+        "DanaHurley__promo.tar.gz",
+        True,
+    ),
+    (
+        "EdLaComb__promo",
+        ED_LACOMB__PROMO,
+        "https://drive.google.com/uc?export=download&id=10rR3JwUQIkOqczZ99JjJfSOYzwO0uUNM",
+        "EdLaComb__promo.tar.gz",
+        True,
+    ),
+    (
+        "john_hunerlach__radio",
+        JOHN_HUNERLACH__RADIO,
+        "https://drive.google.com/uc?export=download&id=1ZTu_qrnY2DDkdRJ-Vx0LexaeoOXuH-Vh",
+        "john_hunerlach__radio.tar.gz",
+        True,
+    ),
+    (
+        "LinsayRousseau__promo",
+        LINSAY_ROUSSEAU__PROMO,
+        "https://drive.google.com/uc?export=download&id=10uAc07lPmWdAEsijfI0kWaIiz0utDYJc",
+        "LinsayRousseau__promo.tar.gz",
+        True,
+    ),
+    (
+        "SamScholl__promo",
+        SAM_SCHOLL__PROMO,
+        "https://drive.google.com/uc?export=download&id=112A7wEv61Mdcv8K0UW1FVYab_WdpRWCg",
+        "SamScholl__promo.tar.gz",
+        True,
+    ),
+    #########
+    # OTHER #
+    #########
+    (
+        "OtisJiry__promo",
+        OTIS_JIRY__STORY,
+        "https://drive.google.com/uc?export=download&id=11AQ_36XUkN3kodA8Lk7ucKrhPkUFDi55",
+        "OtisJiry__promo.tar.gz",
+        True,
+    ),
+    (
+        "MariMonge__promo",
+        MARI_MONGE__PROMO,
+        "https://drive.google.com/uc?export=download&id=10xTRts6r01gDowM3yh6HOxMf679yDXYd",
+        "MariMonge__promo.tar.gz",
         True,
     ),
 }
@@ -247,6 +336,20 @@ _deprecated_metadata = {
         Speaker("Lincoln_custom_ma", "Lincoln (Custom)"),
         "https://drive.google.com/uc?export=download&id=1NJkVrPyxiNLKhc1Pj-ssCFhx_Mxzervf",
         "Lincoln_custom_ma.tar.gz",
+        True,
+    ),
+    (
+        "Josie_Custom",
+        Speaker("Josie_Custom", "Josie (Custom)"),
+        "https://drive.google.com/uc?export=download&id=1KPPjVMgCWCf-efkZBiCivbpiIt5z3LcG",
+        "Josie_Custom.tar.gz",
+        True,
+    ),
+    (
+        "Josie_Custom_Loudnorm",
+        Speaker("Josie_Custom_Loudnorm", "Josie (Custom, Loudness Standardized)"),
+        "https://drive.google.com/uc?export=download&id=1CeLacT0Ys6jiroJPH0U8aO0GaKemg0vK",
+        "Josie_Custom_Loudnorm.tar.gz",
         True,
     ),
 }
