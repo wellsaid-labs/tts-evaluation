@@ -117,7 +117,6 @@ class _State:
             label("num_speakers"): input_encoder.speaker_encoder.vocab_size,
             label("speakers"): sorted([s.label for s in input_encoder.speaker_encoder.vocab]),
             label("num_sessions"): input_encoder.session_encoder.vocab_size,
-            label("sessions"): sorted([s for s in input_encoder.session_encoder.vocab]),
         }
         comet.log_parameters(stats)
 

@@ -149,7 +149,9 @@ _SplitReturnType = typing.TypeVar("_SplitReturnType")
 
 
 def split(
-    list_: typing.List[_SplitReturnType], splits: typing.List[float], value=identity
+    list_: typing.List[_SplitReturnType],
+    splits: typing.List[float],
+    value: typing.Callable[[_SplitReturnType], float] = identity,
 ) -> typing.Iterator[typing.List[_SplitReturnType]]:
     """Split `list_` when the accumulated sum passes a threshold.
 
@@ -159,13 +161,18 @@ def split(
 
     Returns: Slice(s) of the list.
     """
-    totals = list(itertools.accumulate([value(i) for i in list_]))
     index = 0
     for split in splits:
-        lambda_ = lambda x: x <= split + (totals[index - 1] if index > 0 else 0)
-        count = len(list(itertools.takewhile(lambda_, totals[index:])))
-        yield list_[index : index + count]
-        index = index + count
+        if math.isinf(split):
+            yield list_[index:]
+            index = len(list_)
+        elif split == 0:
+            yield []
+        else:
+            totals = itertools.accumulate(value(i) for i in list_[index:])
+            count = sum(1 for _ in itertools.takewhile(lambda x: x <= split, totals))
+            yield list_[index : index + count]
+            index = index + count
     if index < len(list_):
         yield list_[index:]
 

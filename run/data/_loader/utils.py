@@ -210,8 +210,9 @@ class SpanGenerator(typing.Iterator[Span]):
     def __init__(self, passages: typing.List[Passage], max_seconds: float, **kwargs):
         assert max_seconds > 0, "The maximum interval length must be a positive number."
         self.passages = [p for p in passages if len(p.speech_segments) > 0]
-        message = "Filtered out %d of %d passages without speech segments."
-        logger.warning(message, len(passages) - len(self.passages), len(passages))
+        if len(self.passages) != len(passages):
+            message = "Filtered out %d of %d passages without speech segments."
+            logger.warning(message, len(passages) - len(self.passages), len(passages))
         self.max_seconds = max_seconds
         lengths = [p.segmented_audio_length() for p in self.passages]
         self._weights = torch.tensor(lengths)

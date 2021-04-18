@@ -146,6 +146,12 @@ def test_split__infinity():
     assert list(lib.utils.split([1, 2, 3, 4, 5], [8, float("inf"), 3])) == expected
 
 
+def test_split__multiple_infinities():
+    """ Test `lib.utils.split` handles multiple infinite thresholds and overflow. """
+    expected = [[1, 2, 3], [4, 5], [], []]
+    assert list(lib.utils.split([1, 2, 3, 4, 5], [8, float("inf"), float("inf"), 3])) == expected
+
+
 def test_split__no_thresholds():
     """ Test `lib.utils.split` handles no thresholds. """
     assert list(lib.utils.split([1, 2, 3, 4, 5], [])) == [[1, 2, 3, 4, 5]]
