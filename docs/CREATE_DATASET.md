@@ -169,45 +169,54 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
       > README.txt file explaining why this archive exists
 
    ```bash
+   mkdir $PROCESSED
    RECORDINGS=$(ls $ROOT/recordings/*$ENCODING | python -m run.utils.sort)
    SCRIPTS=$(ls $ROOT/scripts/*.csv | python -m run.utils.sort)
    python -m run.data pair $(python -m run.utils.prefix --recording $RECORDINGS) \
-      $(python -m run.utils.prefix --script $SCRIPTS)
+      $(python -m run.utils.prefix --script $SCRIPTS) \
+      2>&1 | tee $PROCESSED/script-recordings-pair.log
    ```
+
+   💡 TIP: Learn more about `2>&1 | tee`, here: https://stackoverflow.com/questions/418896/how-to-redirect-output-to-a-file-and-stdout
 
 1. (Optional) Review dataset audio file format(s) for inconsistencies...
 
    ```bash
-   python -m run.data audio print-format $ROOT/recordings/*$ENCODING
+   python -m run.data audio print-format $ROOT/recordings/*$ENCODING \
+      2>&1 | tee $PROCESSED/audio-format.log
    ```
 
 1. Normalize audio file format...
 
    ```bash
-   mkdir -p $PROCESSED/recordings
-   python -m run.data audio normalize $ROOT/recordings/*$ENCODING $PROCESSED/recordings
+   mkdir $PROCESSED/recordings
+   python -m run.data audio normalize $ROOT/recordings/*$ENCODING $PROCESSED/recordings \
+      2>&1 | tee $PROCESSED/audio-normalize.log
    ```
 
 1. (Optional) Review audio file loudness for inconsistencies...
 
    ```bash
-   python -m run.data audio loudness $PROCESSED/recordings/*$ENCODING
+   python -m run.data audio loudness $PROCESSED/recordings/*$ENCODING \
+      2>&1 | tee $PROCESSED/audio-loudness.log
    ```
 
 1. Normalize audio file format for
    [Google speech-to-text](https://cloud.google.com/speech-to-text/docs/encoding)...
 
    ```bash
-   mkdir -p $PROCESSED/speech_to_text
+   mkdir $PROCESSED/speech_to_text
    python -m run.data audio normalize $ROOT/recordings/*$ENCODING $PROCESSED/speech_to_text \
-                                      --data-type='signed-integer' --bits=16
+                                      --data-type='signed-integer' --bits=16 \
+      2>&1 | tee $PROCESSED/audio-normalize-stt.log
    ```
 
 1. Normalize CSV file text...
 
    ```bash
-   mkdir -p $PROCESSED/scripts
-   python -m run.data csv normalize $ROOT/scripts/*.csv $PROCESSED/scripts
+   mkdir $PROCESSED/scripts
+   python -m run.data csv normalize $ROOT/scripts/*.csv $PROCESSED/scripts \
+      2>&1 | tee $PROCESSED/csv-normalize.log
    ```
 
    💡 TIP: Add the flag `--tab-separated` to process a TSV file.
