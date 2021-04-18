@@ -491,8 +491,7 @@ def main():
     question = "How many span(s) do you want to generate?"
     num_samples: int = sidebar.number_input(question, 0, None, 100)
 
-    with st.spinner("Loading dataset..."):
-        dataset = {k: v for s in speakers for k, v in get_dataset(frozenset([s])).items()}
+    dataset = {k: v for s in speakers for k, v in get_dataset(frozenset([s])).items()}
     with st.spinner("Generating spans..."):
         spans = _get_spans(dataset, num_samples=num_samples)
 
