@@ -541,25 +541,15 @@ def _include_span(span: Span):
 
 def _configure_data_processing():
     """ Configure modules that process data, other than audio. """
-    dev_speakers = [
-        run.data._loader.ADRIENNE_WALKER_HELLER,
-        run.data._loader.ALICIA_HARRIS__MANUAL_POST,
-        run.data._loader.BETH_CAMERON,
-        run.data._loader.ELISE_RANDALL,
-        run.data._loader.FRANK_BONACQUISTI,
-        run.data._loader.GEORGE_DRAKE_JR,
-        run.data._loader.HANUMAN_WELCH,
-        run.data._loader.HEATHER_DOE,
-        run.data._loader.HILARY_NORIEGA,
-        run.data._loader.JACK_RUTKOWSKI__MANUAL_POST,
-        run.data._loader.JOHN_HUNERLACH__NARRATION,
-        run.data._loader.JOHN_HUNERLACH__RADIO,
-        run.data._loader.MARK_ATHERLAY,
-        run.data._loader.MEGAN_SINCLAIR,
-        run.data._loader.SAM_SCHOLL__MANUAL_POST,
-        run.data._loader.STEVEN_WAHLBERG,
-        run.data._loader.SUSAN_MURPHY,
-    ]
+    dev_speakers = run.data._loader.WSL_DATASETS.copy()
+    # NOTE: The `MARI_MONGE__PROMO` dataset is too short for evaluation, at 15 minutes long.
+    del dev_speakers[run.data._loader.MARI_MONGE__PROMO]
+    # NOTE: The `ALICIA_HARRIS`, `JACK_RUTKOWSKI`, and `SAM_SCHOLL` datasets are duplicate datasets.
+    # There is an improved version of their datasets already in `dev_speakers`.
+    del dev_speakers[run.data._loader.ALICIA_HARRIS]
+    del dev_speakers[run.data._loader.JACK_RUTKOWSKI]
+    del dev_speakers[run.data._loader.SAM_SCHOLL]
+    dev_speakers = set(dev_speakers.keys())
     config = {
         lib.text.grapheme_to_phoneme: HParams(separator=PHONEME_SEPARATOR),
         run._utils.get_dataset: HParams(
@@ -570,7 +560,7 @@ def _configure_data_processing():
         ),
         run._utils.split_dataset: HParams(
             groups=[set(_loader.WSL_DATASETS)],
-            dev_speakers=set(dev_speakers),
+            dev_speakers=dev_speakers,
             approx_dev_length=30 * 60,
             min_similarity=0.9,
         ),
