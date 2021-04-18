@@ -10,7 +10,6 @@ from run.data._loader.utils import Passage, Speaker, dataset_loader
 ##############
 # E-LEARNING #
 ##############
-
 ADRIENNE_WALKER_HELLER = Speaker("adrienne_walker_heller", "Adrienne Walker-Heller")
 ALICIA_HARRIS = Speaker("alicia_harris", "Alicia Harris")
 ALICIA_HARRIS__MANUAL_POST = Speaker(
