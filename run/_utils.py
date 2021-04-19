@@ -209,7 +209,8 @@ def split_dataset(
         items = ((s, p) for s, p in dataset.items() if s in group and s not in dev_speakers)
         for speaker, passages in items:
             duplicates, rest = _find_duplicate_passages(dev_scripts, passages, min_sim)
-            logger.warning("Discarded %d `%s` duplicates.", len(duplicates), speaker)
+            if len(duplicates) > 0:
+                logger.warning("Discarded %d `%s` duplicates.", len(duplicates), speaker)
             train[speaker] = rest
 
     for spkr in dataset.keys():
