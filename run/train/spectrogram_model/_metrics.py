@@ -82,6 +82,36 @@ def get_num_jumps(
     return num_jumps.sum(dim=0)
 
 
+@configurable
+def get_num_small_max(
+    alignments: torch.Tensor,
+    tokens_mask: torch.Tensor,
+    spectrogram_mask: torch.Tensor,
+    threshold: float = HParam(),
+) -> torch.Tensor:
+    """Given `alignments` from frames to tokens, this computes the number of alignments where no
+    token gets no more than `threshold` focus.
+
+    Args:
+        alignments (torch.FloatTensor [num_frames, batch_size, num_tokens])
+        token_mask (torch.BoolTensor [num_tokens, batch_size])
+        spectrogram_mask (torch.BoolTensor [num_frames, batch_size])
+        threshold: The percentage focus a token gets.
+
+    Returns:
+        torch.FloatTensor [batch_size]
+    """
+    if alignments.numel() == 0:
+        return torch.zeros(alignments.shape[1], device=alignments.device)
+
+    alignments = alignments.masked_fill(~tokens_mask.transpose(0, 1).unsqueeze(0), 0)
+    # [num_frames, batch_size, num_tokens] → [token_mask, batch_size]
+    values = alignments.max(dim=2).values
+    values = (values < threshold).float()
+    values = values.masked_fill(~spectrogram_mask, 0)
+    return values.sum(dim=0)
+
+
 """
 TODO: In order to support `get_rms_level`, the signal used to compute the spectrogram should
 be padded appropriately. At the moment, the spectrogram is padded such that it's length
@@ -202,6 +232,7 @@ class Metrics(_utils.Metrics):
         FREQUENCY_TEXT_LENGTH: The frequency of each text length bucket.
         ALIGNMENT_NORM: The p-norm of an alignment. The more focused an alignment is the higher this
             metric. The metric is bounded at [0, 1].
+        ALIGNMENT_SMALL_MAX: The number of frames which have a small maximum alignment.
         ALIGNMENT_SKIPS: This metric assumes that each alignment focuses on one token. This measures
             the percentage of tokens skipped by the alignments.
         ALIGNMENT_JUMPS: This metric assumes that each alignment focuses on one token. This measures
@@ -222,6 +253,7 @@ class Metrics(_utils.Metrics):
 
     (
         ALIGNMENT_NORM_SUM,
+        ALIGNMENT_NUM_SMALL_MAX,
         ALIGNMENT_NUM_SKIPS,
         ALIGNMENT_NUM_JUMPS,
         ALIGNMENT_STD_SUM,
@@ -255,6 +287,7 @@ class Metrics(_utils.Metrics):
     FREQUENCY_TEXT_LENGTH = partial(get_dataset_label, "text_length_bucket_{lower}_{upper}")
 
     ALIGNMENT_NORM = partial(get_model_label, "alignment_norm")
+    ALIGNMENT_SMALL_MAX = partial(get_model_label, "alignment_num_small_max")
     ALIGNMENT_SKIPS = partial(get_model_label, "alignment_skips")
     ALIGNMENT_JUMPS = partial(get_model_label, "alignment_jumps")
     ALIGNMENT_STD = partial(get_model_label, "alignment_std")
@@ -335,12 +368,13 @@ class Metrics(_utils.Metrics):
         """
         values: typing.Dict[str, float] = collections.defaultdict(float)
         tokens_mask = batch.encoded_phonemes_mask.tensor
-        for span, num_skipped, num_jumps, std, norm, length, has_reached_max in zip(
+        for span, num_skipped, num_jumps, std, norm, small_max, length, has_reached_max in zip(
             batch.spans,
             self._to_list(get_num_skipped(alignments, tokens_mask, spectrogram_mask)),
             self._to_list(get_num_jumps(alignments, tokens_mask, spectrogram_mask)),
             self._to_list(get_alignment_std(alignments, tokens_mask, spectrogram_mask)),
             self._to_list(get_alignment_norm(alignments, tokens_mask, spectrogram_mask)),
+            self._to_list(get_num_small_max(alignments, tokens_mask, spectrogram_mask)),
             self._to_list(spectrogram_lengths),
             itertools.repeat(False) if reached_max is None else self._to_list(reached_max),
         ):
@@ -352,6 +386,7 @@ class Metrics(_utils.Metrics):
                 for suffix in ["", f"/{span.speaker.label}"]:
                     format_ = lambda s: f"{s}{suffix}"
                     values[format_(self.ALIGNMENT_NORM_SUM)] += norm
+                    values[format_(self.ALIGNMENT_NUM_SMALL_MAX)] += small_max
                     values[format_(self.ALIGNMENT_NUM_SKIPS)] += num_skipped
                     values[format_(self.ALIGNMENT_NUM_JUMPS)] += num_jumps
                     values[format_(self.ALIGNMENT_STD_SUM)] += std
@@ -429,6 +464,9 @@ class Metrics(_utils.Metrics):
             total_spans = reduce(self.NUM_SPANS) + reduce(self.NUM_REACHED_MAX)
             update = {
                 self.ALIGNMENT_NORM: div(self.ALIGNMENT_NORM_SUM, self.NUM_FRAMES_PREDICTED),
+                self.ALIGNMENT_SMALL_MAX: div(
+                    self.ALIGNMENT_NUM_SMALL_MAX, self.NUM_FRAMES_PREDICTED
+                ),
                 self.ALIGNMENT_STD: div(self.ALIGNMENT_STD_SUM, self.NUM_FRAMES_PREDICTED),
                 self.ALIGNMENT_SKIPS: div(self.ALIGNMENT_NUM_SKIPS, self.NUM_TOKENS),
                 self.ALIGNMENT_JUMPS: div(self.ALIGNMENT_NUM_JUMPS, self.NUM_TOKENS),

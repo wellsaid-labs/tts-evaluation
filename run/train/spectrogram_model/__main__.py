@@ -24,9 +24,8 @@ from run.train._utils import (
     set_run_seed,
     start_experiment,
 )
-from run.train.spectrogram_model import _worker
+from run.train.spectrogram_model import _metrics, _worker
 from run.train.spectrogram_model._data import InputEncoder
-from run.train.spectrogram_model._metrics import Metrics
 
 logger = logging.getLogger(__name__)
 app = typer.Typer()
@@ -87,7 +86,10 @@ def _make_configuration(
             num_workers=2,
             prefetch_factor=2 if debug else 10,
         ),
-        Metrics._get_model_metrics: HParams(num_frame_channels=NUM_FRAME_CHANNELS),
+        _metrics.Metrics._get_model_metrics: HParams(num_frame_channels=NUM_FRAME_CHANNELS),
+        # NOTE: Based on the alignment visualizations, if the maximum alignment is less than 30%
+        # then a misalignment has likely occured.
+        _metrics.get_num_small_max: HParams(threshold=0.3),
         # SOURCE (Tacotron 2):
         # We use the Adam optimizer with β1 = 0.9, β2 = 0.999, eps = 10−6 learning rate of 10−3
         # We also apply L2 regularization with weight 10−6
