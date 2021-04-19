@@ -544,7 +544,11 @@ def _include_span(span: Span):
 
 
 def _configure_data_processing():
-    """ Configure modules that process data, other than audio. """
+    """Configure modules that process data, other than audio.
+
+    TODO: Remove `BETH_CAMERON__CUSTOM` from the `WSL_DATASETS` groups because it has it's own
+    custom script.
+    """
     dev_speakers = run.data._loader.WSL_DATASETS.copy()
     # NOTE: The `MARI_MONGE__PROMO` dataset is too short for evaluation, at 15 minutes long.
     del dev_speakers[run.data._loader.MARI_MONGE__PROMO]
