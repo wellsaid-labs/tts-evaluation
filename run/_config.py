@@ -553,6 +553,8 @@ def _configure_data_processing():
     del dev_speakers[run.data._loader.ALICIA_HARRIS]
     del dev_speakers[run.data._loader.JACK_RUTKOWSKI]
     del dev_speakers[run.data._loader.SAM_SCHOLL]
+    # NOTE: The `BETH_CAMERON__CUSTOM` dataset isn't included in the studio.
+    del dev_speakers[run.data._loader.BETH_CAMERON__CUSTOM]
     dev_speakers = set(dev_speakers.keys())
     groups = [set(_loader.WSL_DATASETS.keys())]
     # NOTE: For other datasets like M-AILABS and LJ, this assumes that there is no duplication
