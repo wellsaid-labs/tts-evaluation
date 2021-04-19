@@ -249,7 +249,7 @@ class SpanGenerator(typing.Iterator[_loader.Span]):
             is_singles = all([len(p.alignments) == 1 for p in passages])
             max_seconds_ = math.inf if is_singles else max_seconds
             self.generators[speaker] = _loader.SpanGenerator(passages, max_seconds_)
-        self.counter = {s: 0.0 for s in list(dataset.keys())}
+        self.counter = {s: 0.0 for s in dataset.keys()}
         self.include_span = include_span
 
     def __iter__(self) -> typing.Iterator[_loader.Span]:
