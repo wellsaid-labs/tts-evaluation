@@ -353,8 +353,8 @@ def _get_dataset_stats(
             stats[label("num_audio_files")] = len(set(p.audio_file for p in passages))
             stats[label("num_passages")] = len(passages)
             stats[label("num_characters")] = sum(len(p.script) for p in passages)
-            num_seconds = seconds_to_str(sum(p.segmented_audio_length() for p in passages))
-            stats[label("num_seconds")] = num_seconds
+            num_seconds = sum(p.segmented_audio_length() for p in passages)
+            stats[label("num_seconds")] = seconds_to_str(num_seconds)
     return stats
 
 

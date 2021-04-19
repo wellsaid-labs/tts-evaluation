@@ -554,6 +554,10 @@ def _configure_data_processing():
     del dev_speakers[run.data._loader.JACK_RUTKOWSKI]
     del dev_speakers[run.data._loader.SAM_SCHOLL]
     dev_speakers = set(dev_speakers.keys())
+    groups = [set(_loader.WSL_DATASETS.keys())]
+    # NOTE: For other datasets like M-AILABS and LJ, this assumes that there is no duplication
+    # between different speakers.
+    groups += [{s} for s in _loader.DATASETS.keys() if s not in _loader.WSL_DATASETS]
     config = {
         lib.text.grapheme_to_phoneme: HParams(separator=PHONEME_SEPARATOR),
         run._utils.get_dataset: HParams(
@@ -563,15 +567,9 @@ def _configure_data_processing():
             handle_passage=lib.utils.identity,
         ),
         run._utils.split_dataset: HParams(
-            groups=[set(_loader.WSL_DATASETS)],
-            dev_speakers=dev_speakers,
-            approx_dev_length=30 * 60,
-            min_similarity=0.9,
+            groups=groups, dev_speakers=dev_speakers, approx_dev_len=30 * 60, min_sim=0.9
         ),
-        run._utils.SpanGenerator.__init__: HParams(
-            max_seconds=15,
-            include_span=_include_span,
-        ),
+        run._utils.SpanGenerator.__init__: HParams(max_seconds=15, include_span=_include_span),
     }
     add_config(config)
 

@@ -1,6 +1,5 @@
 import collections
 import functools
-import itertools
 import logging
 import math
 import multiprocessing
@@ -8,17 +7,19 @@ import multiprocessing.pool
 import pathlib
 import random
 import typing
+from functools import partial
 
 import torch
 import torch.nn
-import tqdm
 from google.cloud import storage
 from hparams import HParam, configurable
 from Levenshtein.StringMatcher import StringMatcher
 from third_party import LazyLoader
 from torchnlp.random import fork_rng
+from tqdm import tqdm
 
 import lib
+from lib.utils import split
 from run._config import Dataset
 from run.data import _loader
 
@@ -61,28 +62,28 @@ def get_dataset(
 
 
 @functools.lru_cache(maxsize=None)
-def _is_duplicate(a: str, b: str, min_similarity: float) -> bool:
+def _is_duplicate(a: str, b: str, min_sim: float) -> bool:
     """Helper function for `split_dataset` used to judge string similarity."""
     matcher = StringMatcher(seq1=a, seq2=b)
     return (
-        matcher.real_quick_ratio() > min_similarity
-        and matcher.quick_ratio() > min_similarity
-        and matcher.ratio() > min_similarity
+        matcher.real_quick_ratio() > min_sim
+        and matcher.quick_ratio() > min_sim
+        and matcher.ratio() > min_sim
     )
 
 
 def _find_duplicate_passages(
-    dev_scripts: typing.Set[str],
+    dev_scripts: typing.Union[typing.Set[str], typing.Tuple[str]],
     passages: typing.List[_loader.Passage],
-    min_similarity: float,
+    min_sim: float,
 ) -> typing.Tuple[typing.List[_loader.Passage], typing.List[_loader.Passage]]:
     """Find passages in `passages` that are a duplicate of a passage in `dev_scripts`.
 
     Args:
         dev_scripts: Set of unique scripts.
         passages: Passages that may have a `script` thats already included in `dev_scripts`.
-        minimum_similarity: From 0 - 1, this is the minimum similarity two scripts must have to be
-          considered duplicates.
+        min_sim: From 0 - 1, this is the minimum similarity two scripts must have to be considered
+            duplicates.
     """
     duplicates, rest = [], []
     for passage in passages:
@@ -92,7 +93,7 @@ def _find_duplicate_passages(
 
         length = len(duplicates)
         for dev_script in dev_scripts:
-            if _is_duplicate(dev_script, passage.script, min_similarity):
+            if _is_duplicate(dev_script, passage.script, min_sim):
                 duplicates.append(passage)
                 break
 
@@ -102,59 +103,56 @@ def _find_duplicate_passages(
     return duplicates, rest
 
 
-def _split_dataset(
-    dataset: Dataset,
-    dev_speakers: typing.Set[_loader.Speaker],
-    approx_dev_length: int,
-    min_similarity: float,
-    seed: int,
-) -> typing.Tuple[Dataset, Dataset]:
-    logger.info("Splitting `dataset`...")
-    dev: typing.Dict[_loader.Speaker, list] = collections.defaultdict(list)
-    train: typing.Dict[_loader.Speaker, list] = collections.defaultdict(list)
+def _passages_len(passages: typing.List[_loader.Passage]):
+    """ Get the cumulative length of all `passages`. """
+    return sum(p.segmented_audio_length() for p in passages)
+
+
+def _len_of_dups(
+    item: typing.Tuple[int, _loader.Passage], passages: typing.List[_loader.Passage], min_sim: float
+) -> float:
+    """Get the length of the duplicate passages to `item`."""
+    assert passages[item[0]] is item[1]
+    dups = _find_duplicate_passages((item[1].script,), passages[item[0] :], min_sim)[0]
+    return _passages_len(dups)
+
+
+TrainDev = typing.Tuple[Dataset, Dataset]
+
+
+def _split_dataset(dataset: Dataset, dev_len: int, min_sim: float) -> TrainDev:
+    """Split `dataset` into `train` and `dev` such that they contain no duplicates.
+
+    Args
+        ...
+        dev_len: The approximate number of seconds to include for each speaker split.
+        min_sim: The minimum similarity between two passages for them to be considered duplicates.
+    """
+    dev: Dataset = collections.defaultdict(list)
+    train: Dataset = collections.defaultdict(list)
     dev_scripts: typing.Set[str] = set()
-    len_ = lambda _passage: _passage.segmented_audio_length()
-    sum_ = lambda _passages: sum([len_(p) for p in _passages])
-    with fork_rng(seed=seed):
-        iterator = list(sorted(dataset.items(), key=lambda i: (len(i[1]), i[0])))
-        for speaker, passages in tqdm.tqdm(iterator):
-            if speaker not in dev_speakers:
-                train[speaker] = passages
-                continue
+    items = sorted(dataset.items(), key=lambda i: i[0])
+    random.shuffle(items)
+    logger.info("Creating initial split...")
+    for speaker, passages in tqdm(items):
+        duplicates, rest = _find_duplicate_passages(dev_scripts, passages, min_sim)
+        random.shuffle(rest)
+        split_lens = [max(dev_len - _passages_len(duplicates), 0), math.inf]
+        val = partial(_len_of_dups, passages=rest, min_sim=min_sim)
+        splits = [[p for _, p in s] for s in split(list(enumerate(rest)), split_lens, val)]
+        dev[speaker].extend(duplicates + splits[0])
+        train[speaker].extend(splits[1])
+        dev_scripts.update(d.script for d in dev[speaker])
 
-            duplicates, rest = _find_duplicate_passages(dev_scripts, passages, min_similarity)
+    length = None
+    while length is None or length != len(dev_scripts):
+        length = len(dev_scripts)
+        logger.info("Filtering out leftover duplicates...")
+        for speaker, _ in tqdm(items):
+            duplicates, rest = _find_duplicate_passages(dev_scripts, train[speaker], min_sim)
             dev[speaker].extend(duplicates)
-
-            random.shuffle(rest)
-            seconds = max(approx_dev_length - sum_(dev[speaker]), 0)
-            splits = tuple(lib.utils.split(rest, [seconds, math.inf], len_))
-            dev[speaker].extend(splits[0])
-            train[speaker].extend(splits[1])
-            dev_scripts.update(d.script for d in dev[speaker])
-
-            message = "The `dev` dataset is larger than the `train` dataset."
-            assert sum_(train[speaker]) >= sum_(dev[speaker]), message
-            assert sum_(train[speaker]) > 0, "The train dataset has no aligned audio data."
-            assert sum_(dev[speaker]) > 0, "The train dataset has no aligned audio data."
-
-        # NOTE: Run the deduping algorithm until there are no more duplicates.
-        length = None
-        while length is None or length != len(dev_scripts):
-            logger.info("Rerunning until there are no more duplicates...")
-            length = len(dev_scripts)
-            for speaker, _ in iterator:
-                duplicates, rest = _find_duplicate_passages(
-                    dev_scripts, train[speaker], min_similarity
-                )
-                if speaker not in dev_speakers and len(duplicates) > 0:
-                    message = "Discarded %d duplicates for non-dev speaker %s. "
-                    logger.warning(message, len(duplicates), speaker)
-                elif speaker in dev_speakers:
-                    dev[speaker].extend(duplicates)
-                train[speaker] = rest
-                dev_scripts.update(d.script for d in duplicates)
-
-    _is_duplicate.cache_clear()
+            train[speaker] = rest
+            dev_scripts.update(d.script for d in duplicates)
 
     return dict(train), dict(dev)
 
@@ -164,51 +162,64 @@ def _split_dataset(
 def split_dataset(
     dataset: Dataset,
     dev_speakers: typing.Set[_loader.Speaker] = HParam(),
-    approx_dev_length: int = HParam(),
-    min_similarity: float = HParam(),
-    groups: typing.Optional[typing.List[typing.Set[_loader.Speaker]]] = None,
+    approx_dev_len: int = HParam(),
+    min_sim: float = HParam(),
+    groups: typing.List[typing.Set[_loader.Speaker]] = HParam(),
     seed: int = 123,
-) -> typing.Tuple[Dataset, Dataset]:
-    """Split the dataset into a train set and development set.
+) -> TrainDev:
+    """Split `dataset` into a train and development dataset. Ensures that `dev` and `train` share
+    no duplicate passages.
 
-    NOTE: The RNG state should never change; otherwise, the training and dev datasets may be
-    different from experiment to experiment.
-
-    NOTE: `len_` assumes that the amount of data in each passage can be estimated with
+    NOTE: This assumes that the amount of data in each passage can be estimated with
     `segmented_audio_length`. For example, if there was a long pause within a passage, this
     estimate wouldn't make sense.
-
-    NOTE: Passages are split between the train and development set in groups. The groups are
-    dictated by textual similarity. The result of this is that the text in the train and
-    development sets is distinct.
-
     NOTE: Any duplicate data for a speaker, not in `dev_speakers` will be discarded.
-
     NOTE: The duplicate cache is cleared after this function is run assuming it's not relevant
     any more.
+    NOTE: The RNG state should never change; otherwise, the training and dev datasets may be
+    different from process to process.
+    TODO: `_split_dataset` can be rerun many times, in order to reduce, the size of the `dev_split`,
+    so that it better matches `approx_dev_len`; however, it's not obvious how that would affect
+    the distribution of the dev set as compared to the train set.
 
     Args:
         ...
         dev_speakers: Speakers to include in the development set.
-        approx_dev_length: Number of seconds per speaker in the development dataset. The
+        approx_dev_len: Number of seconds per speaker in the development dataset. The
             deduping algorithm may add extra items above the `approx_dev_length`.
-        groups: Speakers to be deduplicated, together. Otherwise, the speakers are considered to
-            have independent datasets.
+        min_sim: The minimum percentage similarity for two passages to be considered duplicates.
+        groups: Groups of speakers to be deduplicated, together.
         ...
     """
-    remaining = set(dataset.keys())
-    groups = [] if groups is None else groups
-    message = "Groups must not have overlapping speakers."
-    assert len(set(itertools.chain(*tuple(groups)))) == sum([len(g) for g in groups]), message
-    [remaining.remove(s) for group in groups for s in group if s in remaining]
-
+    logger.info("Splitting dataset...")
+    speakers = {s for g in groups for s in g}
+    assert len(speakers) == sum(len(g) for g in groups), "Groups have overlapping speakers."
+    assert len(set(dataset.keys()) - speakers) == 0, "Dataset speakers not found in groups."
     train: Dataset = {}
     dev: Dataset = {}
-    for group in groups + [set([s]) for s in remaining]:
-        subset = {k: v for k, v in dataset.items() if k in group}
-        _train, _dev = _split_dataset(subset, dev_speakers, approx_dev_length, min_similarity, seed)
-        train.update(_train)
-        dev.update(_dev)
+    subsets = ({k: v for k, v in dataset.items() if k in g and k in dev_speakers} for g in groups)
+    with fork_rng(seed=seed):
+        for subset in (s for s in subsets if len(s) > 0):
+            train_split, dev_split = _split_dataset(subset, approx_dev_len, min_sim)
+            train, dev = {**train, **train_split}, {**dev, **dev_split}
+
+    # NOTE: For non-dev speakers, discard training passages which are already in `dev`.
+    for group in groups:
+        dev_scripts = {p.script for s, d in dev.items() for p in d if s in group}
+        items = ((s, p) for s, p in dataset.items() if s in group and s not in dev_speakers)
+        for speaker, passages in items:
+            duplicates, rest = _find_duplicate_passages(dev_scripts, passages, min_sim)
+            logger.warning("Discarded %d `%s` duplicates.", len(duplicates), speaker)
+            train[speaker] = rest
+
+    for spkr in dataset.keys():
+        assert _passages_len(train.get(spkr, [])) > 0, "The `train` dataset has no data."
+        if spkr in dev_speakers:
+            message = "The `dev` dataset is larger than the `train` dataset."
+            assert _passages_len(train.get(spkr, [])) >= _passages_len(dev.get(spkr, [])), message
+            assert _passages_len(dev.get(spkr, [])) > 0, "The `dev` dataset has no data."
+
+    _is_duplicate.cache_clear()
     return train, dev
 
 

@@ -4,7 +4,7 @@ import hparams
 import pytest
 
 import run
-from run._utils import _find_duplicate_passages, split_dataset
+from run._utils import _find_duplicate_passages, _len_of_dups, split_dataset
 from run.data._loader import Alignment
 from tests._utils import TEST_DATA_PATH, make_passage
 
@@ -21,7 +21,7 @@ def run_around_tests():
 
 
 def test__find_duplicate_passages():
-    """ Test `run._config._find_duplicate_passages` finds duplicate passages. """
+    """ Test `run._utils._find_duplicate_passages` finds duplicate passages. """
     dev_scripts = set(["This is a test."])
     passages = [
         make_passage(script="I'm testing this."),
@@ -34,7 +34,7 @@ def test__find_duplicate_passages():
 
 
 def test__find_duplicate_passages__no_duplicates():
-    """ Test `run._config._find_duplicate_passages` handles no duplicates. """
+    """ Test `run._utils._find_duplicate_passages` handles no duplicates. """
     dev_scripts = set(["This is a test."])
     duplicates, rest = _find_duplicate_passages(
         dev_scripts, [make_passage(script="I'm testing this.")], 0.9
@@ -43,9 +43,24 @@ def test__find_duplicate_passages__no_duplicates():
     assert len(duplicates) == 0
 
 
+def test__len_of_dups():
+    """ Test `run._utils._len_of_dups` handles a basic case. """
+    alignments = Alignment.stow([Alignment((0, 1), (0, 1), (0, 1))])
+    passages = [
+        make_passage(script="a", alignments=alignments),
+        make_passage(script="b", alignments=alignments),
+        make_passage(script="c", alignments=alignments),
+        make_passage(script="a", alignments=alignments),
+    ]
+    assert _len_of_dups((0, passages[0]), passages, 1.0) == 2
+    assert _len_of_dups((1, passages[1]), passages, 1.0) == 1
+    assert _len_of_dups((2, passages[2]), passages, 1.0) == 1
+    assert _len_of_dups((3, passages[3]), passages, 1.0) == 1
+
+
 @mock.patch("random.shuffle", return_value=None)
 def test_split_dataset__deduplication(_):
-    """ Test `run._config.split_dataset` handles deduplication accross multiple speakers. """
+    """ Test `run._utils.split_dataset` handles deduplication accross multiple speakers. """
     speaker_a = run.data._loader.Speaker("a")
     speaker_b = run.data._loader.Speaker("b")
     speaker_c = run.data._loader.Speaker("c")
@@ -94,8 +109,8 @@ def test_split_dataset__deduplication(_):
     }
     assert dev == {
         speaker_a: [
-            passage("I'm testing this.", speaker_a),
             passage("This is a test!", speaker_a),
+            passage("I'm testing this.", speaker_a),
         ],
         speaker_b: [
             passage("This is a test!", speaker_b),
@@ -107,7 +122,7 @@ def test_split_dataset__deduplication(_):
 
 @mock.patch("random.shuffle", return_value=None)
 def test_split_dataset__order(_):
-    """ Test `run._config.split_dataset` handles different dictionary orderings. """
+    """ Test `run._utils.split_dataset` handles different dictionary orderings. """
     speaker_a = run.data._loader.Speaker("a")
     speaker_b = run.data._loader.Speaker("b")
     groups = [set([speaker_a, speaker_b])]
@@ -139,9 +154,10 @@ def test_split_dataset__order(_):
 
 @mock.patch("random.shuffle", return_value=None)
 def test_split_dataset__groups(_):
-    """ Test `run._config.split_dataset` handles independent speakers. """
+    """ Test `run._utils.split_dataset` handles independent speakers. """
     speaker_a = run.data._loader.Speaker("a")
     speaker_b = run.data._loader.Speaker("b")
+    groups = [{speaker_a}, {speaker_b}]
     alignments = Alignment.stow([Alignment((0, 1), (0, 1), (0, 1))])
     passage = lambda script, speaker: make_passage(
         script=script, speaker=speaker, alignments=alignments
@@ -157,7 +173,7 @@ def test_split_dataset__groups(_):
         passage("I'm testing this.", speaker_b),
         passage("This is a test!", speaker_b),
     ]
-    train, dev = split_dataset(dataset, dev_speakers, dev_length, 0.9)
+    train, dev = split_dataset(dataset, dev_speakers, dev_length, 0.9, groups)
     assert train == {
         speaker_a: [passage("I'm testing this.", speaker_a)],
         speaker_b: [passage("This is a test!", speaker_b)],
