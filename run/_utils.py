@@ -198,10 +198,10 @@ def split_dataset(
     train: Dataset = {}
     dev: Dataset = {}
     subsets = ({k: v for k, v in dataset.items() if k in g and k in dev_speakers} for g in groups)
-    with fork_rng(seed=seed):
-        for subset in (s for s in subsets if len(s) > 0):
+    for subset in (s for s in subsets if len(s) > 0):
+        with fork_rng(seed=seed):
             train_split, dev_split = _split_dataset(subset, approx_dev_len, min_sim)
-            train, dev = {**train, **train_split}, {**dev, **dev_split}
+        train, dev = {**train, **train_split}, {**dev, **dev_split}
 
     # NOTE: For non-dev speakers, discard training passages which are already in `dev`.
     for group in groups:
