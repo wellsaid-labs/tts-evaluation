@@ -592,6 +592,15 @@ def test_is_voiced():
     assert not lib.text.is_voiced("")
 
 
+def test_has_digit():
+    """ Test `lib.text.has_digit` handles basic cases. """
+    assert lib.text.has_digit("123")
+    assert lib.text.has_digit("123abc")
+    assert lib.text.has_digit("1")
+    assert not lib.text.has_digit("abc")
+    assert not lib.text.has_digit("")
+
+
 def test_add_space_between_sentences():
     """ Test `lib.text.add_space_between_sentences` adds a space between sentences. """
     nlp = lib.text.load_en_core_web_md(disable=("tagger", "ner"))

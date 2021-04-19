@@ -83,15 +83,20 @@ def bucket_and_chart(
     x: str = "Buckets",
     y: str = "Count",
     ndigits: int = 7,
+    normalize: bool = False,
+    stack: bool = True,
+    opacity: float = 1.0,
 ) -> alt.Chart:
     """ Bucket `values` and create a bar chart. """
     assert len(values) == len(labels)
     data = [(v, l) for v, l in zip(values, labels) if not math.isnan(v)]
     if len(data) != len(values):
         logger.warning("Ignoring %d NaNs...", len(values) - len(data))
-    buckets = collections.defaultdict(int)
+    buckets = collections.defaultdict(float)
+    counter = collections.Counter(labels)
     for value, label in data:
-        buckets[(round(lib.utils.round_(value, bucket_size), ndigits), label)] += 1
+        unit = 1 / counter[label] if normalize else 1
+        buckets[(round(lib.utils.round_(value, bucket_size), ndigits), label)] += unit
     data = sorted([(l, b, v) for (b, l), v in buckets.items()])
     df = pd.DataFrame(data, columns=["label", "bucket", "count"])
     # NOTE: x-axis is "quantitative" due to this warning by Vega-Lite, in the online editor:
@@ -103,10 +108,10 @@ def bucket_and_chart(
     #  function ("sum")."
     return (
         alt.Chart(df)
-        .mark_bar()
+        .mark_bar(opacity=opacity)
         .encode(
             x=alt.X("bucket", type="quantitative", title=x + " (binned)"),
-            y=alt.Y(field="count", type="quantitative", title=y, stack=True),
+            y=alt.Y(field="count", type="quantitative", title=y, stack=stack),
             color=alt.Color(field="label", type="nominal", title="Label"),
             tooltip=["label", "bucket", "count"],
         )

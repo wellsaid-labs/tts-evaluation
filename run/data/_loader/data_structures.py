@@ -490,6 +490,7 @@ class Span:
     @property
     def nonalignments_slice(self):
         """Slice of `Alignment`s in `self.passage.nonalignments`."""
+        assert self.passage_alignments is self.passage.alignments
         return slice(self.slice.start, self.slice.stop + 1)
 
     @property
@@ -557,13 +558,17 @@ class Span:
     def check_invariants(self):
         """ Check datastructure invariants. """
         self.passage.check_invariants()
-        assert self.passage_alignments in (self.passage.nonalignments, self.passage.alignments)
+        assert (
+            self.passage_alignments is self.passage.nonalignments
+            or self.passage_alignments is self.passage.alignments
+        )
         assert self.slice.stop > self.slice.start, "`Span` must have `Alignments`."
         assert self.slice.stop <= len(self.passage_alignments) and self.slice.stop >= 0
         assert self.slice.start < len(self.passage_alignments) and self.slice.start >= 0
         # NOTE: `self.audio_slice_` must partially contain all alignments.
         assert self.audio_slice_ is None or (
-            self.audio_slice_.start <= self._first.audio[1]
+            self.audio_slice_.stop > self.audio_slice_.start
+            and self.audio_slice_.start <= self._first.audio[1]
             and self.audio_slice_.stop >= self._last.audio[0]
         )
         return self

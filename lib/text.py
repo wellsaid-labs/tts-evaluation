@@ -647,6 +647,13 @@ def is_voiced(text: str) -> bool:
     return ALPHANUMERIC_REGEX.search(text) is not None
 
 
+DIGIT_REGEX = re.compile(r"\d")
+
+
+def has_digit(text: str) -> bool:
+    return bool(DIGIT_REGEX.search(text))
+
+
 def add_space_between_sentences(doc: spacy.tokens.Doc) -> str:
     """ Add spaces between sentences which are not separated by a space. """
     if len(doc) <= 2:

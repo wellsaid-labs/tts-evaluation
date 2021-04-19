@@ -518,9 +518,6 @@ def _include_passage(passage: Passage) -> bool:
     return True
 
 
-DIGIT_REGEX = re.compile(r"\d")
-
-
 def _include_span(span: Span):
     """Return `True` iff `span` should be included in the dataset."""
     if "<" in span.script or ">" in span.script:
@@ -529,7 +526,7 @@ def _include_span(span: Span):
     # NOTE: Filter out any passage(s) with digits because the pronunciation is fundamentally
     # ambigious, and it's much easier to handle this case with text normalization.
     # NOTE: See performance statistics here: https://stackoverflow.com/a/31861306/4804936
-    if DIGIT_REGEX.search(span.script):
+    if lib.text.has_digit(span.script):
         return False
 
     # NOTE: `Span`s which end with a short, or fast `Span`, tend to be error prone.
