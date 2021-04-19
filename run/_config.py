@@ -4,7 +4,6 @@ import enum
 import logging
 import math
 import pprint
-import re
 import typing
 
 import torch
