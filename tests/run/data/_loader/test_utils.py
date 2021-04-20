@@ -1,4 +1,5 @@
 import functools
+import math
 import pathlib
 import typing
 from collections import Counter
@@ -136,7 +137,7 @@ def test__maybe_normalize_audio_and_cache():
 def test_span_generator():
     """Test `SpanGenerator` samples uniformly given a uniform distribution of alignments."""
     dataset = [make_passage(_make_alignments(((0, 1), (1, 2), (2, 3))))]
-    iterator = SpanGenerator(dataset, max_seconds=10)
+    iterator = SpanGenerator(dataset, max_seconds=10, max_pause=math.inf)
     counter: typing.Counter[Alignment] = Counter()
     for _ in range(10000):
         span = next(iterator)
@@ -147,7 +148,7 @@ def test_span_generator():
 
 def test_span_generator__empty():
     """ Test `SpanGenerator` handles an empty list. """
-    iterator = SpanGenerator([], max_seconds=10)
+    iterator = SpanGenerator([], max_seconds=10, max_pause=math.inf)
     assert next(iterator, None) is None
 
 
@@ -158,7 +159,7 @@ def test_span_generator__zero():
         make_passage(_make_alignments(((1, 1),))),
         make_passage(_make_alignments(((1, 2),))),
     ]
-    iterator = SpanGenerator(dataset, max_seconds=10)
+    iterator = SpanGenerator(dataset, max_seconds=10, max_pause=math.inf)
     counter: typing.Counter[Alignment] = Counter()
     for _ in range(10000):
         span = next(iterator)
@@ -177,7 +178,7 @@ def test_span_generator__singular():
         make_passage(_make_alignments(((0, 10),))),
         make_passage(_make_alignments(((0, 5),))),
     ]
-    iterator = SpanGenerator(dataset, max_seconds=10)
+    iterator = SpanGenerator(dataset, max_seconds=10, max_pause=math.inf)
     counter: typing.Counter[Alignment] = Counter()
     for _ in range(10000):
         span = next(iterator)
@@ -193,7 +194,7 @@ def test_span_generator__multiple_multiple():
         make_passage(_make_alignments(((0, 1), (1, 2), (2, 3)))),
         make_passage(_make_alignments(((3, 4), (4, 5), (5, 6)))),
     ]
-    iterator = SpanGenerator(dataset, max_seconds=10)
+    iterator = SpanGenerator(dataset, max_seconds=10, max_pause=math.inf)
     counter: typing.Counter[Alignment] = Counter()
     for _ in range(10000):
         span = next(iterator)
@@ -206,13 +207,28 @@ def test_span_generator__multiple_multiple():
 def test_span_generator__pause():
     """ Test `SpanGenerator` samples uniformly despite a large pause. """
     dataset = [make_passage(_make_alignments(((0, 1), (1, 2), (2, 3), (20, 21), (40, 41))))]
-    iterator = SpanGenerator(dataset, max_seconds=4)
+    iterator = SpanGenerator(dataset, max_seconds=4, max_pause=math.inf)
     counter: typing.Counter[Alignment] = Counter()
     for _ in range(10000):
         span = next(iterator)
         counter.update(span.passage.alignments[span.slice])
     assert set(counter.keys()) == set(typing.cast(typing.Tuple[Alignment], dataset[0].alignments))
     assert_uniform_distribution(counter, abs=0.02)
+
+
+def test_span_generator__ignore_pause():
+    """ Test `SpanGenerator` `max_pause` can ignore pauses. """
+    dataset = [make_passage(_make_alignments(((0, 1), (1, 2), (2, 3), (20, 21), (40, 41))))]
+    iterator = SpanGenerator(dataset, max_seconds=50, max_pause=1)
+    for _ in range(1000):
+        span = next(iterator)
+        assert span.slice.stop - span.slice.start <= 3
+
+    with pytest.raises(AssertionError):
+        iterator = SpanGenerator(dataset, max_seconds=50, max_pause=50)
+        for _ in range(1000):
+            span = next(iterator)
+            assert span.slice.stop - span.slice.start <= 3
 
 
 def test_span_generator__multiple_unequal_passages__large_max_seconds():
@@ -224,7 +240,7 @@ def test_span_generator__multiple_unequal_passages__large_max_seconds():
         make_passage(_make_alignments(((0, 1),))),
         make_passage(_make_alignments(((3, 4), (4, 5), (5, 6)))),
     ]
-    iterator = SpanGenerator(dataset, max_seconds=1000000)
+    iterator = SpanGenerator(dataset, max_seconds=1000000, max_pause=math.inf)
 
     alignments_counter: typing.Counter[Alignment] = Counter()
     spans_counter: typing.Counter[lib.utils.Tuple[Alignment]] = Counter()
@@ -248,7 +264,7 @@ def test_span_generator__multiple_unequal_passages__large_max_seconds():
 def test_span_generator__unequal_alignment_sizes():
     """ Test `SpanGenerator` samples uniformly despite unequal alignment sizes. """
     dataset = [make_passage(_make_alignments(((0, 1), (1, 5), (5, 20))))]
-    iterator = SpanGenerator(dataset, max_seconds=20)
+    iterator = SpanGenerator(dataset, max_seconds=20, max_pause=math.inf)
     counter: typing.Counter[Alignment] = Counter()
     for _ in range(10000):
         span = next(iterator)
@@ -264,7 +280,7 @@ def test_span_generator__unequal_alignment_sizes__boundary_bias():
     `[(1, 2), (2, 3), (3, 11), (11, 12)]`. That leads to an oversampling of `(11, 12)`.
     """
     dataset = [make_passage(_make_alignments(((0, 1), (1, 2), (2, 3), (3, 11), (11, 12))))]
-    iterator = SpanGenerator(dataset, max_seconds=10)
+    iterator = SpanGenerator(dataset, max_seconds=10, max_pause=math.inf)
     counter: typing.Counter[Alignment] = Counter()
     for _ in range(10000):
         span = next(iterator)

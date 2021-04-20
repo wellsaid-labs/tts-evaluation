@@ -154,7 +154,15 @@ def start(
     project: str = typer.Argument(..., help="Experiment project name."),
     name: str = typer.Argument("", help="Experiment name."),
     tags: typing.List[str] = typer.Option(
-        ["recording_sessions", "promo", "monotonic", "no_balance_train"], help="Experiment tags."
+        [
+            "recording_sessions",
+            "promo",
+            "monotonic",
+            "no_balance_train",
+            "no_slash",
+            "no_long_pauses",
+        ],
+        help="Experiment tags.",
     ),
     debug: bool = typer.Option(False, help="Turn on debugging mode."),
 ):

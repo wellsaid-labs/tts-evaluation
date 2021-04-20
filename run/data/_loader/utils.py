@@ -204,16 +204,25 @@ class SpanGenerator(typing.Iterator[Span]):
     Args:
         passages
         max_seconds: The maximum interval length.
+        max_pause: The maximum pause length between speech segments
         **kwargs: Additional key-word arguments passed `Timeline`.
     """
 
-    def __init__(self, passages: typing.List[Passage], max_seconds: float, **kwargs):
+    @configurable
+    def __init__(
+        self,
+        passages: typing.List[Passage],
+        max_seconds: float,
+        max_pause: float = HParam(),
+        **kwargs,
+    ):
         assert max_seconds > 0, "The maximum interval length must be a positive number."
         self.passages = [p for p in passages if len(p.speech_segments) > 0]
         if len(self.passages) != len(passages):
             message = "Filtered out %d of %d passages without speech segments."
             logger.warning(message, len(passages) - len(self.passages), len(passages))
         self.max_seconds = max_seconds
+        self.max_pause = max_pause
         lengths = [p.segmented_audio_length() for p in self.passages]
         self._weights = torch.tensor(lengths)
         make_timeline: typing.Callable[[Passage], Timeline]
@@ -264,9 +273,14 @@ class SpanGenerator(typing.Iterator[Span]):
         if begin is None or end is None:
             return
 
+        segments = passage.speech_segments[begin : end + 1]
+        if len(segments) > 1:
+            pairs = zip(segments, segments[1:])
+            if any(b.audio_start - a.audio_stop > self.max_pause for a, b in pairs):
+                return
+
         length = timeline.stop(end) - timeline.start(begin)
         if length > 0 and length <= self.max_seconds:
-            segments = passage.speech_segments[begin : end + 1]
             slice_ = slice(segments[0].slice.start, segments[-1].slice.stop)
             audio_slice = slice(segments[0].audio_start, segments[-1].audio_stop)
             return passage.span(slice_, audio_slice)

@@ -323,6 +323,10 @@ def _configure_audio_processing():
             bits=bits,
             **{f.name: getattr(format_, f.name) for f in dataclasses.fields(format_)},
         ),
+        # NOTE: Today pauses longer than one second are not used for emphasis or meaning; however,
+        # Otis does tend to use long pauses for emphasis; however, he rarely pauses for longer than
+        # one second.
+        run.data._loader.utils.SpanGenerator.__init__: HParams(max_pause=1.0),
         # NOTE: A 0.400 `block_size` is standard for ITU-R BS.1770.
         run.train.spectrogram_model._data._get_loudness: HParams(block_size=0.400, precision=0),
         run.train.spectrogram_model._data._random_loudness_annotations: HParams(max_annotations=10),
@@ -520,6 +524,11 @@ def _include_passage(passage: Passage) -> bool:
 def _include_span(span: Span):
     """Return `True` iff `span` should be included in the dataset."""
     if "<" in span.script or ">" in span.script:
+        return False
+
+    # NOTE: Filter out any passage(s) with a slash because it's ambigious. It's not obvious if
+    # it should be silent or verbalized.
+    if "/" in span.script or "\\" in span.script:
         return False
 
     # NOTE: Filter out any passage(s) with digits because the pronunciation is fundamentally
