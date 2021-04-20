@@ -35,14 +35,14 @@ ALIGNMENT_PRECISION = 0.1
 @contextlib.contextmanager
 def st_expander(label):
     with st.beta_expander(label):
+        start = time.time()
         try:
-            start = time.time()
             logger.info("Visualizing '%s'...", label)
             yield label
-            elapsed = seconds_to_str(time.time() - start)
-            logger.info("`%s` ran for %s", label, elapsed)
         except GeneratorExit:
             pass
+        elapsed = seconds_to_str(time.time() - start)
+        logger.info("`%s` ran for %s", label, elapsed)
 
 
 _RandomSampleVar = typing.TypeVar("_RandomSampleVar")

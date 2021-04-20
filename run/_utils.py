@@ -236,6 +236,7 @@ class SpanGenerator(typing.Iterator[_loader.Span]):
     is pretty accurate.
 
     Args:
+        ...
         dataset
         max_seconds: The maximum seconds delimited by an `Span`.
         balanced: Generate a similar amount of `Span`s per speaker.
@@ -249,6 +250,7 @@ class SpanGenerator(typing.Iterator[_loader.Span]):
         max_seconds: int = HParam(),
         include_span: typing.Callable[[_loader.Span], bool] = HParam(),
         balanced: bool = True,
+        **kwargs,
     ):
         self.max_seconds = max_seconds
         self.dataset = dataset
@@ -256,7 +258,7 @@ class SpanGenerator(typing.Iterator[_loader.Span]):
         for speaker, passages in dataset.items():
             is_singles = all([len(p.alignments) == 1 for p in passages])
             max_seconds_ = math.inf if is_singles else max_seconds
-            self.generators[speaker] = _loader.SpanGenerator(passages, max_seconds_)
+            self.generators[speaker] = _loader.SpanGenerator(passages, max_seconds_, **kwargs)
         self.counter = {s: 0.0 for s in dataset.keys()}
         self.expected = {
             s: 1.0 if balanced else float(sum(p.segmented_audio_length() for p in d))

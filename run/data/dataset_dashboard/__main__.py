@@ -118,7 +118,7 @@ def _write_span_table(
 
 def _span_metric(
     spans: typing.List[Span],
-    func: typing.Callable[[Span], float],
+    get_val: typing.Union[typing.Callable[[Span], float], typing.List[float]],
     name: str,
     unit_x: str,
     bucket_size: float,
@@ -132,7 +132,7 @@ def _span_metric(
 
     Args:
         ...
-        func: Get a measurement for a `Span`.
+        get_val: Get a measurement for a `Span`.
         name: The title of the analysis.
         unit_x: The name of the measurement unit for `func`.
         bucket_size: The size of each bin in a bar chart showing the distribution of measurements.
@@ -146,7 +146,8 @@ def _span_metric(
             return
 
         st.write(f"The {unit_y.lower()} count for each bucket:")
-        results = map_(spans, func)
+        results = map_(spans, get_val) if callable(get_val) else get_val
+        assert len(results) == len(spans)
         labels = [s.speaker.label for s in spans]
         kwargs = dict(x=unit_x, y=unit_y + " Count", **kwargs)
         chart = utils.bucket_and_chart(results, labels, bucket_size, **kwargs)
@@ -165,12 +166,14 @@ def _span_metric(
                 st.text("")
 
 
+@lib.utils.log_runtime
 def _analyze_all_passages(dataset: Dataset, **kwargs):
     st.markdown("### Passage Analysis")
     spans = [p[:] for d in dataset.values() for p in d]
     _span_metric(spans, lambda s: s.audio_length, "Length", "Seconds", 5, "Passage", **kwargs)
 
 
+@lib.utils.log_runtime
 def _analyze_alignment_speech_segments(
     passages: typing.List[Passage], max_rows: int, run_all: bool
 ):
@@ -212,6 +215,7 @@ def _analyze_alignment_speech_segments(
         _write_span_table(sample, other_columns=other_columns)
 
 
+@lib.utils.log_runtime
 def _analyze_speech_segment_transitions(
     passages: typing.List[Passage], pad=lib.audio.milli_to_sec(25), **kwargs
 ):
@@ -225,30 +229,30 @@ def _analyze_speech_segment_transitions(
     """
     span_metric = functools.partial(_span_metric, **kwargs)
     unit = "Speech Segment Transition"
-    threshold = 1.5
-    transitions = []
+    threshold = 1.0
+    lengths = []
+    spans = []
     total, above_threshold = collections.defaultdict(float), collections.defaultdict(float)
     segments = [(p, p.speech_segments) for p in passages if len(p.speech_segments) != 0]
     pairs = [(p, z) for (p, s) in segments for z in zip(s, s[1:])]
     for passage, (prev, next) in pairs:
-        slice_ = slice(prev.slice.stop, next.slice.start + 1)
-        audio_slice = slice(prev.audio_slice.stop - pad * 2, next.audio_slice.start + pad * 2)
-        span = passage.nonalignment_span(slice_, audio_slice)
+        audio_length = next.audio_slice.start - prev.audio_slice.stop
+        audio_slice = slice(prev.audio_slice.start, next.audio_slice.stop)
+        span = passage.span(slice(prev.slice.start, next.slice.stop), audio_slice)
         total[passage.speaker] += 1
-        if slice_.stop > slice_.start:
-            if not lib.text.is_voiced(span.script) and not lib.text.is_voiced(span.transcript):
-                transitions.append(span)
-                if span.audio_length > threshold:
-                    above_threshold[span.speaker] += 1
-    lambda_ = lambda s: s.audio_length
+        if not has_a_mistranscription(span):
+            spans.append(span)
+            lengths.append(audio_length)
+            above_threshold[span.speaker] += float(audio_length > threshold)
     info = [(s, above_threshold[s] / t) for s, t in total.items()]
     info = sorted(info, key=lambda k: k[1], reverse=True)
     info = {s.label: f"{t:.3%}" for s, t in info}
     notes = [f"The percentage of span transitions above **{threshold}s**:", info]
     kwargs = dict(normalize=True, note=notes, **kwargs)
-    span_metric(transitions, lambda_, "Length", "Seconds", 0.5, unit, **kwargs)
+    span_metric(spans, lengths, "Length", "Seconds", 0.5, unit, **kwargs)
 
 
+@lib.utils.log_runtime
 def _analyze_speech_segments(passages: typing.List[Passage], **kwargs):
     st.markdown("### Speech Segments Analysis")
 
@@ -277,6 +281,7 @@ def _analyze_speech_segments(passages: typing.List[Passage], **kwargs):
     _analyze_speech_segment_transitions(passages, **kwargs)
 
 
+@lib.utils.log_runtime
 def _analyze_nonalignments(passages: typing.List[Passage], max_rows: int, run_all: bool):
     st.markdown("### Nonalignment Analysis")
     nonalignments = [s for p in passages for s in p.nonalignment_spans().spans]
@@ -308,13 +313,13 @@ def _analyze_nonalignments(passages: typing.List[Passage], max_rows: int, run_al
         st.table(pd.DataFrame(data[:max_rows], columns=["script", "transcript"]))
 
 
+@lib.utils.log_runtime
 def _analyze_alignments(passages: typing.List[Passage], max_rows: int, run_all: bool):
     st.markdown("### Alignment Analysis")
     trigrams = list(utils.passages_alignment_ngrams(passages, 3))
     unigrams = list(utils.passages_alignment_ngrams(passages, 1))
-    if st.sidebar.checkbox(
-        "Analyze only single word alignments", key="single world alignments", value=True
-    ):
+    label = "Analyze only single word alignments"
+    if st.sidebar.checkbox(label, key="single world alignments", value=True):
         unigrams = [u for u in unigrams if " " not in u.script]
 
     with utils.st_expander("Random Sample of Alignments") as label:
@@ -364,13 +369,18 @@ def _analyze_alignments(passages: typing.List[Passage], max_rows: int, run_all: 
         _write_span_table(filtered[:max_rows])
 
 
-def _analyze_non_speech_segments(passages: typing.List[Passage], **kwargs):
+@lib.utils.log_runtime
+def _analyze_non_speech_segments(passages: typing.List[Passage], max_rows: int, run_all: bool):
     st.markdown("### Non Speech Segment Analysis")
+    if not st.checkbox("Analyze", key="non-speech-segment-analysis", value=run_all):
+        return
+
     intervals = [(p, i) for p in passages for i in p.non_speech_segments.intervals()]
     segments = [p.span(slice(0, 0), slice(*i)) for p, i in intervals]
     lambda_ = lambda p: p.audio_length
     unit = "Non Speech Segment"
-    _span_metric(segments, lambda_, "Length", "Seconds", 0.5, unit, normalize=True, **kwargs)
+    kwargs = dict(normalize=True, max_rows=max_rows, run_all=run_all)
+    _span_metric(segments, lambda_, "Length", "Seconds", 0.5, unit, **kwargs)
 
 
 @lib.utils.log_runtime
