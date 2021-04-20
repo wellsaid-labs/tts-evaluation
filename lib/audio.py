@@ -811,6 +811,9 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
     https://community.sw.siemens.com/s/article/sound-quality-metrics-loudness-and-sones
     https://en.wikipedia.org/wiki/Sone
     http://www.physics.mcgill.ca/~guymoore/ph224/notes/lecture12.pdf
+    https://github.com/tuwien-musicir/DeepLearning_Tutorial/blob/master/rp_extract.py#L320
+    https://github.com/tuwien-musicir/DeepLearning_Tutorial/blob/master/rp_extract.py#L363
+    http://hyperphysics.phy-astr.gsu.edu/hbase/Sound/phon.html
 
     Learn more:
     - Loudness Spectrogram:
