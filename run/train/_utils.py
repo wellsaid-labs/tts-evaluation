@@ -287,6 +287,7 @@ class CometMLExperiment:
         """
         items = [f"<p><b>Step:</b> {self.curr_step}</p>"]
         param_to_label = lambda s: s.title().replace("_", " ")
+        kwargs = dict(speaker=speaker, **kwargs)
         items.extend([f"<p><b>{param_to_label(k)}:</b> {v}</p>" for k, v in kwargs.items()])
         for key, data in audio.items():
             name = param_to_label(key)

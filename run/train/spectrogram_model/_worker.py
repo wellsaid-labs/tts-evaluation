@@ -285,7 +285,11 @@ class _HandleBatchArgs(typing.NamedTuple):
 
 
 def _visualize_source_vs_target(args: _HandleBatchArgs, preds: lib.spectrogram_model.Forward):
-    """Visualize predictions as compared to the original `batch`."""
+    """Visualize predictions as compared to the original `batch`.
+
+    TODO: Add `pick` so that we can find examples which perform poorly in training, and hence are
+    probably bad examples. Also, this should log the audio, for analysis.
+    """
     if not is_master():
         return
 
