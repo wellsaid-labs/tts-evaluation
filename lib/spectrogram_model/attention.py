@@ -231,6 +231,7 @@ class Attention(torch.nn.Module):
         # fixed? For example, we could pad the alignment and encoder output so that `window_start`
         # can progress to the end.
         window_start = torch.clamp(torch.min(window_start, num_tokens - window_length), min=0)
+        window_start = torch.max(last_window_start, window_start)
         if not math.isinf(token_skip_warning):
             assert token_skip_warning >= 0, "The number of tokens skipped is a positive number."
             max_tokens_skipped = (window_start - last_window_start).max()

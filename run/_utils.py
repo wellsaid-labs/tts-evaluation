@@ -230,9 +230,15 @@ class SpanGenerator(typing.Iterator[_loader.Span]):
     NOTE: For datasets that are conventional with only one alignment per passage, `SpanGenerator`
     samples directly from that distribution.
 
+    TODO: Create a generic dataset size estimiator that takes into account
+    `run._config._include_span` instead of just using
+    `float(sum(p.segmented_audio_length() for p in d))`. Based on statistics, the current estimator
+    is pretty accurate.
+
     Args:
         dataset
         max_seconds: The maximum seconds delimited by an `Span`.
+        balanced: Generate a similar amount of `Span`s per speaker.
     """
 
     @lib.utils.log_runtime
@@ -242,6 +248,7 @@ class SpanGenerator(typing.Iterator[_loader.Span]):
         dataset: Dataset,
         max_seconds: int = HParam(),
         include_span: typing.Callable[[_loader.Span], bool] = HParam(),
+        balanced: bool = True,
     ):
         self.max_seconds = max_seconds
         self.dataset = dataset
@@ -251,6 +258,10 @@ class SpanGenerator(typing.Iterator[_loader.Span]):
             max_seconds_ = math.inf if is_singles else max_seconds
             self.generators[speaker] = _loader.SpanGenerator(passages, max_seconds_)
         self.counter = {s: 0.0 for s in dataset.keys()}
+        self.expected = {
+            s: 1.0 if balanced else float(sum(p.segmented_audio_length() for p in d))
+            for s, d in dataset.items()
+        }
         self.include_span = include_span
 
     def __iter__(self) -> typing.Iterator[_loader.Span]:
@@ -259,7 +270,7 @@ class SpanGenerator(typing.Iterator[_loader.Span]):
     def __next__(self) -> _loader.Span:
         """ Sample spans with a uniform speaker distribution based on `span.audio_length`. """
         while True:
-            speaker = lib.utils.corrected_random_choice(self.counter)
+            speaker = lib.utils.corrected_random_choice(self.counter, self.expected)
             span = next(self.generators[speaker])
             if span.audio_length <= self.max_seconds and self.include_span(span):
                 self.counter[span.speaker] += span.audio_length

@@ -43,11 +43,9 @@ def _make_configuration(
     train_batch_size = 28 if debug else 56
     batch_size_ratio = 4
     dev_batch_size = train_batch_size * batch_size_ratio
-    dev_steps_per_epoch = 1 if debug else 128
-    dev_oversample_ratio = 2
-    # NOTE: Oversample the development dataset in order to reduce the variance of the results.
-    dev_steps_to_train_steps = int(round(batch_size_ratio * ratio * (1 / dev_oversample_ratio)))
-    train_steps_per_epoch = 1 if debug else dev_steps_per_epoch * dev_steps_to_train_steps
+    dev_steps_per_epoch = 1 if debug else 64
+    train_steps_per_epoch = int(round(dev_steps_per_epoch * batch_size_ratio * ratio))
+    train_steps_per_epoch = 1 if debug else train_steps_per_epoch
     assert train_batch_size % lib.distributed.get_device_count() == 0
     assert dev_batch_size % lib.distributed.get_device_count() == 0
 
@@ -83,6 +81,8 @@ def _make_configuration(
             dev_batch_size=dev_batch_size,
             train_steps_per_epoch=train_steps_per_epoch,
             dev_steps_per_epoch=int(dev_steps_per_epoch),
+            is_train_balanced=False,
+            is_dev_balanced=True,
             num_workers=2,
             prefetch_factor=2 if debug else 10,
         ),
@@ -153,7 +153,9 @@ def start(
     context: typer.Context,
     project: str = typer.Argument(..., help="Experiment project name."),
     name: str = typer.Argument("", help="Experiment name."),
-    tags: typing.List[str] = typer.Option([], help="Experiment tags."),
+    tags: typing.List[str] = typer.Option(
+        ["recording_sessions", "promo", "monotonic", "no_balance_train"], help="Experiment tags."
+    ),
     debug: bool = typer.Option(False, help="Turn on debugging mode."),
 ):
     """ Start a training run in PROJECT named NAME with TAGS. """

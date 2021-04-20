@@ -248,13 +248,16 @@ def _get_data_loaders(
     dev_batch_size: int = HParam(),
     train_steps_per_epoch: int = HParam(),
     dev_steps_per_epoch: int = HParam(),
+    is_train_balanced: bool = HParam(),
+    is_dev_balanced: bool = HParam(),
     num_workers: int = HParam(),
     prefetch_factor: int = HParam(),
 ) -> typing.Tuple[DataLoader[Batch], DataLoader[Batch]]:
     """ Initialize training and development data loaders.  """
     input_encoder, step = state.input_encoder, int(state.step.item())
-    train = DataProcessor(train_dataset, train_batch_size, input_encoder=input_encoder, step=step)
-    dev = DataProcessor(dev_dataset, dev_batch_size, input_encoder=input_encoder, step=step)
+    kwargs = dict(input_encoder=input_encoder, step=step)
+    train = DataProcessor(train_dataset, train_batch_size, **kwargs, balanced=is_train_balanced)
+    dev = DataProcessor(dev_dataset, dev_batch_size, **kwargs, balanced=is_dev_balanced)
     kwargs = dict(
         num_workers=num_workers,
         device=state.device,

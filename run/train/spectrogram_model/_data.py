@@ -492,6 +492,7 @@ class DataProcessor(typing.Mapping[int, Batch]):
         batch_size: int,
         input_encoder: InputEncoder,
         step: int = 0,
+        **kwargs
     ):
         """Given an index, generate the appropriate batch indefinitely.
 
@@ -511,7 +512,7 @@ class DataProcessor(typing.Mapping[int, Batch]):
         - Checkpoint the random state of every worker, and use it to restart those workers. We'd
           likely need to setup a communication channel with workers, in order to implement this.
         """
-        iter_ = run._utils.SpanGenerator(dataset)
+        iter_ = run._utils.SpanGenerator(dataset, **kwargs)
         iter_ = BucketBatchSampler(iter_, batch_size, False, self._data_iterator_sort_key)
         iter_ = DeterministicSampler(iter_, run._config.RANDOM_SEED + step, cuda=False)
         if is_initialized():
