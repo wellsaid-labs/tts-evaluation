@@ -815,6 +815,13 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
     https://github.com/tuwien-musicir/DeepLearning_Tutorial/blob/master/rp_extract.py#L363
     http://hyperphysics.phy-astr.gsu.edu/hbase/Sound/phon.html
 
+    TODO: Use LEAF instead, to learn, a spectrogram representation that works well for TTS:
+    https://github.com/denfed/leaf-audio-pytorch/tree/main/leaf_audio_pytorch
+    The LEAF module could be pretrained by the signal model. The module would be trained to create
+    the input and to discriminate. Since both the output and the input are differentiable, in order
+    to prevent the network from collapsing, we could also have a secondary loss based on a basic
+    spectrogram.
+
     Learn more:
     - Loudness Spectrogram:
       https://www.dsprelated.com/freebooks/sasp/Loudness_Spectrogram_Examples.html
