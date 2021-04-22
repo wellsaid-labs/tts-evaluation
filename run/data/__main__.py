@@ -14,6 +14,7 @@ import pathlib
 import re
 import shlex
 import subprocess
+import sys
 import tempfile
 import time
 import typing
@@ -121,6 +122,7 @@ def pair(
         }
         rows.append(row)
     rows = sorted(rows, key=lambda r: r["Seconds per Character"])
+    typer.echo("\n")
     typer.echo(tabulate.tabulate(rows, headers="keys"))
 
 
@@ -206,6 +208,8 @@ def loudness(paths: typing.List[pathlib.Path] = typer.Argument(..., exists=True,
         lufs = meter.integrated_loudness(audio)
         progress_bar.update(round(metadata.length))
         results.append((lufs, metadata.path))
+    progress_bar.close()
+    typer.echo("\n")
     typer.echo(tabulate.tabulate(sorted(results), headers=["LUFS", "Path"]))
 
 
@@ -293,11 +297,15 @@ def csv_normalize(
     dest: pathlib.Path = typer.Argument(..., exists=True, file_okay=False),
     tab_separated: bool = typer.Option(False, help="Parse this file as a TSV."),
     expected_columns: typing.List[str] = typer.Option(["Source", "Title", "Content"]),
+    columns: typing.Optional[typing.List[str]] = typer.Option(None),
 ):
     """Normalize csv file(s) in PATHS and save to directory DEST."""
     nlp = lib.text.load_en_core_web_md(disable=("tagger", "ner"))
     partial = functools.partial(_csv_normalize, nlp=nlp)
     results = []
+    # NOTE: There is a bug with `setprofile` and `read_csv`:
+    # https://github.com/pandas-dev/pandas/issues/41069
+    sys.setprofile(None)
     for path in tqdm.tqdm(paths):
         dest_path = dest / path.name
         if dest_path.exists():
@@ -313,7 +321,7 @@ def csv_normalize(
             logger.warning(message, text.count("\t"), path)
 
         separator = "\t" if tab_separated else ","
-        data_frame = pandas.read_csv(path, sep=separator, keep_default_na=False)
+        data_frame = pandas.read_csv(path, sep=separator, keep_default_na=False, names=columns)
         data_frame = typing.cast(pandas.DataFrame, data_frame)
         data_frame = data_frame.applymap(partial)
         dropped = list(set(data_frame.columns) - set(expected_columns))

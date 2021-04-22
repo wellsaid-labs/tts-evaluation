@@ -337,6 +337,7 @@ def _run_step(
     https://github.com/horovod/horovod/issues/665
     https://discuss.pytorch.org/t/how-to-overlap-h2d-and-training/93635/5
     https://github.com/pytorch/pytorch/issues/23729#issuecomment-518616242
+    TODO: Log spectrogram loss per speaker, in order to monitor overfitting.
 
     Args:
         ...
