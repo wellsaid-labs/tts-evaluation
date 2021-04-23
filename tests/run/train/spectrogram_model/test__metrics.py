@@ -110,6 +110,33 @@ def test_get_num_small_max():
     assert num_skips.tolist() == [0.0, 2.0, 1.0, 1.0]
 
 
+def test_get_num_repeated():
+    """ Test `_metrics.get_num_repeated` counts repeated tokens correctly. """
+    alignments_ = [
+        [[1, 0, 0], [0, 1, 0], [0, 0, 1]],  # Test no repeats
+        [[1, 0, 0], [0, 1, 0], [0, 1, 0]],  # Test one repeated
+        [[1, 0, 0], [0, 0, 1], [0, 0, 1]],  # Test masked last token (no repeats)
+        [[1, 0, 0], [0, 1, 0], [0, 1, 0]],  # Test masked last frame (no repeats)
+    ]
+    alignments = torch.tensor(alignments_).transpose(0, 1).float()
+    spectrogram_mask_ = [
+        [1, 1, 1],
+        [1, 1, 1],
+        [1, 1, 1],
+        [1, 1, 0],  # Test that a masked frame is ignored
+    ]
+    spectrogram_mask = torch.tensor(spectrogram_mask_).transpose(0, 1).bool()
+    token_mask_ = [
+        [1, 1, 1],
+        [1, 1, 1],
+        [1, 1, 0],  # Test that a masked token cannot be selected
+        [1, 1, 1],
+    ]
+    token_mask = torch.tensor(token_mask_).transpose(0, 1).bool()
+    num_skips = _metrics.get_num_repeated(alignments, token_mask, spectrogram_mask, 1.0)
+    assert num_skips.tolist() == [0.0, 1.0, 0.0, 0.0]
+
+
 def _get_db_spectrogram(signal, **kwargs) -> torch.Tensor:
     spectrogram = torch.stft(signal.view(1, -1), **kwargs)
     spectrogram = torch.norm(spectrogram.double(), dim=-1)

@@ -73,7 +73,7 @@ def get_num_jumps(
         return torch.zeros(alignments.shape[1], device=alignments.device)
 
     alignments = alignments.masked_fill(~tokens_mask.transpose(0, 1).unsqueeze(0), 0)
-    # [num_frames, batch_size, num_tokens] → [token_mask, batch_size]
+    # [num_frames, batch_size, num_tokens] → [num_frames, batch_size]
     indices = alignments.max(dim=2).indices
     start = torch.cat([torch.zeros(1, alignments.shape[1], device=alignments.device), indices[:-1]])
     skip_size = indices - start
@@ -105,11 +105,41 @@ def get_num_small_max(
         return torch.zeros(alignments.shape[1], device=alignments.device)
 
     alignments = alignments.masked_fill(~tokens_mask.transpose(0, 1).unsqueeze(0), 0)
-    # [num_frames, batch_size, num_tokens] → [token_mask, batch_size]
+    # [num_frames, batch_size, num_tokens] → [num_frames, batch_size]
     values = alignments.max(dim=2).values
     values = (values < threshold).float()
     values = values.masked_fill(~spectrogram_mask, 0)
     return values.sum(dim=0)
+
+
+@configurable
+def get_num_repeated(
+    alignments: torch.Tensor,
+    tokens_mask: torch.Tensor,
+    spectrogram_mask: torch.Tensor,
+    threshold: float = HParam(),
+) -> torch.Tensor:
+    """Given `alignments` from frames to tokens, this gets the number of tokens that get more
+    focus than `threshold`.
+
+    Args:
+        alignments (torch.FloatTensor [num_frames, batch_size, num_tokens])
+        token_mask (torch.BoolTensor [num_tokens, batch_size])
+        spectrogram_mask (torch.BoolTensor [num_frames, batch_size])
+        threshold: The percentage focus a token gets.
+
+    Returns:
+        torch.FloatTensor [batch_size]
+    """
+    if alignments.numel() == 0:
+        return torch.zeros(alignments.shape[1], device=alignments.device)
+
+    alignments = alignments.masked_fill(~tokens_mask.transpose(0, 1).unsqueeze(0), 0)
+    alignments = alignments.masked_fill(~spectrogram_mask.unsqueeze(2), 0)
+    # [num_frames, batch_size, num_tokens] → [batch_size, num_tokens]
+    values = alignments.sum(dim=0)
+    values = (values > threshold).float()
+    return values.sum(dim=1)
 
 
 """
@@ -232,7 +262,8 @@ class Metrics(_utils.Metrics):
         FREQUENCY_TEXT_LENGTH: The frequency of each text length bucket.
         ALIGNMENT_NORM: The p-norm of an alignment. The more focused an alignment is the higher this
             metric. The metric is bounded at [0, 1].
-        ALIGNMENT_SMALL_MAX: The number of frames which have a small maximum alignment.
+        ALIGNMENT_SMALL_MAX: The percentage of frames which have a small maximum alignment.
+        ALIGNMENT_REPEATED: The percentage of tokens which have had a lot of focus.
         ALIGNMENT_SKIPS: This metric assumes that each alignment focuses on one token. This measures
             the percentage of tokens skipped by the alignments.
         ALIGNMENT_JUMPS: This metric assumes that each alignment focuses on one token. This measures
@@ -254,6 +285,7 @@ class Metrics(_utils.Metrics):
     (
         ALIGNMENT_NORM_SUM,
         ALIGNMENT_NUM_SMALL_MAX,
+        ALIGNMENT_NUM_REPEATED,
         ALIGNMENT_NUM_SKIPS,
         ALIGNMENT_NUM_JUMPS,
         ALIGNMENT_STD_SUM,
@@ -288,8 +320,9 @@ class Metrics(_utils.Metrics):
 
     ALIGNMENT_NORM = partial(get_model_label, "alignment_norm")
     ALIGNMENT_SMALL_MAX = partial(get_model_label, "alignment_num_small_max")
+    ALIGNMENT_REPEATED = partial(get_model_label, "alignment_repeated")
     ALIGNMENT_SKIPS = partial(get_model_label, "alignment_skips")
-    ALIGNMENT_JUMPS = partial(get_model_label, "alignment_jumps")
+    ALIGNMENT_JUMPS = partial(get_model_label, "alignment_jumps_v2")
     ALIGNMENT_STD = partial(get_model_label, "alignment_std")
     AVERAGE_PREDICTED_RMS_LEVEL = partial(get_model_label, "average_predicted_rms_level")
     AVERAGE_RELATIVE_SPEED = partial(get_model_label, "average_relative_speed")
@@ -368,13 +401,14 @@ class Metrics(_utils.Metrics):
         """
         values: typing.Dict[str, float] = collections.defaultdict(float)
         tokens_mask = batch.encoded_phonemes_mask.tensor
-        for span, num_skipped, num_jumps, std, norm, small_max, length, has_reached_max in zip(
+        for span, skipped, jumps, std, norm, small_max, repeated, length, has_reached_max in zip(
             batch.spans,
             self._to_list(get_num_skipped(alignments, tokens_mask, spectrogram_mask)),
             self._to_list(get_num_jumps(alignments, tokens_mask, spectrogram_mask)),
             self._to_list(get_alignment_std(alignments, tokens_mask, spectrogram_mask)),
             self._to_list(get_alignment_norm(alignments, tokens_mask, spectrogram_mask)),
             self._to_list(get_num_small_max(alignments, tokens_mask, spectrogram_mask)),
+            self._to_list(get_num_repeated(alignments, tokens_mask, spectrogram_mask)),
             self._to_list(spectrogram_lengths),
             itertools.repeat(False) if reached_max is None else self._to_list(reached_max),
         ):
@@ -387,8 +421,9 @@ class Metrics(_utils.Metrics):
                     format_ = lambda s: f"{s}{suffix}"
                     values[format_(self.ALIGNMENT_NORM_SUM)] += norm
                     values[format_(self.ALIGNMENT_NUM_SMALL_MAX)] += small_max
-                    values[format_(self.ALIGNMENT_NUM_SKIPS)] += num_skipped
-                    values[format_(self.ALIGNMENT_NUM_JUMPS)] += num_jumps
+                    values[format_(self.ALIGNMENT_NUM_REPEATED)] += repeated
+                    values[format_(self.ALIGNMENT_NUM_SKIPS)] += skipped
+                    values[format_(self.ALIGNMENT_NUM_JUMPS)] += jumps
                     values[format_(self.ALIGNMENT_STD_SUM)] += std
                     values[format_(self.NUM_FRAMES_PREDICTED)] += length
 
@@ -467,9 +502,10 @@ class Metrics(_utils.Metrics):
                 self.ALIGNMENT_SMALL_MAX: div(
                     self.ALIGNMENT_NUM_SMALL_MAX, self.NUM_FRAMES_PREDICTED
                 ),
+                self.ALIGNMENT_REPEATED: div(self.ALIGNMENT_NUM_REPEATED, self.NUM_TOKENS),
                 self.ALIGNMENT_STD: div(self.ALIGNMENT_STD_SUM, self.NUM_FRAMES_PREDICTED),
                 self.ALIGNMENT_SKIPS: div(self.ALIGNMENT_NUM_SKIPS, self.NUM_TOKENS),
-                self.ALIGNMENT_JUMPS: div(self.ALIGNMENT_NUM_JUMPS, self.NUM_TOKENS),
+                self.ALIGNMENT_JUMPS: div(self.ALIGNMENT_NUM_JUMPS, self.NUM_FRAMES_PREDICTED),
                 self.AVERAGE_RELATIVE_SPEED: div(self.NUM_FRAMES_PREDICTED, self.NUM_FRAMES),
                 self.STOP_TOKEN_ACCURACY: div(self.NUM_CORRECT_STOP_TOKEN, self.NUM_FRAMES),
                 self.STOP_TOKEN_LOSS: div(self.STOP_TOKEN_LOSS_SUM, self.NUM_FRAMES),
