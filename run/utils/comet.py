@@ -69,7 +69,10 @@ def samples(
     experiment: str,
     dest: pathlib.Path = run._config.SAMPLES_PATH / lib.environment.bash_time_label(),
 ):
-    """ Download all samples for an EXPERIMENT. """
+    """Download all samples for an EXPERIMENT.
+
+    TODO: Adapt the script to download the most recent K clips, especially, for long training runs.
+    """
     api = comet_ml.api.API()
     experiment_ = api.get_experiment_by_id(experiment)
     asset_list = experiment_.get_asset_list(asset_type="audio")
