@@ -210,6 +210,7 @@ def _configure_audio_processing():
         precision="25-bit",
     )
     non_speech_segment_frame_length = 50
+    max_frames_per_token = 0.18 / (FRAME_HOP / format_.sample_rate)
 
     # NOTE: A "hann window" is standard for calculating an FFT, it's even mentioned as a "popular
     # window" on Wikipedia (https://en.wikipedia.org/wiki/Window_function).
@@ -292,7 +293,10 @@ def _configure_audio_processing():
             # included everything but 3 alignments. The last three alignments were 0.19 "or",
             # 0.21 "or", and 0.24 "EEOC". The slowest alignment was the acronym "EEOC" with the
             # last letter taking 0.5 seconds.
-            max_frames_per_token=(0.18 / (FRAME_HOP / format_.sample_rate)),
+            max_frames_per_token=max_frames_per_token,
+        ),
+        run.train.spectrogram_model._metrics.get_num_repeated: HParams(
+            threshold=max_frames_per_token
         ),
         lib.signal_model.SignalModel.__init__: HParams(
             ratios=[2] * int(math.log2(FRAME_HOP)),
