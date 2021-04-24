@@ -608,6 +608,7 @@ def run_worker(
         (Context.TRAIN, DatasetType.TRAIN, train_loader, _run_step),
         (Context.EVALUATE, DatasetType.DEV, dev_loader, _run_step),
     ]
+    save_checkpoint(state.to_checkpoint(), checkpoints_directory, f"step_{state.step.item()}")
     while True:
         steps_per_epoch = train_loader.num_steps_per_epoch
         [_run_steps(state, *args, steps_per_epoch=steps_per_epoch) for args in contexts]
