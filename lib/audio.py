@@ -580,7 +580,7 @@ def k_weighting(
     return _k_weighting(frequencies, sample_rate) + offset
 
 
-def a_weighting(frequencies: np.ndarray) -> np.ndarray:
+def a_weighting(frequencies: np.ndarray, *_) -> np.ndarray:
     """Wrapper around `librosa.core.A_weighting`.
 
     Learn more:
@@ -598,7 +598,7 @@ def a_weighting(frequencies: np.ndarray) -> np.ndarray:
     )
 
 
-def iso226_weighting(frequencies: np.ndarray) -> np.ndarray:
+def iso226_weighting(frequencies: np.ndarray, *_) -> np.ndarray:
     """Get the ISO226 weights for `frequencies`.
 
     Learn more:
@@ -621,7 +621,7 @@ def iso226_weighting(frequencies: np.ndarray) -> np.ndarray:
     )
 
 
-def identity_weighting(frequencies: np.ndarray) -> np.ndarray:
+def identity_weighting(frequencies: np.ndarray, *_) -> np.ndarray:
     """Get identity weighting, it doesn't change the frequency weighting.
 
     Args:
@@ -876,7 +876,7 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
         num_mel_bins: int = HParam(),
         window: torch.Tensor = HParam(),
         min_decibel: float = HParam(),
-        get_weighting: typing.Callable[[np.ndarray], np.ndarray] = HParam(),
+        get_weighting: typing.Callable[[np.ndarray, int], np.ndarray] = HParam(),
         eps: float = 1e-10,
         **kwargs,
     ):
@@ -889,10 +889,11 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
         self.sample_rate = sample_rate
         self.num_mel_bins = num_mel_bins
         self.eps = eps
+        self.weighting_name = get_weighting.__name__
 
         mel_basis = _mel_filters(sample_rate, num_mel_bins, fft_length=self.fft_length, **kwargs)
         frequencies = librosa.fft_frequencies(sr=sample_rate, n_fft=self.fft_length)  # type: ignore
-        weighting = torch.tensor(get_weighting(frequencies)).float().view(-1, 1)
+        weighting = torch.tensor(get_weighting(frequencies, sample_rate)).float().view(-1, 1)
         weighting = db_to_power(weighting)
         self.register_buffer("mel_basis", torch.tensor(mel_basis).float())
         self.register_buffer("weighting", weighting)

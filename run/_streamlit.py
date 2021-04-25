@@ -139,6 +139,10 @@ def audio_to_html(audio: np.ndarray, attrs="controls", **kwargs) -> str:
     return f'<audio {attrs} src="/{temp_file.relative_to(STREAMLIT_WEB_ROOT_PATH)}"></audio>'
 
 
+def write_audio(*args, **kwargs):
+    st.markdown(audio_to_html(*args, **kwargs), unsafe_allow_html=True)
+
+
 _MapInputVar = typing.TypeVar("_MapInputVar")
 _MapReturnVar = typing.TypeVar("_MapReturnVar")
 
