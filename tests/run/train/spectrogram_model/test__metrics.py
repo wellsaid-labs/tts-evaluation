@@ -1,9 +1,19 @@
+import hparams
+import pytest
 import torch
 
 import lib
 import run
 from run.train.spectrogram_model import _data, _metrics
 from tests._utils import TEST_DATA_PATH, assert_almost_equal
+
+
+@pytest.fixture(autouse=True)
+def run_around_tests():
+    """ Set a basic configuration. """
+    run._config.configure()
+    yield
+    hparams.clear_config()
 
 
 def test_get_num_skipped():
