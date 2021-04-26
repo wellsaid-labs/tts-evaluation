@@ -224,6 +224,7 @@ def _configure_audio_processing():
             lib.audio.power_spectrogram_to_framed_rms: HParams(window=window),
             lib.audio.SignalTodBMelSpectrogram.__init__: HParams(window=window),
             lib.audio.griffin_lim: HParams(window=window.numpy()),
+            run.train.spectrogram_model._metrics.get_num_pause_frames: HParams(window=window),
         }
         add_config(config)
     except ImportError:

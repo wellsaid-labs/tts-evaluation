@@ -216,6 +216,7 @@ def get_num_pause_frames(
     min_length: float = HParam(),
     frame_hop: int = HParam(),
     sample_rate: int = HParam(),
+    window: torch.Tensor = HParam(),
 ) -> typing.List[int]:
     """Count the number of frames inside a pause.
 
@@ -229,16 +230,16 @@ def get_num_pause_frames(
     # [num_frames, batch_size, frame_channels] → [batch_size, num_frames, frame_channels]
     power_spec = lib.audio.db_to_power(db_spectrogram).transpose(0, 1)
     # [batch_size, num_frames, frame_channels] → [batch_size, num_frames]
-    framed_rms_level = lib.audio.power_spectrogram_to_framed_rms(power_spec)
-    is_silent = framed_rms_level < lib.audio.db_to_amp(max_loudness)
+    framed_rms_level = lib.audio.power_spectrogram_to_framed_rms(power_spec, window=window)
+    is_silent = framed_rms_level < lib.audio.db_to_amp(max_loudness)  # [batch_size, num_frames]
     is_silent = is_silent if mask is None else is_silent * mask.transpose(0, 1)
     frames_threshold = min_length * sample_rate / frame_hop
     num_frames = [0] * power_spec.shape[0]
-    for i, sequence in enumerate(is_silent):
-        for _is_silent, group in itertools.groupby(list(sequence)):
-            group = list(group)
-            if _is_silent and len(group) >= frames_threshold:
-                num_frames[i] += len(group)
+    for i in range(is_silent.shape[0]):
+        _is_silent, count = torch.unique_consecutive(is_silent[i], return_counts=True)
+        count = _is_silent.float() * count
+        count = (count >= frames_threshold).float() * count
+        num_frames[i] = int(count.sum().item())
     return num_frames
 
 

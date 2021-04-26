@@ -224,10 +224,11 @@ def test_get_num_pause_frames():
     metadata = lib.audio.get_audio_metadata(audio_path)
     run.data._loader.is_normalized_audio_file(metadata)
     audio = lib.audio.read_audio(audio_path)
-    audio = torch.tensor(lib.audio.pad_remainder(audio))
     fft_length = 2048
     frame_hop = fft_length // 4
     sample_rate = 24000
+    window = run._utils.get_window("hann", fft_length, frame_hop)
+    audio = torch.tensor(lib.audio.pad_remainder(audio, multiple=frame_hop))
     signal_to_spectrogram = lambda s, **k: _data._signals_to_spectrograms([s], **k)[0].tensor
     db_mel_spectrogram = signal_to_spectrogram(
         audio,
@@ -235,9 +236,12 @@ def test_get_num_pause_frames():
         frame_hop=frame_hop,
         fft_length=fft_length,
         sample_rate=sample_rate,
+        window=window,
+        min_decibel=-50,
+        num_mel_bins=128,
     )
     get_num_pause_frames = functools.partial(
-        _metrics.get_num_pause_frames, frame_hop=frame_hop, sample_rate=sample_rate
+        _metrics.get_num_pause_frames, frame_hop=frame_hop, sample_rate=sample_rate, window=window
     )
     assert get_num_pause_frames(db_mel_spectrogram, None, -40.0, frame_hop / sample_rate) == [97]
     assert get_num_pause_frames(db_mel_spectrogram, None, -40.0, 0.25) == [38]
