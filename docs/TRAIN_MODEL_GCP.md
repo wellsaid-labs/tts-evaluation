@@ -155,18 +155,27 @@ Setup your local development environment by following [these instructions](LOCAL
 
 ## Post Training Clean Up
 
+### On the instance
+
+1. (Optional) Upload the checkpoints to Google Cloud Storage...
+
+   ```bash
+   NAME='' # EXAMPLE: super_hi_fi__custom_voice
+   gsutil -m cp -r -n disk/experiments/ gs://wsl_experiments/$NAME
+   ```
+
 ### From your local repository
 
 1. Setup your environment variables again...
 
-   ```bash
+   ```zsh
    ZONE='your-vm-zone' # EXAMPLE: us-central1-a
    NAME=$USER"-your-instance-name" # EXAMPLE: michaelp-baseline
    ```
 
 1. Delete your instance...
 
-   ```bash
+   ```zsh
    python -m run.utils.gcp delete-instance --name=$NAME --zone=$ZONE
    ```
 
