@@ -174,13 +174,14 @@ def test_get_power_rms_level_sum():
         _db_spectrogram(lib.audio.full_scale_sine_wave()),
     ]
     db_spectrogram = torch.cat(db_spectrogram_, dim=1)
-    rms = _metrics.get_power_rms_level_sum(db_spectrogram, window=window)
+    rms = _metrics.get_power_rms_level_sum(
+        db_spectrogram, window=window, window_correction_factor=None
+    )
     assert_almost_equal(rms / db_spectrogram.shape[0], torch.Tensor([1.0000001, 0.500006]))
 
 
 def test_get_power_rms_level_sum__precise():
-    """Test `_metrics.get_power_rms_level_sum` gets an exact dB RMS level from a
-    dB spectrogram."""
+    """Test `_metrics.get_power_rms_level_sum` gets an exact dB RMS level from a dB spectrogram."""
     frame_length = 1024
     frame_hop = frame_length // 4
     window = torch.ones(frame_length)
@@ -198,13 +199,14 @@ def test_get_power_rms_level_sum__precise():
         _db_spectrogram(lib.audio.full_scale_sine_wave()),
     ]
     db_spectrogram = torch.cat(db_spectrogram_, dim=1)
-    rms = _metrics.get_power_rms_level_sum(db_spectrogram, window=window)
+    rms = _metrics.get_power_rms_level_sum(
+        db_spectrogram, window=window, window_correction_factor=None
+    )
     assert_almost_equal(rms / (sample_rate / frame_hop), torch.Tensor([1.0, 0.49999998418]))
 
 
 def test_get_average_db_rms_level():
-    """Test `_metrics.get_power_rms_level_sum` gets the correct RMS level for
-    a test file."""
+    """Test `_metrics.get_power_rms_level_sum` gets the correct RMS level for a test file."""
     audio_path = TEST_DATA_PATH / "audio" / "bit(rate(lj_speech,24000),32).wav"
     metadata = lib.audio.get_audio_metadata(audio_path)
     run.data._loader.is_normalized_audio_file(metadata)
@@ -215,7 +217,7 @@ def test_get_average_db_rms_level():
     rms_level = _metrics.get_average_db_rms_level(db_mel_spectrogram).item()
     # NOTE: Audacity measured this RMS to be -23.6371. And `signal_to_rms` measured RMS to be
     # -23.6365.
-    assert rms_level == -23.64263916015625
+    assert rms_level == pytest.approx(-23.64263916015625, abs=0.001)
 
 
 def test_get_num_pause_frames():

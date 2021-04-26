@@ -792,7 +792,7 @@ def test_signal_to_db_mel_spectrogram():
         # Learn more here: https://github.com/pytorch/audio/issues/452
         window=torch.tensor(librosa.filters.get_window("hann", win_length)).float(),
         min_decibel=min_decibel,
-        get_weighting=librosa.A_weighting,
+        get_weighting=lambda f, *_: librosa.A_weighting(f),
         lower_hertz=0,
         eps=amin,
     )
@@ -938,9 +938,7 @@ def test__loudness():
             min_decibel=float("-inf"),
             # NOTE: Our `k_weighting` implementation predicts a different `offset` than -0.691 which
             # is required by the original guidelines.
-            get_weighting=partial(
-                lib.audio.k_weighting, sample_rate=metadata.sample_rate, offset=-0.691
-            ),
+            get_weighting=partial(lib.audio.k_weighting, offset=-0.691),
             eps=1e-10,
             lower_hertz=0,
             upper_hertz=20000,

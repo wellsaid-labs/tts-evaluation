@@ -221,10 +221,12 @@ def _configure_audio_processing():
     try:
         window = run._utils.get_window("hann", FRAME_SIZE, FRAME_HOP)
         config = {
-            lib.audio.power_spectrogram_to_framed_rms: HParams(window=window),
+            lib.audio.power_spectrogram_to_framed_rms: HParams(
+                window=window,
+                window_correction_factor=lib.audio.get_window_correction_factor(window),
+            ),
             lib.audio.SignalTodBMelSpectrogram.__init__: HParams(window=window),
             lib.audio.griffin_lim: HParams(window=window.numpy()),
-            run.train.spectrogram_model._metrics.get_num_pause_frames: HParams(window=window),
         }
         add_config(config)
     except ImportError:

@@ -216,7 +216,7 @@ def get_num_pause_frames(
     min_length: float = HParam(),
     frame_hop: int = HParam(),
     sample_rate: int = HParam(),
-    window: torch.Tensor = HParam(),
+    **kwargs,
 ) -> typing.List[int]:
     """Count the number of frames inside a pause.
 
@@ -230,7 +230,7 @@ def get_num_pause_frames(
     # [num_frames, batch_size, frame_channels] → [batch_size, num_frames, frame_channels]
     power_spec = lib.audio.db_to_power(db_spectrogram).transpose(0, 1)
     # [batch_size, num_frames, frame_channels] → [batch_size, num_frames]
-    framed_rms_level = lib.audio.power_spectrogram_to_framed_rms(power_spec, window=window)
+    framed_rms_level = lib.audio.power_spectrogram_to_framed_rms(power_spec, **kwargs)
     is_silent = framed_rms_level < lib.audio.db_to_amp(max_loudness)  # [batch_size, num_frames]
     is_silent = is_silent if mask is None else is_silent * mask.transpose(0, 1)
     frames_threshold = min_length * sample_rate / frame_hop

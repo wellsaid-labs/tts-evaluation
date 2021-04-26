@@ -731,10 +731,23 @@ def framed_rms_to_rms(
     return power_to_amp(typing.cast(_TensorOrArrayOrFloat, rms))
 
 
+def get_window_correction_factor(window: torch.Tensor) -> float:
+    """Energy correction factor for `window` distortion.
+
+    Learn more:
+    https://community.sw.siemens.com/s/article/window-correction-factors
+    https://www.mathworks.com/matlabcentral/answers/372516-calculate-windowing-correction-factor
+    """
+    window_correction_factor = torch.ones(*window.shape, device=window.device).pow(2).mean().sqrt()
+    window_correction_factor = window_correction_factor / window.pow(2).mean().sqrt()
+    return float(window_correction_factor)
+
+
 @configurable
 def power_spectrogram_to_framed_rms(
     power_spectrogram: torch.Tensor,
     window: torch.Tensor = HParam(),
+    window_correction_factor: typing.Optional[float] = None,
 ) -> torch.Tensor:
     """Compute the root mean square from a spectrogram.
 
@@ -750,21 +763,20 @@ def power_spectrogram_to_framed_rms(
     Args:
         power_spectrogram (torch.FloatTensor
             [batch_size (optional), num_frames, fft_length // 2 + 1])
-        window (torch.FloatTensor [window_size])
+        ...
 
     Returns:
         (torch.FloatTensor [batch_size (optional), num_frames])
     """
-    device = power_spectrogram.device
     has_batch_dim = power_spectrogram.dim() == 3
     batch_size = power_spectrogram.shape[0] if has_batch_dim else 1
     power_spectrogram = power_spectrogram.view(batch_size, *power_spectrogram.shape[-2:])
 
-    # Learn more:
-    # https://community.sw.siemens.com/s/article/window-correction-factors
-    # https://www.mathworks.com/matlabcentral/answers/372516-calculate-windowing-correction-factor
-    window_correction_factor = torch.ones(*window.shape, device=device).pow(2).mean().sqrt()
-    window_correction_factor = window_correction_factor / window.pow(2).mean().sqrt()
+    window_correction_factor = (
+        get_window_correction_factor(window)
+        if window_correction_factor is None
+        else window_correction_factor
+    )
 
     # TODO: This adjustment might be related to repairing constant-overlap-add, see here:
     # https://ccrma.stanford.edu/~jos/sasp/Overlap_Add_Decomposition.html. It should be better
@@ -889,7 +901,7 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
         self.sample_rate = sample_rate
         self.num_mel_bins = num_mel_bins
         self.eps = eps
-        self.weighting_name = get_weighting.__name__
+        self.get_weighting = get_weighting
 
         mel_basis = _mel_filters(sample_rate, num_mel_bins, fft_length=self.fft_length, **kwargs)
         frequencies = librosa.fft_frequencies(sr=sample_rate, n_fft=self.fft_length)  # type: ignore

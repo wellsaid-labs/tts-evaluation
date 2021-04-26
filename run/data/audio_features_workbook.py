@@ -76,7 +76,7 @@ def main():
     spec_rms_level = round_(framed_rms_to_rms(framed_rms_level, frame_hop, signal_length).item())
     spec_rms_db_level = round_(amp_to_db(spec_rms_level))
     lufs = round_(meter.integrated_loudness(audio))
-    weighting = signal_to_spectrogram.weighting_name
+    weighting = signal_to_spectrogram.get_weighting.__name__
 
     st.write("### Metadata")
     st.write({k: str(v) for k, v in lib.utils.dataclass_as_dict(metadata).items()})
