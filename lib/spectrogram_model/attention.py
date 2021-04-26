@@ -150,7 +150,7 @@ class Attention(torch.nn.Module):
     ) -> typing.Tuple[torch.Tensor, torch.Tensor, AttentionHiddenState]:
         """
         Args:
-            tokens (torch.FloatTensor [num_tokens, batch_size, hidden_size]): Batch of sequences.
+            tokens (torch.FloatTensor [num_tokens, batch_size, token_size]): Batch of sequences.
             tokens_mask (torch.BoolTensor [batch_size, num_tokens]): Sequence mask(s) to deliminate
                 padding in `tokens` with zeros.
             num_tokens (torch.LongTensor [batch_size]): Number of tokens in each sequence.
@@ -160,7 +160,7 @@ class Attention(torch.nn.Module):
                 a `logger.warning` will be logged.
 
         Returns:
-            context (torch.FloatTensor [batch_size, hidden_size]): Attention context vector.
+            context (torch.FloatTensor [batch_size, token_size]): Attention context vector.
             alignment (torch.FloatTensor [batch_size, num_tokens]): Attention alignment.
             hidden_state
         """
@@ -198,16 +198,16 @@ class Attention(torch.nn.Module):
         alignment = torch.softmax(score, dim=1)
 
         # NOTE: Transpose and unsqueeze to fit the requirements for `torch.bmm`
-        # [num_tokens, batch_size, hidden_size] →
-        # [batch_size, num_tokens, hidden_size]
+        # [num_tokens, batch_size, token_size] →
+        # [batch_size, num_tokens, token_size]
         tokens = tokens.transpose(0, 1)
 
         # alignment [batch_size (b), 1 (n), num_tokens (m)] (bmm)
-        # tokens [batch_size (b), num_tokens (m), hidden_size (p)] →
-        # [batch_size (b), 1 (n), hidden_size (p)]
+        # tokens [batch_size (b), num_tokens (m), token_size (p)] →
+        # [batch_size (b), 1 (n), token_size (p)]
         context = torch.bmm(alignment.unsqueeze(1), tokens)
 
-        # [batch_size, 1, hidden_size] → [batch_size, hidden_size]
+        # [batch_size, 1, token_size] → [batch_size, token_size]
         context = context.squeeze(1)
 
         length = max_num_tokens + cumulative_alignment_padding * 2
