@@ -125,6 +125,7 @@ def test_comet_ml_experiment():
             audio={"predicted_audio": torch.rand(100), "gold_audio": torch.rand(100)},
             speaker=Speaker(""),
         )
+        comet.log_npy("random", Speaker(""), torch.rand(100))
         figure = pyplot.figure()
         pyplot.close(figure)
         comet.log_figures({run._config.Label("figure"): figure})

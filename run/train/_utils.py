@@ -264,6 +264,21 @@ class CometMLExperiment:
 
         self._experiment.log_epoch_end(epoch)
 
+    def log_npy(
+        self,
+        name: str,
+        speaker: run.data._loader.Speaker,
+        array: typing.Union[numpy.ndarray, torch.Tensor],
+    ) -> typing.Optional[str]:
+        """Log a `ndarray` or `tensor` as a `.npy` file and return asset url."""
+        file_name = f"step={self.curr_step},speaker={speaker.label},"
+        file_name += f"name={name},experiment={self.get_key()}.npy"
+        array = array.detach().cpu().numpy() if isinstance(array, torch.Tensor) else array
+        file_ = io.BytesIO()
+        numpy.save(file_, array, allow_pickle=False)
+        asset = self.log_asset(file_, file_name=file_name)
+        return asset["web"] if asset is not None else asset
+
     def _upload_audio(
         self, file_name: str, data: typing.Union[numpy.ndarray, torch.Tensor]
     ) -> typing.Optional[str]:
@@ -295,7 +310,10 @@ class CometMLExperiment:
             file_name += f"name={name},experiment={self.get_key()}.wav"
             url = self._upload_audio(file_name, data)
             items.append(f"<p><b>{name}:</b></p>")
-            items.append(f'<audio controls preload="metadata" src="{url}"></audio>')
+            if url is None:
+                items.append(f"Failed to upload: {file_name}")
+            else:
+                items.append(f'<audio controls preload="metadata" src="{url}"></audio>')
         self.log_html("<section>{}</section>".format("\n".join(items)))
 
     def log_parameter(self, key: run._config.Label, value: typing.Any):
@@ -317,12 +335,17 @@ class CometMLExperiment:
     def log_metric(self, name: run._config.Label, value: typing.Union[int, float]):
         self._experiment.log_metric(name, value)
 
-    def log_figure(self, name: run._config.Label, figure: matplotlib.figure.Figure):
-        self._experiment.log_figure(str(name), figure)
+    def log_figure(
+        self, name: run._config.Label, figure: matplotlib.figure.Figure
+    ) -> typing.Optional[str]:
+        asset = self._experiment.log_figure(str(name), figure)
+        return asset["web"] if asset is not None else asset
 
-    def log_figures(self, dict_: typing.Dict[run._config.Label, matplotlib.figure.Figure]):
+    def log_figures(
+        self, dict_: typing.Dict[run._config.Label, matplotlib.figure.Figure]
+    ) -> typing.Dict[run._config.Label, typing.Optional[str]]:
         """ Log multiple figures from `dict_` via `experiment.log_figure`. """
-        [self.log_figure(k, v) for k, v in dict_.items()]
+        return {k: self.log_figure(k, v) for k, v in dict_.items()}
 
     def set_name(self, name: str):
         logger.info('Experiment name set to "%s"', name)

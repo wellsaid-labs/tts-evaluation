@@ -783,7 +783,7 @@ def power_spectrogram_to_framed_rms(
 class Spectrograms(typing.NamedTuple):
     """
     Args:
-        db_mel (torch.FloatTensor [batch_size  (optional), num_frames, num_mel_bins]):
+        db_mel (torch.FloatTensor [batch_size (optional), num_frames, num_mel_bins]):
             A spectrogram with the mel scale for frequency and decibel scale for loudness.
         db (torch.FloatTensor [batch_size (optional), num_frames, fft_length // 2 + 1]):
             A spectrogram with a decibel scale for loudness.

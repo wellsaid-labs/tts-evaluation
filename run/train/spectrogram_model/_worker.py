@@ -496,18 +496,21 @@ def _visualize_inferred(
     dataset = lambda n: get_dataset_label(
         f"{n}/{pick_label}", cadence=args.cadence, type_=args.dataset_type
     )
-    figures = {
-        dataset("gold_spectrogram"): lib.visualize.plot_mel_spectrogram(gold_spectrogram),
-        model("predicted_spectrogram"): lib.visualize.plot_mel_spectrogram(predicted_spectrogram),
-        model("alignment"): lib.visualize.plot_alignments(predicted_alignments),
-        model("stop_token"): lib.visualize.plot_logits(predicted_stop_token),
-    }
-    args.state.comet.log_figures(figures)
+    figures = (
+        (dataset("gold_spectrogram"), lib.visualize.plot_mel_spectrogram, gold_spectrogram),
+        (model("predicted_spectrogram"), lib.visualize.plot_mel_spectrogram, predicted_spectrogram),
+        (model("alignment"), lib.visualize.plot_alignments, predicted_alignments),
+        (model("stop_token"), lib.visualize.plot_logits, predicted_stop_token),
+    )
+    figure_urls = args.state.comet.log_figures({l: v(n) for l, v, n in figures})
     audio = {
         "predicted_griffin_lim_audio": lib.audio.griffin_lim(predicted_spectrogram.cpu().numpy()),
         "gold_griffin_lim_audio": lib.audio.griffin_lim(gold_spectrogram.cpu().numpy()),
         "gold_audio": args.batch.audio[item].cpu().numpy(),
     }
+    log_npy = args.state.comet.log_npy
+    npy_urls = {f"{l} Array": log_npy(l, args.batch.spans[item].speaker, a) for l, _, a in figures}
+    failed = "Failed to upload."
     args.state.comet.log_html_audio(
         audio=audio,
         context=args.state.comet.context,
@@ -517,6 +520,8 @@ def _visualize_inferred(
         predicted_loudness=get_average_db_rms_level(predicted_spectrogram.unsqueeze(1)).item(),
         gold_loudness=get_average_db_rms_level(gold_spectrogram.unsqueeze(1)).item(),
         pick_function=pick_label,
+        **{f"{k} Figure": failed if v is None else f'<img src="{v}">' for k, v in figure_urls},
+        **{k: failed if v is None else v for k, v in npy_urls},
     )
 
 

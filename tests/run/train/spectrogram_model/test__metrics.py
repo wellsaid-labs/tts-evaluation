@@ -1,3 +1,5 @@
+import functools
+
 import hparams
 import pytest
 import torch
@@ -214,3 +216,36 @@ def test_get_average_db_rms_level():
     # NOTE: Audacity measured this RMS to be -23.6371. And `signal_to_rms` measured RMS to be
     # -23.6365.
     assert rms_level == -23.64263916015625
+
+
+def test_get_num_pause_frames():
+    """Test `_metrics.get_power_rms_level_sum` gets the correct number of pause frames."""
+    audio_path = TEST_DATA_PATH / "audio" / "bit(rate(lj_speech,24000),32).wav"
+    metadata = lib.audio.get_audio_metadata(audio_path)
+    run.data._loader.is_normalized_audio_file(metadata)
+    audio = lib.audio.read_audio(audio_path)
+    audio = torch.tensor(lib.audio.pad_remainder(audio))
+    fft_length = 2048
+    frame_hop = fft_length // 4
+    sample_rate = 24000
+    signal_to_spectrogram = lambda s, **k: _data._signals_to_spectrograms([s], **k)[0].tensor
+    db_mel_spectrogram = signal_to_spectrogram(
+        audio,
+        get_weighting=lib.audio.iso226_weighting,
+        frame_hop=frame_hop,
+        fft_length=fft_length,
+        sample_rate=sample_rate,
+    )
+    get_num_pause_frames = functools.partial(
+        _metrics.get_num_pause_frames, frame_hop=frame_hop, sample_rate=sample_rate
+    )
+    assert get_num_pause_frames(db_mel_spectrogram, None, -40.0, frame_hop / sample_rate) == [97]
+    assert get_num_pause_frames(db_mel_spectrogram, None, -40.0, 0.25) == [38]
+    # NOTE: Test `max_loudness` is too quiet.
+    assert get_num_pause_frames(db_mel_spectrogram, None, -80.0, frame_hop / sample_rate) == [0]
+    # NOTE: Test `min_length` is too long.
+    assert get_num_pause_frames(db_mel_spectrogram, None, -40.0, 1) == [0]
+    mask = torch.zeros(*db_mel_spectrogram.shape[:2])
+    assert get_num_pause_frames(db_mel_spectrogram, mask, -40.0, frame_hop / sample_rate) == [0]
+    batch = torch.cat([db_mel_spectrogram, db_mel_spectrogram], dim=1)
+    assert get_num_pause_frames(batch, None, -40.0, frame_hop / sample_rate) == [97, 97]

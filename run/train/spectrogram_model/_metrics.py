@@ -208,6 +208,40 @@ def get_average_db_rms_level(
     return power_to_db(cumulative_power_rms_level / num_elements)
 
 
+@configurable
+def get_num_pause_frames(
+    db_spectrogram: torch.Tensor,
+    mask: typing.Optional[torch.Tensor] = None,
+    max_loudness: float = HParam(),
+    min_length: float = HParam(),
+    frame_hop: int = HParam(),
+    sample_rate: int = HParam(),
+) -> typing.List[int]:
+    """Count the number of frames inside a pause.
+
+    Args:
+        db_spectrogram (torch.FloatTensor [num_frames, batch_size, frame_channels])
+        mask (torch.FloatTensor [num_frames, batch_size])
+        max_loudness: The maximum loudness a pause can be.
+        min_length: The minimum length for a pause to be considered a pause.
+        ...
+    """
+    # [num_frames, batch_size, frame_channels] → [batch_size, num_frames, frame_channels]
+    power_spec = lib.audio.db_to_power(db_spectrogram).transpose(0, 1)
+    # [batch_size, num_frames, frame_channels] → [batch_size, num_frames]
+    framed_rms_level = lib.audio.power_spectrogram_to_framed_rms(power_spec)
+    is_silent = framed_rms_level < lib.audio.db_to_amp(max_loudness)
+    is_silent = is_silent if mask is None else is_silent * mask.transpose(0, 1)
+    frames_threshold = min_length * sample_rate / frame_hop
+    num_frames = [0] * power_spec.shape[0]
+    for i, sequence in enumerate(is_silent):
+        for _is_silent, group in itertools.groupby(list(sequence)):
+            group = list(group)
+            if _is_silent and len(group) >= frames_threshold:
+                num_frames[i] += len(group)
+    return num_frames
+
+
 def get_alignment_norm(
     alignments: torch.Tensor, tokens_mask: torch.Tensor, spectrogram_mask: torch.Tensor
 ) -> torch.Tensor:
@@ -254,6 +288,7 @@ class Metrics(_utils.Metrics):
     Vars:
         ...
         AVERAGE_NUM_FRAMES: The average number of frames per spectrogram.
+        PAUSE_FRAMES: The percentage of frames inside of a pause.
         AVERAGE_RMS_LEVEL: The average loudness per frame.
         MAX_NUM_FRAMES: The maximum number of frames in a spectrogram.
         MIN_DATA_LOADER_QUEUE_SIZE: The minimum data loader queue size.
@@ -270,6 +305,7 @@ class Metrics(_utils.Metrics):
             the percentage of token transitions that jump over a token.
         ALIGNMENT_STD: This metric measures the standard deviation of an alignment. As the alignment
             is more focused, this metrics goes to zero.
+        PREDICTED_PAUSE_FRAMES: The percentage of predicted frames inside of a pause.
         AVERAGE_PREDICTED_RMS_LEVEL: The average loudness per predicted frame.
         AVERAGE_RELATIVE_SPEED: The number of predicted frames divided by the number of frames.
         AVERAGE_RMS_LEVEL_DELTA: The delta between `AVERAGE_PREDICTED_RMS_LEVEL` and
@@ -302,6 +338,8 @@ class Metrics(_utils.Metrics):
         NUM_TOKENS,
         RMS_SUM_PREDICTED,
         RMS_SUM,
+        NUM_PAUSE_FRAMES_PREDICTED,
+        NUM_PAUSE_FRAMES,
         SPECTROGRAM_LOSS_SUM,
         STOP_TOKEN_LOSS_SUM,
         *_,
@@ -309,6 +347,7 @@ class Metrics(_utils.Metrics):
 
     NUM_SPANS_ = partial(get_dataset_label, "num_spans")
     AVERAGE_NUM_FRAMES = partial(get_dataset_label, "average_num_frames")
+    PAUSE_FRAMES = partial(get_dataset_label, "pause_frames")
     AVERAGE_RMS_LEVEL = partial(get_dataset_label, "average_rms_level")
     MAX_NUM_FRAMES = partial(get_dataset_label, "max_num_frames")
     AVERAGE_FRAMES_PER_TOKEN = partial(get_dataset_label, "average_frames_per_token")
@@ -324,6 +363,7 @@ class Metrics(_utils.Metrics):
     ALIGNMENT_SKIPS = partial(get_model_label, "alignment_skips")
     ALIGNMENT_JUMPS = partial(get_model_label, "alignment_jumps_v2")
     ALIGNMENT_STD = partial(get_model_label, "alignment_std")
+    PREDICTED_PAUSE_FRAMES = partial(get_model_label, "predicted_pause_frames")
     AVERAGE_PREDICTED_RMS_LEVEL = partial(get_model_label, "average_predicted_rms_level")
     AVERAGE_RELATIVE_SPEED = partial(get_model_label, "average_relative_speed")
     AVERAGE_RMS_LEVEL_DELTA = partial(get_model_label, "average_rms_level_delta")
@@ -446,18 +486,22 @@ class Metrics(_utils.Metrics):
         """
         values: typing.Dict[str, float] = collections.defaultdict(float)
         loudness = get_power_rms_level_sum(batch.spectrogram.tensor, batch.spectrogram_mask.tensor)
-        for span, loudness, predicted_loudness, has_reached_max in zip(
+        for span, loudness, pred_loudness, num_pause, num_pause_pred, has_reached_max in zip(
             batch.spans,
             self._to_list(loudness),
             self._to_list(get_power_rms_level_sum(predicted_spectrogram, spectrogram_mask)),
+            get_num_pause_frames(batch.spectrogram.tensor, batch.spectrogram_mask.tensor),
+            get_num_pause_frames(predicted_spectrogram, spectrogram_mask),
             itertools.repeat(False) if reached_max is None else self._to_list(reached_max),
         ):
             if not has_reached_max:
                 assert span.speaker in self.speakers
                 for suffix in ["", f"/{span.speaker.label}"]:
                     format_ = lambda s: f"{s}{suffix}"
-                    values[format_(self.RMS_SUM_PREDICTED)] += predicted_loudness
+                    values[format_(self.RMS_SUM_PREDICTED)] += pred_loudness
                     values[format_(self.RMS_SUM)] += loudness
+                    values[format_(self.NUM_PAUSE_FRAMES)] += num_pause
+                    values[format_(self.NUM_PAUSE_FRAMES_PREDICTED)] += num_pause_pred
 
         return dict(values)
 
@@ -565,6 +609,10 @@ class Metrics(_utils.Metrics):
                 self.AVERAGE_PREDICTED_RMS_LEVEL: predicted_rms,
                 self.AVERAGE_RMS_LEVEL: rms,
                 self.AVERAGE_RMS_LEVEL_DELTA: predicted_rms - rms,
+                self.PAUSE_FRAMES: div(self.NUM_PAUSE_FRAMES, self.NUM_FRAMES),
+                self.PREDICTED_PAUSE_FRAMES: div(
+                    self.NUM_PAUSE_FRAMES_PREDICTED, self.NUM_FRAMES_PREDICTED
+                ),
             }
             metrics.update({partial(k, speaker=speaker): v for k, v in update.items()})
         return metrics

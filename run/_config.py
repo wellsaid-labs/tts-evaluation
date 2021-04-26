@@ -211,6 +211,10 @@ def _configure_audio_processing():
     )
     non_speech_segment_frame_length = 50
     max_frames_per_token = 0.18 / (FRAME_HOP / format_.sample_rate)
+    # NOTE: Today pauses longer than one second are not used for emphasis or meaning; however,
+    # Otis does tend to use long pauses for emphasis; however, he rarely pauses for longer than
+    # one second.
+    too_long_pause_length = 1.0
 
     # NOTE: A "hann window" is standard for calculating an FFT, it's even mentioned as a "popular
     # window" on Wikipedia (https://en.wikipedia.org/wiki/Window_function).
@@ -298,6 +302,12 @@ def _configure_audio_processing():
         run.train.spectrogram_model._metrics.get_num_repeated: HParams(
             threshold=max_frames_per_token
         ),
+        run.train.spectrogram_model._metrics.get_num_pause_frames: HParams(
+            frame_hop=FRAME_HOP,
+            sample_rate=format_.sample_rate,
+            min_length=too_long_pause_length,
+            max_loudness=-50,
+        ),
         lib.signal_model.SignalModel.__init__: HParams(
             ratios=[2] * int(math.log2(FRAME_HOP)),
         ),
@@ -327,10 +337,7 @@ def _configure_audio_processing():
             bits=bits,
             **{f.name: getattr(format_, f.name) for f in dataclasses.fields(format_)},
         ),
-        # NOTE: Today pauses longer than one second are not used for emphasis or meaning; however,
-        # Otis does tend to use long pauses for emphasis; however, he rarely pauses for longer than
-        # one second.
-        run.data._loader.utils.SpanGenerator.__init__: HParams(max_pause=1.0),
+        run.data._loader.utils.SpanGenerator.__init__: HParams(max_pause=too_long_pause_length),
         # NOTE: A 0.400 `block_size` is standard for ITU-R BS.1770.
         run.train.spectrogram_model._data._get_loudness: HParams(block_size=0.400, precision=0),
         run.train.spectrogram_model._data._random_loudness_annotations: HParams(max_annotations=10),
