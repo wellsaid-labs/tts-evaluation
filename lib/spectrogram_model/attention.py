@@ -173,22 +173,13 @@ class Attention(torch.nn.Module):
 
         part = slice(cumulative_alignment_padding, -cumulative_alignment_padding)
 
-        # [batch_size, num_tokens + 2 * cumulative_alignment_padding] →
-        # [batch_size, 1, num_tokens + 2 * cumulative_alignment_padding]
-        location_features = cumulative_alignment.unsqueeze(1)
-
         tokens_mask, window_indices = _window(tokens_mask, window_start, window_length, 1, False)
         tokens = _window(tokens, window_start.unsqueeze(1), window_length, 0, False)[0]
-        location_features = _window(
-            location_features,
-            window_start.unsqueeze(1),
-            window_length + cumulative_alignment_padding * 2,
-            2,
-            False,
-        )[0]
+        length = window_length + cumulative_alignment_padding * 2
+        cum_alignment_window = _window(cumulative_alignment, window_start, length, 1, False)[0]
 
         # [batch_size, 1, num_tokens] → [batch_size, hidden_size, num_tokens]
-        location_features = self.alignment_conv(location_features)
+        location_features = self.alignment_conv(cum_alignment_window.unsqueeze(1))
 
         # [1, batch_size, query_hidden_size] → [batch_size, hidden_size, 1]
         query = self.project_query(query).view(batch_size, self.hidden_size, 1)
@@ -219,9 +210,9 @@ class Attention(torch.nn.Module):
         # [batch_size, 1, hidden_size] → [batch_size, hidden_size]
         context = context.squeeze(1)
 
-        alignment = torch.zeros(
-            batch_size, max_num_tokens + cumulative_alignment_padding * 2, device=device
-        ).scatter_(1, window_indices + cumulative_alignment_padding, alignment)
+        length = max_num_tokens + cumulative_alignment_padding * 2
+        indices = window_indices + cumulative_alignment_padding
+        alignment = torch.zeros(batch_size, length, device=device).scatter_(1, indices, alignment)
 
         last_window_start = window_start
         window_start = alignment.max(dim=1)[1] - window_length // 2 - cumulative_alignment_padding
