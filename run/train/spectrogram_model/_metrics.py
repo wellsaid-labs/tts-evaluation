@@ -234,8 +234,9 @@ def get_num_pause_frames(
     is_silent = framed_rms_level < lib.audio.db_to_amp(max_loudness)  # [batch_size, num_frames]
     is_silent = is_silent if mask is None else is_silent * mask.transpose(0, 1)
     frames_threshold = min_length * sample_rate / frame_hop
-    num_frames = [0] * power_spec.shape[0]
-    for i in range(is_silent.shape[0]):
+    batch_size = is_silent.shape[0]
+    num_frames = [0] * batch_size
+    for i in range(batch_size):
         _is_silent, count = torch.unique_consecutive(is_silent[i], return_counts=True)
         count = _is_silent.float() * count
         count = (count >= frames_threshold).float() * count
