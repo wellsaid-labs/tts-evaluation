@@ -47,9 +47,8 @@ def _window(
     if check_invariants:
         assert start.min() >= 0, "The window `start` must be positive."
         assert length <= tensor.shape[dim], "The `length` is larger than the `tensor`."
-        assert (
-            start.max() + length <= tensor.shape[dim]
-        ), "The window `start` must smaller or equal to than `tensor.shape[dim] - length`."
+        message = "The window `start` must smaller or equal to than `tensor.shape[dim] - length`."
+        assert start.max() + length <= tensor.shape[dim], message
 
     indices, dim = _window_helper(length, dim, tensor.dim(), tensor.device)
     indices_shape = list(tensor.shape)
@@ -58,12 +57,17 @@ def _window(
     start = start.unsqueeze(dim)
 
     if check_invariants:
-        assert (
-            start.dim() == tensor.dim()
-        ), "The `start` tensor must be the same size as `tensor` without the `dim` dimension."
+        message = "`start` tensor must be the same size as `tensor` without the `dim` dimension."
+        assert start.dim() == tensor.dim(), message
 
     indices = indices + start
-    return torch.gather(tensor, dim, indices), indices
+    gather = torch.gather(tensor, dim, indices)
+
+    if check_invariants:
+        assert gather.shape[dim] == length
+        assert indices.shape[dim] == length
+
+    return gather, indices
 
 
 class AttentionHiddenState(typing.NamedTuple):
