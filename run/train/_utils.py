@@ -142,6 +142,10 @@ class CometMLExperiment:
     border-bottom: 2px solid #E8E8E8;
     background: white;
   }
+
+  img {
+    vertical-align: middle;
+  }
 </style>
     """
 
@@ -276,6 +280,7 @@ class CometMLExperiment:
         array = array.detach().cpu().numpy() if isinstance(array, torch.Tensor) else array
         file_ = io.BytesIO()
         numpy.save(file_, array, allow_pickle=False)
+        file_.seek(0)
         asset = self.log_asset(file_, file_name=file_name)
         return asset["web"] if asset is not None else asset
 
@@ -301,7 +306,7 @@ class CometMLExperiment:
             **kwargs: Additional metadata to include.
         """
         items = [f"<p><b>Step:</b> {self.curr_step}</p>"]
-        param_to_label = lambda s: s.title().replace("_", " ")
+        param_to_label = lambda s: s.title().replace("_", " ") if " " not in s else s
         kwargs = dict(speaker=speaker, **kwargs)
         items.extend([f"<p><b>{param_to_label(k)}:</b> {v}</p>" for k, v in kwargs.items()])
         for key, data in audio.items():
@@ -313,7 +318,7 @@ class CometMLExperiment:
             if url is None:
                 items.append(f"Failed to upload: {file_name}")
             else:
-                items.append(f'<audio controls preload="metadata" src="{url}"></audio>')
+                items.append(f'<audio controls preload="none" src="{url}"></audio>')
         self.log_html("<section>{}</section>".format("\n".join(items)))
 
     def log_parameter(self, key: run._config.Label, value: typing.Any):

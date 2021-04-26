@@ -502,7 +502,7 @@ def _visualize_inferred(
         (model("alignment"), lib.visualize.plot_alignments, predicted_alignments),
         (model("stop_token"), lib.visualize.plot_logits, predicted_stop_token),
     )
-    figure_urls = args.state.comet.log_figures({l: v(n) for l, v, n in figures})
+    assets = args.state.comet.log_figures({l: v(n) for l, v, n in figures})
     audio = {
         "predicted_griffin_lim_audio": lib.audio.griffin_lim(predicted_spectrogram.cpu().numpy()),
         "gold_griffin_lim_audio": lib.audio.griffin_lim(gold_spectrogram.cpu().numpy()),
@@ -520,8 +520,8 @@ def _visualize_inferred(
         predicted_loudness=get_average_db_rms_level(predicted_spectrogram.unsqueeze(1)).item(),
         gold_loudness=get_average_db_rms_level(gold_spectrogram.unsqueeze(1)).item(),
         pick_function=pick_label,
-        **{f"{k} Figure": failed if v is None else f'<img src="{v}">' for k, v in figure_urls},
-        **{k: failed if v is None else v for k, v in npy_urls},
+        **{f"{k} Figure": failed if v is None else f'<img src="{v}">' for k, v in assets.items()},
+        **{k: failed if v is None else f'<a href="{v}">{v}</a>' for k, v in npy_urls.items()},
     )
 
 
