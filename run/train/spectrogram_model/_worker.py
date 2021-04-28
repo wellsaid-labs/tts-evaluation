@@ -62,6 +62,7 @@ class Checkpoint(_utils.Checkpoint):
     model: lib.spectrogram_model.SpectrogramModel
     optimizer: torch.optim.Adam
     clipper: lib.optimizers.AdaptiveGradientNormClipper
+    ema: lib.optimizers.ExponentialMovingParameterAverage
     scheduler: torch.optim.lr_scheduler.LambdaLR
 
 
@@ -71,6 +72,7 @@ class _State:
     model: torch.nn.parallel.DistributedDataParallel
     optimizer: torch.optim.Adam
     clipper: lib.optimizers.AdaptiveGradientNormClipper
+    ema: lib.optimizers.ExponentialMovingParameterAverage
     scheduler: torch.optim.lr_scheduler.LambdaLR
     comet: CometMLExperiment
     device: torch.device
@@ -81,11 +83,13 @@ class _State:
         assert self.scheduler._step_count == self.step.item() + 1
         assert self.scheduler.last_epoch == self.step.item()
         assert self.scheduler.optimizer == self.optimizer
+        assert self.ema.step == self.step.item() + 1
         ptrs = set(p.data_ptr() for p in self.model.parameters() if p.requires_grad)
         assert set(p.data_ptr() for p in self.model.module.parameters() if p.requires_grad) == ptrs
         assert len(self.optimizer.param_groups) == 1
         assert set(p.data_ptr() for p in self.optimizer.param_groups[0]["params"]) == ptrs
         assert set(p.data_ptr() for p in self.clipper.parameters) == ptrs
+        assert set(p.data_ptr() for p in self.ema.parameters) == ptrs
         assert self.model.module.vocab_size == self.input_encoder.phoneme_encoder.vocab_size
         assert self.model.module.num_speakers == self.input_encoder.speaker_encoder.vocab_size
         assert self.model.module.num_sessions == self.input_encoder.session_encoder.vocab_size
@@ -165,6 +169,7 @@ class _State:
     ) -> typing.Tuple[
         torch.optim.Adam,
         lib.optimizers.AdaptiveGradientNormClipper,
+        lib.optimizers.ExponentialMovingParameterAverage,
         torch.optim.lr_scheduler.LambdaLR,
     ]:
         """Initialize model optimizers.
@@ -177,7 +182,8 @@ class _State:
         optimizer_ = optimizer(params)
         clipper = lib.optimizers.AdaptiveGradientNormClipper(params)
         scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer_, lr_multiplier_schedule)
-        return optimizer_, clipper, scheduler
+        ema = lib.optimizers.ExponentialMovingParameterAverage(params)
+        return optimizer_, clipper, ema, scheduler
 
     def to_checkpoint(self):
         """ Create a checkpoint to save the spectrogram training state. """
@@ -187,6 +193,7 @@ class _State:
             model=typing.cast(lib.spectrogram_model.SpectrogramModel, self.model.module),
             optimizer=self.optimizer,
             clipper=self.clipper,
+            ema=self.ema,
             scheduler=self.scheduler,
             step=int(self.step.item()),
         )
@@ -210,6 +217,7 @@ class _State:
             torch.nn.parallel.DistributedDataParallel(checkpoint.model, [device], device),
             checkpoint.optimizer,
             checkpoint.clipper,
+            checkpoint.ema,
             checkpoint.scheduler,
             comet,
             device,
@@ -404,6 +412,7 @@ def _run_step(
         assert not is_master() or torch.isfinite(norm_inf), f"Gradient was too large {norm_inf}."
         norm = args.state.clipper.clip()
         args.state.optimizer.step()
+        args.state.ema.update()
         args.state.scheduler.step()
         args.timer.record_event(args.timer.LOG_METRICS)
         args.state.step.add_(1)
@@ -578,6 +587,7 @@ def _run_steps(
     with contextlib.ExitStack() as stack:
         stack.enter_context(set_context(context, state.comet, state.model))
         stack.enter_context(set_epoch(state.comet, step=state.step.item(), **kwargs))
+        stack.enter_context(contextlib.nullcontext() if context == Context.TRAIN else state.ema)
 
         metrics = Metrics(state.comet, state.input_encoder.speaker_encoder.vocab)
         timer = Timer().record_event(Timer.LOAD_DATA)

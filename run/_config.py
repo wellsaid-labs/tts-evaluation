@@ -396,7 +396,7 @@ def _configure_models():
             # The output of the final convolutional layer is passed into a single
             # bi-directional [19] LSTM [20] layer containing 512 units (256) in each
             # direction) to generate the encoded features.
-            lstm_layers=1,
+            lstm_layers=2,
             out_size=encoder_output_size,
         ),
         lib.spectrogram_model.attention.Attention.__init__: HParams(

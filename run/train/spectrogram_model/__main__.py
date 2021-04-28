@@ -66,9 +66,9 @@ def _make_configuration(
             # NOTE: This value is the minimum loss the test set achieves before the model
             # starts overfitting on the train set.
             # TODO: Try increasing the stop token minimum loss because it still overfit.
-            stop_token_min_loss=0.0105,
+            stop_token_min_loss=0.015,
             # NOTE: This value is the average spectrogram length in the training dataset.
-            average_spectrogram_length=315.0,
+            average_spectrogram_length=233.5,
         ),
         _worker._get_data_loaders: HParams(
             # SOURCE: Tacotron 2
@@ -161,6 +161,10 @@ def start(
             "no_balance_train",
             "no_slash",
             "no_long_pauses",
+            "stop_token_0.015_min_loss",
+            "encoder_2_lstm",
+            "ema",
+            "avg_spec_len_233.5",
         ],
         help="Experiment tags.",
     ),
