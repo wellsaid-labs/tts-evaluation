@@ -57,7 +57,7 @@ Setup your local development environment by following [these instructions](LOCAL
 1. SSH into the instance...
 
    ```zsh
-   VM_NAME=$(python -m run.utils.gcp most-recent --filter $NAME)
+   VM_NAME=$(python -m run.utils.gcp most-recent --name $NAME)
    gcloud compute ssh --zone=$ZONE $VM_NAME
    ```
 
@@ -184,7 +184,7 @@ Setup your local development environment by following [these instructions](LOCAL
    💡 TIP: The instance can be imaged and deleted. For example:
 
    ```zsh
-   VM_NAME=$(python -m run.utils.gcp most-recent --filter $NAME)
+   VM_NAME=$(python -m run.utils.gcp most-recent --name $NAME)
    gcloud compute ssh --zone=$ZONE $VM_NAME \
       --command="rm /opt/wellsaid-labs/AUTO_START_FROM_CHECKPOINT"
    python -m run.utils.gcp image-and-delete \
