@@ -203,7 +203,7 @@ def most_recent(
     # It's much easier to run the below command...
     command = (
         "gcloud compute instances list --sort-by=creationTimestamp "
-        '--format="value(name,metadata.items[1].value,creationTimestamp)"'
+        '--format="value(name,metadata.items.created-by,creationTimestamp)"'
     )
     lines = subprocess.check_output(command, shell=True).decode().strip().split("\n")
     machines = [(s.strip() for s in l.split()) for l in lines]
