@@ -105,7 +105,7 @@ class Decoder(torch.nn.Module):
 
         Args:
             tokens (torch.FloatTensor [num_tokens, batch_size, encoder_output_size])
-            speaker (torch.LongTensor [batch_size, speaker_embedding_dim])
+            speaker (torch.FloatTensor [batch_size, speaker_embedding_dim])
         """
         max_num_tokens, batch_size, _ = tokens.shape
         device = tokens.device
@@ -184,7 +184,7 @@ class Decoder(torch.nn.Module):
             tokens (torch.FloatTensor [num_tokens, batch_size, encoder_output_size])
             tokens_mask (torch.BoolTensor [batch_size, num_tokens])
             num_tokens (torch.LongTensor [batch_size])
-            speaker (torch.LongTensor [batch_size, speaker_embedding_dim])
+            speaker (torch.FloatTensor [batch_size, speaker_embedding_dim])
             target_frames (torch.FloatTensor [num_frames, batch_size, num_frame_channels],
                 optional): Ground truth frames for "teacher forcing" and loss.
             hidden_state: Hidden state from previous time steps, used to predict the next time step.
