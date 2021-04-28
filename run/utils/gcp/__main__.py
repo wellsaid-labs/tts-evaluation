@@ -190,7 +190,10 @@ def delete_instance(name: str = typer.Option(...), zone: str = typer.Option(...)
 
 
 @app.command()
-def most_recent(filter: str = ""):
+def most_recent(
+    filter: str = "",
+    name: typing.Optional[str] = typer.Option(None, help="Filter by the name of a instance group."),
+):
     """Print the name of the most recent instance created containing the string FILTER."""
     # NOTE: This wasn't implemented with Google's Python SDK because:
     # - The client must query all zones, and preferably in parallel.
@@ -200,11 +203,13 @@ def most_recent(filter: str = ""):
     # It's much easier to run the below command...
     command = (
         "gcloud compute instances list --sort-by=creationTimestamp "
-        '--format="value(name,creationTimestamp)"'
+        '--format="value(name,metadata.items[1].value,creationTimestamp)"'
     )
     lines = subprocess.check_output(command, shell=True).decode().strip().split("\n")
-    machines = [l.split()[0].strip() for l in lines]
-    machines = [m for m in machines if filter in m]
+    machines = [(s.strip() for s in l.split()) for l in lines]
+    machines = [
+        n for n, m, _ in machines if filter in n and (name is None or m.split("/")[-1] == name)
+    ]
     if len(machines) == 0:
         logger.error("No instance found.")
     else:
