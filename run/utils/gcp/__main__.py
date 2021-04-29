@@ -206,10 +206,10 @@ def most_recent(
         '--format="value(name,metadata.items.created-by,creationTimestamp)"'
     )
     lines = subprocess.check_output(command, shell=True).decode().strip().split("\n")
-    machines = [(s.strip() for s in l.split()) for l in lines]
-    machines = [
-        n for n, m, _ in machines if filter in n and (name is None or m.split("/")[-1] == name)
-    ]
+    machines = [[s.strip() for s in l.split()] for l in lines]
+    if name is not None:
+        machines = [s[0] for s in machines if len(s) == 3 and s[1].split("/")[-1] == name]
+    machines = [n for n in machines if filter in n]
     if len(machines) == 0:
         logger.error("No instance found.")
     else:
