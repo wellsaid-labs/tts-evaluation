@@ -208,8 +208,8 @@ def most_recent(
     lines = subprocess.check_output(command, shell=True).decode().strip().split("\n")
     machines = [[s.strip() for s in l.split()] for l in lines]
     if name is not None:
-        machines = [s[0] for s in machines if len(s) == 3 and s[1].split("/")[-1] == name]
-    machines = [n for n in machines if filter in n]
+        machines = [s for s in machines if len(s) == 3 and s[1].split("/")[-1] == name]
+    machines = [s[0] for s in machines if filter in s[0]]
     if len(machines) == 0:
         logger.error("No instance found.")
     else:
