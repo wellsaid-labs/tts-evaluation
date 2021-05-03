@@ -216,17 +216,8 @@ def _analyze_alignment_speech_segments(
 
 
 @lib.utils.log_runtime
-def _analyze_speech_segment_transitions(
-    passages: typing.List[Passage], pad=lib.audio.milli_to_sec(25), **kwargs
-):
-    """Analyze the transition periods between speech segments.
-
-    TODO: Parameterize `pad`.
-
-    Args:
-        ...
-        pad: The number of seconds of padding added to a speech segment.
-    """
+def _analyze_speech_segment_transitions(passages: typing.List[Passage], **kwargs):
+    """Analyze the transition periods between speech segments."""
     span_metric = functools.partial(_span_metric, **kwargs)
     unit = "Speech Segment Transition"
     threshold = 1.0
