@@ -230,11 +230,11 @@ class Passage:
         return None if self.index == len(self.passages) - 1 else self.passages[self.index + 1]
 
     @property
-    def audio_start(self):
+    def audio_start(self) -> float:
         return self.speech_segments[0].audio_start
 
     @property
-    def audio_stop(self):
+    def audio_stop(self) -> float:
         return self.speech_segments[-1].audio_stop
 
     def audio(self):
@@ -438,12 +438,12 @@ class Span:
         return self._last_cache
 
     @property
-    def audio_start(self):
+    def audio_start(self) -> float:
         """Start of audio span in `self.audio_file`."""
         return self._first.audio[0] if self.audio_slice_ is None else self.audio_slice_.start
 
     @property
-    def audio_stop(self):
+    def audio_stop(self) -> float:
         """End of audio span in `self.audio_file`."""
         return self._last.audio[-1] if self.audio_slice_ is None else self.audio_slice_.stop
 
