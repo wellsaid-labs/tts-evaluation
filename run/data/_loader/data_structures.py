@@ -643,6 +643,9 @@ def _make_speech_segments_helper(
 ) -> typing.Tuple[typing.Tuple[slice, ...], ...]:
     """Make a list of `Span`s that start and end with silence.
 
+    NOTE: Long alignments (more than 1s) can include a pause. Due to this, there may be a pause
+    inside a speech segment.
+
     Args:
         ...
         nss_timeline: Timeline for looking up non-speech segments (NSS) an interval of audio.

@@ -536,7 +536,14 @@ def _include_passage(passage: Passage) -> bool:
 
 
 def _include_span(span: Span):
-    """Return `True` iff `span` should be included in the dataset."""
+    """Return `True` iff `span` should be included in the dataset.
+
+    TODO: The dataset metrics show that 2% of Heather's dataset still has pauses longer than 1s.
+    Can we filter them out in accordance to `too_long_pause_length`?
+    TODO: How can we filter out all non-standard words that haven't been normalized, yet? We could
+    normalize the script before hand, removing all non-standard words. Afterwards, we can verify
+    with Google STT that it matches the voice over.
+    """
     if "<" in span.script or ">" in span.script:
         return False
 

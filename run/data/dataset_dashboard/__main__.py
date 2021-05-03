@@ -243,6 +243,27 @@ def _analyze_speech_segment_transitions(passages: typing.List[Passage], **kwargs
     span_metric(spans, lengths, "Length", "Seconds", 0.5, unit, **kwargs)
 
 
+def _total_pauses(span: Span, threshold: float = 1.0, min_speech_segment: float = 0.1) -> float:
+    """ Get the sum of pauses longer than `threshold` in `Span`. """
+    lengths = []
+    intervals = span.passage.non_speech_segments[span.audio_start : span.audio_stop]
+    start, stop = max(intervals[0][0], span.audio_start), min(intervals[0][1], span.audio_stop)
+    for interval in intervals:
+        if interval[0] - stop > min_speech_segment:
+            assert stop >= start
+            lengths.append(stop - start)
+            start = interval[0]
+        stop = min(interval[1], span.audio_stop)
+    lengths.append(stop - start)
+    return 0.0 if len(lengths) == 0 else sum(l for l in lengths if l > threshold)
+
+
+def _max_nonalignment_length(span: Span) -> float:
+    nonalignments = span.passage.nonalignments[span.nonalignments_slice]
+    clamp = lambda x: lib.utils.clamp(x, min_=span.audio_start, max_=span.audio_stop)
+    return max(clamp(a.audio[-1]) - clamp(a.audio[0]) for a in nonalignments)
+
+
 @lib.utils.log_runtime
 def _analyze_speech_segments(passages: typing.List[Passage], **kwargs):
     st.markdown("### Speech Segments Analysis")
@@ -255,20 +276,32 @@ def _analyze_speech_segments(passages: typing.List[Passage], **kwargs):
     num_digit = sum(s.audio_length for s in segments if lib.text.has_digit(s.script))
     threshold = 15
     above_threshold = sum(s.audio_length for s in segments if s.audio_length > threshold)
+
     st.markdown(
         f"There are **{len(segments):,} ({audio_length})** segments to analyze, representing of "
         f"**{utils.passages_coverage(passages, segments):.2%}** all alignments in passages. "
         f"At a high-level:\n\n"
+        f"- **{sum(s.audio_length for s in segments):.2f}** seconds of speech segments\n\n"
         f"- **{num_mistranscription / total_seconds:.2%}** has a mistranscription\n\n"
         f"- **{num_slash / total_seconds:.2%}** has a slash\n\n"
         f"- **{num_digit / total_seconds:.2%}** has a digit\n\n"
         f"- **{above_threshold / total_seconds:.2%}** is longer than {threshold} seconds\n\n"
         f"- **{max(s.audio_length for s in segments):.2f}** seconds is the longest segment\n\n"
         f"- **{min(s.audio_length for s in segments):.2f}** seconds is the shortest segment\n\n"
+        f"- **{sum(_total_pauses(s) for s in segments):.2f}** seconds of long pauses\n\n"
     )
 
+    segments = [s for s in segments if not has_a_mistranscription(s)]
+    lambda_: typing.Callable[[Span], float]
     lambda_ = lambda s: s.audio_length
     _span_metric(segments, lambda_, "Length", "Seconds", 0.1, "Speech Segment", **kwargs)
+
+    name, unit_y = "Total Pause Length", "Speech Segment"
+    _span_metric(segments, _total_pauses, name, "Seconds", 0.1, unit_y, **kwargs)
+
+    name, unit_y = "Max Non Alignment Length", "Speech Segment"
+    _span_metric(segments, _max_nonalignment_length, name, "Seconds", 0.1, unit_y, **kwargs)
+
     _analyze_speech_segment_transitions(passages, **kwargs)
 
 
