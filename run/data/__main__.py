@@ -106,13 +106,14 @@ def numberings(
 def pair(
     recording: typing.List[pathlib.Path] = typer.Option(..., exists=True, dir_okay=False),
     script: typing.List[pathlib.Path] = typer.Option(..., exists=True, dir_okay=False),
+    encoding: str = typer.Option("utf-8"),
 ):
     """Sort and analyze pairs consisting of a RECORING and a SCRIPT."""
     assert len(recording) == len(script)
     rows = []
     iterator = tqdm.tqdm(zip(lib.audio.get_audio_metadata(recording), script), total=len(script))
     for metadata, script_ in iterator:
-        num_characters = len(script_.read_text())
+        num_characters = len(script_.read_text(encoding=encoding))
         row = {
             "Script Name": script_.name,
             "Recording Name": metadata.path.name,
@@ -257,6 +258,7 @@ def text(
     paths: typing.List[pathlib.Path] = typer.Argument(..., exists=True, dir_okay=False),
     dest: pathlib.Path = typer.Argument(..., exists=True, file_okay=False),
     column="Content",
+    encoding: str = typer.Option("utf-8"),
 ):
     """Convert text file(s) in PATHS to CSV file(s), and save to directory DEST with one row and one
     column."""
@@ -265,7 +267,8 @@ def text(
         if dest_path.exists():
             logger.error("Skipping, file already exists: %s", dest_path)
             continue
-        pandas.DataFrame({column: [path.read_text()]}).to_csv(dest_path, index=False)
+        text = path.read_text(encoding=encoding)
+        pandas.DataFrame({column: [text]}).to_csv(dest_path, index=False)
 
 
 def _csv_normalize(text: str, nlp: spacy_en.English) -> str:
@@ -298,6 +301,7 @@ def csv_normalize(
     tab_separated: bool = typer.Option(False, help="Parse this file as a TSV."),
     expected_columns: typing.List[str] = typer.Option(["Source", "Title", "Content"]),
     columns: typing.Optional[typing.List[str]] = typer.Option(None),
+    encoding: str = typer.Option("utf-8"),
 ):
     """Normalize csv file(s) in PATHS and save to directory DEST."""
     nlp = lib.text.load_en_core_web_md(disable=("tagger", "ner"))
@@ -312,7 +316,7 @@ def csv_normalize(
             logger.error("Skipping, file already exists: %s", dest_path)
             continue
 
-        text = path.read_text()
+        text = path.read_text(encoding=encoding)
         if not tab_separated and text.count("\t") > len(text.split("\n")) // 2:
             message = (
                 "There are a lot of tabs (%d) so this (%s) might be a TSV file. "

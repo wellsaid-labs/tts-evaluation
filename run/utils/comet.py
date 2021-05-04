@@ -68,6 +68,7 @@ def patch(
 def samples(
     experiment: str,
     dest: pathlib.Path = run._config.SAMPLES_PATH / lib.environment.bash_time_label(),
+    max_samples: int = 100,
 ):
     """Download all samples for an EXPERIMENT.
 
@@ -76,6 +77,8 @@ def samples(
     api = comet_ml.api.API()
     experiment_ = api.get_experiment_by_id(experiment)
     asset_list = experiment_.get_asset_list(asset_type="audio")
+    asset_list = typing.cast(typing.List, asset_list)
+    asset_list = sorted(asset_list, key=lambda a: a["createdAt"], reverse=True)[:max_samples]
     dest.mkdir()
     typer.echo(f"Downloading samples for experiment {experiment} into {dest}...")
     for asset in tqdm.tqdm(asset_list):
