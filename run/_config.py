@@ -83,8 +83,8 @@ NUM_FRAME_CHANNELS = 128
 # https://www.dsprelated.com/freebooks/sasp/Classic_Spectrograms.html
 # https://github.com/pytorch/audio/issues/384#issuecomment-597020705
 # https://pytorch.org/audio/compliance.kaldi.html
-FRAME_SIZE = 2048  # NOTE: Frame size in samples.
-FFT_LENGTH = 2048
+FRAME_SIZE = 4096  # NOTE: Frame size in samples.
+FFT_LENGTH = 4096
 assert FRAME_SIZE % 4 == 0
 FRAME_HOP = FRAME_SIZE // 4
 
@@ -406,7 +406,7 @@ def _configure_models():
             # Attention probabilities are computed after projecting inputs and location
             # features to 128-dimensional hidden representations.
             hidden_size=128,
-            convolution_filter_size=31,
+            convolution_filter_size=9,
             # NOTE: The alignment between text and speech is monotonic; therefore, the attention
             # progression should reflect that. The `window_length` ensures the progression is
             # limited.
@@ -414,6 +414,7 @@ def _configure_models():
             # number of characters the model is attending too at a time. That metric can be used
             # to set the `window_length`.
             window_length=9,
+            avg_frames_per_token=1.4555,
         ),
         lib.spectrogram_model.decoder.Decoder.__init__: HParams(
             encoder_output_size=encoder_output_size,

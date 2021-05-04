@@ -150,6 +150,7 @@ class SpectrogramModel(torch.nn.Module):
         speaker_embed_dropout: The speaker embedding dropout probability.
         stop_threshold: If the stop probability exceeds this value, this model stops generating
             frames.
+        stop_token_eps: The stop probability assigned to the initial frames.
     """
 
     @configurable
@@ -164,6 +165,7 @@ class SpectrogramModel(torch.nn.Module):
         output_scalar: float = HParam(),
         speaker_embed_dropout: float = HParam(),
         stop_threshold: float = HParam(),
+        stop_token_eps: float = 1e-10,
     ):
         super().__init__()
         assert speaker_embedding_size % 2 == 0, "This must be even."
@@ -178,8 +180,26 @@ class SpectrogramModel(torch.nn.Module):
         self.speaker_embed_dropout = torch.nn.Dropout(speaker_embed_dropout)
         self.encoder = encoder.Encoder(vocab_size, speaker_embedding_size)
         self.decoder = decoder.Decoder(num_frame_channels, speaker_embedding_size)
-        self.stop_sigmoid = torch.nn.Sigmoid()
+        self.output_scalar: torch.Tensor
         self.register_buffer("output_scalar", torch.tensor(output_scalar).float())
+        self.stop_token_eps: torch.Tensor
+        self.register_buffer("stop_token_eps", torch.logit(torch.tensor(stop_token_eps)))
+
+    def _mask_stop_token(
+        self, stop_token: torch.Tensor, num_tokens: torch.Tensor, window_start: torch.Tensor
+    ) -> torch.Tensor:
+        """Only consider the `stop_token` if the last token is within the attention window.
+
+        Args:
+            stop_token (torch.FloatTensor [num_frames (optional), batch_size])
+            num_tokens (torch.LongTensor [1 (optional), batch_size])
+            window_start (torch.LongTensor [num_frames (optional), batch_size])
+
+        Returns:
+            stop_token (torch.FloatTensor [num_frames (optional), batch_size])
+        """
+        at_the_end = window_start >= num_tokens - self.decoder.attention.window_length
+        return stop_token.masked_fill(~at_the_end, self.stop_token_eps)
 
     def _is_stop(
         self,
@@ -187,11 +207,8 @@ class SpectrogramModel(torch.nn.Module):
         num_tokens: torch.Tensor,
         window_start: torch.Tensor,
         reached_max: torch.Tensor,
-    ) -> torch.Tensor:
+    ) -> typing.Tuple[torch.Tensor, torch.Tensor]:
         """
-        NOTE: This uses hard constraint to prevent stoppping unless all the characters were seen.
-        TODO: Try training with the hard constraint for consistency with inference.
-
         Args:
             stop_token (torch.FloatTensor [*, batch_size, *])
             num_tokens (torch.LongTensor [batch_size])
@@ -202,9 +219,9 @@ class SpectrogramModel(torch.nn.Module):
             torch.BoolTensor [batch_size]
         """
         stop_token = stop_token.view(-1)
-        larger_than_threshold = self.stop_sigmoid(stop_token) >= self.stop_threshold
-        at_the_end = window_start >= num_tokens - self.decoder.attention.window_length
-        return (larger_than_threshold & at_the_end) | reached_max
+        stop_token = self._mask_stop_token(stop_token, num_tokens, window_start)
+        is_stop = (torch.sigmoid(stop_token) >= self.stop_threshold) | reached_max
+        return is_stop, stop_token
 
     def _infer_generator(
         self,
@@ -225,6 +242,7 @@ class SpectrogramModel(torch.nn.Module):
         """
         _, batch_size, _ = encoded_tokens.shape
         device = encoded_tokens.device
+        num_tokens = inputs.num_tokens
 
         assert (
             use_tqdm and batch_size == 1 or not use_tqdm
@@ -234,19 +252,19 @@ class SpectrogramModel(torch.nn.Module):
         frames, stop_tokens, alignments = [], [], []
         lengths = torch.zeros(batch_size, dtype=torch.long, device=device)
         stopped = torch.zeros(batch_size, dtype=torch.bool, device=device)
-        max_lengths = (inputs.num_tokens.float() * self.max_frames_per_token).long()
+        max_lengths = (num_tokens.float() * self.max_frames_per_token).long()
         max_lengths = torch.clamp(max_lengths, min=1)
-        max_tokens = inputs.num_tokens.max().cpu().item() if use_tqdm else None
+        max_tokens = num_tokens.max().cpu().item() if use_tqdm else None
         progress_bar = tqdm(leave=True, unit="char(s)", total=max_tokens) if use_tqdm else None
         keep_going = lambda: (
             stopped.sum() < batch_size and lengths[~stopped].max() < max_lengths[~stopped].max()
         )
         maybe_squeeze = lambda t: t if include_batch_dim else t.squeeze(1)
         while keep_going():
-            frame, stop_token, alignment, hidden_state = self.decoder(
+            frame, stop_token, alignment, _, hidden_state = self.decoder(
                 encoded_tokens,
                 inputs.tokens_mask,
-                inputs.num_tokens,
+                num_tokens,
                 inputs.speaker,
                 hidden_state=hidden_state,
                 **kwargs,
@@ -256,10 +274,11 @@ class SpectrogramModel(torch.nn.Module):
             frame[:, stopped] *= 0
             reached_max = lengths == max_lengths
             window_start = hidden_state.attention_hidden_state.window_start
-            stopped[self._is_stop(stop_token, inputs.num_tokens, window_start, reached_max)] = True
+            is_stop, stop_token = self._is_stop(stop_token, num_tokens, window_start, reached_max)
+            stopped[is_stop] = True
 
             frames.append(frame.squeeze(0) * self.output_scalar)
-            stop_tokens.append(stop_token.squeeze(0))
+            stop_tokens.append(stop_token)
             alignments.append(alignment.squeeze(0))
 
             if len(frames) > split_size or not keep_going():
@@ -364,9 +383,11 @@ class SpectrogramModel(torch.nn.Module):
             targets.frames,
         )
         frames = out.frames.masked_fill(~targets.mask.unsqueeze(2), 0) * self.output_scalar
+        num_tokens = inputs.num_tokens.unsqueeze(0)
+        stop_tokens = self._mask_stop_token(out.stop_tokens, num_tokens, out.window_starts)
         return Forward(
             frames if include_batch_dim else frames.squeeze(1),
-            out.stop_tokens if include_batch_dim else out.stop_tokens.squeeze(1),
+            stop_tokens if include_batch_dim else stop_tokens.squeeze(1),
             out.alignments if include_batch_dim else out.alignments.squeeze(1),
         )
 

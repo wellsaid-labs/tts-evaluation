@@ -52,7 +52,7 @@ def test_autoregressive_decoder():
     frames = torch.empty(0)
     stop_token = torch.empty(0)
     for _ in range(3):
-        frames, stop_token, alignment, hidden_state = module(
+        frames, stop_token, alignment, window_starts, hidden_state = module(
             tokens=tokens,
             tokens_mask=tokens_mask,
             num_tokens=tokens_mask.long().sum(dim=1),
@@ -68,6 +68,9 @@ def test_autoregressive_decoder():
 
         assert alignment.dtype == torch.float
         assert alignment.shape == (1, batch_size, num_tokens)
+
+        assert window_starts.dtype == torch.long
+        assert window_starts.shape == (1, batch_size)
 
         assert isinstance(hidden_state, DecoderHiddenState)
 
@@ -102,7 +105,7 @@ def test_autoregressive_decoder__target():
     target_frames = torch.rand(num_frames, batch_size, module.num_frame_channels)
     speaker = torch.zeros(batch_size, module.speaker_embedding_size)
 
-    frames, stop_token, alignment, hidden_state = module(
+    frames, stop_token, alignment, window_starts, hidden_state = module(
         tokens=tokens,
         tokens_mask=tokens_mask,
         num_tokens=tokens_mask.long().sum(dim=1),
@@ -118,6 +121,9 @@ def test_autoregressive_decoder__target():
 
     assert alignment.dtype == torch.float
     assert alignment.shape == (num_frames, batch_size, num_tokens)
+
+    assert window_starts.dtype == torch.long
+    assert window_starts.shape == (num_frames, batch_size)
 
     assert hidden_state.last_frame.dtype == torch.float
     assert hidden_state.last_frame.shape == (1, batch_size, module.num_frame_channels)
