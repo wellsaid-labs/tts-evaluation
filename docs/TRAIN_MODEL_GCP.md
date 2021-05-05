@@ -184,13 +184,17 @@ Setup your local development environment by following [these instructions](LOCAL
    💡 TIP: The instance can be imaged and deleted. For example:
 
    ```zsh
+   IMAGE_FAMILY=$NAME # EXAMPLE: michaelp-baseline
+   IMAGE_NAME="$IMAGE_FAMILY-v1" # EXAMPLE: michaelp-baseline-v1
    VM_NAME=$(python -m run.utils.gcp most-recent --name $NAME)
+   VM_ZONE=$(python -m run.utils.gcp zone --name $VM_NAME)
    gcloud compute ssh --zone=$ZONE $VM_NAME \
       --command="rm /opt/wellsaid-labs/AUTO_START_FROM_CHECKPOINT"
    python -m run.utils.gcp image-and-delete \
-      --image-family=$NAME \
-      --image-name="$NAME-v1" \
+      --image-family=$IMAGE_FAMILY \
+      --image-name=$IMAGE_NAME \
       --name=$NAME \
       --vm-name=$VM_NAME \
-      --zone=$(python -m run.utils.gcp zone --name $VM_NAME)
+      --zone=$VM_ZONE
+   gcloud compute disks delete $VM_NAME --zone=$VM_ZONE
    ```
