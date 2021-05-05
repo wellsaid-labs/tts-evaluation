@@ -25,6 +25,8 @@ import lib
 logger = logging.getLogger(__name__)
 app = typer.Typer(context_settings=dict(max_content_width=math.inf))
 credentials, project = google.auth.default()
+# NOTE: The documentation for `compute` is difficult to find, so here is a link:
+# https://googleapis.github.io/google-api-python-client/docs/dyn/compute_v1.html
 compute = googleapiclient.discovery.build("compute", "v1", credentials=credentials)
 
 
@@ -62,6 +64,7 @@ def make_instance(
     image: typing.Optional[str] = typer.Option(None),
     metadata: typing.List[str] = typer.Option([]),
     metadata_from_file: typing.List[str] = typer.Option([]),
+    health_check: str = typer.Option("check-ssh"),
 ):
     """ Create a managed and preemptible instance named NAME in ZONE. """
     lib.environment.set_basic_logging_config()
@@ -129,6 +132,23 @@ def make_instance(
     template_op = _wait_for_operation(template_op["name"])
     logger.info("Created instance template: %s", template_op["targetLink"])
 
+    try:
+        body = {
+            "checkIntervalSec": 10,
+            "healthyThreshold": 2,
+            "logConfig": {"enable": False},
+            "name": health_check,
+            "tcpHealthCheck": {"port": 22, "proxyHeader": "NONE", "request": "", "response": ""},
+            "timeoutSec": 5,
+            "type": "TCP",
+            "unhealthyThreshold": 3,
+        }
+        health_check_op = compute.healthChecks().insert(project=project, body=body).execute()
+        health_check_op = _wait_for_operation(health_check_op["name"])
+        logger.info("Created health check: %s", health_check_op["targetLink"])
+    except googleapiclient.errors.HttpError as error:
+        logger.warning(error._get_reason())
+
     body = {
         "name": name,
         "baseInstanceName": name,
@@ -137,6 +157,12 @@ def make_instance(
         "statefulPolicy": {
             "preservedState": {"disks": {name: {"autoDelete": "ON_PERMANENT_INSTANCE_DELETION"}}}
         },
+        "autoHealingPolicies": [
+            {
+                "initialDelaySec": 300.0,
+                "healthCheck": f"projects/{project}/global/healthChecks/{health_check}",
+            }
+        ],
     }
     client = compute.instanceGroupManagers()
     manager_op = client.insert(project=project, zone=zone, body=body).execute()
