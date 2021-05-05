@@ -397,6 +397,7 @@ class Batch(_utils.Batch):
     # SequenceBatch[torch.FloatTensor [num_frames, batch_size], torch.LongTensor [1, batch_size])
     stop_token: SequenceBatch
 
+    # TODO: How come this is a `SequenceBatch`? It's not a sequence.
     # SequenceBatch[torch.LongTensor [1, batch_size], torch.LongTensor [1, batch_size])
     encoded_speaker: SequenceBatch
 

@@ -510,7 +510,7 @@ def _visualize_inferred(
     }
     log_npy = args.state.comet.log_npy
     npy_urls = {f"{l} Array": log_npy(l, args.batch.spans[item].speaker, a) for l, _, a in figures}
-    failed = "Failed to upload."
+    link = lambda h: "Failed to upload." if h is None else f'<a href="{h}">{h}</a>'
     args.state.comet.log_html_audio(
         audio=audio,
         context=args.state.comet.context,
@@ -520,8 +520,8 @@ def _visualize_inferred(
         predicted_loudness=get_average_db_rms_level(predicted_spectrogram.unsqueeze(1)).item(),
         gold_loudness=get_average_db_rms_level(gold_spectrogram.unsqueeze(1)).item(),
         pick_function=pick_label,
-        **{f"{k} Figure": failed if v is None else f'<img src="{v}">' for k, v in assets.items()},
-        **{k: failed if v is None else f'<a href="{v}">{v}</a>' for k, v in npy_urls.items()},
+        **{f"{k} Figure": link(v) for k, v in assets.items()},
+        **{k: link(v) for k, v in npy_urls.items()},
     )
 
 

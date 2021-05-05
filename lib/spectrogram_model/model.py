@@ -102,7 +102,7 @@ class Params(typing.NamedTuple):
     # speaker (torch.LongTensor [1, batch_size (optional)]): Speaker encodings.
     speaker: torch.Tensor
 
-    # speaker (torch.LongTensor [1, batch_size (optional)]): Speaker recording session encodings.
+    # session (torch.LongTensor [1, batch_size (optional)]): Speaker recording session encodings.
     session: torch.Tensor
 
     # num_tokens (torch.LongTensor [1, batch_size (optional)] or None): Number of tokens in each
