@@ -459,7 +459,8 @@ class SignalModel(torch.nn.Module):
 
         conditioning = self.condition(spectrogram)  # [batch_size, *, num_frames]
 
-        # [batch_size, frame_channels, num_frames] → [batch_size, 2, signal_length + excess_padding]
+        # [batch_size, self.get_layer_size(0), num_frames] →
+        # [batch_size, 2, signal_length + excess_padding]
         signal = self.network(spectrogram, spectrogram_mask, conditioning)
 
         # [batch_size, 2, signal_length + excess_padding] →

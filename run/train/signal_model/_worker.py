@@ -513,6 +513,7 @@ def _visualize_inferred_end_to_end(
         speaker=batch.batch.encoded_speaker.tensor[:, item],
         session=batch.batch.encoded_session.tensor[:, item],
     )
+    # NOTE: The `spectrogram_model` runs on CPU to conserve GPU memory.
     preds = spectrogram_model(params=params, mode=lib.spectrogram_model.Mode.INFER)
     preds = typing.cast(lib.spectrogram_model.Infer, preds)
     splits = preds.frames.to(state.device).split(split_size)
