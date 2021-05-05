@@ -35,7 +35,7 @@ Setup your local development environment by following [these instructions](LOCAL
    python -m run.utils.gcp make-instance \
       --name=$NAME \
       --zone=$ZONE \
-      --machine-type='custom-32-98304' \
+      --machine-type='n1-standard-32' \
       --gpu-type='nvidia-tesla-t4' \
       --gpu-count=4 \
       --disk-size=512 \
@@ -58,6 +58,7 @@ Setup your local development environment by following [these instructions](LOCAL
 
    ```zsh
    VM_NAME=$(python -m run.utils.gcp most-recent --name $NAME)
+   echo "VM_NAME=$VM_NAME"
    gcloud compute ssh --zone=$ZONE $VM_NAME
    ```
 
@@ -78,6 +79,7 @@ Setup your local development environment by following [these instructions](LOCAL
 
    ```bash
    VM_NAME=$(python -m run.utils.gcp most-recent --filter $USER)
+   echo "VM_NAME=$VM_NAME"
    VM_ZONE=$(python -m run.utils.gcp zone --name $VM_NAME)
    VM_IP=$(python -m run.utils.gcp ip --name $VM_NAME --zone=$VM_ZONE)
    VM_USER=$(python -m run.utils.gcp user --name $VM_NAME --zone=$VM_ZONE)
