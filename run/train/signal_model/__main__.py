@@ -42,7 +42,7 @@ def _make_configuration(
     dev_slice_size = 32768
     batch_size_ratio = 1 / 2
     dev_batch_size = int(train_batch_size * train_slice_size / dev_slice_size / 2)
-    dev_steps_per_epoch = 1 if debug else 64
+    dev_steps_per_epoch = 1 if debug else 256
     train_steps_per_epoch = int(round(dev_steps_per_epoch * batch_size_ratio * ratio))
     train_steps_per_epoch = 1 if debug else train_steps_per_epoch
 

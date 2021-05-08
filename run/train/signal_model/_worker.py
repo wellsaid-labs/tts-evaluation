@@ -394,7 +394,9 @@ def _run_step(args: _HandleBatchArgs):
 
     TODO: For the target signal, the `signal_to_spec` can be computed during data processing.
 
-    TODO: Parallelize loop with multiple independent discriminators.
+    TODO: Parallelize loop with multiple independent discriminators. Or, we could batch together
+    the multiple resolutions via padding or proportional frame hop. And, we'd could use grouped
+    convolutions, in order, to process the spectrograms seperately.
     """
     args.timer.record_event(args.timer.MODEL_FORWARD)
     signal = args.state.model(

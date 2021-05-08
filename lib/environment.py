@@ -366,7 +366,7 @@ class RecordStandardStreams:
 PT_EXTENSION = ".pt"
 
 
-def save(path: Path, data: typing.Any, overwrite: bool = False):
+def save(path: Path, data: typing.Any, overwrite: bool = False, min_space: float = 0.01):
     """Use `torch.save` to save an object to `path`.
 
     Raises:
@@ -376,10 +376,12 @@ def save(path: Path, data: typing.Any, overwrite: bool = False):
         path: File path to save to.
         data: Data to save.
         overwrite: If `True` this allows for `path` to be overwritten.
+        min_space: The minimum required space before writing a file.
     """
     assert path.suffix == PT_EXTENSION
     if not overwrite and path.exists():
         raise ValueError("File already exists (%s).", path)
+    assert_enough_disk_space(min_space=min_space)
     torch.save(data, str(path))
     logger.info("Saved: %s", str(path))
 
