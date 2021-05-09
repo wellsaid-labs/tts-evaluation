@@ -381,6 +381,7 @@ def save(path: Path, data: typing.Any, overwrite: bool = False, min_space: float
     assert path.suffix == PT_EXTENSION
     if not overwrite and path.exists():
         raise ValueError("File already exists (%s).", path)
+    # TODO: Ensure that the next `torch.save` doesn't go below the `min_space`.
     assert_enough_disk_space(min_space=min_space)
     torch.save(data, str(path))
     logger.info("Saved: %s", str(path))
