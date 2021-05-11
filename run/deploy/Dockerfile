@@ -58,17 +58,130 @@ RUN apt-get update --fix-missing \
   && find venv/ -follow -type f -name '*.a' -delete \
   && find venv/ -follow -type f -name '*.js.map' -delete
 
+# ffmpeg build stage
+FROM base as ffmpeg-build
+
+ARG FFMPEG_VERSION=4.4
+
+ARG PREFIX=/opt/ffmpeg
+ARG LD_LIBRARY_PATH=/opt/ffmpeg/lib
+ARG MAKEFLAGS="-j4"
+
+# FFmpeg build dependencies.
+RUN apt-get update --fix-missing
+RUN apt-get install -y \
+  build-essential \
+  coreutils \
+  gcc \
+  libmp3lame-dev \
+  openssl \
+  pkgconf \
+  wget \
+  yasm
+
+# Get ffmpeg source.
+RUN cd /tmp/ && \
+  wget http://ffmpeg.org/releases/ffmpeg-${FFMPEG_VERSION}.tar.gz && \
+  tar zxf ffmpeg-${FFMPEG_VERSION}.tar.gz && rm ffmpeg-${FFMPEG_VERSION}.tar.gz
+
+# Compile ffmpeg.
+RUN cd /tmp/ffmpeg-${FFMPEG_VERSION} && \
+  ./configure \
+  --disable-shared \
+  --enable-static \
+  --enable-pic \
+  --enable-libmp3lame \
+  # general
+  --disable-doc \
+  --disable-debug \
+  --disable-avdevice \
+  --disable-swscale \
+  --disable-programs \
+  --enable-rdft \
+  --enable-ffmpeg \
+  --enable-ffprobe \
+  --disable-network \
+  --disable-zlib \
+  --disable-bzlib \
+  --disable-iconv \
+  --disable-bsfs \
+  --disable-indevs \
+  --disable-outdevs \
+  --disable-hwaccels \
+  --disable-nvenc \
+  --disable-xvmc \
+  --disable-videotoolbox \
+  --disable-audiotoolbox \
+  # filters
+  --disable-filters \
+  --enable-filter=aformat \
+  --enable-filter=aresample \
+  --enable-filter=anull \
+  --enable-filter=atrim \
+  --enable-filter=format \
+  --enable-filter=null \
+  --enable-filter=setpts \
+  --enable-filter=trim \
+  # protocol
+  --disable-protocols \
+  --enable-protocol=file \
+  --enable-protocol=pipe \
+  # demuxer
+  --disable-demuxers \
+  --enable-demuxer=mp3 \
+  --enable-demuxer=pcm_f32le \
+  --enable-demuxer=wav \
+  # muxer
+  --disable-muxers \
+  --enable-muxer=mp3 \
+  --enable-muxer=wav \
+  --enable-muxer=pcm_f32le \
+  # decoder
+  --disable-decoders \
+  --enable-decoder=mp3 \
+  --enable-decoder=mp3adu \
+  --enable-decoder=mp3adufloat \
+  --enable-decoder=mp3float \
+  --enable-decoder=mp3on4 \
+  --enable-decoder=mp3on4float \
+  --enable-decoder=wavpack \
+  --enable-decoder=pcm_f32le \
+  # encoder
+  --disable-encoders \
+  --enable-encoder=libmp3lame \
+  --enable-encoder=pcm_f32le \
+  # parser
+  --disable-parsers \
+  --enable-parser=mpegaudio \
+  # extra
+  --extra-cflags="-I${PREFIX}/include" \
+  --extra-ldflags="-L${PREFIX}/lib" \
+  --extra-libs="-lpthread -lm" \
+  --prefix="${PREFIX}" && \
+  make && make install && make distclean
+
+# Cleanup.
+RUN rm -rf /var/cache/apk/* /tmp/*
+
+# Final base image
 FROM base
+
+RUN apt-get update --fix-missing
 
 WORKDIR /app
 
 COPY --from=builder /app/ /app/
 
+# ffmpeg linking
+ENV PATH=/opt/ffmpeg/bin:$PATH
+COPY --from=ffmpeg-build /opt/ffmpeg /opt/ffmpeg
+RUN apt-get install -y lame
+
 # NOTE: To avoid manually copying `espeak`'s dependencies, we install `espeak` outside of builder.
 # TODO: Attempt to reduce `ffmpeg` size, it's about 200mb without any optimization...
 # https://github.com/alberthdev/alberthdev-misc/wiki/Build-your-own-tiny-FFMPEG
-RUN apt-get update --fix-missing \
-  && apt-get install -y espeak ffmpeg \
+RUN apt-get install -y \
+  espeak \
   && rm -rf /var/lib/apt/lists/*
 
 LABEL maintainer="michael@wellsaidlabs.com"
