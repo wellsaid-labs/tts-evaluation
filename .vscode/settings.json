@@ -20,7 +20,6 @@
     "*.pyc": true,
     "**/__pycache__/**": true,
     "data/**/*.wav": true,
-    "**/*.pt": true
   },
   "files.insertFinalNewline": true,
   "files.trimTrailingWhitespace": true,
