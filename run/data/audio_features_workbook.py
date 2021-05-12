@@ -36,7 +36,7 @@ def _chart_framed_rms_level(framed_rms_level: np.ndarray, frame_hop: int, sample
 
 def main():
     pyplot.style.use("dark_background")
-    st.markdown("# Spectrogram Workbook")
+    st.markdown("# Audio Features Workbook")
     run._config.configure()
 
     uploaded_file = st.file_uploader("Audio File", "wav")
