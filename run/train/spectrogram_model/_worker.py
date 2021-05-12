@@ -82,6 +82,7 @@ class Checkpoint(_utils.Checkpoint):
         assert self.model.vocab_size == self.input_encoder.phoneme_encoder.vocab_size
         assert self.model.num_speakers == self.input_encoder.speaker_encoder.vocab_size
         assert self.model.num_sessions == self.input_encoder.session_encoder.vocab_size
+        assert self.ema.backup == []  # NOTE: Ensure EMA hasn't been applied.
         assert self.model.training  # NOTE: Ensure `model` is in training mode
         # NOTE: Ensure there are no gradients.
         assert all([p.grad is None for p in self.model.parameters()])
@@ -94,7 +95,7 @@ class Checkpoint(_utils.Checkpoint):
         context managers."""
         self.check_invariants()
         with contextlib.ExitStack() as stack:
-            stack.enter_context(set_train_mode(self.model, False))
+            stack.enter_context(set_train_mode(self.model, False, self.ema))
             model = copy.deepcopy(self.model)
         self.check_invariants()
         return self.input_encoder, model
@@ -629,9 +630,8 @@ def _run_steps(
     """Run the `handle_batch` in a loop over `data_loader` batches."""
     make_args = partial(_HandleBatchArgs, state, data_loader, context, dataset_type)
     with contextlib.ExitStack() as stack:
-        stack.enter_context(set_context(context, state.comet, state.model))
+        stack.enter_context(set_context(context, state.comet, state.model, state.ema))
         stack.enter_context(set_epoch(state.comet, step=state.step.item(), **kwargs))
-        stack.enter_context(contextlib.nullcontext() if context == Context.TRAIN else state.ema)
 
         metrics = Metrics(state.comet, state.input_encoder.speaker_encoder.vocab)
         timer = Timer().record_event(Timer.LOAD_DATA)
