@@ -16,6 +16,7 @@ import run._utils
 import run.train
 from lib.samplers import BucketBatchSampler
 from run.train import _utils
+from run.train import spectrogram_model as spectrogram_model_module
 
 
 class _Slice(typing.NamedTuple):
@@ -107,7 +108,7 @@ def _get_slice(
 
 
 @dataclasses.dataclass(frozen=True)
-class SpectrogramModelBatch(run.train.spectrogram_model._worker.Batch):
+class SpectrogramModelBatch(spectrogram_model_module._worker.Batch):
 
     # Spectrograms predicted given `batch`.
     # SequenceBatch[torch.FloatTensor [num_frames, batch_size, frame_channels],
@@ -150,7 +151,7 @@ class DataProcessor(torch.utils.data.IterableDataset):
         batch_size: int,
         span_bucket_size: int,
         slice_padding: int,
-        spectrogram_model_input_encoder: run.train.spectrogram_model._worker.InputEncoder,
+        spectrogram_model_input_encoder: spectrogram_model_module._worker.InputEncoder,
         spectrogram_model: lib.spectrogram_model.SpectrogramModel,
     ):
         """
@@ -173,7 +174,7 @@ class DataProcessor(torch.utils.data.IterableDataset):
             _get_slice, spectrogram_slice_size=slice_size, spectrogram_slice_pad=slice_padding
         )
         self._stack = partial(stack_and_pad_tensors, dim=0)
-        make_batch = run.train.spectrogram_model._data.make_batch
+        make_batch = spectrogram_model_module._data.make_batch
         self._make_spectrogram_model_batch = partial(
             make_batch, input_encoder=spectrogram_model_input_encoder
         )

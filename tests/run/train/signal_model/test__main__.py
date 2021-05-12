@@ -40,7 +40,7 @@ def test_integration():
     with mock.patch("run.train.signal_model._worker.DistributedDataParallel") as module:
         module.side_effect = mock_distributed_data_parallel
         state = _State.make(checkpoint_path, comet, device)
-    speakers = state.spectrogram_model_checkpoint.input_encoder.speaker_encoder.vocab
+    speakers = state.spectrogram_model_input_encoder.speaker_encoder.vocab
 
     batch_size = 1
     train_loader, dev_loader = _get_data_loaders(
