@@ -32,7 +32,7 @@ from lib.audio import sec_to_sample
 from lib.distributed import get_rank, get_world_size, is_initialized
 from lib.samplers import BucketBatchSampler
 from lib.utils import Tuple, flatten_2d
-from run.data._loader import Alignment, Span, Speaker
+from run.data._loader import Alignment, Session, Span, Speaker
 from run.train import _utils
 
 if typing.TYPE_CHECKING:  # pragma: no cover
@@ -70,7 +70,7 @@ class DecodedInput(typing.NamedTuple):
     graphemes: str
     phonemes: str
     speaker: Speaker
-    session: typing.Tuple[Speaker, str]
+    session: typing.Tuple[Speaker, Session]
 
 
 class InputEncoder(Encoder):
@@ -96,7 +96,7 @@ class InputEncoder(Encoder):
         graphemes: typing.List[str],
         phonemes: typing.List[str],
         speakers: typing.List[Speaker],
-        sessions: typing.List[typing.Tuple[Speaker, str]],
+        sessions: typing.List[typing.Tuple[Speaker, Session]],
         phoneme_separator: str = HParam(),
         *args,
         **kwargs,
@@ -493,7 +493,7 @@ class DataProcessor(typing.Mapping[int, Batch]):
         batch_size: int,
         input_encoder: InputEncoder,
         step: int = 0,
-        **kwargs
+        **kwargs,
     ):
         """Given an index, generate the appropriate batch indefinitely.
 

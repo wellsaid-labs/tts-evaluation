@@ -2,6 +2,7 @@ import enum
 import logging
 import math
 import typing
+from contextlib import nullcontext
 
 import torch
 import torch.nn
@@ -184,6 +185,7 @@ class SpectrogramModel(torch.nn.Module):
         self.register_buffer("output_scalar", torch.tensor(output_scalar).float())
         self.stop_token_eps: torch.Tensor
         self.register_buffer("stop_token_eps", torch.logit(torch.tensor(stop_token_eps)))
+        self.grad_enabled = None
 
     def _mask_stop_token(
         self, stop_token: torch.Tensor, num_tokens: torch.Tensor, window_start: torch.Tensor
@@ -427,6 +429,9 @@ class SpectrogramModel(torch.nn.Module):
             logger.warning("%d sequences reached max frames", item.reached_max.sum())
         return item
 
+    def set_grad_enabled(self, enabled: typing.Optional[bool]):
+        self.grad_enabled = enabled
+
     @typing.overload
     def __call__(
         self,
@@ -469,9 +474,11 @@ class SpectrogramModel(torch.nn.Module):
         NOTE: Since the `forward` function is required to be executed, we use the parameter `mode`
         to overload the function.
         """
-        if mode == Mode.FORWARD:
-            return self._forward(*args, **kwargs)
-        elif mode == Mode.GENERATE:
-            return self._generate(*args, **kwargs)
-        else:
-            return self._infer(*args, **kwargs)
+        grad_enabled = self.grad_enabled
+        with nullcontext() if grad_enabled is None else torch.set_grad_enabled(grad_enabled):
+            if mode == Mode.FORWARD:
+                return self._forward(*args, **kwargs)
+            elif mode == Mode.GENERATE:
+                return self._generate(*args, **kwargs)
+            else:
+                return self._infer(*args, **kwargs)

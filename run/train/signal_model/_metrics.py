@@ -232,6 +232,12 @@ class Metrics(_utils.Metrics):
         return metrics
 
     def _get_model_metrics(self, select: _utils.MetricsSelect, is_verbose: bool) -> _GetMetrics:
+        """
+        TODO: The `L1_LOSS_SUM` and `MSE_LOSS_SUM` need to be normalized by the number of frames
+        instead of the number of examples, in order to stay consistent with the training loss.
+        TODO: Answer... Do spectrograms with different resolutions have the same total energy? And
+        how would that impact our normalization approach?
+        """
         metrics = {}
         for fft_length, speaker, suffix, _, div in self._iter_permutations(select, is_verbose):
             num_slices = self._reduce(f"{self.NUM_SLICES}{suffix}", select=select)

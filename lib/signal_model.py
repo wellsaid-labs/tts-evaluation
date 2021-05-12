@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import math
 import typing
+from contextlib import nullcontext
 
 import numpy as np
 import torch
@@ -305,6 +306,7 @@ class SignalModel(torch.nn.Module):
         self.max_channel_size = max_channel_size
         self.mu = mu
         self.upscale_factor = int(np.prod(ratios))
+        self.grad_enabled = None
 
         self.pre_net = _Sequential(
             _InterpolateAndMask(1),
@@ -413,6 +415,9 @@ class SignalModel(torch.nn.Module):
 
         return spectrogram, spectrogram_mask
 
+    def set_grad_enabled(self, enabled: typing.Optional[bool]):
+        self.grad_enabled = enabled
+
     def __call__(
         self,
         spectrogram: torch.Tensor,
@@ -421,7 +426,12 @@ class SignalModel(torch.nn.Module):
     ) -> torch.Tensor:
         return super().__call__(spectrogram, spectrogram_mask, pad_input)
 
-    def forward(
+    def forward(self, *args, **kwargs) -> torch.Tensor:
+        grad_enabled = self.grad_enabled
+        with nullcontext() if grad_enabled is None else torch.set_grad_enabled(grad_enabled):
+            return self._forward(*args, **kwargs)
+
+    def _forward(
         self,
         spectrogram: torch.Tensor,
         spectrogram_mask: typing.Optional[torch.Tensor] = None,

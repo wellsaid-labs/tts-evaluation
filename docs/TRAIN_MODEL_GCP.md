@@ -175,6 +175,21 @@ Setup your local development environment by following [these instructions](LOCAL
    NAME=$USER"-your-instance-name" # EXAMPLE: michaelp-baseline
    ```
 
+1. (Optional) Download checkpoints to your local drive...
+
+   ```bash
+   DIR_NAME='' # EXAMPLE: spectrogram_model
+   CHECKPOINT='' # EXAMPLE: '**/**/checkpoints/step_630927.pt'
+
+   VM_NAME=$(python -m run.utils.gcp most-recent --name $NAME)
+   VM_ZONE=$(python -m run.utils.gcp zone --name $VM_NAME)
+   DEST="disk/experiments/$DIR_NAME/$VM_NAME/"
+   mkdir -p $DEST
+   gcloud compute scp \
+      $VM_NAME:/opt/wellsaid-labs/Text-to-Speech/disk/experiments/$DIR_NAME/$CHECKPOINT \
+      $DEST --zone=$VM_ZONE
+   ```
+
 1. Delete your instance...
 
    ```zsh

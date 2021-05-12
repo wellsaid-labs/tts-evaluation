@@ -1,5 +1,6 @@
 import collections
 import contextlib
+import copy
 import dataclasses
 import logging
 import math
@@ -42,6 +43,7 @@ from run.train._utils import (
     set_context,
     set_epoch,
     set_run_seed,
+    set_train_mode,
 )
 from run.train.spectrogram_model._data import Batch, DataProcessor, InputEncoder
 from run.train.spectrogram_model._metrics import (
@@ -65,6 +67,38 @@ class Checkpoint(_utils.Checkpoint):
     ema: lib.optimizers.ExponentialMovingParameterAverage
     scheduler: torch.optim.lr_scheduler.LambdaLR
 
+    def check_invariants(self):
+        """ Check datastructure invariants. """
+        assert self.scheduler._step_count == self.step + 1
+        assert self.scheduler.last_epoch == self.step
+        assert self.scheduler.optimizer == self.optimizer
+        assert self.ema.step == self.step + 1
+        ptrs = set(p.data_ptr() for p in self.model.parameters() if p.requires_grad)
+        assert len(self.optimizer.param_groups) == 2
+        assert set(p.data_ptr() for g in self.optimizer.param_groups for p in g["params"]) == ptrs
+        assert self.scheduler.get_lr() == list(set(g["lr"] for g in self.optimizer.param_groups))
+        assert set(p.data_ptr() for p in self.clipper.parameters) == ptrs
+        assert set(p.data_ptr() for p in self.ema.parameters) == ptrs
+        assert self.model.vocab_size == self.input_encoder.phoneme_encoder.vocab_size
+        assert self.model.num_speakers == self.input_encoder.speaker_encoder.vocab_size
+        assert self.model.num_sessions == self.input_encoder.session_encoder.vocab_size
+        assert self.model.training  # NOTE: Ensure `model` is in training mode
+        # NOTE: Ensure there are no gradients.
+        assert all([p.grad is None for p in self.model.parameters()])
+
+    def __post_init__(self):
+        self.check_invariants()
+
+    def export(self) -> typing.Tuple[InputEncoder, lib.spectrogram_model.SpectrogramModel]:
+        """Export inference ready `InputEncoder` and `SpectrogramModel` without needing additional
+        context managers."""
+        self.check_invariants()
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(set_train_mode(self.model, False))
+            model = copy.deepcopy(self.model)
+        self.check_invariants()
+        return self.input_encoder, model
+
 
 @dataclasses.dataclass(frozen=True)
 class _State:
@@ -80,19 +114,10 @@ class _State:
 
     def __post_init__(self):
         """ Check datastructure invariants. """
-        assert self.scheduler._step_count == self.step.item() + 1
-        assert self.scheduler.last_epoch == self.step.item()
-        assert self.scheduler.optimizer == self.optimizer
-        assert self.ema.step == self.step.item() + 1
         ptrs = set(p.data_ptr() for p in self.model.parameters() if p.requires_grad)
         assert set(p.data_ptr() for p in self.model.module.parameters() if p.requires_grad) == ptrs
-        assert len(self.optimizer.param_groups) == 2
-        assert set(p.data_ptr() for g in self.optimizer.param_groups for p in g["params"]) == ptrs
-        assert set(p.data_ptr() for p in self.clipper.parameters) == ptrs
-        assert set(p.data_ptr() for p in self.ema.parameters) == ptrs
-        assert self.model.module.vocab_size == self.input_encoder.phoneme_encoder.vocab_size
-        assert self.model.module.num_speakers == self.input_encoder.speaker_encoder.vocab_size
-        assert self.model.module.num_sessions == self.input_encoder.session_encoder.vocab_size
+        assert self.model.training
+        self.to_checkpoint().check_invariants()
 
     @staticmethod
     def _get_input_encoder(
@@ -402,7 +427,6 @@ def _run_step(
     stop_token_loss *= args.batch.spectrogram_mask.tensor
 
     if args.state.model.training:
-        args.state.model.zero_grad(set_to_none=True)
 
         # NOTE: We sum over the `num_frames` dimension to ensure that we don't bias based on
         # `num_frames`. For example, a larger `num_frames` means that the denominator is larger;
@@ -419,11 +443,12 @@ def _run_step(
         stop_token_loss_ = (stop_token_loss_ - stop_token_min_loss).abs() + stop_token_min_loss
 
         args.timer.record_event(args.timer.MODEL_BACKWARD)
+        params = [p for g in args.state.optimizer.param_groups for p in g["params"]]
+        assert all([p.grad is None for p in params])
         (spectrogram_loss_ + stop_token_loss_).backward()
 
         args.timer.record_event(args.timer.MODEL_STEP)
         # NOTE: `optimizer` will not error if there are no gradients so we check beforehand.
-        params = [p for g in args.state.optimizer.param_groups for p in g["params"]]
         assert all([p.grad is not None for p in params]), "`None` gradients found."
         # NOTE: Measure the "grad_norm" before `clipper.clip()`.
         norm_inf = get_parameter_norm(params, math.inf) if is_master() else torch.tensor(math.nan)
@@ -435,6 +460,7 @@ def _run_step(
         args.timer.record_event(args.timer.LOG_METRICS)
         args.state.step.add_(1)
         args.state.comet.set_step(typing.cast(int, args.state.step.item()))
+        args.state.model.zero_grad(set_to_none=True)
 
         norm_inf_ = float(norm_inf.item())
         args.metrics.log_optim_metrics(

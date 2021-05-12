@@ -522,18 +522,34 @@ def resume_experiment(
 
 
 @contextlib.contextmanager
+def set_train_mode(
+    model: torch.nn.Module,
+    mode: bool,
+    ema: typing.Optional[lib.optimizers.ExponentialMovingParameterAverage] = None,
+):
+    original = model.training
+    model.train(mode=mode)
+    with contextlib.nullcontext() if ema is None or mode else ema:
+        with torch.set_grad_enabled(mode=mode):
+            yield
+    model.train(mode=original)
+
+
+@contextlib.contextmanager
 def set_context(
     context: Context,
     comet: CometMLExperiment,
     *models: torch.nn.Module,
+    ema: typing.Optional[lib.optimizers.ExponentialMovingParameterAverage] = None,
 ):
-    with comet.context_manager(context.value):
+    with contextlib.ExitStack() as stack:
+        stack.enter_context(comet.context_manager(context.value))
         logger.info("Setting context to '%s'.", context.value)
-        modes = [model.training for model in models]
-        [model.train(mode=(context == Context.TRAIN)) for model in models]
-        with torch.set_grad_enabled(mode=(context == Context.TRAIN)):
-            yield
-        [model.train(mode=mode) for model, mode in zip(models, modes)]
+        is_training = context == Context.TRAIN
+        for model in models:
+            stack.enter_context(set_train_mode(model, is_training))
+        stack.enter_context(contextlib.nullcontext() if ema is None or is_training else ema)
+        yield
 
 
 @contextlib.contextmanager

@@ -139,13 +139,23 @@ def test_set_context():
     """Test `run.train._utils.set_context` updates comet, module, and grad context. """
     comet = run.train._utils.CometMLExperiment(disabled=True)
     rnn = torch.nn.LSTM(10, 20, 2).eval()
+    ema = lib.optimizers.ExponentialMovingParameterAverage(rnn.parameters())
+
     assert not rnn.training
-    with run.train._utils.set_context(run.train._utils.Context.TRAIN, comet, rnn):
+    with run.train._utils.set_context(run.train._utils.Context.TRAIN, comet, rnn, ema=ema):
         assert rnn.training
         assert comet.context == run.train._utils.Context.TRAIN.value
         output, _ = rnn(torch.randn(5, 3, 10))
         assert output.requires_grad
+        assert len(ema.backup) == 0
     assert not rnn.training
+
+    with run.train._utils.set_context(run.train._utils.Context.EVALUATE, comet, rnn, ema=ema):
+        assert not rnn.training
+        assert comet.context == run.train._utils.Context.EVALUATE.value
+        output, _ = rnn(torch.randn(5, 3, 10))
+        assert not output.requires_grad
+        assert len(ema.backup) > 0
 
 
 def test__nested_to_flat_config():
