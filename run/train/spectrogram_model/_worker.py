@@ -76,7 +76,7 @@ class Checkpoint(_utils.Checkpoint):
         ptrs = set(p.data_ptr() for p in self.model.parameters() if p.requires_grad)
         assert len(self.optimizer.param_groups) == 2
         assert set(p.data_ptr() for g in self.optimizer.param_groups for p in g["params"]) == ptrs
-        assert self.scheduler.get_lr() == list(set(g["lr"] for g in self.optimizer.param_groups))
+        assert set(self.scheduler.get_lr()) == set(g["lr"] for g in self.optimizer.param_groups)
         assert set(p.data_ptr() for p in self.clipper.parameters) == ptrs
         assert set(p.data_ptr() for p in self.ema.parameters) == ptrs
         assert self.model.vocab_size == self.input_encoder.phoneme_encoder.vocab_size
