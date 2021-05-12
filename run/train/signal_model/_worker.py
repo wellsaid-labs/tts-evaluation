@@ -561,9 +561,8 @@ def _run_steps(
     """Run the `handle_batch` in a loop over `data_loader` batches."""
     make_args = partial(_HandleBatchArgs, state, data_loader, context, dataset_type)
     with contextlib.ExitStack() as stack:
-        stack.enter_context(set_context(context, state.comet, *state.models))
+        stack.enter_context(set_context(context, state.comet, *state.models, ema=state.ema))
         stack.enter_context(set_epoch(state.comet, step=state.step.item(), **kwargs))
-        stack.enter_context(contextlib.nullcontext() if context == Context.TRAIN else state.ema)
 
         speakers = state.spectrogram_model_checkpoint.input_encoder.speaker_encoder.vocab
         metrics = Metrics(state.comet, speakers)
@@ -616,12 +615,10 @@ def run_worker(
         steps_per_epoch = train_loader.num_steps_per_epoch
         [_run_steps(state, *args, steps_per_epoch=steps_per_epoch) for args in contexts]
 
-        with set_context(Context.EVALUATE_INFERENCE, state.comet, *state.models):
-            with state.ema:
-                _visualize_inferred(state, dev_loader, DatasetType.DEV)
+        with set_context(Context.EVALUATE_INFERENCE, state.comet, *state.models, ema=state.ema):
+            _visualize_inferred(state, dev_loader, DatasetType.DEV)
 
-        with set_context(Context.EVALUATE_END_TO_END, state.comet, *state.models):
-            with state.ema:
-                _visualize_inferred_end_to_end(state, dev_loader, DatasetType.DEV)
+        with set_context(Context.EVALUATE_END_TO_END, state.comet, *state.models, ema=state.ema):
+            _visualize_inferred_end_to_end(state, dev_loader, DatasetType.DEV)
 
         save_checkpoint(state.to_checkpoint(), checkpoints_directory, f"step_{state.step.item()}")
