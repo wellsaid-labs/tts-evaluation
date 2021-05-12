@@ -92,6 +92,7 @@ class _State:
         assert set(p.data_ptr() for p in self.model.module.parameters() if p.requires_grad) == ptrs
         assert len(self.optimizer.param_groups) == 1
         assert set(p.data_ptr() for p in self.optimizer.param_groups[0]["params"]) == ptrs
+        assert self.scheduler.get_lr() == [self.optimizer.param_groups[0]["lr"]]
         assert set(p.data_ptr() for p in self.clipper.parameters) == ptrs
         assert set(p.data_ptr() for p in self.ema.parameters) == ptrs
         for discrim, discrim_optimizer in zip(self.discrims, self.discrim_optimizers):
@@ -99,6 +100,12 @@ class _State:
             assert set(p.data_ptr() for p in discrim.module.parameters() if p.requires_grad) == ptrs
             assert len(discrim_optimizer.param_groups) == 1
             assert set(p.data_ptr() for p in discrim_optimizer.param_groups[0]["params"]) == ptrs
+            assert discrim.training
+            assert all([p.grad is None for p in discrim.parameters()])
+        assert self.ema.backup == []  # NOTE: Ensure EMA hasn't been applied.
+        assert self.model.training  # NOTE: Ensure `model` is in training mode.
+        # NOTE: Ensure there are no gradients.
+        assert all([p.grad is None for p in self.model.parameters()])
 
     @staticmethod
     def _get_model(
@@ -369,9 +376,10 @@ def _run_discriminator(
 
     if discriminator.training:
         args.timer.record_event(args.timer.MODEL_BACKWARD)
-        discriminator.zero_grad(set_to_none=True)
+        assert all([p.grad is None for p in discriminator_optimizer.param_groups[0]["params"]])
         discriminator_loss.mean().backward()
         discriminator_optimizer.step()
+        discriminator.zero_grad(set_to_none=True)
 
     args.timer.record_event(args.timer.MODEL_FORWARD)
     # NOTE: Use real labels instead of fake to flip the gradient for the generator.
@@ -422,13 +430,15 @@ def _run_step(args: _HandleBatchArgs):
         get_values.append(get_discrim_values)
 
     if args.state.model.training:
-        args.state.model.zero_grad(set_to_none=True)
         args.timer.record_event(args.timer.MODEL_BACKWARD)
+        params = args.state.optimizer.param_groups[0]["params"]
+        discrim_optimizers = args.state.discrim_optimizers
+        discrim_params = [p for o in discrim_optimizers for p in o.param_groups[0]["params"]]
+        assert all([p.grad is None for s in (params, discrim_params) for p in s])
         (loss / len(args.state.signal_to_spectrogram_modules)).backward()
 
         args.timer.record_event(args.timer.MODEL_STEP)
         # NOTE: `optimizer` will not error if there are no gradients so we check beforehand.
-        params = args.state.optimizer.param_groups[0]["params"]
         assert all([p.grad is not None for p in params]), "`None` gradients found."
         # NOTE: Measure the "grad_norm" before `state.step_()`.
         norm_inf = get_parameter_norm(params, math.inf) if is_master() else torch.tensor(math.nan)
@@ -440,6 +450,8 @@ def _run_step(args: _HandleBatchArgs):
         args.state.scheduler.step()
         args.state.step.add_(1)
         args.state.comet.set_step(typing.cast(int, args.state.step.item()))
+        args.state.model.zero_grad(set_to_none=True)
+        [discrim.zero_grad(set_to_none=True) for discrim in args.state.discrims]
 
         args.timer.record_event(args.timer.LOG_METRICS)
         norm_inf_ = float(norm_inf.item())

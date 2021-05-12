@@ -85,10 +85,14 @@ class _State:
         assert set(p.data_ptr() for p in self.model.module.parameters() if p.requires_grad) == ptrs
         assert len(self.optimizer.param_groups) == 1
         assert set(p.data_ptr() for p in self.optimizer.param_groups[0]["params"]) == ptrs
+        assert self.scheduler.get_lr() == [self.optimizer.param_groups[0]["lr"]]
         assert set(p.data_ptr() for p in self.clipper.parameters) == ptrs
         assert self.model.module.vocab_size == self.input_encoder.phoneme_encoder.vocab_size
         assert self.model.module.num_speakers == self.input_encoder.speaker_encoder.vocab_size
         assert self.model.module.num_sessions == self.input_encoder.session_encoder.vocab_size
+        assert self.model.training  # NOTE: Ensure `model` is in training mode
+        # NOTE: Ensure there are no gradients.
+        assert all([p.grad is None for p in self.model.parameters()])
 
     @staticmethod
     def _get_input_encoder(
@@ -376,7 +380,6 @@ def _run_step(
     stop_token_loss *= args.batch.spectrogram_mask.tensor
 
     if args.state.model.training:
-        args.state.model.zero_grad(set_to_none=True)
 
         # NOTE: We sum over the `num_frames` dimension to ensure that we don't bias based on
         # `num_frames`. For example, a larger `num_frames` means that the denominator is larger;
@@ -393,11 +396,12 @@ def _run_step(
         stop_token_loss_ = (stop_token_loss_ - stop_token_min_loss).abs() + stop_token_min_loss
 
         args.timer.record_event(args.timer.MODEL_BACKWARD)
+        params = [p for g in args.state.optimizer.param_groups for p in g["params"]]
+        assert all([p.grad is None for p in params])
         (spectrogram_loss_ + stop_token_loss_).backward()
 
         args.timer.record_event(args.timer.MODEL_STEP)
         # NOTE: `optimizer` will not error if there are no gradients so we check beforehand.
-        params = args.state.optimizer.param_groups[0]["params"]
         assert all([p.grad is not None for p in params]), "`None` gradients found."
         # NOTE: Measure the "grad_norm" before `clipper.clip()`.
         norm_inf = get_parameter_norm(params, math.inf) if is_master() else torch.tensor(math.nan)
@@ -408,6 +412,7 @@ def _run_step(
         args.timer.record_event(args.timer.LOG_METRICS)
         args.state.step.add_(1)
         args.state.comet.set_step(typing.cast(int, args.state.step.item()))
+        args.state.model.zero_grad(set_to_none=True)
 
         norm_inf_ = float(norm_inf.item())
         args.metrics.log_optim_metrics(
