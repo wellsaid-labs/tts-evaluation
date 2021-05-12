@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 FloatFloat = typing.Tuple[float, float]
 IntInt = typing.Tuple[int, int]
 Slice = slice  # NOTE: `pylance` is buggy if we use `slice` directly for typing.
+Session = typing.NewType("Session", str)
 
 
 class NonalignmentSpans(typing.NamedTuple):
@@ -194,7 +195,7 @@ class Passage:
     """
 
     audio_file: AudioMetadata
-    session: str
+    session: Session
     speaker: Speaker
     script: str
     transcript: str
@@ -452,7 +453,7 @@ class Span:
         return self.passage.speaker
 
     @property
-    def session(self):
+    def session(self) -> Session:
         return self.passage.session
 
     @property
@@ -803,9 +804,9 @@ def _make_speech_segments(passage: Passage) -> typing.List[Span]:
     return [passage.span(*s) for s in speech_segments]
 
 
-def _default_session(passage: UnprocessedPassage):
+def _default_session(passage: UnprocessedPassage) -> Session:
     """By default, this assumes that each audio file was recorded, individually."""
-    return passage.audio_path.name
+    return Session(passage.audio_path.name)
 
 
 @lib.utils.log_runtime
@@ -813,7 +814,7 @@ def make_passages(
     label: str,
     dataset: UnprocessedDataset,
     add_tqdm: bool = False,
-    get_session: typing.Callable[[UnprocessedPassage], str] = _default_session,
+    get_session: typing.Callable[[UnprocessedPassage], Session] = _default_session,
     **kwargs,
 ) -> typing.List[Passage]:
     """Process `UnprocessedPassage` and return a list of `Passage`s.

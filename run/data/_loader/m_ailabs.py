@@ -26,13 +26,8 @@ from pathlib import Path
 
 from torchnlp.download import download_file_maybe_extract
 
-from run.data._loader.utils import (
-    Passage,
-    Speaker,
-    UnprocessedPassage,
-    conventional_dataset_loader,
-    make_passages,
-)
+from run.data._loader.data_structures import Passage, Session, Speaker, UnprocessedPassage
+from run.data._loader.utils import conventional_dataset_loader, make_passages
 
 logger = logging.getLogger(__name__)
 Dataset = typing.NewType("Dataset", str)
@@ -148,10 +143,11 @@ def _metadata_path_to_book(metadata_path: Path, root: Path) -> Book:
     return Book(Dataset(root.name), speaker, book_title)
 
 
-def _get_session(passage: UnprocessedPassage):
+def _get_session(passage: UnprocessedPassage) -> Session:
     """For the M-AILABS speech dataset, we define each chapter as an individual recording session."""
     chapter = passage.audio_path.stem.rsplit("_", 1)[0]
-    return f"{passage.audio_path.parent.parent.name}/{passage.audio_path.parent.name}/{chapter}"
+    label = f"{passage.audio_path.parent.parent.name}/{passage.audio_path.parent.name}/{chapter}"
+    return Session(label)
 
 
 def _m_ailabs_speech_dataset(
@@ -163,7 +159,7 @@ def _m_ailabs_speech_dataset(
     root_directory_name: str = "M-AILABS",
     metadata_pattern: str = "**/metadata.csv",
     add_tqdm: bool = False,
-    get_session: typing.Callable[[UnprocessedPassage], str] = _get_session,
+    get_session: typing.Callable[[UnprocessedPassage], Session] = _get_session,
 ) -> typing.List[Passage]:
     """Download, extract, and process a M-AILABS dataset.
 
