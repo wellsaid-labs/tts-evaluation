@@ -1,4 +1,5 @@
 import contextlib
+import copy
 import dataclasses
 import logging
 import math
@@ -42,6 +43,7 @@ from run.train._utils import (
     save_checkpoint,
     set_context,
     set_epoch,
+    set_train_mode,
 )
 from run.train.signal_model._data import Batch, DataProcessor
 from run.train.signal_model._metrics import Metrics, MetricsValues
@@ -63,6 +65,44 @@ class Checkpoint(_utils.Checkpoint):
     discrim_optimizers: typing.List[torch.optim.Adam]
     spectrogram_model_checkpoint_path: pathlib.Path
 
+    def check_invariants(self):
+        """ Check datastructure invariants. """
+        assert len(self.discrims) == len(self.discrim_optimizers)
+        assert self.scheduler._step_count == self.step + 1
+        assert self.scheduler.last_epoch == self.step
+        assert self.scheduler.optimizer == self.optimizer
+        assert self.ema.step == self.step + 1
+        ptrs = set(p.data_ptr() for p in self.model.parameters() if p.requires_grad)
+        assert len(self.optimizer.param_groups) == 1
+        assert set(p.data_ptr() for p in self.optimizer.param_groups[0]["params"]) == ptrs
+        assert self.scheduler.get_lr() == [self.optimizer.param_groups[0]["lr"]]
+        assert set(p.data_ptr() for p in self.clipper.parameters) == ptrs
+        assert set(p.data_ptr() for p in self.ema.parameters) == ptrs
+        for discrim, discrim_optimizer in zip(self.discrims, self.discrim_optimizers):
+            ptrs = set(p.data_ptr() for p in discrim.parameters() if p.requires_grad)
+            assert len(discrim_optimizer.param_groups) == 1
+            assert set(p.data_ptr() for p in discrim_optimizer.param_groups[0]["params"]) == ptrs
+            assert discrim.training
+            assert all([p.grad is None for p in discrim.parameters()])
+        assert self.ema.backup == []  # NOTE: Ensure EMA hasn't been applied.
+        assert self.model.training  # NOTE: Ensure `model` is in training mode.
+        # NOTE: Ensure there are no gradients.
+        assert all([p.grad is None for p in self.model.parameters()])
+
+    def __post_init__(self):
+        self.check_invariants()
+
+    def export(self) -> lib.signal_model.SignalModel:
+        """Export inference ready `InputEncoder` and `SpectrogramModel` without needing additional
+        context managers."""
+        self.check_invariants()
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(set_train_mode(self.model, False, self.ema))
+            model = copy.deepcopy(self.model)
+            model.remove_weight_norm_()
+        self.check_invariants()
+        return model
+
 
 @dataclasses.dataclass(frozen=True)
 class _State:
@@ -74,7 +114,9 @@ class _State:
     signal_to_spectrogram_modules: typing.List[SignalTodBMelSpectrogram]
     discrims: typing.List[DistributedDataParallel]
     discrim_optimizers: typing.List[torch.optim.Adam]
-    spectrogram_model_checkpoint: spectrogram_model._worker.Checkpoint
+    spectrogram_model_input_encoder: spectrogram_model._worker.InputEncoder
+    # NOTE: An additional underscore was added because Pylance had issues with the former naming.
+    spectrogram_model_: lib.spectrogram_model.SpectrogramModel
     spectrogram_model_checkpoint_path: pathlib.Path
     comet: CometMLExperiment
     device: torch.device
@@ -82,30 +124,15 @@ class _State:
 
     def __post_init__(self):
         """ Check datastructure invariants. """
-        assert len(self.discrims) == len(self.discrim_optimizers)
-        assert len(self.discrims) == len(self.signal_to_spectrogram_modules)
-        assert self.scheduler._step_count == self.step.item() + 1
-        assert self.scheduler.last_epoch == self.step.item()
-        assert self.scheduler.optimizer == self.optimizer
-        assert self.ema.step == self.step.item() + 1
         ptrs = set(p.data_ptr() for p in self.model.parameters() if p.requires_grad)
         assert set(p.data_ptr() for p in self.model.module.parameters() if p.requires_grad) == ptrs
-        assert len(self.optimizer.param_groups) == 1
-        assert set(p.data_ptr() for p in self.optimizer.param_groups[0]["params"]) == ptrs
-        assert self.scheduler.get_lr() == [self.optimizer.param_groups[0]["lr"]]
-        assert set(p.data_ptr() for p in self.clipper.parameters) == ptrs
-        assert set(p.data_ptr() for p in self.ema.parameters) == ptrs
-        for discrim, discrim_optimizer in zip(self.discrims, self.discrim_optimizers):
+        assert self.model.training
+        for discrim in self.discrims:
             ptrs = set(p.data_ptr() for p in discrim.parameters() if p.requires_grad)
             assert set(p.data_ptr() for p in discrim.module.parameters() if p.requires_grad) == ptrs
-            assert len(discrim_optimizer.param_groups) == 1
-            assert set(p.data_ptr() for p in discrim_optimizer.param_groups[0]["params"]) == ptrs
             assert discrim.training
-            assert all([p.grad is None for p in discrim.parameters()])
-        assert self.ema.backup == []  # NOTE: Ensure EMA hasn't been applied.
-        assert self.model.training  # NOTE: Ensure `model` is in training mode.
-        # NOTE: Ensure there are no gradients.
-        assert all([p.grad is None for p in self.model.parameters()])
+        assert len(self.discrims) == len(self.signal_to_spectrogram_modules)
+        self.to_checkpoint().check_invariants()
 
     @staticmethod
     def _get_model(
@@ -197,13 +224,15 @@ class _State:
     @staticmethod
     def load_spectrogram_model(
         comet: CometMLExperiment, spectrogram_model_checkpoint_path: pathlib.Path
-    ) -> spectrogram_model._worker.Checkpoint:
+    ) -> typing.Tuple[
+        spectrogram_model._worker.InputEncoder, lib.spectrogram_model.SpectrogramModel
+    ]:
         checkpoint = lib.environment.load(spectrogram_model_checkpoint_path)
         comet.log_other(
             get_config_label("spectrogram_model_experiment_key"),
             checkpoint.comet_experiment_key,
         )
-        return checkpoint
+        return checkpoint.export()
 
     @classmethod
     def from_checkpoint(
@@ -218,6 +247,9 @@ class _State:
         https://github.com/pytorch/pytorch/issues/52127
         """
         discrims = [DistributedDataParallel(d, [device], device) for d in checkpoint.discrims]
+        input_encoder, spectrogram_model = cls.load_spectrogram_model(
+            comet, checkpoint.spectrogram_model_checkpoint_path
+        )
         return cls(
             DistributedDataParallel(checkpoint.model, [device], device),
             checkpoint.optimizer,
@@ -227,7 +259,8 @@ class _State:
             cls._get_signal_to_spectrogram_modules(device),
             discrims,
             checkpoint.discrim_optimizers,
-            cls.load_spectrogram_model(comet, checkpoint.spectrogram_model_checkpoint_path),
+            input_encoder,
+            spectrogram_model,
             checkpoint.spectrogram_model_checkpoint_path,
             comet,
             device,
@@ -245,13 +278,17 @@ class _State:
         distribute = partial(DistributedDataParallel, device_ids=[device], output_device=device)
         model = distribute(cls._get_model(device, comet))
         discrims = [distribute(d) for d in cls._get_discrims(device)]
+        input_encoder, spectrogram_model = cls.load_spectrogram_model(
+            comet, spectrogram_model_checkpoint_path
+        )
         return cls(
             model,
             *cls._get_optimizers(model),
             cls._get_signal_to_spectrogram_modules(device),
             discrims,
             cls._get_discrim_optimizers(discrims),
-            cls.load_spectrogram_model(comet, spectrogram_model_checkpoint_path),
+            input_encoder,
+            spectrogram_model,
             spectrogram_model_checkpoint_path,
             comet,
             device,
@@ -291,8 +328,12 @@ def _get_data_loaders(
     """ Initialize training and development data loaders.  """
     model = state.model.module if isinstance(state.model, DistributedDataParallel) else state.model
     padding = typing.cast(int, model.padding)
-    checkpoint = state.spectrogram_model_checkpoint
-    processor = partial(DataProcessor, slice_padding=padding, checkpoint=checkpoint)
+    processor = partial(
+        DataProcessor,
+        slice_padding=padding,
+        spectrogram_model_input_encoder=state.spectrogram_model_input_encoder,
+        spectrogram_model=state.spectrogram_model_,
+    )
     train = processor(train_dataset, train_slice_size, train_batch_size, train_span_bucket_size)
     dev = processor(dev_dataset, dev_slice_size, dev_batch_size, dev_span_bucket_size)
     kwargs = dict(
@@ -520,15 +561,13 @@ def _visualize_inferred_end_to_end(
     batch = typing.cast(Batch, next(iter(data_loader)))
     item = random.randint(0, len(batch.batch) - 1)
     num_tokens = batch.batch.encoded_phonemes.lengths[:, item]
-    spectrogram_model = state.spectrogram_model_checkpoint.model
-    spectrogram_model = spectrogram_model.train(False)
     params = lib.spectrogram_model.Params(
         tokens=batch.batch.encoded_phonemes.tensor[:num_tokens, item],
         speaker=batch.batch.encoded_speaker.tensor[:, item],
         session=batch.batch.encoded_session.tensor[:, item],
     )
     # NOTE: The `spectrogram_model` runs on CPU to conserve GPU memory.
-    preds = spectrogram_model(params=params, mode=lib.spectrogram_model.Mode.INFER)
+    preds = state.spectrogram_model_(params=params, mode=lib.spectrogram_model.Mode.INFER)
     preds = typing.cast(lib.spectrogram_model.Infer, preds)
     splits = preds.frames.to(state.device).split(split_size)
     predicted = list(generate_waveform(state.model.module, splits))
@@ -576,8 +615,7 @@ def _run_steps(
         stack.enter_context(set_context(context, state.comet, *state.models, ema=state.ema))
         stack.enter_context(set_epoch(state.comet, step=state.step.item(), **kwargs))
 
-        speakers = state.spectrogram_model_checkpoint.input_encoder.speaker_encoder.vocab
-        metrics = Metrics(state.comet, speakers)
+        metrics = Metrics(state.comet, state.spectrogram_model_input_encoder.speaker_encoder.vocab)
         timer = Timer().record_event(Timer.LOAD_DATA)
         iterator = iter(data_loader)
         while True:

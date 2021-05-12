@@ -1,5 +1,6 @@
 import collections
 import contextlib
+import copy
 import dataclasses
 import logging
 import math
@@ -42,6 +43,7 @@ from run.train._utils import (
     set_context,
     set_epoch,
     set_run_seed,
+    set_train_mode,
 )
 from run.train.spectrogram_model._data import Batch, DataProcessor, InputEncoder
 from run.train.spectrogram_model._metrics import (
@@ -64,6 +66,36 @@ class Checkpoint(_utils.Checkpoint):
     clipper: lib.optimizers.AdaptiveGradientNormClipper
     scheduler: torch.optim.lr_scheduler.LambdaLR
 
+    def check_invariants(self):
+        """ Check datastructure invariants. """
+        assert self.scheduler._step_count == self.step + 1
+        assert self.scheduler.last_epoch == self.step
+        assert self.scheduler.optimizer == self.optimizer
+        ptrs = set(p.data_ptr() for p in self.model.parameters() if p.requires_grad)
+        assert len(self.optimizer.param_groups) == 1
+        assert set(p.data_ptr() for p in self.optimizer.param_groups[0]["params"]) == ptrs
+        assert self.scheduler.get_lr() == [self.optimizer.param_groups[0]["lr"]]
+        assert set(p.data_ptr() for p in self.clipper.parameters) == ptrs
+        assert self.model.vocab_size == self.input_encoder.phoneme_encoder.vocab_size
+        assert self.model.num_speakers == self.input_encoder.speaker_encoder.vocab_size
+        assert self.model.num_sessions == self.input_encoder.session_encoder.vocab_size
+        assert self.model.training  # NOTE: Ensure `model` is in training mode
+        # NOTE: Ensure there are no gradients.
+        assert all([p.grad is None for p in self.model.parameters()])
+
+    def __post_init__(self):
+        self.check_invariants()
+
+    def export(self) -> typing.Tuple[InputEncoder, lib.spectrogram_model.SpectrogramModel]:
+        """Export inference ready `InputEncoder` and `SpectrogramModel` without needing additional
+        context managers."""
+        self.check_invariants()
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(set_train_mode(self.model, False))
+            model = copy.deepcopy(self.model)
+        self.check_invariants()
+        return self.input_encoder, model
+
 
 @dataclasses.dataclass(frozen=True)
 class _State:
@@ -78,21 +110,10 @@ class _State:
 
     def __post_init__(self):
         """ Check datastructure invariants. """
-        assert self.scheduler._step_count == self.step.item() + 1
-        assert self.scheduler.last_epoch == self.step.item()
-        assert self.scheduler.optimizer == self.optimizer
         ptrs = set(p.data_ptr() for p in self.model.parameters() if p.requires_grad)
         assert set(p.data_ptr() for p in self.model.module.parameters() if p.requires_grad) == ptrs
-        assert len(self.optimizer.param_groups) == 1
-        assert set(p.data_ptr() for p in self.optimizer.param_groups[0]["params"]) == ptrs
-        assert self.scheduler.get_lr() == [self.optimizer.param_groups[0]["lr"]]
-        assert set(p.data_ptr() for p in self.clipper.parameters) == ptrs
-        assert self.model.module.vocab_size == self.input_encoder.phoneme_encoder.vocab_size
-        assert self.model.module.num_speakers == self.input_encoder.speaker_encoder.vocab_size
-        assert self.model.module.num_sessions == self.input_encoder.session_encoder.vocab_size
-        assert self.model.training  # NOTE: Ensure `model` is in training mode
-        # NOTE: Ensure there are no gradients.
-        assert all([p.grad is None for p in self.model.parameters()])
+        assert self.model.training
+        self.to_checkpoint().check_invariants()
 
     @staticmethod
     def _get_input_encoder(

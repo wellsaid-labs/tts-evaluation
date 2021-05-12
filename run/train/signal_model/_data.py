@@ -1,4 +1,3 @@
-import copy
 import dataclasses
 import math
 import random
@@ -14,8 +13,9 @@ import lib
 import run
 import run._config
 import run._utils
+import run.train
 from lib.samplers import BucketBatchSampler
-from run.train import _utils, spectrogram_model
+from run.train import _utils
 
 
 class _Slice(typing.NamedTuple):
@@ -107,7 +107,7 @@ def _get_slice(
 
 
 @dataclasses.dataclass(frozen=True)
-class SpectrogramModelBatch(spectrogram_model._worker.Batch):
+class SpectrogramModelBatch(run.train.spectrogram_model._worker.Batch):
 
     # Spectrograms predicted given `batch`.
     # SequenceBatch[torch.FloatTensor [num_frames, batch_size, frame_channels],
@@ -150,7 +150,8 @@ class DataProcessor(torch.utils.data.IterableDataset):
         batch_size: int,
         span_bucket_size: int,
         slice_padding: int,
-        checkpoint: spectrogram_model._worker.Checkpoint,
+        spectrogram_model_input_encoder: run.train.spectrogram_model._worker.InputEncoder,
+        spectrogram_model: lib.spectrogram_model.SpectrogramModel,
     ):
         """
         Args:
@@ -167,17 +168,14 @@ class DataProcessor(torch.utils.data.IterableDataset):
         self.batch_size = batch_size
         self.slice_padding = slice_padding
         self.slice_size = slice_size
-        # NOTE: Without `copy.deepcopy`, `multiprocessing` "spawn" throws an error while replicating
-        # this object onto another process...
-        # `ValueError: bad value(s) in fds_to_keep`
-        # Learn more: https://github.com/pytorch/pytorch/issues/35858
-        self.spectrogram_model = copy.deepcopy(checkpoint.model.train(mode=False))
+        self.spectrogram_model = spectrogram_model
         self._slice = partial(
             _get_slice, spectrogram_slice_size=slice_size, spectrogram_slice_pad=slice_padding
         )
         self._stack = partial(stack_and_pad_tensors, dim=0)
+        make_batch = run.train.spectrogram_model._data.make_batch
         self._make_spectrogram_model_batch = partial(
-            spectrogram_model._data.make_batch, input_encoder=checkpoint.input_encoder
+            make_batch, input_encoder=spectrogram_model_input_encoder
         )
 
     @staticmethod
@@ -187,20 +185,19 @@ class DataProcessor(torch.utils.data.IterableDataset):
     def _make_batches(self, spans: typing.List[run.data._loader.Span]) -> typing.Iterable[Batch]:
         """Sample slices from a batch of predicted spectrograms."""
         batch = self._make_spectrogram_model_batch(spans)
-        with torch.no_grad():
-            params = lib.spectrogram_model.Params(
-                tokens=batch.encoded_phonemes.tensor,
-                speaker=batch.encoded_speaker.tensor,
-                session=batch.encoded_session.tensor,
-                num_tokens=batch.encoded_phonemes.lengths,
-                tokens_mask=batch.encoded_phonemes_mask.tensor,
-            )
-            preds = self.spectrogram_model(
-                params=params,
-                target_frames=batch.spectrogram.tensor,
-                target_mask=batch.spectrogram_mask.tensor,
-                mode=lib.spectrogram_model.Mode.FORWARD,
-            )
+        params = lib.spectrogram_model.Params(
+            tokens=batch.encoded_phonemes.tensor,
+            speaker=batch.encoded_speaker.tensor,
+            session=batch.encoded_session.tensor,
+            num_tokens=batch.encoded_phonemes.lengths,
+            tokens_mask=batch.encoded_phonemes_mask.tensor,
+        )
+        preds = self.spectrogram_model(
+            params=params,
+            target_frames=batch.spectrogram.tensor,
+            target_mask=batch.spectrogram_mask.tensor,
+            mode=lib.spectrogram_model.Mode.FORWARD,
+        )
         num_frames = batch.spectrogram.lengths.sum().item()
         weights = batch.spectrogram.lengths.view(-1).float()
         num_batches = int(math.floor(num_frames / self.slice_size / self.batch_size))

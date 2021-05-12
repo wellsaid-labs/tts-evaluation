@@ -522,10 +522,16 @@ def resume_experiment(
 
 
 @contextlib.contextmanager
-def set_train_mode(model: torch.nn.Module, mode: bool):
+def set_train_mode(
+    model: torch.nn.Module,
+    mode: bool,
+    ema: typing.Optional[lib.optimizers.ExponentialMovingParameterAverage] = None,
+):
     original = model.training
     model.train(mode=mode)
-    yield
+    with contextlib.nullcontext() if ema is None or mode else ema:
+        with torch.set_grad_enabled(mode=mode):
+            yield
     model.train(mode=original)
 
 
@@ -542,7 +548,6 @@ def set_context(
         is_training = context == Context.TRAIN
         for model in models:
             stack.enter_context(set_train_mode(model, is_training))
-        stack.enter_context(torch.set_grad_enabled(mode=is_training))
         stack.enter_context(contextlib.nullcontext() if ema is None or is_training else ema)
         yield
 
