@@ -282,6 +282,7 @@ class SignalModel(torch.nn.Module):
     """Predicts a signal given a spectrogram.
 
     Args:
+        ...
         input_size: The input tensor channel dimension size.
         hidden_size: The channal dimension size of the final convolution(s). The rest of the modules
             are a multiple of `hidden_size` as determined by `get_layer_size`.
@@ -294,6 +295,9 @@ class SignalModel(torch.nn.Module):
     @configurable
     def __init__(
         self,
+        num_speakers: int,
+        num_sessions: int,
+        speaker_embedding_size: int = 128,
         input_size: int = HParam(),
         hidden_size: int = HParam(),
         ratios: typing.List[int] = HParam(),
@@ -307,10 +311,20 @@ class SignalModel(torch.nn.Module):
         self.mu = mu
         self.upscale_factor = int(np.prod(ratios))
         self.grad_enabled = None
+        self.num_speakers = num_speakers
+        self.num_sessions = num_sessions
+
+        self.embed_speaker = torch.nn.Embedding(num_speakers, speaker_embedding_size // 2)
+        self.embed_session = torch.nn.Embedding(num_sessions, speaker_embedding_size // 2)
 
         self.pre_net = _Sequential(
             _InterpolateAndMask(1),
-            torch.nn.Conv1d(input_size, self.get_layer_size(0), kernel_size=3, padding=0),
+            torch.nn.Conv1d(
+                input_size + speaker_embedding_size,
+                self.get_layer_size(0),
+                kernel_size=3,
+                padding=0,
+            ),
             _LayerNorm(self.get_layer_size(0)),
         )
         _network: typing.List[torch.nn.Module] = [
@@ -421,10 +435,12 @@ class SignalModel(torch.nn.Module):
     def __call__(
         self,
         spectrogram: torch.Tensor,
+        speaker: torch.Tensor,
+        session: torch.Tensor,
         spectrogram_mask: typing.Optional[torch.Tensor] = None,
         pad_input: bool = True,
     ) -> torch.Tensor:
-        return super().__call__(spectrogram, spectrogram_mask, pad_input)
+        return super().__call__(spectrogram, speaker, session, spectrogram_mask, pad_input)
 
     def forward(self, *args, **kwargs) -> torch.Tensor:
         grad_enabled = self.grad_enabled
@@ -434,12 +450,15 @@ class SignalModel(torch.nn.Module):
     def _forward(
         self,
         spectrogram: torch.Tensor,
+        speaker: torch.Tensor,
+        session: torch.Tensor,
         spectrogram_mask: typing.Optional[torch.Tensor] = None,
         pad_input: bool = True,
     ) -> torch.Tensor:
         """
         Args:
             spectrogram (torch.FloatTensor [batch_size (optional), num_frames, frame_channels])
+            ...
             spectrogram_mask (torch.BoolTensor [batch_size (optional), num_frames] or None):
                 The mask elements on either boundary of the spectrogram so that the corresponding
                 output is not affected.
@@ -457,13 +476,28 @@ class SignalModel(torch.nn.Module):
         batch_size, num_frames, frame_channels = spectrogram.shape
         num_frames = num_frames - self.padding * 2
 
-        # [batch_size, num_frames, frame_channels] → [batch_size, frame_channels, num_frames]
+        # [batch_size] → [batch_size, speaker_embedding_size // 2]
+        speaker = self.embed_speaker(speaker.view(batch_size))
+        # [batch_size] → [batch_size, speaker_embedding_size // 2]
+        session = self.embed_session(session.view(batch_size))
+        # [batch_size, speaker_embedding_size // 2] (cat)
+        # [batch_size, speaker_embedding_size // 2] → [batch_size, speaker_embedding_size]
+        session = torch.cat([speaker, session], dim=1)
+        # [batch_size, speaker_embedding_size] → [batch_size, num_frames, speaker_embedding_size]
+        session = session.unsqueeze(1).expand(-1, spectrogram.shape[1], -1)
+        # [batch_size, num_frames, speaker_embedding_size] (cat)
+        # [batch_size, num_frames, frame_channels] →
+        # [batch_size, num_frames, frame_channels + speaker_embedding_size]
+        spectrogram = torch.cat([spectrogram, session], dim=2)
+
+        # [batch_size, num_frames, frame_channels + speaker_embedding_size] →
+        # [batch_size, frame_channels + speaker_embedding_size, num_frames]
         spectrogram = spectrogram.transpose(1, 2)
 
         # [batch_size, num_frames] → [batch_size, 1, num_frames]
         spectrogram_mask = spectrogram_mask.unsqueeze(1)
 
-        # [batch_size, frame_channels, num_frames] →
+        # [batch_size, frame_channels + speaker_embedding_size, num_frames] →
         # [batch_size, self.get_layer_size(0), num_frames]
         spectrogram = self.pre_net(spectrogram, spectrogram_mask)
 
@@ -503,14 +537,27 @@ class SpectrogramDiscriminator(torch.nn.Module):
     Args:
         fft_length
         num_mel_bins
+        ...
         hidden_size: The size of the hidden layers.
     """
 
     @configurable
-    def __init__(self, fft_length: int, num_mel_bins: int, hidden_size: int = HParam()):
+    def __init__(
+        self,
+        fft_length: int,
+        num_mel_bins: int,
+        num_speakers: int,
+        num_sessions: int,
+        speaker_embedding_size: int = 128,
+        hidden_size: int = HParam(),
+    ):
         super().__init__()
         self.fft_length = fft_length
-        input_size = fft_length + num_mel_bins + 2
+        input_size = fft_length + num_mel_bins + 2 + speaker_embedding_size
+        self.num_speakers = num_speakers
+        self.num_sessions = num_sessions
+        self.embed_speaker = torch.nn.Embedding(num_speakers, speaker_embedding_size // 2)
+        self.embed_session = torch.nn.Embedding(num_sessions, speaker_embedding_size // 2)
         self.layers = _Sequential(
             torch.nn.Conv1d(input_size, hidden_size, kernel_size=3, padding=1),
             _LayerNorm(hidden_size),
@@ -540,26 +587,42 @@ class SpectrogramDiscriminator(torch.nn.Module):
         spectrogram: torch.Tensor,
         db_spectrogram: torch.Tensor,
         db_mel_spectrogram: torch.Tensor,
+        speaker: torch.Tensor,
+        session: torch.Tensor,
     ) -> torch.Tensor:
-        return super().__call__(spectrogram, db_spectrogram, db_mel_spectrogram)
+        return super().__call__(spectrogram, db_spectrogram, db_mel_spectrogram, speaker, session)
 
     def forward(
         self,
         spectrogram: torch.Tensor,
         db_spectrogram: torch.Tensor,
         db_mel_spectrogram: torch.Tensor,
+        speaker: torch.Tensor,
+        session: torch.Tensor,
     ) -> torch.Tensor:
         """
         Args:
             spectrogram (torch.FloatTensor [batch_size, num_frames, fft_length // 2 + 1])
             db_spectrogram (torch.FloatTensor [batch_size, num_frames, fft_length // 2 + 1])
             db_mel_spectrogram (torch.FloatTensor [batch_size, num_frames, num_mel_bins])
+            speaker (torch.LongTensor [batch_size])
+            session (torch.LongTensor [batch_size])
 
         Returns:
             (torch.FloatTensor [batch_size]): A score that discriminates between predicted and
                 real spectrogram.
         """
-        features = torch.cat([spectrogram, db_spectrogram, db_mel_spectrogram], dim=2)
+        # [batch_size] → [batch_size, speaker_embedding_size // 2]
+        speaker = self.embed_speaker(speaker.view(spectrogram.shape[0]))
+        # [batch_size] → [batch_size, speaker_embedding_size // 2]
+        session = self.embed_session(session.view(spectrogram.shape[0]))
+        # [batch_size, speaker_embedding_size // 2] (cat)
+        # [batch_size, speaker_embedding_size // 2] → [batch_size, speaker_embedding_size]
+        session = torch.cat([speaker, session], dim=1)
+        # [batch_size, speaker_embedding_size] → [batch_size, num_frames, speaker_embedding_size]
+        session = session.unsqueeze(1).expand(-1, spectrogram.shape[1], -1)
+
+        features = torch.cat([session, spectrogram, db_spectrogram, db_mel_spectrogram], dim=2)
         features = features.transpose(-1, -2)
         return self.layers(features).squeeze(1).mean(dim=-1)
 
@@ -567,6 +630,8 @@ class SpectrogramDiscriminator(torch.nn.Module):
 def generate_waveform(
     model: SignalModel,
     spectrogram: typing.Iterator[torch.Tensor],
+    speaker: torch.Tensor,
+    session: torch.Tensor,
     spectrogram_mask: typing.Optional[typing.Iterator[torch.Tensor]] = None,
 ) -> typing.Iterator[torch.Tensor]:
     """
@@ -608,7 +673,7 @@ def generate_waveform(
         mask = ([last_item[1][:, -padding * 2 :]] if last_item else []) + [i[1] for i in items]
         mask_ = lib.utils.pad_tensor(torch.cat(mask, dim=1), pad=padding_tuple, dim=1)
 
-        waveform = model(frames_, mask_, pad_input=False)
+        waveform = model(frames_, speaker, session, mask_, pad_input=False)
         yield waveform if has_batch_dim else waveform.squeeze(0)
 
         last_item = (frames_, mask_)
