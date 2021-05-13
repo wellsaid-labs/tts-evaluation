@@ -1,6 +1,12 @@
 """ A workbook to find the best permutation of a set of model(s), a speaker, a recording session,
 and a script.
 
+TODO:
+- Speed up this workbook by supporting batch TTS inference.
+- Speed up this workbook by caching checkpoints.
+- For consistency, add a method for caching spectrogram outputs, if the inputs don't change. This
+  would help ensure that the evaluation is consistent.
+
 Usage:
     $ PYTHONPATH=. streamlit run run/evaluate/grid_search.py --runner.magicEnabled=false
 """
