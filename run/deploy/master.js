@@ -59,9 +59,12 @@ const {
 // - ~30 seconds for the pod to start `gunicorn`, load checkpoints, and load docker container.
 // NOTE: Practically, the build time is around 105 seconds.
 const AVERAGE_POD_BUILD_TIME = 105 * 1000;
-// NOTE: This average assumes 5.5x real time processing for an average clip length of 7.147 seconds.
-// These numbers were computed based on the first ~5500 clips generated on our website.
-const AVERAGE_JOB_TIME = 5.5 * 7.147 * 1000;
+// NOTE: This average assumes 0.4x real time processing for an average clip length.
+// These numbers were computed based on March 2021s mixpanel.
+const AVERAGE_CHAR_PER_SECOND = 16.50;
+const AVERAGE_CLIP_LENGTH_IN_CHAR = 309;
+const AVERAGE_CLIP_LENGTH_IN_SEC = AVERAGE_CLIP_LENGTH_IN_CHAR / AVERAGE_CHAR_PER_SECOND;
+const AVERAGE_JOB_TIME_IN_MILLI = 0.4 * AVERAGE_CLIP_LENGTH_IN_SEC * 1000;
 // NOTE: At minimum, this should a minute long because at minimum GCP charges for a minute
 // of usage. Learn more: https://cloud.google.com/compute/vm-instance-pricing
 // NOTE: After the minute long, GCP charges for every second of usage.
@@ -207,15 +210,12 @@ class Pod {
   /**
    * Check if this Pod is ready for more requests.
    *
-   * NOTE: In November 2019, it was observed it could take up to 15 seconds to load the checkpoints. This timeout
-   * was set to be double the expected response time, just in case.
-   *
    * @param {string} name The pod name to request.
    * @param {string} host Host to make HTTP request to.
    * @param {number} port Port on host to query.
    * @param {number} timeout Timeout for the HTTP request.
    */
-  static async isReady(name, host, port, timeout = 30000) {
+  static async isReady(name, host, port, timeout = 1000) {
     try {
       const abortController = new AbortController();
       setTimeout(() => abortController.abort(), timeout);
@@ -244,7 +244,7 @@ class Pod {
    *
    * @param {boolean} update_cache If `true` `isReady` forcefully updates it's cache.
    */
-  async isReady(update_cache = false) {
+  async isReady(update_cache = false, timeout = 1000) {
     if (this.isDestroyed) {
       throw new Error(`Pod.isReady Error: Pod ${this.name} has already been destroyed.`);
     }
@@ -254,7 +254,7 @@ class Pod {
     if (update_cache || !this.isReadyCache.createdTime ||
       Date.now() - this.isReadyCache.createdTime > this.isReadyCache.ttl) {
       this.isReadyCache.createdTime = Date.now();
-      this.isReadyCache.contents = Pod.isReady(this.name, this.ip, this.port);
+      this.isReadyCache.contents = Pod.isReady(this.name, this.ip, this.port, timeout);
     } else {
       logger.log(`Pod.isReady: Using Pod ${this.name} \`isReadyCache\`.`);
     }
@@ -316,6 +316,7 @@ class Pod {
 
     logger.log(`Reserving pod ${this.name}.`);
     this.freeSince = undefined;
+    logger.log(`Reserved pod ${this.name}.`);
     return this;
   }
 
@@ -323,16 +324,9 @@ class Pod {
    * Release `this` Pod from the job.
    */
   release() {
-    if (this.isDestroyed) {
-      throw new Error(`Pod.release Error: Pod ${this.name} has already been destroyed.`);
-    }
-
-    if (!this.isReserved()) {
-      throw new Error(`Pod.release Error: Pod ${this.name} has not already been reserved.`);
-    }
-
     logger.log(`Releasing pod ${this.name}.`);
     this.freeSince = Date.now();
+    logger.log(`Released pod ${this.name}.`);
     return this;
   }
 
@@ -347,15 +341,19 @@ class Pod {
       return true;
     }
 
-    if (this.isReserved()) {
-      return false;
+    // TODO: Reserved `Pod`s are sometimes destroyed, investigate that.
+    // NOTE: Only declare `isDead` iff `this` fails `isReady` check multiple times with a
+    // large enough timeout.
+    // NOTE: In November 2019, it was observed it could take up to 15 seconds to load the
+    // checkpoints. This timeout was set to be double the expected response time, just in case.
+    let isReady = await this.isReady(true, 30000);
+    isReady = isReady || (!this.isDestroyed && await this.isReady(true, 30000));
+    if (!isReady && !this.isDestroyed && this.isReserved()) {
+      logger.warn(`Pod.destroy: Reserved Pod ${this.name} is already dead.`);
     }
 
-    const isReady = await this.isReady();
-
-    // NOTE: Recompute `this.isReserved` after `this.isReady` to ensure it's still not reserved.
     // NOTE: Ensure that after `await this.isReady` is hasn't died.
-    return this.isDestroyed || (!this.isReserved() && !isReady);
+    return this.isDestroyed || !isReady;
   }
 
   static async destroy(podName, nodeName) {
@@ -602,24 +600,32 @@ class PodPool {
     const numReservedPods = this.pods.filter(p => p.isReserved()).length;
     this.logger.log(`PodPool.logNumReservedPods: There are ${numReservedPods} reserved pods.`);
     this.reservationLog.addEvent(numReservedPods);
-    this.scale();
+  }
+
+  /**
+   * Check if `pod` is ready, and queue up `cleanPod` if it's not.
+   */
+  async isPodReady(pod, update_cache) {
+    const isReady = await pod.isReady(update_cache);
+    if (!isReady) {
+      this.cleanPod(pod);
+    }
+    return isReady;
   }
 
   /**
    * Fulfill the next pod reservation request in `this.podRequests` and `this.waiting`.
    */
   async fulfillPodRequests() {
-    this.logger.log(`PodPool.fulfillPodRequests: Fulfilling pod requests.`);
-    if (this.waiting.length > 0 &&
-      this.pods.length > 0 &&
-      await Promise.race(this.pods.map(p => p.isReady())) &&
-      this.waiting.length > 0 &&
-      this.pods.length > 0) {
+    // NOTE: This assumes that there are Pods ready if `this.pods.length > 0`.
+    if (this.waiting.length > 0 && this.pods.length > 0) {
       this.waiting.map(resolve => resolve());
       this.waiting = [];
     }
 
     while (this.podRequests.length > 0 && this.pods.length > 0) {
+      this.logger.log(`PodPool.fulfillPodRequests: Attempting to fulfill pod request.`);
+
       // NOTE: Always re-sort and re-filter because `pod.isReady()` can take some time.
       const available = this.pods.filter(p => !p.isReserved());
       if (available.length == 0) {
@@ -631,15 +637,14 @@ class PodPool {
       // NOTE: Reserve preemptively before `await` during which `javascript` could run another
       // thread that'll reserve it.
       pod.reserve();
-      if (await pod.isReady() && this.podRequests.length > 0) {
-        this.podRequests.shift()(pod);
+      if (await this.isPodReady(pod, true) && this.podRequests.length > 0) {
+        this.podRequests.shift()[1](pod);
         this.logNumReservedPods();
       } else { // CASE: `pod` is dead.
         pod.release();
-        await this.cleanPod(pod);
+        this.logNumReservedPods();
       }
     }
-    this.scale();
   }
 
   /**
@@ -655,15 +660,14 @@ class PodPool {
       this.logger.log(`PodPool.reservePod: Reserved ${pod.name} for work.`);
       return reservedPodCallback(pod);
     };
-    this.podRequests.push(callback);
+    this.podRequests.push([Date.now(), callback]);
     this.fulfillPodRequests(); // Attempt to immediately fulfill the pod request.
     return () => {
-      if (this.podRequests.includes(callback)) {
+      if (this.podRequests.map(r => r[1]).includes(callback)) {
         this.logger.log(`PodPool.reservePod: Canceling one Pod request from ` +
           `${this.podRequests.length} Pod request(s).`);
-        this.podRequests = this.podRequests.filter(r => r !== callback);
+        this.podRequests = this.podRequests.filter(r => r[1] !== callback);
         this.logger.log(`PodPool.reservePod: There are ${this.podRequests.length} Pod request(s).`);
-        this.scale();
       }
     }
   }
@@ -690,13 +694,14 @@ class PodPool {
     await this.clean();
     this.logger.log(`PodPool.scale: There are ${this.pods.length} pod(s).`);
     this.logger.log(`PodPool.scale: There are ${this.numPodsBuilding} pod(s) building.`);
-    this.logger.log(`PodPool.scale: There are ${this.waiting.length} requests waiting.`);
+    this.logger.log(`PodPool.scale: There are ${this.waiting.length} request(s) waiting.`);
+    this.logger.log(`PodPool.scale: There are ${this.podRequests.length} job(s) outstanding.`);
     const shortTermNumPodsDesired = PodPool.getNumShortTermPods(
-      Math.max(this.podRequests.length, this.waiting.length), this.pods.length);
+      this.podRequests.length, this.podRequests.map(r => r[0]));
     this.logger.log(`PodPool.scale: This desires short term ${shortTermNumPodsDesired} pod(s).`);
     const longTermNumPodsDesired = PodPool.getNumLongTermPods(this.reservationLog, this.minPods);
     this.logger.log(`PodPool.scale: This desires long term ${longTermNumPodsDesired} pod(s).`);
-    const numPodsDesired = Math.max(shortTermNumPodsDesired, longTermNumPodsDesired);
+    const numPodsDesired = shortTermNumPodsDesired + longTermNumPodsDesired;
     this.logger.log(`PodPool.scale: This desires ${numPodsDesired} pod(s).`);
     if (numPodsDesired > this.pods.length + this.numPodsBuilding) {
       await this.upscale(numPodsDesired);
@@ -784,8 +789,13 @@ class PodPool {
     main()
     bool = false;
     */
-    if (await pod.isDead() && this.pods.includes(pod) && !pod.isReserved()) {
+    if (await pod.isDead() && this.pods.includes(pod)) {
       this.logger.log(`PodPool.clean: Cleaning up Pod ${pod.name}.`);
+      if (pod.isReserved()) {
+        this.logger.warn(`Pod.clean: Releasing Pod ${pod.name} before destroying.`);
+        pod.release();
+        this.logNumReservedPods();
+      }
       this.pods = this.pods.filter(p => p !== pod);
       pod.destroy();
     }
@@ -799,34 +809,32 @@ class PodPool {
   }
 
   /**
-   * Get the number of pods needed to complete the outstanding jobs.
+   * Get the number of pods that would have been needed to complete the outstanding jobs.
    *
    * @param {number} numJobsOutstanding The number of jobs that need to be completed.
-   * @param {number} numPods The number of pods existing to complete jobs.
-   * @param {number} averagePodBuildTime The average time in milliseconds it takes for a pod to come
-   *    online.
-   * @param {number} averageJobTime The average time in milliseconds it takes for a job to finish.
-   * @param {number} minJobsPerPod The minimum work a pod should do before going offline. This
-   *    ensures that pods are price efficient.
+   * @param {list} jobsTimes The time each job was created.
+   * @param {number} averageJobTimeInMilli
+   * @param {number} maxShortTermPods The maximum number of short term pods for
+   *    getNumShortTermPods`.
    */
   static getNumShortTermPods(
     numJobsOutstanding,
-    numPods,
-    averagePodBuildTime = AVERAGE_POD_BUILD_TIME,
-    averageJobTime = AVERAGE_JOB_TIME,
-    minJobsPerPod = Math.floor(MINIMUM_POD_TIME_TO_LIVE / AVERAGE_JOB_TIME),
+    jobsTimes,
+    averageJobTimeInMilli = AVERAGE_JOB_TIME_IN_MILLI,
+    maxShortTermPods = 32,
   ) {
-    logger.log(`PodPool.getNumShortTermPods: There are ${numJobsOutstanding} jobs outstanding.`);
-    const jobsCompletedDuringPodBuildTime = Math.floor(averagePodBuildTime / averageJobTime);
-    if (numJobsOutstanding / jobsCompletedDuringPodBuildTime > numPods) {
-      // Get the number of pods to build to finish the outstanding jobs as quickly as possible.
-      const jobsUnaccountedFor = numJobsOutstanding - numPods * jobsCompletedDuringPodBuildTime;
-      const numPodsToBuild = Math.ceil(jobsUnaccountedFor / minJobsPerPod);
-      return numPods + numPodsToBuild;
+    if (jobsTimes.length != numJobsOutstanding) {
+      throw new Error(`Pod.getNumShortTermPods Error: The number of jobs is ambigious.`);
     }
 
-    // Get the number of pods needed so that new pods do not need to be built.
-    return Math.ceil(numJobsOutstanding / jobsCompletedDuringPodBuildTime);
+    if (numJobsOutstanding == 0) {
+      return 0;
+    }
+
+    const elapsedTimeInMilli = Date.now() - Math.min(...jobsTimes);
+    const totalOutstandingWorkInMilli = averageJobTimeInMilli * numJobsOutstanding;
+    const podsDesired = Math.ceil(totalOutstandingWorkInMilli / elapsedTimeInMilli);
+    return Math.min(podsDesired, numJobsOutstanding, maxShortTermPods);
   }
 
   /**
@@ -919,11 +927,12 @@ function onClose(request, response, func) {
  * Send `request` to `pod` and pass back the response to `response`.
  *
  * @param {string} prefix A string prefix printed with every log.
+ * @param {PodPool} podPool
  * @param {Pod} pod The Pod to proxy the request to.
  * @param {express.Request} request
  * @param {express.Response} response
  */
-function proxyRequestToPod(prefix, pod, request, response) {
+function proxyRequestToPod(prefix, podPool, pod, request, response) {
   return new Promise(async (resolve, reject) => {
     const ttsAbortController = new AbortController();
     const handleClose = (message, error) => {
@@ -935,7 +944,7 @@ function proxyRequestToPod(prefix, pod, request, response) {
         resolve();
       } else {
         if (!pod.isDestroyed) {
-          pod.isReady(update_cache = true);
+          podPool.isPodReady(pod, true);
         }
         reject(error);
       }
@@ -1019,7 +1028,7 @@ function reservePodController(request, response, next) {
   const cancelReservation = podPool.reservePod(async (pod) => {
     prefix = `reservePodController [${pod.name}]: `;
     try {
-      await proxyRequestToPod(prefix, pod, request, response);
+      await proxyRequestToPod(prefix, podPool, pod, request, response);
     } catch (error) {
       next(error);
     }
@@ -1049,7 +1058,7 @@ const noReservationController = (() => {
     logger.log(`noReservationController: Got Pod of type ${Object.prototype.toString.call(pod)}.`);
     podIndex += 1;
     logger.log(`noReservationController: Got Pod named ${pod.name}.`);
-    if (await pod.isReady()) {
+    if (await podPool.isPodReady(pod, true)) {
       return pod;
     } else {
       return getPod(podPool);
@@ -1071,7 +1080,7 @@ const noReservationController = (() => {
     }
     const pod = await getPod(podPool);
     try {
-      await proxyRequestToPod(`noReservationController [${pod.name}]: `, pod, request, response);
+      await proxyRequestToPod(`noReservationController [${pod.name}]: `, podPool, pod, request, response);
     } catch (error) {
       next(error);
     }
@@ -1146,7 +1155,11 @@ if (require.main === module) {
     v5: new PodPool(process.env.V5_WORKER_POD_IMAGE, 0),
     v6: new PodPool(process.env.V6_WORKER_POD_IMAGE, 0),
     v7: new PodPool(process.env.V7_WORKER_POD_IMAGE, 0),
-    v8: new PodPool(process.env.V8_WORKER_POD_IMAGE, 2),
+    v8: new PodPool(process.env.V8_WORKER_POD_IMAGE, 4),
+    "uneeq.v1": new PodPool(process.env.UNEEQ_V1_WORKER_POD_IMAGE, 1),
+    "v8.1": new PodPool(process.env.V8_1_WORKER_POD_IMAGE, 1),
+    "veritone.v1": new PodPool(process.env.VERITONE_V1_WORKER_POD_IMAGE, 1),
+    "super-hi-fi.v1": new PodPool(process.env.SUPER_HI_FI_V1_WORKER_POD_IMAGE, 1),
   };
   app.locals.podPools.latest = app.locals.podPools.v8;
 
