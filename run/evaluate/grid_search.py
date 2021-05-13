@@ -28,6 +28,12 @@ from run._streamlit import (
 st.set_page_config(layout="wide")
 
 
+DEFAULT_SCRIPT = (
+    "Your creative life will evolve in ways that you can’t possibly imagine. Trust"
+    " your gut. Don’t overthink it. And allow yourself a little room to play."
+)
+
+
 def path_label(path: pathlib.Path) -> str:
     """ Get a short label for `path`. """
     return f"{path.parent.name}/{path.name}"
@@ -77,9 +83,7 @@ def main():
     default = speakers if is_all else speakers[:1]
     speakers = st.multiselect("Speaker(s)", options=speakers, format_func=format_, default=default)
     max_sessions = st.number_input("Maximum Recording Sessions", min_value=1, value=1, step=1)
-    default_script = "Your creative life will evolve in ways that you can’t possibly imagine. Trust"
-    default_script += " your gut. Don’t overthink it. And allow yourself a little room to play."
-    scripts = st.text_area("Script(s)", value=default_script)
+    scripts = st.text_area("Script(s)", value=DEFAULT_SCRIPT)
     scripts = [s.strip() for s in scripts.split("\n") if len(s.strip()) > 0]
 
     if not st.button("Generate"):
@@ -104,7 +108,8 @@ def main():
         (input_encoder, spec_model), spec_path = spec_items
         audio = text_to_speech(input_encoder, spec_model, sig_model, script, speaker, session)
         sesh = str(session).replace("/", "__")
-        name = f"spk={speaker.label},sesh={sesh}.wav"
+        name = f"spec={spec_path.stem},sig={sig_path.stem},spk={speaker.label},"
+        name += f"sesh={sesh},script={id(script)}.wav"
         temp_path = audio_to_static_temp_path(audio, name=name)
         row = {
             "Audio": audio_temp_path_to_html(temp_path),
