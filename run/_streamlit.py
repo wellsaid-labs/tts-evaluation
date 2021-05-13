@@ -8,6 +8,7 @@ import pathlib
 import shutil
 import tempfile
 import typing
+import zipfile
 
 import altair as alt
 import librosa.util
@@ -130,13 +131,39 @@ def audio_to_base64_html(audio: np.ndarray, attrs="controls", **kwargs) -> str:
     return f'<audio {attrs} src="data:audio/wav;base64,{data}"></audio>'
 
 
-def audio_to_html(audio: np.ndarray, attrs="controls", **kwargs) -> str:
-    """Create an audio HTML element from a numpy array."""
+def get_static_temp_path(name) -> pathlib.Path:
+    """Get a temp path in a temp directory within `STREAMLIT_STATIC_TEMP_PATH`."""
     STREAMLIT_STATIC_TEMP_PATH.mkdir(exist_ok=True, parents=True)
     temp_dir = pathlib.Path(tempfile.mkdtemp(dir=STREAMLIT_STATIC_TEMP_PATH))
-    temp_file = temp_dir / "audio.wav"
-    lib.audio.write_audio(temp_file, audio, **kwargs)
-    return f'<audio {attrs} src="/{temp_file.relative_to(STREAMLIT_WEB_ROOT_PATH)}"></audio>'
+    return temp_dir / name
+
+
+def audio_to_static_temp_path(audio: np.ndarray, name: str = "audio.wav", **kwargs) -> pathlib.Path:
+    """Create an audio file in `STREAMLIT_STATIC_TEMP_PATH`. """
+    temp_path = get_static_temp_path(name)
+    lib.audio.write_audio(temp_path, audio, **kwargs)
+    return temp_path
+
+
+def audio_temp_path_to_html(temp_path: pathlib.Path, attrs="controls"):
+    """Create an audio HTML element for the audio file at `temp_path."""
+    return f'<audio {attrs} src="/{temp_path.relative_to(STREAMLIT_WEB_ROOT_PATH)}"></audio>'
+
+
+def audio_to_html(audio: np.ndarray, attrs="controls", **kwargs) -> str:
+    """Create an audio HTML element from a numpy array."""
+    temp_path = audio_to_static_temp_path(audio, **kwargs)
+    return audio_temp_path_to_html(temp_path, attrs=attrs)
+
+
+def zip_to_html(name: str, label: str, paths: typing.List[pathlib.Path]) -> str:
+    """ Make a zipfile named `name` that can be downloaded with a button called `label`."""
+    temp_path = get_static_temp_path(name)
+    with zipfile.ZipFile(temp_path, "w") as zip:
+        for path in paths:
+            zip.write(path, arcname=path.stem)
+    temp_path = temp_path.relative_to(STREAMLIT_WEB_ROOT_PATH)
+    return f'<a href="/{temp_path}" download="{name}">{label}</a>'
 
 
 def write_audio(*args, **kwargs):
@@ -253,3 +280,12 @@ def dataset_passages(dataset: Dataset) -> typing.Iterator[Passage]:
     """ Get all passages in `dataset`. """
     for _, passages in dataset.items():
         yield from passages
+
+
+def st_data_frame(df: pd.DataFrame):
+    """Display the `DataFrame` in the `streamlit` app."""
+    df = df.replace({"\n": "<br>"}, regex=True)
+    # NOTE: Temporary fix based on this issue / pr: https://github.com/streamlit/streamlit/pull/3038
+    html = "<style>tr{background-color: transparent !important;}</style>"
+    st.markdown(html, unsafe_allow_html=True)
+    st.markdown(df.to_markdown(index=False), unsafe_allow_html=True)

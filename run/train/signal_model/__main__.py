@@ -52,23 +52,12 @@ def _make_configuration(
     # https://stackoverflow.com/questions/56929874/what-is-the-warning-empty-filters-detected-in-mel-frequency-basis-about
     signal_to_spectrogram_params = [
         dict(
-            fft_length=2048,
-            frame_hop=256,
-            window=get_window("hann", 1024, 256),
-            num_mel_bins=128,
-        ),
-        dict(
-            fft_length=1024,
-            frame_hop=128,
-            window=get_window("hann", 512, 128),
-            num_mel_bins=64,
-        ),
-        dict(
-            fft_length=512,
-            frame_hop=64,
-            window=get_window("hann", 256, 64),
-            num_mel_bins=32,
-        ),
+            fft_length=length,
+            frame_hop=length // 8,
+            window=get_window("hann", length // 2, length // 8),
+            num_mel_bins=length // 16,
+        )
+        for length in (512, 1024, 2048)
     ]
 
     real_label = True

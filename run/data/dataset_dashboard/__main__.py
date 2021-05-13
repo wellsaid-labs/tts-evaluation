@@ -48,6 +48,7 @@ from run._streamlit import (
     get_dataset,
     map_,
     rmtree_streamlit_static_temp_dir,
+    st_data_frame,
 )
 from run.data._loader import DATASETS, Passage, Span, has_a_mistranscription
 from run.data.dataset_dashboard import _utils as utils
@@ -108,12 +109,8 @@ def _write_span_table(
     lib.utils.call_once(rmtree_streamlit_static_temp_dir)
     get_audio = lambda s: audio_to_html(utils.span_audio(s))
     df.insert(0, audio_column, map_(spans, get_audio))
-    df = df.replace({"\n": "<br>"}, regex=True)
-    # NOTE: Temporary fix based on this issue / pr: https://github.com/streamlit/streamlit/pull/3038
-    html = "<style>tr{background-color: transparent !important;}</style>"
-    st.markdown(html, unsafe_allow_html=True)
+    st_data_frame(df)
     logger.info(f"Finished visualizing spans! {mazel_tov()}")
-    st.markdown(df.to_markdown(index=False), unsafe_allow_html=True)
 
 
 def _span_metric(
