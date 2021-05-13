@@ -74,7 +74,7 @@ class Checkpoint(_utils.Checkpoint):
         ptrs = set(p.data_ptr() for p in self.model.parameters() if p.requires_grad)
         assert len(self.optimizer.param_groups) == 1
         assert set(p.data_ptr() for p in self.optimizer.param_groups[0]["params"]) == ptrs
-        assert self.scheduler.get_lr() == [self.optimizer.param_groups[0]["lr"]]
+        assert self.scheduler.get_last_lr() == [self.optimizer.param_groups[0]["lr"]]
         assert set(p.data_ptr() for p in self.clipper.parameters) == ptrs
         assert self.model.vocab_size == self.input_encoder.phoneme_encoder.vocab_size
         assert self.model.num_speakers == self.input_encoder.speaker_encoder.vocab_size
@@ -94,6 +94,7 @@ class Checkpoint(_utils.Checkpoint):
         with contextlib.ExitStack() as stack:
             stack.enter_context(set_train_mode(self.model, False))
             model = copy.deepcopy(self.model)
+            model.set_grad_enabled(False)
         self.check_invariants()
         return self.input_encoder, model
 
