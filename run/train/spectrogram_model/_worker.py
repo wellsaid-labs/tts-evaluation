@@ -90,6 +90,7 @@ class Checkpoint(_utils.Checkpoint):
         """Export inference ready `InputEncoder` and `SpectrogramModel` without needing additional
         context managers."""
         self.check_invariants()
+        self.model.grad_enabled = None  # NOTE: For backwards compatibility
         with contextlib.ExitStack() as stack:
             stack.enter_context(set_train_mode(self.model, False))
             model = copy.deepcopy(self.model)
