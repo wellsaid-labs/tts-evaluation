@@ -1,5 +1,5 @@
-""" Use this workbook to find the best permutation of a set of model(s), a speaker, a recording
-session, and a script.
+""" A workbook to find the best permutation of a set of model(s), a speaker, a recording session,
+and a script.
 
 Usage:
     $ PYTHONPATH=. streamlit run run/evaluate/grid_search.py --runner.magicEnabled=false
