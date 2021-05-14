@@ -58,6 +58,8 @@ spec:
               value: gcr.io/voice-service-255602/speech-api-worker:veritone.v1.00
             - name: SUPER_HI_FI_V1_WORKER_POD_IMAGE
               value: gcr.io/voice-service-255602/speech-api-worker:super-hi-fi.v1.00
+            - name: V9_WORKER_POD_IMAGE
+              value: gcr.io/voice-service-255602/speech-api-worker:v9.00
             - name: WORKER_POD_EXPOSED_PORT # Port master communicates with its workers on
               value: "8000"
             - name: WORKER_POD_PREFIX

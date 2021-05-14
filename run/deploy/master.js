@@ -1160,6 +1160,7 @@ if (require.main === module) {
     "v8.1": new PodPool(process.env.V8_1_WORKER_POD_IMAGE, 1),
     "veritone.v1": new PodPool(process.env.VERITONE_V1_WORKER_POD_IMAGE, 1),
     "super-hi-fi.v1": new PodPool(process.env.SUPER_HI_FI_V1_WORKER_POD_IMAGE, 1),
+    v9: new PodPool(process.env.V8_WORKER_POD_IMAGE, 1),
   };
   app.locals.podPools.latest = app.locals.podPools.v8;
 

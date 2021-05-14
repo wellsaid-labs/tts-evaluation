@@ -11,7 +11,7 @@
 
 # NOTE: Alpine does not work with PyTorch wheel due to the reliance on various symbols like
 # `__printf_chk`. Learn more: https://github.com/gliderlabs/docker-alpine/issues/149
-FROM python:3.7-slim as base
+FROM python:3.8-slim as base
 
 # Learn more about multi-stage builds:
 # https://blog.realkinetic.com/building-minimal-docker-containers-for-python-applications-37d0272c52f3
@@ -35,7 +35,7 @@ COPY third_party/ third_party/
 
 # Install Python Dependencies
 RUN apt-get update --fix-missing \
-  && apt-get install -y --no-install-recommends git-core \
+  && apt-get install -y --no-install-recommends git-core gcc g++ \
   # TODO: Consider the ideas here to reduce the size of numpy installation:
   # https://towardsdatascience.com/how-to-shrink-numpy-scipy-pandas-and-matplotlib-for-your-data-product-4ec8d7e86ee4
   && venv/bin/pip install --no-cache-dir numpy \
@@ -43,15 +43,16 @@ RUN apt-get update --fix-missing \
   gunicorn \
   torch==1.8.1+cpu -f https://download.pytorch.org/whl/torch_stable.html \
   unidecode \
+  ftfy \
   tqdm \
-  spacy \
+  spacy==2.2.4 \
   https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-2.2.5/en_core_web_sm-2.2.5.tar.gz#egg=en_core_web_sm \
   git+https://github.com/PetrochukM/HParams.git \
   git+https://github.com/PetrochukM/PyTorch-NLP.git \
   && mkdir disk/other \
   && venv/bin/pip uninstall -y pip \
-  && rm -rf venv/lib/python3.7/site-packages/torch/test \
-  && rm -rf venv/lib/python3.7/site-packages/caffe2 \
+  && rm -rf venv/lib/python3.8/site-packages/torch/test \
+  && rm -rf venv/lib/python3.8/site-packages/caffe2 \
   # Inspired by: https://jcrist.github.io/conda-docker-tips.html
   && find venv/ -follow -type f -name '*.pyc' -delete \
   && find venv/ -follow -type f -name '*.a' -delete \
@@ -97,5 +98,5 @@ RUN echo 'Top N largest directories\n' && du -h / | sort -rh | head -100
 # https://github.com/fofanov/gunicorn/commit/e8ecc20cc547b614eaa1bed5b0bf5f3b4b4d0274
 # http://docs.gunicorn.org/en/stable/settings.html#logging
 ENV GUNICORN=1
-CMD ["venv/bin/gunicorn", "src.service.worker:app", "--bind=0.0.0.0:8000", "--timeout=3600", \
+CMD ["venv/bin/gunicorn", "run.deploy.worker:app", "--bind=0.0.0.0:8000", "--timeout=3600", \
   "--graceful-timeout=600", "--workers=2", "--access-logfile='-'", "--preload"]

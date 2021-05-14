@@ -2,14 +2,15 @@ import logging
 import pathlib
 import typing
 from functools import partial
+from unittest.mock import MagicMock
 
 import torch
 import torch.nn
 import torch.optim
 import torch.utils
 import torch.utils.data
-import typer
 from hparams import HParams, add_config, parse_hparam_args
+from third_party import LazyLoader
 
 import lib
 from run._config import FRAME_HOP, RANDOM_SEED, SIGNAL_MODEL_EXPERIMENTS_PATH, Dataset
@@ -24,8 +25,19 @@ from run.train._utils import (
 )
 from run.train.signal_model import _metrics, _worker
 
+if typing.TYPE_CHECKING:  # pragma: no cover
+    import typer
+else:
+    typer = LazyLoader("typer", globals(), "typer")
+
 logger = logging.getLogger(__name__)
-app = typer.Typer()
+
+try:
+    app = typer.Typer()
+except (ModuleNotFoundError, NameError):
+    app = MagicMock()
+    typer = MagicMock()
+    logger.info("Ignoring optional `typer` dependency.")
 
 
 def _make_configuration(
