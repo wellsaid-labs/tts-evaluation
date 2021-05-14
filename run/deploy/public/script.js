@@ -47,6 +47,9 @@ document.addEventListener('DOMContentLoaded', async function (_) {
       speakers = [78252076];
     } else if (version == "super-hi-fi.v1") {
       speakers = [70695443];
+    } else if (version == "v9") {
+      speakers = [...Array(33).keys()];
+      speakers.splice(1, 1); // Macy is not available in v6 / v7
     }
     speakerOptionElements.forEach(option => {
       option.disabled = !speakers.includes(parseInt(option.value));

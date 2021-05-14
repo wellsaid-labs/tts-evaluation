@@ -1,5 +1,4 @@
 import dataclasses
-import logging
 import math
 import pathlib
 from typing import cast
@@ -13,8 +12,6 @@ from run import train
 from run._config import TTS_BUNDLE_PATH
 
 app = typer.Typer(context_settings=dict(max_content_width=math.inf))
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 
 @dataclasses.dataclass(frozen=True)

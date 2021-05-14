@@ -158,6 +158,9 @@ def set_basic_logging_config(id_: int = os.getpid(), reset=False, level=logging.
     `sys.stdout` and `sys.stderr`, set a formatter, and
     add the handler to the root logger.
 
+    TODO: For CLIs, it'd be more helpful to write all log messages to `sys.stderr`, so that the
+    CLI output is written to `sys.stdout`. Should we support that?
+
     Args:
         id_: An id to be printed along with all logs.
         reset: Reset root logger handlers.

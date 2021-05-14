@@ -53,16 +53,21 @@ body>div {
   display: flex;
   align-items: center;
   width: 520px;
-  justify-content: space-between;
+  justify-content: left;
+  flex-wrap: wrap;
 }
 
-#metadata>input {
-  font-size: 16px;
-  border-radius: 8px;
-  height: 48px;
-  padding: 0 16px;
-  outline: 0px;
+
+#metadata>input,
+#metadata>select {
+  background-color: white;
   border: 1px solid #BDBDBD;
+  border-radius: 8px;
+  font-size: 16px;
+  height: 48px;
+  margin: 4px 8px 4px 0px;
+  outline: 0;
+  padding: 0 16px;
 }
 
 #metadata>input:focus,
@@ -70,15 +75,6 @@ body>div {
   border: 1px solid #9E9E9E;
 }
 
-#metadata>select {
-  background-color: white;
-  border: 1px solid #BDBDBD;
-  font-size: 16px;
-  height: 48px;
-  margin-left: 8px;
-  outline: 0;
-  padding: 0 16px;
-}
 
 #textarea {
   position: relative;
