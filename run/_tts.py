@@ -116,7 +116,7 @@ def text_to_speech(
     params = Params(tokens=encoded.phonemes, speaker=encoded.speaker, session=encoded.session)
     preds = typing.cast(Infer, spec_model(params=params, mode=Mode.INFER))
     splits = preds.frames.split(split_size)
-    predicted = list(generate_waveform(sig_model, splits))
+    predicted = list(generate_waveform(sig_model, splits, encoded.speaker, encoded.session))
     predicted = typing.cast(torch.Tensor, torch.cat(predicted, dim=-1))
     return predicted.detach().numpy()
 
@@ -182,7 +182,7 @@ def text_to_speech_ffmpeg_generator(
         thread.start()
         logger.info("Generating waveform...")
         generator = get_spectrogram()
-        for waveform in generate_waveform(sig_model, generator):
+        for waveform in generate_waveform(sig_model, generator, input.speaker, input.session):
             pipe.stdin.write(waveform.cpu().numpy().tobytes())
             yield from _dequeue(queue)
         close()
