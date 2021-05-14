@@ -169,7 +169,7 @@ class FlaskException(Exception):
 
 @app.errorhandler(FlaskException)
 def handle_invalid_usage(error: FlaskException):
-    """ Response for a `FlaskException`."""
+    """Response for a `FlaskException`."""
     response = jsonify(error.to_dict())
     response.status_code = error.status_code
     return response
@@ -338,6 +338,12 @@ if __name__ == "__main__" or "GUNICORN" in os.environ:
     bundle = typing.cast(TTSBundle, load(TTS_BUNDLE_PATH, DEVICE))
     INPUT_ENCODER = bundle.input_encoder
     app.logger.info("Loaded speakers: %s", INPUT_ENCODER.speaker_encoder.vocab)
+
+    for (speaker, session) in SPEAKER_ID_TO_SPEAKER.values():
+        if speaker in INPUT_ENCODER.speaker_encoder.token_to_index:
+            message = "Speaker recording session not found."
+            assert (speaker, session) in INPUT_ENCODER.session_encoder.token_to_index, message
+
     SPECTROGRAM_MODEL = bundle.spectrogram_model
     SIGNAL_MODEL = bundle.signal_model
 
