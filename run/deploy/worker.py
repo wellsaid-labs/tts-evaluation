@@ -60,12 +60,12 @@ from run._config import TTS_BUNDLE_PATH, configure
 from run._tts import (
     PublicSpeakerValueError,
     PublicTextValueError,
+    TTSBundle,
     encode_tts_inputs,
     text_to_speech_ffmpeg_generator,
 )
 from run.data import _loader
 from run.data._loader import Session, Speaker
-from run.deploy.bundle_tts import TTSBundle
 from run.train.spectrogram_model._data import EncodedInput, InputEncoder
 
 if "NUM_CPU_THREADS" in os.environ:
