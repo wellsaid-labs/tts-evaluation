@@ -2,7 +2,7 @@
 
 ## Synopsis
 
-These steps go over deploying the service at `src/service/` to GKE. This service creates a scalable
+These steps go over deploying the service at `run/deploy/` to GKE. This service creates a scalable
 endpoint to run our TTS model.
 
 ## Update Container
@@ -61,12 +61,13 @@ Refer to the above guides in case there are missing details in the below steps.
       gcr.io/${PROJECT_ID}/speech-api:v8.01
    ```
 
-1. Update the Kubernetes deployment manifest (e.g. `src/service/deployment.yaml`) with the updated
+1. Update the Kubernetes deployment manifest (e.g. `run/deploy/deployment.yaml`) with the updated
    images.
+
 1. Update the Kubernetes deployment with:
 
    ```bash
-   kubectl apply -f src/service/deployment.yaml
+   kubectl apply -f run/deploy/deployment.yaml
    ```
 
 ### Update Container from GCP Machine
@@ -117,11 +118,11 @@ these deployment steps are loosely based on the below "New Cluster" guide.
 1. Update `public/script.js` to remove any absolute paths to voice.wellsaidlabs.com or
    voice2.wellsaidlabs.com in favor of relative paths.
 
-1. Update the deployment manifest `namespace` configuration in `src/service/deployment.yaml` to
+1. Update the deployment manifest `namespace` configuration in `run/deploy/deployment.yaml` to
    `staging`. Then apply the deployment manifest, creating a `Deployment`.
 
    ```bash
-   kubectl apply -f src/service/deployment.yaml
+   kubectl apply -f run/deploy/deployment.yaml
    ```
 
 1. Expose the staging environment like so:
@@ -191,7 +192,7 @@ Refer to the above guides in case there are missing details in the below steps.
    2. Give permission to the service to create `Pods` via:
 
       ```bash
-      kubectl apply -f src/service/rbac.yaml
+      kubectl apply -f run/deploy/rbac.yaml
       ```
 
 1. Set up API Keys. Our API Keys are stored on Kubernetes as secrets. Create them via:
@@ -208,7 +209,7 @@ Refer to the above guides in case there are missing details in the below steps.
    1. Apply the deployment manifest, creating a `Deployment`.
 
       ```bash
-      kubectl apply -f src/service/deployment.yaml
+      kubectl apply -f run/deploy/deployment.yaml
       ```
 
    This command assumes that the required images were built and pushed similar to
@@ -236,12 +237,12 @@ Refer to the above guides in case there are missing details in the below steps.
       [here](https://console.cloud.google.com/networking/addresses/add?project=mythical-runner-203817).
       Ensure that the static IP address is of type "Global (to be used with Global forwarding
       rules)".
-   1. Change `kubernetes.io/ingress.global-static-ip-name` in `src/service/ingress.yaml` to
+   1. Change `kubernetes.io/ingress.global-static-ip-name` in `run/deploy/ingress.yaml` to
       your static IP address name.
    1. Apply the ingress manifest, creating a `Ingress`.
 
       ```bash
-      kubectl apply -f src/service/ingress.yaml
+      kubectl apply -f run/deploy/ingress.yaml
       ```
 
       Wait 30 minutes. On the GKE frontend, it'll display a status for ingress creation.
