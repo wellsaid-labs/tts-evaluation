@@ -251,6 +251,7 @@ def read_audio(
 
     TODO: Should we implement automatic gain control?
     https://en.wikipedia.org/wiki/Automatic_gain_control
+    TODO: Should there be a look up table from numpy dtype to ffmpeg data types?
 
     Args:
         path: Path to load.
@@ -1028,12 +1029,12 @@ def get_signal_to_db_mel_spectrogram(*args, **kwargs) -> SignalTodBMelSpectrogra
 @configurable
 def get_pyloudnorm_meter(
     sample_rate: int, filter_class: str = HParam(), **kwargs
-) -> pyloudnorm.Meter:
+) -> 'pyloudnorm.Meter':
     return _get_pyloudnorm_meter(sample_rate=sample_rate, filter_class=filter_class, **kwargs)
 
 
 @lru_cache(maxsize=None)
-def _get_pyloudnorm_meter(sample_rate: int, filter_class: str, **kwargs) -> pyloudnorm.Meter:
+def _get_pyloudnorm_meter(sample_rate: int, filter_class: str, **kwargs) -> 'pyloudnorm.Meter':
     """Get cached `pyloudnorm.Meter` module.
 
     NOTE: `pyloudnorm.Meter` is expensive to import, so we try to avoid it.

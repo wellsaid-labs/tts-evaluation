@@ -24,7 +24,6 @@ from functools import partial
 
 import hparams.hparams
 import numpy
-import threadpoolctl
 import torch
 import torch.cuda
 import torch.distributed
@@ -55,9 +54,11 @@ from run._config import (
 if typing.TYPE_CHECKING:  # pragma: no cover
     import comet_ml
     import matplotlib.figure
+    import threadpoolctl
 else:
     comet_ml = LazyLoader("comet_ml", globals(), "comet_ml")
     matplotlib = LazyLoader("matplotlib", globals(), "matplotlib")
+    threadpoolctl = LazyLoader("threadpoolctl", globals(), "threadpoolctl")
 
 
 lib.environment.enable_fault_handler()

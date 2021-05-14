@@ -18,7 +18,8 @@ from run.train.signal_model._worker import (
     _visualize_inferred,
     _visualize_inferred_end_to_end,
 )
-from tests.run.train._utils import mock_distributed_data_parallel, setup_experiment
+from tests._utils import mock_distributed_data_parallel
+from tests.run.train._utils import setup_experiment
 
 
 def _make_checkpoint(temp_dir, train_dataset, dev_dataset, comet, device, name="spectrogram"):

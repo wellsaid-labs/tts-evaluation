@@ -55,6 +55,8 @@ DATA_PATH = DISK_PATH / "data"
 EXPERIMENTS_PATH = DISK_PATH / "experiments"
 TEMP_PATH = DISK_PATH / "temp"
 SAMPLES_PATH = DISK_PATH / "samples"
+# NOTE: For production, store an inference version of signal and spectrogram model.
+TTS_BUNDLE_PATH = DISK_PATH / "tts_bundle.pt"
 SIGNAL_MODEL_EXPERIMENTS_PATH = EXPERIMENTS_PATH / "signal_model"
 SPECTROGRAM_MODEL_EXPERIMENTS_PATH = EXPERIMENTS_PATH / "spectrogram_model"
 
@@ -358,6 +360,8 @@ def _configure_audio_processing():
             length=10,
             standard_deviation=2,
         ),
+        run._tts.text_to_speech_ffmpeg_generator: HParams(sample_rate=format_.sample_rate),
+        run._tts.encode_tts_inputs: HParams(seperator=PHONEME_SEPARATOR),
     }
     add_config(config)
 
@@ -524,6 +528,7 @@ def _include_passage(passage: Passage) -> bool:
     if not any(c.islower() for c in passage.script):
         return False
 
+    # TODO: Filter out Mary Ann from the dataset instead of filtering the related books.
     # NOTE: Filter out Midnight Passenger because it has an inconsistent acoustic setup compared to
     # other samples from the same speaker.
     # NOTE: Filter out the North & South book because it uses English in a way that's not consistent

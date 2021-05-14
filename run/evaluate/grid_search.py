@@ -1,6 +1,12 @@
 """ A workbook to find the best permutation of a set of model(s), a speaker, a recording session,
 and a script.
 
+TODO:
+- Speed up this workbook by supporting batch TTS inference.
+- Speed up this workbook by caching checkpoints.
+- For consistency, add a method for caching spectrogram outputs, if the inputs don't change. This
+  would help ensure that the evaluation is consistent.
+
 Usage:
     $ PYTHONPATH=. streamlit run run/evaluate/grid_search.py --runner.magicEnabled=false
 """
@@ -17,7 +23,7 @@ import lib
 import run
 from lib.environment import PT_EXTENSION, load
 from run._config import SIGNAL_MODEL_EXPERIMENTS_PATH, SPECTROGRAM_MODEL_EXPERIMENTS_PATH
-from run._end_to_end import text_to_speech
+from run._tts import text_to_speech
 from run._streamlit import (
     audio_temp_path_to_html,
     audio_to_static_temp_path,
@@ -26,6 +32,12 @@ from run._streamlit import (
 )
 
 st.set_page_config(layout="wide")
+
+
+DEFAULT_SCRIPT = (
+    "Your creative life will evolve in ways that you can’t possibly imagine. Trust"
+    " your gut. Don’t overthink it. And allow yourself a little room to play."
+)
 
 
 def path_label(path: pathlib.Path) -> str:
@@ -77,9 +89,7 @@ def main():
     default = speakers if is_all else speakers[:1]
     speakers = st.multiselect("Speaker(s)", options=speakers, format_func=format_, default=default)
     max_sessions = st.number_input("Maximum Recording Sessions", min_value=1, value=1, step=1)
-    default_script = "Your creative life will evolve in ways that you can’t possibly imagine. Trust"
-    default_script += " your gut. Don’t overthink it. And allow yourself a little room to play."
-    scripts = st.text_area("Script(s)", value=default_script)
+    scripts = st.text_area("Script(s)", value=DEFAULT_SCRIPT)
     scripts = [s.strip() for s in scripts.split("\n") if len(s.strip()) > 0]
 
     if not st.button("Generate"):
@@ -104,7 +114,8 @@ def main():
         (input_encoder, spec_model), spec_path = spec_items
         audio = text_to_speech(input_encoder, spec_model, sig_model, script, speaker, session)
         sesh = str(session).replace("/", "__")
-        name = f"spk={speaker.label},sesh={sesh}.wav"
+        name = f"spec={spec_path.stem},sig={sig_path.stem},spk={speaker.label},"
+        name += f"sesh={sesh},script={id(script)}.wav"
         temp_path = audio_to_static_temp_path(audio, name=name)
         row = {
             "Audio": audio_temp_path_to_html(temp_path),

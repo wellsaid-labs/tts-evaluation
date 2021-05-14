@@ -316,6 +316,12 @@ OLD_WSL_DATASETS = {
 }
 
 
+LINCOLN__CUSTOM = Speaker("Lincoln_custom_ma", "Lincoln (Custom)")
+JOSIE__CUSTOM = Speaker("Josie_Custom", "Josie (Custom)")
+JOSIE__CUSTOM__MANUAL_POST = Speaker(
+    "Josie_Custom_Loudnorm", "Josie (Custom, Loudness Standardized)"
+)
+
 _deprecated_metadata = {
     (
         "Sean Hannity",
@@ -333,21 +339,21 @@ _deprecated_metadata = {
     ),
     (
         "Lincoln_custom_ma",
-        Speaker("Lincoln_custom_ma", "Lincoln (Custom)"),
+        LINCOLN__CUSTOM,
         "https://drive.google.com/uc?export=download&id=1NJkVrPyxiNLKhc1Pj-ssCFhx_Mxzervf",
         "Lincoln_custom_ma.tar.gz",
         True,
     ),
     (
         "Josie_Custom",
-        Speaker("Josie_Custom", "Josie (Custom)"),
+        JOSIE__CUSTOM,
         "https://drive.google.com/uc?export=download&id=1KPPjVMgCWCf-efkZBiCivbpiIt5z3LcG",
         "Josie_Custom.tar.gz",
         True,
     ),
     (
         "Josie_Custom_Loudnorm",
-        Speaker("Josie_Custom_Loudnorm", "Josie (Custom, Loudness Standardized)"),
+        JOSIE__CUSTOM__MANUAL_POST,
         "https://drive.google.com/uc?export=download&id=1CeLacT0Ys6jiroJPH0U8aO0GaKemg0vK",
         "Josie_Custom_Loudnorm.tar.gz",
         True,

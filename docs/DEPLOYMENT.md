@@ -2,7 +2,7 @@
 
 ## Synopsis
 
-These steps go over deploying the service at `src/service/` to GKE. This service creates a scalable
+These steps go over deploying the service at `run/deploy/` to GKE. This service creates a scalable
 endpoint to run our TTS model.
 
 ## Update Container
@@ -23,14 +23,19 @@ Refer to the above guides in case there are missing details in the below steps.
 
    ```bash
    PROJECT_ID="voice-service-255602"
-   docker build -f docker/master/Dockerfile -t gcr.io/${PROJECT_ID}/speech-api:v8.01 .
-   docker build -f docker/worker/Dockerfile -t gcr.io/${PROJECT_ID}/speech-api-worker:v8.01 .
+   SPECTROGRAM_CHECKPOINT="" # Example: disk/experiments/spectrogram_model/step_304001.pt
+   SIGNAL_CHECKPOINT=""  # Example: disk/experiments/signal_model/step_770733.pt
+   TTS_BUNDLE_PATH=$(python -m run.deploy.bundle_tts $SPECTROGRAM_CHECKPOINT $SIGNAL_CHECKPOINT)
+   docker build -f run/deploy/docker/master/Dockerfile -t gcr.io/${PROJECT_ID}/speech-api:v8.23 .
+   docker build -f run/deploy/docker/worker/Dockerfile \
+        --build-arg TTS_BUNDLE_PATH=${TTS_BUNDLE_PATH} \
+        -t gcr.io/${PROJECT_ID}/speech-api-worker:v9.00 .
    ```
 
 1. Check the worker image size:
 
    ```bash
-   docker images gcr.io/${PROJECT_ID}/speech-api-worker:v8.01
+   docker images gcr.io/${PROJECT_ID}/speech-api-worker:v9.00
    ```
 
    The image size should be around 750mb.
@@ -38,30 +43,31 @@ Refer to the above guides in case there are missing details in the below steps.
 1. Push the build:
 
    ```bash
-   docker push gcr.io/${PROJECT_ID}/speech-api:v8.01
-   docker push gcr.io/${PROJECT_ID}/speech-api-worker:v8.01
+   docker push gcr.io/${PROJECT_ID}/speech-api:v8.23
+   docker push gcr.io/${PROJECT_ID}/speech-api-worker:v9.00
    ```
 
 1. Test the build:
 
    ```bash
    docker run --rm -p 8000:8000 -e "YOUR_SPEECH_API_KEY=123" \
-      gcr.io/${PROJECT_ID}/speech-api-worker:v8.01
+      gcr.io/${PROJECT_ID}/speech-api-worker:v9.00
    ```
 
    Or:
 
    ```bash
    docker run --rm -p 8000:8000 -e "AUTOSCALE_LOOP=5000 YOUR_SPEECH_API_KEY=123" \
-      gcr.io/${PROJECT_ID}/speech-api:v8.01
+      gcr.io/${PROJECT_ID}/speech-api:v8.23
    ```
 
-1. Update the Kubernetes deployment manifest (e.g. `src/service/deployment.yaml`) with the updated
+1. Update the Kubernetes deployment manifest (e.g. `run/deploy/deployment.yaml`) with the updated
    images.
+
 1. Update the Kubernetes deployment with:
 
    ```bash
-   kubectl apply -f src/service/deployment.yaml
+   kubectl apply -f run/deploy/deployment.yaml
    ```
 
 ### Update Container from GCP Machine
@@ -73,7 +79,7 @@ Similar to the above, except:
 - For authentication reasons, the build should be pushed with the `gcloud` tool:
 
   ```bash
-  sudo gcloud docker -- push gcr.io/${PROJECT_ID}/speech-api-worker:v8.01
+  sudo gcloud docker -- push gcr.io/${PROJECT_ID}/speech-api-worker:v9.00
   ```
 
   Learn more here: https://cloud.google.com/container-registry/docs/advanced-authentication
@@ -112,11 +118,11 @@ these deployment steps are loosely based on the below "New Cluster" guide.
 1. Update `public/script.js` to remove any absolute paths to voice.wellsaidlabs.com or
    voice2.wellsaidlabs.com in favor of relative paths.
 
-1. Update the deployment manifest `namespace` configuration in `src/service/deployment.yaml` to
+1. Update the deployment manifest `namespace` configuration in `run/deploy/deployment.yaml` to
    `staging`. Then apply the deployment manifest, creating a `Deployment`.
 
    ```bash
-   kubectl apply -f src/service/deployment.yaml
+   kubectl apply -f run/deploy/deployment.yaml
    ```
 
 1. Expose the staging environment like so:
@@ -186,7 +192,7 @@ Refer to the above guides in case there are missing details in the below steps.
    2. Give permission to the service to create `Pods` via:
 
       ```bash
-      kubectl apply -f src/service/rbac.yaml
+      kubectl apply -f run/deploy/rbac.yaml
       ```
 
 1. Set up API Keys. Our API Keys are stored on Kubernetes as secrets. Create them via:
@@ -203,7 +209,7 @@ Refer to the above guides in case there are missing details in the below steps.
    1. Apply the deployment manifest, creating a `Deployment`.
 
       ```bash
-      kubectl apply -f src/service/deployment.yaml
+      kubectl apply -f run/deploy/deployment.yaml
       ```
 
    This command assumes that the required images were built and pushed similar to
@@ -231,12 +237,12 @@ Refer to the above guides in case there are missing details in the below steps.
       [here](https://console.cloud.google.com/networking/addresses/add?project=mythical-runner-203817).
       Ensure that the static IP address is of type "Global (to be used with Global forwarding
       rules)".
-   1. Change `kubernetes.io/ingress.global-static-ip-name` in `src/service/ingress.yaml` to
+   1. Change `kubernetes.io/ingress.global-static-ip-name` in `run/deploy/ingress.yaml` to
       your static IP address name.
    1. Apply the ingress manifest, creating a `Ingress`.
 
       ```bash
-      kubectl apply -f src/service/ingress.yaml
+      kubectl apply -f run/deploy/ingress.yaml
       ```
 
       Wait 30 minutes. On the GKE frontend, it'll display a status for ingress creation.

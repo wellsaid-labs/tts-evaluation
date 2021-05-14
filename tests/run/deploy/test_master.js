@@ -2,7 +2,7 @@
  * This is a minimal testing module for `master.js`.
  *
  * Usage:
- *    $ node tests/service/test_master.js
+ *    $ node tests/run/deploy/test_master.js
  */
 process.env['API_KEY_SUFFIX'] = '_SPEECH_API_KEY';
 process.env['AUTOSCALE_WINDOW'] = '600000';
@@ -13,7 +13,7 @@ process.env['WORKER_NODE_POOL'] = 'workers-v2';
 process.env['WORKER_POD_PREFIX'] = 'speech-api-worker-node';
 
 const assert = require('assert');
-const master = require('../../src/service/master');
+const master = require('../../../run/deploy/master');
 
 async function testEventLog() {
   console.log('Running `testEventLog`.');
@@ -100,15 +100,23 @@ async function testPod() {
 
 async function testPodPoolGetNumShortTermPods() {
   console.log('Running `testPodPoolGetNumShortTermPods`.');
+  let jobsTimes = [Date.now() - 3000, Date.now() - 2000, Date.now() - 1500, Date.now() - 1000];
+
   // There are no jobs that need burst.
-  assert.equal(master.PodPool.getNumShortTermPods(0, 5, 49000, 42000, 1), 0);
+  assert.equal(master.PodPool.getNumShortTermPods(0, [], 2000), 0);
 
-  // The current jobs will be finished before a new pod can be built.
-  assert.equal(master.PodPool.getNumShortTermPods(10, 5, 49000, 7000, 1), 2);
+  // Basic test case.
+  assert.equal(master.PodPool.getNumShortTermPods(4, jobsTimes, 2000), 3);
 
-  // New pods can be built to handle the backlog.
-  assert.equal(master.PodPool.getNumShortTermPods(10, 5, 49000, 42000, 1), 10);
-  assert.equal(master.PodPool.getNumShortTermPods(10, 0, 49000, 42000, 1), 10);
+  // Test cap of `numJobsOutstanding`.
+  assert.equal(master.PodPool.getNumShortTermPods(4, jobsTimes, 4000), 4);
+
+  // Test reversing `jobsTimes` doesn't affect results
+  assert.equal(master.PodPool.getNumShortTermPods(4, jobsTimes.reverse(), 2000), 3);
+
+  // Test burst request
+  jobsTimes = [...Array(100).keys()].map(x => Date.now() - 1);
+  assert.equal(master.PodPool.getNumShortTermPods(100, jobsTimes, 2000, 32), 32);
 }
 
 async function testPodPoolGetNumLongTermPods() {

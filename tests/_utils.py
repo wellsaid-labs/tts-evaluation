@@ -1,16 +1,31 @@
 import pathlib
+import shutil
 import subprocess
+import tempfile
 import typing
 import urllib.request
+from unittest import mock
 
 import numpy
 import pytest
 import torch
+from hparams import add_config
 
 import lib
-import run.data._loader
+import run
 from lib.utils import Tuple
-from run.data._loader import Alignment, Span
+from run._tts import TTSBundle, make_tts_bundle
+from run.data._loader import (
+    JUDY_BIEBER,
+    LINDA_JOHNSON,
+    Alignment,
+    Session,
+    Span,
+    lj_speech_dataset,
+    m_ailabs_en_us_judy_bieber_speech_dataset,
+)
+from run.train._utils import save_checkpoint
+from tests import _utils
 
 TEST_DATA_PATH = lib.environment.ROOT_PATH / "tests" / "_test_data"
 
@@ -79,8 +94,9 @@ def make_passage(
     make_str = lambda attr: "." * max_(attr) if len(alignments) else ""
     script_ = make_str("script") if script is None else script
     transcript_ = make_str("transcript") if transcript is None else transcript
+    sesh = Session(str(audio_file))
     passage = run.data._loader.Passage(
-        audio_file, str(audio_file), speaker, script_, transcript_, alignments, **kwargs
+        audio_file, sesh, speaker, script_, transcript_, alignments, **kwargs
     )
     object.__setattr__(passage, "nonalignments", nonalignments)
     default_speech_segments = tuple(passage[i] for i in range(len(alignments)))
@@ -130,3 +146,44 @@ def maybe_normalize_audio_and_cache_side_effect(metadata: lib.audio.AudioMetadat
 second_parameter_url_side_effect = lambda _, *args, **kwargs: first_parameter_url_side_effect(
     *args, **kwargs
 )
+
+
+def mock_distributed_data_parallel(module, *_, **__):
+    # NOTE: `module.module = module` would cause the `named_children` property to error, so
+    # instead we set a `property`, learn more:
+    # https://stackoverflow.com/questions/1325673/how-to-add-property-to-a-class-dynamically
+    module.__class__.module = property(lambda self: self)
+    return module
+
+
+def make_mock_tts_bundle() -> typing.Tuple[run._config.Dataset, TTSBundle]:
+    """Create the required components needed for running TTS inference end-to-end."""
+    run._config.configure()
+    comet = run.train._utils.CometMLExperiment(disabled=True, project_name="project name")
+    device = torch.device("cpu")
+
+    books = [run.data._loader.m_ailabs.DOROTHY_AND_WIZARD_OZ]
+    directory = _utils.TEST_DATA_PATH / "datasets"
+    temp_directory = pathlib.Path(tempfile.TemporaryDirectory().name)
+    shutil.copytree(directory, temp_directory)
+    m_ailabs = m_ailabs_en_us_judy_bieber_speech_dataset(temp_directory, books=books)
+    lj_speech = lj_speech_dataset(temp_directory)
+    dataset = {JUDY_BIEBER: m_ailabs, LINDA_JOHNSON: lj_speech}
+
+    add_config(run.train.spectrogram_model.__main__._make_configuration(dataset, dataset, False))
+    with mock.patch("torch.nn.parallel.DistributedDataParallel") as module:
+        module.side_effect = mock_distributed_data_parallel
+
+        make_spec_model_state = run.train.spectrogram_model._worker._State.from_dataset
+        spec_model_state = make_spec_model_state(dataset, dataset, comet, device)
+        spec_model_ckpt = spec_model_state.to_checkpoint()
+        spec_model_ckpt_path = save_checkpoint(spec_model_ckpt, temp_directory, "ckpt")
+
+    add_config(run.train.signal_model.__main__._make_configuration(dataset, dataset, False))
+    with mock.patch("run.train.signal_model._worker.DistributedDataParallel") as module:
+        module.side_effect = mock_distributed_data_parallel
+
+        make_sig_model_state = run.train.signal_model._worker._State.make
+        sig_model_state = make_sig_model_state(spec_model_ckpt_path, comet, device)
+
+    return dataset, make_tts_bundle(spec_model_ckpt, sig_model_state.to_checkpoint())

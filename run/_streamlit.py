@@ -10,19 +10,28 @@ import tempfile
 import typing
 import zipfile
 
-import altair as alt
-import librosa.util
 import numpy as np
-import pandas as pd
-import streamlit as st
 import tqdm
 from streamlit.server.server import Server
-from third_party import session_state
+from third_party import LazyLoader, session_state
 
 import lib
 import run
 from run._config import Dataset
 from run.data._loader import Passage
+
+if typing.TYPE_CHECKING:  # pragma: no cover
+    import altair as alt
+    import librosa
+    import librosa.util
+    import pandas as pd
+    import streamlit as st
+else:
+    librosa = LazyLoader("librosa", globals(), "librosa")
+    alt = LazyLoader("alt", globals(), "altair")
+    pd = LazyLoader("pd", globals(), "pandas")
+    st = LazyLoader("st", globals(), "streamlit")
+
 
 logger = logging.getLogger(__name__)
 
@@ -161,7 +170,7 @@ def zip_to_html(name: str, label: str, paths: typing.List[pathlib.Path]) -> str:
     temp_path = get_static_temp_path(name)
     with zipfile.ZipFile(temp_path, "w") as zip:
         for path in paths:
-            zip.write(path, arcname=path.stem)
+            zip.write(path, arcname=path.name)
     temp_path = temp_path.relative_to(STREAMLIT_WEB_ROOT_PATH)
     return f'<a href="/{temp_path}" download="{name}">{label}</a>'
 

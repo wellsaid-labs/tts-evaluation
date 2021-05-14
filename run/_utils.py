@@ -11,9 +11,7 @@ from functools import partial
 
 import torch
 import torch.nn
-from google.cloud import storage
 from hparams import HParam, configurable
-from Levenshtein.StringMatcher import StringMatcher
 from third_party import LazyLoader
 from torchnlp.random import fork_rng
 from tqdm import tqdm
@@ -27,9 +25,13 @@ if typing.TYPE_CHECKING:  # pragma: no cover
     import librosa
     import scipy
     import scipy.signal
+    from google.cloud import storage
+    from Levenshtein.StringMatcher import StringMatcher
 else:
     librosa = LazyLoader("librosa", globals(), "librosa")
     scipy = LazyLoader("scipy", globals(), "scipy")
+    storage = LazyLoader("storage", globals(), "google.cloud.storage")
+    StringMatcher = LazyLoader("StringMatcher", globals(), "Levenshtein.StringMatcher.StringMatcher")
 
 logger = logging.getLogger(__name__)
 
@@ -291,11 +293,11 @@ def get_window(window: str, window_length: int, window_hop: int) -> torch.Tensor
 
 
 @functools.lru_cache(maxsize=1)
-def get_storage_client() -> storage.Client:
+def get_storage_client() -> 'storage.Client':
     return storage.Client()
 
 
-def gcs_uri_to_blob(gcs_uri: str) -> storage.Blob:
+def gcs_uri_to_blob(gcs_uri: str) -> 'storage.Blob':
     """Parse GCS URI (e.g. "gs://cloud-samples-tests/speech/brooklyn.flac") and return a `Blob`.
 
     NOTE: This function requires GCS authorization.
@@ -308,6 +310,6 @@ def gcs_uri_to_blob(gcs_uri: str) -> storage.Blob:
     return bucket.blob(name)
 
 
-def blob_to_gcs_uri(blob: storage.Blob) -> str:
+def blob_to_gcs_uri(blob: 'storage.Blob') -> str:
     """ Get GCS URI (e.g. "gs://cloud-samples-tests/speech/brooklyn.flac") from `blob`. """
     return "gs://" + blob.bucket.name + "/" + blob.name
