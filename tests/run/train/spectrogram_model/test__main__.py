@@ -14,7 +14,8 @@ from run.train.spectrogram_model._worker import (
     _run_step,
     _State,
 )
-from tests.run.train._utils import mock_distributed_data_parallel, setup_experiment
+from tests._utils import mock_distributed_data_parallel
+from tests.run.train._utils import setup_experiment
 
 
 def test_integration():

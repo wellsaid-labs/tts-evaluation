@@ -1,3 +1,7 @@
+"""
+TODO: Add tests for every function.
+"""
+
 import gc
 import logging
 import subprocess
@@ -14,9 +18,31 @@ from spacy.lang.en import English
 
 from lib.signal_model import SignalModel, generate_waveform
 from lib.spectrogram_model import Infer, Mode, Params, SpectrogramModel
-from lib.text import grapheme_to_phoneme, load_en_core_web_md, normalize_vo_script
+from lib.text import (
+    GRAPHEME_TO_PHONEME_RESTRICTED,
+    grapheme_to_phoneme,
+    load_en_core_web_md,
+    normalize_vo_script,
+)
+from run import train
 from run.data._loader import Session, Speaker
 from run.train.spectrogram_model._data import DecodedInput, EncodedInput, InputEncoder
+
+
+class TTSBundle(typing.NamedTuple):
+    """The bare minimum required to run a TTS model in inference mode."""
+
+    input_encoder: InputEncoder
+    spectrogram_model: SpectrogramModel
+    signal_model: SignalModel
+
+
+def make_tts_bundle(
+    spectrogram_checkpoint: train.spectrogram_model._worker.Checkpoint,
+    signal_checkpoint: train.signal_model._worker.Checkpoint,
+):
+    """Make a bundle of objects required for running TTS infernece."""
+    return TTSBundle(*spectrogram_checkpoint.export(), signal_checkpoint.export())
 
 
 class PublicTextValueError(ValueError):
@@ -34,7 +60,7 @@ def encode_tts_inputs(
     script: str,
     speaker: Speaker,
     session: Session,
-    restricted: typing.List[str] = HParam(),
+    seperator: str = HParam(),
 ) -> EncodedInput:
     """Encode TTS `script`, `speaker` and `session` for use with the model(s) with friendly errors
     for common issues.
@@ -42,7 +68,7 @@ def encode_tts_inputs(
     normalized = normalize_vo_script(script)
     if len(normalized) == 0:
         raise PublicTextValueError("Text cannot be empty.")
-    for substring in restricted:
+    for substring in list(GRAPHEME_TO_PHONEME_RESTRICTED) + [seperator]:
         if substring in normalized:
             raise PublicTextValueError(f"Text cannot contain these characters: {substring}")
 
@@ -89,7 +115,8 @@ def text_to_speech(
     encoded = encode_tts_inputs(nlp, input_encoder, script, speaker, session)
     params = Params(tokens=encoded.phonemes, speaker=encoded.speaker, session=encoded.session)
     preds = typing.cast(Infer, spec_model(params=params, mode=Mode.INFER))
-    predicted = list(generate_waveform(sig_model, preds.frames.split(split_size)))
+    splits = preds.frames.split(split_size)
+    predicted = list(generate_waveform(sig_model, splits))
     predicted = typing.cast(torch.Tensor, torch.cat(predicted, dim=-1))
     return predicted.detach().numpy()
 
@@ -139,21 +166,27 @@ def text_to_speech_ffmpeg_generator(
             gc.collect()
             yield pred.frames.transpose(0, 1) if pred.frames.dim() == 3 else pred.frames
 
-    command = ["ffmpeg", "-ar", sample_rate] + list(input_flags) + ["-i", "pipe:"]
+    command = ["ffmpeg", "-ar", str(sample_rate)] + list(input_flags) + ["-i", "pipe:"]
     command += list(output_flags) + ["pipe:"]
     pipe = subprocess.Popen(command, stdin=PIPE, stdout=PIPE, stderr=sys.stdout.buffer)
     queue: SimpleQueue = SimpleQueue()
     thread = threading.Thread(target=_enqueue, args=(pipe.stdout, queue), daemon=True)
-    try:
-        thread.start()
-        logger.info("Generating waveform...")
-        for waveform in generate_waveform(sig_model, get_spectrogram()):
-            pipe.stdin.write(waveform.cpu().numpy().tobytes())
-            yield from _dequeue(queue)
-    finally:
+
+    def close():
         pipe.stdin.close()
         pipe.wait()
         thread.join()
         pipe.stdout.close()
+
+    try:
+        thread.start()
+        logger.info("Generating waveform...")
+        generator = get_spectrogram()
+        for waveform in generate_waveform(sig_model, generator):
+            pipe.stdin.write(waveform.cpu().numpy().tobytes())
+            yield from _dequeue(queue)
+        close()
         yield from _dequeue(queue)
+    except BaseException:
+        close()
         logger.info("Finished generating waveform.")

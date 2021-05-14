@@ -367,12 +367,32 @@ class SignalModel(torch.nn.Module):
         for module in self._get_weight_norm_modules():
             torch.nn.utils.weight_norm(module)
 
+    def del_weight_norm_temp_tensor_(self):
+        """Delete the temporary "weight" tensor created every forward pass by `weight_norm`.
+
+        NOTE: It can cause issues like:
+        https://github.com/pytorch/pytorch/issues/28594
+        """
+        for module in self.modules():
+            for _, hook in module._forward_pre_hooks.items():
+                if isinstance(hook, WeightNorm) and hasattr(module, hook.name):
+                    delattr(module, hook.name)
+
+    def set_weight_norm_temp_tensor_(self):
+        """Re-create the temporary "weight" tensor created every forward pass by `weight_norm`."""
+        for module in self.modules():
+            for _, hook in module._forward_pre_hooks.items():
+                if isinstance(hook, WeightNorm) and not hasattr(module, hook.name):
+                    hook(module, None)
+
     def remove_weight_norm_(self):
         """Remove `weight_norm` from `self`.
 
         WARNING: `remove_weight_norm` creates and deletes model parameters. For example, if an
         optimizer depends on the current model parameters, this will break that connection.
         """
+        # NOTE: `remove_weight_norm` requires that the temporary tensor exists.
+        self.set_weight_norm_temp_tensor_()
         for module in self._get_weight_norm_modules():
             if _has_weight_norm(module):
                 torch.nn.utils.remove_weight_norm(module)

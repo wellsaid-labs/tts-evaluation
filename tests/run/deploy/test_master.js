@@ -2,7 +2,7 @@
  * This is a minimal testing module for `master.js`.
  *
  * Usage:
- *    $ node tests/service/test_master.js
+ *    $ node tests/run/deploy/test_master.js
  */
 process.env['API_KEY_SUFFIX'] = '_SPEECH_API_KEY';
 process.env['AUTOSCALE_WINDOW'] = '600000';
@@ -13,7 +13,7 @@ process.env['WORKER_NODE_POOL'] = 'workers-v2';
 process.env['WORKER_POD_PREFIX'] = 'speech-api-worker-node';
 
 const assert = require('assert');
-const master = require('../../src/service/master');
+const master = require('../../../run/deploy/master');
 
 async function testEventLog() {
   console.log('Running `testEventLog`.');

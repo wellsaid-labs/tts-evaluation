@@ -40,6 +40,8 @@ else:
 
 logger = logging.getLogger(__name__)
 
+GRAPHEME_TO_PHONEME_RESTRICTED = ("[[", "]]", "<", ">")
+
 
 def _line_grapheme_to_phoneme(
     graphemes: typing.List[str],
@@ -49,7 +51,7 @@ def _line_grapheme_to_phoneme(
     service_separator: str = "_",
     grapheme_batch_separator: str = "<break> [[_::_::_::_::_::_::_::_::_::_::]] <break>",
     phoneme_batch_separator: str = "\n _________\n",
-    restricted: typing.List[str] = ["[[", "]]", "<", ">"],
+    restricted: typing.Tuple[str, ...] = GRAPHEME_TO_PHONEME_RESTRICTED,
 ) -> typing.List[str]:
     """
     TODO: Support `espeak-ng` `service`, if needed.
