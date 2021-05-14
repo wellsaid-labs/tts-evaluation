@@ -1,4 +1,3 @@
-import dataclasses
 import math
 import pathlib
 from typing import cast
@@ -6,21 +5,11 @@ from typing import cast
 import typer
 
 from lib.environment import load, save
-from lib.signal_model import SignalModel
-from lib.spectrogram_model import SpectrogramModel
 from run import train
 from run._config import TTS_BUNDLE_PATH
+from run._tts import make_tts_bundle
 
 app = typer.Typer(context_settings=dict(max_content_width=math.inf))
-
-
-@dataclasses.dataclass(frozen=True)
-class TTSBundle:
-    """The bare minimum required to run a TTS model in inference mode."""
-
-    input_encoder: train.spectrogram_model._data.InputEncoder
-    spectrogram_model: SpectrogramModel
-    signal_model: SignalModel
 
 
 def main(
@@ -32,7 +21,7 @@ def main(
     SIGNAL_CHECKPOINT."""
     spec_ckpt = cast(train.spectrogram_model._worker.Checkpoint, load(spectrogram_checkpoint))
     sig_ckpt = cast(train.signal_model._worker.Checkpoint, load(signal_checkpoint))
-    bundle = TTSBundle(*spec_ckpt.export(), sig_ckpt.export())
+    bundle = make_tts_bundle(spec_ckpt, sig_ckpt)
     save(TTS_BUNDLE_PATH, bundle, overwrite=overwrite)
     typer.echo(TTS_BUNDLE_PATH)
 

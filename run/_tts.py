@@ -1,3 +1,7 @@
+"""
+TODO: Add tests for every function.
+"""
+
 import gc
 import logging
 import subprocess
@@ -20,8 +24,25 @@ from lib.text import (
     load_en_core_web_md,
     normalize_vo_script,
 )
+from run import train
 from run.data._loader import Session, Speaker
 from run.train.spectrogram_model._data import DecodedInput, EncodedInput, InputEncoder
+
+
+class TTSBundle(typing.NamedTuple):
+    """The bare minimum required to run a TTS model in inference mode."""
+
+    input_encoder: InputEncoder
+    spectrogram_model: SpectrogramModel
+    signal_model: SignalModel
+
+
+def make_tts_bundle(
+    spectrogram_checkpoint: train.spectrogram_model._worker.Checkpoint,
+    signal_checkpoint: train.signal_model._worker.Checkpoint,
+):
+    """Make a bundle of objects required for running TTS infernece."""
+    return TTSBundle(*spectrogram_checkpoint.export(), signal_checkpoint.export())
 
 
 class PublicTextValueError(ValueError):
