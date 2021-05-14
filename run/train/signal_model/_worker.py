@@ -66,7 +66,12 @@ class Checkpoint(_utils.Checkpoint):
     spectrogram_model_checkpoint_path: pathlib.Path
 
     def check_invariants(self):
-        """ Check datastructure invariants. """
+        """Check datastructure invariants.
+
+        TODO: Check that there are no non-leaf nodes in the model, so that it can be copied. Learn
+        more:
+        https://github.com/pytorch/pytorch/issues/28594
+        """
         assert len(self.discrims) == len(self.discrim_optimizers)
         assert self.scheduler._step_count == self.step + 1
         assert self.scheduler.last_epoch == self.step
@@ -99,6 +104,7 @@ class Checkpoint(_utils.Checkpoint):
         self.model.grad_enabled = None  # NOTE: For backwards compatibility
         with contextlib.ExitStack() as stack:
             stack.enter_context(set_train_mode(self.model, False, self.ema))
+            self.model.del_weight_norm_temp_tensor_()
             model = copy.deepcopy(self.model)
             model.set_grad_enabled(False)
             model.remove_weight_norm_()
@@ -205,10 +211,12 @@ class _State:
         return [optimizer(filter(is_include, d.parameters())) for d in discrims]
 
     def to_checkpoint(self):
-        """ Create a checkpoint to save the signal model training state. """
+        """Create a checkpoint to save the signal model training state."""
+        model = typing.cast(SignalModel, self.model.module)
+        model.del_weight_norm_temp_tensor_()
         return Checkpoint(
             comet_experiment_key=self.comet.get_key(),
-            model=typing.cast(SignalModel, self.model.module),
+            model=model,
             optimizer=self.optimizer,
             clipper=self.clipper,
             ema=self.ema,
