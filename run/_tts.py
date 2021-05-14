@@ -150,6 +150,13 @@ def text_to_speech_ffmpeg_generator(
     pipe = subprocess.Popen(command, stdin=PIPE, stdout=PIPE, stderr=sys.stdout.buffer)
     queue: SimpleQueue = SimpleQueue()
     thread = threading.Thread(target=_enqueue, args=(pipe.stdout, queue), daemon=True)
+
+    def close():
+        pipe.stdin.close()
+        pipe.wait()
+        thread.join()
+        pipe.stdout.close()
+
     try:
         thread.start()
         logger.info("Generating waveform...")
@@ -157,10 +164,8 @@ def text_to_speech_ffmpeg_generator(
         for waveform in generate_waveform(sig_model, generator):
             pipe.stdin.write(waveform.cpu().numpy().tobytes())
             yield from _dequeue(queue)
-    finally:
-        pipe.stdin.close()
-        pipe.wait()
-        thread.join()
-        pipe.stdout.close()
+        close()
         yield from _dequeue(queue)
+    except BaseException:
+        close()
         logger.info("Finished generating waveform.")
