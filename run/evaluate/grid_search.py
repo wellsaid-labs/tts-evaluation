@@ -23,7 +23,7 @@ import lib
 import run
 from lib.environment import PT_EXTENSION, load
 from run._config import SIGNAL_MODEL_EXPERIMENTS_PATH, SPECTROGRAM_MODEL_EXPERIMENTS_PATH
-from run._end_to_end import text_to_speech
+from run._tts import text_to_speech
 from run._streamlit import (
     audio_temp_path_to_html,
     audio_to_static_temp_path,

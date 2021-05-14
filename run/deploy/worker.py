@@ -57,7 +57,7 @@ from lib.environment import load, set_basic_logging_config
 from lib.signal_model import SignalModel
 from lib.spectrogram_model import SpectrogramModel
 from run._config import TTS_BUNDLE_PATH, configure
-from run._end_to_end import (
+from run._tts import (
     PublicSpeakerValueError,
     PublicTextValueError,
     encode_tts_inputs,

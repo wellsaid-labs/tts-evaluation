@@ -360,8 +360,8 @@ def _configure_audio_processing():
             length=10,
             standard_deviation=2,
         ),
-        run._end_to_end.text_to_speech_ffmpeg_generator: HParams(sample_rate=format_.sample_rate),
-        run._end_to_end.encode_tts_inputs: HParams(seperator=PHONEME_SEPARATOR),
+        run._tts.text_to_speech_ffmpeg_generator: HParams(sample_rate=format_.sample_rate),
+        run._tts.encode_tts_inputs: HParams(seperator=PHONEME_SEPARATOR),
     }
     add_config(config)
 
