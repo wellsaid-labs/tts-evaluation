@@ -26,7 +26,7 @@ Refer to the above guides in case there are missing details in the below steps.
    SPECTROGRAM_CHECKPOINT="" # Example: disk/experiments/spectrogram_model/step_304001.pt
    SIGNAL_CHECKPOINT=""  # Example: disk/experiments/signal_model/step_770733.pt
    TTS_BUNDLE_PATH=$(python -m run.deploy.bundle_tts $SPECTROGRAM_CHECKPOINT $SIGNAL_CHECKPOINT)
-   docker build -f run/deploy/docker/master/Dockerfile -t gcr.io/${PROJECT_ID}/speech-api:v8.20 .
+   docker build -f run/deploy/docker/master/Dockerfile -t gcr.io/${PROJECT_ID}/speech-api:v8.23 .
    docker build -f run/deploy/docker/worker/Dockerfile \
         --build-arg TTS_BUNDLE_PATH=${TTS_BUNDLE_PATH} \
         -t gcr.io/${PROJECT_ID}/speech-api-worker:v9.00 .
@@ -43,7 +43,7 @@ Refer to the above guides in case there are missing details in the below steps.
 1. Push the build:
 
    ```bash
-   docker push gcr.io/${PROJECT_ID}/speech-api:v8.20
+   docker push gcr.io/${PROJECT_ID}/speech-api:v8.23
    docker push gcr.io/${PROJECT_ID}/speech-api-worker:v9.00
    ```
 
@@ -58,7 +58,7 @@ Refer to the above guides in case there are missing details in the below steps.
 
    ```bash
    docker run --rm -p 8000:8000 -e "AUTOSCALE_LOOP=5000 YOUR_SPEECH_API_KEY=123" \
-      gcr.io/${PROJECT_ID}/speech-api:v8.20
+      gcr.io/${PROJECT_ID}/speech-api:v8.23
    ```
 
 1. Update the Kubernetes deployment manifest (e.g. `run/deploy/deployment.yaml`) with the updated
