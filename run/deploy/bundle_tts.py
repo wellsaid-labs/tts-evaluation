@@ -1,54 +1,44 @@
+import dataclasses
 import logging
+import math
+import pathlib
+from typing import cast
 
-from src.environment import set_basic_logging_config
-from src.service.worker_config import SIGNAL_MODEL_CHECKPOINT_PATH
-from src.service.worker_config import SPEAKER_ID_TO_SPEAKER
-from src.service.worker_config import SPECTROGRAM_MODEL_CHECKPOINT_PATH
-from src.utils import Checkpoint
+import typer
 
-set_basic_logging_config()
+from lib.environment import load, save
+from lib.signal_model import SignalModel
+from lib.spectrogram_model import SpectrogramModel
+from run import train
+from run._config import TTS_BUNDLE_PATH
+
+app = typer.Typer(context_settings=dict(max_content_width=math.inf))
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def main(speaker_id_to_speaker, spectrogram_model_checkpoint, signal_model_checkpoint):
-    """ Runs various preprocessing code to build the `docker/worker/Dockerfile` file.
+@dataclasses.dataclass(frozen=True)
+class TTSBundle:
+    """The bare minimum required to run a TTS model in inference mode."""
 
-    Args:
-        speaker_id_to_speaker (dict)
-        spectrogram_model_checkpoint (src.utils.Checkpoint)
-        signal_model_checkpoint (src.utils.signal_model_checkpoint)
-    """
-    # Ensure `speaker_id_to_speaker` invariants pass
-    speaker_encoder = spectrogram_model_checkpoint.input_encoder.speaker_encoder
-    assert all(s in set(speaker_id_to_speaker.values()) for s in speaker_encoder.vocab), (
-        'All speaker ids were not found in `speaker_id_to_speaker`.')
-
-    # TODO: The below checkpoint attributes should be statically defined somewhere so that there is
-    # some guarantee that these attributes exist.
-
-    # Reduce checkpoint size
-    signal_model_checkpoint.exponential_moving_parameter_average.apply_shadow()
-    signal_model_checkpoint.exponential_moving_parameter_average = None
-    signal_model_checkpoint.optimizer = None
-    signal_model_checkpoint.criterions_state_dict = None
-    spectrogram_model_checkpoint.optimizer = None
-    signal_model_checkpoint.model.zero_grad()
-    spectrogram_model_checkpoint.model.zero_grad()
-    signal_model_checkpoint.model.eval()
-    spectrogram_model_checkpoint.model.eval()
-
-    # Remove unnecessary information
-    signal_model_checkpoint.comet_ml_project_name = None
-    signal_model_checkpoint.comet_ml_experiment_key = None
-    spectrogram_model_checkpoint.comet_ml_project_name = None
-    spectrogram_model_checkpoint.comet_ml_experiment_key = None
-
-    # NOTE: This overwrites the previous checkpoint.
-    spectrogram_model_checkpoint.save(overwrite=True)
-    signal_model_checkpoint.save(overwrite=True)
+    input_encoder: train.spectrogram_model._data.InputEncoder
+    spectrogram_model: SpectrogramModel
+    signal_model: SignalModel
 
 
-if __name__ == '__main__':  # pragma: no cover
-    signal_model_checkpoint = Checkpoint.from_path(SIGNAL_MODEL_CHECKPOINT_PATH)
-    spectrogram_model_checkpoint = Checkpoint.from_path(SPECTROGRAM_MODEL_CHECKPOINT_PATH)
-    main(SPEAKER_ID_TO_SPEAKER, spectrogram_model_checkpoint, signal_model_checkpoint)
+def main(
+    spectrogram_checkpoint: pathlib.Path,
+    signal_checkpoint: pathlib.Path,
+    overwrite: bool = False,
+):
+    """Make a bundle of inference components from the SPECTROGRAM_CHECKPOINT and the
+    SIGNAL_CHECKPOINT."""
+    spec_ckpt = cast(train.spectrogram_model._worker.Checkpoint, load(spectrogram_checkpoint))
+    sig_ckpt = cast(train.signal_model._worker.Checkpoint, load(signal_checkpoint))
+    bundle = TTSBundle(*spec_ckpt.export(), sig_ckpt.export())
+    save(TTS_BUNDLE_PATH, bundle, overwrite=overwrite)
+    typer.echo(TTS_BUNDLE_PATH)
+
+
+if __name__ == "__main__":  # pragma: no cover
+    typer.run(main)

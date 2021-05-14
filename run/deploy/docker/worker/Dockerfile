@@ -25,12 +25,12 @@ WORKDIR /app
 
 RUN python3 -m venv venv
 
+ARG TTS_BUNDLE_PATH
+
 # NOTE: `COPY` experiment folder fist, so that this layer is reused the most.
-COPY disk/experiments/spectrogram_model/add-your-experiment-here/checkpoints/add-your-checkpoint-here/ \
-  disk/experiments/spectrogram_model/add-your-experiment-here/checkpoints/add-your-checkpoint-here/
-COPY disk/experiments/signal_model/add-your-experiment-here/checkpoints/add-your-checkpoint-here/ \
-  disk/experiments/signal_model/add-your-experiment-here/checkpoints/add-your-checkpoint-here/
-COPY src/ src/
+COPY $TTS_BUNDLE_PATH $TTS_BUNDLE_PATH
+COPY run/ run/
+COPY lib/ lib/
 COPY third_party/ third_party/
 
 # Install Python Dependencies
@@ -41,7 +41,7 @@ RUN apt-get update --fix-missing \
   && venv/bin/pip install --no-cache-dir numpy \
   flask \
   gunicorn \
-  torch==1.5.0+cpu -f https://download.pytorch.org/whl/torch_stable.html \
+  torch==1.8.1+cpu -f https://download.pytorch.org/whl/torch_stable.html \
   unidecode \
   tqdm \
   spacy \
@@ -49,7 +49,6 @@ RUN apt-get update --fix-missing \
   git+https://github.com/PetrochukM/HParams.git \
   git+https://github.com/PetrochukM/PyTorch-NLP.git \
   && mkdir disk/other \
-  && venv/bin/python -m src.service.worker_setup \
   && venv/bin/pip uninstall -y pip \
   && rm -rf venv/lib/python3.7/site-packages/torch/test \
   && rm -rf venv/lib/python3.7/site-packages/caffe2 \
