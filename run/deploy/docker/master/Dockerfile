@@ -5,8 +5,7 @@ COPY package-lock.json package-lock.json
 
 RUN npm install --prod
 
-COPY src/ src/
-COPY third_party/ third_party/
+COPY run/ run/
 
 LABEL maintainer="michael@wellsaidlabs.com"
 
@@ -17,4 +16,4 @@ LABEL maintainer="michael@wellsaidlabs.com"
 ENV NODE_ENV production
 
 EXPOSE 8000
-CMD ["node", "--trace-warnings", "src/service/master.js"]
+CMD ["node", "--trace-warnings", "run/deploy/master.js"]

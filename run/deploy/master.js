@@ -2,7 +2,7 @@
  * The goal of this master is to assign pods to complete work. It is optimized to handle two
  * primary use cases: burst traffic and consistent traffic.
  *
- * NOTE: This file is tested via `node tests/service/test_master.js`.
+ * NOTE: This file is tested via `node tests/run/deploy/test_master.js`.
  *
  * TODO: Ensure that there are multiple copies of master running, in case of version upgrades.
  * TODO: Switch from `npm` to `yarn` for dependancy management.
@@ -1160,7 +1160,7 @@ if (require.main === module) {
     "v8.1": new PodPool(process.env.V8_1_WORKER_POD_IMAGE, 1),
     "veritone.v1": new PodPool(process.env.VERITONE_V1_WORKER_POD_IMAGE, 1),
     "super-hi-fi.v1": new PodPool(process.env.SUPER_HI_FI_V1_WORKER_POD_IMAGE, 1),
-    v9: new PodPool(process.env.V8_WORKER_POD_IMAGE, 1),
+    v9: new PodPool(process.env.V9_WORKER_POD_IMAGE, 1),
   };
   app.locals.podPools.latest = app.locals.podPools.v8;
 
