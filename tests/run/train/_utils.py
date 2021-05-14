@@ -16,7 +16,11 @@ from tests import _utils
 
 @mock.patch("urllib.request.urlretrieve")
 def setup_experiment(mock_urlretrieve):
-    """Setup basic experiment for testing."""
+    """Setup basic experiment for testing.
+
+    TODO: `tests._utils.make_mock_tts_bundle` and this share a lot of similar ideas,
+    can we merge them?
+    """
     mock_urlretrieve.side_effect = _utils.first_parameter_url_side_effect
 
     run._config.configure()
@@ -70,11 +74,3 @@ def setup_experiment(mock_urlretrieve):
         backend="gloo", init_method="tcp://127.0.0.1:23456", world_size=1, rank=0
     )
     return train_dataset, dev_dataset, comet, device
-
-
-def mock_distributed_data_parallel(module, *_, **__):
-    # NOTE: `module.module = module` would cause the `named_children` property to error, so
-    # instead we set a `property`, learn more:
-    # https://stackoverflow.com/questions/1325673/how-to-add-property-to-a-class-dynamically
-    module.__class__.module = property(lambda self: self)
-    return module
