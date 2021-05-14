@@ -161,7 +161,7 @@ def zip_to_html(name: str, label: str, paths: typing.List[pathlib.Path]) -> str:
     temp_path = get_static_temp_path(name)
     with zipfile.ZipFile(temp_path, "w") as zip:
         for path in paths:
-            zip.write(path, arcname=path.stem)
+            zip.write(path, arcname=path.name)
     temp_path = temp_path.relative_to(STREAMLIT_WEB_ROOT_PATH)
     return f'<a href="/{temp_path}" download="{name}">{label}</a>'
 

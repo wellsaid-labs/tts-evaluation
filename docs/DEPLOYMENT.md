@@ -23,14 +23,19 @@ Refer to the above guides in case there are missing details in the below steps.
 
    ```bash
    PROJECT_ID="voice-service-255602"
-   docker build -f docker/master/Dockerfile -t gcr.io/${PROJECT_ID}/speech-api:v8.01 .
-   docker build -f docker/worker/Dockerfile -t gcr.io/${PROJECT_ID}/speech-api-worker:v8.01 .
+   SPECTROGRAM_CHECKPOINT="" # Example: disk/experiments/spectrogram_model/step_304001.pt
+   SIGNAL_CHECKPOINT=""  # Example: disk/experiments/signal_model/step_770733.pt
+   TTS_BUNDLE_PATH=$(python -m run.deploy.bundle_tts $SPECTROGRAM_CHECKPOINT $SIGNAL_CHECKPOINT)
+   docker build -f run/deploy/docker/master/Dockerfile -t gcr.io/${PROJECT_ID}/speech-api:v8.20.
+   docker build -f run/deploy/docker/worker/Dockerfile \
+        --build-arg TTS_BUNDLE_PATH=${TTS_BUNDLE_PATH} \
+        -t gcr.io/${PROJECT_ID}/speech-api-worker:v8.04
    ```
 
 1. Check the worker image size:
 
    ```bash
-   docker images gcr.io/${PROJECT_ID}/speech-api-worker:v8.01
+   docker images gcr.io/${PROJECT_ID}/speech-api-worker:v8.04
    ```
 
    The image size should be around 750mb.
@@ -39,14 +44,14 @@ Refer to the above guides in case there are missing details in the below steps.
 
    ```bash
    docker push gcr.io/${PROJECT_ID}/speech-api:v8.01
-   docker push gcr.io/${PROJECT_ID}/speech-api-worker:v8.01
+   docker push gcr.io/${PROJECT_ID}/speech-api-worker:v8.04
    ```
 
 1. Test the build:
 
    ```bash
    docker run --rm -p 8000:8000 -e "YOUR_SPEECH_API_KEY=123" \
-      gcr.io/${PROJECT_ID}/speech-api-worker:v8.01
+      gcr.io/${PROJECT_ID}/speech-api-worker:v8.04
    ```
 
    Or:
@@ -73,7 +78,7 @@ Similar to the above, except:
 - For authentication reasons, the build should be pushed with the `gcloud` tool:
 
   ```bash
-  sudo gcloud docker -- push gcr.io/${PROJECT_ID}/speech-api-worker:v8.01
+  sudo gcloud docker -- push gcr.io/${PROJECT_ID}/speech-api-worker:v8.04
   ```
 
   Learn more here: https://cloud.google.com/container-registry/docs/advanced-authentication

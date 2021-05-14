@@ -55,6 +55,8 @@ DATA_PATH = DISK_PATH / "data"
 EXPERIMENTS_PATH = DISK_PATH / "experiments"
 TEMP_PATH = DISK_PATH / "temp"
 SAMPLES_PATH = DISK_PATH / "samples"
+# NOTE: For production, store an inference version of signal and spectrogram model.
+TTS_BUNDLE_PATH = DISK_PATH / "tts.pt"
 SIGNAL_MODEL_EXPERIMENTS_PATH = EXPERIMENTS_PATH / "signal_model"
 SPECTROGRAM_MODEL_EXPERIMENTS_PATH = EXPERIMENTS_PATH / "spectrogram_model"
 

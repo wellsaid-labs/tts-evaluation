@@ -251,6 +251,7 @@ def read_audio(
 
     TODO: Should we implement automatic gain control?
     https://en.wikipedia.org/wiki/Automatic_gain_control
+    TODO: Should there be a look up table from numpy dtype to ffmpeg data types?
 
     Args:
         path: Path to load.

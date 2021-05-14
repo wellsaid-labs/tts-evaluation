@@ -805,7 +805,10 @@ def _make_speech_segments(passage: Passage) -> typing.List[Span]:
 
 
 def _default_session(passage: UnprocessedPassage) -> Session:
-    """By default, this assumes that each audio file was recorded, individually."""
+    """By default, this assumes that each audio file was recorded, individually.
+
+    TODO: Remove suffix from `Session` name.
+    """
     return Session(passage.audio_path.name)
 
 

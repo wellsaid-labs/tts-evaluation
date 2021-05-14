@@ -21,6 +21,7 @@ from lib.utils import flatten, flatten_2d
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import en_core_web_md
+    import en_core_web_sm
     import Levenshtein
     import nltk
     import normalise
@@ -28,6 +29,7 @@ if typing.TYPE_CHECKING:  # pragma: no cover
     import spacy.tokens
     from spacy.lang import en as spacy_en
 else:
+    en_core_web_sm = LazyLoader("en_core_web_sm", globals(), "en_core_web_sm")
     en_core_web_md = LazyLoader("en_core_web_md", globals(), "en_core_web_md")
     Levenshtein = LazyLoader("Levenshtein", globals(), "Levenshtein")
     nltk = LazyLoader("nltk", globals(), "nltk")
@@ -688,6 +690,12 @@ def _nltk_download(dependency):
 def load_en_core_web_md(*args, **kwargs) -> spacy_en.English:
     """ Load and cache in memory a spaCy `spacy_en.English` object. """
     return en_core_web_md.load(*args, **kwargs)
+
+
+@functools.lru_cache(maxsize=None)
+def load_en_core_web_sm(*args, **kwargs) -> spacy_en.English:
+    """ Load and cache in memory a spaCy `spacy_en.English` object. """
+    return en_core_web_sm.load(*args, **kwargs)
 
 
 @functools.lru_cache(maxsize=None)
