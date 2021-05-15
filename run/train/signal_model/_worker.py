@@ -131,7 +131,7 @@ class _State:
     step: torch.Tensor = torch.tensor(0, dtype=torch.long)
 
     def __post_init__(self):
-        """ Check datastructure invariants. """
+        """Check datastructure invariants."""
         ptrs = set(p.data_ptr() for p in self.model.parameters() if p.requires_grad)
         assert set(p.data_ptr() for p in self.model.module.parameters() if p.requires_grad) == ptrs
         assert self.model.training
@@ -346,7 +346,7 @@ def _get_data_loaders(
     num_workers: int = HParam(),
     prefetch_factor: int = HParam(),
 ) -> typing.Tuple[DataLoader[Batch], DataLoader[Batch]]:
-    """ Initialize training and development data loaders.  """
+    """Initialize training and development data loaders."""
     model = state.model.module if isinstance(state.model, DistributedDataParallel) else state.model
     padding = typing.cast(int, model.padding)
     processor = partial(
@@ -503,13 +503,13 @@ def _run_step(args: _HandleBatchArgs):
         pred_specs = signal_to_spectrogram(signal, intermediate=True)
         gold_specs = signal_to_spectrogram(target_signal, intermediate=True)
         generator_loss, get_discrim_values = _run_discriminator(args, i, pred_specs, gold_specs)
-        l1_loss_ = l1_loss(pred_specs.db_mel, gold_specs.db_mel, reduction="none").mean(dim=1)
-        mse_loss_ = mse_loss(pred_specs.db_mel, gold_specs.db_mel, reduction="none").mean(dim=1)
-        loss += l1_loss_.mean() + mse_loss_.mean() + generator_loss.mean()
+        l1 = l1_loss(pred_specs.db_mel, gold_specs.db_mel, reduction="none").mean(dim=[1, 2])
+        mse = mse_loss(pred_specs.db_mel, gold_specs.db_mel, reduction="none").mean(dim=[1, 2])
+        loss += l1.mean() + mse.mean() + generator_loss.mean()
 
         fft_length = signal_to_spectrogram.fft_length
         get_model_values = args.metrics.get_model_values
-        get_values.append(partial(get_model_values, fft_length, args.batch, l1_loss_, mse_loss_))
+        get_values.append(partial(get_model_values, fft_length, args.batch, l1, mse))
         get_values.append(get_discrim_values)
 
     if args.state.model.training:
