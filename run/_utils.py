@@ -26,12 +26,12 @@ if typing.TYPE_CHECKING:  # pragma: no cover
     import scipy
     import scipy.signal
     from google.cloud import storage
-    from Levenshtein.StringMatcher import StringMatcher
+    from Levenshtein import StringMatcher
 else:
     librosa = LazyLoader("librosa", globals(), "librosa")
     scipy = LazyLoader("scipy", globals(), "scipy")
     storage = LazyLoader("storage", globals(), "google.cloud.storage")
-    StringMatcher = LazyLoader("StringMatcher", globals(), "Levenshtein.StringMatcher.StringMatcher")
+    StringMatcher = LazyLoader("StringMatcher", globals(), "Levenshtein.StringMatcher")
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +66,7 @@ def get_dataset(
 @functools.lru_cache(maxsize=None)
 def _is_duplicate(a: str, b: str, min_sim: float) -> bool:
     """Helper function for `split_dataset` used to judge string similarity."""
-    matcher = StringMatcher(seq1=a, seq2=b)
+    matcher = StringMatcher.StringMatcher(seq1=a, seq2=b)
     return (
         matcher.real_quick_ratio() > min_sim
         and matcher.quick_ratio() > min_sim
@@ -106,7 +106,7 @@ def _find_duplicate_passages(
 
 
 def _passages_len(passages: typing.List[_loader.Passage]):
-    """ Get the cumulative length of all `passages`. """
+    """Get the cumulative length of all `passages`."""
     return sum(p.segmented_audio_length() for p in passages)
 
 
@@ -272,7 +272,7 @@ class SpanGenerator(typing.Iterator[_loader.Span]):
         return self
 
     def __next__(self) -> _loader.Span:
-        """ Sample spans with a uniform speaker distribution based on `span.audio_length`. """
+        """Sample spans with a uniform speaker distribution based on `span.audio_length`."""
         while True:
             speaker = lib.utils.corrected_random_choice(self.counter, self.expected)
             span = next(self.generators[speaker])
@@ -293,11 +293,11 @@ def get_window(window: str, window_length: int, window_hop: int) -> torch.Tensor
 
 
 @functools.lru_cache(maxsize=1)
-def get_storage_client() -> 'storage.Client':
+def get_storage_client() -> "storage.Client":
     return storage.Client()
 
 
-def gcs_uri_to_blob(gcs_uri: str) -> 'storage.Blob':
+def gcs_uri_to_blob(gcs_uri: str) -> "storage.Blob":
     """Parse GCS URI (e.g. "gs://cloud-samples-tests/speech/brooklyn.flac") and return a `Blob`.
 
     NOTE: This function requires GCS authorization.
@@ -310,6 +310,6 @@ def gcs_uri_to_blob(gcs_uri: str) -> 'storage.Blob':
     return bucket.blob(name)
 
 
-def blob_to_gcs_uri(blob: 'storage.Blob') -> str:
-    """ Get GCS URI (e.g. "gs://cloud-samples-tests/speech/brooklyn.flac") from `blob`. """
+def blob_to_gcs_uri(blob: "storage.Blob") -> str:
+    """Get GCS URI (e.g. "gs://cloud-samples-tests/speech/brooklyn.flac") from `blob`."""
     return "gs://" + blob.bucket.name + "/" + blob.name
