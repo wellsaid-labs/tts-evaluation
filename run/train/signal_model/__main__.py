@@ -181,7 +181,10 @@ def start(
     ),
     project: str = typer.Argument(..., help="Experiment project name."),
     name: str = typer.Argument("", help="Experiment name."),
-    tags: typing.List[str] = typer.Option([], help="Experiment tags."),
+    tags: typing.List[str] = typer.Option(
+        ["embeddings", "4096_1024_256", "random_loudness"],
+        help="Experiment tags.",
+    ),
     debug: bool = typer.Option(False, help="Turn on debugging mode."),
 ):
     """Start a training run in PROJECT named NAME with TAGS."""
