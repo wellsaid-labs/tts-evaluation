@@ -58,7 +58,11 @@ RUN apt-get update --fix-missing \
   && find venv/ -follow -type f -name '*.a' -delete \
   && find venv/ -follow -type f -name '*.js.map' -delete
 
-# ffmpeg build stage
+# NOTE: ffmpeg build stage. We are manually compiling the ffmpeg binary with a limited feature set
+# based on our usage requirements (see the ffmpeg command in `worker.py`). This cuts the overall
+# weight of our ffmpeg dependency down from ~268mb to ~26mb.
+#   - Official compilation guide: https://trac.ffmpeg.org/wiki/CompilationGuide/Generic
+#   - Dockerfile reference: https://github.com/alfg/docker-ffmpeg/blob/master/Dockerfile
 FROM base as ffmpeg-build
 
 ARG FFMPEG_VERSION=4.4
@@ -68,8 +72,8 @@ ARG LD_LIBRARY_PATH=/opt/ffmpeg/lib
 ARG MAKEFLAGS="-j4"
 
 # FFmpeg build dependencies.
-RUN apt-get update --fix-missing
-RUN apt-get install -y \
+RUN apt-get update --fix-missing && \
+  apt-get install -y \
   build-essential \
   coreutils \
   gcc \
@@ -158,29 +162,25 @@ RUN cd /tmp/ffmpeg-${FFMPEG_VERSION} && \
   --extra-ldflags="-L${PREFIX}/lib" \
   --extra-libs="-lpthread -lm" \
   --prefix="${PREFIX}" && \
-  make && make install && make distclean
-
-# Cleanup.
-RUN rm -rf /var/cache/apk/* /tmp/*
+  make && make install && make distclean && \
+  rm -rf /tmp/*
 
 # Final base image
 FROM base
-
-RUN apt-get update --fix-missing
 
 WORKDIR /app
 
 COPY --from=builder /app/ /app/
 
-# ffmpeg linking
+# NOTE: ffmpeg linking
 ENV PATH=/opt/ffmpeg/bin:$PATH
 COPY --from=ffmpeg-build /opt/ffmpeg /opt/ffmpeg
-RUN apt-get install -y lame
 
-# NOTE: To avoid manually copying `espeak`'s dependencies, we install `espeak` outside of builder.
-# TODO: Attempt to reduce `ffmpeg` size, it's about 200mb without any optimization...
-# https://github.com/alberthdev/alberthdev-misc/wiki/Build-your-own-tiny-FFMPEG
-RUN apt-get install -y \
+RUN apt-get update --fix-missing \
+  && apt-get install -y \
+  # NOTE: ffmpeg dependency (mp3 encoding, see --enable-libmp3lame flag)
+  lame \
+  # NOTE: To avoid manually copying `espeak`'s dependencies, we install `espeak` outside of builder.
   espeak \
   && rm -rf /var/lib/apt/lists/*
 
