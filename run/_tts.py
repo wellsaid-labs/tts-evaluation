@@ -353,7 +353,11 @@ def text_to_speech_ffmpeg_generator(
             # [batch_size (optional), num_frames, num_frame_channels]
             yield pred.frames.transpose(0, 1) if pred.frames.dim() == 3 else pred.frames
 
-    command = ["ffmpeg", "-ar", str(sample_rate)] + list(input_flags) + ["-i", "pipe:"]
+    command = (
+        ["ffmpeg", "-hide_banner", "-loglevel", "error", "-ar", str(sample_rate)]
+        + list(input_flags)
+        + ["-i", "pipe:"]
+    )
     command += list(output_flags) + ["pipe:"]
     pipe = subprocess.Popen(command, stdin=PIPE, stdout=PIPE, stderr=sys.stdout.buffer)
     queue: SimpleQueue = SimpleQueue()
