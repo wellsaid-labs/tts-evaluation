@@ -14,6 +14,8 @@ export let options = {
     { duration: '30s', target: 15 },
     { duration: '30s', target: 30 },
   ],
+  // Recommended: https://k6.io/docs/using-k6/options/#discard-response-bodies
+  discardResponseBodies: true,
 };
 
 const lines = new SharedArray('tos', function loadTosText() {
