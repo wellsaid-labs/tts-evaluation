@@ -1,0 +1,28 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: tts
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/minScale: '0'
+        autoscaling.knative.dev/maxScale: '30'
+    spec:
+      containerConcurrency: 1
+      timeoutSeconds: 3600
+      containers:
+      - name: tts
+        image: gcr.io/voice-service-2-313121/speech-api-worker
+        ports:
+        - containerPort: 8000
+        resources:
+          limits:
+            cpu: '4'
+            memory: 4Gi
+        readinessProbe:
+          successThreshold: 1
+          tcpSocket: {}
+  traffic:
+  - percent: 100
+    latestRevision: true

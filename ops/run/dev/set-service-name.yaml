@@ -1,0 +1,9 @@
+# This sets the target GKE cluster
+- op: replace
+  path: /metadata/name
+  value: tts-dev
+# This sets the service revision name and must be incremented with every release.
+# TODO: Use the GIT SHA or something like it.
+- op: replace
+  path: /spec/template/metadata/name
+  value: tts-dev-002

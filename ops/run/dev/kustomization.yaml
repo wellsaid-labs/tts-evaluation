@@ -1,0 +1,26 @@
+bases:
+- ../base
+namespace: dev
+resources:
+- namespace.yaml
+images:
+- name: gcr.io/voice-service-2-313121/speech-api-worker
+  digest: sha256:3af2c7a3a88806e0ff5e5c0659ab6a97c42eba7f6e5d61e33dbc9244163e17d3
+patchesJson6902:
+- target:
+    group: serving.knative.dev
+    version: v1
+    kind: Service
+    name: tts
+  path: add-api-keys.yaml
+- target:
+    group: serving.knative.dev
+    version: v1
+    kind: Service
+    name: tts
+  path: set-service-name.yaml
+secretGenerator:
+- name: api-keys
+  env: .env.api-keys
+generatorOptions:
+  disableNameSuffixHash: true
