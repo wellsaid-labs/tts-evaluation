@@ -2,8 +2,11 @@
 TODO: Add tests for every function.
 """
 
+import enum
+import functools
 import gc
 import logging
+import pathlib
 import subprocess
 import sys
 import threading
@@ -15,7 +18,11 @@ import numpy
 import torch
 from hparams import HParam, configurable
 from spacy.lang.en import English
+from third_party import LazyLoader
+from torchnlp.encoders.text import stack_and_pad_tensors
+from torchnlp.utils import lengths_to_mask
 
+from lib.environment import PT_EXTENSION, load
 from lib.signal_model import SignalModel, generate_waveform
 from lib.spectrogram_model import Infer, Mode, Params, SpectrogramModel
 from lib.text import (
@@ -24,9 +31,77 @@ from lib.text import (
     load_en_core_web_md,
     normalize_vo_script,
 )
+from lib.utils import get_chunks, tqdm_
 from run import train
-from run.data._loader import Session, Speaker
+from run._config import CHECKPOINTS_PATH
+from run.data._loader import Session, Span, Speaker
 from run.train.spectrogram_model._data import DecodedInput, EncodedInput, InputEncoder
+
+if typing.TYPE_CHECKING:  # pragma: no cover
+    import spacy.tokens
+else:
+    spacy = LazyLoader("spacy", globals(), "spacy")
+
+logger = logging.getLogger(__name__)
+
+
+def load_checkpoints(
+    directory: pathlib.Path,
+    root_directory_name: str,
+    gcs_path: str,
+    sig_model_dir_name: str = "signal_model",
+    spec_model_dir_name: str = "spectrogram_model",
+    link_template: str = "https://www.comet.ml/api/experiment/redirect?experimentKey={key}",
+    **kwargs,
+) -> typing.Tuple[
+    train.spectrogram_model._worker.Checkpoint, train.signal_model._worker.Checkpoint
+]:
+    """Load checkpoints from GCP.
+
+    Args:
+        directory: Directory to cache the dataset.
+        root_directory_name: Name of the directory inside `directory` to store data.
+        gcs_path: The base GCS path storing the data.
+        sig_model_dir_name: The name of the signal model directory on GCS.
+        spec_model_dir_name: The name of the spectrogram model directory on GCS.
+        link_template: Template string for formating a Comet experiment link.
+        kwargs: Additional key-word arguments passed to `load`.
+    """
+    logger.info("Loading `%s` checkpoints.", root_directory_name)
+
+    root = (pathlib.Path(directory) / root_directory_name).absolute()
+    root.mkdir(exist_ok=True)
+    directories = [root / d for d in (spec_model_dir_name, sig_model_dir_name)]
+
+    checkpoints: typing.List[train._utils.Checkpoint] = []
+    for directory in directories:
+        directory.mkdir(exist_ok=True)
+        command = ["gsutil", "cp", "-n"]
+        command += [f"{gcs_path}/{directory.name}/*{PT_EXTENSION}", f"{directory}/"]
+        subprocess.run(command, check=True)
+        files_ = [p for p in directory.iterdir() if p.suffix == PT_EXTENSION]
+        assert len(files_) == 1
+        checkpoints.append(load(files_[0], **kwargs))
+        link = link_template.format(key=checkpoints[-1].comet_experiment_key)
+        logger.info("Loaded `%s` checkpoint from experiment %s", directory.name, link)
+
+    spec_chkpt, sig_chkpt = tuple(checkpoints)
+    spec_chkpt = typing.cast(train.spectrogram_model._worker.Checkpoint, spec_chkpt)
+    sig_chkpt = typing.cast(train.signal_model._worker.Checkpoint, sig_chkpt)
+    spec_chkpt.check_invariants()
+    sig_chkpt.check_invariants()
+    return spec_chkpt, sig_chkpt
+
+
+class Checkpoints(enum.Enum):
+    V9_STAGING: typing.Final = "v9_staging"
+
+
+_GCS_PATH = "gs://wellsaid_labs_checkpoints/"
+CHECKPOINTS_LOADERS = {
+    e: functools.partial(load_checkpoints, CHECKPOINTS_PATH, e.value, _GCS_PATH + e.value)
+    for e in Checkpoints
+}
 
 
 class TTSPackage(typing.NamedTuple):

@@ -30,16 +30,14 @@ web audio api; therefore, the server must manage it via some database.
 
 Example (Flask):
 
-      $ SPECTROGRAM_CHECKPOINT="" # Example: disk/experiments/spectrogram_model/step_304001.pt
-      $ SIGNAL_CHECKPOINT=""  # Example: disk/experiments/signal_model/step_770733.pt
-      $ python -m run.deploy.bundle_tts $SPECTROGRAM_CHECKPOINT $SIGNAL_CHECKPOINT
+      $ CHECKPOINTS=""  # Example: v9_staging
+      $ python -m run.deploy.package_tts $CHECKPOINTS
       $ PYTHONPATH=. YOUR_SPEECH_API_KEY=123 python -m run.deploy.worker
 
 Example (Gunicorn):
 
-      $ SPECTROGRAM_CHECKPOINT=""
-      $ SIGNAL_CHECKPOINT=""
-      $ python -m run.deploy.bundle_tts $SPECTROGRAM_CHECKPOINT $SIGNAL_CHECKPOINT
+      $ CHECKPOINTS=""
+      $ python -m run.deploy.package_tts $CHECKPOINTS
       $ YOUR_SPEECH_API_KEY=123 gunicorn run.deploy.worker:app --timeout=3600 --env='GUNICORN=1'
 """
 import gc
