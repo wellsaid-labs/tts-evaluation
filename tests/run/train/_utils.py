@@ -18,8 +18,8 @@ from tests import _utils
 def setup_experiment(mock_urlretrieve):
     """Setup basic experiment for testing.
 
-    TODO: `tests._utils.make_mock_tts_bundle` and this share a lot of similar ideas,
-    can we merge them?
+    TODO: `tests._utils.make_mock_tts_package` and this share a lot of similar ideas,
+    can we merge them to reduce redundancy?
     """
     mock_urlretrieve.side_effect = _utils.first_parameter_url_side_effect
 

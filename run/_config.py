@@ -53,10 +53,11 @@ TTS_DISK_CACHE_NAME = ".tts_cache"  # NOTE: Hidden directory stored in other dir
 DISK_PATH = lib.environment.ROOT_PATH / "disk"
 DATA_PATH = DISK_PATH / "data"
 EXPERIMENTS_PATH = DISK_PATH / "experiments"
+CHECKPOINTS_PATH = DISK_PATH / "checkpoints"
 TEMP_PATH = DISK_PATH / "temp"
 SAMPLES_PATH = DISK_PATH / "samples"
 # NOTE: For production, store an inference version of signal and spectrogram model.
-TTS_BUNDLE_PATH = DISK_PATH / "tts_bundle.pt"
+TTS_PACKAGE_PATH = DISK_PATH / "tts_package.pt"
 SIGNAL_MODEL_EXPERIMENTS_PATH = EXPERIMENTS_PATH / "signal_model"
 SPECTROGRAM_MODEL_EXPERIMENTS_PATH = EXPERIMENTS_PATH / "spectrogram_model"
 
@@ -614,11 +615,12 @@ def _configure_data_processing():
 
 
 def configure():
-    """ Configure modules required for `run`. """
+    """Configure modules required for `run`."""
     for directory in [
         DISK_PATH,
         DATA_PATH,
         EXPERIMENTS_PATH,
+        CHECKPOINTS_PATH,
         TEMP_PATH,
         SAMPLES_PATH,
         SIGNAL_MODEL_EXPERIMENTS_PATH,

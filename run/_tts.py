@@ -29,20 +29,20 @@ from run.data._loader import Session, Speaker
 from run.train.spectrogram_model._data import DecodedInput, EncodedInput, InputEncoder
 
 
-class TTSBundle(typing.NamedTuple):
-    """The bare minimum required to run a TTS model in inference mode."""
+class TTSPackage(typing.NamedTuple):
+    """A package of Python objects required to run TTS in inference mode."""
 
     input_encoder: InputEncoder
     spectrogram_model: SpectrogramModel
     signal_model: SignalModel
 
 
-def make_tts_bundle(
+def package_tts(
     spectrogram_checkpoint: train.spectrogram_model._worker.Checkpoint,
     signal_checkpoint: train.signal_model._worker.Checkpoint,
 ):
-    """Make a bundle of objects required for running TTS infernece."""
-    return TTSBundle(*spectrogram_checkpoint.export(), signal_checkpoint.export())
+    """Package together objects required for running TTS inference."""
+    return TTSPackage(*spectrogram_checkpoint.export(), signal_checkpoint.export())
 
 
 class PublicTextValueError(ValueError):
@@ -98,25 +98,19 @@ def encode_tts_inputs(
 
 
 def text_to_speech(
-    input_encoder: InputEncoder,
-    spec_model: SpectrogramModel,
-    sig_model: SignalModel,
+    package: TTSPackage,
     script: str,
     speaker: Speaker,
     session: Session,
     split_size: int = 32,
 ) -> numpy.ndarray:
-    """Run TTS end-to-end.
-
-    TODO: Add an end-to-end function for stream TTS.
-    TODO: Add an end-to-end function for batch TTS.
-    """
+    """Run TTS end-to-end with friendly errors."""
     nlp = load_en_core_web_md(disable=("parser", "ner"))
-    encoded = encode_tts_inputs(nlp, input_encoder, script, speaker, session)
+    encoded = encode_tts_inputs(nlp, package.input_encoder, script, speaker, session)
     params = Params(tokens=encoded.phonemes, speaker=encoded.speaker, session=encoded.session)
-    preds = typing.cast(Infer, spec_model(params=params, mode=Mode.INFER))
+    preds = typing.cast(Infer, package.spectrogram_model(params=params, mode=Mode.INFER))
     splits = preds.frames.split(split_size)
-    predicted = list(generate_waveform(sig_model, splits))
+    predicted = list(generate_waveform(package.signal_model, splits))
     predicted = typing.cast(torch.Tensor, torch.cat(predicted, dim=-1))
     return predicted.detach().numpy()
 
@@ -135,9 +129,8 @@ def _dequeue(queue: SimpleQueue) -> typing.Generator[bytes, None, None]:
 
 @configurable
 def text_to_speech_ffmpeg_generator(
-    logger: logging.Logger,
-    spec_model: SpectrogramModel,
-    sig_model: SignalModel,
+    logger_: logging.Logger,
+    package: TTSPackage,
     input: EncodedInput,
     sample_rate: int = HParam(),
     input_flags: typing.Tuple[str, ...] = ("-f", "f32le", "-acodec", "pcm_f32le", "-ac", "1"),
@@ -160,7 +153,7 @@ def text_to_speech_ffmpeg_generator(
 
     def get_spectrogram():
         params = Params(tokens=input.phonemes, speaker=input.speaker, session=input.session)
-        for pred in spec_model(params=params, mode=Mode.GENERATE):
+        for pred in package.spectrogram_model(params=params, mode=Mode.GENERATE):
             # [num_frames, batch_size (optional), num_frame_channels] →
             # [batch_size (optional), num_frames, num_frame_channels]
             gc.collect()
@@ -180,13 +173,13 @@ def text_to_speech_ffmpeg_generator(
 
     try:
         thread.start()
-        logger.info("Generating waveform...")
+        logger_.info("Generating waveform...")
         generator = get_spectrogram()
-        for waveform in generate_waveform(sig_model, generator):
+        for waveform in generate_waveform(package.signal_model, generator):
             pipe.stdin.write(waveform.cpu().numpy().tobytes())
             yield from _dequeue(queue)
         close()
         yield from _dequeue(queue)
     except BaseException:
         close()
-        logger.info("Finished generating waveform.")
+        logger_.info("Finished generating waveform.")

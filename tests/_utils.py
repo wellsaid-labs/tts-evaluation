@@ -14,7 +14,7 @@ from hparams import add_config
 import lib
 import run
 from lib.utils import Tuple
-from run._tts import TTSBundle, make_tts_bundle
+from run._tts import TTSPackage, package_tts
 from run.data._loader import (
     JUDY_BIEBER,
     LINDA_JOHNSON,
@@ -156,7 +156,7 @@ def mock_distributed_data_parallel(module, *_, **__):
     return module
 
 
-def make_mock_tts_bundle() -> typing.Tuple[run._config.Dataset, TTSBundle]:
+def make_mock_tts_package() -> typing.Tuple[run._config.Dataset, TTSPackage]:
     """Create the required components needed for running TTS inference end-to-end."""
     run._config.configure()
     comet = run.train._utils.CometMLExperiment(disabled=True, project_name="project name")
@@ -186,4 +186,4 @@ def make_mock_tts_bundle() -> typing.Tuple[run._config.Dataset, TTSBundle]:
         make_sig_model_state = run.train.signal_model._worker._State.make
         sig_model_state = make_sig_model_state(spec_model_ckpt_path, comet, device)
 
-    return dataset, make_tts_bundle(spec_model_ckpt, sig_model_state.to_checkpoint())
+    return dataset, package_tts(spec_model_ckpt, sig_model_state.to_checkpoint())

@@ -54,13 +54,11 @@ from flask import Flask, Response, jsonify, request, send_file, send_from_direct
 from spacy.lang.en import English
 
 from lib.environment import load, set_basic_logging_config
-from lib.signal_model import SignalModel
-from lib.spectrogram_model import SpectrogramModel
-from run._config import TTS_BUNDLE_PATH, configure
+from run._config import TTS_PACKAGE_PATH, configure
 from run._tts import (
     PublicSpeakerValueError,
     PublicTextValueError,
-    TTSBundle,
+    TTSPackage,
     encode_tts_inputs,
     text_to_speech_ffmpeg_generator,
 )
@@ -80,9 +78,7 @@ DEVICE = torch.device("cpu")
 API_KEY_SUFFIX = "_SPEECH_API_KEY"
 MAX_CHARS = 10000
 API_KEYS: typing.Set[str] = set([v for k, v in os.environ.items() if API_KEY_SUFFIX in k])
-SIGNAL_MODEL: SignalModel
-SPECTROGRAM_MODEL: SpectrogramModel
-INPUT_ENCODER: InputEncoder
+TTS_PACKAGE: TTSPackage
 SPACY: English
 # NOTE: The keys need to stay the same for backwards compatibility.
 SPEAKER_ID_TO_SPEAKER: typing.Dict[int, typing.Tuple[Speaker, Session]] = {
@@ -290,7 +286,7 @@ def get_input_validated():
     """
     request_args = request.get_json() if request.method == "POST" else request.args
     request_args = typing.cast(RequestArgs, request_args)
-    validate_and_unpack(request_args, INPUT_ENCODER, SPACY)
+    validate_and_unpack(request_args, TTS_PACKAGE.input_encoder, SPACY)
     return jsonify({"message": "OK"})
 
 
@@ -303,7 +299,7 @@ def get_stream():
     """
     request_args = request.get_json() if request.method == "POST" else request.args
     request_args = typing.cast(RequestArgs, request_args)
-    input = validate_and_unpack(request_args, INPUT_ENCODER, SPACY)
+    input = validate_and_unpack(request_args, TTS_PACKAGE.input_encoder, SPACY)
     headers = {
         "Cache-Control": "no-cache, no-store, must-revalidate",
         "Pragma": "no-cache",
@@ -311,7 +307,7 @@ def get_stream():
     }
     output_flags = ("-f", "mp3", "-b:a", "192k")
     generator = text_to_speech_ffmpeg_generator(
-        app.logger, SPECTROGRAM_MODEL, SIGNAL_MODEL, input, output_flags=output_flags
+        app.logger, TTS_PACKAGE, input, output_flags=output_flags
     )
     return Response(generator, headers=headers, mimetype="audio/mpeg")
 
@@ -335,17 +331,14 @@ if __name__ == "__main__" or "GUNICORN" in os.environ:
 
     # NOTE: These models are cached globally to enable sharing between processes, learn more:
     # https://github.com/benoitc/gunicorn/issues/2007
-    bundle = typing.cast(TTSBundle, load(TTS_BUNDLE_PATH, DEVICE))
-    INPUT_ENCODER = bundle.input_encoder
-    app.logger.info("Loaded speakers: %s", INPUT_ENCODER.speaker_encoder.vocab)
+    TTS_PACKAGE = typing.cast(TTSPackage, load(TTS_PACKAGE_PATH, DEVICE))
+    app.logger.info("Loaded speakers: %s", TTS_PACKAGE.input_encoder.speaker_encoder.vocab)
 
     for (speaker, session) in SPEAKER_ID_TO_SPEAKER.values():
-        if speaker in INPUT_ENCODER.speaker_encoder.token_to_index:
+        if speaker in TTS_PACKAGE.input_encoder.speaker_encoder.token_to_index:
             message = "Speaker recording session not found."
-            assert (speaker, session) in INPUT_ENCODER.session_encoder.token_to_index, message
-
-    SPECTROGRAM_MODEL = bundle.spectrogram_model
-    SIGNAL_MODEL = bundle.signal_model
+            lookup = TTS_PACKAGE.input_encoder.session_encoder.token_to_index
+            assert (speaker, session) in lookup, message
 
     SPACY = en_core_web_sm.load(disable=("parser", "ner"))
     app.logger.info("Loaded spaCy.")
