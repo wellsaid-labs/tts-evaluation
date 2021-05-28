@@ -155,6 +155,9 @@ class DataProcessor(torch.utils.data.IterableDataset):
         spectrogram_model: lib.spectrogram_model.SpectrogramModel,
     ):
         """
+        TODO: Consider unbalanced sampling from the training dataset, similar to, the spectrogram
+        model training.
+
         Args:
             ...
             slice_size: The number of frames per spectrogram slice.

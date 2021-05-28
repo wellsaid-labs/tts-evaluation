@@ -136,7 +136,7 @@ def get_dataset_label(
     speaker: typing.Optional[Speaker] = None,
     **kwargs,
 ) -> Label:
-    """ Label something related to a dataset. """
+    """Label something related to a dataset."""
     kwargs = dict(cadence=cadence.value, type=type_.value, name=name, **kwargs)
     if speaker is None:
         return _label("{cadence}/dataset/{type}/{name}", **kwargs)
@@ -146,7 +146,7 @@ def get_dataset_label(
 def get_model_label(
     name: str, cadence: Cadence, speaker: typing.Optional[Speaker] = None, **kwargs
 ) -> Label:
-    """ Label something related to the model. """
+    """Label something related to the model."""
     kwargs = dict(cadence=cadence.value, name=name, **kwargs)
     if speaker is None:
         return _label("{cadence}/model/{name}", **kwargs)
@@ -154,19 +154,19 @@ def get_model_label(
 
 
 def get_config_label(name: str, cadence: Cadence = Cadence.STATIC, **kwargs) -> Label:
-    """ Label something related to a configuration. """
+    """Label something related to a configuration."""
     return _label("{cadence}/config/{name}", cadence=cadence.value, name=name, **kwargs)
 
 
 def get_environment_label(name: str, cadence: Cadence = Cadence.STATIC, **kwargs) -> Label:
-    """ Label something related to a environment. """
+    """Label something related to a environment."""
     return _label("{cadence}/environment/{name}", cadence=cadence.value, name=name, **kwargs)
 
 
 def get_timer_label(
     name: str, device: Device = Device.CPU, cadence: Cadence = Cadence.STATIC, **kwargs
 ) -> Label:
-    """ Label something related to a performance. """
+    """Label something related to a performance."""
     template = "{cadence}/timer/{device}/{name}"
     return _label(template, cadence=cadence.value, device=device.value, name=name, **kwargs)
 
@@ -198,7 +198,7 @@ torch.nn.LayerNorm.__init__ = configurable_(torch.nn.LayerNorm.__init__)
 
 
 def _configure_audio_processing():
-    """ Configure modules that process audio. """
+    """Configure modules that process audio."""
     # NOTE: The SoX and FFmpeg encodings are the same.
     # NOTE: The signal model output is 32-bit.
     suffix = ".wav"
@@ -367,7 +367,7 @@ def _configure_audio_processing():
 
 
 def _configure_models():
-    """ Configure spectrogram and signal model. """
+    """Configure spectrogram and signal model."""
     # SOURCE (Tacotron 2):
     # Attention probabilities are computed after projecting inputs and location
     # features to 128-dimensional hidden representations.
@@ -548,6 +548,8 @@ def _include_span(span: Span):
     TODO: How can we filter out all non-standard words that haven't been normalized, yet? We could
     normalize the script before hand, removing all non-standard words. Afterwards, we can verify
     with Google STT that it matches the voice over.
+    TODO: The character "." is ambigious. It is sometimes prounced "dot" and sometimes it's silent.
+    There may be some inconsistency between eSpeak and the voice over with regards to ".".
     """
     if "<" in span.script or ">" in span.script:
         return False

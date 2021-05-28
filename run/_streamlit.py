@@ -48,7 +48,7 @@ STREAMLIT_STATIC_SYMLINK_PATH = STREAMLIT_STATIC_PRIVATE_PATH / "symlink"
 
 
 def is_streamlit_running() -> bool:
-    """ Check if `streamlit` server has been initialized. """
+    """Check if `streamlit` server has been initialized."""
     try:
         Server.get_current()
         return True
@@ -58,7 +58,7 @@ def is_streamlit_running() -> bool:
 
 
 def get_session_state() -> dict:
-    """Get a reference to a session state represented as a `dict`. """
+    """Get a reference to a session state represented as a `dict`."""
     return session_state.get(cache={})
 
 
@@ -148,7 +148,7 @@ def get_static_temp_path(name) -> pathlib.Path:
 
 
 def audio_to_static_temp_path(audio: np.ndarray, name: str = "audio.wav", **kwargs) -> pathlib.Path:
-    """Create an audio file in `STREAMLIT_STATIC_TEMP_PATH`. """
+    """Create an audio file in `STREAMLIT_STATIC_TEMP_PATH`."""
     temp_path = get_static_temp_path(name)
     lib.audio.write_audio(temp_path, audio, **kwargs)
     return temp_path
@@ -190,7 +190,7 @@ def map_(
     max_parallel: int = os.cpu_count() * 3,
     progress_bar: bool = True,
 ) -> typing.List[_MapReturnVar]:
-    """ Apply `func` to `list_` in parallel. """
+    """Apply `func` to `list_` in parallel."""
     with multiprocessing.pool.ThreadPool(processes=max_parallel) as pool:
         iterator = pool.imap(func, list_, chunksize=chunk_size)
         if progress_bar:
@@ -200,7 +200,7 @@ def map_(
 
 @session_cache(maxsize=None)
 def read_wave_audio(*args, **kwargs) -> np.ndarray:
-    """ Read audio slice, and cache. """
+    """Read audio slice, and cache."""
     return lib.audio.read_wave_audio(*args, **kwargs)
 
 
@@ -217,7 +217,7 @@ def passage_audio(passage: run.data._loader.Passage) -> np.ndarray:
 
 @session_cache(maxsize=None)
 def get_dataset(speaker_labels: typing.FrozenSet[str]) -> run._config.Dataset:
-    """Load dataset subset, and cache. """
+    """Load dataset subset, and cache."""
     logger.info("Loading dataset...")
     with st.spinner(f"Loading dataset(s): {','.join(list(speaker_labels))}"):
         datasets = {k: v for k, v in run._config.DATASETS.items() if k.label in speaker_labels}
@@ -286,7 +286,7 @@ def make_interval_chart(
 
 
 def dataset_passages(dataset: Dataset) -> typing.Iterator[Passage]:
-    """ Get all passages in `dataset`. """
+    """Get all passages in `dataset`."""
     for _, passages in dataset.items():
         yield from passages
 
