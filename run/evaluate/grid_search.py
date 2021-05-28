@@ -22,14 +22,15 @@ import streamlit as st
 import lib
 import run
 from lib.environment import PT_EXTENSION, load
+from run import train
 from run._config import SIGNAL_MODEL_EXPERIMENTS_PATH, SPECTROGRAM_MODEL_EXPERIMENTS_PATH
-from run._tts import text_to_speech
 from run._streamlit import (
     audio_temp_path_to_html,
     audio_to_static_temp_path,
     st_data_frame,
     zip_to_html,
 )
+from run._tts import TTSPackage, text_to_speech
 
 st.set_page_config(layout="wide")
 
@@ -41,7 +42,7 @@ DEFAULT_SCRIPT = (
 
 
 def path_label(path: pathlib.Path) -> str:
-    """ Get a short label for `path`. """
+    """Get a short label for `path`."""
     return f"{path.parent.name}/{path.name}"
 
 
@@ -96,11 +97,9 @@ def main():
         st.stop()
 
     with st.spinner("Loading checkpoints..."):
-        spec_ckpts = [
-            cast(run.train.spectrogram_model._worker.Checkpoint, load(p)) for p in spec_paths
-        ]
+        spec_ckpts = [cast(train.spectrogram_model._worker.Checkpoint, load(p)) for p in spec_paths]
         spec_export = [(c.export(), p) for c, p in zip(spec_ckpts, spec_paths)]
-        sig_ckpts = [cast(run.train.signal_model._worker.Checkpoint, load(p)) for p in sig_paths]
+        sig_ckpts = [cast(train.signal_model._worker.Checkpoint, load(p)) for p in sig_paths]
         sig_export = [(c.export(), p) for c, p in zip(sig_ckpts, sig_paths)]
 
     rows = []
@@ -112,7 +111,8 @@ def main():
     iter_ = list(itertools.product(sessions_sample, spec_export, sig_export, scripts))
     for (speaker, session), spec_items, (sig_model, sig_path), script in iter_:
         (input_encoder, spec_model), spec_path = spec_items
-        audio = text_to_speech(input_encoder, spec_model, sig_model, script, speaker, session)
+        package = TTSPackage(input_encoder, spec_model, sig_model)
+        audio = text_to_speech(package, script, speaker, session)
         sesh = str(session).replace("/", "__")
         name = f"spec={spec_path.stem},sig={sig_path.stem},spk={speaker.label},"
         name += f"sesh={sesh},script={id(script)}.wav"

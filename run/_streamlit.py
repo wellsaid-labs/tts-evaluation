@@ -159,18 +159,29 @@ def audio_temp_path_to_html(temp_path: pathlib.Path, attrs="controls"):
     return f'<audio {attrs} src="/{temp_path.relative_to(STREAMLIT_WEB_ROOT_PATH)}"></audio>'
 
 
+def image_temp_path_to_html(temp_path: pathlib.Path):
+    """Create an image HTML element for the image file at `temp_path."""
+    return f'<img src="/{temp_path.relative_to(STREAMLIT_WEB_ROOT_PATH)}" />'
+
+
 def audio_to_html(audio: np.ndarray, attrs="controls", **kwargs) -> str:
     """Create an audio HTML element from a numpy array."""
     temp_path = audio_to_static_temp_path(audio, **kwargs)
     return audio_temp_path_to_html(temp_path, attrs=attrs)
 
 
-def zip_to_html(name: str, label: str, paths: typing.List[pathlib.Path]) -> str:
-    """ Make a zipfile named `name` that can be downloaded with a button called `label`."""
+def zip_to_html(
+    name: str,
+    label: str,
+    paths: typing.List[pathlib.Path],
+    archive_paths: typing.Optional[typing.List[pathlib.Path]] = None,
+) -> str:
+    """Make a zipfile named `name` that can be downloaded with a button called `label`."""
     temp_path = get_static_temp_path(name)
-    with zipfile.ZipFile(temp_path, "w") as zip:
-        for path in paths:
-            zip.write(path, arcname=path.name)
+    archive_paths_ = [p.name for p in paths] if archive_paths is None else archive_paths
+    with zipfile.ZipFile(temp_path, "w") as file_:
+        for path, archive_path in zip(paths, archive_paths_):
+            file_.write(path, arcname=archive_path)
     temp_path = temp_path.relative_to(STREAMLIT_WEB_ROOT_PATH)
     return f'<a href="/{temp_path}" download="{name}">{label}</a>'
 
@@ -224,6 +235,14 @@ def get_dataset(speaker_labels: typing.FrozenSet[str]) -> run._config.Dataset:
         dataset = run._utils.get_dataset(datasets)
         logger.info(f"Finished loading {set(speaker_labels)} dataset(s)! {lib.utils.mazel_tov()}")
     return dataset
+
+
+@session_cache(maxsize=None)
+def get_dev_dataset() -> run._config.Dataset:
+    """Load dev dataset, and cache."""
+    with st.spinner("Loading dataset..."):
+        _, dev_dataset = run._utils.split_dataset(run._utils.get_dataset())
+    return dev_dataset
 
 
 @session_cache(maxsize=None)

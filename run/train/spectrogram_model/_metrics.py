@@ -24,7 +24,9 @@ from run.train.spectrogram_model._data import Batch
 
 
 def get_num_skipped(
-    alignments: torch.Tensor, token_mask: torch.Tensor, spectrogram_mask: torch.Tensor
+    alignments: torch.Tensor,
+    token_mask: typing.Optional[torch.Tensor],
+    spectrogram_mask: typing.Optional[torch.Tensor],
 ) -> torch.Tensor:
     """Given `alignments` from frames to tokens, this computes the number of tokens that were
     skipped.
@@ -50,9 +52,12 @@ def get_num_skipped(
     num_skipped = torch.zeros(*alignments.shape, device=device, dtype=torch.long)
     num_skipped = num_skipped.scatter(dim=2, index=indices, src=one)
     # [num_frames, batch_size, num_tokens] → [batch_size, num_tokens]
-    num_skipped = num_skipped.masked_fill(~spectrogram_mask.unsqueeze(-1), 0).sum(dim=0)
-    token_mask = token_mask.transpose(0, 1)
-    return (num_skipped.masked_fill(~token_mask, -1) == 0).float().sum(dim=1)
+    if spectrogram_mask is not None:
+        num_skipped = num_skipped.masked_fill(~spectrogram_mask.unsqueeze(-1), 0)
+    num_skipped = num_skipped.sum(dim=0)
+    if token_mask is not None:
+        num_skipped = num_skipped.masked_fill(~token_mask.transpose(0, 1), -1)
+    return (num_skipped == 0).float().sum(dim=1)
 
 
 def get_num_jumps(
@@ -172,7 +177,7 @@ length of 2048, frame hop of 512 and a sample rate of 24000), doesn't practicall
 
 
 def get_power_rms_level_sum(
-    db_spectrogram: torch.Tensor, mask: typing.Optional[torch.Tensor] = None, **kwargs
+    db_spectrogram: torch.Tensor, mask: typing.Optional[torch.Tensor], **kwargs
 ) -> torch.Tensor:
     """Get the sum of the power RMS level for each frame in the spectrogram.
 
@@ -191,7 +196,7 @@ def get_power_rms_level_sum(
 
 
 def get_average_db_rms_level(
-    db_spectrogram: torch.Tensor, mask: typing.Optional[torch.Tensor] = None, **kwargs
+    db_spectrogram: torch.Tensor, mask: typing.Optional[torch.Tensor], **kwargs
 ) -> torch.Tensor:
     """Get the average, over spectrogram frames, RMS level (dB) for each spectrogram.
 
@@ -211,7 +216,7 @@ def get_average_db_rms_level(
 @configurable
 def get_num_pause_frames(
     db_spectrogram: torch.Tensor,
-    mask: typing.Optional[torch.Tensor] = None,
+    mask: typing.Optional[torch.Tensor],
     max_loudness: float = HParam(),
     min_length: float = HParam(),
     frame_hop: int = HParam(),
@@ -245,7 +250,9 @@ def get_num_pause_frames(
 
 
 def get_alignment_norm(
-    alignments: torch.Tensor, tokens_mask: torch.Tensor, spectrogram_mask: torch.Tensor
+    alignments: torch.Tensor,
+    tokens_mask: typing.Optional[torch.Tensor],
+    spectrogram_mask: typing.Optional[torch.Tensor],
 ) -> torch.Tensor:
     """The inf-norm of an alignment. The more focused an alignment is the higher this metric. The
     metric is bounded at [0, 1].
@@ -258,13 +265,18 @@ def get_alignment_norm(
     Returns:
         torch.FloatTensor [batch_size]
     """
-    alignments = alignments.masked_fill(~tokens_mask.transpose(0, 1).unsqueeze(0), 0)
+    if tokens_mask is not None:
+        alignments = alignments.masked_fill(~tokens_mask.transpose(0, 1).unsqueeze(0), 0)
     alignments = alignments.norm(dim=2, p=math.inf)
-    return alignments.masked_fill(~spectrogram_mask, 0).sum(dim=0)
+    if spectrogram_mask is not None:
+        alignments = alignments.masked_fill(~spectrogram_mask, 0)
+    return alignments.sum(dim=0)
 
 
 def get_alignment_std(
-    alignments: torch.Tensor, tokens_mask: torch.Tensor, spectrogram_mask: torch.Tensor
+    alignments: torch.Tensor,
+    tokens_mask: typing.Optional[torch.Tensor],
+    spectrogram_mask: typing.Optional[torch.Tensor],
 ) -> torch.Tensor:
     """This metric measures the standard deviation of an alignment. As the alignment is more
     focused, this metrics goes to zero.
@@ -277,9 +289,12 @@ def get_alignment_std(
     Returns:
         torch.FloatTensor [batch_size]
     """
-    alignments = alignments.masked_fill(~tokens_mask.transpose(0, 1).unsqueeze(0), 0)
+    if tokens_mask is not None:
+        alignments = alignments.masked_fill(~tokens_mask.transpose(0, 1).unsqueeze(0), 0)
     alignments = lib.utils.get_weighted_std(alignments, dim=2)
-    return alignments.masked_fill(~spectrogram_mask, 0).sum(dim=0)
+    if spectrogram_mask is not None:
+        alignments = alignments.masked_fill(~spectrogram_mask, 0)
+    return alignments.sum(dim=0)
 
 
 _GetMetrics = typing.Dict[GetLabel, float]

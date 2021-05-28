@@ -190,6 +190,73 @@ def text_to_speech(
     return predicted.detach().numpy()
 
 
+class TTSInputOutput(typing.NamedTuple):
+    """Text-to-speech input and output."""
+
+    params: Params
+    spec_model: Infer
+    sig_model: numpy.ndarray
+
+
+def batch_span_to_speech(
+    package: TTSPackage, spans: typing.List[Span], **kwargs
+) -> typing.List[TTSInputOutput]:
+    """
+    NOTE: This method doesn't consider `Span` context for TTS generation.
+    """
+    inputs = [(s.script, s.speaker, s.session) for s in spans]
+    return batch_text_to_speech(package, inputs, **kwargs)
+
+
+def batch_text_to_speech(
+    package: TTSPackage,
+    inputs: typing.List[typing.Tuple[str, Speaker, Session]],
+    batch_size: int = 8,
+) -> typing.List[TTSInputOutput]:
+    """Run TTS end-to-end quickly with a verbose output."""
+    nlp = load_en_core_web_md(disable=("parser", "ner"))
+    inputs = [(normalize_vo_script(sc), sp, se) for sc, sp, se in inputs]
+    docs: typing.List[spacy.tokens.Doc] = list(nlp.pipe([i[0] for i in inputs]))
+    phonemes = typing.cast(typing.List[str], grapheme_to_phoneme(docs))
+    decoded = [DecodedInput(sc, p, sp, (sp, se)) for (sc, sp, se), p in zip(inputs, phonemes)]
+    encoded = [(i, package.input_encoder.encode(d)) for i, d in enumerate(decoded)]
+    encoded = sorted(encoded, key=lambda i: i[1].phonemes.numel())
+    results: typing.Dict[int, TTSInputOutput] = {}
+    for batch in tqdm_(list(get_chunks(encoded, batch_size))):
+        tokens = stack_and_pad_tensors([e.phonemes for _, e in batch], dim=1)
+        params = Params(
+            tokens=tokens.tensor,
+            speaker=torch.stack([e.speaker for _, e in batch]).view(1, len(batch)),
+            session=torch.stack([e.session for _, e in batch]).view(1, len(batch)),
+            num_tokens=tokens.lengths,
+        )
+        preds = typing.cast(Infer, package.spectrogram_model(params=params, mode=Mode.INFER))
+        spectrogram = preds.frames.transpose(0, 1)
+        spectrogram_mask = lengths_to_mask(preds.lengths)
+        signals = package.signal_model(spectrogram, spectrogram_mask)
+        lengths = preds.lengths * package.signal_model.upscale_factor
+        more_results = {
+            j: TTSInputOutput(
+                Params(
+                    tokens=batch[i][1].phonemes,
+                    speaker=batch[i][1].speaker,
+                    session=batch[i][1].session,
+                ),
+                Infer(
+                    frames=preds.frames[: preds.lengths[:, i], i],
+                    stop_tokens=preds.stop_tokens[: preds.lengths[:, i], i],
+                    alignments=preds.alignments[: preds.lengths[:, i], i, : tokens.lengths[:, i]],
+                    lengths=preds.lengths[:, i],
+                    reached_max=preds.reached_max[:, i],
+                ),
+                signals[i][: lengths[:, i]].detach().numpy(),
+            )
+            for i, (j, _) in zip(range(len(batch)), batch)
+        }
+        results.update(more_results)
+    return [results[i] for i in range(len(inputs))]
+
+
 def _enqueue(out: typing.IO[bytes], queue: SimpleQueue):
     """Enqueue all lines from a file-like object to `queue`."""
     for line in iter(out.readline, b""):
