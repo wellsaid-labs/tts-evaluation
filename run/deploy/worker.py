@@ -305,7 +305,7 @@ def get_stream():
     }
     output_flags = ("-f", "mp3", "-b:a", "192k")
     generator = text_to_speech_ffmpeg_generator(
-        app.logger, TTS_PACKAGE, input, output_flags=output_flags
+        TTS_PACKAGE, input, app.logger, output_flags=output_flags
     )
     return Response(generator, headers=headers, mimetype="audio/mpeg")
 

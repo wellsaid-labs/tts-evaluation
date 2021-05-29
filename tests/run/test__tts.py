@@ -30,7 +30,7 @@ def test_text_to_speech_ffmpeg_generator():
     """
     with fork_rng(seed=123):
         package, encoded = _make_args()
-        generator = text_to_speech_ffmpeg_generator(logger, package, encoded)
+        generator = text_to_speech_ffmpeg_generator(package, encoded)
         assert len(b"".join([s for s in generator])) == 12045
 
 
@@ -39,7 +39,7 @@ def test_text_to_speech_ffmpeg_generator__thread_leak():
     with fork_rng(seed=123):
         package, encoded = _make_args()
         active_threads = threading.active_count()
-        generator = text_to_speech_ffmpeg_generator(logger, package, encoded)
+        generator = text_to_speech_ffmpeg_generator(package, encoded)
         package.spectrogram_model.stop_threshold = math.inf
         next(generator)
         assert active_threads + 1 == threading.active_count()

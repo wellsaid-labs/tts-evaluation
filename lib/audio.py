@@ -865,7 +865,7 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
         frame_hop: See `hop_length` here:
             https://pytorch.org/docs/stable/torch.html#torch.stft
         sample_rate: The sample rate of the audio.
-        num_mel_bins: See `src.audio._mel_filters`. The mel scale is applied to mimic the the
+        num_mel_bins: See `_mel_filters`. The mel scale is applied to mimic the the
             non-linear human ear perception of sound, by being more discriminative at lower
             frequencies and less discriminative at higher frequencies.
         window: See `window` here:

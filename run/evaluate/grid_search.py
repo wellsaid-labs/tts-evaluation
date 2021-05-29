@@ -25,10 +25,11 @@ from lib.environment import PT_EXTENSION, load
 from run import train
 from run._config import SIGNAL_MODEL_EXPERIMENTS_PATH, SPECTROGRAM_MODEL_EXPERIMENTS_PATH
 from run._streamlit import (
-    audio_temp_path_to_html,
-    audio_to_static_temp_path,
+    audio_to_web_path,
+    paths_to_html_download_link,
     st_data_frame,
-    zip_to_html,
+    st_html,
+    web_path_to_url,
 )
 from run._tts import TTSPackage, text_to_speech
 
@@ -116,9 +117,9 @@ def main():
         sesh = str(session).replace("/", "__")
         name = f"spec={spec_path.stem},sig={sig_path.stem},spk={speaker.label},"
         name += f"sesh={sesh},script={id(script)}.wav"
-        temp_path = audio_to_static_temp_path(audio, name=name)
+        audio_web_path = audio_to_web_path(audio, name=name)
         row = {
-            "Audio": audio_temp_path_to_html(temp_path),
+            "Audio": f'<audio controls src="{web_path_to_url(audio_web_path)}"></audio>',
             "Spectrogam Model": path_label(spec_path),
             "Signal Model": path_label(sig_path),
             "Speaker": speaker.label,
@@ -126,14 +127,14 @@ def main():
             "Script": f"'{script[:25]}...'",
         }
         rows.append(row)
-        paths.append(temp_path)
+        paths.append(audio_web_path)
         bar.progress(len(rows) / len(iter_))
     bar.empty()
     st_data_frame(pd.DataFrame(rows))
 
     with st.spinner("Making Zipfile..."):
         st.text("")
-        st.markdown(zip_to_html("audios.zip", "Download Audio(s)", paths), unsafe_allow_html=True)
+        st_html(paths_to_html_download_link("audios.zip", "Download Audio(s)", paths))
 
 
 if __name__ == "__main__":

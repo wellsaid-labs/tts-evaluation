@@ -42,14 +42,7 @@ import lib
 import run
 from lib.utils import flatten_2d, mazel_tov, round_, seconds_to_str
 from run._config import Dataset
-from run._streamlit import (
-    audio_to_html,
-    clear_session_cache,
-    get_dataset,
-    map_,
-    rmtree_streamlit_static_temp_dir,
-    st_data_frame,
-)
+from run._streamlit import audio_to_html, clear_session_cache, get_dataset, map_, st_data_frame
 from run.data._loader import DATASETS, Passage, Span, has_a_mistranscription
 from run.data.dataset_dashboard import _utils as utils
 
@@ -106,7 +99,6 @@ def _write_span_table(
     dfs = [pd.DataFrame.from_dict(default_columns(spans)), pd.DataFrame.from_dict(other_columns)]
     df = pd.concat(dfs, axis=1)
     assert audio_column not in df.columns
-    lib.utils.call_once(rmtree_streamlit_static_temp_dir)
     get_audio = lambda s: audio_to_html(utils.span_audio(s))
     df.insert(0, audio_column, map_(spans, get_audio))
     st_data_frame(df)
