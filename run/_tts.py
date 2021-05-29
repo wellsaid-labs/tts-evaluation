@@ -271,9 +271,9 @@ def _dequeue(queue: SimpleQueue) -> typing.Generator[bytes, None, None]:
 
 @configurable
 def text_to_speech_ffmpeg_generator(
-    logger_: logging.Logger,
     package: TTSPackage,
     input: EncodedInput,
+    logger_: logging.Logger = logger,
     sample_rate: int = HParam(),
     input_flags: typing.Tuple[str, ...] = ("-f", "f32le", "-acodec", "pcm_f32le", "-ac", "1"),
     output_flags: typing.Tuple[str, ...] = ("-f", "mp3", "-b:a", "192k"),
