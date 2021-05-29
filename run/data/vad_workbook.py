@@ -59,6 +59,7 @@ from run._streamlit import (
     make_signal_chart,
     passage_audio,
     read_wave_audio,
+    st_html,
 )
 from run.data import _loader
 from run.data._loader import (
@@ -375,7 +376,7 @@ def main():
 
     st.markdown("### Audio")
     html = audio_to_html(audio, sample_rate=passage.audio_file.sample_rate)
-    st.markdown(html, unsafe_allow_html=True)
+    st_html(html)
 
     _stt_alignments_vad(passage, audio)
     _baseline_vad(passage, audio)
