@@ -113,7 +113,8 @@ def flatten_2d(
 ) -> typing.List[_FlattenReturnType]:
     """Flatten a 2d list into a 1d list.
 
-    Learn more: https://stackoverflow.com/questions/952914/how-to-make-a-flat-list-out-of-list-of-lists
+    Learn more:
+    https://stackoverflow.com/questions/952914/how-to-make-a-flat-list-out-of-list-of-lists
     """
     return [item for sublist in l for item in sublist]
 
