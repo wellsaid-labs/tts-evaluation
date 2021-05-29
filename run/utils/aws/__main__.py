@@ -69,7 +69,7 @@ def interruptions(
 
 
 def _maybe_import_key_pair(ssh_key_path: pathlib.Path):
-    """ Import public SSH key to AWS, if doesn't already exist. """
+    """Import public SSH key to AWS, if doesn't already exist."""
     try:
         pairs = client.describe_key_pairs(KeyNames=[ssh_key_path.name])["KeyPairs"]
         if len(pairs) > 0:
@@ -90,7 +90,7 @@ def _maybe_import_key_pair(ssh_key_path: pathlib.Path):
 
 
 def _maybe_create_security_group(security_group_name: str, security_group_description: str):
-    """ Create an AWS security group that authorizes SSH connections. """
+    """Create an AWS security group that authorizes SSH connections."""
     groups = client.describe_security_groups(GroupNames=[security_group_name])["SecurityGroups"]
     if len(groups) > 0:
         message = "Skipping security group creation, found %d groups(s) named '%s'."
@@ -135,7 +135,7 @@ def _find_spot_instance_request(name_tag: str, name: str) -> None:
 
 
 def _find_instance(name_tag: str, name: str) -> None:
-    """ Find instance named `name`. """
+    """Find instance named `name`."""
     response = client.describe_instances(Filters=[{"Name": f"tag:{name_tag}", "Values": [name]}])
     if len(response["Reservations"]) == 0:
         return None
@@ -150,7 +150,7 @@ def _find_instance(name_tag: str, name: str) -> None:
 def _wait_until_spot_instance_request_is_fulfilled(
     name_tag: str, name: str, poll_interval: float = 1.0
 ):
-    """ Wait until spot request and it's corresponding instance are running. """
+    """Wait until spot request and it's corresponding instance are running."""
     logger.info("Waiting until instance is created...")
     response = None
     while response is None or response["State"] != _SpotInstanceRequestState.ACTIVE.value:

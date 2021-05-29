@@ -105,7 +105,7 @@ class _SttAlternatives(typing.TypedDict):
 
 
 class SttResult(typing.TypedDict):
-    """ The expected typing of a Google Speech-to-Text call. """
+    """The expected typing of a Google Speech-to-Text call."""
 
     results: typing.List[_SttAlternatives]
 
@@ -237,13 +237,13 @@ def is_sound_alike(a: str, b: str) -> bool:
 
 
 def _minus(text: str):
-    """ Helper function for `_format_gap`. """
+    """Helper function for `_format_gap`."""
     STATS.script_unaligned.add(text)
     return f'\n{AnsiCodes.RED}--- "{text}"{AnsiCodes.RESET_ALL}\n'
 
 
 def _plus(text: str):
-    """ Helper function for `_format_gap`. """
+    """Helper function for `_format_gap`."""
     STATS.transcript_unaligned.add(text)
     return f'{AnsiCodes.GREEN}+++ "{text}"{AnsiCodes.RESET_ALL}\n'
 
@@ -251,7 +251,7 @@ def _plus(text: str):
 def _format_gap(
     scripts: typing.List[str], tokens: typing.List[ScriptToken], stt_tokens: typing.List[SttToken]
 ) -> typing.Iterable[str]:
-    """ Format the span of `tokens` and `stt_tokens` that lie between two alignments, the gap. """
+    """Format the span of `tokens` and `stt_tokens` that lie between two alignments, the gap."""
     if len(tokens) > 2 or len(stt_tokens) > 0:
         if tokens[0].script_index != tokens[-1].script_index:
             yield _minus(scripts[tokens[0].script_index][tokens[0].slice[-1] :])
@@ -380,7 +380,7 @@ _default_get_window_size = lambda a, b: int(max(round(a * 0.05), 256) + abs(a - 
 
 
 def _flatten_stt_result(stt_result: SttResult) -> typing.Tuple[str, typing.List[SttToken]]:
-    """ Flatten a `SttResult` into a list of `SttToken` tokens and a transcript. """
+    """Flatten a `SttResult` into a list of `SttToken` tokens and a transcript."""
     stt_tokens = []
     transcript = ""
     offset = 0
@@ -631,7 +631,7 @@ def _sync_and_upload(
     text_column: str,
     recorder: lib.environment.RecordStandardStreams,
 ):
-    """ Sync `script_blobs` with `audio_blobs` and upload to `alignment_blobs`. """
+    """Sync `script_blobs` with `audio_blobs` and upload to `alignment_blobs`."""
     assert len(audio_blobs) == len(script_blobs), "Expected the same number of blobs."
     assert len(audio_blobs) == len(dest_blobs), "Expected the same number of blobs."
     assert len(audio_blobs) == len(stt_blobs), "Expected the same number of blobs."
@@ -692,7 +692,7 @@ def main(
         "alignments/", help="Upload alignment results to this folder in --destinations."
     ),
 ):
-    """ Align --scripts with --voice-overs and upload alignments to --destinations. """
+    """Align --scripts with --voice-overs and upload alignments to --destinations."""
     if len(voice_over) > len(destination):
         ratio = len(voice_over) // len(destination)
         destination = list(chain.from_iterable(repeat(x, ratio) for x in destination))

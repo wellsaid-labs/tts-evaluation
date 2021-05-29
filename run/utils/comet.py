@@ -17,7 +17,7 @@ app = typer.Typer(context_settings=dict(max_content_width=math.inf))
 
 @app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
 def checkout(context: typer.Context, experiment: str, overwrite: bool = False):
-    """ Updates the files in the working directory to reproduce a EXPERIMENT. """
+    """Updates the files in the working directory to reproduce a EXPERIMENT."""
     api = comet_ml.api.API()
     experiment_ = api.get_experiment_by_id(experiment)
     git = experiment_.get_git_metadata()

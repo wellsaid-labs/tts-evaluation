@@ -67,7 +67,7 @@ class Checkpoint(_utils.Checkpoint):
     scheduler: torch.optim.lr_scheduler.LambdaLR
 
     def check_invariants(self):
-        """ Check datastructure invariants. """
+        """Check datastructure invariants."""
         assert self.scheduler._step_count == self.step + 1
         assert self.scheduler.last_epoch == self.step
         assert self.scheduler.optimizer == self.optimizer
@@ -111,7 +111,7 @@ class _State:
     step: torch.Tensor = torch.tensor(0, dtype=torch.long)
 
     def __post_init__(self):
-        """ Check datastructure invariants. """
+        """Check datastructure invariants."""
         ptrs = set(p.data_ptr() for p in self.model.parameters() if p.requires_grad)
         assert set(p.data_ptr() for p in self.model.module.parameters() if p.requires_grad) == ptrs
         assert self.model.training
@@ -207,7 +207,7 @@ class _State:
         return optimizer_, clipper, scheduler
 
     def to_checkpoint(self):
-        """ Create a checkpoint to save the spectrogram training state. """
+        """Create a checkpoint to save the spectrogram training state."""
         return Checkpoint(
             comet_experiment_key=self.comet.get_key(),
             input_encoder=self.input_encoder,
@@ -251,7 +251,7 @@ class _State:
         comet: CometMLExperiment,
         device: torch.device,
     ):
-        """ Create spectrogram training state from the `train_dataset`. """
+        """Create spectrogram training state from the `train_dataset`."""
         input_encoder = cls._get_input_encoder(train_dataset, dev_dataset, comet)
         model = cls._get_model(device, comet, input_encoder)
         # NOTE: Even if `_get_model` is initialized differently in each process, the parameters
@@ -280,7 +280,7 @@ def _get_data_loaders(
     num_workers: int = HParam(),
     prefetch_factor: int = HParam(),
 ) -> typing.Tuple[DataLoader[Batch], DataLoader[Batch]]:
-    """ Initialize training and development data loaders.  """
+    """Initialize training and development data loaders."""
     input_encoder, step = state.input_encoder, int(state.step.item())
     kwargs = dict(input_encoder=input_encoder, step=step)
     train = DataProcessor(train_dataset, train_batch_size, **kwargs, balanced=is_train_balanced)
@@ -468,23 +468,23 @@ def _run_step(
 def _min_alignment_norm(
     args: _HandleBatchArgs, preds: lib.spectrogram_model.Infer, spectrogram_mask: torch.Tensor
 ) -> int:
-    """ Get the index of the prediction that has the smallest alignment norm."""
+    """Get the index of the prediction that has the smallest alignment norm."""
     tokens_mask = args.batch.encoded_phonemes_mask.tensor
     return int(torch.argmin(get_alignment_norm(preds.alignments, tokens_mask, spectrogram_mask)))
 
 
 def _max_num_frames_diff(args: _HandleBatchArgs, preds: lib.spectrogram_model.Infer, *_) -> int:
-    """ Get the index of the prediction that most deviates from the original spectrogram length."""
+    """Get the index of the prediction that most deviates from the original spectrogram length."""
     return int(torch.argmax((args.batch.spectrogram.lengths - preds.lengths).abs()))
 
 
 def _random_sequence(args: _HandleBatchArgs, *_) -> int:
-    """ Get a random batch index. """
+    """Get a random batch index."""
     return random.randint(0, len(args.batch) - 1)
 
 
 class _Pick(typing.Protocol):
-    """ Get a batch index given the arguments and predictions. """
+    """Get a batch index given the arguments and predictions."""
 
     def __call__(
         self,

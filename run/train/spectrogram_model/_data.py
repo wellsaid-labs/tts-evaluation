@@ -252,7 +252,7 @@ def _random_speed_annotations(
 
 
 def _get_char_to_word(doc: spacy.tokens.Doc) -> typing.List[int]:
-    """ Get a mapping from characters to words in `doc`. """
+    """Get a mapping from characters to words in `doc`."""
     char_to_word = [-1] * len(doc.text)
     for token in doc:
         char_to_word[token.idx : token.idx + len(token.text)] = [token.i] * len(token.text)
@@ -260,7 +260,7 @@ def _get_char_to_word(doc: spacy.tokens.Doc) -> typing.List[int]:
 
 
 def _get_word_vectors(char_to_word: typing.List[int], doc: spacy.tokens.Doc) -> torch.Tensor:
-    """ Get word vectors mapped onto a character length vector. """
+    """Get word vectors mapped onto a character length vector."""
     zeros = torch.zeros(doc.vector.size)
     word_vectors_ = numpy.stack([zeros if w < 0 else doc[w].vector for w in char_to_word])
     return torch.from_numpy(word_vectors_)
