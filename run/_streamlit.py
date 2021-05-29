@@ -1,6 +1,4 @@
-import base64
 import functools
-import io
 import logging
 import multiprocessing
 import os
@@ -143,92 +141,74 @@ def load_tts(checkpoints_key: Checkpoints):
     return package_tts(*CHECKPOINTS_LOADERS[checkpoints_key]())
 
 
-def make_symlink(target: pathlib.Path) -> pathlib.Path:
-    """System link `target` to `STREAMLIT_STATIC_SYMLINK_PATH` and return the linked location."""
-    STREAMLIT_STATIC_SYMLINK_PATH.mkdir(exist_ok=True, parents=True)
-    path = STREAMLIT_STATIC_SYMLINK_PATH / target.relative_to(lib.environment.ROOT_PATH)
-    if not path.exists():
-        path.parent.mkdir(exist_ok=True, parents=True)
-        path.symlink_to(target)
-    return path.relative_to(STREAMLIT_WEB_ROOT_PATH)
-
-
-def _audio_to_base64(audio: np.ndarray, **kwargs) -> str:
-    """Encode audio into a `base64` string."""
-    in_memory_file = io.BytesIO()
-    lib.audio.write_audio(in_memory_file, audio, **kwargs)
-    return base64.b64encode(in_memory_file.read()).decode("utf-8")
-
-
+@session_cache(maxsize=None)
 def rmtree_streamlit_static_temp_dir():
-    """Destroy the our Streamlit temporary directory."""
-    assert pathlib.Path(st.__file__).parent in STREAMLIT_STATIC_TEMP_PATH.parents
-    if STREAMLIT_STATIC_TEMP_PATH.exists():
-        shutil.rmtree(STREAMLIT_STATIC_TEMP_PATH)
+    """Destroy the our Streamlit temporary directory.
+
+    NOTE: With `session_cache`, this function runs once per session.
+    """
+    if is_streamlit_running():
+        assert pathlib.Path(st.__file__).parent in STREAMLIT_STATIC_TEMP_PATH.parents
+        if STREAMLIT_STATIC_TEMP_PATH.exists():
+            shutil.rmtree(STREAMLIT_STATIC_TEMP_PATH)
 
 
-def audio_path_to_html(audio: pathlib.Path, attrs="controls") -> str:
-    """Create an audio HTML element from an audio path."""
-    return f'<audio {attrs} src="/{make_symlink(audio)}"></audio>'
+rmtree_streamlit_static_temp_dir()
 
 
-def audio_to_base64_html(audio: np.ndarray, attrs="controls", **kwargs) -> str:
-    """Create an audio HTML element from a numpy array."""
-    data = _audio_to_base64(audio, **kwargs)
-    return f'<audio {attrs} src="data:audio/wav;base64,{data}"></audio>'
+# A `Path` to a file or directory accessible via HTTP in the streamlit app.
+WebPath = typing.NewType("WebPath", pathlib.Path)
+RelativeUrl = typing.NewType("RelativeUrl", str)
 
 
-def get_static_temp_path(name) -> pathlib.Path:
-    """Get a temp path in a temp directory within `STREAMLIT_STATIC_TEMP_PATH`."""
+def make_temp_web_dir() -> WebPath:
+    """Make a temporary directory accessible via HTTP in the streamlit app."""
     STREAMLIT_STATIC_TEMP_PATH.mkdir(exist_ok=True, parents=True)
-    temp_dir = pathlib.Path(tempfile.mkdtemp(dir=STREAMLIT_STATIC_TEMP_PATH))
-    return temp_dir / name
+    return WebPath(pathlib.Path(tempfile.mkdtemp(dir=STREAMLIT_STATIC_TEMP_PATH)))
 
 
-def audio_to_static_temp_path(audio: np.ndarray, name: str = "audio.wav", **kwargs) -> pathlib.Path:
-    """Create an audio file in `STREAMLIT_STATIC_TEMP_PATH`."""
-    temp_path = get_static_temp_path(name)
-    lib.audio.write_audio(temp_path, audio, **kwargs)
-    return temp_path
+def web_path_to_url(path: WebPath) -> RelativeUrl:
+    """Get the related URL given a `WebPath`."""
+    return RelativeUrl(f"/{path.relative_to(STREAMLIT_WEB_ROOT_PATH)}")
 
 
-def temp_path_to_rel_url(temp_path: pathlib.Path):
-    return f"/{temp_path.relative_to(STREAMLIT_WEB_ROOT_PATH)}"
+def path_to_web_path(path: pathlib.Path) -> WebPath:
+    """Get a system linked web path given a `path`."""
+    STREAMLIT_STATIC_SYMLINK_PATH.mkdir(exist_ok=True, parents=True)
+    web_path = STREAMLIT_STATIC_SYMLINK_PATH / path.relative_to(lib.environment.ROOT_PATH)
+    if not web_path.exists():
+        web_path.parent.mkdir(exist_ok=True, parents=True)
+        web_path.symlink_to(path)
+    return WebPath(path)
 
 
-def audio_temp_path_to_html(temp_path: pathlib.Path, attrs="controls"):
-    """Create an audio HTML element for the audio file at `temp_path."""
-    return f'<audio {attrs} src="{temp_path_to_rel_url(temp_path)}"></audio>'
+def audio_to_web_path(audio: np.ndarray, name: str = "audio.wav", **kwargs) -> WebPath:
+    web_path = make_temp_web_dir() / name
+    lib.audio.write_audio(web_path, audio, **kwargs)
+    return web_path
 
 
-def image_temp_path_to_html(temp_path: pathlib.Path):
-    """Create an image HTML element for the image file at `temp_path."""
-    return f'<img src="{temp_path_to_rel_url(temp_path)}" />'
-
-
-def audio_to_html(audio: np.ndarray, attrs="controls", **kwargs) -> str:
+def audio_to_html(
+    audio: np.ndarray, name: str = "audio.wav", attrs: str = "controls", **kwargs
+) -> str:
     """Create an audio HTML element from a numpy array."""
-    temp_path = audio_to_static_temp_path(audio, **kwargs)
-    return audio_temp_path_to_html(temp_path, attrs=attrs)
+    web_path = audio_to_web_path(audio, name, **kwargs)
+    return f'<audio {attrs} src="{web_path_to_url(web_path)}"></audio>'
 
 
-def zip_to_html(
+def paths_to_html_download_link(
     name: str,
     label: str,
     paths: typing.List[pathlib.Path],
     archive_paths: typing.Optional[typing.List[pathlib.Path]] = None,
 ) -> str:
     """Make a zipfile named `name` that can be downloaded with a button called `label`."""
-    temp_path = get_static_temp_path(name)
+    web_path = make_temp_web_dir() / name
     archive_paths_ = [p.name for p in paths] if archive_paths is None else archive_paths
-    with zipfile.ZipFile(temp_path, "w") as file_:
+    with zipfile.ZipFile(web_path, "w") as file_:
         for path, archive_path in zip(paths, archive_paths_):
             file_.write(path, arcname=archive_path)
-    return f'<a href="{temp_path_to_rel_url(temp_path)}" download="{name}">{label}</a>'
-
-
-def write_audio(*args, **kwargs):
-    st_html(audio_to_html(*args, **kwargs))
+    return f'<a href="{web_path_to_url(web_path)}" download="{name}">{label}</a>'
 
 
 _MapInputVar = typing.TypeVar("_MapInputVar")
@@ -351,6 +331,11 @@ def dataset_passages(dataset: Dataset) -> typing.Iterator[Passage]:
         yield from passages
 
 
+@session_cache(maxsize=None)
+def load_en_core_web_md(*args, **kwargs):
+    return lib.text.load_en_core_web_md(*args, **kwargs)
+
+
 def st_data_frame(df: pd.DataFrame):
     """Display the `DataFrame` in the `streamlit` app."""
     df = df.replace({"\n": "<br>"}, regex=True)
@@ -358,11 +343,6 @@ def st_data_frame(df: pd.DataFrame):
     html = "<style>tr{background-color: transparent !important;}</style>"
     st_html(html)
     st_html(df.to_markdown(index=False))
-
-
-@session_cache(maxsize=None)
-def load_en_core_web_md(*args, **kwargs):
-    return lib.text.load_en_core_web_md(*args, **kwargs)
 
 
 def st_html(html: str):

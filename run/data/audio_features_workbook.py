@@ -17,7 +17,7 @@ from matplotlib import pyplot
 import lib
 import run
 from lib.audio import amp_to_db, framed_rms_to_rms, sample_to_sec
-from run._streamlit import write_audio
+from run._streamlit import audio_to_html, st_html
 
 
 def _chart_framed_rms_level(framed_rms_level: np.ndarray, frame_hop: int, sample_rate: int):
@@ -102,10 +102,10 @@ def main():
     st.pyplot(lib.visualize.plot_spectrogram(specs.amp), transparent=True)
 
     st.markdown("### Original Audio")
-    write_audio(audio, sample_rate=sample_rate)
+    st_html(audio_to_html(audio, sample_rate=sample_rate))
     st.markdown("### Griffin-Lim Audio")
     griffin_lim = lib.audio.griffin_lim(specs.db_mel.numpy(), sample_rate=sample_rate)
-    write_audio(griffin_lim, sample_rate=sample_rate)
+    st_html(audio_to_html(griffin_lim, sample_rate=sample_rate))
 
 
 if __name__ == "__main__":

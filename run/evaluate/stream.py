@@ -22,11 +22,11 @@ from lib.audio import get_audio_metadata
 from lib.text import natural_keys
 from run._streamlit import (
     get_session_state,
-    get_static_temp_path,
     load_en_core_web_md,
     load_tts,
+    make_temp_web_dir,
     st_html,
-    temp_path_to_rel_url,
+    web_path_to_url,
 )
 from run._tts import (
     CHECKPOINTS_LOADERS,
@@ -140,10 +140,10 @@ def main():
         requests.get(f"{STREAMING_SERVICE_ENDPOINT}/shutdown")
         state["service"].join()
 
-    temp_path = get_static_temp_path("audio.mp3")
+    web_path = make_temp_web_dir() / "audio.mp3"
     start_time = time.time()
     with st.spinner("Starting streaming service..."):
-        args = (copy.deepcopy(hparams.hparams.get_config()), temp_path, tts, inputs)
+        args = (copy.deepcopy(hparams.hparams.get_config()), web_path, tts, inputs)
         state["service"] = threading.Thread(target=_streaming_service, args=args, daemon=True)
         state["service"].start()
 
@@ -152,13 +152,13 @@ def main():
     endpoint = f"{STREAMING_SERVICE_ENDPOINT}/stream.mp3?v={time.time()}"
     st_html(f'<audio controls src="{endpoint}"></audio>')
     st_html(
-        f'<a href="{temp_path_to_rel_url(temp_path)}" download="{temp_path.name}">'
+        f'<a href="{web_path_to_url(web_path)}" download="{web_path.name}">'
         "Download Generated Audio</a>"
     )
     stats = st.empty()
     while state["service"].is_alive():
-        if temp_path.exists() and temp_path.stat().st_size > 0:
-            seconds_generated = get_audio_metadata(temp_path).length
+        if web_path.exists() and web_path.stat().st_size > 0:
+            seconds_generated = get_audio_metadata(web_path).length
             elapsed = time.time() - start_time
             stats.info(
                 "Stats:\n\n"
