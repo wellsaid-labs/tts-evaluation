@@ -5,7 +5,7 @@ from hparams import HParam, configurable
 
 
 class _AlwaysDropout(torch.nn.Dropout):
-    """ Adaptation of `nn.Dropout` to apply dropout during both evaluation and training. """
+    """Adaptation of `nn.Dropout` to apply dropout during both evaluation and training."""
 
     def forward(self, input_: torch.Tensor) -> torch.Tensor:
         return torch.nn.functional.dropout(

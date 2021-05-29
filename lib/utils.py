@@ -37,12 +37,12 @@ _RandomSampleReturnType = typing.TypeVar("_RandomSampleReturnType")
 def random_sample(
     list_: typing.List[_RandomSampleReturnType], sample_size: int
 ) -> typing.List[_RandomSampleReturnType]:
-    """ Random sample function that doesn't error if `list_` is smaller than `sample_size`. """
+    """Random sample function that doesn't error if `list_` is smaller than `sample_size`."""
     return random.sample(list_, min(len(list_), sample_size))
 
 
 def mean(list_: typing.Iterable[float]) -> float:
-    """ Mean function that does not return an error if `list_` is empty. """
+    """Mean function that does not return an error if `list_` is empty."""
     list_ = list(list_)
     if len(list_) == 0:
         return math.nan
@@ -55,7 +55,7 @@ _ChunksReturnType = typing.TypeVar("_ChunksReturnType")
 def get_chunks(
     list_: typing.List[_ChunksReturnType], n: int
 ) -> typing.Iterator[typing.List[_ChunksReturnType]]:
-    """ Yield successive `n`-sized chunks from `list_`. """
+    """Yield successive `n`-sized chunks from `list_`."""
     for i in range(0, len(list_), n):
         yield list_[i : i + n]
 
@@ -133,7 +133,7 @@ def flatten(l: _FlattenInputType) -> typing.List[_FlattenReturnType]:
 
 
 def flatten_parameters(model: torch.nn.Module) -> torch.nn.Module:
-    """ Apply `flatten_parameters` to `model`. """
+    """Apply `flatten_parameters` to `model`."""
     lambda_ = lambda m: m.flatten_parameters() if hasattr(m, "flatten_parameters") else None
     return model.apply(lambda_)
 
@@ -212,7 +212,7 @@ _LogRuntimeFunction = typing.TypeVar("_LogRuntimeFunction", bound=typing.Callabl
 
 
 def log_runtime(function: _LogRuntimeFunction) -> _LogRuntimeFunction:
-    """ Decorator for measuring the execution time of a function. """
+    """Decorator for measuring the execution time of a function."""
 
     @functools.wraps(function)
     def decorator(*args, **kwargs):
@@ -371,7 +371,7 @@ _MappedIteratorItem = typing.TypeVar("_MappedIteratorItem")
 
 
 class MappedIterator(typing.Mapping[int, _MappedIteratorItem], typing.Generic[_MappedIteratorItem]):
-    """ Wrap an iterator with a mapping. """
+    """Wrap an iterator with a mapping."""
 
     def __init__(self, iterator: typing.Iterable[_MappedIteratorItem]):
         self.iterator = iterator
@@ -553,7 +553,7 @@ def dataclass_as_dict(data):
 
 
 def to_str(object, *attributes: str) -> str:
-    """ Create a string representation of `object` given it's `attributes`. """
+    """Create a string representation of `object` given it's `attributes`."""
     values = ", ".join(f"{a}={getattr(object, a)}" for a in attributes)
     return f"{object.__class__.__name__}({values})"
 
@@ -583,11 +583,11 @@ class Timeline:
         self._intervals = np.ascontiguousarray(self._intervals)
 
     def start(self, index: int) -> np.ndarray:
-        """ Get the start of the interval at `index`. """
+        """Get the start of the interval at `index`."""
         return self._intervals[0, index]
 
     def stop(self, index: int) -> np.ndarray:
-        """ Get the stop of the interval at `index`. """
+        """Get the stop of the interval at `index`."""
         return self._intervals[1, index]
 
     def make_slice(self, interval: typing.Union[int, float, slice]) -> slice:
@@ -623,7 +623,7 @@ class Timeline:
         return range(*self.make_slice(interval).indices(self._intervals.shape[1]))
 
     def __getitem__(self, interval: typing.Union[int, float, slice]) -> np.ndarray:
-        """Get the intervals overlapping `interval`. """
+        """Get the intervals overlapping `interval`."""
         return self._intervals[:, self.make_slice(interval)].T
 
     def intervals(
@@ -670,5 +670,5 @@ _TqdmVar = typing.TypeVar("_TqdmVar")
 
 
 def tqdm_(iterator: typing.Iterable[_TqdmVar], **kwargs) -> typing.Iterable[_TqdmVar]:
-    """ `tqdm` with typing. """
+    """`tqdm` with typing."""
     return tqdm(iterator, **kwargs)

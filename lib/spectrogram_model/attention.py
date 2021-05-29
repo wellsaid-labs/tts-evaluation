@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 def _window_helper(
     length: int, dimension: int, num_dimensions: int, device: torch.device
 ) -> typing.Tuple[torch.Tensor, int]:
-    """ Helper to ensure `indices` and `dimension` are not recalculated unnecessarily. """
+    """Helper to ensure `indices` and `dimension` are not recalculated unnecessarily."""
     dimension = num_dimensions + dimension if dimension < 0 else dimension
     indices = torch.arange(0, length, device=device)
     indices_shape = [1] * dimension + [-1] + [1] * (num_dimensions - dimension - 1)

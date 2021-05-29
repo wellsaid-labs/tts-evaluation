@@ -39,32 +39,32 @@ logger = logging.getLogger(__name__)
 
 
 def milli_to_sec(milli: float) -> float:
-    """ Covert milliseconds to seconds. """
+    """Covert milliseconds to seconds."""
     return milli / 1000
 
 
 def sec_to_milli(sec: float) -> float:
-    """ Covert seconds to milliseconds. """
+    """Covert seconds to milliseconds."""
     return sec * 1000
 
 
 def milli_to_sample(milli: float, sample_rate: int) -> int:
-    """ Covert milliseconds to samples. """
+    """Covert milliseconds to samples."""
     return int(round(milli_to_sec(milli) * sample_rate))
 
 
 def sample_to_milli(sample: int, sample_rate: int) -> float:
-    """ Covert samples to milliseconds. """
+    """Covert samples to milliseconds."""
     return sec_to_milli(float(sample) / sample_rate)
 
 
 def sample_to_sec(sample: int, sample_rate: int) -> float:
-    """ Covert samples to seconds. """
+    """Covert samples to seconds."""
     return float(sample) / sample_rate
 
 
 def sec_to_sample(sec: float, sample_rate: int) -> int:
-    """ Covert seconds to samples. """
+    """Covert seconds to samples."""
     return int(round(sec * sample_rate))
 
 
@@ -363,7 +363,7 @@ AudioFilter = typing.NewType("AudioFilter", str)
 
 
 def format_ffmpeg_audio_filter(name: str, **kwargs: typing.Union[str, int, float]) -> AudioFilter:
-    """ Format ffmpeg audio filter flag "-af". """
+    """Format ffmpeg audio filter flag "-af"."""
     return typing.cast(AudioFilter, f"{name}=" + ":".join([f"{k}={v}" for k, v in kwargs.items()]))
 
 
@@ -371,7 +371,7 @@ AudioFilters = typing.NewType("AudioFilters", str)
 
 
 def format_ffmpeg_audio_filters(filters: typing.List[AudioFilter]) -> AudioFilters:
-    """ Format ffmpeg audio filter flag "-af". """
+    """Format ffmpeg audio filter flag "-af"."""
     return typing.cast(AudioFilters, ",".join(filters))
 
 
@@ -668,22 +668,22 @@ def amp_to_db(tensor: _TensorOrArrayOrFloat, **kwargs) -> _TensorOrArrayOrFloat:
 
 
 def amp_to_power(tensor: _TensorOrArrayOrFloat) -> _TensorOrArrayOrFloat:
-    """ Convert amplitude (https://en.wikipedia.org/wiki/Amplitude) units to power units. """
+    """Convert amplitude (https://en.wikipedia.org/wiki/Amplitude) units to power units."""
     return tensor ** 2
 
 
 def power_to_amp(tensor: _TensorOrArrayOrFloat) -> _TensorOrArrayOrFloat:
-    """ Convert power units to amplitude units. """
+    """Convert power units to amplitude units."""
     return tensor ** 0.5
 
 
 def db_to_power(tensor: _TensorOrArrayOrFloat) -> _TensorOrArrayOrFloat:
-    """ Convert decibel units to power units. """
+    """Convert decibel units to power units."""
     return typing.cast(_TensorOrArrayOrFloat, 10 ** (tensor / 10.0))
 
 
 def db_to_amp(tensor: _TensorOrArrayOrFloat) -> _TensorOrArrayOrFloat:
-    """ Convert decibel units to amplitude units. """
+    """Convert decibel units to amplitude units."""
     return db_to_power(tensor / 2)
 
 
@@ -726,7 +726,7 @@ def signal_to_framed_rms(
 def framed_rms_to_rms(
     frame_rms: _TensorOrArrayOrFloat, frame_hop: int, signal_length: int
 ) -> _TensorOrArrayOrFloat:
-    """ Convert framed RMS to RMS. """
+    """Convert framed RMS to RMS."""
     rms = amp_to_power(frame_rms) * frame_hop / signal_length
     rms = rms if isinstance(rms, float) else rms.sum()
     return power_to_amp(typing.cast(_TensorOrArrayOrFloat, rms))
@@ -1022,19 +1022,19 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
 
 @lru_cache(maxsize=None)
 def get_signal_to_db_mel_spectrogram(*args, **kwargs) -> SignalTodBMelSpectrogram:
-    """ Get cached `SignalTodBMelSpectrogram` module. """
+    """Get cached `SignalTodBMelSpectrogram` module."""
     return SignalTodBMelSpectrogram(*args, **kwargs)
 
 
 @configurable
 def get_pyloudnorm_meter(
     sample_rate: int, filter_class: str = HParam(), **kwargs
-) -> 'pyloudnorm.Meter':
+) -> "pyloudnorm.Meter":
     return _get_pyloudnorm_meter(sample_rate=sample_rate, filter_class=filter_class, **kwargs)
 
 
 @lru_cache(maxsize=None)
-def _get_pyloudnorm_meter(sample_rate: int, filter_class: str, **kwargs) -> 'pyloudnorm.Meter':
+def _get_pyloudnorm_meter(sample_rate: int, filter_class: str, **kwargs) -> "pyloudnorm.Meter":
     """Get cached `pyloudnorm.Meter` module.
 
     NOTE: `pyloudnorm.Meter` is expensive to import, so we try to avoid it.

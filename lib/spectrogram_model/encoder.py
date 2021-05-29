@@ -15,7 +15,7 @@ from lib.utils import LSTM
 def _roll_helper(
     length: int, device: torch.device, dimension: int, num_dimensions: int
 ) -> typing.Tuple[torch.Tensor, int]:
-    """ Helper to ensure `indices` and `dimension` are not recalculated unnecessarily. """
+    """Helper to ensure `indices` and `dimension` are not recalculated unnecessarily."""
     indices = torch.arange(0, length, device=device)
     dimension = num_dimensions + dimension if dimension < 0 else dimension
     # EXAMPLE:
