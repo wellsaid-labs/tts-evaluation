@@ -6,14 +6,14 @@ from torchnlp.random import fork_rng
 
 import lib
 from run._tts import encode_tts_inputs, text_to_speech_ffmpeg_generator
-from tests import _utils
+from tests.run._utils import make_mock_tts_package
 
 logger = logging.getLogger(__name__)
 
 
 def _make_args():
     """Create arguments for the below tests."""
-    dataset, package = _utils.make_mock_tts_package()
+    dataset, package = make_mock_tts_package()
     nlp = lib.text.load_en_core_web_sm(disable=("parser", "ner"))
     passage = list(dataset.values())[0][-1]
     script, speaker, session = passage.script, passage.speaker, passage.session

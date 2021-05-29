@@ -177,7 +177,7 @@ length of 2048, frame hop of 512 and a sample rate of 24000), doesn't practicall
 
 
 def get_power_rms_level_sum(
-    db_spectrogram: torch.Tensor, mask: typing.Optional[torch.Tensor], **kwargs
+    db_spectrogram: torch.Tensor, mask: typing.Optional[torch.Tensor] = None, **kwargs
 ) -> torch.Tensor:
     """Get the sum of the power RMS level for each frame in the spectrogram.
 
@@ -196,7 +196,7 @@ def get_power_rms_level_sum(
 
 
 def get_average_db_rms_level(
-    db_spectrogram: torch.Tensor, mask: typing.Optional[torch.Tensor], **kwargs
+    db_spectrogram: torch.Tensor, mask: typing.Optional[torch.Tensor] = None, **kwargs
 ) -> torch.Tensor:
     """Get the average, over spectrogram frames, RMS level (dB) for each spectrogram.
 

@@ -12,14 +12,14 @@ from tests._utils import TEST_DATA_PATH, assert_almost_equal
 
 @pytest.fixture(autouse=True)
 def run_around_tests():
-    """ Set a basic configuration. """
+    """Set a basic configuration."""
     run._config.configure()
     yield
     hparams.clear_config()
 
 
 def test_get_num_skipped():
-    """ Test `_metrics.get_num_skipped` counts skipped tokens correctly. """
+    """Test `_metrics.get_num_skipped` counts skipped tokens correctly."""
     alignments_ = [
         [[1, 0, 0], [0, 1, 0], [0, 0, 1]],  # Test no skips
         [[1, 0, 0], [0, 1, 0], [0, 1, 0]],  # Test skipped
@@ -46,7 +46,7 @@ def test_get_num_skipped():
 
 
 def test_get_num_skipped__zero_elements():
-    """ Test `_metrics.get_num_skipped` handles zero elements correctly. """
+    """Test `_metrics.get_num_skipped` handles zero elements correctly."""
     args = (
         torch.empty(1024, 0, 1024),
         torch.empty(1024, 0, dtype=torch.bool),
@@ -56,7 +56,7 @@ def test_get_num_skipped__zero_elements():
 
 
 def test_get_num_jumps():
-    """ Test `_metrics.get_num_jumps` counts jumps correctly. """
+    """Test `_metrics.get_num_jumps` counts jumps correctly."""
     alignments_ = [
         [[1, 0, 0], [0, 1, 0], [0, 0, 1]],  # Test no jumps
         [[1, 0, 0], [0, 0, 1], [0, 0, 1]],  # Test one jump
@@ -86,7 +86,7 @@ def test_get_num_jumps():
 
 
 def test_get_num_jumps__zero_elements():
-    """ Test `_metrics.get_num_jumps` handles zero elements correctly. """
+    """Test `_metrics.get_num_jumps` handles zero elements correctly."""
     args = (
         torch.empty(1024, 0, 1024),
         torch.empty(1024, 0, dtype=torch.bool),
@@ -96,7 +96,7 @@ def test_get_num_jumps__zero_elements():
 
 
 def test_get_num_small_max():
-    """ Test `_metrics.get_num_small_max` counts jumps correctly. """
+    """Test `_metrics.get_num_small_max` counts jumps correctly."""
     alignments_ = [
         [[1, 0, 0], [0, 1, 0], [0, 0, 1]],  # Test non small focus
         [[1, 0, 0], [0, 0.9, 0.1], [0, 0.1, 0.9]],  # Test two small focus
@@ -123,7 +123,7 @@ def test_get_num_small_max():
 
 
 def test_get_num_repeated():
-    """ Test `_metrics.get_num_repeated` counts repeated tokens correctly. """
+    """Test `_metrics.get_num_repeated` counts repeated tokens correctly."""
     alignments_ = [
         [[1, 0, 0], [0, 1, 0], [0, 0, 1]],  # Test no repeats
         [[1, 0, 0], [0, 1, 0], [0, 1, 0]],  # Test one repeated

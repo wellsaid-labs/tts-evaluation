@@ -1,6 +1,3 @@
-import pathlib
-import shutil
-import tempfile
 from unittest import mock
 
 import torch
@@ -9,33 +6,21 @@ import torch.distributed
 import run
 from run._config import Cadence, DatasetType
 from run._utils import split_dataset
-from run.data._loader import JUDY_BIEBER, LINDA_JOHNSON, m_ailabs_en_us_judy_bieber_speech_dataset
+from run.data._loader import JUDY_BIEBER, LINDA_JOHNSON
 from run.train._utils import CometMLExperiment, _get_dataset_stats
 from tests import _utils
+from tests.run._utils import make_small_dataset
 
 
 @mock.patch("urllib.request.urlretrieve")
 def setup_experiment(mock_urlretrieve):
-    """Setup basic experiment for testing.
-
-    TODO: `tests._utils.make_mock_tts_package` and this share a lot of similar ideas,
-    can we merge them to reduce redundancy?
-    """
+    """Setup basic experiment for testing."""
     mock_urlretrieve.side_effect = _utils.first_parameter_url_side_effect
 
     run._config.configure()
 
-    # Test loading data
-    directory = _utils.TEST_DATA_PATH / "datasets"
-    temp_directory = pathlib.Path(tempfile.TemporaryDirectory().name)
-    shutil.copytree(directory, temp_directory)
-    books = [run.data._loader.m_ailabs.DOROTHY_AND_WIZARD_OZ]
-    dataset = {
-        JUDY_BIEBER: m_ailabs_en_us_judy_bieber_speech_dataset(temp_directory, books=books),
-        LINDA_JOHNSON: run.data._loader.lj_speech_dataset(temp_directory),
-    }
-
-    # Test splitting data
+    # Test loading and splitting data
+    dataset = make_small_dataset()
     dev_speakers = set([JUDY_BIEBER])
     train_dataset, dev_dataset = split_dataset(dataset, dev_speakers, 3)
 

@@ -12,20 +12,16 @@ from run.train.spectrogram_model._worker import (
     _HandleBatchArgs,
     _run_inference,
     _run_step,
-    _State,
 )
-from tests._utils import mock_distributed_data_parallel
+from tests.run._utils import make_spec_worker_state, mock_distributed_data_parallel
 from tests.run.train._utils import setup_experiment
 
 
 def test_integration():
     train_dataset, dev_dataset, comet, device = setup_experiment()
-
     add_config(_make_configuration(train_dataset, dev_dataset, True))
+    state = make_spec_worker_state(train_dataset, dev_dataset, comet, device)
 
-    with mock.patch("torch.nn.parallel.DistributedDataParallel") as module:
-        module.side_effect = mock_distributed_data_parallel
-        state = _State.from_dataset(train_dataset, dev_dataset, comet, device)
     assert state.model.module == state.model  # Enusre the mock worked
     # fmt: off
     assert sorted(state.input_encoder.grapheme_encoder.vocab) == sorted([
