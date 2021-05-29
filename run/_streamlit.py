@@ -5,6 +5,7 @@ import logging
 import multiprocessing
 import os
 import pathlib
+import pickle
 import shutil
 import tempfile
 import typing
@@ -18,6 +19,7 @@ from third_party import LazyLoader, session_state
 import lib
 import run
 from run._config import Dataset
+from run._tts import CHECKPOINTS_LOADERS, Checkpoints, package_tts
 from run.data._loader import Passage
 
 if typing.TYPE_CHECKING:  # pragma: no cover
@@ -53,13 +55,44 @@ def is_streamlit_running() -> bool:
         Server.get_current()
         return True
     except RuntimeError:
-        logger.warning("Streamlit isn't running!")
         return False
 
 
 def get_session_state() -> dict:
     """Get a reference to a session state represented as a `dict`."""
     return session_state.get(cache={})
+
+
+_WrappedFunction = typing.TypeVar("_WrappedFunction", bound=typing.Callable[..., typing.Any])
+
+
+def pickle_cache(func: _WrappedFunction = None, **kwargs) -> _WrappedFunction:
+    """Cache the inputs and outputs of `func` in a `pickle` format.
+
+    NOTE: Due this the below bug, it's better to cache using `pickle`, so that old objects
+    don't stick around. Learn more:
+    https://github.com/streamlit/streamlit/issues/2379
+    """
+    if not func:
+        return functools.partial(pickle_cache, **kwargs)  # type: ignore
+
+    cache = {}
+
+    @functools.wraps(func)
+    def decorator(*args, **kwargs):
+        key = (pickle.dumps(args), pickle.dumps(kwargs))
+        if key in cache:
+            return pickle.loads(cache[key])
+        result = func(*args, **kwargs)
+        cache[key] = pickle.dumps(result)
+        return result
+
+    def cache_clear():
+        cache.clear()
+
+    decorator.cache_clear = cache_clear
+
+    return typing.cast(_WrappedFunction, decorator)
 
 
 _SessionCacheVar = typing.TypeVar("_SessionCacheVar", bound=typing.Callable[..., typing.Any])
@@ -94,7 +127,7 @@ def session_cache(func: typing.Optional[typing.Callable] = None, **kwargs):
     session_state = get_session_state()
     if func.__qualname__ not in session_state["cache"]:
         logger.info("Creating `%s` cache.", func.__qualname__)
-        session_state["cache"][func.__qualname__] = functools.lru_cache(**kwargs)(func)
+        session_state["cache"][func.__qualname__] = pickle_cache(**kwargs)(func)
 
     return session_state["cache"][func.__qualname__]
 
@@ -103,6 +136,11 @@ def clear_session_cache():
     """Clear the cache for `session_cache`."""
     logger.info("Clearing cache...")
     [v.cache_clear() for v in get_session_state()["cache"].values()]
+
+
+@session_cache(maxsize=None)
+def load_tts(checkpoints_key: Checkpoints):
+    return package_tts(*CHECKPOINTS_LOADERS[checkpoints_key]())
 
 
 def make_symlink(target: pathlib.Path) -> pathlib.Path:
@@ -154,14 +192,18 @@ def audio_to_static_temp_path(audio: np.ndarray, name: str = "audio.wav", **kwar
     return temp_path
 
 
+def temp_path_to_rel_url(temp_path: pathlib.Path):
+    return f"/{temp_path.relative_to(STREAMLIT_WEB_ROOT_PATH)}"
+
+
 def audio_temp_path_to_html(temp_path: pathlib.Path, attrs="controls"):
     """Create an audio HTML element for the audio file at `temp_path."""
-    return f'<audio {attrs} src="/{temp_path.relative_to(STREAMLIT_WEB_ROOT_PATH)}"></audio>'
+    return f'<audio {attrs} src="{temp_path_to_rel_url(temp_path)}"></audio>'
 
 
 def image_temp_path_to_html(temp_path: pathlib.Path):
     """Create an image HTML element for the image file at `temp_path."""
-    return f'<img src="/{temp_path.relative_to(STREAMLIT_WEB_ROOT_PATH)}" />'
+    return f'<img src="{temp_path_to_rel_url(temp_path)}" />'
 
 
 def audio_to_html(audio: np.ndarray, attrs="controls", **kwargs) -> str:
@@ -182,12 +224,11 @@ def zip_to_html(
     with zipfile.ZipFile(temp_path, "w") as file_:
         for path, archive_path in zip(paths, archive_paths_):
             file_.write(path, arcname=archive_path)
-    temp_path = temp_path.relative_to(STREAMLIT_WEB_ROOT_PATH)
-    return f'<a href="/{temp_path}" download="{name}">{label}</a>'
+    return f'<a href="{temp_path_to_rel_url(temp_path)}" download="{name}">{label}</a>'
 
 
 def write_audio(*args, **kwargs):
-    st.markdown(audio_to_html(*args, **kwargs), unsafe_allow_html=True)
+    st_html(audio_to_html(*args, **kwargs))
 
 
 _MapInputVar = typing.TypeVar("_MapInputVar")
@@ -315,5 +356,15 @@ def st_data_frame(df: pd.DataFrame):
     df = df.replace({"\n": "<br>"}, regex=True)
     # NOTE: Temporary fix based on this issue / pr: https://github.com/streamlit/streamlit/pull/3038
     html = "<style>tr{background-color: transparent !important;}</style>"
-    st.markdown(html, unsafe_allow_html=True)
-    st.markdown(df.to_markdown(index=False), unsafe_allow_html=True)
+    st_html(html)
+    st_html(df.to_markdown(index=False))
+
+
+@session_cache(maxsize=None)
+def load_en_core_web_md(*args, **kwargs):
+    return lib.text.load_en_core_web_md(*args, **kwargs)
+
+
+def st_html(html: str):
+    """Write HTML to streamlit app."""
+    return st.markdown(html, unsafe_allow_html=True)

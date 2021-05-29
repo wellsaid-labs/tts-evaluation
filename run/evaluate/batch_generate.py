@@ -20,9 +20,11 @@ from run._streamlit import (
     get_dev_dataset,
     get_static_temp_path,
     image_temp_path_to_html,
+    load_tts,
+    st_html,
     zip_to_html,
 )
-from run._tts import CHECKPOINTS_LOADERS, Checkpoints, batch_span_to_speech, package_tts
+from run._tts import CHECKPOINTS_LOADERS, Checkpoints, batch_span_to_speech
 from run.data._loader import Span
 from run.train.spectrogram_model._metrics import (
     get_alignment_norm,
@@ -76,8 +78,7 @@ def main():
         results.append(result)
 
     with st.spinner("Loading and exporting model(s)..."):
-        checkpoints = [CHECKPOINTS_LOADERS[c]() for c in checkpoints_keys]
-        packages = [package_tts(spec, sig) for spec, sig in checkpoints]
+        packages = [load_tts(c) for c in checkpoints_keys]
 
     for package, checkpoints_ in zip(packages, checkpoints_keys):
         spans = [next(generator) for _ in tqdm(range(num_fake_clips), total=num_fake_clips)]
@@ -119,7 +120,7 @@ def main():
         paths = [pathlib.Path(r["Audio Path"]) for r in results]
         archive_paths = [pathlib.Path(str(r["Id"]) + p.suffix) for r, p in zip(results, paths)]
         html = zip_to_html("audios.zip", "Download Audio(s)", paths, archive_paths)
-        st.markdown(html, unsafe_allow_html=True)
+        st_html(html)
 
 
 if __name__ == "__main__":

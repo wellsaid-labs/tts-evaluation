@@ -28,6 +28,7 @@ from run._streamlit import (
     audio_temp_path_to_html,
     audio_to_static_temp_path,
     st_data_frame,
+    st_html,
     zip_to_html,
 )
 from run._tts import TTSPackage, text_to_speech
@@ -133,7 +134,7 @@ def main():
 
     with st.spinner("Making Zipfile..."):
         st.text("")
-        st.markdown(zip_to_html("audios.zip", "Download Audio(s)", paths), unsafe_allow_html=True)
+        st_html(zip_to_html("audios.zip", "Download Audio(s)", paths))
 
 
 if __name__ == "__main__":
