@@ -8,6 +8,7 @@ import lib
 import run.data._loader
 from run.data._loader import Alignment
 from tests import _utils
+from tests.run.data._loader._utils import maybe_normalize_audio_and_cache_side_effect
 
 verbalize_test_cases = {
     "LJ044-0055": "five four four Camp Street New",  # Test special case
@@ -51,10 +52,10 @@ def test_lj_speech_dataset(
     mock_get_audio_metadata,
     _,
 ):
-    """ Test `run.data._loader.lj_speech_dataset` loads and verbalizes the data. """
+    """Test `run.data._loader.lj_speech_dataset` loads and verbalizes the data."""
     mock_urlretrieve.side_effect = _utils.first_parameter_url_side_effect
     mock_get_audio_metadata.side_effect = _utils.get_audio_metadata_side_effect
-    mock_normalize_and_cache.side_effect = _utils.maybe_normalize_audio_and_cache_side_effect
+    mock_normalize_and_cache.side_effect = maybe_normalize_audio_and_cache_side_effect
     mock_get_non_speech_segments_and_cache.side_effect = lambda *a, **k: lib.utils.Timeline([])
     archive = _utils.TEST_DATA_PATH / "datasets" / "LJSpeech-1.1.tar.bz2"
 

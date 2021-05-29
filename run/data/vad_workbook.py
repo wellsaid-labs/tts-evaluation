@@ -127,7 +127,7 @@ def _chart_alignments_and_non_speech_segments(
 
 
 def _median(x: np.ndarray) -> float:
-    """ Get the median value of a sorted array. """
+    """Get the median value of a sorted array."""
     return x[math.floor(len(x) / 2) : math.ceil(len(x) / 2) + 1].mean().item()
 
 
@@ -327,7 +327,7 @@ def _get_hard_passages(dataset: run._config.Dataset, threshold: float = 20) -> t
 
 
 def _init_random_seed(key="random_seed", default_value: int = 123) -> int:
-    """ Create a persistent state for the random seed. """
+    """Create a persistent state for the random seed."""
     state = get_session_state()
     value = st.sidebar.number_input("Random Seed", value=default_value)
     if key not in state or value != default_value:

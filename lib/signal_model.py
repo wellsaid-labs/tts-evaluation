@@ -80,7 +80,7 @@ class _InterpolateAndMask(torch.nn.Module):
 
 
 class _PixelShuffle1d(torch.nn.Module):
-    """ The 1d version to PyTorch's `torch.nn.PixelShuffle`. """
+    """The 1d version to PyTorch's `torch.nn.PixelShuffle`."""
 
     def __init__(self, upscale_factor: int):
         super().__init__()
@@ -268,7 +268,7 @@ class _LayerNorm(torch.nn.LayerNorm):
 
 
 def _has_weight_norm(module: torch.nn.Module, name: str = "weight") -> bool:
-    """ Check if module has `WeightNorm` decorator. """
+    """Check if module has `WeightNorm` decorator."""
     for k, hook in module._forward_pre_hooks.items():
         if isinstance(hook, WeightNorm) and hook.name == name:
             return True
@@ -398,7 +398,7 @@ class SignalModel(torch.nn.Module):
                 torch.nn.utils.remove_weight_norm(module)
 
     def _get_weight_norm_modules(self) -> typing.Iterator[torch.nn.Module]:
-        """ Get all modules that should have their weight(s) normalized. """
+        """Get all modules that should have their weight(s) normalized."""
         for module in self.modules():
             if isinstance(module, torch.nn.Conv1d):
                 yield module
@@ -412,7 +412,7 @@ class SignalModel(torch.nn.Module):
                     torch.nn.init.zeros_(module.bias)
 
     def get_layer_size(self, i: int) -> int:
-        """ Get the hidden size of layer `i`. """
+        """Get the hidden size of layer `i`."""
         assert i <= len(self.ratios)
         initial_size = int(2 ** (len(self.ratios) // 2)) * self.hidden_size
         layer_size = initial_size // 2 ** (i // 2)

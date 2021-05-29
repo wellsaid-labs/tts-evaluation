@@ -74,7 +74,7 @@ _Columns = typing.Dict[str, typing.List[typing.Any]]
 
 
 def _default_span_columns(spans: typing.List[Span]) -> _Columns:
-    """ Get default columns for `_write_span_table`. """
+    """Get default columns for `_write_span_table`."""
     logger.info("Getting %d generic span columns...", len(spans))
     _round: typing.Callable[[float, Span], float]
     _round = lambda a, s: round_(a, 1 / s.audio_file.sample_rate)
@@ -241,7 +241,7 @@ def _analyze_speech_segment_transitions(passages: typing.List[Passage], **kwargs
 
 
 def _total_pauses(span: Span, threshold: float = 1.0, min_speech_segment: float = 0.1) -> float:
-    """ Get the sum of pauses longer than `threshold` in `Span`. """
+    """Get the sum of pauses longer than `threshold` in `Span`."""
     lengths = []
     intervals = span.passage.non_speech_segments[span.audio_start : span.audio_stop]
     start, stop = max(intervals[0][0], span.audio_start), min(intervals[0][1], span.audio_stop)

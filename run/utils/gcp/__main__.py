@@ -39,7 +39,7 @@ class _OperationStatus(str, Enum):
 def _wait_for_operation(
     operation: str, poll_interval: int = 1, is_global: bool = True, **kwargs
 ) -> typing.Dict:
-    """ Wait for an operation to finish, and return the finished operation. """
+    """Wait for an operation to finish, and return the finished operation."""
     while True:
         client = compute.globalOperations() if is_global else compute.zoneOperations()
         result = client.get(project=project, operation=operation, **kwargs).execute()
@@ -66,7 +66,7 @@ def make_instance(
     metadata_from_file: typing.List[str] = typer.Option([]),
     health_check: str = typer.Option("check-ssh"),
 ):
-    """ Create a managed and preemptible instance named NAME in ZONE. """
+    """Create a managed and preemptible instance named NAME in ZONE."""
     lib.environment.set_basic_logging_config()
 
     images = compute.images()
@@ -176,7 +176,7 @@ def watch_instance(
     zone: str = typer.Option(...),
     poll_interval: int = typer.Option(5),
 ):
-    """ Print the status of instance named NAME in ZONE. """
+    """Print the status of instance named NAME in ZONE."""
     lib.environment.set_basic_logging_config()
     client = compute.instanceGroupManagers()
     while True:
@@ -195,7 +195,7 @@ def watch_instance(
 
 @app.command()
 def delete_instance(name: str = typer.Option(...), zone: str = typer.Option(...)):
-    """ Delete the instance named NAME in ZONE. """
+    """Delete the instance named NAME in ZONE."""
     lib.environment.set_basic_logging_config()
 
     try:

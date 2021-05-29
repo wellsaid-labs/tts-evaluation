@@ -557,7 +557,7 @@ class Span:
         return (self.__getitem__(i) for i in range(self.slice.stop - self.slice.start))
 
     def check_invariants(self):
-        """ Check datastructure invariants. """
+        """Check datastructure invariants."""
         self.passage.check_invariants()
         assert (
             self.passage_alignments is self.passage.nonalignments
@@ -595,7 +595,7 @@ def _make_nonalignments(passage: Passage) -> Tuple[Alignment]:
 
 
 def _exists(path: Path) -> bool:
-    """ Helper function for `make_passages` that can be easily mocked. """
+    """Helper function for `make_passages` that can be easily mocked."""
     return path.exists() and path.is_file()
 
 
@@ -691,7 +691,7 @@ def _maybe_normalize_vo_script(script: str) -> str:
 
 
 def _check_updated_script_helper(label: str, attr: str, original: str, updated: str):
-    """ Helper function for `_check_updated_script`. """
+    """Helper function for `_check_updated_script`."""
     diff = [o for o, u in zip(original, updated) if o != u]
     lib.utils.call_once(logger.error, f"[{label}] `{attr}` was not normalized: {diff}")
     assert len(original) == len(updated), "Alignments and script are out-of-sync."

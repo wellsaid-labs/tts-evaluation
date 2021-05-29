@@ -205,7 +205,7 @@ def assert_enough_disk_space(min_space):
 
 
 def check_module_versions(requirements_path: Path = ROOT_PATH / "requirements.txt"):
-    """ Check if installed module versions respect `requirements.txt` specifications. """
+    """Check if installed module versions respect `requirements.txt` specifications."""
     freeze = subprocess.check_output([sys.executable, "-m", "pip", "freeze"])
     split = freeze.decode("utf-8").split()
     for line in requirements_path.read_text().split():
@@ -225,7 +225,7 @@ def check_module_versions(requirements_path: Path = ROOT_PATH / "requirements.tx
 
 
 def set_seed(seed: int):
-    """ Set package random generator seed(s). """
+    """Set package random generator seed(s)."""
     logger.info("Setting seed to be %d", seed)
     torchnlp.random.set_seed(seed)
 
@@ -286,7 +286,7 @@ def _duplicate_stream(from_: typing.TextIO, to: Path) -> typing.Callable[[], Non
     os.dup2(tee.stdin.fileno(), from_.fileno())
 
     def _clean_up():
-        """ Clean up called during exit or by user. """
+        """Clean up called during exit or by user."""
         # (High Level) Ensure ``from_`` flushes before tee is closed
         from_.flush()
 
@@ -301,7 +301,7 @@ def _duplicate_stream(from_: typing.TextIO, to: Path) -> typing.Callable[[], Non
         os.close(original_fileno)
 
     def stop():
-        """ Stop duplication early before the program exits. """
+        """Stop duplication early before the program exits."""
         atexit.unregister(_clean_up)
         _clean_up()
 
@@ -331,7 +331,7 @@ class RecordStandardStreams:
         assert not (directory / log_filename).exists(), "Cannot overwrite existing file."
 
     def _start(self) -> RecordStandardStreams:
-        """ Start recording `sys.stdout` and `sys.stderr`. """
+        """Start recording `sys.stdout` and `sys.stderr`."""
         self.stop_stream_stdout = _duplicate_stream(sys.stdout, self.log_path)
         self.stop_stream_stderr = _duplicate_stream(sys.stderr, self.log_path)
         return self
@@ -507,7 +507,7 @@ def get_tracked_changes() -> str:
 
 
 def has_tracked_changes() -> bool:
-    """ Return `True` if there are active tracked changes by `git` in the working area. """
+    """Return `True` if there are active tracked changes by `git` in the working area."""
     return len(get_tracked_changes()) > 0
 
 
@@ -527,7 +527,7 @@ def get_cuda_gpus() -> str:
 
 
 def get_num_cuda_gpus() -> int:
-    """ Get the number of Nvidia CUDA enabled GPUs. """
+    """Get the number of Nvidia CUDA enabled GPUs."""
     if torch.cuda.is_available():
         return torch.cuda.device_count()
     return 0

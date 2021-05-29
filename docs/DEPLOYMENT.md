@@ -23,12 +23,11 @@ Refer to the above guides in case there are missing details in the below steps.
 
    ```bash
    PROJECT_ID="voice-service-255602"
-   SPECTROGRAM_CHECKPOINT="" # Example: disk/experiments/spectrogram_model/step_304001.pt
-   SIGNAL_CHECKPOINT=""  # Example: disk/experiments/signal_model/step_770733.pt
-   TTS_BUNDLE_PATH=$(python -m run.deploy.bundle_tts $SPECTROGRAM_CHECKPOINT $SIGNAL_CHECKPOINT)
+   CHECKPOINTS="" # Example: v9_staging
+   TTS_PACKAGE_PATH=$(python -m run.deploy.package_tts $CHECKPOINTS)
    docker build -f run/deploy/docker/master/Dockerfile -t gcr.io/${PROJECT_ID}/speech-api:v8.23 .
    docker build -f run/deploy/docker/worker/Dockerfile \
-        --build-arg TTS_BUNDLE_PATH=${TTS_BUNDLE_PATH} \
+        --build-arg TTS_PACKAGE_PATH=${TTS_PACKAGE_PATH} \
         -t gcr.io/${PROJECT_ID}/speech-api-worker:v9.00 .
    ```
 

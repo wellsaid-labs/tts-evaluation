@@ -48,7 +48,7 @@ STREAMLIT_STATIC_SYMLINK_PATH = STREAMLIT_STATIC_PRIVATE_PATH / "symlink"
 
 
 def is_streamlit_running() -> bool:
-    """ Check if `streamlit` server has been initialized. """
+    """Check if `streamlit` server has been initialized."""
     try:
         Server.get_current()
         return True
@@ -58,7 +58,7 @@ def is_streamlit_running() -> bool:
 
 
 def get_session_state() -> dict:
-    """Get a reference to a session state represented as a `dict`. """
+    """Get a reference to a session state represented as a `dict`."""
     return session_state.get(cache={})
 
 
@@ -148,7 +148,7 @@ def get_static_temp_path(name) -> pathlib.Path:
 
 
 def audio_to_static_temp_path(audio: np.ndarray, name: str = "audio.wav", **kwargs) -> pathlib.Path:
-    """Create an audio file in `STREAMLIT_STATIC_TEMP_PATH`. """
+    """Create an audio file in `STREAMLIT_STATIC_TEMP_PATH`."""
     temp_path = get_static_temp_path(name)
     lib.audio.write_audio(temp_path, audio, **kwargs)
     return temp_path
@@ -159,18 +159,29 @@ def audio_temp_path_to_html(temp_path: pathlib.Path, attrs="controls"):
     return f'<audio {attrs} src="/{temp_path.relative_to(STREAMLIT_WEB_ROOT_PATH)}"></audio>'
 
 
+def image_temp_path_to_html(temp_path: pathlib.Path):
+    """Create an image HTML element for the image file at `temp_path."""
+    return f'<img src="/{temp_path.relative_to(STREAMLIT_WEB_ROOT_PATH)}" />'
+
+
 def audio_to_html(audio: np.ndarray, attrs="controls", **kwargs) -> str:
     """Create an audio HTML element from a numpy array."""
     temp_path = audio_to_static_temp_path(audio, **kwargs)
     return audio_temp_path_to_html(temp_path, attrs=attrs)
 
 
-def zip_to_html(name: str, label: str, paths: typing.List[pathlib.Path]) -> str:
-    """ Make a zipfile named `name` that can be downloaded with a button called `label`."""
+def zip_to_html(
+    name: str,
+    label: str,
+    paths: typing.List[pathlib.Path],
+    archive_paths: typing.Optional[typing.List[pathlib.Path]] = None,
+) -> str:
+    """Make a zipfile named `name` that can be downloaded with a button called `label`."""
     temp_path = get_static_temp_path(name)
-    with zipfile.ZipFile(temp_path, "w") as zip:
-        for path in paths:
-            zip.write(path, arcname=path.name)
+    archive_paths_ = [p.name for p in paths] if archive_paths is None else archive_paths
+    with zipfile.ZipFile(temp_path, "w") as file_:
+        for path, archive_path in zip(paths, archive_paths_):
+            file_.write(path, arcname=archive_path)
     temp_path = temp_path.relative_to(STREAMLIT_WEB_ROOT_PATH)
     return f'<a href="/{temp_path}" download="{name}">{label}</a>'
 
@@ -190,7 +201,7 @@ def map_(
     max_parallel: int = os.cpu_count() * 3,
     progress_bar: bool = True,
 ) -> typing.List[_MapReturnVar]:
-    """ Apply `func` to `list_` in parallel. """
+    """Apply `func` to `list_` in parallel."""
     with multiprocessing.pool.ThreadPool(processes=max_parallel) as pool:
         iterator = pool.imap(func, list_, chunksize=chunk_size)
         if progress_bar:
@@ -200,7 +211,7 @@ def map_(
 
 @session_cache(maxsize=None)
 def read_wave_audio(*args, **kwargs) -> np.ndarray:
-    """ Read audio slice, and cache. """
+    """Read audio slice, and cache."""
     return lib.audio.read_wave_audio(*args, **kwargs)
 
 
@@ -217,13 +228,21 @@ def passage_audio(passage: run.data._loader.Passage) -> np.ndarray:
 
 @session_cache(maxsize=None)
 def get_dataset(speaker_labels: typing.FrozenSet[str]) -> run._config.Dataset:
-    """Load dataset subset, and cache. """
+    """Load dataset subset, and cache."""
     logger.info("Loading dataset...")
     with st.spinner(f"Loading dataset(s): {','.join(list(speaker_labels))}"):
         datasets = {k: v for k, v in run._config.DATASETS.items() if k.label in speaker_labels}
         dataset = run._utils.get_dataset(datasets)
         logger.info(f"Finished loading {set(speaker_labels)} dataset(s)! {lib.utils.mazel_tov()}")
     return dataset
+
+
+@session_cache(maxsize=None)
+def get_dev_dataset() -> run._config.Dataset:
+    """Load dev dataset, and cache."""
+    with st.spinner("Loading dataset..."):
+        _, dev_dataset = run._utils.split_dataset(run._utils.get_dataset())
+    return dev_dataset
 
 
 @session_cache(maxsize=None)
@@ -286,7 +305,7 @@ def make_interval_chart(
 
 
 def dataset_passages(dataset: Dataset) -> typing.Iterator[Passage]:
-    """ Get all passages in `dataset`. """
+    """Get all passages in `dataset`."""
     for _, passages in dataset.items():
         yield from passages
 
