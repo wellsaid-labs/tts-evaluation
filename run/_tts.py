@@ -235,7 +235,9 @@ def batch_text_to_speech(
         preds = typing.cast(Infer, package.spectrogram_model(params=params, mode=Mode.INFER))
         spectrogram = preds.frames.transpose(0, 1)
         spectrogram_mask = lengths_to_mask(preds.lengths)
-        signals = package.signal_model(spectrogram, spectrogram_mask)
+        signals = package.signal_model(
+            spectrogram, spectrogram_mask, params.session, params.speaker
+        )
         lengths = preds.lengths * package.signal_model.upscale_factor
         more_results = {
             j: TTSInputOutput(
