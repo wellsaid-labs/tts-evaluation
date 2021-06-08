@@ -150,6 +150,8 @@ def rmtree_streamlit_static_temp_dir():
     if is_streamlit_running():
         assert pathlib.Path(st.__file__).parent in STREAMLIT_STATIC_TEMP_PATH.parents
         if STREAMLIT_STATIC_TEMP_PATH.exists():
+            message = "Clearing temporary files at %s..."
+            logger.info(message, STREAMLIT_STATIC_TEMP_PATH.relative_to(lib.environment.ROOT_PATH))
             shutil.rmtree(STREAMLIT_STATIC_TEMP_PATH)
 
 
