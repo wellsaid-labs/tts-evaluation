@@ -293,6 +293,9 @@ def get_input_validated():
 def get_stream():
     """Get speech given `text` and `speaker`.
 
+    NOTE: Consider the scenario where the requester isn't consuming the stream quickly, the
+    worker would need to wait for the requester.
+
     Returns: `audio/mpeg` streamed in chunks given that the arguments are valid.
     """
     request_args = request.get_json() if request.method == "POST" else request.args
