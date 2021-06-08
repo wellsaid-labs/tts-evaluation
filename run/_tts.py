@@ -328,6 +328,7 @@ def text_to_speech_ffmpeg_generator(
             yield from _dequeue(queue)
         close()
         yield from _dequeue(queue)
+        logger_.info("Finished waveform generation.")
     except BaseException:
         close()
-        logger_.info("Finished generating waveform.")
+        logger_.exception("Abrupt stop to waveform generation...")

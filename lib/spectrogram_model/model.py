@@ -1,8 +1,8 @@
+import contextlib
 import enum
 import logging
 import math
 import typing
-from contextlib import nullcontext
 
 import torch
 import torch.nn
@@ -263,6 +263,7 @@ class SpectrogramModel(torch.nn.Module):
         )
         maybe_squeeze = lambda t: t if include_batch_dim else t.squeeze(1)
         while keep_going():
+            assert torch.is_grad_enabled() == self.grad_enabled
             frame, stop_token, alignment, _, hidden_state = self.decoder(
                 encoded_tokens,
                 inputs.tokens_mask,
@@ -409,15 +410,16 @@ class SpectrogramModel(torch.nn.Module):
             token_skip_warning: If the attention skips more than `token_skip_warning`, then
                 a `logger.warning` will be logged.
         """
-        inputs = self._make_inputs(params)
-        return self._infer_generator(
-            inputs=inputs,
-            encoded_tokens=self.encoder(inputs),
-            split_size=split_size,
-            use_tqdm=use_tqdm,
-            include_batch_dim=len(params.tokens.shape) == 2,
-            token_skip_warning=token_skip_warning,
-        )
+        with self._set_grad_enabled():
+            inputs = self._make_inputs(params)
+            yield from self._infer_generator(
+                inputs=inputs,
+                encoded_tokens=self.encoder(inputs),
+                split_size=split_size,
+                use_tqdm=use_tqdm,
+                include_batch_dim=len(params.tokens.shape) == 2,
+                token_skip_warning=token_skip_warning,
+            )
 
     def _infer(self, *args, **kwargs) -> Infer:
         """Generates a spectrogram given `tokens`, `speaker`, etc."""
@@ -431,6 +433,12 @@ class SpectrogramModel(torch.nn.Module):
 
     def set_grad_enabled(self, enabled: typing.Optional[bool]):
         self.grad_enabled = enabled
+
+    @contextlib.contextmanager
+    def _set_grad_enabled(self):
+        enable = self.grad_enabled
+        with contextlib.nullcontext() if enable is None else torch.set_grad_enabled(enable):
+            yield
 
     @typing.overload
     def __call__(
@@ -474,8 +482,7 @@ class SpectrogramModel(torch.nn.Module):
         NOTE: Since the `forward` function is required to be executed, we use the parameter `mode`
         to overload the function.
         """
-        grad_enabled = self.grad_enabled
-        with nullcontext() if grad_enabled is None else torch.set_grad_enabled(grad_enabled):
+        with self._set_grad_enabled():
             if mode == Mode.FORWARD:
                 return self._forward(*args, **kwargs)
             elif mode == Mode.GENERATE:
