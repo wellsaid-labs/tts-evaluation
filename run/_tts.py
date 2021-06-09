@@ -4,7 +4,6 @@ TODO: Add tests for every function.
 
 import enum
 import functools
-import gc
 import logging
 import pathlib
 import subprocess
@@ -298,7 +297,6 @@ def text_to_speech_ffmpeg_generator(
         for pred in package.spectrogram_model(params=params, mode=Mode.GENERATE):
             # [num_frames, batch_size (optional), num_frame_channels] →
             # [batch_size (optional), num_frames, num_frame_channels]
-            gc.collect()
             yield pred.frames.transpose(0, 1) if pred.frames.dim() == 3 else pred.frames
 
     command = ["ffmpeg", "-ar", str(sample_rate)] + list(input_flags) + ["-i", "pipe:"]
