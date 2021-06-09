@@ -30,7 +30,7 @@ image. For reference, see the resource requests in
 [tts.jsonnet](/ops/run/tts.jsonnet).
 
 ```bash
-docker run --rm -p 8000:8000 -e "YOUR_SPEECH_API_KEY=123" \
+docker run --rm -p 8000:8000 \
   gcr.io/${PROJECT_ID}/speech-api-worker:v9.00
 ```
 
