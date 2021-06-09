@@ -9,11 +9,13 @@ let characterLengthTrend = new Trend('character_length');
 
 export let options = {
   stages: [
-    { duration: '30s', target: 5 },
-    { duration: '30s', target: 10 },
-    { duration: '30s', target: 15 },
-    { duration: '30s', target: 30 },
+    { duration: '30s', target: 20 },
+    { duration: '30s', target: 40 },
+    { duration: '30s', target: 80 },
   ],
+  // Allows active requests to complete before shutdown
+  gracefulStop: '60s',
+  gracefulRampDown: '60s',
   // Recommended: https://k6.io/docs/using-k6/options/#discard-response-bodies
   discardResponseBodies: true,
 };
