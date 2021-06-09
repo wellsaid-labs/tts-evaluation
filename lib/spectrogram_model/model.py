@@ -376,7 +376,7 @@ class SpectrogramModel(torch.nn.Module):
     def _generate(
         self,
         params: Params,
-        split_size: float = 32,
+        split_size: float = 64,
         use_tqdm: bool = False,
         token_skip_warning: float = math.inf,
     ) -> Generator:
