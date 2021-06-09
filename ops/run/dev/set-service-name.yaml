@@ -6,4 +6,4 @@
 # TODO: Use the GIT SHA or something like it.
 - op: replace
   path: /spec/template/metadata/name
-  value: tts-dev-002
+  value: tts-dev-004

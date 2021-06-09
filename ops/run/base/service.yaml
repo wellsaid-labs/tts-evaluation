@@ -8,6 +8,7 @@ spec:
       annotations:
         autoscaling.knative.dev/minScale: '0'
         autoscaling.knative.dev/maxScale: '30'
+        run.googleapis.com/ingress: internal
     spec:
       containerConcurrency: 1
       timeoutSeconds: 3600
