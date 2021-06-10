@@ -1,10 +1,10 @@
 # GKE Cluster Setup
 
-This document details how to setup a new GKE cluster that's intended to act as an execution
-runtime for the TTS service when orchestrated via Cloud Run.
+This document details how to setup a new GKE cluster that's intended to act 
+as an execution runtime for the TTS service.
 
-1. First enable the required services. You'll only need to do this once per Google Cloud
-   Project.
+1. First enable the required services. You'll only need to do this once per 
+   Google Cloud Project.
 
     ```
     gcloud services enable \
@@ -15,10 +15,8 @@ runtime for the TTS service when orchestrated via Cloud Run.
 
 2. Next, create a GKE cluster:
 
-    Create a cluster:
-
     ```
-    export name="tts-dev"
+    export name="dev"
     gcloud beta container clusters create "$name" \
         --region "us-central1" \
         --no-enable-basic-auth \
@@ -49,4 +47,6 @@ runtime for the TTS service when orchestrated via Cloud Run.
         --maintenance-window-recurrence "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR,SA,SU" \
         --enable-shielded-nodes
     ```
+
+3. Then read the [instructions for deploying the TTS service](./run/README).
 
