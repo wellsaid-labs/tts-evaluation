@@ -48,5 +48,5 @@ as an execution runtime for the TTS service.
         --enable-shielded-nodes
     ```
 
-3. Then read the [instructions for deploying the TTS service](./run/README).
+3. Then read the [instructions for deploying the TTS service](./run/README.md).
 
