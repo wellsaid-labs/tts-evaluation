@@ -1,95 +1,145 @@
 # Runtime Service Configuration
 
-This directory contains code for deploying individual instances of the TTS service.
+This directory contains code for deploying the TTS service. The service is 
+deployed to a [GKE Cluster](https://cloud.google.com/kubernetes-engine),
+and orchestrated via [Cloud Run](https://cloud.google.com/run).
 
-Right now this setup utilizes Kustomize, but we plan to deprecate Kustmoize in
-the near future in favor of Pulumi or jsonnet.
+## Prerequisites 
+
+You'll need the following installed:
+
+- [gcloud](https://cloud.google.com/sdk/docs/quickstart)
+- [jsonnet](https://github.com/google/jsonnet#packages)
+- [kubectl](https://kubernetes.io/docs/tasks/tools/)
+
+You'll also need access to the appropriate Google Cloud Project.
+
+## High Level Architecture
+
+The TTS service is a single Python application that:
+
+- Streams audio from text that's provided via a request.
+- Validates text that's to be converted to audio.
+
+Two versions of the TTS service are deployed per model:
+
+- One for streaming audio.
+- One for validating input.
+
+This decision was made because the resource needs and concurrency of these
+endpoints are different. Deploying them separately allows us to adjust 
+their scaling factors to reduce cost and increase service resiliency.
+
+Each TTS service instance isn't exposed to the public internet. Rather they 
+can only be queried from the cluster, using cluster-local DNS. The 
+DNS name for a service is of the following format:
+
+```bash
+# input validation
+iv.${model}.svc.cluster.local
+
+# audio streaming
+stream.${model}.svc.cluster.local
+```
+
+For instance, if we were deploying a model whose identifier is `v3` we'd use 
+hostnames `iv.v3.svc.cluster.local` and `stream.v3.svc.cluster.local`, 
+respectively.
+
+Public access will handled by a [Kong](https://konghq.com/) proxy instance. 
+That's not in place yet, so it's not documented.
+
+## Building an Image
+
+The TTS software is packaged via [Docker](https://docker.com). If
+you already know the image you want to deploy you can skip this step.
+Otherwise you'll need to build and push an image.
+
+TODO: Document how to build and push the image(s).
 
 ## Deploying
 
-There's currently single instance of the service that's running the smaller
-image prepared by Neil. That service is accessible at [https://ttsdev.wellsaidlabs.com](https://ttsdev.wellsaidlabs.com).
+To deploy a new version of a service, follow these steps:
 
-The YAML files that define this instance live in the `dev/` directory.
+1. Connect to the target cluster:
 
-Before updating anything you'll need to populate a file that's not
-committed to the repository with the API keys. Eventually this file will
-be stored in some sort of secret management solution. Follow these
-steps to create and populate that file:
-
-1. Create the secrets file:
-
-    ```
-    touch dev/.env.api-keys
+    ```bash
+    gcloud container clusters get-credentials $cluster --region us-central1
     ```
 
-2. Edit the file and add an API key per line, like so:
+2. Populate the api keys that should be used to access the endpoint. 
+   The API keys must be present in a file named `apikeys.json` that lives 
+   in the same directory as this README. WellSaidLabs should eventually store
+   this file in something like [Google Secret Manager](https://cloud.google.com/secret-manager)
+   and add the command for downloading it here.
 
-    ```
-    SAMS_SPEECH_API_KEY=XXX
-    NEIL_SPEECH_API_KEY=YYY
-    ```
+   The contents of that file should look something like this: 
 
-   It's important that every entry end with the `_SPEECH_API_KEY` suffix, as
-   the Python application specifically looks for environment variables ending
-   in this value.
-
-Next make the desired changes to the YAML files in `base/` or `dev/`. The changes in `dev/`
-are merged over the definitions in `base/`.
-
-For instance, to update the mininum number of instances edit `base/service.yaml` like so:
-
-```diff
-      annotations:
--        autoscaling.knative.dev/minScale: '0'
-+        autoscaling.knative.dev/minScale: '3'
-        autoscaling.knative.dev/maxScale: '30'
-```
-
-
-Once you're done you can deploy your changes like so:
-
-1. First, edit `dev/set-service-name.yaml` and increment the value of the revision name:
-
-    ```diff
-        - op: replace
-          path: /spec/template/metadata/name
-    -     value: tts-dev-002
-    +     value: tts-dev-003
+    ```json
+    {
+        "SAMS_SPEECH_API_KEY": "XXX",
+        "NEIL_SPEECH_API_KEY": "YYY"
+    }
     ```
 
-2. Then deploy that revision:
+    Again, if you're updating an existing environment make sure you first download the 
+    existing API keys first. Otherwise you'll overwrite the ones that are there.
+
+2.  Deploy the version you'd like to release:
+
+    ```bash
+    jsonnet \
+        -y tts.jsonnet \
+        --tla-str model=$model \
+        --tla-str version=$version \
+        --tla-str image=$image \
+        | kubectl apply -f -
+    ```
+
+    A few notes about the parameters:
+
+    - `$model` is a unique identifier for the model being deployed. It'll 
+      determine the on-cluster DNS name for the service, which will be 
+      `[stream|iv].$model.svc.cluster.local`. It can only contain 
+      lowercase alphanumeric characters and dashes.
+
+    - `$version` is a unique identifier for the revision being released. 
+      It can only include lowercase alphanumeric characters and dashes, 
+      so we choose to use a simple monotonic integer. So if it's the first 
+      time it's being released us `1`, then `2` and so on.
+
+    - `$image` is the fully qualified image to deploy. You should use an
+      [image digest](https://cloud.google.com/architecture/using-container-images)
+      instead of a tag, since they're immutable. If you know the tag you'd
+      like to release you can use the command below to determine the 
+      digest:
+
+      ```
+      docker inspect \
+        gcr.io/voice-service/speech-api-worker:latest \
+        --format={{index .RepoDigests 0}}
+      ```
+
+      The result should look something like this:
+
+      ```
+      gcr.io/voice-service-2-313121/speech-api-worker@sha256:3af2c7a3a88806e0ff5e5c0659ab6a97c42eba7f6e5d61e33dbc9244163e17d3
+      ```
+
+4. After running the command you can see the status of what was deployed via 
+   this command:
 
     ```
-    gcloud config set project voice-service-2-313121
-    gcloud container clusters get-credentials tts-dev --region us-central1
-    kubectl apply -k dev/
+    kubectl get --namespace $model service.serving.knative.dev
+    ```
+    
+    If something didn't work, you can investigate by first listing all 
+    resources:
+
+    ```
+    kubectl get --namespace $model all
     ```
 
-You can see the new revision and it's status like so:
-
-```
-kubectl get revisions --namespace=dev
-```
-
-Once that command reports the new revision as ready, test it like so:
-
-```
-export API_KEY=XXX
-curl \
-    -H "Content-Type: application/json" \
-    -X POST \
-    -d "{ \"text\": \"hello world\", \"speaker_id\": 2, \"api_key\": \"$API_KEY\" }" \
-    https://ttsdev.wellsaidlabs.com/api/speech_synthesis/v1/text_to_speech/stream \
-    --output audio.mp3
-```
-
-Open the resulting `audio.mp3` file to make sure it's well formed and confirm it's working.
-
-If you want to see the number of actual pods running at any point in time you can
-do so like this:
-
-```
-kubectl get pods --namespace=dev
-```
+    Then depending on the output use commands like `kubectl describe` 
+    and `kubectl logs` to further debug things.
 
