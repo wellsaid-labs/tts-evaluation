@@ -13,9 +13,9 @@ You might be interested in:
 - [Learning about our engineering processes](./docs/ENGINEERING_PROCESSES.md)
 - [Setting up a local development environment](./docs/LOCAL_SETUP.md)
 - [Training a spectrogram or signal model on GCP](./docs/TRAIN_MODEL_GCP.md)
-- [Training a TTS model on GCP](./docs/TRAIN_TTS_MODEL_GCP.md)
-- [Creating a new dataset](./docs/PREPROCESSING_DATASETS.md)
+- [Creating a new dataset](./docs/CREATE_DATASET.md)
 - [See some tips and tricks](./docs/TIPS_AND_TRICKS.md)
+- [Learn more about deployment](./docs/DEPLOYMENT.md)
 
 ## Architecture: Functional Core, Imperative Shell
 
