@@ -135,10 +135,10 @@ def _normalize_file_name(name):
     name = name.replace("_", " ")
     # NOTE: Put a space before the start of a non-lower case sequence, non-closing bracket, non
     # numeric sequence.
-    name = re.sub("([^a-z0-9\)\]\-]+)", r" \1", name)
+    name = re.sub(r"([^a-z0-9\)\]\-]+)", r" \1", name)
     # NOTE: Put a spaces surrounding a "|" character.
-    name = re.sub("([\|]+)", r" \1 ", name)
-    name = "_".join(re.sub("([A-Z][a-z]+)", r" \1", name).split()).lower()
+    name = re.sub(r"([\|]+)", r" \1 ", name)
+    name = "_".join(re.sub(r"([A-Z][a-z]+)", r" \1", name).split()).lower()
     return name.replace("_-", "-").replace("-_", "-")
 
 
