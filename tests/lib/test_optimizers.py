@@ -9,7 +9,7 @@ from tests._utils import assert_almost_equal
 
 
 def test_adaptive_gradient_norm_clipper_():
-    """ Test `AdaptiveGradientNormClipper` clips the gradient norm correctly. """
+    """Test `AdaptiveGradientNormClipper` clips the gradient norm correctly."""
     parameters = torch.zeros(3)
     clippers = lib.optimizers.AdaptiveGradientNormClipper([parameters], 10, float("inf"))
 
@@ -23,7 +23,7 @@ def test_adaptive_gradient_norm_clipper_():
 
 
 def test_adaptive_gradient_norm_clipper__window():
-    """ Test `AdaptiveGradientNormClipper` manages the window correctly. """
+    """Test `AdaptiveGradientNormClipper` manages the window correctly."""
     parameters = torch.zeros(1)
     clippers = lib.optimizers.AdaptiveGradientNormClipper([parameters], 3, float("inf"))
 
@@ -53,7 +53,7 @@ def test_adaptive_gradient_norm_clipper__window():
 
 
 def test_adaptive_gradient_norm_clipper__large_gradient():
-    """ Test `AdaptiveGradientNormClipper` errors given a large gradient. """
+    """Test `AdaptiveGradientNormClipper` errors given a large gradient."""
     parameters = torch.zeros(1)
     clippers = lib.optimizers.AdaptiveGradientNormClipper([parameters], 3, float("inf"))
 
@@ -95,7 +95,7 @@ def test_exponential_moving_parameter_average():
 
 
 def test_exponential_moving_parameter_average__identity():
-    """ Test `ExponentialMovingParameterAverage` is an identity function when `beta==0.0`. """
+    """Test `ExponentialMovingParameterAverage` is an identity function when `beta==0.0`."""
     beta = 0.0
     parameters = [torch.zeros(1)]
     ema = lib.optimizers.ExponentialMovingParameterAverage(parameters, beta=beta)

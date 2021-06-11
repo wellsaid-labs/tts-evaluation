@@ -22,7 +22,7 @@ def _make_decoder(
     encoder_output_size=5,
     stop_net_dropout=0.5,
 ) -> Decoder:
-    """ Make `decoder.Decoder` for testing. """
+    """Make `decoder.Decoder` for testing."""
     config = {
         lib.spectrogram_model.pre_net.PreNet.__init__: HParams(num_layers=1, dropout=0.5),
         lib.spectrogram_model.attention.Attention.__init__: HParams(
@@ -41,7 +41,7 @@ def _make_decoder(
 
 
 def test_autoregressive_decoder():
-    """ Test `decoder.Decoder` handles a basic case. """
+    """Test `decoder.Decoder` handles a basic case."""
     batch_size = 5
     num_tokens = 6
     module = _make_decoder()
@@ -92,7 +92,7 @@ def test_autoregressive_decoder():
 
 
 def test_autoregressive_decoder__target():
-    """ Test `decoder.Decoder` handles `target_frames` inputs. """
+    """Test `decoder.Decoder` handles `target_frames` inputs."""
     batch_size = 5
     num_frames = 3
     num_tokens = 6

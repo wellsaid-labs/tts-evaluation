@@ -4,7 +4,7 @@ import lib.spectrogram_model.pre_net
 
 
 def test_pre_net():
-    """ Test `lib.spectrogram_model.pre_net.PreNet` handles a basic case. """
+    """Test `lib.spectrogram_model.pre_net.PreNet` handles a basic case."""
     num_frames = 32
     batch_size = 5
     size = 64

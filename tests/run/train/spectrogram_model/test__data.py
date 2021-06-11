@@ -19,14 +19,14 @@ from tests._utils import assert_almost_equal, assert_uniform_distribution
 
 @pytest.fixture(autouse=True)
 def run_around_tests():
-    """ Set a basic configuration. """
+    """Set a basic configuration."""
     run._config.configure()
     yield
     hparams.clear_config()
 
 
 def test_input_encoder():
-    """ Test `_data.InputEncoder` handles a basic case. """
+    """Test `_data.InputEncoder` handles a basic case."""
     graphemes = ["abc", "def"]
     phonemes = ["ˈ|eɪ|b|ˌ|iː|s|ˈ|iː|", "d|ˈ|ɛ|f"]
     phoneme_separator = "|"
@@ -61,13 +61,13 @@ def test__random_nonoverlapping_alignments():
 
 
 def test__random_nonoverlapping_alignments__empty():
-    """Test `_data._random_nonoverlapping_alignments` handles empty list. """
+    """Test `_data._random_nonoverlapping_alignments` handles empty list."""
     input_ = Alignment.stow([])
     assert _data._random_nonoverlapping_alignments(input_, 3) == tuple()
 
 
 def test__random_nonoverlapping_alignments__large_max():
-    """Test `_data._random_nonoverlapping_alignments` handles a large maximum. """
+    """Test `_data._random_nonoverlapping_alignments` handles a large maximum."""
     make = lambda a, b: Alignment((a, b), (a, b), (a, b))
     with torchnlp.random.fork_rng(1234):
         alignments = Alignment.stow(
@@ -77,7 +77,7 @@ def test__random_nonoverlapping_alignments__large_max():
 
 
 def test__get_loudness():
-    """Test `_data._get_loudnes` slices, measures, and rounds loudness correctly. """
+    """Test `_data._get_loudnes` slices, measures, and rounds loudness correctly."""
     sample_rate = 1000
     length = 10
     implementation = "K-weighting"
@@ -103,7 +103,7 @@ def test__get_loudness():
 
 
 def test__get_char_to_word():
-    """Test `_data._get_char_to_word` maps characters to words correctly. """
+    """Test `_data._get_char_to_word` maps characters to words correctly."""
     nlp = lib.text.load_en_english()
     doc = nlp("It was time to present the present abcdefghi.")
     char_to_word = _data._get_char_to_word(doc)
@@ -113,7 +113,7 @@ def test__get_char_to_word():
 
 
 def test__get_word_vectors():
-    """Test `_data._get_word_vectors` maps word vectors onto characters. """
+    """Test `_data._get_word_vectors` maps word vectors onto characters."""
     text = "It was time to present the present abcdefghi."
     doc = lib.text.load_en_core_web_md()(text)
     char_to_word = _data._get_char_to_word(doc)
@@ -133,7 +133,7 @@ def test__get_word_vectors():
 
 
 def test__signals_to_spectrograms():
-    """ Test `_data._signals_to_spectrograms` is invariant to the batch size. """
+    """Test `_data._signals_to_spectrograms` is invariant to the batch size."""
     fft_length = 2048
     hop_length = fft_length // 4
     window = torch.from_numpy(librosa.filters.get_window("hann", fft_length)).float()
@@ -163,7 +163,7 @@ def test__get_normalized_half_gaussian():
 
 
 def test__make_stop_token():
-    """ Test `_data._make_stop_token` makes a batched stop token. """
+    """Test `_data._make_stop_token` makes a batched stop token."""
     spectrogram = SequenceBatch(torch.ones(8, 4, 16), torch.tensor([2, 4, 6, 8]).unsqueeze(0))
     stop_token = _data._make_stop_token(spectrogram, 6, 2)
     assert_almost_equal(stop_token.lengths, spectrogram.lengths)

@@ -27,7 +27,7 @@ def run_around_tests():
 
 
 def test_flask_exception():
-    """Test `FlaskException` `to_dict` produces the correct dictionary. """
+    """Test `FlaskException` `to_dict` produces the correct dictionary."""
     exception = FlaskException("This is a test", 404, code="NOT_FOUND", payload={"blah": "hi"})
     assert exception.to_dict() == {"blah": "hi", "code": "NOT_FOUND", "message": "This is a test"}
 

@@ -30,7 +30,7 @@ def test_random_sample():
 
 
 def test_mean():
-    """ Test `lib.utils.mean` handles empty and non-empty iterables. """
+    """Test `lib.utils.mean` handles empty and non-empty iterables."""
     assert lib.utils.mean([1, 2, 3]) == 2
     assert lib.utils.mean(range(3)) == 1
     assert numpy.isnan(lib.utils.mean([]))  # type: ignore
@@ -76,7 +76,7 @@ def test_get_weighted_std__bias():
 
 
 def test_get_weighted_std__error():
-    """ Test `lib.utils.get_weighted_std` errors if the distribution is not normalized. """
+    """Test `lib.utils.get_weighted_std` errors if the distribution is not normalized."""
     with pytest.raises(AssertionError):
         lib.utils.get_weighted_std(torch.tensor([0, 0.25, 0.25, 0.25]), dim=0)
 
@@ -110,7 +110,7 @@ class MockModel(torch.nn.Module):
 
 
 def test_flatten_parameters():
-    """ Test that `lib.utils.flatten_parameters` executes. """
+    """Test that `lib.utils.flatten_parameters` executes."""
     lib.utils.flatten_parameters(MockModel())
     lib.utils.flatten_parameters(torch.nn.LSTM(10, 10))
 
@@ -120,45 +120,45 @@ def test_identity():
 
 
 def test_split():
-    """ Test `lib.utils.split` splits once. """
+    """Test `lib.utils.split` splits once."""
     assert list(lib.utils.split([1, 2, 3, 4, 5], [4])) == [[1, 2], [3, 4, 5]]
 
 
 def test_split__exact():
-    """ Test `lib.utils.split` splits exactly on `[1, 2]`. """
+    """Test `lib.utils.split` splits exactly on `[1, 2]`."""
     assert list(lib.utils.split([1, 2, 3], [3])) == [[1, 2], [3]]
 
 
 def test_split__zero():
-    """ Test `lib.utils.split` handles a zero split. """
+    """Test `lib.utils.split` handles a zero split."""
     assert list(lib.utils.split([1, 2, 3], [0])) == [[], [1, 2, 3]]
 
 
 def test_split__empty_split():
-    """ Test `lib.utils.split` returns empty splits if threshold is not met. """
+    """Test `lib.utils.split` returns empty splits if threshold is not met."""
     assert list(lib.utils.split([3], [2])) == [[], [3]]
     assert list(lib.utils.split([1, 2, 3, 4, 5], [8, 3])) == [[1, 2, 3], [], [4, 5]]
 
 
 def test_split__infinity():
-    """ Test `lib.utils.split` handles infinite thresholds and overflow. """
+    """Test `lib.utils.split` handles infinite thresholds and overflow."""
     expected = [[1, 2, 3], [4, 5], []]
     assert list(lib.utils.split([1, 2, 3, 4, 5], [8, float("inf"), 3])) == expected
 
 
 def test_split__multiple_infinities():
-    """ Test `lib.utils.split` handles multiple infinite thresholds and overflow. """
+    """Test `lib.utils.split` handles multiple infinite thresholds and overflow."""
     expected = [[1, 2, 3], [4, 5], [], []]
     assert list(lib.utils.split([1, 2, 3, 4, 5], [8, float("inf"), float("inf"), 3])) == expected
 
 
 def test_split__no_thresholds():
-    """ Test `lib.utils.split` handles no thresholds. """
+    """Test `lib.utils.split` handles no thresholds."""
     assert list(lib.utils.split([1, 2, 3, 4, 5], [])) == [[1, 2, 3, 4, 5]]
 
 
 def test_log_runtime():
-    """ Test `lib.utils.log_runtime` executes. """
+    """Test `lib.utils.log_runtime` executes."""
 
     @lib.utils.log_runtime
     def _helper():
@@ -168,11 +168,11 @@ def test_log_runtime():
 
 
 def test_log_runtime__type_hints__documentation():
-    """ Test if `lib.utils.log_runtime` passes along type hints and documentation. """
+    """Test if `lib.utils.log_runtime` passes along type hints and documentation."""
 
     @lib.utils.log_runtime
     def _helper(arg: str):
-        """ Docs """
+        """Docs"""
         return arg
 
     assert typing.get_type_hints(_helper)["arg"] == str
@@ -191,39 +191,39 @@ def test_pool():
 
 
 def test_pad_tensor():
-    """ Test `pad_tensor` for various `dim`. """
+    """Test `pad_tensor` for various `dim`."""
     assert pad_tensor(torch.zeros(3, 4, 5), pad=(1, 1), dim=0).shape == (5, 4, 5)
     assert pad_tensor(torch.zeros(3, 4, 5), pad=(1, 1), dim=-1).shape == (3, 4, 7)
     assert pad_tensor(torch.zeros(3, 4, 5), pad=(1, 1), dim=1).shape == (3, 6, 5)
 
 
 def test_pad_tensor__kwargs():
-    """ Test `pad_tensor` `kwargs` are passed along. """
+    """Test `pad_tensor` `kwargs` are passed along."""
     assert pad_tensor(torch.zeros(3, 4, 5), pad=(1, 1), dim=1, value=1.0).sum() == 2 * 3 * 5
 
 
 def test_trim_tensors():
-    """ Test `lib.utils.trim_tensors` trims a 1-d tensor. """
+    """Test `lib.utils.trim_tensors` trims a 1-d tensor."""
     a, b = lib.utils.trim_tensors(torch.tensor([1, 2, 3, 4]), torch.tensor([2, 3]), dim=0)
     assert torch.equal(a, torch.tensor([2, 3]))
     assert torch.equal(b, torch.tensor([2, 3]))
 
 
 def test_trim_tensors__3d():
-    """ Test `lib.utils.trim_tensors` trims a 3-d tensor. """
+    """Test `lib.utils.trim_tensors` trims a 3-d tensor."""
     a, b = lib.utils.trim_tensors(torch.zeros(2, 4, 2), torch.zeros(2, 2, 2), dim=1)
     assert a.shape == (2, 2, 2)
     assert b.shape == (2, 2, 2)
 
 
 def test_trim_tensors__uneven():
-    """ Test `lib.utils.trim_tensors` raises if it needs to trim unevenly. """
+    """Test `lib.utils.trim_tensors` raises if it needs to trim unevenly."""
     with pytest.raises(AssertionError):
         lib.utils.trim_tensors(torch.tensor([1, 2, 3]), torch.tensor([2, 3]), dim=0)
 
 
 def test_lstm():
-    """ Test `lib.utils.LSTM` and `torch.nn.LSTM` return the same output, given a hidden state. """
+    """Test `lib.utils.LSTM` and `torch.nn.LSTM` return the same output, given a hidden state."""
     input_ = torch.randn(5, 3, 10)
     hidden_state = (torch.randn(4, 3, 20), torch.randn(4, 3, 20))
 
@@ -241,7 +241,7 @@ def test_lstm():
 
 
 def test_lstm__hidden_state():
-    """ Test `lib.utils.LSTM` uses the initial hidden state correctly. """
+    """Test `lib.utils.LSTM` uses the initial hidden state correctly."""
     input_ = torch.randn(5, 1, 10)
 
     with fork_rng(seed=123):
@@ -260,7 +260,7 @@ def test_lstm__hidden_state():
 
 
 def test_lstm__batch_first():
-    """ Test if `lib.utils.LSTM` works with the `batch_first` parameter. """
+    """Test if `lib.utils.LSTM` works with the `batch_first` parameter."""
     input_ = torch.randn(1, 3, 10)
 
     with fork_rng(seed=123):
@@ -279,7 +279,7 @@ def test_lstm__batch_first():
 
 
 def test_lstm__mono():
-    """ Test if `lib.utils.LSTM` works with the `bidirectional` parameter. """
+    """Test if `lib.utils.LSTM` works with the `bidirectional` parameter."""
     input_ = torch.randn(5, 1, 10)
 
     with fork_rng(seed=123):
@@ -316,7 +316,7 @@ def test_lstm_cell():
 
 
 def test_lstm_cell__hidden_state():
-    """ Test `lib.utils.LSTMCell` uses the initial hidden state correctly. """
+    """Test `lib.utils.LSTMCell` uses the initial hidden state correctly."""
     input_ = torch.randn(1, 10)
 
     with fork_rng(seed=123):
@@ -334,7 +334,7 @@ def test_lstm_cell__hidden_state():
 
 
 def test_clamp():
-    """ Test `lib.utils.clamp` with basic cases. """
+    """Test `lib.utils.clamp` with basic cases."""
     assert lib.utils.clamp(3, min_=1, max_=2) == 2
     assert lib.utils.clamp(2, min_=1, max_=2) == 2
     assert lib.utils.clamp(1, min_=1, max_=2) == 1
@@ -342,7 +342,7 @@ def test_clamp():
 
 
 def test_clamp__infinity():
-    """ Test `lib.utils.clamp` with infinity. """
+    """Test `lib.utils.clamp` with infinity."""
     assert lib.utils.clamp(3, min_=1, max_=math.inf) == 3
     assert lib.utils.clamp(3, min_=-math.inf, max_=2) == 2
     assert lib.utils.clamp(0, min_=1, max_=math.inf) == 1
@@ -350,7 +350,7 @@ def test_clamp__infinity():
 
 
 def test_call_once():
-    """ Test `lib.utils.call_once` only executes callable once with the same arguments. """
+    """Test `lib.utils.call_once` only executes callable once with the same arguments."""
     count = 0
 
     def add_(a, b=0):
@@ -367,7 +367,7 @@ def test_call_once():
 
 
 def test_mapped_iterator():
-    """ Test `MappedIterator` returns iterator items. """
+    """Test `MappedIterator` returns iterator items."""
     map = lib.utils.MappedIterator(iter(range(3)))
     assert map[0] == 0
     assert map[1] == 1
@@ -375,7 +375,7 @@ def test_mapped_iterator():
 
 
 def test_mapped_iterator__out_of_order():
-    """ Test `MappedIterator` returns iterator items out of order. """
+    """Test `MappedIterator` returns iterator items out of order."""
     map = lib.utils.MappedIterator(iter(range(3)))
     assert map[1] == 1
 
@@ -386,7 +386,7 @@ def test_mapped_iterator__out_of_order():
 
 
 def test__tuple():
-    """ Test `Tuple` can store and retrieve `tuple`s. """
+    """Test `Tuple` can store and retrieve `tuple`s."""
     dtype = numpy.dtype([("f0", str, 1), ("f1", numpy.float32)])
     dtype = numpy.dtype([("f0", numpy.int32), ("f1", dtype)])
     data = [(1, ("a", 1.0)), (2, ("b", 2.0)), (3, ("c", 3.0))]
@@ -410,7 +410,7 @@ class MockNamedTuple(typing.NamedTuple):
 
 
 def test__tuple__named():
-    """ Test `Tuple` can store and retrieve `NamedTuple`s. """
+    """Test `Tuple` can store and retrieve `NamedTuple`s."""
     dtype = numpy.dtype([("f0", numpy.float32), ("f1", numpy.int32)])
     dtype = numpy.dtype([("string", str, 1), ("tuple", dtype), ("default", numpy.int32)])
     data = [
@@ -430,7 +430,7 @@ def test__tuple__named():
 
 
 def test__tuple__empty():
-    """ Test `Tuple` can store no data. """
+    """Test `Tuple` can store no data."""
     items = lib.utils._Tuple([])
 
     with pytest.raises(IndexError):
@@ -442,7 +442,7 @@ def test__tuple__empty():
 
 
 def test_corrected_random_choice():
-    """ Test `lib.utils.corrected_random_choice` handles basic cases. """
+    """Test `lib.utils.corrected_random_choice` handles basic cases."""
     distribution = {i: 0.0 for i in range(10)}
     for _ in range(10000):
         choice = lib.utils.corrected_random_choice(distribution)
@@ -456,7 +456,7 @@ def test_corrected_random_choice():
 
 
 def test_corrected_random_choice__non_uniform():
-    """ Test `lib.utils.corrected_random_choice` handles non-uniform distribution. """
+    """Test `lib.utils.corrected_random_choice` handles non-uniform distribution."""
     distribution = {i: 0.0 for i in range(10)}
     expected = {i: 1 / (i + 1) for i in range(10)}
     for _ in range(10000):
@@ -472,7 +472,7 @@ def test_corrected_random_choice__non_uniform():
 
 
 def test_timeline():
-    """ Test `Timeline` handles basic cases. """
+    """Test `Timeline` handles basic cases."""
     intervals = [(0, 1), (0.5, 1), (1, 2)]
     timeline = Timeline(intervals, dtype=numpy.float64)
     assert timeline.intervals() == intervals
@@ -490,7 +490,7 @@ def test_timeline():
 
 
 def test_timeline__zero():
-    """ Test `Timeline` handles zero intervals. """
+    """Test `Timeline` handles zero intervals."""
     timeline = Timeline([], dtype=numpy.float64)
     assert timeline.intervals() == []
     with pytest.raises(IndexError):
@@ -504,7 +504,7 @@ def test_timeline__zero():
 
 
 def test_timeline_map():
-    """ Test `TimelineMap` handles basic cases. """
+    """Test `TimelineMap` handles basic cases."""
     intervals = [
         ((3, 4), "a"),  # NOTE: Out of order
         ((0, 1), "a"),
@@ -522,7 +522,7 @@ def test_timeline_map():
 
 
 def test_triplets():
-    """ Test `triplets`. """
+    """Test `triplets`."""
     assert list(lib.utils.triplets(["a", "b", "c"])) == [
         (None, "a", "b"),
         ("a", "b", "c"),
