@@ -2,7 +2,7 @@
 
 Usage:
 
-    > python -m run.utils.check_licenses
+    $ python -m run.utils.check_licenses
 """
 
 import subprocess

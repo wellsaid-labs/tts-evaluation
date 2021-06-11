@@ -49,6 +49,7 @@ retry
 typer
 watchdog
 threadpoolctl
+pip-licenses
 
 # Web
 flask
