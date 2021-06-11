@@ -12,7 +12,7 @@ from run.data import _loader
 
 @pytest.fixture(autouse=True)
 def run_around_tests():
-    """ Set a basic configuration. """
+    """Set a basic configuration."""
     suffix = ".wav"
     data_type = lib.audio.AudioDataType.FLOATING_POINT
     bits = 32

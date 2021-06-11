@@ -15,14 +15,14 @@ TEST_DATA_LJ = TEST_DATA_PATH / "bit(rate(lj_speech,24000),32).wav"
 
 @pytest.fixture(autouse=True)
 def run_around_tests():
-    """ Set a basic configuration. """
+    """Set a basic configuration."""
     run._config.configure()
     yield
     hparams.clear_config()
 
 
 def test__find_duplicate_passages():
-    """ Test `run._utils._find_duplicate_passages` finds duplicate passages. """
+    """Test `run._utils._find_duplicate_passages` finds duplicate passages."""
     dev_scripts = set(["This is a test."])
     passages = [
         make_passage(script="I'm testing this."),
@@ -35,7 +35,7 @@ def test__find_duplicate_passages():
 
 
 def test__find_duplicate_passages__no_duplicates():
-    """ Test `run._utils._find_duplicate_passages` handles no duplicates. """
+    """Test `run._utils._find_duplicate_passages` handles no duplicates."""
     dev_scripts = set(["This is a test."])
     duplicates, rest = _find_duplicate_passages(
         dev_scripts, [make_passage(script="I'm testing this.")], 0.9
@@ -45,7 +45,7 @@ def test__find_duplicate_passages__no_duplicates():
 
 
 def test__len_of_dups():
-    """ Test `run._utils._len_of_dups` handles a basic case. """
+    """Test `run._utils._len_of_dups` handles a basic case."""
     alignments = Alignment.stow([Alignment((0, 1), (0, 1), (0, 1))])
     passages = [
         make_passage(script="a", alignments=alignments),
@@ -61,7 +61,7 @@ def test__len_of_dups():
 
 @mock.patch("random.shuffle", return_value=None)
 def test_split_dataset__deduplication(_):
-    """ Test `run._utils.split_dataset` handles deduplication accross multiple speakers. """
+    """Test `run._utils.split_dataset` handles deduplication accross multiple speakers."""
     speaker_a = run.data._loader.Speaker("a")
     speaker_b = run.data._loader.Speaker("b")
     speaker_c = run.data._loader.Speaker("c")
@@ -123,7 +123,7 @@ def test_split_dataset__deduplication(_):
 
 @mock.patch("random.shuffle", return_value=None)
 def test_split_dataset__order(_):
-    """ Test `run._utils.split_dataset` handles different dictionary orderings. """
+    """Test `run._utils.split_dataset` handles different dictionary orderings."""
     speaker_a = run.data._loader.Speaker("a")
     speaker_b = run.data._loader.Speaker("b")
     groups = [set([speaker_a, speaker_b])]
@@ -155,7 +155,7 @@ def test_split_dataset__order(_):
 
 @mock.patch("random.shuffle", return_value=None)
 def test_split_dataset__groups(_):
-    """ Test `run._utils.split_dataset` handles independent speakers. """
+    """Test `run._utils.split_dataset` handles independent speakers."""
     speaker_a = run.data._loader.Speaker("a")
     speaker_b = run.data._loader.Speaker("b")
     groups = [{speaker_a}, {speaker_b}]

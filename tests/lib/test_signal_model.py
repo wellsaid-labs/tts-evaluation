@@ -15,7 +15,7 @@ assert_almost_equal = lambda *a, **k: _utils.assert_almost_equal(*a, **k, decima
 
 
 def test__interpolate_and_concat():
-    """ Test `lib.signal_model._InterpolateAndConcat` trims and concats. """
+    """Test `lib.signal_model._InterpolateAndConcat` trims and concats."""
     module = lib.signal_model._InterpolateAndConcat(size=1, scale_factor=2)
     concat = torch.arange(0, 3, dtype=torch.float).view(1, 1, 3)
     tensor = torch.ones(1, 1, 4)
@@ -24,7 +24,7 @@ def test__interpolate_and_concat():
 
 
 def test__interpolate_and_mask():
-    """ Test `lib.signal_model._InterpolateAndMask` trims and masks. """
+    """Test `lib.signal_model._InterpolateAndMask` trims and masks."""
     module = lib.signal_model._InterpolateAndMask(scale_factor=2)
     mask = torch.tensor([0, 1, 0], dtype=torch.float).view(1, 1, 3)
     tensor = torch.full((1, 1, 4), 2, dtype=torch.float)
@@ -33,7 +33,7 @@ def test__interpolate_and_mask():
 
 
 def test__pixel_shuffle_1d():
-    """ Test `lib.signal_model._PixelShuffle1d` reshapes the input correctly. """
+    """Test `lib.signal_model._PixelShuffle1d` reshapes the input correctly."""
     module = lib.signal_model._PixelShuffle1d(upscale_factor=4)
     tensor = torch.arange(0, 12).view(1, 3, 4).transpose(1, 2)
     output = module(tensor)
@@ -41,7 +41,7 @@ def test__pixel_shuffle_1d():
 
 
 def test__block():
-    """ Test `lib.signal_model._Block` is differentiable and outputs the right shape. """
+    """Test `lib.signal_model._Block` is differentiable and outputs the right shape."""
     in_channels = 4
     num_frames = 4
     batch_size = 3
@@ -67,7 +67,7 @@ def test__block():
 
 
 def test__has_weight_norm():
-    """ Test `lib.signal_model._has_weight_norm` detects `torch.nn.utils.weight_norm`. """
+    """Test `lib.signal_model._has_weight_norm` detects `torch.nn.utils.weight_norm`."""
     module = torch.nn.Linear(20, 40)
     torch.nn.utils.weight_norm(module, name="weight")
     assert lib.signal_model._has_weight_norm(module)
@@ -84,7 +84,7 @@ def _make_small_signal_model(
     max_channel_size: int = 8,
     mu: int = 255,
 ) -> typing.Tuple[lib.signal_model.SignalModel, torch.Tensor, typing.Tuple[int, int, int]]:
-    """ Make `lib.signal_model.SignalModel` and it's inputs for testing."""
+    """Make `lib.signal_model.SignalModel` and it's inputs for testing."""
     model = lib.signal_model.SignalModel(
         input_size=num_frame_channels,
         hidden_size=hidden_size,
@@ -123,7 +123,7 @@ def test_signal_model__no_batch__odd():
 
 
 def test_signal_model__batch_invariance():
-    """ Test `lib.signal_model.SignalModel` output doesn't vary with batch size. """
+    """Test `lib.signal_model.SignalModel` output doesn't vary with batch size."""
     model, spectrogram, _ = _make_small_signal_model()
     _utils.assert_almost_equal(model(spectrogram)[0], model(spectrogram[0]), decimal=5)
 
@@ -172,7 +172,7 @@ def test_signal_model__shape():
 
 
 def test_train():
-    """ Test `lib.signal_model.SignalModel.train` executes. """
+    """Test `lib.signal_model.SignalModel.train` executes."""
     model, *_ = _make_small_signal_model()
     model.train()
     model.train()
@@ -418,7 +418,7 @@ _expected_grads = {
 
 
 def test_signal_model__version():
-    """ Test `lib.signal_model.SignalModel` has not changed since it was last tested. """
+    """Test `lib.signal_model.SignalModel` has not changed since it was last tested."""
     with fork_rng(123):
         (
             model,

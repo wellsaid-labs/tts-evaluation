@@ -27,7 +27,7 @@ def _make_log_record(
 
 
 def test__colored_formatter__warning():
-    """ Test `_ColoredFormatter` runs for a warning. """
+    """Test `_ColoredFormatter` runs for a warning."""
     id_ = 0
     formatter = lib.environment._ColoredFormatter(id_)
     record = _make_log_record(level=logging.WARNING)
@@ -38,7 +38,7 @@ def test__colored_formatter__warning():
 
 
 def test__colored_formatter__error__large_id():
-    """ Test `_ColoredFormatter` runs for a error with a large id. """
+    """Test `_ColoredFormatter` runs for a error with a large id."""
     id_ = 10000
     formatter = lib.environment._ColoredFormatter(id_)
     record = _make_log_record(level=logging.ERROR)
@@ -49,14 +49,14 @@ def test__colored_formatter__error__large_id():
 
 
 def test__max_level_filter():
-    """ Test `_MaxLevelFilter` filters correctly. """
+    """Test `_MaxLevelFilter` filters correctly."""
     filter_ = lib.environment._MaxLevelFilter(logging.INFO)
     assert filter_.filter(_make_log_record(level=logging.INFO))
     assert not filter_.filter(_make_log_record(level=logging.WARNING))
 
 
 def test_set_basic_logging_config():
-    """ Test if `set_basic_logging_config` executes without error. """
+    """Test if `set_basic_logging_config` executes without error."""
     # `set_basic_logging_config` requires the root logger to have no handlers.
     logger = logging.getLogger()
     handlers = logger.handlers.copy()
@@ -72,12 +72,12 @@ def test_set_basic_logging_config():
 
 
 def test_assert_enough_disk_space():
-    """ Test that `assert_enough_disk_space` passes. """
+    """Test that `assert_enough_disk_space` passes."""
     lib.environment.assert_enough_disk_space(min_space=0)
 
 
 def test_assert_enough_disk_space__not_enough():
-    """ Test that `assert_enough_disk_space` fails. """
+    """Test that `assert_enough_disk_space` fails."""
     with pytest.raises(AssertionError):
         lib.environment.assert_enough_disk_space(min_space=1.0)
 
@@ -85,21 +85,21 @@ def test_assert_enough_disk_space__not_enough():
 @mock.patch("lib.environment.subprocess.check_output", return_value="torch==0.4.1".encode())
 @mock.patch("lib.environment.Path.read_text", return_value="torch==0.4.1\n")
 def test_check_module_versions(_, __):
-    """ Test that `check_module_versions` passes. """
+    """Test that `check_module_versions` passes."""
     lib.environment.check_module_versions()
 
 
 @mock.patch("lib.environment.subprocess.check_output", return_value="comet-ml==3.2.0".encode())
 @mock.patch("lib.environment.Path.read_text", return_value="comet-ml[cpu_logging]==3.2.0\n")
 def test_check_module_versions__brackets(_, __):
-    """ Test that `check_module_versions` handles brackets. """
+    """Test that `check_module_versions` handles brackets."""
     lib.environment.check_module_versions()
 
 
 @mock.patch("lib.environment.subprocess.check_output", return_value="torch==0.4.1".encode())
 @mock.patch("lib.environment.Path.read_text", return_value="torch==0.4.0\n")
 def test_check_module_versions__wrong_version(_, __):
-    """ Test that `check_module_versions` if the install version is incorrect. """
+    """Test that `check_module_versions` if the install version is incorrect."""
     with pytest.raises(RuntimeError):
         lib.environment.check_module_versions()
 
@@ -107,13 +107,13 @@ def test_check_module_versions__wrong_version(_, __):
 @mock.patch("lib.environment.subprocess.check_output", return_value="tensorflow==0.4.0".encode())
 @mock.patch("lib.environment.Path.read_text", return_value="torch==0.4.0\n")
 def test_check_module_versions__missing_install(_, __):
-    """ Test that `check_module_versions` if a installation is missing. """
+    """Test that `check_module_versions` if a installation is missing."""
     with pytest.raises(RuntimeError):
         lib.environment.check_module_versions()
 
 
 def test_set_seed():
-    """ Test that `set_seed` executes. """
+    """Test that `set_seed` executes."""
     lib.environment.set_seed(123)
 
 
@@ -124,7 +124,7 @@ def test_bash_time_label():
 
 
 def test_bash_time_label__short():
-    """ Test that a short bash time label has 3 parts. """
+    """Test that a short bash time label has 3 parts."""
     label = lib.environment.bash_time_label(short=True)
     assert len(label.split("_")) == 3
 
@@ -177,7 +177,7 @@ def test_get_root_path():
 
 
 def test__duplicate_stream(capsys):
-    """ Test if `_duplicate_stream` duplicates `sys.stdout`. """
+    """Test if `_duplicate_stream` duplicates `sys.stdout`."""
     with tempfile.TemporaryDirectory() as directory:
         file_path = Path(directory) / "stdout.log"
         with capsys.disabled():  # Disable capsys because it messes with sys.stdout
@@ -200,7 +200,7 @@ def test__duplicate_stream(capsys):
 
 
 def test_record_standard_streams(capsys):
-    """ Test if `RecordStandardStreams` duplicates the standard streams. """
+    """Test if `RecordStandardStreams` duplicates the standard streams."""
     with tempfile.TemporaryDirectory() as directory:
         directory_path = Path(directory)
         with capsys.disabled():
@@ -237,7 +237,7 @@ def test_record_standard_streams(capsys):
 
 
 def test_load_and_save():
-    """ Test `load` and `save` work on a random object. """
+    """Test `load` and `save` work on a random object."""
     with tempfile.TemporaryDirectory() as directory:
         file_path = pathlib.Path(directory) / f"test_load_and_save{PT_EXTENSION}"
         object_ = frozenset(["testing"])
@@ -246,7 +246,7 @@ def test_load_and_save():
 
 
 def test_save__overwrite():
-    """ Test `save` overwrites existing files only explicitly. """
+    """Test `save` overwrites existing files only explicitly."""
     with tempfile.TemporaryDirectory() as directory:
         file_path = pathlib.Path(directory) / f"test_save__overwrite{PT_EXTENSION}"
         lib.environment.save(file_path, "object")
@@ -256,7 +256,7 @@ def test_save__overwrite():
 
 
 def test_load_most_recent_file():
-    """ Test `load_most_recent_file` loads the most recent non-corrupted file. """
+    """Test `load_most_recent_file` loads the most recent non-corrupted file."""
     with tempfile.TemporaryDirectory() as directory:
         path = pathlib.Path(directory)
         expected_path = path / f"recent{PT_EXTENSION}"
@@ -270,7 +270,7 @@ def test_load_most_recent_file():
 
 
 def test_load_most_recent_file__no_files():
-    """ Test `load_most_recent_file` errors if there are no files found. """
+    """Test `load_most_recent_file` errors if there are no files found."""
     with tempfile.TemporaryDirectory() as directory:
         path = pathlib.Path(directory)
         with pytest.raises(ValueError):
@@ -278,7 +278,7 @@ def test_load_most_recent_file__no_files():
 
 
 def test_load_most_recent_file__corrupted():
-    """ Test `load_most_recent_file` errors if only corrupted files are found. """
+    """Test `load_most_recent_file` errors if only corrupted files are found."""
     with tempfile.TemporaryDirectory() as directory:
         path = pathlib.Path(directory)
         newest = path / f"newest{PT_EXTENSION}"
@@ -288,60 +288,60 @@ def test_load_most_recent_file__corrupted():
 
 
 def test_get_untracked_files():
-    """ Test `get_untracked_files` finds the new file. """
+    """Test `get_untracked_files` finds the new file."""
     file_ = tempfile.NamedTemporaryFile(dir=lib.environment.ROOT_PATH)
     assert Path(file_.name).name in lib.environment.get_untracked_files().split()
 
 
 def test_has_untracked_files():
-    """ Test `has_untracked_files` finds the new file. """
+    """Test `has_untracked_files` finds the new file."""
     _ = tempfile.NamedTemporaryFile(dir=lib.environment.ROOT_PATH)
     assert lib.environment.has_untracked_files()
 
 
 def test_get_last_git_commit_date():
-    """ Test if `get_last_git_commit_date` executes without error. """
+    """Test if `get_last_git_commit_date` executes without error."""
     assert isinstance(lib.environment.get_last_git_commit_date(), str)
 
 
 def test_get_git_branch_name():
-    """ Test if `get_git_branch_name` executes without error. """
+    """Test if `get_git_branch_name` executes without error."""
     assert isinstance(lib.environment.get_git_branch_name(), str)
 
 
 def test_get_tracked_changes():
-    """ Test if `get_tracked_changes` executes without error. """
+    """Test if `get_tracked_changes` executes without error."""
     assert isinstance(lib.environment.get_tracked_changes(), str)
 
 
 def test_has_tracked_changes():
-    """ Test if `has_tracked_changes` executes without error. """
+    """Test if `has_tracked_changes` executes without error."""
     assert isinstance(lib.environment.has_tracked_changes(), bool)
 
 
 def test_get_cuda_gpus():
-    """ Test if `get_cuda_gpus` executes without error. """
+    """Test if `get_cuda_gpus` executes without error."""
     assert isinstance(lib.environment.get_cuda_gpus(), str)
 
 
 def test_get_num_cuda_gpus():
-    """ Test if `get_num_cuda_gpus` executes without error. """
+    """Test if `get_num_cuda_gpus` executes without error."""
     assert isinstance(lib.environment.get_num_cuda_gpus(), int)
 
 
 def test_get_disks():
-    """ Test if `get_disks` executes without error. """
+    """Test if `get_disks` executes without error."""
     out = lib.environment.get_disks()
     assert out is None or isinstance(out, str)
 
 
 def test_get_unique_cpus():
-    """ Test if `get_unique_cpus` executes without error. """
+    """Test if `get_unique_cpus` executes without error."""
     out = lib.environment.get_unique_cpus()
     assert out is None or isinstance(out, str)
 
 
 def test_get_total_physical_memory():
-    """ Test if `get_total_physical_memory` executes without error. """
+    """Test if `get_total_physical_memory` executes without error."""
     out = lib.environment.get_total_physical_memory()
     assert out is None or isinstance(out, int)
