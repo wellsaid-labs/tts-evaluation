@@ -245,7 +245,8 @@ class SpectrogramModel(torch.nn.Module):
         )
         maybe_squeeze = lambda t: t if include_batch_dim else t.squeeze(1)
         while keep_going():
-            assert torch.is_grad_enabled() == self.grad_enabled
+            if self.grad_enabled is not None:
+                assert torch.is_grad_enabled() == self.grad_enabled
             frame, stop_token, alignment, hidden_state = self.decoder(
                 encoded_tokens,
                 inputs.tokens_mask,
