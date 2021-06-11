@@ -13,7 +13,7 @@ assert_almost_equal = partial(_utils.assert_almost_equal, decimal=5)
 
 
 def test__roll():
-    """ Test `lib.spectrogram_model.encoder._roll` to roll given a simple tensor. """
+    """Test `lib.spectrogram_model.encoder._roll` to roll given a simple tensor."""
     tensor = torch.tensor([1, 2, 3, 4, 5, 6])
     result = lib.spectrogram_model.encoder._roll(tensor, shift=torch.tensor(4), dim=0)
     assert torch.equal(result, torch.tensor([3, 4, 5, 6, 1, 2]))
@@ -39,7 +39,7 @@ def test__roll__transpose():
 
 
 def test__roll__3d():
-    """ Test `lib.spectrogram_model.encoder._roll` to roll given a 3d `tensor` and 2d `start`. """
+    """Test `lib.spectrogram_model.encoder._roll` to roll given a 3d `tensor` and 2d `start`."""
     tensor = torch.tensor([1, 2, 3]).view(1, 3, 1).expand(4, 3, 4)
     shift = torch.arange(0, 16).view(4, 4)
     result = lib.spectrogram_model.encoder._roll(tensor, shift=shift, dim=1)
@@ -60,7 +60,7 @@ def test__roll__3d():
 def _make_rnn(
     input_size: int = 4, hidden_size: int = 5, num_layers: int = 2, **kwargs
 ) -> lib.spectrogram_model.encoder._RightMaskedBiRNN:
-    """ Make `encoder._RightMaskedBiRNN` for testing."""
+    """Make `encoder._RightMaskedBiRNN` for testing."""
     return lib.spectrogram_model.encoder._RightMaskedBiRNN(
         input_size=input_size, hidden_size=hidden_size, num_layers=num_layers, **kwargs
     )
@@ -71,14 +71,14 @@ def _make_rnn_inputs(
     batch_size: int = 2,
     seq_len: int = 3,
 ) -> typing.Tuple[torch.Tensor, torch.Tensor]:
-    """ Make `encoder._RightMaskedBiRNN` inputs for testing."""
+    """Make `encoder._RightMaskedBiRNN` inputs for testing."""
     tokens = torch.randn(seq_len, batch_size, module.input_size)
     tokens_mask = torch.ones(seq_len, batch_size, dtype=torch.bool)
     return tokens, tokens_mask
 
 
 def test__right_masked_bi_rnn__lstm():
-    """ Test `encoder._RightMaskedBiRNN` is consistent with `torch.nn.LSTM`. """
+    """Test `encoder._RightMaskedBiRNN` is consistent with `torch.nn.LSTM`."""
     with fork_rng(123):
         masked_bi_rnn = _make_rnn(rnn_class=torch.nn.LSTM)
     with fork_rng(123):
@@ -96,7 +96,7 @@ def test__right_masked_bi_rnn__lstm():
 
 
 def test__right_masked_bi_rnn__gru():
-    """ Test `encoder._RightMaskedBiRNN` is consistent with `torch.nn.GRU`. """
+    """Test `encoder._RightMaskedBiRNN` is consistent with `torch.nn.GRU`."""
     with fork_rng(123):
         masked_bi_rnn = _make_rnn(rnn_class=torch.nn.GRU)
     with fork_rng(123):
@@ -183,7 +183,7 @@ def _make_encoder(
     batch_size=4,
     num_tokens=5,
 ):
-    """ Make `encoder.Encoder` and it's inputs for testing."""
+    """Make `encoder.Encoder` and it's inputs for testing."""
     encoder = lib.spectrogram_model.encoder.Encoder(
         vocab_size=vocab_size,
         speaker_embedding_size=speaker_embedding_size,
@@ -207,7 +207,7 @@ def _make_encoder(
 
 
 def test_encoder():
-    """ Test `encoder.Encoder` handles a basic case. """
+    """Test `encoder.Encoder` handles a basic case."""
     (module, arg, (num_tokens, batch_size, out_size)) = _make_encoder()
     output = module(arg)
     assert output.dtype == torch.float
@@ -216,7 +216,7 @@ def test_encoder():
 
 
 def test_encoder_filter_size():
-    """ Test `encoder.Encoder` handles different filter sizes. """
+    """Test `encoder.Encoder` handles different filter sizes."""
     for filter_size in [1, 3, 5]:
         module, arg, (num_tokens, batch_size, out_size) = _make_encoder(
             convolution_filter_size=filter_size
@@ -227,7 +227,7 @@ def test_encoder_filter_size():
 
 
 def test_encoder_padding_invariance():
-    """ Test `encoder.Encoder` is consistent regardless of the padding. """
+    """Test `encoder.Encoder` is consistent regardless of the padding."""
     (module, arg, (_, batch_size, _)) = _make_encoder(dropout=0)
     expected = module(arg)
     expected.sum().backward()

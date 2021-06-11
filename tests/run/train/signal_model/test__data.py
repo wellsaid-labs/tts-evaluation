@@ -27,7 +27,7 @@ def test__get_slice(randint_mock):
 
 
 def test__get_slice__distribution():
-    """ Test that `_get_slice` samples each sample equally. """
+    """Test that `_get_slice` samples each sample equally."""
     spectrogram = torch.arange(1, 5).unsqueeze(1)
     signal = torch.arange(1, 13)
     slice_size = 3

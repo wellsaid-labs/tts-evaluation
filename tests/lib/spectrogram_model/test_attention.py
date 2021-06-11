@@ -12,7 +12,7 @@ from tests import _utils
 
 
 def test__window():
-    """ Test `_window` to window given a simple tensor. """
+    """Test `_window` to window given a simple tensor."""
     window = _window(torch.tensor([1, 2, 3]), start=torch.tensor(1), length=2, dim=0)[0]
     assert torch.equal(window, torch.tensor([2, 3]))
 
@@ -25,31 +25,31 @@ def test__window__identity():
 
 
 def test__window__length_to_small():
-    """ Test `_window` fails if `length` is too small. """
+    """Test `_window` fails if `length` is too small."""
     with pytest.raises(RuntimeError):
         _window(torch.tensor([1, 2, 3]), start=torch.tensor(0), length=-1, dim=0)
 
 
 def test__window__length_to_long():
-    """ Test `_window` fails if `length` is too long. """
+    """Test `_window` fails if `length` is too long."""
     with pytest.raises(AssertionError):
         _window(torch.tensor([1, 2, 3]), start=torch.tensor(0), length=4, dim=0)
 
 
 def test__window__start_to_small():
-    """ Test `_window` fails if `start` is out of range.  """
+    """Test `_window` fails if `start` is out of range."""
     with pytest.raises(AssertionError):
         _window(torch.tensor([1, 2, 3]), start=torch.tensor(-1), length=3, dim=0)
 
 
 def test__window__start_to_large():
-    """ Test `_window` fails if `start` is out of range.  """
+    """Test `_window` fails if `start` is out of range."""
     with pytest.raises(AssertionError):
         _window(torch.tensor([1, 2, 3]), start=torch.tensor(4), length=1, dim=0)
 
 
 def test__window__window_out_of_range():
-    """ Test `_window` fails if the window is out of range.  """
+    """Test `_window` fails if the window is out of range."""
     with pytest.raises(AssertionError):
         _window(torch.tensor([1, 2, 3]), start=torch.tensor(1), length=3, dim=0)
 
@@ -97,7 +97,7 @@ def _make_attention(
     typing.Tuple[torch.Tensor, torch.Tensor, torch.Tensor, AttentionHiddenState],
     typing.Tuple[int, int],
 ]:
-    """ Make `attention.Attention` and it's inputs for testing."""
+    """Make `attention.Attention` and it's inputs for testing."""
     module = Attention(
         query_hidden_size=query_hidden_size,
         hidden_size=attention_hidden_size,
@@ -122,7 +122,7 @@ def _make_attention(
 
 
 def _make_num_tokens(tokens_mask):
-    """ Create `num_tokens` input for `attention.Attention`. """
+    """Create `num_tokens` input for `attention.Attention`."""
     return tokens_mask.sum(dim=1)
 
 
@@ -132,7 +132,7 @@ def _add_padding(
     tokens_mask: torch.Tensor,
     hidden_state: AttentionHiddenState,
 ) -> typing.Tuple[torch.Tensor, torch.Tensor, AttentionHiddenState]:
-    """ Add zero padding to `tokens`, `tokens_mask` and `hidden_state`. """
+    """Add zero padding to `tokens`, `tokens_mask` and `hidden_state`."""
     tokens_padding = torch.randn(amount, tokens.shape[1], tokens.shape[2])
     padded_tokens = torch.cat([tokens, tokens_padding], dim=0)
     tokens_mask_padding = torch.zeros(tokens_mask.shape[0], amount, dtype=torch.bool)
@@ -148,7 +148,7 @@ assert_almost_equal = partial(_utils.assert_almost_equal, decimal=5)
 
 
 def test_location_relative_attention():
-    """ Test `attention.Attention` handles a basic case. """
+    """Test `attention.Attention` handles a basic case."""
     (
         module,
         (tokens, tokens_mask, query, hidden_state),
@@ -205,7 +205,7 @@ def test_location_relative_attention():
 
 
 def test_location_relative_attention__batch_invariance():
-    """ Test `attention.Attention` is consistent regardless of the batch size. """
+    """Test `attention.Attention` is consistent regardless of the batch size."""
     (
         module,
         (tokens, tokens_mask, query, hidden_state),
@@ -241,7 +241,7 @@ def test_location_relative_attention__batch_invariance():
 
 
 def test_location_relative_attention__padding_invariance():
-    """ Test `attention.Attention` is consistent regardless of the padding. """
+    """Test `attention.Attention` is consistent regardless of the padding."""
     (module, (tokens, tokens_mask, query, hidden_state), _) = _make_attention(dropout=0)
     num_tokens = _make_num_tokens(tokens_mask)
     num_padding = 4
@@ -270,7 +270,7 @@ def test_location_relative_attention__padding_invariance():
 
 
 def test_location_relative_attention__zero():
-    """ Test `attention.Attention` doesn't have a discontinuity at zero. """
+    """Test `attention.Attention` doesn't have a discontinuity at zero."""
     (module, (tokens, _, query, hidden_state), (batch_size, max_num_tokens)) = _make_attention()
     tokens_mask = torch.randn(batch_size, max_num_tokens) < 0.5
     tokens_mask[:, 0] = True  # NOTE: Softmax will fail unless one token is present.

@@ -34,7 +34,7 @@ TEST_DATA_LJ_MULTI_CHANNEL = TEST_DATA_PATH / "channels(bit(rate(lj_speech,24000
 
 @pytest.fixture(autouse=True)
 def run_around_tests():
-    """ Set a basic configuration for `lib.audio`. """
+    """Set a basic configuration for `lib.audio`."""
     fft_length = 2048
     sample_rate = 24000
     num_mel_bins = 128
@@ -83,7 +83,7 @@ def test_unit_conversion():
 
 
 def test__parse_audio_metadata():
-    """ Test `lib.audio._parse_audio_metadata` parses the metadata correctly. """
+    """Test `lib.audio._parse_audio_metadata` parses the metadata correctly."""
     metadata = lib.audio._parse_audio_metadata(
         """Input File     : 'data/Heather Doe/03 Recordings/Heather_4-21.wav'
     Channels       : 1
@@ -106,7 +106,7 @@ def test__parse_audio_metadata():
 
 
 def test__parse_audio_metadata__mp3():
-    """ Test `lib.audio._parse_audio_metadata` parses the metadata, with a comment, correctly. """
+    """Test `lib.audio._parse_audio_metadata` parses the metadata, with a comment, correctly."""
     metadata = lib.audio._parse_audio_metadata(
         """Input File     : 'data/beth_cameron/recordings/4.mp3'
     Channels       : 1
@@ -130,7 +130,7 @@ def test__parse_audio_metadata__mp3():
 
 
 def test__parse_audio_metadata__multiline_comments():
-    """ Test `lib.audio._parse_audio_metadata` parses the metadata, with a multiline comment. """
+    """Test `lib.audio._parse_audio_metadata` parses the metadata, with a multiline comment."""
     metadata = lib.audio._parse_audio_metadata(
         """Input File     : 'coldcomforthvac_061915.mp3'
     Channels       : 1
@@ -156,7 +156,7 @@ def test__parse_audio_metadata__multiline_comments():
 
 
 def test_get_audio_metadata():
-    """ Test `lib.audio.get_audio_metadata` returns the right metadata. """
+    """Test `lib.audio.get_audio_metadata` returns the right metadata."""
     assert lib.audio.get_audio_metadata(TEST_DATA_LJ) == lib.audio.AudioMetadata(
         path=TEST_DATA_LJ,
         sample_rate=24000,
@@ -169,12 +169,12 @@ def test_get_audio_metadata():
 
 
 def test_get_audio_metadata__empty():
-    """ Test `lib.audio.get_audio_metadata` handles an empty list. """
+    """Test `lib.audio.get_audio_metadata` handles an empty list."""
     assert lib.audio.get_audio_metadata([]) == []
 
 
 def test_get_audio_metadata__large_batch():
-    """ Test `lib.audio.get_audio_metadata` handles a large batch.  """
+    """Test `lib.audio.get_audio_metadata` handles a large batch."""
     metadatas = lib.audio.get_audio_metadata([TEST_DATA_LJ] * 100, max_arg_length=124)
     for metadata in metadatas:
         assert metadata == lib.audio.AudioMetadata(
@@ -211,7 +211,7 @@ def test_get_audio_metadata__bad_file():
 
 
 def test_read_audio():
-    """ Test `lib.audio.read_audio` reads audio that is consistent with it's metadata. """
+    """Test `lib.audio.read_audio` reads audio that is consistent with it's metadata."""
     metadata = lib.audio.get_audio_metadata(TEST_DATA_LJ)
     audio = lib.audio.read_audio(TEST_DATA_LJ)
     assert audio.dtype == np.float32
@@ -219,7 +219,7 @@ def test_read_audio():
 
 
 def test_read_audio__slice():
-    """ Test `lib.audio.read_audio` gets the correct slice. """
+    """Test `lib.audio.read_audio` gets the correct slice."""
     metadata = lib.audio.get_audio_metadata(TEST_DATA_LJ)
     start = 1
     length = 2
@@ -230,21 +230,21 @@ def test_read_audio__slice():
 
 
 def test_read_wave_audio():
-    """ Test `lib.audio.read_wave_audio` reads the full audio, correctly. """
+    """Test `lib.audio.read_wave_audio` reads the full audio, correctly."""
     metadata = lib.audio.get_audio_metadata(TEST_DATA_LJ)
     audio = lib.audio.read_wave_audio(metadata)
     np.testing.assert_almost_equal(audio, lib.audio.read_audio(TEST_DATA_LJ))
 
 
 def test_read_wave_audio__memmap():
-    """ Test `lib.audio.read_wave_audio` reads the full audio, correctly, into a memory map. """
+    """Test `lib.audio.read_wave_audio` reads the full audio, correctly, into a memory map."""
     metadata = lib.audio.get_audio_metadata(TEST_DATA_LJ)
     audio = lib.audio.read_wave_audio(metadata, memmap=True)
     np.testing.assert_almost_equal(audio, lib.audio.read_audio(TEST_DATA_LJ))
 
 
 def test_read_wave_audio__slice():
-    """ Test `lib.audio.read_wave_audio` gets the correct slice. """
+    """Test `lib.audio.read_wave_audio` gets the correct slice."""
     metadata = lib.audio.get_audio_metadata(TEST_DATA_LJ)
     start = 1
     length = 2
@@ -255,7 +255,7 @@ def test_read_wave_audio__slice():
 
 
 def test_read_wave_audio__slice__memmap():
-    """ Test `lib.audio.read_wave_audio` puts the correct slice into a memory map. """
+    """Test `lib.audio.read_wave_audio` puts the correct slice into a memory map."""
     metadata = lib.audio.get_audio_metadata(TEST_DATA_LJ)
     start = 1
     length = 2
@@ -266,14 +266,14 @@ def test_read_wave_audio__slice__memmap():
 
 
 def test_read_audio__slice_identity():
-    """ Test `lib.audio.read_audio` slice is consistent with no slice. """
+    """Test `lib.audio.read_audio` slice is consistent with no slice."""
     metadata = lib.audio.get_audio_metadata(TEST_DATA_LJ)
     audio = lib.audio.read_audio(TEST_DATA_LJ, 0.0, metadata.length)
     np.testing.assert_almost_equal(audio, lib.audio.read_audio(TEST_DATA_LJ))
 
 
 def test_read_wave_audio__16_bit_pcm():
-    """ Test `lib.audio.read_wave_audio` handles signed-integer. """
+    """Test `lib.audio.read_wave_audio` handles signed-integer."""
     audio_path = TEST_DATA_PATH / "rate(lj_speech,24000).wav"
     metadata = lib.audio.get_audio_metadata(audio_path)
     start = 1
@@ -302,7 +302,7 @@ def test_write_audio__read_audio():
 
 
 def test_write_audio__overwrite():
-    """ Test `lib.audio.write_audio` does not overwrite file. """
+    """Test `lib.audio.write_audio` does not overwrite file."""
     with tempfile.NamedTemporaryFile() as file_:
         path = pathlib.Path(file_.name)
         with pytest.raises(ValueError):
@@ -310,7 +310,7 @@ def test_write_audio__overwrite():
 
 
 def test_write_audio__dtype():
-    """ Test `lib.audio.write_audio` checks dtype. """
+    """Test `lib.audio.write_audio` checks dtype."""
     with tempfile.TemporaryDirectory() as directory:
         path = pathlib.Path(directory) / "invalid.wav"
         with pytest.raises(AssertionError):
@@ -318,7 +318,7 @@ def test_write_audio__dtype():
 
 
 def test_write_audio__bounds():
-    """ Test `lib.audio.write_audio` checks bounds. """
+    """Test `lib.audio.write_audio` checks bounds."""
     with tempfile.TemporaryDirectory() as directory:
         path = pathlib.Path(directory) / "invalid.wav"
         with pytest.raises(AssertionError):
@@ -410,21 +410,21 @@ def test_apply_audio_filters():
 
 
 def test_pad_remainder():
-    """ Test `lib.audio.pad_remainder` pads to a 256 multiple given various edge cases. """
+    """Test `lib.audio.pad_remainder` pads to a 256 multiple given various edge cases."""
     assert lib.audio.pad_remainder(np.random.normal(size=256), 256).shape[0] == 256
     assert lib.audio.pad_remainder(np.random.normal(size=255), 256).shape[0] == 256
     assert lib.audio.pad_remainder(np.random.normal(size=254), 256).shape[0] == 256
 
 
 def test_pad_remainder__right():
-    """ Test `lib.audio.pad_remainder` pads to a 256 multiple on the right side. """
+    """Test `lib.audio.pad_remainder` pads to a 256 multiple on the right side."""
     assert lib.audio.pad_remainder(np.random.normal(size=256), 256, center=False).shape[0] == 256
     assert lib.audio.pad_remainder(np.random.normal(size=255), 256, center=False).shape[0] == 256
     assert lib.audio.pad_remainder(np.random.normal(size=254), 256, center=False).shape[0] == 256
 
 
 def test_full_scale_sine_wave():
-    """ Test `lib.audio.full_scale_sine_wave` generates a sine wave. """
+    """Test `lib.audio.full_scale_sine_wave` generates a sine wave."""
     np.testing.assert_almost_equal(
         lib.audio.full_scale_sine_wave(25, 2),
         np.array(
@@ -460,7 +460,7 @@ def test_full_scale_sine_wave():
 
 
 def test_full_scale_square_wave():
-    """ Test `lib.audio.full_scale_square_wave` generates a square wave. """
+    """Test `lib.audio.full_scale_square_wave` generates a square wave."""
     np.testing.assert_almost_equal(
         lib.audio.full_scale_square_wave(25, 2),
         np.array(
@@ -496,7 +496,7 @@ def test_full_scale_square_wave():
 
 
 def test_k_weighting():
-    """ Test `lib.audio.k_weighting` at several test frequencies. """
+    """Test `lib.audio.k_weighting` at several test frequencies."""
     np.testing.assert_almost_equal(
         [-13.9492132, 0.0, 3.3104297],
         lib.audio.k_weighting(np.array([20, lib.audio.REFERENCE_FREQUENCY, 20000]), 24000),
@@ -504,7 +504,7 @@ def test_k_weighting():
 
 
 def test_a_weighting():
-    """ Test `lib.audio.a_weighting` at several test frequencies. """
+    """Test `lib.audio.a_weighting` at several test frequencies."""
     np.testing.assert_almost_equal(
         [-50.3856623, 0.0, -9.3315703],
         lib.audio.a_weighting(np.array([20, lib.audio.REFERENCE_FREQUENCY, 20000])),
@@ -523,7 +523,7 @@ def test_iso226_weighting():
 
 
 def test_identity_weighting():
-    """ Test `lib.audio.identity_weighting` at several test frequencies. """
+    """Test `lib.audio.identity_weighting` at several test frequencies."""
     np.testing.assert_almost_equal(
         [0.0, 0.0, 0.0],
         lib.audio.identity_weighting(np.array([20, lib.audio.REFERENCE_FREQUENCY, 20000])),
@@ -531,56 +531,56 @@ def test_identity_weighting():
 
 
 def test_power_to_amp():
-    """ Test `amp_to_power` and `lib.audio.power_to_amp` are consistent. """
+    """Test `amp_to_power` and `lib.audio.power_to_amp` are consistent."""
     input_ = torch.abs(torch.randn(100))
     result = lib.audio.power_to_amp(amp_to_power(input_)).numpy()
     np.testing.assert_almost_equal(result, input_.numpy(), decimal=5)
 
 
 def test_amp_to_db():
-    """ Test `lib.audio.amp_to_db` and `lib.audio.db_to_amp` are consistent. """
+    """Test `lib.audio.amp_to_db` and `lib.audio.db_to_amp` are consistent."""
     input_ = torch.abs(torch.randn(100))
     result = lib.audio.db_to_amp(lib.audio.amp_to_db(input_)).numpy()
     np.testing.assert_almost_equal(result, input_.numpy(), decimal=5)
 
 
 def test_power_to_db():
-    """ Test `power_to_db` and `db_to_power` are consistent. """
+    """Test `power_to_db` and `db_to_power` are consistent."""
     input_ = torch.abs(torch.randn(100))
     result = db_to_power(power_to_db(input_)).numpy()
     np.testing.assert_almost_equal(result, input_.numpy(), decimal=5)
 
 
 def test_power_to_db__numpy():
-    """ Test `power_to_db` and `db_to_power` are consistent. """
+    """Test `power_to_db` and `db_to_power` are consistent."""
     input_ = torch.abs(torch.randn(100)).numpy()
     result = db_to_power(power_to_db(input_))
     np.testing.assert_almost_equal(result, input_, decimal=5)
 
 
 def test_power_to_db__float():
-    """ Test `power_to_db` and `db_to_power` are consistent. """
+    """Test `power_to_db` and `db_to_power` are consistent."""
     input_ = abs(random.random())
     result = db_to_power(power_to_db(input_))
     np.testing.assert_almost_equal(result, input_, decimal=5)
 
 
 def test_signal_to_rms__full_scale_square_wave():
-    """ Test `lib.audio.signal_to_rms` on a standard 0 dBFS signal. """
+    """Test `lib.audio.signal_to_rms` on a standard 0 dBFS signal."""
     rms = lib.audio.signal_to_rms(lib.audio.full_scale_square_wave())
     assert rms == pytest.approx(1.0)
     assert lib.audio.amp_to_db(rms) == pytest.approx(0.0)
 
 
 def test_signal_to_rms__full_scale_sine_wave():
-    """ Test `lib.audio.signal_to_rms` on a standard -3.01 dBFS signal. """
+    """Test `lib.audio.signal_to_rms` on a standard -3.01 dBFS signal."""
     rms = lib.audio.signal_to_rms(lib.audio.full_scale_sine_wave())
     assert rms == pytest.approx(0.70710677)
     assert lib.audio.amp_to_db(rms) == pytest.approx(-3.0103001594543457)
 
 
 def test_signal_to_framed_rms__full_scale_square_wave():
-    """ Test `lib.audio.signal_to_framed_rms` on a standard 0 dBFS signal. """
+    """Test `lib.audio.signal_to_framed_rms` on a standard 0 dBFS signal."""
     frame_length = 1024
     frame_hop = frame_length // 4
     signal = lib.audio.full_scale_square_wave()
@@ -590,7 +590,7 @@ def test_signal_to_framed_rms__full_scale_square_wave():
 
 
 def test_signal_to_framed_rms__full_scale_sine_wave():
-    """ Test `lib.audio.signal_to_framed_rms` on a standard -3.01 dBFS signal. """
+    """Test `lib.audio.signal_to_framed_rms` on a standard -3.01 dBFS signal."""
     frame_length = 1024
     frame_hop = frame_length // 4
     signal = lib.audio.full_scale_sine_wave()
@@ -618,7 +618,7 @@ def test_signal_to_framed_rms__signal_to_rms():
 
 
 def test_power_spectrogram_to_framed_rms__full_scale_square_wave():
-    """ Test `power_spectrogram_to_framed_rms` on a standard 0 dBFS signal. """
+    """Test `power_spectrogram_to_framed_rms` on a standard 0 dBFS signal."""
     frame_length = 1024
     frame_hop = frame_length // 4
     window = torch.ones(frame_length)
@@ -639,7 +639,7 @@ def test_power_spectrogram_to_framed_rms__full_scale_square_wave():
 
 
 def test_power_spectrogram_to_framed_rms__full_scale_sine_wave__sample_rates():
-    """ Test `power_spectrogram_to_framed_rms` on a standard -3.01 dBFS signal. """
+    """Test `power_spectrogram_to_framed_rms` on a standard -3.01 dBFS signal."""
     frame_length = 1024
     frame_hop = frame_length // 4
     window = torch.ones(frame_length)
@@ -660,7 +660,7 @@ def test_power_spectrogram_to_framed_rms__full_scale_sine_wave__sample_rates():
 
 
 def test_power_spectrogram_to_framed_rms__sample_rates():
-    """ Test `power_spectrogram_to_framed_rms` accross multiple sample rates. """
+    """Test `power_spectrogram_to_framed_rms` accross multiple sample rates."""
     for sample_rate in range(1000, 24000, 1000):
         frame_length = 2048
         frame_hop = frame_length // 4
@@ -707,7 +707,7 @@ def test_power_spectrogram_to_framed_rms__window_correction__padding():
 
 
 def test_power_spectrogram_to_framed_rms__batch():
-    """ Test `power_spectrogram_to_framed_rms` on a batch of spectrograms. """
+    """Test `power_spectrogram_to_framed_rms` on a batch of spectrograms."""
     frame_length = 2048
     frame_hop = frame_length // 4
     window = torch.hann_window(frame_length)
@@ -735,7 +735,7 @@ def test_power_spectrogram_to_framed_rms__batch():
 
 
 def test_power_spectrogram_to_framed_rms__zero_elements():
-    """ Test `power_spectrogram_to_framed_rms` on a zero frames. """
+    """Test `power_spectrogram_to_framed_rms` on a zero frames."""
     window = torch.ones(1024)
     power_spectrogram = torch.zeros(64, 0, 1025)
     frame_rms = power_spectrogram_to_framed_rms(power_spectrogram, window=window).numpy()
@@ -743,7 +743,7 @@ def test_power_spectrogram_to_framed_rms__zero_elements():
 
 
 def test_signal_to_db_mel_spectrogram():
-    """ Test `lib.audio.SignalTodBMelSpectrogram` against an equivilant `librosa` implmentation. """
+    """Test `lib.audio.SignalTodBMelSpectrogram` against an equivilant `librosa` implmentation."""
     n_fft = 2048
     win_length = 2048
     hop_length = 512
@@ -841,7 +841,7 @@ def test_signal_to_db_mel_spectrogram__intermediate():
 
 
 def test_signal_to_db_mel_spectrogram__backward():
-    """ Test `lib.audio.SignalTodBMelSpectrogram` is differentiable. """
+    """Test `lib.audio.SignalTodBMelSpectrogram` is differentiable."""
     tensor = torch.nn.Parameter(torch.randn(2400))
     module = lib.audio.get_signal_to_db_mel_spectrogram()
     for output in module(tensor, intermediate=True):
@@ -849,7 +849,7 @@ def test_signal_to_db_mel_spectrogram__backward():
 
 
 def test_signal_to_db_mel_spectrogram__zeros():
-    """ Test `lib.audio.SignalTodBMelSpectrogram` is differentiable given zeros. """
+    """Test `lib.audio.SignalTodBMelSpectrogram` is differentiable given zeros."""
     tensor = torch.nn.Parameter(torch.zeros(2400))
     module = lib.audio.get_signal_to_db_mel_spectrogram()
     for output in module(tensor, intermediate=True):
@@ -857,7 +857,7 @@ def test_signal_to_db_mel_spectrogram__zeros():
 
 
 def test_signal_to_db_mel_spectrogram__batch():
-    """ Test `lib.audio.SignalTodBMelSpectrogram` is invariant to the batch size. """
+    """Test `lib.audio.SignalTodBMelSpectrogram` is invariant to the batch size."""
     tensor = torch.nn.Parameter(torch.randn(10, 2400))
     module = lib.audio.get_signal_to_db_mel_spectrogram()
     results = module(tensor)
@@ -866,7 +866,7 @@ def test_signal_to_db_mel_spectrogram__batch():
 
 
 def test_signal_to_db_mel_spectrogram__padded_batch():
-    """ Test `lib.audio.SignalTodBMelSpectrogram` is invariant to the batch size and padding. """
+    """Test `lib.audio.SignalTodBMelSpectrogram` is invariant to the batch size and padding."""
     fft_length = 2048
     hop_length = fft_length // 4
     window = torch.from_numpy(librosa.filters.get_window("hann", fft_length)).float()
@@ -885,7 +885,7 @@ def test_signal_to_db_mel_spectrogram__padded_batch():
 
 
 def test_signal_to_db_mel_spectrogram__alignment():
-    """ Test `lib.audio.SignalTodBMelSpectrogram` can be aligned to the signal. """
+    """Test `lib.audio.SignalTodBMelSpectrogram` can be aligned to the signal."""
     fft_length = 2048
     frame_size = 1200
     frame_hop = frame_size // 4
@@ -905,7 +905,7 @@ def test_signal_to_db_mel_spectrogram__alignment():
 
 
 def _db_spectrogram_to_loudness(db_spectrogram: torch.Tensor, window: torch.Tensor) -> float:
-    """ Get loudness as defined by ITU-R BS.1770-4 from a k-weighted dB spectrogram. """
+    """Get loudness as defined by ITU-R BS.1770-4 from a k-weighted dB spectrogram."""
     power_spectrogram = db_to_power(db_spectrogram)
     loudness = power_spectrogram_to_framed_rms(power_spectrogram, window=window)
     loudness = torch.tensor([v for v in loudness if lib.audio.amp_to_db(v) >= -70])
@@ -962,7 +962,7 @@ def test__loudness():
 
 
 def test_griffin_lim():
-    """ Test that `lib.audio.griffin_lim` executes. """
+    """Test that `lib.audio.griffin_lim` executes."""
     metadata = lib.audio.get_audio_metadata(TEST_DATA_LJ)
     signal = lib.audio.read_audio(TEST_DATA_LJ)
     signal = lib.audio.pad_remainder(signal)
@@ -973,18 +973,18 @@ def test_griffin_lim():
 
 
 def test_griffin_lim__large_numbers():
-    """ Test that `lib.audio.griffin_lim` produces empty array for large numbers. """
+    """Test that `lib.audio.griffin_lim` produces empty array for large numbers."""
     shape = lib.audio.griffin_lim(np.random.uniform(low=-2000, high=2000, size=(50, 50))).shape
     assert shape == (0,)
 
 
 def test_griffin_lim__small_array():
-    """ Test that `lib.audio.griffin_lim` produces empty array for a small array. """
+    """Test that `lib.audio.griffin_lim` produces empty array for a small array."""
     assert lib.audio.griffin_lim(np.random.uniform(low=-1, high=1, size=(1, 1))).shape == (0,)
 
 
 def test_highpass_filter():
-    """ Test that `lib.audio.highpass_filter` creates an array of the right shape. """
+    """Test that `lib.audio.highpass_filter` creates an array of the right shape."""
     sample_rate = 8000
     signal = np.random.uniform(low=-1, high=1, size=(sample_rate,))
     filtered = lib.audio.highpass_filter(signal, 300, sample_rate=sample_rate)

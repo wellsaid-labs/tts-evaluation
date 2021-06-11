@@ -12,12 +12,12 @@ from run.data.__main__ import _normalize_file_name, logger, numberings, rename
 
 
 def _rename_side_effect(path: Path, _expected=Path):
-    """ Side-effect for `Path.rename`. """
+    """Side-effect for `Path.rename`."""
     assert path == _expected
 
 
 def _assert_rename(name: str, renamed: str, **kwargs):
-    """ Helper function for `__main__.rename`. """
+    """Helper function for `__main__.rename`."""
     with tempfile.TemporaryDirectory() as directory_:
         directory = Path(directory_)
         path = directory / name
@@ -32,7 +32,7 @@ def _assert_rename(name: str, renamed: str, **kwargs):
 def _mock_directory() -> typing.Iterator[
     typing.Tuple[Path, Path, Path, typing.List[Path], typing.List[Path]]
 ]:
-    """ Create a temporary directory with empty files for testing. """
+    """Create a temporary directory with empty files for testing."""
     with tempfile.TemporaryDirectory() as directory_:
         directory = Path(directory_)
         recordings_path = directory / "recordings"
@@ -63,7 +63,7 @@ def _mock_directory() -> typing.Iterator[
 
 
 def test__normalize_file_name():
-    """ Test `__main__._normalize_file_name` handles all kinds of casing and numbering. """
+    """Test `__main__._normalize_file_name` handles all kinds of casing and numbering."""
     norm = _normalize_file_name
     assert norm("ENTHUSIASTIC_Script1") == "enthusiastic_script1"
     assert norm("Script16-21") == "script16-21"
@@ -82,7 +82,7 @@ def test__normalize_file_name():
 
 
 def test_rename():
-    """ Test `__main__.rename` against a couple of basic cases. """
+    """Test `__main__.rename` against a couple of basic cases."""
     _assert_rename(
         "Copy of WSL_SMurphyScript16-21.wav",
         "copy_of_wsl_s_murphy_script16-21.wav",
@@ -99,7 +99,7 @@ def test_rename():
 
 
 def test_rename__duplicate():
-    """ Test `__main__.rename` against duplicate numberings. """
+    """Test `__main__.rename` against duplicate numberings."""
     with _mock_directory() as (directory, *_):
         with pytest.raises(AssertionError) as info:
             rename(directory, only_numbers=True)
@@ -107,13 +107,13 @@ def test_rename__duplicate():
 
 
 def test_numberings():
-    """ Test `__main__.numberings` against a basic case. """
+    """Test `__main__.numberings` against a basic case."""
     with _mock_directory() as (_, recordings_path, scripts_path, *_):
         numberings(recordings_path, scripts_path)
 
 
 def test_numberings__duplicate_numbering():
-    """ Test `__main__.numberings` handles duplicate numberings. """
+    """Test `__main__.numberings` handles duplicate numberings."""
     with _mock_directory() as (_, recordings_path, scripts_path, _, scripts):
         scripts[1].unlink()
         with pytest.raises(AssertionError):
@@ -121,7 +121,7 @@ def test_numberings__duplicate_numbering():
 
 
 def test_numberings__missing():
-    """ Test `__main__.numberings` handles a missing file. """
+    """Test `__main__.numberings` handles a missing file."""
     with _mock_directory() as (_, recordings_path, scripts_path, recordings, scripts):
         random.choice(recordings + scripts).unlink()
         with pytest.raises(AssertionError):

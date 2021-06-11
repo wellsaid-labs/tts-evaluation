@@ -32,7 +32,7 @@ class LazyLoader(types.ModuleType):
         super(LazyLoader, self).__init__(name)
 
     def _load(self):
-        """ Load the module and insert it into the parent's globals. """
+        """Load the module and insert it into the parent's globals."""
 
         # Import the target module and insert it into the parent's namespace
         module = importlib.import_module(self.__name__)
