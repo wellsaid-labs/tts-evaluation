@@ -14,10 +14,6 @@ You might be interested in:
 - [Setting up a local development environment](./docs/LOCAL_SETUP.md)
 - [Training a spectrogram or signal model on GCP](./docs/TRAIN_MODEL_GCP.md)
 - [Training a TTS model on GCP](./docs/TRAIN_TTS_MODEL_GCP.md)
-- [Training a spectrogram or signal model on AWS spot instances](./docs/TRAIN_MODEL_AWS_SPOT.md)
-- [Training a spectrogram or signal model on AWS](./docs/TRAIN_MODEL_AWS.md)
-- [Training a TTS model on AWS spot instances](./docs/TRAIN_TTS_MODEL_AWS.md)
-- [Evaluating a TTS model on GCP or AWS](./docs/EVALUATE_A_MODEL_GCP.md)
 - [Creating a new dataset](./docs/PREPROCESSING_DATASETS.md)
 - [See some tips and tricks](./docs/TIPS_AND_TRICKS.md)
 

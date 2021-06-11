@@ -40,7 +40,8 @@ def patch(
 
     $ python -m run.utils.comet patch XXXXXXXX --overwrite --include="*.py"
 
-    $ python -m run.utils.comet patch XXXXXXXX --overwrite --3way
+    $ python -m run.utils.comet patch XXXXXXXX --overwrite --ignore-space-change \
+--ignore-whitespace --3way
 
     $ python -m run.utils.comet patch XXXXXXXX --overwrite --ignore-space-change \
 --ignore-whitespace --reject
