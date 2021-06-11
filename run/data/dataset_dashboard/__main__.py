@@ -42,14 +42,7 @@ import lib
 import run
 from lib.utils import flatten_2d, mazel_tov, round_, seconds_to_str
 from run._config import Dataset
-from run._streamlit import (
-    audio_to_html,
-    clear_session_cache,
-    get_dataset,
-    map_,
-    rmtree_streamlit_static_temp_dir,
-    st_data_frame,
-)
+from run._streamlit import audio_to_html, clear_session_cache, get_dataset, map_, st_data_frame
 from run.data._loader import DATASETS, Passage, Span, has_a_mistranscription
 from run.data.dataset_dashboard import _utils as utils
 
@@ -74,7 +67,7 @@ _Columns = typing.Dict[str, typing.List[typing.Any]]
 
 
 def _default_span_columns(spans: typing.List[Span]) -> _Columns:
-    """ Get default columns for `_write_span_table`. """
+    """Get default columns for `_write_span_table`."""
     logger.info("Getting %d generic span columns...", len(spans))
     _round: typing.Callable[[float, Span], float]
     _round = lambda a, s: round_(a, 1 / s.audio_file.sample_rate)
@@ -106,7 +99,6 @@ def _write_span_table(
     dfs = [pd.DataFrame.from_dict(default_columns(spans)), pd.DataFrame.from_dict(other_columns)]
     df = pd.concat(dfs, axis=1)
     assert audio_column not in df.columns
-    lib.utils.call_once(rmtree_streamlit_static_temp_dir)
     get_audio = lambda s: audio_to_html(utils.span_audio(s))
     df.insert(0, audio_column, map_(spans, get_audio))
     st_data_frame(df)
@@ -241,7 +233,7 @@ def _analyze_speech_segment_transitions(passages: typing.List[Passage], **kwargs
 
 
 def _total_pauses(span: Span, threshold: float = 1.0, min_speech_segment: float = 0.1) -> float:
-    """ Get the sum of pauses longer than `threshold` in `Span`. """
+    """Get the sum of pauses longer than `threshold` in `Span`."""
     lengths = []
     intervals = span.passage.non_speech_segments[span.audio_start : span.audio_stop]
     start, stop = max(intervals[0][0], span.audio_start), min(intervals[0][1], span.audio_stop)

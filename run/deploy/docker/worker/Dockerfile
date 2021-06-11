@@ -25,10 +25,10 @@ WORKDIR /app
 
 RUN python3 -m venv venv
 
-ARG TTS_BUNDLE_PATH
+ARG TTS_PACKAGE_PATH
 
 # NOTE: `COPY` experiment folder fist, so that this layer is reused the most.
-COPY $TTS_BUNDLE_PATH $TTS_BUNDLE_PATH
+COPY $TTS_PACKAGE_PATH $TTS_PACKAGE_PATH
 COPY run/ run/
 COPY lib/ lib/
 COPY third_party/ third_party/

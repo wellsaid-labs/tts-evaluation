@@ -59,6 +59,7 @@ from run._streamlit import (
     make_signal_chart,
     passage_audio,
     read_wave_audio,
+    st_html,
 )
 from run.data import _loader
 from run.data._loader import (
@@ -70,7 +71,7 @@ from run.data._loader import (
 )
 
 if typing.TYPE_CHECKING:  # pragma: no cover
-    import webrtcvad
+    import webrtcvad  # type: ignore
 else:
     webrtcvad = LazyLoader("webrtcvad", globals(), "webrtcvad")
 
@@ -127,7 +128,7 @@ def _chart_alignments_and_non_speech_segments(
 
 
 def _median(x: np.ndarray) -> float:
-    """ Get the median value of a sorted array. """
+    """Get the median value of a sorted array."""
     return x[math.floor(len(x) / 2) : math.ceil(len(x) / 2) + 1].mean().item()
 
 
@@ -327,7 +328,7 @@ def _get_hard_passages(dataset: run._config.Dataset, threshold: float = 20) -> t
 
 
 def _init_random_seed(key="random_seed", default_value: int = 123) -> int:
-    """ Create a persistent state for the random seed. """
+    """Create a persistent state for the random seed."""
     state = get_session_state()
     value = st.sidebar.number_input("Random Seed", value=default_value)
     if key not in state or value != default_value:
@@ -374,8 +375,7 @@ def main():
         audio = passage_audio(passage)
 
     st.markdown("### Audio")
-    html = audio_to_html(audio, sample_rate=passage.audio_file.sample_rate)
-    st.markdown(html, unsafe_allow_html=True)
+    st_html(audio_to_html(audio, sample_rate=passage.audio_file.sample_rate))
 
     _stt_alignments_vad(passage, audio)
     _baseline_vad(passage, audio)

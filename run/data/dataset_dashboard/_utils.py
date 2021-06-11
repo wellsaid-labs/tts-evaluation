@@ -51,18 +51,18 @@ _RandomSampleVar = typing.TypeVar("_RandomSampleVar")
 def random_sample(
     list_: typing.List[_RandomSampleVar], max_samples: int, seed: int = 123
 ) -> typing.List[_RandomSampleVar]:
-    """ Deterministic random sample. """
+    """Deterministic random sample."""
     with fork_rng(seed):
         return random.sample(list_, min(len(list_), max_samples))
 
 
 def _ngrams(list_: typing.Sequence, n: int) -> typing.Iterator[slice]:
-    """ Learn more: https://en.wikipedia.org/wiki/N-gram. """
+    """Learn more: https://en.wikipedia.org/wiki/N-gram."""
     yield from (slice(i, i + n) for i in range(len(list_) - n + 1))
 
 
 def _signal_to_db_rms_level(signal: np.ndarray) -> float:
-    """ Get the dB RMS level of `signal`."""
+    """Get the dB RMS level of `signal`."""
     if signal.shape[0] == 0:
         return math.nan
     return round(amp_to_db(float(signal_to_rms(signal))), 1)
@@ -87,7 +87,7 @@ def bucket_and_chart(
     stack: bool = True,
     opacity: float = 1.0,
 ) -> alt.Chart:
-    """ Bucket `values` and create a bar chart. """
+    """Bucket `values` and create a bar chart."""
     assert len(values) == len(labels)
     data = [(v, l) for v, l in zip(values, labels) if not math.isnan(v)]
     if len(data) != len(values):
@@ -155,14 +155,14 @@ def passage_alignment_speech_segments(passage: Passage) -> typing.List[Span]:
 
 
 def passages_alignment_ngrams(passages: typing.List[Passage], n: int = 1) -> typing.Iterator[Span]:
-    """ Get ngram `Span`s with `n` alignments. """
+    """Get ngram `Span`s with `n` alignments."""
     for passage in tqdm.tqdm(passages):
         passage: Passage
         yield from (passage.span(s) for s in _ngrams(passage.alignments, n=n))
 
 
 def passages_coverage(passages: typing.List[Passage], spans: typing.List[Span]) -> float:
-    """ Get the percentage of the `passages` these `spans` cover. """
+    """Get the percentage of the `passages` these `spans` cover."""
     alignments = set()
     passage_ids = set(id(p) for p in passages)
     for span in spans:
@@ -173,12 +173,12 @@ def passages_coverage(passages: typing.List[Passage], spans: typing.List[Span]) 
 
 
 def dataset_num_alignments(dataset: Dataset) -> int:
-    """ Get number of `Alignment`s in `dataset`. """
+    """Get number of `Alignment`s in `dataset`."""
     return sum(len(p.alignments) for p in dataset_passages(dataset))
 
 
 def dataset_coverage(dataset: Dataset, spans: typing.List[Span]) -> float:
-    """ Get the percentage of the `dataset` these `spans` cover. """
+    """Get the percentage of the `dataset` these `spans` cover."""
     alignments = set()
     passage_ids = set(id(p) for d in dataset.values() for p in d)
     for span in spans:
@@ -189,13 +189,13 @@ def dataset_coverage(dataset: Dataset, spans: typing.List[Span]) -> float:
 
 
 def span_mistranscriptions(span: Span) -> typing.List[typing.Tuple[str, str]]:
-    """ Get a slices of script and transcript that were not aligned. """
+    """Get a slices of script and transcript that were not aligned."""
     spans, spans_is_voiced = voiced_nonalignment_spans(span)
     return [(s.script, s.transcript) for s, i in zip(spans.spans, spans_is_voiced) if i]
 
 
 def span_pauses(span: Span) -> typing.List[float]:
-    """ Get the length of pauses between alignments in `span`. """
+    """Get the length of pauses between alignments in `span`."""
     return [s.audio_length for s in span.nonalignment_spans().spans[1:-1]]
 
 
@@ -209,7 +209,7 @@ def span_max_silence(span: Span) -> float:
 
 
 def span_audio_slice(span: Span, second: float, lengths: typing.Tuple[float, float]) -> np.ndarray:
-    """ Get the audio at `second`. """
+    """Get the audio at `second`."""
     clamp_ = lambda x: clamp(x, min_=0, max_=span.passage.audio_file.length)
     start = clamp_(span.audio_start + second - lengths[0])
     end = clamp_(span.audio_start + second + lengths[1])
@@ -220,7 +220,7 @@ def span_audio_boundary_rms_level(
     span: Span,
     lengths: typing.Tuple[float, float] = (ALIGNMENT_PRECISION / 2, ALIGNMENT_PRECISION / 2),
 ) -> typing.Tuple[float, float]:
-    """ Get the audio RMS level at the boundaries. """
+    """Get the audio RMS level at the boundaries."""
     return (span_audio_left_rms_level(span, lengths), span_audio_right_rms_level(span, lengths))
 
 
@@ -228,7 +228,7 @@ def span_audio_left_rms_level(
     span: Span,
     lengths: typing.Tuple[float, float] = (ALIGNMENT_PRECISION / 2, ALIGNMENT_PRECISION / 2),
 ) -> float:
-    """ Get the audio RMS level at the left boundary. """
+    """Get the audio RMS level at the left boundary."""
     return _signal_to_db_rms_level(span_audio_slice(span, 0, lengths))
 
 
@@ -236,7 +236,7 @@ def span_audio_right_rms_level(
     span: Span,
     lengths: typing.Tuple[float, float] = (ALIGNMENT_PRECISION / 2, ALIGNMENT_PRECISION / 2),
 ) -> float:
-    """ Get the audio RMS level at the right boundary. """
+    """Get the audio RMS level at the right boundary."""
     return _signal_to_db_rms_level(span_audio_slice(span, span.audio_length, lengths))
 
 
@@ -249,7 +249,7 @@ def span_audio_loudness(span: Span) -> float:
 
 
 def span_visualize_signal(span: Span) -> alt.Chart:
-    """ Visualize `span` signal as a waveform chart with lines for alignments. """
+    """Visualize `span` signal as a waveform chart with lines for alignments."""
     signal_chart = make_signal_chart(span_audio(span), span.audio_file.sample_rate)
     intervals = [a.audio for a in span.alignments]
     return (signal_chart + make_interval_chart(intervals)).interactive()
@@ -264,7 +264,7 @@ def span_sec_per_char(span: Span):
 
 
 def span_sec_per_phon(span: Span):
-    """ Get the aligned seconds per character. """
+    """Get the aligned seconds per character."""
     try:
         phonemes = fast_grapheme_to_phoneme(span.script)
     except AssertionError:

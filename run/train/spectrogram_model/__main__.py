@@ -42,6 +42,7 @@ except (ModuleNotFoundError, NameError):
     typer = MagicMock()
     logger.info("Ignoring optional `typer` dependency.")
 
+
 def _make_configuration(
     train_dataset: Dataset, dev_dataset: Dataset, debug: bool
 ) -> typing.Dict[typing.Callable, typing.Any]:
@@ -182,7 +183,7 @@ def start(
     ),
     debug: bool = typer.Option(False, help="Turn on debugging mode."),
 ):
-    """ Start a training run in PROJECT named NAME with TAGS. """
+    """Start a training run in PROJECT named NAME with TAGS."""
     args = start_experiment(SPECTROGRAM_MODEL_EXPERIMENTS_PATH, project, name, tags, debug=debug)
     cli_config = parse_hparam_args(context.args)
     _run_app(*args, None, cli_config, debug)

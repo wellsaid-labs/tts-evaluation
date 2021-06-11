@@ -57,7 +57,7 @@ def read_audio(audio_file: AudioMetadata, *args, **kwargs) -> np.ndarray:
 
 @configurable
 def normalize_audio_suffix(path: Path, suffix: str = HParam()) -> Path:
-    """ Normalize the last suffix to `suffix` in `path`. """
+    """Normalize the last suffix to `suffix` in `path`."""
     assert len(path.suffixes) == 1, "`path` has multiple suffixes."
     return path.parent / (path.stem + suffix)
 
@@ -235,7 +235,7 @@ class SpanGenerator(typing.Iterator[Span]):
 
     @staticmethod
     def _overlap(x1: _Float, x2: _Float, y1: _Float, y2: _Float) -> _Float:
-        """ Get the percentage overlap between x and the y slice. """
+        """Get the percentage overlap between x and the y slice."""
         if x2 == x1:
             return 1.0 if x1 >= y1 and x2 <= y2 else 0.0
         return (min(x2, y2) - max(x1, y1)) / (x2 - x1)

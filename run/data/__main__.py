@@ -52,7 +52,7 @@ run._config.configure()
 
 
 def _get_total_length(paths: typing.List[pathlib.Path]) -> float:
-    """ Get the sum of the lengths of each audio file in `paths`. """
+    """Get the sum of the lengths of each audio file in `paths`."""
     return sum([m.length for m in lib.audio.get_audio_metadata(paths)])
 
 
@@ -77,14 +77,14 @@ def download(
         [], help="Only download speakers whose name excludes the substring(s) --exclude."
     ),
 ):
-    """Download dataset(s). """
+    """Download dataset(s)."""
     is_include = functools.partial(_is_include, include=include, exclude=exclude)
     datasets = {k: v for k, v in run.data._loader.DATASETS.items() if is_include(k.label)}
     [loader(run._config.DATA_PATH) for loader in datasets.values()]
 
 
 def _file_numberings(directory: pathlib.Path) -> typing.List[str]:
-    """ Get every file numbering in `directory`. """
+    """Get every file numbering in `directory`."""
     numbers = lambda n: "-".join([str(int(i)) for i in re.findall(r"\d+", n)])
     return sorted([numbers(p.stem) for p in directory.iterdir() if p.is_file()])
 
@@ -94,7 +94,7 @@ def numberings(
     directory: pathlib.Path = typer.Argument(..., exists=True, file_okay=False),
     other_directory: pathlib.Path = typer.Argument(..., exists=True, file_okay=False),
 ):
-    """ Check that DIRECTORY and OTHER_DIRECTORY have files with similar numberings. """
+    """Check that DIRECTORY and OTHER_DIRECTORY have files with similar numberings."""
     numberings = _file_numberings(directory)
     other_numberings = _file_numberings(other_directory)
     message = f"Directories did not have equal numberings:\n{numberings}\n{other_numberings}"
@@ -150,7 +150,7 @@ def rename(
     directory: pathlib.Path = typer.Argument(..., exists=True, file_okay=False),
     only_numbers: bool = typer.Option(False, help=_ONLY_NUMBERS_HELP),
 ):
-    """ Normalize the name of every directory and file in DIRECTORY."""
+    """Normalize the name of every directory and file in DIRECTORY."""
     paths = list(directory.glob("**/*"))
     updates = []
     for path in paths:
@@ -176,7 +176,7 @@ def rename(
 
 
 def _download(gcs_uri: str) -> typing.Tuple[typing.IO[bytes], str]:
-    """ Helper function for `diff`. """
+    """Helper function for `diff`."""
     blob = gcs_uri_to_blob(gcs_uri)
     file_ = tempfile.NamedTemporaryFile(prefix=blob.name.split(".")[0].split("/")[-1])
     path = pathlib.Path(file_.name)
@@ -196,7 +196,7 @@ def diff(gcs_uri: str, other_gcs_uri: str):
 
 @audio_app.command()
 def loudness(paths: typing.List[pathlib.Path] = typer.Argument(..., exists=True, dir_okay=False)):
-    """ Print the loudness for each file in PATHS. """
+    """Print the loudness for each file in PATHS."""
     # TODO: Get loudness faster by...
     # - Adding parallel processing with chunking for large audio files
     # - Find a faster loudness implementation
@@ -237,7 +237,7 @@ def audio_normalize(
     data_type: typing.Optional[lib.audio.AudioDataType] = typer.Option(None),
     bits: typing.Optional[int] = typer.Option(None),
 ):
-    """ Normalize audio file format(s) in PATHS and save to directory DEST. """
+    """Normalize audio file format(s) in PATHS and save to directory DEST."""
     if bits is not None:
         hparams.add_config({_loader.normalize_audio: hparams.HParams(bits=bits)})
     if data_type is not None:
@@ -372,7 +372,7 @@ def shuffle(
     source: pathlib.Path = typer.Option(..., exists=True, dir_okay=False),
     dest: pathlib.Path = typer.Option(...),
 ):
-    """ Shuffle SOURCE csv and save it to DEST csv. """
+    """Shuffle SOURCE csv and save it to DEST csv."""
     assert dest.parent.exists(), "DEST parent directory must exist."
     assert not dest.exists(), "DEST must not exist."
     df = pandas.read_csv(source)
@@ -387,7 +387,7 @@ def prefix(
     column: str = typer.Option(...),
     prefix: str = typer.Option(...),
 ):
-    """ Add a PREFIX to every value in the SOURCE csv under COLUMN and save to DEST csv. """
+    """Add a PREFIX to every value in the SOURCE csv under COLUMN and save to DEST csv."""
     assert dest.parent.exists(), "DEST parent directory must exist."
     assert not dest.exists(), "DEST must not exist."
     df = pandas.read_csv(source)

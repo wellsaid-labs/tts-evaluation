@@ -6,7 +6,8 @@ import pytest
 import run
 from run._utils import _find_duplicate_passages, _len_of_dups, split_dataset
 from run.data._loader import Alignment
-from tests._utils import TEST_DATA_PATH, make_passage
+from tests._utils import TEST_DATA_PATH
+from tests.run._utils import make_passage
 
 TEST_DATA_PATH = TEST_DATA_PATH / "audio"
 TEST_DATA_LJ = TEST_DATA_PATH / "bit(rate(lj_speech,24000),32).wav"

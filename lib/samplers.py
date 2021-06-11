@@ -7,7 +7,7 @@ from lib.utils import identity
 
 
 class BucketBatchSampler(BatchSampler):
-    """ `BucketBatchSampler` similar to `torchnlp`. This version incrementally creates the bucket,
+    """`BucketBatchSampler` similar to `torchnlp`. This version incrementally creates the bucket,
     instead of all at once.
 
     Original:

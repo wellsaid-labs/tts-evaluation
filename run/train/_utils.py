@@ -97,7 +97,7 @@ def get_config_parameters() -> typing.Dict[run._config.Label, typing.Any]:
 
 
 class Context(enum.Enum):
-    """ Constants and labels for contextualizing the use-case. """
+    """Constants and labels for contextualizing the use-case."""
 
     TRAIN: typing.Final = "train"
     EVALUATE: typing.Final = "evaluate"
@@ -350,7 +350,7 @@ class CometMLExperiment:
     def log_figures(
         self, dict_: typing.Dict[run._config.Label, matplotlib.figure.Figure]
     ) -> typing.Dict[run._config.Label, typing.Optional[str]]:
-        """ Log multiple figures from `dict_` via `experiment.log_figure`. """
+        """Log multiple figures from `dict_` via `experiment.log_figure`."""
         return {k: self.log_figure(k, v) for k, v in dict_.items()}
 
     def set_name(self, name: str):
@@ -391,7 +391,7 @@ def _get_dataset_stats(
 def _run_experiment(
     comet: CometMLExperiment, debug: bool = False
 ) -> typing.Tuple[run._config.Dataset, run._config.Dataset]:
-    """Helper function for `start_experiment` and  `resume_experiment`. """
+    """Helper function for `start_experiment` and  `resume_experiment`."""
     lib.environment.check_module_versions()
 
     # NOTE: Load, preprocess, and cache dataset values.
@@ -882,6 +882,7 @@ class Metrics(lib.distributed.DictStore):
 
     @staticmethod
     def _to_list(tensor: torch.Tensor) -> typing.List[float]:
+        assert len(tensor.squeeze().shape) <= 1, "Tensor must be 1-dimensional."
         return tensor.view(-1).tolist()
 
     def get_data_loader_values(self, data_loader: DataLoader) -> MetricsValues:
@@ -905,7 +906,7 @@ class Metrics(lib.distributed.DictStore):
     def _div(
         self, num: typing.Union[str, float], denom: typing.Union[str, float], **kwargs
     ) -> float:
-        """ Reduce and divide `self.data[num] / self.data[denom]`. """
+        """Reduce and divide `self.data[num] / self.data[denom]`."""
         reduced_denom = self._reduce(denom, **kwargs) if isinstance(denom, str) else denom
         if reduced_denom == 0:
             return math.nan
