@@ -192,7 +192,6 @@ class SpectrogramModel(torch.nn.Module):
     ) -> torch.Tensor:
         """
         NOTE: This uses hard constraint to prevent stoppping unless all the characters were seen.
-        TODO: Try training with the hard constraint for consistency with inference.
 
         Args:
             stop_token (torch.FloatTensor [*, batch_size, *])

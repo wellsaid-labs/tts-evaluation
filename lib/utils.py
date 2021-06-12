@@ -379,7 +379,7 @@ class MappedIterator(typing.Mapping[int, _MappedIteratorItem], typing.Generic[_M
         self.iter = None
         self.offset = 0
 
-    def __getitem__(self, index) -> _MappedIteratorItem:
+    def __getitem__(self, index: int) -> _MappedIteratorItem:
         assert index >= self.offset, "Items may only be accessed once."
         self.iter = iter(self.iterator) if self.iter is None else self.iter
         for _ in range(index - self.offset):
@@ -529,7 +529,7 @@ _CorrectedRandomChoiceVar = typing.TypeVar("_CorrectedRandomChoiceVar")
 def corrected_random_choice(
     distr: typing.Dict[_CorrectedRandomChoiceVar, float],
     expect: typing.Optional[typing.Dict[_CorrectedRandomChoiceVar, float]] = None,
-    eps=10e-8,
+    eps: float = 10e-8,
 ) -> _CorrectedRandomChoiceVar:
     """Choose a key in `distribution` that would help even out the distribution.
 

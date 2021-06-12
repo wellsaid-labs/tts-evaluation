@@ -164,6 +164,7 @@ def set_basic_logging_config(id_: int = os.getpid(), reset=False, level=logging.
     Args:
         id_: An id to be printed along with all logs.
         reset: Reset root logger handlers.
+        level: The logging level of the root logger.
     """
     root = logging.getLogger()
 
@@ -420,6 +421,7 @@ def load_most_recent_file(
 
     Args:
         pattern: Pattern to search for files.
+        read: Callable for loading a file given a `Path`.
 
     Returns:
         The most recent non-corrupted file that is found based on modification time.
