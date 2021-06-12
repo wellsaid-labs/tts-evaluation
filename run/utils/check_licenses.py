@@ -1,10 +1,9 @@
-""" Tool for checking licenses of packages managed by `pip`.
+"""Tool for checking licenses of packages managed by `pip`.
 
 Usage:
 
     $ python -m run.utils.check_licenses
 """
-
 import subprocess
 import typing
 from io import StringIO
@@ -46,8 +45,8 @@ ACCEPTABLE = {
 
 def main():
     output = subprocess.check_output(["pip-licenses", "--format=csv"]).decode().strip()
-    df = pandas.read_csv(StringIO(output))
-    for index, row in df.iterrows():
+    data_frame = typing.cast(pandas.DataFrame, pandas.read_csv(StringIO(output)))
+    for _, row in data_frame.iterrows():
         row = typing.cast(Row, row)
         for license_ in row["License"].split(","):
             license_ = license_.strip()

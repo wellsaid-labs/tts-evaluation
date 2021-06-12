@@ -2,7 +2,8 @@
 from run import _config  # isort: skip
 from run import _utils, data, train, utils
 
-# NOTE: `_tts` uses every module, so it needs to be imported last.
+# NOTE: `_tts` and `deploy` use every module, so they need to be imported last.
 from run import _tts  # isort: skip
+from run import deploy  # isort: skip
 
-__all__ = ["_config", "_utils", "data", "train", "utils", "_tts"]
+__all__ = ["_config", "_utils", "data", "train", "utils", "_tts", "deploy"]

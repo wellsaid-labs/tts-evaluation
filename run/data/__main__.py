@@ -257,7 +257,7 @@ def audio_normalize(
 def text(
     paths: typing.List[pathlib.Path] = typer.Argument(..., exists=True, dir_okay=False),
     dest: pathlib.Path = typer.Argument(..., exists=True, file_okay=False),
-    column="Content",
+    column: str = "Content",
     encoding: str = typer.Option("utf-8"),
 ):
     """Convert text file(s) in PATHS to CSV file(s), and save to directory DEST with one row and one
