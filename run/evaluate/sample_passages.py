@@ -1,6 +1,8 @@
 """ Tool for sampling passages for comparison with deployment.
 
 TODO: Should `run._config.DEV_SPEAKERS` be a configured parameter?
+TODO: Create a hash for checking that the `dev_dataset` loaded is the same one the model was trained
+on.
 
 Usage:
 
