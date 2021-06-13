@@ -203,15 +203,7 @@ def _grapheme_to_phoneme(grapheme: str):
 def is_sound_alike(a: str, b: str) -> bool:
     """Return `True` if `str` `a` and `str` `b` sound a-like.
 
-    TODO: If the strings have the same voiced characters, in the same order, regardless of spaces,
-    can we consider them aligned? For example, these didn't align:
-    " Smallbone ", "small bone"
-    " backlit ", "black-lit"
-    " misjudgments, ", "Miss judgments"
-    " Dreamfields. ", "dream Fields"
-    " Fireside ", "fire site"
-    " Pre-game ", "pregame"
-    TODO: If the strings have the same set of characters, can we conisder them aligned?
+    NOTE: If two words have same sounds are spoken in the same order, then they sound-a-like.
 
     Example:
         >>> is_sound_alike("Hello-you've", "Hello. You've")
@@ -227,7 +219,8 @@ def is_sound_alike(a: str, b: str) -> bool:
     b = normalize_vo_script(b)
     return_ = (
         a.lower() == b.lower()
-        or _remove_punctuation(a.lower()) == _remove_punctuation(b.lower())
+        or _remove_punctuation(a.lower()).replace(" ", "")
+        == _remove_punctuation(b.lower()).replace(" ", "")
         or _grapheme_to_phoneme(a) == _grapheme_to_phoneme(b)
     )
     if return_:
@@ -600,8 +593,6 @@ def run_stt(
 
     TODO: Look into how many requests are made every poll, in order to better calibrate against
     Google's quota.
-    TODO: Look into `set(dest_blobs)` and the following `upload_from_string`. This line got called
-    multiple times for a single log file, and it caused the program to exceeds Google's quota.
 
     Args:
         audio_blobs: List of GCS voice-over blobs.
@@ -666,7 +657,9 @@ def _sync_and_upload(
     STATS.log()
 
     logger.info("Uploading logs...")
-    for dest_blob in set(dest_blobs):
+    # NOTE: `storage.Blob` doesn't implement `__hash__`.
+    for dest_gcs_uri in set(blob_to_gcs_uri(b) for b in dest_blobs):
+        dest_blob = gcs_uri_to_blob(dest_gcs_uri)
         blob = dest_blob.bucket.blob(dest_blob.name + recorder.log_path.name)
         blob.upload_from_string(recorder.log_path.read_text())
 

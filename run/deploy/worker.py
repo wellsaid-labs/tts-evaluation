@@ -67,8 +67,10 @@ from run.train.spectrogram_model._data import EncodedInput, InputEncoder
 if "NUM_CPU_THREADS" in os.environ:
     torch.set_num_threads(int(os.environ["NUM_CPU_THREADS"]))
 
-# NOTE: Flask documentation requests that logging is configured before `app` is created.
-set_basic_logging_config()
+if __name__ == "__main__":
+    # NOTE: Incase this module is imported, don't run `set_basic_logging_config`.
+    # NOTE: Flask documentation requests that logging is configured before `app` is created.
+    set_basic_logging_config()
 
 app = Flask(__name__)
 
