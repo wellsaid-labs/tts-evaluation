@@ -656,11 +656,11 @@ def _sync_and_upload(
 
     STATS.log()
 
-    logger.info("Uploading logs...")
     # NOTE: `storage.Blob` doesn't implement `__hash__`.
     for dest_gcs_uri in set(blob_to_gcs_uri(b) for b in dest_blobs):
         dest_blob = gcs_uri_to_blob(dest_gcs_uri)
         blob = dest_blob.bucket.blob(dest_blob.name + recorder.log_path.name)
+        logger.info("Uploading logs to `%s`...", blob)
         blob.upload_from_string(recorder.log_path.read_text())
 
 
