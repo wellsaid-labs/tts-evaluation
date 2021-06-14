@@ -1,0 +1,97 @@
+# Kong Gateway
+
+This directory contains the configuration and documentation around managing our Kong gateway;
+a service which routes traffic to our internal Cloud Run containers.
+
+TODO: reference/resources for quick start using kong
+
+## Prerequisites
+
+This document assumes the following dependencies have been installed and [cluster setup](../ClusterSetup.md) has been completed. Additionally, you may need [authorize docker](https://cloud.google.com/container-registry/docs/advanced-authentication) in order to push images to the cloud registry.
+
+- [gcloud](https://cloud.google.com/sdk/docs/quickstart)
+- [kubectl](https://kubernetes.io/docs/tasks/tools/)
+- [helm@v3](https://helm.sh/docs/intro/install/)
+
+## Kong Gateway Configuration
+
+Our current Kong setup leverages the kong [Kubernetes Ingress Controller](https://docs.konghq.com/kubernetes-ingress-controller/).
+The controller listens for changes to our kubernetes resources and updates the Kong service
+accordingly. This allows us to run Kong in a db-less manor, meaning all of the configurations
+are defined using kubernetes manifests and custom resource definitions.
+
+### Configuring the base Kong docker image
+
+The base [Kong image](https://hub.docker.com/_/kong) provides several bundled plugins by default. In order to add custom or third-party plugins to our deployment, we need to rebuild the image to include the plugin _and_ add that plugin to our [kong configuration](./kong/kong.yaml). See [kong plugin distribution](https://docs.konghq.com/gateway-oss/1.0.x/plugin-development/distribution/) for more details.
+
+1. Setup env variables for image tagging
+
+  ```bash
+  export PROJECT_ID=voice-service-2-313121
+  export ENV=$ENV # example: staging
+  export KONG_IMAGE_TAG="gcr.io/$PROJECT_ID/kong:wellsaid-$ENV"
+  ```
+
+1. Build and tag the docker image locally
+
+   ```bash
+   docker build -t $KONG_IMAGE_TAG ./ops/gateway/kong
+   ```
+
+1. Push the image to our cloud registry
+
+   ```bash
+   docker push $KONG_IMAGE_TAG
+   ```
+
+   And confirm the tagged image exists:
+
+   ```bash
+   docker image ls gcr.io/$PROJECT_ID/kong
+   ```
+
+1. Now that the image exists in our remote registry, we need to update our deployment configuration to properly reference this image. Update the corresponding `kong.$ENV.yaml` like so:
+
+    ```yaml
+    image:
+      repository: gcr.io/voice-service-2-313121/kong
+      tag: wellsaid-$ENV
+    ```
+
+### Configuring the Kong service
+
+### Configuring the Kubernetes Ingress Controller
+
+
+## Kong Gateway Deployment
+
+TODO: sanity check: `kubectl config current-context`
+
+Useful commands:
+```bash
+# List deployments managed by helm
+helm list
+```
+
+### Deploying the Kong Gateway
+
+```bash
+helm install gateway kong/kong \
+  --version 2.1.0 \
+  -f ./ops/gateway/kong/kong.base.yaml \
+  -f ./ops/gateway/kong/kong.$ENV.yaml
+```
+
+
+## Kong Gateway Management
+
+### Updating our Kong Gateway configuration
+
+```bash
+helm upgrade gateway kong/kong \
+  --version 2.1.0 \
+  -f ./ops/gateway/kong/kong.base.yaml \
+  -f ./ops/gateway/kong/kong.$ENV.yaml
+```
+
+### Logging and Metrics
