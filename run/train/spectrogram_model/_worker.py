@@ -634,7 +634,7 @@ def _run_steps(
     """Run the `handle_batch` in a loop over `data_loader` batches."""
     make_args = partial(_HandleBatchArgs, state, data_loader, context, dataset_type)
     with contextlib.ExitStack() as stack:
-        stack.enter_context(set_context(context, state.comet, state.model, state.ema))
+        stack.enter_context(set_context(context, state.comet, state.model, ema=state.ema))
         stack.enter_context(set_epoch(state.comet, step=state.step.item(), **kwargs))
 
         metrics = Metrics(state.comet, state.input_encoder.speaker_encoder.vocab)
