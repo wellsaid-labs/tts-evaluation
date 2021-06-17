@@ -11,7 +11,8 @@ USER root
 #   via a simple ConfigMap due to external dependencies.
 #   https://docs.konghq.com/hub/smartparkingtechnology/google-logging/#install
 # NOTE: this should have been as simple as `RUN luarocks install kong-plugin-google-logging` but that was not the case :(
-RUN wget -O "kong-google-logging-plugin.zip" "https://github.com/SmartParkingTechnology/kong-google-logging-plugin/archive/master.zip"
+# RUN wget -O "kong-google-logging-plugin.zip" "https://github.com/SmartParkingTechnology/kong-google-logging-plugin/archive/master.zip"
+RUN wget -O "kong-google-logging-plugin.zip" "https://github.com/wellsaid-labs/kong-google-logging-plugin/archive/master.zip"
 RUN unzip kong-google-logging-plugin.zip \
   && cd ./kong-google-logging-plugin-master \
   && luarocks make *.rockspec

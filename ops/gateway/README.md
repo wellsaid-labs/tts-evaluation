@@ -4,7 +4,7 @@ This directory contains the configuration and documentation around managing our 
 a service which routes traffic to our internal Cloud Run containers.
 
 TODO: reference/resources for quick start using kong
-
+TODO: embed architecture diagram (probably in ../README.md)
 ## Prerequisites
 
 This document assumes the following dependencies have been installed and [cluster setup](../ClusterSetup.md) has been completed. Additionally, you may need [authorize docker](https://cloud.google.com/container-registry/docs/advanced-authentication) in order to push images to the cloud registry.
@@ -26,11 +26,11 @@ The base [Kong image](https://hub.docker.com/_/kong) provides several bundled pl
 
 1. Setup env variables for image tagging
 
-  ```bash
-  export PROJECT_ID=voice-service-2-313121
-  export ENV=$ENV # example: staging
-  export KONG_IMAGE_TAG="gcr.io/$PROJECT_ID/kong:wellsaid-$ENV"
-  ```
+    ```bash
+    export PROJECT_ID=voice-service-2-313121
+    export ENV=$ENV # example: staging
+    export KONG_IMAGE_TAG="gcr.io/$PROJECT_ID/kong:wellsaid-$ENV"
+    ```
 
 1. Build and tag the docker image locally
 
@@ -75,13 +75,31 @@ helm list
 
 ### Deploying the Kong Gateway
 
+The following will deploy the configured Kong gateway along with the Kong
+Ingress Controller.
+
 ```bash
+# We deploy the kong gateway into the kong namespace
+kubectl create namespace kong
+# Install helm chart, referencing our configurations (order of file paths is important!)
 helm install gateway kong/kong \
   --version 2.1.0 \
   -f ./ops/gateway/kong/kong.base.yaml \
   -f ./ops/gateway/kong/kong.$ENV.yaml
 ```
 
+Let's confirm the proxy is live on our cluster.
+
+```bash
+# Display the kong proxy service
+kubectl get service gateway-kong-proxy
+# Using, the External IP from above command, make a request to the proxy
+curl -XGET http://$KONG_IP
+```
+
+At this point we should get back a 404 response with the following message:
+`{"message":"no Route matched with those values"}`. Kong is deployed, but we
+have yet to configure any routes/services.
 
 ## Kong Gateway Management
 
@@ -95,3 +113,33 @@ helm upgrade gateway kong/kong \
 ```
 
 ### Logging and Metrics
+
+Logging is currently handled via the [google-logging](https://github.com/SmartParkingTechnology/kong-google-logging-plugin) Kong plugin.
+
+1. Setup a service account to allow this plugin to write logs directly to Google Cloud Logging.
+
+    1. Create the Service Account
+
+        ```bash
+        gcloud iam service-accounts create kong-google-logging \
+          --description="Service account used for writing detailed logs directly from our Kong proxy" \
+          --display-name="kong-google-logging"
+        ```
+
+    1. Grant the Service Account an IAM Role that will allow writing to Google Cloud Logging.
+
+        ```bash
+        gcloud projects add-iam-policy-binding voice-service-2-313121 \
+          --member="serviceAccount:kong-google-logging@voice-service-2-313121.iam.gserviceaccount.com" \
+          --role="roles/logging.logWriter"
+        ```
+
+    1. Generate the Service Account Key that the `kong-google-logging` plugin will use to
+       authenticate with.
+
+        ```bash
+        gcloud iam service-accounts keys create ./kong-google-logging.sakey.json \
+        --iam-account=kong-google-logging@voice-service-2-313121.iam.gserviceaccount.com
+        ```
+
+2. TODO: best way to templatize the kong/plugins/google-logging.yaml file (and pass above credentials in to Secret config)

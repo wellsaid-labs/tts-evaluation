@@ -1,9 +1,9 @@
 # GKE Cluster Setup
 
-This document details how to setup a new GKE cluster that's intended to act 
+This document details how to setup a new GKE cluster that's intended to act
 as an execution runtime for the TTS service.
 
-1. First enable the required services. You'll only need to do this once per 
+1. First enable the required services. You'll only need to do this once per
    Google Cloud Project.
 
     ```
@@ -45,7 +45,8 @@ as an execution runtime for the TTS service.
         --maintenance-window-start "2021-05-08T07:00:00Z" \
         --maintenance-window-end "2021-05-08T11:00:00Z" \
         --maintenance-window-recurrence "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR,SA,SU" \
-        --enable-shielded-nodes
+        --enable-shielded-nodes \
+        --cloud-run-config=load-balancer-type=INTERNAL
     ```
 
 3. Then read the [instructions for deploying the TTS service](./run/README.md).

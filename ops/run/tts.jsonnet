@@ -57,12 +57,12 @@ function(model, version, image)
   };
 
   local ivSvc = common.Service({
-    name: 'iv',
+    name: 'validate',
     namespace: ns.metadata.name,
     apiKeysSecret: apiKeysSecret.metadata.name,
     image: image,
     version: version,
-    scale: { min: 3, max: 30 },
+    scale: { min: 1, max: 30 },
     concurrency: 4,
     timeout: 10,
     restartTimeout: 10,
@@ -74,7 +74,7 @@ function(model, version, image)
     apiKeysSecret: apiKeysSecret.metadata.name,
     image: image,
     version: version,
-    scale: { min: 3, max: 30 },
+    scale: { min: 1, max: 30 },
     concurrency: 1,
     timeout: 3600,  // 1hr
     restartTimeout: 600,  // 10 minutes

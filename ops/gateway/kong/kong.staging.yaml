@@ -1,5 +1,14 @@
 # Specific overrides for our `staging` environment
 
+ingressController:
+  args:
+    [
+      "–anonymous-reports=false",
+      "–log-level=trace",
+      "–log-format=json",
+      "–profiling=true",
+    ]
+
 image:
   repository: gcr.io/voice-service-2-313121/kong
   tag: "wellsaid-staging"
