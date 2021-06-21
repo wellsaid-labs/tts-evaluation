@@ -68,6 +68,7 @@ The base [Kong image](https://hub.docker.com/_/kong) provides several bundled pl
 TODO: sanity check: `kubectl config current-context`
 
 Useful commands:
+
 ```bash
 # List deployments managed by helm
 helm list
@@ -101,20 +102,13 @@ At this point we should get back a 404 response with the following message:
 `{"message":"no Route matched with those values"}`. Kong is deployed, but we
 have yet to configure any routes/services.
 
-## Kong Gateway Management
-
-### Updating our Kong Gateway configuration
-
-```bash
-helm upgrade gateway kong/kong \
-  --version 2.1.0 \
-  -f ./ops/gateway/kong/kong.base.yaml \
-  -f ./ops/gateway/kong/kong.$ENV.yaml
-```
-
-### Logging and Metrics
+### Deploying the `google-logging` plugin
 
 Logging is currently handled via the [google-logging](https://github.com/SmartParkingTechnology/kong-google-logging-plugin) Kong plugin.
+
+```bash
+cd ops/gateway/kong/plugins/
+```
 
 1. Setup a service account to allow this plugin to write logs directly to Google Cloud Logging.
 
@@ -138,8 +132,48 @@ Logging is currently handled via the [google-logging](https://github.com/SmartPa
        authenticate with.
 
         ```bash
-        gcloud iam service-accounts keys create ./kong-google-logging.sakey.json \
+        gcloud iam service-accounts keys create ./kong-google-logging-service-account.secrets.json \
         --iam-account=kong-google-logging@voice-service-2-313121.iam.gserviceaccount.com
         ```
 
-2. TODO: best way to templatize the kong/plugins/google-logging.yaml file (and pass above credentials in to Secret config)
+1. Deploy the `google-logging` plugin. Note that the configuration for this plugin includes the
+   service account credentials which are stored in a `Secret`.
+
+   ```bash
+   jsonnet google-logging.jsonnet \
+      -y \
+      --tla-str location=us-central1 \
+      --tla-str cluster=staging \
+      | kubectl apply -f -
+   ```
+
+1. Confirm that this plugin has been successfully picked up by the kong ingress controller.
+
+  ```bash
+  # Fetch a kong gateway pod
+  kubectl get pods -n kong
+  # Monitor logs on the `ingress-controller` container. These logs will tell us if the resources
+  # deployed in the previous step were synced properly by kong
+  kubectl logs POD_NAME -n kong -c ingress-controller --tail=20 --follow
+  ```
+
+  Finally, once the plugin is synced by kong we can start reading logs!
+
+  ```bash
+  gcloud logging read "labels.source=kong-google-logging" --limit=1
+  ```
+
+## Kong Gateway Management
+
+### Updating our Kong Gateway configuration
+
+```bash
+helm upgrade gateway kong/kong \
+  --version 2.1.0 \
+  -f ./ops/gateway/kong/kong.base.yaml \
+  -f ./ops/gateway/kong/kong.$ENV.yaml
+```
+
+### Logging and Metrics
+
+TODO
