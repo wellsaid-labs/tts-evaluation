@@ -75,6 +75,7 @@ def make_instance(
     elif image_family is None and image is not None:
         image_ = images.get(project=image_project, image=image).execute()
     else:
+        # TODO: The error message should reflect that `image` and `image_family` are not `None`.
         typer.echo("Unable to find image.")
         raise typer.Exit(code=1)
     logger.info("Found image: %s", image_["selfLink"])
