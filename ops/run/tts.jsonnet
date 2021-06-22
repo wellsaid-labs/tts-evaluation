@@ -56,7 +56,7 @@ function(model, version, image)
     data: { [k]: std.base64(apiKeys[k]) for k in std.objectFields(apiKeys) },
   };
 
-  local ivSvc = common.Service({
+  local validateSvc = common.Service({
     name: 'validate',
     namespace: ns.metadata.name,
     apiKeysSecret: apiKeysSecret.metadata.name,
@@ -80,4 +80,16 @@ function(model, version, image)
     restartTimeout: 600,  // 10 minutes
   });
 
-  [ns, apiKeysSecret, ivSvc, streamSvc]
+  local validateRoute = common.Route({
+    namespace: ns.metadata.name,
+    serviceName: validateSvc.metadata.name,
+    servicePaths: ['/api/text_to_speech/input_validated'],
+  });
+
+  local streamRoute = common.Route({
+    namespace: ns.metadata.name,
+    serviceName: streamSvc.metadata.name,
+    servicePaths: ['/api/text_to_speech/stream'],
+  });
+
+  [ns, apiKeysSecret, validateSvc, streamSvc] + validateRoute + streamRoute

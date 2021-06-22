@@ -146,6 +146,8 @@ To deploy a new version of a service, follow these steps:
 
 ## Management
 
+### Pinning `latest` release (TODO)
+
 ### Deleting a release
 
 Since all resources related to a model release are namespaced we can simply
