@@ -212,44 +212,5 @@
       },
     };
     // NOTE: prune simply removes requestTransformerConfigSecret if null
-    std.prune([requestTransformerConfigSecret, requestTransformer, kongIngress, ingress]),
-  /**
-   * This function produces the resources needed to inject API key authorization between kong
-   * and the upstream service.
-   */
-  ApiKeyRequestTransformer(spec):
-    local pluginConfiguration = {
-      apiVersion: 'v1',
-      kind: 'Secret',
-      metadata: {
-        name: 'kong-plugin-apikey-request-transformer-secret',
-        namespace: spec.namespace,
-      },
-      stringData: {
-        // https://docs.konghq.com/hub/kong-inc/request-transformer/
-        'apikey-config': |||
-          add:
-            body:
-              - api_key:%(api_key)s
-        ||| % { api_key: spec.apiKey },
-      },
-      type: 'Opaque',
-    };
-    local plugin = {
-      apiVersion: 'configuration.konghq.com/v1',
-      kind: 'KongPlugin',
-      metadata: {
-        name: 'kong-plugin-apikey-request-transformer',
-        namespace: spec.namespace,
-      },
-      configFrom: {
-        secretKeyRef: {
-          namespace: spec.namespace,
-          name: pluginConfiguration.metadata.name,
-          key: 'apikey-config'
-        },
-      },
-      plugin: 'request-transformer',
-    };
-    [pluginConfiguration, plugin],
+    std.prune([requestTransformerConfigSecret, requestTransformer, kongIngress, ingress])
 }

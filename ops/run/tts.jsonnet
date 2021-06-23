@@ -16,7 +16,7 @@
  *      --tla-str model=v3 \
  *      --tla-str version=v0-1-1 \
  *      --tla-str image=gcr.io/voice/tts@sha256:...
- *      --ext-code-file legacyImageApiKeys=apikeys.json
+ *      --tla-str includeImageApiKeys=false
  *
  * The model parameter is a unique identifier for the model contained
  * in the image.
