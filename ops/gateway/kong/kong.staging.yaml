@@ -3,10 +3,10 @@
 ingressController:
   args:
     [
-      "–anonymous-reports=false",
-      "–log-level=trace",
-      "–log-format=json",
-      "–profiling=true",
+      "–-anonymous-reports=false",
+      "–-log-level=trace",
+      "–-log-format=json",
+      "–-profiling=true",
     ]
 
 image:

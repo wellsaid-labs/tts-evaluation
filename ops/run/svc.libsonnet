@@ -61,14 +61,15 @@
                   path: '/healthy',
                 },
               },
+            } + (if "apiKeySecretName" in spec && spec.apiKeySecretName != null then {
               envFrom: [
                 {
                   secretRef: {
-                    name: spec.apiKeysSecret,
+                    name: spec.apiKeySecretName,
                   },
                 },
               ],
-            },
+            } else {}),
           ],
         },
       },
@@ -90,6 +91,40 @@
    *    - Ingress: path/service routing (augmented by the KongIngress resource)
    */
   Route(spec):
+    // NOTE: in the event that we add the api_key to body transformation we store the plugin
+    // configuration in a Secret.
+    // https://docs.konghq.com/hub/kong-inc/request-transformer/
+    local requestTransformerConfig = {
+      replace: {
+        headers: [
+          'host:' + spec.serviceName + '.' + spec.namespace + '.svc.cluster.local',
+        ],
+      },
+      add: {
+        headers: [
+          'host:' + spec.serviceName + '.' + spec.namespace + '.svc.cluster.local',
+        ],
+      } + if spec.apiKey != null then {
+        body: [
+          'api_key:' + spec.apiKey
+        ],
+      } else {},
+    };
+
+    local requestTransformerConfigSecret = if spec.apiKey != null then {
+      apiVersion: 'v1',
+      kind: 'Secret',
+      metadata: {
+        name: 'route-' + spec.serviceName + '-request-transformer-config',
+        namespace: spec.namespace,
+      },
+      stringData: {
+        // https://docs.konghq.com/hub/kong-inc/request-transformer/
+        'request-transformer-config': std.manifestYamlDoc(requestTransformerConfig, true),
+      },
+      type: 'Opaque',
+    };
+
     local requestTransformer = {
       apiVersion: 'configuration.konghq.com/v1',
       kind: 'KongPlugin',
@@ -97,20 +132,19 @@
         name: 'route-' + spec.serviceName + '-request-transformer',
         namespace: spec.namespace,
       },
-      config: {
-        replace: {
-          headers: [
-            'host:' + spec.serviceName + '.' + spec.namespace + '.svc.cluster.local',
-          ],
-        },
-        add: {
-          headers: [
-            'host:' + spec.serviceName + '.' + spec.namespace + '.svc.cluster.local',
-          ],
+      plugin: 'request-transformer',
+    } + (if spec.apiKey != null then {
+      configFrom: {
+        secretKeyRef: {
+          namespace: spec.namespace,
+          name: requestTransformerConfigSecret.metadata.name,
+          key: std.objectFields(requestTransformerConfigSecret.stringData)[0]
         },
       },
-      plugin: 'request-transformer',
-    };
+    } else {
+      config: requestTransformerConfig
+    });
+
     // https://docs.konghq.com/kubernetes-ingress-controller/1.2.x/references/custom-resources/#kongingress
     local kongIngress = {
       apiVersion: 'configuration.konghq.com/v1',
@@ -146,6 +180,7 @@
         ],
       },
     };
+
     local ingress = {
       apiVersion: 'extensions/v1beta1',
       kind: 'Ingress',
@@ -155,7 +190,7 @@
         annotations: {
           'kubernetes.io/ingress.class': 'kong',
           'konghq.com/override': kongIngress.metadata.name, //'route-configuration',
-          'konghq.com/plugins': requestTransformer.metadata.name,
+          'konghq.com/plugins': requestTransformer.metadata.name
         },
       },
       spec: {
@@ -176,5 +211,45 @@
         ],
       },
     };
-    [requestTransformer, kongIngress, ingress]
+    // NOTE: prune simply removes requestTransformerConfigSecret if null
+    std.prune([requestTransformerConfigSecret, requestTransformer, kongIngress, ingress]),
+  /**
+   * This function produces the resources needed to inject API key authorization between kong
+   * and the upstream service.
+   */
+  ApiKeyRequestTransformer(spec):
+    local pluginConfiguration = {
+      apiVersion: 'v1',
+      kind: 'Secret',
+      metadata: {
+        name: 'kong-plugin-apikey-request-transformer-secret',
+        namespace: spec.namespace,
+      },
+      stringData: {
+        // https://docs.konghq.com/hub/kong-inc/request-transformer/
+        'apikey-config': |||
+          add:
+            body:
+              - api_key:%(api_key)s
+        ||| % { api_key: spec.apiKey },
+      },
+      type: 'Opaque',
+    };
+    local plugin = {
+      apiVersion: 'configuration.konghq.com/v1',
+      kind: 'KongPlugin',
+      metadata: {
+        name: 'kong-plugin-apikey-request-transformer',
+        namespace: spec.namespace,
+      },
+      configFrom: {
+        secretKeyRef: {
+          namespace: spec.namespace,
+          name: pluginConfiguration.metadata.name,
+          key: 'apikey-config'
+        },
+      },
+      plugin: 'request-transformer',
+    };
+    [pluginConfiguration, plugin],
 }

@@ -177,3 +177,21 @@ helm upgrade gateway kong/kong \
 ### Logging and Metrics
 
 TODO
+
+### Debugging Kong Ingress Controller
+
+The Kong Ingress Controller is in charge of responding to changes in kubernetes
+resources and updating kong with the derived configurations (services/routes/plugins). At some point it may be helpful to see what the Kong proxy configuration looks
+like.
+
+```bash
+# Grab kong gateway pod name
+kubectl get pods -n kong
+# Grab shell (note the container!)
+kubectl exec -it POD_NAME -n kong -c ingress-controller -- /bin/sh
+# Run the ingress controller with dump-config flag. This will output config files
+# into the /tmp directory. Wait for the 'syncing configuration` output.
+/kong-ingress-controller --dump-config=enabled
+# output the configuration
+cat /tmp/controller.../last_good.json
+```

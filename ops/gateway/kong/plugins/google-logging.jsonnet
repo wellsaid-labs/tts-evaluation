@@ -29,9 +29,9 @@ function(namespace='kong', location, cluster)
       namespace: namespace,
     },
     stringData: {
+      # See https://github.com/SmartParkingTechnology/kong-google-logging-plugin
+      # google_key refers to the service account created for this plugin to write log entries
       'google-logging-config': |||
-        # See https://github.com/SmartParkingTechnology/kong-google-logging-plugin
-        # google_key refers to the service account created for this plugin to write log entries
         google_key:
           private_key: "%(private_key)s"
           client_email: "%(client_email)s"
