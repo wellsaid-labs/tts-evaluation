@@ -1,4 +1,6 @@
 # Specific overrides for our `staging` environment
+proxy:
+  loadBalancerIP: 34.136.18.163
 
 ingressController:
   args:

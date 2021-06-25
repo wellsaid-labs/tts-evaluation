@@ -90,13 +90,18 @@ To deploy a new version of a service, follow these steps:
     ```bash
     jsonnet \
         -y tts.jsonnet \
+        --tla-str env=$env \
         --tla-str model=$model \
         --tla-str version=$version \
         --tla-str image=$image \
+        --tla-str includeImageApiKeys=false \
         | kubectl apply -f -
     ```
 
     A few notes about the parameters:
+
+    - `$env` refers to the cluster environment (currently `staging` or `prod`)
+      and is mainly used for hostname configuration.
 
     - `$model` is a unique identifier for the model being deployed. It'll
       determine the on-cluster DNS name for the service, which will be
@@ -126,7 +131,11 @@ To deploy a new version of a service, follow these steps:
       gcr.io/voice-service-2-313121/speech-api-worker@sha256:3af2c7a3a88806e0ff5e5c0659ab6a97c42eba7f6e5d61e33dbc9244163e17d3
       ```
 
-1. After running the command you can see the status of what was deployed via
+    - `$includeImageApiKeys` is a boolean flag that determines whether or not to
+      inject api keys into the proxied upstream request. This is only for backwards
+      compatibility, enabled support of our existing tts worker images.
+
+2. After running the command you can see the status of what was deployed via
    this command:
 
     ```bash

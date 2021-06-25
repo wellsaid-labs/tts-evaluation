@@ -13,6 +13,7 @@
  *
  *    jsonnet tts.jsonnet \
  *      -y \
+ *      --tla-str env=staging \
  *      --tla-str model=v3 \
  *      --tla-str version=v0-1-1 \
  *      --tla-str image=gcr.io/voice/tts@sha256:...
@@ -44,7 +45,7 @@
  */
 local common = import 'svc.libsonnet';
 
-function(model, version, image, includeImageApiKeys='false')
+function(env, model, version, image, includeImageApiKeys='false')
 
   local ns = {
     apiVersion: 'v1',
@@ -53,6 +54,11 @@ function(model, version, image, includeImageApiKeys='false')
       name: model,
     },
   };
+
+  local hostname = if env == 'staging' then
+    'staging.tts.wellsaidlabs.com'
+    else if env == 'prod' then
+    'tts.wellsaidlabs.com';
 
   local apiKey = if includeImageApiKeys == 'true' then
     local apiKeys = import 'apikeys.json';
@@ -97,6 +103,7 @@ function(model, version, image, includeImageApiKeys='false')
   });
 
   local validateRoute = common.Route({
+    hostname: hostname,
     namespace: ns.metadata.name,
     serviceName: validateSvc.metadata.name,
     servicePaths: ['/api/text_to_speech/input_validated'],
@@ -104,6 +111,7 @@ function(model, version, image, includeImageApiKeys='false')
   });
 
   local streamRoute = common.Route({
+    hostname: hostname,
     namespace: ns.metadata.name,
     serviceName: streamSvc.metadata.name,
     servicePaths: ['/api/text_to_speech/stream'],

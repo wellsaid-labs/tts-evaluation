@@ -173,9 +173,7 @@
           'POST',
           'GET',
         ],
-        // TODO: restrict to https once TLS is live
         protocols: [
-          'http',
           'https',
         ],
       },
@@ -189,17 +187,21 @@
         namespace: spec.namespace,
         annotations: {
           'kubernetes.io/ingress.class': 'kong',
-          'konghq.com/override': kongIngress.metadata.name, //'route-configuration',
-          'konghq.com/plugins': requestTransformer.metadata.name
+          'konghq.com/override': kongIngress.metadata.name,
+          'konghq.com/plugins': requestTransformer.metadata.name,
+          'konghq.com/protocols':'https',
+          'konghq.com/https-redirect-status-code':'301',
         },
       },
       spec: {
         rules: [
           {
+            host: spec.hostname,
             http: {
               paths: [
                 {
                   path: path,
+                  pathType: "Exact",
                   backend: {
                     serviceName: spec.serviceName,
                     servicePort: if "servicePort" in spec then spec.servicePort else 80

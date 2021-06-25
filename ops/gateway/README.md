@@ -58,10 +58,20 @@ The base [Kong image](https://hub.docker.com/_/kong) provides several bundled pl
       tag: wellsaid-$ENV
     ```
 
-### Configuring the Kong service
+### Configuring the Kong deployment
+
+The configuration for our Kong deployment is located in the `kong.base.yaml` and `kong.$ENV.yaml`
+files, where the `kong.$ENV.yaml` file provides environment specific configuration overrides to the
+base helm chart config. The first update you will want to make is to configure the static IP
+used by the proxy. If you have not setup the static IP yet, see
+[Reserving a static IP](../ClusterSetup.md).
+
+```yaml
+proxy:
+  loadBalancerIP: <STATIC_IP_GOES_HERE>
+```
 
 ### Configuring the Kubernetes Ingress Controller
-
 
 ## Kong Gateway Deployment
 
@@ -112,29 +122,29 @@ cd ops/gateway/kong/plugins/
 
 1. Setup a service account to allow this plugin to write logs directly to Google Cloud Logging.
 
-    1. Create the Service Account
+    Create the Service Account
 
-        ```bash
-        gcloud iam service-accounts create kong-google-logging \
-          --description="Service account used for writing detailed logs directly from our Kong proxy" \
-          --display-name="kong-google-logging"
-        ```
+    ```bash
+    gcloud iam service-accounts create kong-google-logging \
+      --description="Service account used for writing detailed logs directly from our Kong proxy" \
+      --display-name="kong-google-logging"
+    ```
 
-    1. Grant the Service Account an IAM Role that will allow writing to Google Cloud Logging.
+    Grant the Service Account an IAM Role that will allow writing to Google Cloud Logging.
 
-        ```bash
-        gcloud projects add-iam-policy-binding voice-service-2-313121 \
-          --member="serviceAccount:kong-google-logging@voice-service-2-313121.iam.gserviceaccount.com" \
-          --role="roles/logging.logWriter"
-        ```
+    ```bash
+    gcloud projects add-iam-policy-binding voice-service-2-313121 \
+      --member="serviceAccount:kong-google-logging@voice-service-2-313121.iam.gserviceaccount.com" \
+      --role="roles/logging.logWriter"
+    ```
 
-    1. Generate the Service Account Key that the `kong-google-logging` plugin will use to
+    Generate the Service Account Key that the `kong-google-logging` plugin will use to
        authenticate with.
 
-        ```bash
-        gcloud iam service-accounts keys create ./kong-google-logging-service-account.secrets.json \
-        --iam-account=kong-google-logging@voice-service-2-313121.iam.gserviceaccount.com
-        ```
+    ```bash
+    gcloud iam service-accounts keys create ./kong-google-logging-service-account.secrets.json \
+    --iam-account=kong-google-logging@voice-service-2-313121.iam.gserviceaccount.com
+    ```
 
 1. Deploy the `google-logging` plugin. Note that the configuration for this plugin includes the
    service account credentials which are stored in a `Secret`.
@@ -149,19 +159,36 @@ cd ops/gateway/kong/plugins/
 
 1. Confirm that this plugin has been successfully picked up by the kong ingress controller.
 
-  ```bash
-  # Fetch a kong gateway pod
-  kubectl get pods -n kong
-  # Monitor logs on the `ingress-controller` container. These logs will tell us if the resources
-  # deployed in the previous step were synced properly by kong
-  kubectl logs POD_NAME -n kong -c ingress-controller --tail=20 --follow
-  ```
+    ```bash
+    # Fetch a kong gateway pod
+    kubectl get pods -n kong
+    # Monitor logs on the `ingress-controller` container. These logs will tell us if the resources
+    # deployed in the previous step were synced properly by kong
+    kubectl logs POD_NAME -n kong -c ingress-controller --tail=20 --follow
+    ```
 
-  Finally, once the plugin is synced by kong we can start reading logs!
+    Finally, once the plugin is synced by kong we can start reading logs!
 
-  ```bash
-  gcloud logging read "labels.source=kong-google-logging" --limit=1
-  ```
+    ```bash
+    gcloud logging read "labels.source=kong-google-logging" --limit=1
+    ```
+
+### Deploying the `cert-manager` and setting up TLS
+
+See [TLS Certificate issuance for HTTPS](../tls/README.md).
+
+### Deploying a fallback/catch-all route
+
+Note that this Ingress resource is also responsible for requesting a TLS
+Certificate via the `cert-manager`, see the `fallback-route` Ingress resource
+annotations!
+
+```bash
+jsonnet ./ops/gateway/kong/plugins/fallback-route.jsonnet \
+  -y \
+  --tla-str env=staging \
+  | kubectl apply -f -
+```
 
 ## Kong Gateway Management
 

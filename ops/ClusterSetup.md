@@ -51,3 +51,16 @@ as an execution runtime for the TTS service.
 
 3. Then read the [instructions for deploying the TTS service](./run/README.md).
 
+## Reserving a static IP
+
+See [Reserving a static external IP address](https://cloud.google.com/compute/docs/ip-addresses/reserve-static-external-ip-address).
+The static IP will be referenced in the configuration/deployment of our
+[Kong Gateway](./gateway/README.md). At this point it appears that Kong does
+[not support global static ips](https://docs.konghq.com/kubernetes-ingress-controller/1.3.x/deployment/gke/#requirements).
+
+```bash
+~ export ENV=$ENV
+~ gcloud compute addresses create gateway-$ENV --region=us-central1
+~ # View newly reserved ip address
+~ gcloud compute addresses list
+```
