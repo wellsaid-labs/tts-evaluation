@@ -1,0 +1,16 @@
+apiVersion: configuration.konghq.com/v1
+kind: KongClusterPlugin
+metadata:
+  name: kong-global-key-auth
+  namespace: kong
+  annotations:
+    kubernetes.io/ingress.class: kong
+  labels:
+    global: "true"
+config:
+  key_in_header: true
+  key_names:
+    - "x-api-key"
+  # Strip the credentials from request headers before forwarding
+  hide_credentials: true
+plugin: key-auth

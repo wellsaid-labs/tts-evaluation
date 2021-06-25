@@ -190,15 +190,82 @@ jsonnet ./ops/gateway/kong/plugins/fallback-route.jsonnet \
   | kubectl apply -f -
 ```
 
+### Deploying the `key-auth` plugin
+
+The [`key-auth`](https://docs.konghq.com/hub/kong-inc/key-auth/) plugin allows
+us to secure our API using API key authorization. It is possible to restrict
+access on a route, service, or consumer basis but for now we will be enabling
+the key-auth plugin globally.
+
+```bash
+kubectl apply -f ./ops/gateway/kong/plugins/global-key-auth.yaml
+```
+
+Once applied, any requests to the gateway will now fail with a 401 Unauthorized
+response.
+
 ## Kong Gateway Management
 
 ### Updating our Kong Gateway configuration
+
+At some point we may want to update our kong configurations (proxy configs,
+scaling, resource requirements, etc..). Similar to installing kong, we will
+also use `helm` to "upgrade" the release. In the event that the (ROLLBACK)
 
 ```bash
 helm upgrade gateway kong/kong \
   --version 2.1.0 \
   -f ./ops/gateway/kong/kong.base.yaml \
   -f ./ops/gateway/kong/kong.$ENV.yaml
+```
+
+### Kong Consumers
+
+Once the `key-auth` plugin is enabled, a `KongConsumer` is required to make
+authenticated requests to the API. For reference, see [Provisioning a consumer](https://docs.konghq.com/kubernetes-ingress-controller/1.3.x/guides/using-consumer-credential-resource/#provision-a-consumer).
+
+```bash
+# We will be namespacing all of the kong consumers
+kubectl create namespace kong-consumers
+# Export the username
+export KONG_CONSUMER_USERNAME=$KONG_CONSUMER_USERNAME
+# Create the consumer!
+jsonnet ./ops/gateway/kong/auth/consumer.jsonnet \
+  -y \
+  --tla-str username=$KONG_CONSUMER_USERNAME \
+  --tla-str secretKey="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')" \
+  | kubectl apply -f -
+# Once the above resources are created, use the following command can be used
+# to display the auto generated secret (api key) for the new consumer.
+kubectl get secrets/$KONG_CONSUMER_USERNAME-consumer-apikey \
+  --template={{.data.key}} \
+  -n kong-consumers \
+  | base64 -D
+```
+
+At this point you should be able to test that the new consumer
+credentials are working
+
+```bash
+# Should respond with 401 Unauthorized
+curl -I https://tts.wellsaidlabs.com
+# Should response with a 404 Not Found
+curl -I https://tts.wellsaidlabs.com -H "X-Api-Key: $CONSUMER_API_KEY"
+```
+
+Listing existing KongConsumers
+
+```bash
+kubectl get kongconsumers.configuration.konghq.com -n kong-consumers
+```
+
+Delete an existing consumer
+
+```bash
+# Delete the KongConsumer
+kubectl delete kongconsumers.configuration.konghq.com/$KONG_CONSUMER_USERNAME-consumer -n kong-consumers
+# Delete the secret
+kubectl delete secret/$KONG_CONSUMER_USERNAME-consumer-apikey -n kong-consumers
 ```
 
 ### Logging and Metrics
