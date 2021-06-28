@@ -29,6 +29,14 @@ def test_is_sound_alike():
     assert is_sound_alike("twentieth", "20th")
     assert is_sound_alike("screen introduction", "screen--Introduction,")
     assert is_sound_alike("Hello-you've", "Hello. You've")
+    assert is_sound_alike("'is...'", "is")
+    assert is_sound_alike("Pre-game", "pregame")
+    assert is_sound_alike("Dreamfields.", "dream Fields")
+    assert is_sound_alike(" — ", "")
+
+    # NOTE: These cases are not supported, yet,
+    assert not is_sound_alike("fifteen", "15")
+    assert not is_sound_alike("forty", "40")
 
 
 def test_format_ratio():

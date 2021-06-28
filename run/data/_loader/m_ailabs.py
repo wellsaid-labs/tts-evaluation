@@ -144,7 +144,8 @@ def _metadata_path_to_book(metadata_path: Path, root: Path) -> Book:
 
 
 def _get_session(passage: UnprocessedPassage) -> Session:
-    """For the M-AILABS speech dataset, we define each chapter as an individual recording session."""
+    """For the M-AILABS speech dataset, we define each chapter as an individual recording
+    session."""
     chapter = passage.audio_path.stem.rsplit("_", 1)[0]
     label = f"{passage.audio_path.parent.parent.name}/{passage.audio_path.parent.name}/{chapter}"
     return Session(label)

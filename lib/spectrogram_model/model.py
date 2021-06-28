@@ -211,6 +211,8 @@ class SpectrogramModel(torch.nn.Module):
         reached_max: torch.Tensor,
     ) -> typing.Tuple[torch.Tensor, torch.Tensor]:
         """
+        NOTE: This uses hard constraint to prevent stoppping unless all the characters were seen.
+
         Args:
             stop_token (torch.FloatTensor [*, batch_size, *])
             num_tokens (torch.LongTensor [batch_size])

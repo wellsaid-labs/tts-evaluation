@@ -222,9 +222,6 @@ def get_audio_metadata(paths, **kwargs):
 def clip_waveform(waveform: np.ndarray) -> np.ndarray:
     """Clip audio at the maximum and minimum amplitude.
 
-    TODO: Now that `SoX` is used to preprocess the data, let's change `logger.debug` to
-    `logger.warning`.
-
     NOTE: Clipping will cause distortion to the waveform, learn more:
     https://en.wikipedia.org/wiki/Clipping_(audio)
     """
