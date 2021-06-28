@@ -18,6 +18,16 @@ RUN unzip kong-google-logging-plugin.zip \
   && luarocks make *.rockspec
 RUN rm kong-google-logging-plugin.zip
 
+# Manually download and make `latest-version-
+COPY kong-latest-version-transformer/ kong-latest-version-transformer/
+RUN cd kong-latest-version-transformer \
+  && luarocks make *.rockspec
+# RUN wget -O "kong-latest-version-transformer.zip" "https://github.com/wellsaid-labs/kong-latest-version-transformer/archive/master.zip"
+# RUN unzip kong-latest-version-transformer.zip \
+#   && cd ./kong-latest-version-transformer-master \
+#   && luarocks make *.rockspec
+# RUN rm kong-latest-version-transformer.zip
+
 RUN luarocks list
 
 USER kong
