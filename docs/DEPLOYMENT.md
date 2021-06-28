@@ -25,7 +25,7 @@ Refer to the above guides in case there are missing details in the below steps.
    PROJECT_ID="voice-service-255602"
    CHECKPOINTS="" # Example: v9_staging
    TTS_PACKAGE_PATH=$(python -m run.deploy.package_tts $CHECKPOINTS)
-   docker build -f run/deploy/docker/master/Dockerfile -t gcr.io/${PROJECT_ID}/speech-api:v8.25 .
+   docker build -f run/deploy/docker/master/Dockerfile -t gcr.io/${PROJECT_ID}/speech-api:v8.26 .
    docker build -f run/deploy/docker/worker/Dockerfile \
         --build-arg TTS_PACKAGE_PATH=${TTS_PACKAGE_PATH} \
         -t gcr.io/${PROJECT_ID}/speech-api-worker:v9.00 .
@@ -42,7 +42,7 @@ Refer to the above guides in case there are missing details in the below steps.
 1. Push the build:
 
    ```bash
-   docker push gcr.io/${PROJECT_ID}/speech-api:v8.25
+   docker push gcr.io/${PROJECT_ID}/speech-api:v8.26
    docker push gcr.io/${PROJECT_ID}/speech-api-worker:v9.00
    ```
 
@@ -57,7 +57,7 @@ Refer to the above guides in case there are missing details in the below steps.
 
    ```bash
    docker run --rm -p 8000:8000 -e "AUTOSCALE_LOOP=5000 YOUR_SPEECH_API_KEY=123" \
-      gcr.io/${PROJECT_ID}/speech-api:v8.25
+      gcr.io/${PROJECT_ID}/speech-api:v8.26
    ```
 
 1. Update the Kubernetes deployment manifest (e.g. `run/deploy/deployment.yaml`) with the updated
