@@ -194,15 +194,22 @@ class _State:
     def _make_optimizer_groups(
         model: torch.nn.Module,
         exclude_from_decay: typing.Callable[[str, torch.nn.Parameter, torch.nn.Module], bool],
-    ):
+    ) -> typing.List[typing.Dict[str, typing.Any]]:
+        """Create optimizer groups with optimizer options per group.
+
+        Args:
+            ...
+            exclude_from_decay: Given the paramter name, object, and parent module this returns
+                if the parameter should have weight decay.
+        """
         param_to_module = {p: m for m in model.modules() for p in m.parameters(recurse=False)}
         named_params = [(n, p) for n, p in model.named_parameters() if p.requires_grad]
         exclude: typing.Callable[[str, torch.nn.Parameter], bool]
         exclude = lambda n, p: exclude_from_decay(n, p, param_to_module[p])
         no_decay_names, no_decay_params = tuple(zip(*[p for p in named_params if exclude(*p)]))
         decay_names, decay_params = tuple(zip(*[p for p in named_params if not exclude(*p)]))
-        logger.info("Params excluded from weight decay: %s", no_decay_names)
-        logger.info("Params with weight decay: %s", decay_names)
+        logger.info("Parameters excluded from weight decay: %s", no_decay_names)
+        logger.info("Parameters with weight decay: %s", decay_names)
         return [{"params": no_decay_params, "weight_decay": 0.0}, {"params": decay_params}]
 
     @staticmethod

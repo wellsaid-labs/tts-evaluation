@@ -166,21 +166,7 @@ def start(
     context: typer.Context,
     project: str = typer.Argument(..., help="Experiment project name."),
     name: str = typer.Argument("", help="Experiment name."),
-    tags: typing.List[str] = typer.Option(
-        [
-            "recording_sessions",
-            "promo",
-            "monotonic",
-            "no_balance_train",
-            "no_slash",
-            "no_long_pauses",
-            "stop_token_0.027_min_loss",
-            "encoder_2_lstm",
-            "ema",
-            "avg_spec_len_117.5",
-        ],
-        help="Experiment tags.",
-    ),
+    tags: typing.List[str] = typer.Option([], help="Experiment tags."),
     debug: bool = typer.Option(False, help="Turn on debugging mode."),
 ):
     """Start a training run in PROJECT named NAME with TAGS."""
