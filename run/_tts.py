@@ -115,7 +115,10 @@ def package_tts(
     spectrogram_checkpoint: train.spectrogram_model._worker.Checkpoint,
     signal_checkpoint: train.signal_model._worker.Checkpoint,
 ):
-    """Package together objects required for running TTS inference."""
+    """Package together objects required for running TTS inference.
+
+    TODO: Include the experiment key and step in the `TTSPackage`, so it can be identified.
+    """
     return TTSPackage(*spectrogram_checkpoint.export(), signal_checkpoint.export())
 
 
