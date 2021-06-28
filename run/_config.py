@@ -578,23 +578,25 @@ def _include_span(span: Span):
     return True
 
 
+DEV_SPEAKERS = run.data._loader.WSL_DATASETS.copy()
+# NOTE: The `MARI_MONGE__PROMO` dataset is too short for evaluation, at 15 minutes long.
+del DEV_SPEAKERS[run.data._loader.MARI_MONGE__PROMO]
+# NOTE: The `ALICIA_HARRIS`, `JACK_RUTKOWSKI`, and `SAM_SCHOLL` datasets are duplicate datasets.
+# There is an improved version of their datasets already in `dev_speakers`.
+del DEV_SPEAKERS[run.data._loader.ALICIA_HARRIS]
+del DEV_SPEAKERS[run.data._loader.JACK_RUTKOWSKI]
+del DEV_SPEAKERS[run.data._loader.SAM_SCHOLL]
+# NOTE: The `BETH_CAMERON__CUSTOM` dataset isn't included in the studio.
+del DEV_SPEAKERS[run.data._loader.BETH_CAMERON__CUSTOM]
+DEV_SPEAKERS = set(DEV_SPEAKERS.keys())
+
+
 def _configure_data_processing():
     """Configure modules that process data, other than audio.
 
     TODO: Remove `BETH_CAMERON__CUSTOM` from the `WSL_DATASETS` groups because it has it's own
     custom script.
     """
-    dev_speakers = run.data._loader.WSL_DATASETS.copy()
-    # NOTE: The `MARI_MONGE__PROMO` dataset is too short for evaluation, at 15 minutes long.
-    del dev_speakers[run.data._loader.MARI_MONGE__PROMO]
-    # NOTE: The `ALICIA_HARRIS`, `JACK_RUTKOWSKI`, and `SAM_SCHOLL` datasets are duplicate datasets.
-    # There is an improved version of their datasets already in `dev_speakers`.
-    del dev_speakers[run.data._loader.ALICIA_HARRIS]
-    del dev_speakers[run.data._loader.JACK_RUTKOWSKI]
-    del dev_speakers[run.data._loader.SAM_SCHOLL]
-    # NOTE: The `BETH_CAMERON__CUSTOM` dataset isn't included in the studio.
-    del dev_speakers[run.data._loader.BETH_CAMERON__CUSTOM]
-    dev_speakers = set(dev_speakers.keys())
     groups = [set(_loader.WSL_DATASETS.keys())]
     # NOTE: For other datasets like M-AILABS and LJ, this assumes that there is no duplication
     # between different speakers.
@@ -608,7 +610,7 @@ def _configure_data_processing():
             handle_passage=lib.utils.identity,
         ),
         run._utils.split_dataset: HParams(
-            groups=groups, dev_speakers=dev_speakers, approx_dev_len=30 * 60, min_sim=0.9
+            groups=groups, dev_speakers=DEV_SPEAKERS, approx_dev_len=30 * 60, min_sim=0.9
         ),
         run._utils.SpanGenerator.__init__: HParams(max_seconds=15, include_span=_include_span),
     }

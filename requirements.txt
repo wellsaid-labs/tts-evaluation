@@ -59,5 +59,3 @@ gunicorn
 google-cloud-speech
 google-cloud-storage
 google-api-python-client
-awscli
-boto3

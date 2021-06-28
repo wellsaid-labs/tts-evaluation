@@ -65,6 +65,7 @@ def _line_grapheme_to_phoneme(
         service_separator: The separator used by the service between phonemes.
         grapheme_batch_separator: The seperator used deliminate grapheme sequences.
         phoneme_batch_separator: The seperator used deliminate phoneme sequences.
+        restricted: An `AssertionError` will be raised if these substrings are found in `graphemes`.
     """
     template = "Special character '%s' is not allowed."
     condition = all([grapheme_batch_separator not in g for g in graphemes])
@@ -387,7 +388,7 @@ class AmEPDPronunciation(typing.NamedTuple):
     note: typing.Optional[str] = None
 
 
-def _assert_valid_amepd_word(word):
+def _assert_valid_amepd_word(word: str):
     assert all(
         c.isalpha() or c == "'" for c in word
     ), "Words may only be defined with letter(s) or apostrophe(s)."

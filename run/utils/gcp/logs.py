@@ -1,7 +1,5 @@
 """ Streamlit application for querying, parsing, and visualizing Google Cloud Platform logs.
 
-TODO: Move this file to `run/deploy`. This tool is largely intended to query deployment logs.
-
 Usage:
     $ PYTHONPATH=. streamlit run run/utils/gcp/logs.py --runner.magicEnabled=false
 """

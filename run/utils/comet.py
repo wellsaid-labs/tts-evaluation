@@ -40,7 +40,8 @@ def patch(
 
     $ python -m run.utils.comet patch XXXXXXXX --overwrite --include="*.py"
 
-    $ python -m run.utils.comet patch XXXXXXXX --overwrite --3way
+    $ python -m run.utils.comet patch XXXXXXXX --overwrite --ignore-space-change \
+--ignore-whitespace --3way
 
     $ python -m run.utils.comet patch XXXXXXXX --overwrite --ignore-space-change \
 --ignore-whitespace --reject
@@ -70,10 +71,7 @@ def samples(
     dest: pathlib.Path = run._config.SAMPLES_PATH / lib.environment.bash_time_label(),
     max_samples: int = 100,
 ):
-    """Download all samples for an EXPERIMENT.
-
-    TODO: Adapt the script to download the most recent K clips, especially, for long training runs.
-    """
+    """Download all samples for an EXPERIMENT."""
     api = comet_ml.api.API()
     experiment_ = api.get_experiment_by_id(experiment)
     asset_list = experiment_.get_asset_list(asset_type="audio")

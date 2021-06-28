@@ -78,7 +78,7 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
       --image-project=ubuntu-os-cloud
    ```
 
-   ❓ NOTE: 24-hours of VM usage can cost up to 3$.
+   ❓ NOTE: 24-hours of "n1-standard-2" VM usage can cost up to 3$.
 
 1. From your local machine, `ssh` into your new VM instance, like so...
 
