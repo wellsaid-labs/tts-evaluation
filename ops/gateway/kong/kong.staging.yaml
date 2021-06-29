@@ -13,7 +13,7 @@ ingressController:
 
 image:
   repository: gcr.io/voice-service-2-313121/kong-staging
-  tag: "v3"
+  tag: "v4"
 
 resources:
   # TODO: refine limits after we perform some load testing

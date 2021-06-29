@@ -5,6 +5,7 @@ a service which routes traffic to our internal Cloud Run containers.
 
 TODO: reference/resources for quick start using kong
 TODO: embed architecture diagram (probably in ../README.md)
+
 ## Prerequisites
 
 This document assumes the following dependencies have been installed and [cluster setup](../ClusterSetup.md) has been completed. Additionally, you may need [authorize docker](https://cloud.google.com/container-registry/docs/advanced-authentication) in order to push images to the cloud registry.
@@ -22,14 +23,21 @@ are defined using kubernetes manifests and custom resource definitions.
 
 ### Configuring the base Kong docker image
 
-The base [Kong image](https://hub.docker.com/_/kong) provides several bundled plugins by default. In order to add custom or third-party plugins to our deployment, we need to rebuild the image to include the plugin _and_ add that plugin to our [kong configuration](./kong/kong.yaml). See [kong plugin distribution](https://docs.konghq.com/gateway-oss/1.0.x/plugin-development/distribution/) for more details.
+The base [Kong image](https://hub.docker.com/_/kong) provides several bundled plugins by default. In order to add custom or third-party plugins to our deployment, we need to rebuild the image to include the plugin _and_ add those plugins to our [kong configuration](./kong/kong.yaml). See [kong plugin distribution](https://docs.konghq.com/gateway-oss/1.0.x/plugin-development/distribution/) for more details.
+
+1. Ensure the custom plugins exist locally (via git submodules)
+
+    ```bash
+    git submodule update --init --recursive
+    ```
 
 1. Setup env variables for image tagging
 
     ```bash
     export PROJECT_ID=voice-service-2-313121
     export ENV=$ENV # example: staging
-    export KONG_IMAGE_TAG="gcr.io/$PROJECT_ID/kong-$ENV:v1"
+    export KONG_IMAGE_VERSION=$KONG_IMAGE_VERSION # ex: v1
+    export KONG_IMAGE_TAG="gcr.io/$PROJECT_ID/kong-$ENV:$KONG_IMAGE_VERSION"
     ```
 
 1. Build and tag the docker image locally
@@ -55,7 +63,7 @@ The base [Kong image](https://hub.docker.com/_/kong) provides several bundled pl
     ```yaml
     image:
       repository: gcr.io/voice-service-2-313121/kong-$ENV
-      tag: v1
+      tag: $KONG_IMAGE_VERSION
     ```
 
 ### Configuring the Kong deployment
