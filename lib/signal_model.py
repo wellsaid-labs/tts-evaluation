@@ -275,9 +275,6 @@ def _has_weight_norm(module: torch.nn.Module, name: str = "weight") -> bool:
     return False
 
 
-_SignalModelSelfType = typing.TypeVar("_SignalModelSelfType", bound="SignalModel")
-
-
 class SignalModel(torch.nn.Module):
     """Predicts a signal given a spectrogram.
 

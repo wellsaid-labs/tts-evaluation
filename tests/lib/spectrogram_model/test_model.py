@@ -624,13 +624,6 @@ _expected_alignments = [
 _expected_alignments = torch.tensor(_expected_alignments)
 
 
-def _print_params(label: str, params: typing.Iterable[typing.Tuple[str, torch.Tensor]]):
-    print(label + " = {")
-    for name, parameter in params:
-        print(f'    "{name}": torch.tensor({parameter.sum().item():.6f}),')
-    print("}")
-
-
 def test_spectrogram_model__version():
     """Test `spectrogram_model.SpectrogramModel` has not changed since it was last tested."""
     torch.set_printoptions(precision=6, linewidth=100)
@@ -647,7 +640,7 @@ def test_spectrogram_model__version():
         with torch.no_grad():
             preds = model(params, mode=Mode.INFER)
 
-        _print_params("_expected_parameters", model.named_parameters())
+        _utils.print_params("_expected_parameters", model.named_parameters())
         for name, parameter in model.named_parameters():
             assert_almost_equal(_expected_parameters[name], parameter.sum())
         print("Frames", preds.frames.sum(dim=-1).transpose(0, 1))
@@ -681,10 +674,9 @@ def test_spectrogram_model__version():
         print("Stop Token Loss", stop_token_loss.sum())
         assert_almost_equal(stop_token_loss.sum(), torch.tensor(11.185075))
         grads = [(n, p.grad) for n, p in model.named_parameters() if p.grad is not None]
-        _print_params("_expected_grads", grads)
-        for name, parameter in model.named_parameters():
-            if parameter.grad is not None:
-                assert_almost_equal(_expected_grads[name], parameter.grad.sum())
+        _utils.print_params("_expected_grads", grads)
+        for name, grad in grads:
+            assert_almost_equal(_expected_grads[name], grad.sum())
         val = torch.randn(1)
         print("Rand", val)
         assert_almost_equal(val, torch.tensor(0.3122985))
