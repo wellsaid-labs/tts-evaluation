@@ -95,6 +95,8 @@ To deploy a new version of a service, follow these steps:
         --tla-str version=$version \
         --tla-str image=$image \
         --tla-str includeImageApiKeys=false \
+        --tla-str minScale=0 \
+        --tla-str maxScale=32 \
         | kubectl apply -f -
     ```
 
@@ -135,7 +137,14 @@ To deploy a new version of a service, follow these steps:
       inject api keys into the proxied upstream request. This is only for backwards
       compatibility, enabled support of our existing tts worker images.
 
-2. After running the command you can see the status of what was deployed via
+    - `$minScale` is an integer value determining how many container instances
+      should remain idle, see the [cloud run configuration](https://cloud.google.com/run/docs/configuring/min-instances) for more details. For our staging environment and low demand model versions we will want to scale to 0. Note that changes to this value will require a bump in the `version` parameter.
+
+    - `$maxScale` is an integer value that puts a ceiling on the number of container
+      instances we can scale to. This may be useful for preventing over-scaling in
+      response to a spike in requests and/or managing costs.
+
+1. After running the command you can see the status of what was deployed via
    this command:
 
     ```bash
@@ -155,7 +164,40 @@ To deploy a new version of a service, follow these steps:
 
 ## Management
 
-### Pinning `latest` release (TODO)
+### Pinning `latest` release
+
+```bash
+jsonnet ./ops/gateway/kong/plugins/latest-pinned-service.jsonnet \
+  -y \
+  --tla-str latestVersion=$LATEST_VERSION \
+  | kubectl apply -f -
+```
+
+Refer to [Deploying the `latest-version-transformation` plugin](../gateway/README.md)
+for additional details.
+
+### Updating an existing release
+
+This scenario is likely in the event we need to update a model image or change
+the scaling configuration of an existing deployment. It is recommended to use
+the `--dry-run=server` flag as a sanity check to see which resources will be
+updated by this command. Note that changes to the cloud run service will require
+a bump in the `version` parameter. For example, if this model was released with
+`version=1` and then we want to update that release to modify the scaling
+parameters, you would run this command with `version=2`.
+
+```bash
+jsonnet \
+  -y tts.jsonnet \
+  --tla-str env=$env \
+  --tla-str model=$model \
+  --tla-str version=$version \
+  --tla-str image=$image \
+  --tla-str includeImageApiKeys=false \
+  --tla-str minScale=0 \
+  --tla-str maxScale=32 \
+  | kubectl apply --dry-run=server -f -
+```
 
 ### Deleting a release
 

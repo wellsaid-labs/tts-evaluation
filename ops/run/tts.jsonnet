@@ -15,9 +15,10 @@
  *      -y \
  *      --tla-str env=staging \
  *      --tla-str model=v3 \
- *      --tla-str version=v0-1-1 \
- *      --tla-str image=gcr.io/voice/tts@sha256:...
- *      --tla-str includeImageApiKeys=false
+ *      --tla-str version=1 \
+ *      --tla-str image=gcr.io/voice/tts@sha256:... \
+ *      --tla-str includeImageApiKeys=false \
+ *      --tla-str minScale=0
  *
  * The model parameter is a unique identifier for the model contained
  * in the image.
@@ -37,6 +38,11 @@
  * that note, consumer-facing credentials will be handled via Kong so make
  * sure not to get includeImageApiKeys confused with consumer-facing api keys.
  *
+ * The minScale option determines the min number of cloud run containers to
+ * run at all time. For our staging environment and low demand model versions
+ * we will want to scale to 0. Note that changes to this value will require
+ * a bump in the `version` parameter
+ *
  * The output of the command can be redirected to a file, or piped to
  * kubectl directly like so:
  *
@@ -45,7 +51,7 @@
  */
 local common = import 'svc.libsonnet';
 
-function(env, model, version, image, includeImageApiKeys='false')
+function(env, model, version, image, includeImageApiKeys='false', minScale=0, maxScale=32)
 
   local ns = {
     apiVersion: 'v1',
@@ -83,7 +89,7 @@ function(env, model, version, image, includeImageApiKeys='false')
     namespace: ns.metadata.name,
     image: image,
     version: version,
-    scale: { min: 1, max: 30 },
+    scale: { min: minScale, max: maxScale },
     concurrency: 4,
     timeout: 10,
     restartTimeout: 10,
@@ -95,7 +101,7 @@ function(env, model, version, image, includeImageApiKeys='false')
     namespace: ns.metadata.name,
     image: image,
     version: version,
-    scale: { min: 1, max: 30 },
+    scale: { min: minScale, max: maxScale },
     concurrency: 1,
     timeout: 3600,  // 1hr
     restartTimeout: 600,  // 10 minutes
