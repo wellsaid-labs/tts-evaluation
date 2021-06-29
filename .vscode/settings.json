@@ -1,27 +1,16 @@
 {
-  "files.autoSave": "onFocusChange",
-  "editor.tabSize": 2,
-  "editor.formatOnSave": true,
-  "python.formatting.provider": "yapf",
   "editor.detectIndentation": false,
-  "python.linting.flake8Enabled": true,
-  "python.linting.pylintEnabled": false,
+  "editor.formatOnSave": true,
   "editor.rulers": [
     100
   ],
-  "search.exclude": {
-    "**/.git": true,
-    "**/node_modules": true,
-    "**/bower_components": true,
-    "build/**": true,
-    "cover/**": true
+  "editor.tabSize": 2,
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": true,
+    "source.organizeImports": true
   },
-  "reflow.preferredLineLength": 100,
-  "files.trimTrailingWhitespace": true,
-  "git.autofetch": true,
-  "files.insertFinalNewline": true,
-  "eslint.autoFixOnSave": true,
-  "eslint.run": "onSave",
+  "editor.wordWrapColumn": 100,
+  "files.autoSave": "onFocusChange",
   "files.exclude": {
     "**/.git": true,
     "**/.svn": true,
@@ -31,19 +20,24 @@
     "*.pyc": true,
     "**/__pycache__/**": true,
     "data/**/*.wav": true,
-    "**/*.pt": true
   },
-  "spellright.language": [
-    "en"
-  ],
-  "spellright.documentTypes": [
-    "markdown",
-    "latex",
-    "plaintext"
-  ],
-  "python.pythonPath": "venv/bin/python3",
-  "python.dataScience.useNotebookEditor": false,
-  "editor.codeActionsOnSave": {
-    "source.fixAll.eslint": true
-  }
+  "files.insertFinalNewline": true,
+  "files.trimTrailingWhitespace": true,
+  "search.exclude": {
+    "**/.git": true,
+    "**/build": true,
+    "**/coverage": true,
+    "**/node_modules": true,
+    "**/venv": true,
+    "**/.mypy_cache": true,
+    "**/.pytest_cache": true,
+  },
+  "python.formatting.provider": "black",
+  "python.linting.flake8Enabled": true,
+  "python.linting.pylintEnabled": false,
+  "python.linting.mypyEnabled": false,
+  "reflow.preferredLineLength": 100,
+  "git.autofetch": true,
+  "eslint.run": "onSave",
+  "python.analysis.autoImportCompletions": false
 }

@@ -1,185 +1,133 @@
-# Train a Model with Google Cloud Platform (GCP) Compute
+# Train a Model with Google Cloud Platform (GCP) Preemptible Instances
 
 This markdown will walk you through the steps required to train a model on an GCP virtual
 machine.
 
 Related Documentation:
 
-- Would you like to train a end-to-end TTS model? Please follow
-  [this documentation](TRAIN_TTS_MODEL_GCP.md) instead.
-
-- You may want to learn more about the available VM configurations, you can learn more
-  [here](https://console.cloud.google.com/compute/instancesAdd?project=voice-research-255602&organizationId=530338208816)
-  and [here](https://cloud.google.com/sdk/gcloud/reference/compute/instances/create).
+- Would you like to train a end-to-end TTS model? TODO
 
 ## Prerequisites
 
-1. Setup your local development environment by following [these instructions](LOCAL_SETUP.md).
+Setup your local development environment by following [these instructions](LOCAL_SETUP.md).
 
-1. Install `gcloud compute` by following the instructions
-   [here](https://cloud.google.com/compute/docs/gcloud-compute/)
-
-1. Ask a team member to grant you access to our GCP project called "voice-research".
-
-1. Install these dependencies:
-
-   ```bash
-   brew install rsync lsyncd
-   ```
-
-## Train a Model with Google Cloud Platform (GCP) Compute
+## Train a Model with Google Cloud Platform (GCP)
 
 ### From your local repository
 
 1. Setup your environment variables...
 
-   Set these variables for training the spectrogram model...
-
-   ```bash
-   VM_MACHINE_TYPE=n1-highmem-8
-   VM_ACCELERATOR_TYPE=nvidia-tesla-p100,count=2
-   ```
-
-   Set these variables for training the signal model...
-
-   ```bash
-   VM_MACHINE_TYPE=n1-highmem-32
-   VM_ACCELERATOR_TYPE=nvidia-tesla-v100,count=8
-   ```
-
    Also set these environment variables...
 
-   ```bash
-   VM_NAME=$USER"_your-instance-name" # EXAMPLE: michaelp_baseline
-
-   # Pick a zone that supports your choosen `VM_ACCELERATOR_TYPE` using this chart:
-   # https://cloud.google.com/compute/docs/gpus/
-   # Note you'll want to spread your experiments out accross multiple zones to mitigate the risk of
-   # your experiments getting throttled.
-   VM_ZONE=your-vm-instance-zone
+   ```zsh
+   TRAIN_SCRIPT_PATH='path/to/train' # EXAMPLE: run/train/spectrogram_model
+   ZONE='your-vm-zone' # EXAMPLE: us-east1-c
+   NAME=$USER"-your-instance-name" # EXAMPLE: michaelp-baseline
+   GCP_USER='your-gcp-user-name' # Example: michaelp
    ```
 
-1. Create your virtual machine, like so:
+   💡 TIP: Don't place all your preemptible instances in the same zone, just in case one zone
+   runs out of capacity.
 
-   ```bash
-   gcloud compute --project=voice-research-255602 instances create $VM_NAME \
-     # A zone with the required resources using this chart
-     # https://cloud.google.com/compute/docs/gpus/
-     --zone=$VM_ZONE \
+1. Create an instance for training...
 
-     # Required resources
-     --min-cpu-platform="Intel Broadwell" \
-     --machine-type=$VM_MACHINE_TYPE \
-     --accelerator=type=$VM_ACCELERATOR_TYPE \
-     --boot-disk-size=512GB \
-     --boot-disk-type=pd-standard \
-
-     # Restarts are handled by `src/bin/gcp/keep_alive.py`
-     --preemptible \  # Preemtiple machines cost up to 50% less
-     --no-restart-on-failure \
-     --maintenance-policy=TERMINATE \
-
-     # Ensure machine can communicate with other VMs on GCP
-     --scopes=https://www.googleapis.com/auth/cloud-platform \
-
-     --image=ubuntu-1804-lts \
-     --image-project=ubuntu-os-cloud
+   ```zsh
+   python -m run.utils.gcp make-instance \
+      --name=$NAME \
+      --zone=$ZONE \
+      --machine-type='n1-standard-32' \
+      --gpu-type='nvidia-tesla-t4' \
+      --gpu-count=4 \
+      --disk-size=512 \
+      --disk-type='pd-balanced' \
+      --image-project='ubuntu-os-cloud' \
+      --image-family='ubuntu-1804-lts' \
+      --metadata="startup-script-user=$GCP_USER" \
+      --metadata="train-script-path=$TRAIN_SCRIPT_PATH" \
+      --metadata-from-file="startup-script=run/utils/gcp/resume_training_on_start_up.sh"
+   python -m run.utils.gcp watch-instance --name=$NAME --zone=$ZONE
    ```
 
-1. From your local repository, ssh into your new VM instance, like so:
+   ❓ LEARN MORE: See our machine type benchmarks [here](./TRAIN_MODEL_GCP_BENCHMARKS.md).
 
-   ```bash
-   VM_ZONE=$(gcloud compute instances list | grep "^$VM_NAME\s" | awk '{ print $2 }')
-   gcloud compute ssh --zone=$VM_ZONE $VM_NAME
+   💡 TIP: The output of the startup script will be saved on the VM here:
+   `/var/log/syslog`. The relevant logs will start after
+    "Starting Google Compute Engine Startup Scripts..." is logged.
+
+1. SSH into the instance...
+
+   ```zsh
+   VM_NAME=$(python -m run.utils.gcp most-recent --name $NAME)
+   echo "VM_NAME=$VM_NAME"
+   gcloud compute ssh --zone=$ZONE $VM_NAME
    ```
 
    Continue to run this command until it succeeds.
 
-### On the VM instance
-
-1. Install these packages, like so...
-
-   ```bash
-   sudo apt-get update
-   sudo apt-get install python3-venv python3-dev gcc g++ sox ffmpeg espeak -y
-   ```
-
-   💡 TIP: After setting up your VM, you may want to
-   [create an image](https://cloud.google.com/compute/docs/images/create-delete-deprecate-private-images
-   so you don't need to setup your VM from scratch again.
-
-1. Install GPU drivers on your VM by installing
-   [CUDA-10-0](https://developer.nvidia.com/cuda-10.0-download-archive?target_os=Linux&target_arch=x86_64&target_distro=Ubuntu&target_version=1804&target_type=debnetwork)
-   , like so:
-
-   ```bash
-   wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/cuda-repo-ubuntu1804_10.0.130-1_amd64.deb
-   sudo dpkg -i cuda-repo-ubuntu1804_10.0.130-1_amd64.deb
-   sudo apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/7fa2af80.pub
-   sudo apt-get update
-   sudo apt-get install cuda
-   ```
-
-1. Verify CUDA installed correctly by running and ensuring no error messages print.
-
-   ```bash
-   nvidia-smi
-   ```
+### On the instance
 
 1. Create a directory for our software...
 
    ```bash
-   sudo chmod -R a+rwx /opt
+   sudo chmod -R 777 /opt
    mkdir /opt/wellsaid-labs
    ```
 
 ### From your local repository
 
-1. In a new terminal window, setup your environment variables again...
+1. Use `run.utils.lsyncd` to live sync your repository to your VM instance...
 
    ```bash
-   VM_NAME=$USER"_your-instance-name" # EXAMPLE: michaelp_baseline
-   ```
-
-1. Use `src.bin.cloud.lsyncd` to live sync your repository to your VM instance...
-
-   ```bash
-   VM_ZONE=$(gcloud compute instances list | grep "^$VM_NAME\s" | awk '{ print $2 }')
-   VM_USER=$(gcloud compute ssh $VM_NAME --zone $VM_ZONE --command="echo $USER")
-   VM_IP_ADDRESS=$(gcloud compute instances describe --zone $VM_ZONE $VM_NAME \
-      --format='get(networkInterfaces[0].accessConfigs[0].natIP)')
-   IDENTITY_FILE=~/.ssh/google_compute_engine
-   python3 -m src.bin.cloud.lsyncd --public_dns $VM_IP_ADDRESS \
-                                 --identity_file $IDENTITY_FILE \
-                                 --source $(pwd) \
-                                 --destination /opt/wellsaid-labs/Text-to-Speech \
-                                 --user $VM_USER
+   VM_NAME=$(python -m run.utils.gcp most-recent --filter $USER)
+   echo "VM_NAME=$VM_NAME"
+   VM_ZONE=$(python -m run.utils.gcp zone --name $VM_NAME)
+   VM_IP=$(python -m run.utils.gcp ip --name $VM_NAME --zone=$VM_ZONE)
+   VM_USER=$(python -m run.utils.gcp user --name $VM_NAME --zone=$VM_ZONE)
+   sudo python3 -m run.utils.lsyncd $(pwd) /opt/wellsaid-labs/Text-to-Speech \
+                                    --public-dns $VM_IP \
+                                    --user $VM_USER \
+                                    --identity-file ~/.ssh/google_compute_engine
    ```
 
    When prompted, enter your sudo password.
 
-1. Leave this processing running until you've started training. This will allow you to make any
+   💡 TIP: The `VM_NAME` filter can be `$NAME` or any relevant substring in the `$VM_NAME`.
+
+1. Leave this process running until you've started training. This will allow you to make any
    hot-fixes to your code in case you run into an error.
 
-### On the VM instance
-
-1. Start a `screen` session...
-
-   ```bash
-   screen
-   ```
+### On the instance
 
 1. Navigate to the repository, activate a virtual environment, and install package requirements...
 
    ```bash
    cd /opt/wellsaid-labs/Text-to-Speech
 
-   # NOTE: You will always want to be in an active venv whenever you want to work with python.
-   python3 -m venv venv
+   . run/utils/gcp/install_drivers.sh
+   . run/utils/apt_install.sh
+
+   # NOTE: You will always want to be in an active `venv` whenever you want to work with python.
+   python3.8 -m venv venv
    . venv/bin/activate
 
-   python -m pip install wheel
+   python -m pip install wheel pip --upgrade
    python -m pip install -r requirements.txt --upgrade
+
+   # NOTE: Set a flag to restart training if the instance is rebooted
+   # NOTE: Learn more about this command:
+   # https://askubuntu.com/questions/21556/how-to-create-an-empty-file-from-command-line
+   :>> /opt/wellsaid-labs/AUTO_START_FROM_CHECKPOINT
+   ```
+
+   💡 TIP: After setting up your VM, you may want to
+   [create an Google Machine Image](https://cloud.google.com/compute/docs/machine-images/create-machine-images)
+   so you don't need to setup your VM from scratch again.
+
+1. Start a `screen` session with a new virtual environment...
+
+   ```bash
+   screen
+   . venv/bin/activate
    ```
 
 1. For [comet](https://www.comet.ml/wellsaid-labs), name your experiment and pick a project...
@@ -189,28 +137,15 @@ Related Documentation:
    EXPERIMENT_NAME='Your experiment name'
    ```
 
-   ... and this variable for the spectrogram model ...
+1. Start training... For example, run this command to train a spectrogram model:
 
    ```bash
-   TRAIN_SCRIPT_PATH='src/bin/train/spectrogram_model/__main__.py'
-   ```
-
-   ... or this variable for the signal model ...
-
-   ```bash
-   TRAIN_SCRIPT_PATH='src/bin/train/signal_model/__main__.py'
-   ```
-
-1. Start training...
-
-   ```bash
-   # Kill any leftover processes from other runs...
    pkill -9 python; sleep 5s; nvidia-smi; \
-   PYTHONPATH=. python $TRAIN_SCRIPT_PATH --project_name $COMET_PROJECT --name "$EXPERIMENT_NAME";
+   PYTHONPATH=. python $TRAIN_SCRIPT_PATH start $COMET_PROJECT "$EXPERIMENT_NAME";
    ```
 
-   💡 TIP: You may want to include the optional `--spectrogram_model_checkpoint=your-checkpoint.pt`
-   argument.
+   ❓ LEARN MORE: PyTorch leaves zombie processes that must be killed, check out:
+   https://leimao.github.io/blog/Kill-PyTorch-Distributed-Training-Processes/
 
 1. Detach from your screen session by typing `Ctrl-A` then `D`.
 
@@ -220,45 +155,63 @@ Related Documentation:
 
 1. Kill your `lsyncd` process by typing `Ctrl-C`.
 
-1. Start the below process and leave it running for the duration of the training to deal with any
-   unexpected instance interruptions...
+## Post Training Clean Up
+
+### On the instance
+
+1. (Optional) Upload the checkpoints to Google Cloud Storage...
 
    ```bash
-   TRAIN_SCRIPT_PATH='your-choosen-training-script-from-earlier'
-   COMET_PROJECT='your-choosen-comet-project-from-earlier'
-   python -m src.bin.cloud.keep_alive_gcp \
-       --project_name $COMET_PROJECT \
-       --instance $VM_NAME \
-       --command="screen -dmL bash -c \
-                   'sudo chmod -R a+rwx /opt/;
-                   cd /opt/wellsaid-labs/Text-to-Speech;
-                   . venv/bin/activate;
-                   PYTHONPATH=. python $TRAIN_SCRIPT_PATH --checkpoint;'"
+   NAME='' # EXAMPLE: super_hi_fi__custom_voice
+   gsutil -m cp -r -n disk/experiments/ gs://wsl_experiments/$NAME
    ```
-
-   💡 TIP: If you're running this script from your laptop, then we recommend you install
-   [Amphetamine](https://apps.apple.com/us/app/amphetamine/id937984704?mt=12) to keep your laptop
-   from sleeping and stopping the script.
-
-## Post Training Clean Up
 
 ### From your local repository
 
 1. Setup your environment variables again...
 
-   ```bash
-   VM_NAME=$USER"_your-instance-name" # EXAMPLE: michaelp_baseline
-   VM_ZONE=$(gcloud compute instances list | grep "^$VM_NAME\s" | awk '{ print $2 }')
+   ```zsh
+   ZONE='your-vm-zone' # EXAMPLE: us-central1-a
+   NAME=$USER"-your-instance-name" # EXAMPLE: michaelp-baseline
    ```
 
-1. Stop your instance...
+1. (Optional) Download checkpoints to your local drive...
 
    ```bash
-   gcloud compute instances stop $VM_NAME --zone=$VM_ZONE
+   DIR_NAME='' # EXAMPLE: spectrogram_model
+   CHECKPOINT='' # EXAMPLE: '**/**/checkpoints/step_630927.pt'
+
+   VM_NAME=$(python -m run.utils.gcp most-recent --name $NAME)
+   VM_ZONE=$(python -m run.utils.gcp zone --name $VM_NAME)
+   DEST="disk/experiments/$DIR_NAME/$VM_NAME/"
+   mkdir -p $DEST
+   gcloud compute scp \
+      $VM_NAME:/opt/wellsaid-labs/Text-to-Speech/disk/experiments/$DIR_NAME/$CHECKPOINT \
+      $DEST --zone=$VM_ZONE
    ```
 
-   or delete your instance...
+1. Delete your instance...
 
-   ```bash
-   gcloud compute instances delete $VM_NAME --zone=$VM_ZONE
+   ```zsh
+   python -m run.utils.gcp delete-instance --name=$NAME --zone=$ZONE
+   ```
+
+   You may need to run the above a couple of times.
+
+   💡 TIP: The instance can be imaged and deleted. For example:
+
+   ```zsh
+   IMAGE_FAMILY=$NAME # EXAMPLE: michaelp-baseline
+   IMAGE_NAME="$IMAGE_FAMILY-v1" # EXAMPLE: michaelp-baseline-v1
+   VM_NAME=$(python -m run.utils.gcp most-recent --name $NAME)
+   VM_ZONE=$(python -m run.utils.gcp zone --name $VM_NAME)
+   gcloud compute ssh --zone=$ZONE $VM_NAME \
+      --command="rm /opt/wellsaid-labs/AUTO_START_FROM_CHECKPOINT"
+   python -m run.utils.gcp image-and-delete \
+      --image-family=$IMAGE_FAMILY \
+      --image-name=$IMAGE_NAME \
+      --name=$NAME \
+      --vm-name=$VM_NAME \
+      --zone=$VM_ZONE
+   gcloud compute disks delete $VM_NAME --zone=$VM_ZONE
    ```

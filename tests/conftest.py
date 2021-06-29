@@ -1,47 +1,47 @@
-import warnings
-
 # Fix this weird error:
 # https://stackoverflow.com/questions/37604289/tkinter-tclerror-no-display-name-and-no-display-environment-variable
-import matplotlib
-matplotlib.use('Agg')
+import matplotlib  # isort: skip
 
-from hparams import clear_config
+matplotlib.use("Agg")
 
 # Fix this weird error: https://github.com/pytorch/pytorch/issues/2083
-import torch  # noqa: F401
+import torch  # noqa: F401, E402  # isort: skip
+import warnings  # noqa: E402
 
-import pytest
+import pytest  # noqa: E402
+import torch.autograd  # noqa: E402
+import torch.distributed  # noqa: E402
+from hparams import set_lazy_resolution  # noqa: E402
 
-from hparams import set_lazy_resolution
+import lib  # noqa: E402
 
-from src.environment import set_basic_logging_config
-from src.environment import TEST_DATA_PATH
-from src.hparams import set_hparams
-from src.utils.disk_cache_ import DiskCache
-from tests._utils import create_disk_garbage_collection_fixture
-
-set_basic_logging_config()
+lib.environment.set_basic_logging_config()
 
 
 @pytest.fixture(autouse=True)
 def run_before_test():
-    # Invalidate cache before each test.
-    clear_config()
-    for cache in DiskCache.get_instances():
-        cache.purge()
-
-    set_lazy_resolution(True)  # This helps performance for individual tests
-    set_hparams()
-
+    set_lazy_resolution(True)  # NOTE: This improves performance for `hparams`.
+    # NOTE: `get_signal_to_db_mel_spectrogram` doesn't consider `hparams` in the cache key, so,
+    # if the hyperparameters change, then the cache needs to be invalidated.
+    lib.audio.get_signal_to_db_mel_spectrogram.cache_clear()
     with warnings.catch_warnings():
         warnings.filterwarnings(
-            'ignore', module=r'.*torch.*', message=r'.*Anomaly Detection has been enabled.*')
+            "ignore",
+            message=r".*Anomaly Detection has been enabled.*",
+        )
+        warnings.filterwarnings(
+            "ignore",
+            module=r".*hparams.*",
+            message=r".*@configurable: No config for.*",
+        )
+        warnings.filterwarnings(
+            "ignore",
+            module=r".*hparams.*",
+            message=r".*@configurable: Overwriting configured argument.*",
+        )
         with torch.autograd.detect_anomaly():
             yield
-
-    # NOTE: We need to invalidate caching after the test because of delayed writes.
-    for cache in DiskCache.get_instances():
-        cache.purge()
-
-
-gc_fixture_test_data = create_disk_garbage_collection_fixture(TEST_DATA_PATH, autouse=True)
+    try:
+        torch.distributed.destroy_process_group()
+    except (RuntimeError, AssertionError):
+        pass

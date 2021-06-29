@@ -1,290 +1,86 @@
-from collections.abc import MutableMapping
-from contextlib import contextmanager
-from unittest import mock
-from functools import lru_cache
-
-import shutil
+import pathlib
+import subprocess
+import typing
 import urllib.request
-
-from hparams import add_config
-from hparams import HParams
-from torch.optim import Adam
-from torchnlp.utils import split_list
 
 import numpy
 import pytest
 import torch
 
-from src.datasets import add_predicted_spectrogram_column
-from src.datasets import add_spectrogram_column
-from src.datasets import lj_speech_dataset
-from src.datasets import m_ailabs_en_us_speech_dataset
-from src.datasets import normalize_audio_column
-from src.datasets.m_ailabs import DOROTHY_AND_WIZARD_OZ
-from src.environment import SIGNAL_MODEL_EXPERIMENTS_PATH
-from src.environment import SPECTROGRAM_MODEL_EXPERIMENTS_PATH
-from src.optimizers import ExponentialMovingParameterAverage
-from src.optimizers import Optimizer
-from src.signal_model import SignalModel
-from src.spectrogram_model import InputEncoder
-from src.spectrogram_model import SpectrogramModel
-from src.utils import Checkpoint
-from src.utils import OnDiskTensor
+import lib
 
-assert_almost_equal = lambda a, b, **kwargs: numpy.testing.assert_almost_equal(
-    a.cpu().detach().numpy(),
-    b.cpu().detach().numpy(), **kwargs)
+TEST_DATA_PATH = lib.environment.ROOT_PATH / "tests" / "_test_data"
 
 
-def create_disk_garbage_collection_fixture(root_directory, **kwargs):
-    """ Create fixture for deleting extra files and directories after a test is run.
-    """
-
-    @pytest.fixture(**kwargs)
-    def fixture():
-        all_paths = lambda: set(root_directory.rglob('*')) if root_directory.exists() else set()
-
-        before = all_paths()
-        yield root_directory
-        after = all_paths()
-
-        for path in after.difference(before):
-            if not path.exists():
-                continue
-
-            # NOTE: These `print`s will help debug a test if it fails; otherwise, they are ignored.
-            if path.is_dir():
-                print('Deleting directory: ', path)
-                shutil.rmtree(str(path))
-            elif path.is_file():
-                print('Deleting file: ', path)
-                path.unlink()
-
-        assert before == all_paths()
-
-    return fixture
+def assert_almost_equal(a: torch.Tensor, b: torch.Tensor, **kwargs):
+    numpy.testing.assert_almost_equal(a.cpu().detach().numpy(), b.cpu().detach().numpy(), **kwargs)
 
 
-class MockCometML():
-
-    def __init__(self, *args, **kwargs):
-        self.project_name = ''
-
-    @contextmanager
-    def train(self, *args, **kwargs):
-        yield self
-
-    @contextmanager
-    def validate(self, *args, **kwargs):
-        yield self
-
-    def get_key(self):
-        return ''
-
-    def __getattr__(self, attr):
-        return lambda *args, **kwargs: self
-
-
-class MockOnDiskTensor(OnDiskTensor):
-
-    def __init__(self, path, tensor, exists=True):
-        self.tensor = tensor
-        self.exists = exists
-        self.path = path
-        self.allow_pickle = False
-
-    @property
-    def shape(self):
-        return self.tensor.shape
-
-    def to_tensor(self):
-        return self.tensor
-
-    def exists(self):
-        return self.exists
-
-    def unlink(self):
-        return self
-
-    def from_tensor(self, tensor):
-        self.tensor = tensor
-        return self
-
-
-# Check the URL requested is valid
-def url_first_side_effect(url, *args, **kwargs):
+def first_parameter_url_side_effect(url: str, *_, **__):
+    """`unittest.mock.side_effect` for functions with a first parameter url."""
     # TODO: Fix failure case if internet does not work
     assert urllib.request.urlopen(url).getcode() == 200
     return None
 
 
-# NOTE: Consumes the first argument
-url_second_side_effect = lambda _, *args, **kwargs: url_first_side_effect(*args, **kwargs)
+def assert_uniform_distribution(counter: typing.Counter, **kwargs):
+    """Assert that the counted distribution is uniform."""
+    total = sum(counter.values())
+    for value in counter.values():
+        assert value / total == pytest.approx(1 / len(counter), **kwargs)
 
 
-# Learn more about `Mapping`:
-# http://www.kr41.net/2016/03-23-dont_inherit_python_builtin_dict_type.html
-# https://treyhunner.com/2019/04/why-you-shouldnt-inherit-from-list-and-dict-in-python/
-class LazyDict(MutableMapping):
-    """ Lazy dictionary such that each value is a callable that's executed and cached on
-    `__getitem__`.
-    """
-
-    def __init__(self, *args, **kwargs):
-        self._dict = dict(*args, **kwargs)
-        assert all(callable(v) for v in self._dict.values()), 'All values must be callables.'
-        self._cache = dict()
-
-    def __getitem__(self, key):
-        if key in self._cache:
-            return self._cache[key]
-
-        results = self._dict.__getitem__(key)()
-        self._cache[key] = results
-        return results
-
-    def __setitem__(self, key, value):
-        assert callable(value), 'All values must be callables.'
-        self._dict[key] = value
-
-    def __delitem__(self, key):
-        del self._dict[key]
-        del self._cache[key]
-
-    def __iter__(self):
-        return iter(self._dict)
-
-    def __len__(self):
-        return len(self._dict)
+def subprocess_run_side_effect(command, *args, _command: str = "", _func=subprocess.run, **kwargs):
+    """`subprocess.run.side_effect` that only returns if `_command` not in `command`."""
+    if _command not in command:
+        return _func(command, *args, **kwargs)
 
 
-@lru_cache()
-def _get_mock_data():
-    """ Get a mock dataset for testing. """
-    with mock.patch('urllib.request.urlretrieve') as mock_urlretrieve:
-        mock_urlretrieve.side_effect = url_first_side_effect
-        data = m_ailabs_en_us_speech_dataset(all_books=[DOROTHY_AND_WIZARD_OZ])
-        data += lj_speech_dataset()
-    return data
+def make_metadata(
+    path: pathlib.Path = pathlib.Path("."),
+    sample_rate=1,
+    num_channels=0,
+    encoding=lib.audio.AudioEncoding.PCM_INT_8_BIT,
+    bit_rate="",
+    precision="",
+    num_samples=0,
+) -> lib.audio.AudioMetadata:
+    """Make a `AudioMetadata` for testing."""
+    return lib.audio.AudioMetadata(
+        path=path,
+        sample_rate=sample_rate,
+        num_channels=num_channels,
+        encoding=encoding,
+        bit_rate=bit_rate,
+        precision=precision,
+        num_samples=num_samples,
+    )
 
 
-def set_small_model_size_hparams():
-    """ Configure the `SpectrogramModel` and  `SignalModel` to be small for testing. """
-
-    add_config({
-        'src.spectrogram_model': {
-            'model.SpectrogramModel.__init__':
-                HParams(speaker_embedding_dim=8),
-            'encoder.Encoder.__init__':
-                HParams(hidden_size=16, num_convolution_layers=2, out_dim=16),
-            'decoder.AutoregressiveDecoder.__init__':
-                HParams(lstm_hidden_size=16, encoder_output_size=16, pre_net_hidden_size=16),
-            'pre_net.PreNet.__init__':
-                HParams(num_layers=1)
-        }
-    })
-
-    add_config({
-        'src.signal_model': {
-            'SignalModel.__init__': HParams(hidden_size=2, max_channel_size=8),
-            'SpectrogramDiscriminator.__init__': HParams(hidden_size=32),
-        }
-    })
+def get_audio_metadata_side_effect(
+    paths: typing.Union[pathlib.Path, typing.List[pathlib.Path]],
+    _func=lib.audio.get_audio_metadata,
+    **kwargs,
+) -> typing.Union[lib.audio.AudioMetadata, typing.List[lib.audio.AudioMetadata]]:
+    """`get_audio_metadata.side_effect` that returns placeholder metadata if the path doesn't
+    exist."""
+    is_list = isinstance(paths, list)
+    paths = paths if isinstance(paths, list) else [paths]
+    existing = [p for p in paths if p.exists() and p.is_file()]
+    metadatas: typing.List[lib.audio.AudioMetadata] = _func(existing, **kwargs)
+    metadatas = [metadatas.pop(0) if p.exists() else make_metadata(path=p) for p in paths]
+    return metadatas if is_list else metadatas[0]
 
 
-def get_tts_mocks(add_spectrogram=False,
-                  add_predicted_spectrogram=False,
-                  add_spectrogram_kwargs={},
-                  add_predicted_spectrogram_kwargs={}):
-    """ Get mock data for integration testing the TTS pipeline.
+# NOTE: `unittest.mock.side_effect` for functions with a second parameter url.
+second_parameter_url_side_effect = lambda _, *args, **kwargs: first_parameter_url_side_effect(
+    *args, **kwargs
+)
 
-    Args:
-        add_spectrogram (bool): Compute the spectrogram for the dataset.
-        add_predicted_spectrogram (bool): Compute the predicted spectrogram for the dataset.
-        add_spectrogram_kwargs (dict): `kwargs` passed onto `add_spectrogram_column`.
-        add_predicted_spectrogram_kwargs (dict): `kwargs` passed onto
-            `add_predicted_spectrogram_column`.
 
-    Returns:
-        (LazyDict): The dict has various objects required to run an integration test.
-    """
-    return_ = LazyDict({})
-
-    return_['device'] = lambda: torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-    def get_dataset():
-        dataset = normalize_audio_column(_get_mock_data())
-
-        if add_spectrogram:
-            dataset = add_spectrogram_column(dataset, **add_spectrogram_kwargs)
-
-        if add_predicted_spectrogram:
-            dataset = add_predicted_spectrogram_column(dataset,
-                                                       return_['spectrogram_model_checkpoint'],
-                                                       return_['device'],
-                                                       **add_predicted_spectrogram_kwargs)
-
-        return dataset
-
-    return_['dataset'] = get_dataset
-    return_['input_encoder'] = lambda: InputEncoder([e.text for e in _get_mock_data()],
-                                                    [e.speaker for e in _get_mock_data()])
-
-    def get_spectrogram_model():
-        set_small_model_size_hparams()
-        # NOTE: Configure the `SpectrogramModel` to stop iteration as soon as possible.
-        add_config({
-            'src.spectrogram_model.model.SpectrogramModel._infer_generator':
-                HParams(stop_threshold=0.0)
-        })
-        return SpectrogramModel(return_['input_encoder'].text_encoder.vocab_size,
-                                return_['input_encoder'].speaker_encoder.vocab_size)
-
-    return_['spectrogram_model'] = get_spectrogram_model
-
-    def get_spectrogram_model_checkpoint():
-        parameters = return_['spectrogram_model'].parameters()
-        spectrogram_model_optimizer = Optimizer(
-            Adam(params=filter(lambda p: p.requires_grad, parameters)))
-        checkpoint = Checkpoint(
-            comet_ml_project_name='',
-            comet_ml_experiment_key='',
-            directory=SPECTROGRAM_MODEL_EXPERIMENTS_PATH,
-            model=return_['spectrogram_model'],
-            optimizer=spectrogram_model_optimizer,
-            epoch=0,
-            step=0,
-            input_encoder=return_['input_encoder'])
-        checkpoint.save()
-        return checkpoint
-
-    return_['spectrogram_model_checkpoint'] = get_spectrogram_model_checkpoint
-
-    def get_signal_model():
-        set_small_model_size_hparams()
-        return SignalModel()
-
-    return_['signal_model'] = get_signal_model
-
-    def get_signal_model_checkpoint():
-        signal_model_optimizer = Optimizer(
-            Adam(params=filter(lambda p: p.requires_grad, return_['signal_model'].parameters())))
-        signal_model_ema = ExponentialMovingParameterAverage(
-            filter(lambda p: p.requires_grad, return_['signal_model'].parameters()))
-        checkpoint = Checkpoint(
-            comet_ml_project_name='',
-            comet_ml_experiment_key='',
-            directory=SIGNAL_MODEL_EXPERIMENTS_PATH,
-            exponential_moving_parameter_average=signal_model_ema,
-            epoch=0,
-            step=0,
-            optimizer=signal_model_optimizer,
-            model=return_['signal_model'],
-            spectrogram_model_checkpoint_path=return_['spectrogram_model_checkpoint'].path)
-        checkpoint.save()
-        return checkpoint
-
-    return_['signal_model_checkpoint'] = get_signal_model_checkpoint
-    return_['train_dataset'] = lambda: split_list(return_['dataset'], (0.5, 0.5))[0]
-    return_['dev_dataset'] = lambda: split_list(return_['dataset'], (0.5, 0.5))[1]
-    return return_
+def print_params(label: str, params: typing.Iterable[typing.Tuple[str, torch.Tensor]]):
+    """Print `params` in a copy pastable format for testing the model version."""
+    print(label + " = {")
+    for name, parameter in params:
+        print(f'    "{name}": torch.tensor({parameter.sum().item():.6f}),')
+    print("}")

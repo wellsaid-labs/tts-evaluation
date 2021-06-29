@@ -5,7 +5,7 @@
 Where possible, we prefer that code is tested. For Python, we use `pytest` for testing like so:
 
 ```bash
-pytest
+python -m pytest tests/
 ```
 
 After the tests run, we use `pytest-cov` to analyze and print the test case code coverage. Whenever
@@ -17,18 +17,19 @@ To aid code readability, we prefer to use Google coding style. Please familiariz
 Python style guide [here](http://google.github.io/styleguide/pyguide.html).
 
 Where possible, we also use auto-formatters and linters to enforce code readability. For Python,
-we use `yapf` and `flake8`. These tools can be used like so:
+we use `black`, `isort`, and `flake8`. These tools can be used like so:
 
 ```bash
 # Run our linter, learn more: https://en.wikipedia.org/wiki/Lint_(software)
-flake8 src/; flake8 tests/;
+python -m flake8 run tests lib third_party
 
 # Automatically format your code.
-yapf src/ tests/ --recursive --in-place;
+python -m black run tests lib third_party
+python -m isort run tests lib third_party
 ```
 
-You'll want to integrate `yapf` and `flake8` into your code editor, both of these tools are
-popular and there are many extensions written for them.
+You'll want to integrate `black`, `isort` and `flake8` into your code editor, both of these tools
+are popular and there are many extensions written for them.
 
 ## Legal
 

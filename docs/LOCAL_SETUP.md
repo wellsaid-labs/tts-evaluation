@@ -2,75 +2,93 @@
 
 This document summarizes how to setup this repository locally for development.
 
-## Prerequisites
+## 1. Install System Dependencies
 
-This repository only supports macOS with Python 3.6 or higher. You'll also need
-[brew](https://brew.sh/), a package manager for macOS.
+Please install the below requirements:
 
-## 1. Download The Repository
+- [Docker](https://www.docker.com/products/docker-desktop)
+- [brew](https://brew.sh/)
+- [Visual Studio Code](https://code.visualstudio.com/docs/setup/mac). In addition to the
+  initial steps, please run through the section called "Launching from the command line".
+
+Afterwards, please install other system dependencies, like so:
+
+```zsh
+brew install git
+brew install python@3.8
+brew install sox # Audio processing
+brew install ffmpeg # Audio processing
+brew install espeak # Speech synthesizer
+brew install rsync lsyncd # File transfer
+brew install jq # Bash JSON parser
+setopt interactivecomments # Bash style comments
+```
+
+## 2. Clone the Repository
 
 Using `git` clone the repository onto your system:
 
-```bash
-git clone --depth=1 --no-single-branch https://github.com/wellsaid-labs/Text-to-Speech.git
+```zsh
+git clone --depth=10 --no-single-branch --recurse-submodules https://github.com/wellsaid-labs/Text-to-Speech.git
 ```
 
-The reason for using `--depth=1 --no-single-branch` is to reduce the size of the `.git` directory.
+The reason for using `--depth=10 --no-single-branch` is to reduce the size of the `.git` directory.
 On May 20th, these flags would reduce the repository size by 80%
 (i.e. 58 megabytes to 12 megabytes).
 
-## 2. Install Python Dependencies
+## 3. Install Python Dependencies
 
 Install Python dependencies, like so:
 
-```bash
+```zsh
 # Start a virtual environment, learn more:
 # https://realpython.com/python-virtual-environments-a-primer/
-python -m venv venv
+python3 -m venv venv
 . venv/bin/activate
 
 # Install Python dependencies
+python -m pip install pip --upgrade
 python -m pip install -r requirements.txt --upgrade
 ```
 
-## 3. Install Additional Dependencies
+## 4. Comet
 
-This repository requires [SoX](http://sox.sourceforge.net/) (Sound eXchange) and
-[FFmpeg](https://ffmpeg.org/) for audio preprocessing. Finally, this requires
-[eSpeak](http://espeak.sourceforge.net/) for grapheme to phoneme text preprocessing. They can be
-installed like so:
-
-```bash
-brew install sox
-brew install ffmpeg
-brew install espeak
-```
-
-Note that we do not use `ffmpeg` directly instead it is used by one of our
-[dependencies](https://librosa.github.io/librosa/install.html#ffmpeg).
-
-
-## 4. Configure Visualization Dependencies
-
-This repository requires [Comet](https://www.comet.ml) for visualization. You'll need to ask
+This repository requires [Comet](https://www.comet.ml) for visualization, and you'll need to ask
 a team member to create you an account.
 
 With your new account, you'll need to create a `.comet.config` file in this repositories root
-level directory. The file should contain the `api_key`, `rest_api_key` and `workspace`
-configurations. Learn more on
+level directory with these configurations:
+
+```
+[comet]
+workspace=wellsaid-labs
+api_key=<api_key>
+rest_api_key=<rest_api_key>
+disable_auto_logging=1
+```
+
+Learn more about where to find the `api_key` and `rest_api_key` configurations on
 [this web page](https://www.comet.ml/docs/python-sdk/advanced/#python-configuration).
 
-Note that this software tends to trigger Comet's throttling. We are in good standing
-with the Comet team; therefore, if you need you can ask for a second API key to ensure their
-system does not throttle you.
+## 5. Google Cloud
 
-Note that if you need to file an issue with Comet please visit
-[this webpage](https://github.com/comet-ml/issue-tracking).
+This repository relies on GCP, and you'll need to ask team member to get access to our GCP projects,
+"Voice Research" and "Voice Service".
 
-## You're Done
+Afterwards, install [Google Cloud SDK](https://cloud.google.com/sdk/) with these
+[installation scripts](https://cloud.google.com/sdk/docs/downloads-interactive) and authorize
+Google Cloud SDK tools, like so:
 
-Verify that your installation was successful by running the test suite:
+```zsh
+gcloud init
 
-```bash
-pytest
+# NOTE: Authorize Google's command-line-interface, learn more:
+# https://cloud.google.com/sdk/gcloud/reference/auth/login
+gcloud auth login
+
+# NOTE: Authorize Google client libraries, learn more:
+# https://cloud.google.com/sdk/gcloud/reference/auth/application-default
+gcloud auth application-default login
 ```
+
+## Good job! 🎉

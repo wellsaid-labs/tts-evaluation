@@ -3,6 +3,7 @@
 This directory is used by this repository to cache temporary files onto disk. The various
 denominations include:
 
+- `checkpoints`: This is used to download and cache checkpoints.
 - `data`: This is used to download and cache datasets.
 - `experiments`: This is used to save experimental data.
 - `other`: This is used to cache everything else.
