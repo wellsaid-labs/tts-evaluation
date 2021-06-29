@@ -11,7 +11,7 @@ import lib
 from lib.signal_model import generate_waveform
 from tests import _utils
 
-assert_almost_equal = lambda *a, **k: _utils.assert_almost_equal(*a, **k, decimal=5)
+assert_almost_equal = lambda *a, **k: _utils.assert_almost_equal(*a, **k, decimal=4)
 
 
 def test__interpolate_and_concat():

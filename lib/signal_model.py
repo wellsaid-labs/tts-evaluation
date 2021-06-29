@@ -538,10 +538,7 @@ class SignalModel(torch.nn.Module):
 
         if self.excess_padding > 0:  # [batch_size, num_frames * self.upscale_factor]
             signal = signal[:, self.excess_padding : -self.excess_padding]
-        assert signal.shape == (
-            batch_size,
-            self.upscale_factor * num_frames,
-        ), signal.shape
+        assert signal.shape == (batch_size, self.upscale_factor * num_frames), signal.shape
 
         # Remove clipped samples
         num_clipped_samples = ((signal > 1.0) | (signal < -1.0)).sum().item()
