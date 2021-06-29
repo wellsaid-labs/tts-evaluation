@@ -13,14 +13,7 @@ function(serviceName)
       },
     },
     config: {
-      rules: [
-        {
-          condition: {
-            'accept-version': 'latest',
-          },
-          upstream_name: serviceName,
-        },
-      ],
+      latest_version: serviceName
     },
-    plugin: 'route-by-header',
+    plugin: 'latest-version-transformer',
   }]
