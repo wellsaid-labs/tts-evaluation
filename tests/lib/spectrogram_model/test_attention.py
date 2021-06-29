@@ -92,6 +92,7 @@ def _make_attention(
     convolution_filter_size=5,
     dropout=0.5,
     window_length=7,
+    avg_frames_per_token=1.0,
 ) -> typing.Tuple[
     Attention,
     typing.Tuple[torch.Tensor, torch.Tensor, torch.Tensor, AttentionHiddenState],
@@ -104,6 +105,7 @@ def _make_attention(
         convolution_filter_size=convolution_filter_size,
         dropout=dropout,
         window_length=window_length,
+        avg_frames_per_token=avg_frames_per_token,
     )
     tokens = torch.randn(max_num_tokens, batch_size, attention_hidden_size)
     tokens_mask = torch.ones(batch_size, max_num_tokens, dtype=torch.bool)
