@@ -281,6 +281,8 @@ _SignalModelSelfType = typing.TypeVar("_SignalModelSelfType", bound="SignalModel
 class SignalModel(torch.nn.Module):
     """Predicts a signal given a spectrogram.
 
+    TODO: Refactor `speaker_embedding_size` into two parameters for simplicity.
+
     Args:
         ...
         input_size: The input tensor channel dimension size.
@@ -297,7 +299,7 @@ class SignalModel(torch.nn.Module):
         self,
         num_speakers: int,
         num_sessions: int,
-        speaker_embedding_size: int = 128,
+        speaker_embedding_size: int = HParam(),
         input_size: int = HParam(),
         hidden_size: int = HParam(),
         ratios: typing.List[int] = HParam(),
@@ -314,6 +316,7 @@ class SignalModel(torch.nn.Module):
         self.num_speakers = num_speakers
         self.num_sessions = num_sessions
 
+        assert speaker_embedding_size % 2 == 0, "Parameter must be even."
         self.embed_speaker = torch.nn.Embedding(num_speakers, speaker_embedding_size // 2)
         self.embed_session = torch.nn.Embedding(num_sessions, speaker_embedding_size // 2)
 
@@ -478,7 +481,8 @@ class SignalModel(torch.nn.Module):
         """
         Args:
             spectrogram (torch.FloatTensor [batch_size (optional), num_frames, frame_channels])
-            ...
+            speaker (torch.LongTensor [batch_size (optional)])
+            session (torch.LongTensor [batch_size (optional)])
             spectrogram_mask (torch.BoolTensor [batch_size (optional), num_frames] or None):
                 The mask elements on either boundary of the spectrogram so that the corresponding
                 output is not affected.
@@ -493,7 +497,7 @@ class SignalModel(torch.nn.Module):
             spectrogram, spectrogram_mask, pad_input
         )
 
-        batch_size, num_frames, frame_channels = spectrogram.shape
+        batch_size, num_frames, _ = spectrogram.shape
         num_frames = num_frames - self.padding * 2
 
         # [batch_size] → [batch_size, speaker_embedding_size // 2]
@@ -554,6 +558,8 @@ class SignalModel(torch.nn.Module):
 class SpectrogramDiscriminator(torch.nn.Module):
     """Discriminates between predicted and real spectrograms.
 
+    TODO: Refactor `speaker_embedding_size` into two parameters for simplicity.
+
     Args:
         fft_length
         num_mel_bins
@@ -568,7 +574,7 @@ class SpectrogramDiscriminator(torch.nn.Module):
         num_mel_bins: int,
         num_speakers: int,
         num_sessions: int,
-        speaker_embedding_size: int = 128,
+        speaker_embedding_size: int = HParam(),
         hidden_size: int = HParam(),
     ):
         super().__init__()
@@ -576,6 +582,7 @@ class SpectrogramDiscriminator(torch.nn.Module):
         input_size = fft_length + num_mel_bins + 2 + speaker_embedding_size
         self.num_speakers = num_speakers
         self.num_sessions = num_sessions
+        assert speaker_embedding_size % 2 == 0, "Parameter must be even."
         self.embed_speaker = torch.nn.Embedding(num_speakers, speaker_embedding_size // 2)
         self.embed_session = torch.nn.Embedding(num_sessions, speaker_embedding_size // 2)
         self.layers = _Sequential(
@@ -662,8 +669,7 @@ def generate_waveform(
 
     Args:
         model: The model to synthesize the waveform with.
-        spectrogram
-        spectrogram_mask
+        ...
 
     Returns:
         signal (torch.FloatTensor [batch_size (optional), signal_length])

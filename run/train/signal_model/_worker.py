@@ -468,7 +468,7 @@ def _run_discriminator(
 def _random_volume(
     signal: torch.Tensor, target_signal: torch.Tensor
 ) -> typing.Tuple[torch.Tensor, torch.Tensor]:
-    """Randomly select a volume level for `target_signal` and `signal`."""
+    """Randomly adjust the volume level for `target_signal` and `signal`."""
     peek = torch.max(torch.max(signal.abs()), torch.max(target_signal.abs()))
     volume = torch.zeros(1, device=signal.device).uniform_(0.0, 1.0 / float(peek.item()))
     return (signal * volume, target_signal * volume)
