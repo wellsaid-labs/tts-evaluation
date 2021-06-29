@@ -917,7 +917,7 @@ class Metrics(lib.distributed.DictStore):
         self,
         parameter_norm: float,
         parameter_norm_inf: float,
-        optimizer: torch.optim.Adam,
+        optimizer: typing.Union[torch.optim.Adam, torch.optim.AdamW],
         clipper: lib.optimizers.AdaptiveGradientNormClipper,
         **kwargs,
     ):
@@ -925,7 +925,8 @@ class Metrics(lib.distributed.DictStore):
         been sync'd; therefore, there is no need to further sync parameters.
         """
         if is_master():
-            assert len(optimizer.param_groups) == 1, "Expecting only 1 group of parameters."
+            message = "Expecting only 1 learning rate."
+            assert len(set(g["lr"] for g in optimizer.param_groups)) == 1, message
             metrics = {
                 self.GRADIENT_NORM: parameter_norm,
                 self.GRADIENT_INFINITY_NORM: parameter_norm_inf,

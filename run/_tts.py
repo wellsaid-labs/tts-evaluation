@@ -115,7 +115,10 @@ def package_tts(
     spectrogram_checkpoint: train.spectrogram_model._worker.Checkpoint,
     signal_checkpoint: train.signal_model._worker.Checkpoint,
 ):
-    """Package together objects required for running TTS inference."""
+    """Package together objects required for running TTS inference.
+
+    TODO: Include the experiment key and step in the `TTSPackage`, so it can be identified.
+    """
     return TTSPackage(*spectrogram_checkpoint.export(), signal_checkpoint.export())
 
 
@@ -184,7 +187,9 @@ def text_to_speech(
     params = Params(tokens=encoded.phonemes, speaker=encoded.speaker, session=encoded.session)
     preds = typing.cast(Infer, package.spectrogram_model(params=params, mode=Mode.INFER))
     splits = preds.frames.split(split_size)
-    predicted = list(generate_waveform(package.signal_model, splits))
+    predicted = list(
+        generate_waveform(package.signal_model, splits, encoded.speaker, encoded.session)
+    )
     predicted = typing.cast(torch.Tensor, torch.cat(predicted, dim=-1))
     return predicted.detach().numpy()
 
@@ -232,7 +237,9 @@ def batch_text_to_speech(
         preds = typing.cast(Infer, package.spectrogram_model(params=params, mode=Mode.INFER))
         spectrogram = preds.frames.transpose(0, 1)
         spectrogram_mask = lengths_to_mask(preds.lengths)
-        signals = package.signal_model(spectrogram, spectrogram_mask)
+        signals = package.signal_model(
+            spectrogram, spectrogram_mask, params.session, params.speaker
+        )
         lengths = preds.lengths * package.signal_model.upscale_factor
         more_results = {
             j: TTSInputOutput(
@@ -315,7 +322,9 @@ def text_to_speech_ffmpeg_generator(
         thread.start()
         logger_.info("Generating waveform...")
         generator = get_spectrogram()
-        for waveform in generate_waveform(package.signal_model, generator):
+        for waveform in generate_waveform(
+            package.signal_model, generator, input.speaker, input.session
+        ):
             pipe.stdin.write(waveform.cpu().numpy().tobytes())
             yield from _dequeue(queue)
         close()

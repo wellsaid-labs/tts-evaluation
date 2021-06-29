@@ -69,7 +69,8 @@ def _make_configuration(
             ),
             # SOURCE (Tacotron 2):
             # We use the Adam optimizer [29] with β1 = 0.9, β2 = 0.999
-            optimizer=torch.optim.Adam,
+            optimizer=torch.optim.AdamW,
+            exclude_from_decay=_worker.exclude_from_decay,
         ),
         _worker._run_step: HParams(
             # NOTE: This scalar calibrates the loss so that it's scale is similar to Tacotron-2.
@@ -78,9 +79,9 @@ def _make_configuration(
             # NOTE: This value is the minimum loss the test set achieves before the model
             # starts overfitting on the train set.
             # TODO: Try increasing the stop token minimum loss because it still overfit.
-            stop_token_min_loss=0.0105,
+            stop_token_min_loss=0.027,
             # NOTE: This value is the average spectrogram length in the training dataset.
-            average_spectrogram_length=315.0,
+            average_spectrogram_length=117.5,
         ),
         _worker._get_data_loaders: HParams(
             # SOURCE: Tacotron 2
@@ -106,11 +107,11 @@ def _make_configuration(
         # We use the Adam optimizer with β1 = 0.9, β2 = 0.999, eps = 10−6 learning rate of 10−3
         # We also apply L2 regularization with weight 10−6
         # NOTE: No L2 regularization performed better based on Comet experiments in March 2020.
-        torch.optim.Adam.__init__: HParams(
+        torch.optim.AdamW.__init__: HParams(
             eps=10 ** -6,
-            weight_decay=0,
+            weight_decay=0.01,
             lr=10 ** -3,
-            amsgrad=True,
+            amsgrad=False,
             betas=(0.9, 0.999),
         ),
         InputEncoder.__init__: HParams(phoneme_separator=PHONEME_SEPARATOR),
@@ -165,17 +166,7 @@ def start(
     context: typer.Context,
     project: str = typer.Argument(..., help="Experiment project name."),
     name: str = typer.Argument("", help="Experiment name."),
-    tags: typing.List[str] = typer.Option(
-        [
-            "recording_sessions",
-            "promo",
-            "monotonic",
-            "no_balance_train",
-            "no_slash",
-            "no_long_pauses",
-        ],
-        help="Experiment tags.",
-    ),
+    tags: typing.List[str] = typer.Option([], help="Experiment tags."),
     debug: bool = typer.Option(False, help="Turn on debugging mode."),
 ):
     """Start a training run in PROJECT named NAME with TAGS."""

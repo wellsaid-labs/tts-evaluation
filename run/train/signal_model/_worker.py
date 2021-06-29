@@ -144,10 +144,13 @@ class _State:
 
     @staticmethod
     def _get_model(
+        input_encoder: spectrogram_model._data.InputEncoder,
         device: torch.device,
         comet: CometMLExperiment,
     ) -> SignalModel:
-        model = SignalModel().to(device, non_blocking=True)
+        num_speakers = input_encoder.speaker_encoder.vocab_size
+        num_sessions = input_encoder.session_encoder.vocab_size
+        model = SignalModel(num_speakers, num_sessions).to(device, non_blocking=True)
         comet.set_model_graph(str(model))
         label = get_model_label("num_parameters", Cadence.STATIC)
         comet.log_parameter(label, get_total_parameters(model))
@@ -197,9 +200,16 @@ class _State:
     @staticmethod
     @configurable
     def _get_discrims(
-        device: torch.device, args: typing.List[typing.Tuple[int, int]] = HParam()
+        input_encoder: spectrogram_model._data.InputEncoder,
+        device: torch.device,
+        args: typing.List[typing.Tuple[int, int]] = HParam(),
     ) -> typing.List[SpectrogramDiscriminator]:
-        return [SpectrogramDiscriminator(*a).to(device, non_blocking=True) for a in args]
+        num_speakers = input_encoder.speaker_encoder.vocab_size
+        num_sessions = input_encoder.session_encoder.vocab_size
+        return [
+            SpectrogramDiscriminator(*a, num_speakers, num_sessions).to(device, non_blocking=True)
+            for a in args
+        ]
 
     @staticmethod
     @configurable
@@ -256,6 +266,7 @@ class _State:
         NOTE: `dataclasses.astuple` isn't compatible with PyTorch, learn more:
         https://github.com/pytorch/pytorch/issues/52127
         """
+        checkpoint.model.grad_enabled = None  # NOTE: For backwards compatibility
         discrims = [DistributedDataParallel(d, [device], device) for d in checkpoint.discrims]
         input_encoder, spectrogram_model = cls.load_spectrogram_model(
             comet, checkpoint.spectrogram_model_checkpoint_path
@@ -286,11 +297,11 @@ class _State:
     ):
         """Initialize signal model training state."""
         distribute = partial(DistributedDataParallel, device_ids=[device], output_device=device)
-        model = distribute(cls._get_model(device, comet))
-        discrims = [distribute(d) for d in cls._get_discrims(device)]
         input_encoder, spectrogram_model = cls.load_spectrogram_model(
             comet, spectrogram_model_checkpoint_path
         )
+        model = distribute(cls._get_model(input_encoder, device, comet))
+        discrims = [distribute(d) for d in cls._get_discrims(input_encoder, device)]
         return cls(
             model,
             *cls._get_optimizers(model),
@@ -413,7 +424,10 @@ def _run_discriminator(
     db_mel = torch.cat([real_specs.db_mel, fake_specs.db_mel.detach()])
     db = torch.cat([real_specs.db, fake_specs.db.detach()])
     amp = torch.cat([real_specs.amp, fake_specs.amp.detach()])
-    predictions = typing.cast(torch.Tensor, discriminator(amp, db, db_mel))
+    speaker = torch.cat([args.batch.speaker, args.batch.speaker])
+    session = torch.cat([args.batch.session, args.batch.session])
+    predictions = discriminator(amp, db, db_mel, speaker, session)
+    predictions = typing.cast(torch.Tensor, predictions)
     discriminator_loss = binary_cross_entropy_with_logits(predictions, labels, reduction="none")
     get_discrim_values = partial(
         args.metrics.get_discrim_values,
@@ -434,7 +448,13 @@ def _run_discriminator(
 
     args.timer.record_event(args.timer.MODEL_FORWARD)
     # NOTE: Use real labels instead of fake to flip the gradient for the generator.
-    predictions = discriminator(fake_specs.amp, fake_specs.db, fake_specs.db_mel)
+    predictions = discriminator(
+        fake_specs.amp,
+        fake_specs.db,
+        fake_specs.db_mel,
+        args.batch.speaker,
+        args.batch.session,
+    )
     predictions = typing.cast(torch.Tensor, predictions)
     generator_loss = binary_cross_entropy_with_logits(predictions, real_labels, reduction="none")
     get_discrim_values = partial(
@@ -443,6 +463,15 @@ def _run_discriminator(
         generator_losses=generator_loss,
     )
     return generator_loss, get_discrim_values
+
+
+def _random_volume(
+    signal: torch.Tensor, target_signal: torch.Tensor
+) -> typing.Tuple[torch.Tensor, torch.Tensor]:
+    """Randomly adjust the volume level for `target_signal` and `signal`."""
+    peek = torch.max(torch.max(signal.abs()), torch.max(target_signal.abs()))
+    volume = torch.zeros(1, device=signal.device).uniform_(0.0, 1.0 / float(peek.item()))
+    return (signal * volume, target_signal * volume)
 
 
 def _run_step(args: _HandleBatchArgs):
@@ -460,16 +489,19 @@ def _run_step(args: _HandleBatchArgs):
     args.timer.record_event(args.timer.MODEL_FORWARD)
     signal = args.state.model(
         spectrogram=args.batch.spectrogram.tensor,
+        speaker=args.batch.speaker,
+        session=args.batch.session,
         spectrogram_mask=args.batch.spectrogram_mask.tensor,
         pad_input=False,
     )
     signal = typing.cast(torch.Tensor, signal)
+    signal, target_signal = _random_volume(signal, args.batch.target_signal.tensor)
 
     loss = torch.tensor(0.0, device=signal.device)
     get_values = []
     for i, signal_to_spectrogram in enumerate(args.state.signal_to_spectrogram_modules):
         pred_specs = signal_to_spectrogram(signal, intermediate=True)
-        gold_specs = signal_to_spectrogram(args.batch.target_signal.tensor, intermediate=True)
+        gold_specs = signal_to_spectrogram(target_signal, intermediate=True)
         generator_loss, get_discrim_values = _run_discriminator(args, i, pred_specs, gold_specs)
         l1 = l1_loss(pred_specs.db_mel, gold_specs.db_mel, reduction="none").mean(dim=[1, 2])
         mse = mse_loss(pred_specs.db_mel, gold_specs.db_mel, reduction="none").mean(dim=[1, 2])
@@ -546,7 +578,11 @@ def _visualize_inferred(
     item = random.randint(0, len(batch.batch) - 1)
     length = batch.batch.predicted_spectrogram.lengths[:, item]
     spectrogram = batch.batch.predicted_spectrogram.tensor[:length, item].to(state.device)
-    predicted = list(generate_waveform(state.model.module, spectrogram.split(split_size)))
+    speaker = batch.batch.encoded_speaker.tensor[:, item].to(state.device)
+    session = batch.batch.encoded_session.tensor[:, item].to(state.device)
+    splits = spectrogram.split(split_size)
+    predicted = generate_waveform(state.model.module, splits, speaker, session)
+    predicted = list(predicted)
     predicted = typing.cast(torch.Tensor, torch.cat(predicted, dim=-1))
     target = batch.batch.audio[item]
     state.comet.log_html_audio(
@@ -580,7 +616,9 @@ def _visualize_inferred_end_to_end(
     preds = state.spectrogram_model_(params=params, mode=lib.spectrogram_model.Mode.INFER)
     preds = typing.cast(lib.spectrogram_model.Infer, preds)
     splits = preds.frames.to(state.device).split(split_size)
-    predicted = list(generate_waveform(state.model.module, splits))
+    speaker = batch.batch.encoded_speaker.tensor[:, item].to(state.device)
+    session = batch.batch.encoded_session.tensor[:, item].to(state.device)
+    predicted = list(generate_waveform(state.model.module, splits, speaker, session))
     predicted = typing.cast(torch.Tensor, torch.cat(predicted, dim=-1))
     target = batch.batch.audio[item]
     model_label_ = partial(get_model_label, cadence=Cadence.STEP)

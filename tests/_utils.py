@@ -76,3 +76,11 @@ def get_audio_metadata_side_effect(
 second_parameter_url_side_effect = lambda _, *args, **kwargs: first_parameter_url_side_effect(
     *args, **kwargs
 )
+
+
+def print_params(label: str, params: typing.Iterable[typing.Tuple[str, torch.Tensor]]):
+    """Print `params` in a copy pastable format for testing the model version."""
+    print(label + " = {")
+    for name, parameter in params:
+        print(f'    "{name}": torch.tensor({parameter.sum().item():.6f}),')
+    print("}")

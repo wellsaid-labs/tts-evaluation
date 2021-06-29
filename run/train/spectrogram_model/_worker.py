@@ -53,7 +53,7 @@ from run.train.spectrogram_model._metrics import (
 )
 
 logger = logging.getLogger(__name__)
-torch.optim.Adam.__init__ = configurable_(torch.optim.Adam.__init__)
+torch.optim.AdamW.__init__ = configurable_(torch.optim.AdamW.__init__)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -62,8 +62,9 @@ class Checkpoint(_utils.Checkpoint):
 
     input_encoder: InputEncoder
     model: lib.spectrogram_model.SpectrogramModel
-    optimizer: torch.optim.Adam
+    optimizer: torch.optim.AdamW
     clipper: lib.optimizers.AdaptiveGradientNormClipper
+    ema: lib.optimizers.ExponentialMovingParameterAverage
     scheduler: torch.optim.lr_scheduler.LambdaLR
 
     def check_invariants(self):
@@ -71,14 +72,19 @@ class Checkpoint(_utils.Checkpoint):
         assert self.scheduler._step_count == self.step + 1
         assert self.scheduler.last_epoch == self.step
         assert self.scheduler.optimizer == self.optimizer
+        assert self.ema.step == self.step + 1
         ptrs = set(p.data_ptr() for p in self.model.parameters() if p.requires_grad)
-        assert len(self.optimizer.param_groups) == 1
-        assert set(p.data_ptr() for p in self.optimizer.param_groups[0]["params"]) == ptrs
-        assert self.scheduler.get_last_lr() == [self.optimizer.param_groups[0]["lr"]]
+        assert len(self.optimizer.param_groups) == 2
+        assert set(p.data_ptr() for g in self.optimizer.param_groups for p in g["params"]) == ptrs
+        assert set(self.scheduler.get_last_lr()) == set(
+            g["lr"] for g in self.optimizer.param_groups
+        )
         assert set(p.data_ptr() for p in self.clipper.parameters) == ptrs
+        assert set(p.data_ptr() for p in self.ema.parameters) == ptrs
         assert self.model.vocab_size == self.input_encoder.phoneme_encoder.vocab_size
         assert self.model.num_speakers == self.input_encoder.speaker_encoder.vocab_size
         assert self.model.num_sessions == self.input_encoder.session_encoder.vocab_size
+        assert self.ema.backup == []  # NOTE: Ensure EMA hasn't been applied.
         assert self.model.training  # NOTE: Ensure `model` is in training mode
         # NOTE: Ensure there are no gradients.
         assert all([p.grad is None for p in self.model.parameters()])
@@ -92,7 +98,7 @@ class Checkpoint(_utils.Checkpoint):
         self.check_invariants()
         self.model.grad_enabled = None  # NOTE: For backwards compatibility
         with contextlib.ExitStack() as stack:
-            stack.enter_context(set_train_mode(self.model, False))
+            stack.enter_context(set_train_mode(self.model, False, self.ema))
             model = copy.deepcopy(self.model)
             model.set_grad_enabled(False)
         self.check_invariants()
@@ -103,8 +109,9 @@ class Checkpoint(_utils.Checkpoint):
 class _State:
     input_encoder: InputEncoder
     model: torch.nn.parallel.DistributedDataParallel
-    optimizer: torch.optim.Adam
+    optimizer: torch.optim.AdamW
     clipper: lib.optimizers.AdaptiveGradientNormClipper
+    ema: lib.optimizers.ExponentialMovingParameterAverage
     scheduler: torch.optim.lr_scheduler.LambdaLR
     comet: CometMLExperiment
     device: torch.device
@@ -184,14 +191,40 @@ class _State:
         return model
 
     @staticmethod
+    def _make_optimizer_groups(
+        model: torch.nn.Module,
+        exclude_from_decay: typing.Callable[[str, torch.nn.Parameter, torch.nn.Module], bool],
+    ) -> typing.List[typing.Dict[str, typing.Any]]:
+        """Create optimizer groups with optimizer options per group.
+
+        Args:
+            ...
+            exclude_from_decay: Given the paramter name, object, and parent module this returns
+                if the parameter should have weight decay.
+        """
+        param_to_module = {p: m for m in model.modules() for p in m.parameters(recurse=False)}
+        named_params = [(n, p) for n, p in model.named_parameters() if p.requires_grad]
+        exclude: typing.Callable[[str, torch.nn.Parameter], bool]
+        exclude = lambda n, p: exclude_from_decay(n, p, param_to_module[p])
+        no_decay_names, no_decay_params = tuple(zip(*[p for p in named_params if exclude(*p)]))
+        decay_names, decay_params = tuple(zip(*[p for p in named_params if not exclude(*p)]))
+        logger.info("Parameters excluded from weight decay: %s", no_decay_names)
+        logger.info("Parameters with weight decay: %s", decay_names)
+        return [{"params": no_decay_params, "weight_decay": 0.0}, {"params": decay_params}]
+
+    @staticmethod
     @configurable
     def _get_optimizers(
         model: torch.nn.Module,
-        optimizer: typing.Type[torch.optim.Adam] = HParam(),
+        optimizer: typing.Type[torch.optim.AdamW] = HParam(),
         lr_multiplier_schedule: typing.Callable[[int], float] = HParam(),
+        exclude_from_decay: typing.Callable[
+            [str, torch.nn.Parameter, torch.nn.Module], bool
+        ] = HParam(),
     ) -> typing.Tuple[
-        torch.optim.Adam,
+        torch.optim.AdamW,
         lib.optimizers.AdaptiveGradientNormClipper,
+        lib.optimizers.ExponentialMovingParameterAverage,
         torch.optim.lr_scheduler.LambdaLR,
     ]:
         """Initialize model optimizers.
@@ -201,10 +234,11 @@ class _State:
         https://github.com/pytorch/pytorch/issues/2830
         """
         params = list(filter(lambda p: p.requires_grad, model.parameters()))
-        optimizer_ = optimizer(params)
+        optimizer_ = optimizer(_State._make_optimizer_groups(model, exclude_from_decay))
         clipper = lib.optimizers.AdaptiveGradientNormClipper(params)
         scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer_, lr_multiplier_schedule)
-        return optimizer_, clipper, scheduler
+        ema = lib.optimizers.ExponentialMovingParameterAverage(params)
+        return optimizer_, clipper, ema, scheduler
 
     def to_checkpoint(self):
         """Create a checkpoint to save the spectrogram training state."""
@@ -214,6 +248,7 @@ class _State:
             model=typing.cast(lib.spectrogram_model.SpectrogramModel, self.model.module),
             optimizer=self.optimizer,
             clipper=self.clipper,
+            ema=self.ema,
             scheduler=self.scheduler,
             step=int(self.step.item()),
         )
@@ -237,6 +272,7 @@ class _State:
             torch.nn.parallel.DistributedDataParallel(checkpoint.model, [device], device),
             checkpoint.optimizer,
             checkpoint.clipper,
+            checkpoint.ema,
             checkpoint.scheduler,
             comet,
             device,
@@ -431,6 +467,7 @@ def _run_step(
         assert not is_master() or torch.isfinite(norm_inf), f"Gradient was too large {norm_inf}."
         norm = args.state.clipper.clip()
         args.state.optimizer.step()
+        args.state.ema.update()
         args.state.scheduler.step()
         args.timer.record_event(args.timer.LOG_METRICS)
         args.state.step.add_(1)
@@ -604,7 +641,7 @@ def _run_steps(
     """Run the `handle_batch` in a loop over `data_loader` batches."""
     make_args = partial(_HandleBatchArgs, state, data_loader, context, dataset_type)
     with contextlib.ExitStack() as stack:
-        stack.enter_context(set_context(context, state.comet, state.model))
+        stack.enter_context(set_context(context, state.comet, state.model, ema=state.ema))
         stack.enter_context(set_epoch(state.comet, step=state.step.item(), **kwargs))
 
         metrics = Metrics(state.comet, state.input_encoder.speaker_encoder.vocab)
@@ -625,6 +662,21 @@ def _run_steps(
             timer = Timer().record_event(Timer.LOAD_DATA)
 
         metrics.log(is_verbose=True, type_=dataset_type, cadence=Cadence.MULTI_STEP)
+
+
+def exclude_from_decay(param_name: str, param: torch.nn.Parameter, module: torch.nn.Module) -> bool:
+    """
+    NOTE: Learn more about removing regularization from bias terms or `LayerNorm`:
+    https://stats.stackexchange.com/questions/153605/no-regularisation-term-for-bias-unit-in-neural-network/153650
+    https://github.com/huggingface/transformers/issues/4360
+    https://discuss.pytorch.org/t/weight-decay-in-the-optimizers-is-a-bad-idea-especially-with-batchnorm/16994
+
+    Args:
+        param_name: The parameter name as returned by `torch.nn.Module.named_parameters`.
+        param: The parameter name as returned by `torch.nn.Module.parameters`.
+        module: The parent module for this parameter.
+    """
+    return ".bias" in param_name or type(module).__name__ in (torch.nn.LayerNorm,)
 
 
 def run_worker(

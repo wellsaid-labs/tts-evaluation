@@ -110,6 +110,7 @@ class Attention(torch.nn.Module):
         convolution_filter_size: int = HParam(),
         dropout: float = HParam(),
         window_length: int = HParam(),
+        avg_frames_per_token: float = HParam(),
     ):
         super().__init__()
         # Learn more:
@@ -129,6 +130,7 @@ class Attention(torch.nn.Module):
         self.project_scores = torch.nn.Sequential(
             LockedDropout(dropout), torch.nn.Linear(hidden_size, 1, bias=False)
         )
+        self.avg_frames_per_token = avg_frames_per_token
 
     def __call__(
         self,
@@ -183,7 +185,8 @@ class Attention(torch.nn.Module):
         cum_alignment_window = _window(cumulative_alignment, window_start, length, 1, False)[0]
 
         # [batch_size, 1, num_tokens] → [batch_size, hidden_size, num_tokens]
-        location_features = self.alignment_conv(cum_alignment_window.unsqueeze(1))
+        location_features = cum_alignment_window.unsqueeze(1) / self.avg_frames_per_token - 1.0
+        location_features = self.alignment_conv(location_features)
 
         # [1, batch_size, query_hidden_size] → [batch_size, hidden_size, 1]
         query = self.project_query(query).view(batch_size, self.hidden_size, 1)

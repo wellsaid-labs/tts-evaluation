@@ -1,5 +1,25 @@
 """ A workbook to generate a batch of predictions.
 
+TODO: In addition to measuring the current metrics, add support for running speech-to-text on the
+      generated audio. This should help uncover egregious errors like gibbirsh, word skipping, etc.
+
+      For example, speech-to-text will predict for a clip that contains gibbirish...
+      "That aids in solving communal challenges at Ellenton."
+      "That aids in solving communal, challenges Island and Hanna."
+      "That aids in solving communal challenges, Allen Honda."
+      when the original script was...
+      "that aids in solving communal challenges as".
+
+      In this example, speech-to-text predicted for a clip that contains gibbirish...
+      "because of lack of available, liquidity, tivity witted to"
+      "because of lack of available liquidity to edited edited."
+      "because of lack of available liquidity. Tim to it is it is it, is it at"
+      when the original script was...
+      "because of lack of available liquidity to"
+
+      Given that there is a large enough difference, I think we should be able to detect and measure
+      gibbirsh by comparing the speech-to-text output with the original output.
+
 Usage:
     $ PYTHONPATH=. streamlit run run/evaluate/batch_generate.py --runner.magicEnabled=false
 """
