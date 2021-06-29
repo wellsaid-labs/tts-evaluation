@@ -29,7 +29,7 @@ The base [Kong image](https://hub.docker.com/_/kong) provides several bundled pl
     ```bash
     export PROJECT_ID=voice-service-2-313121
     export ENV=$ENV # example: staging
-    export KONG_IMAGE_TAG="gcr.io/$PROJECT_ID/kong:wellsaid-$ENV"
+    export KONG_IMAGE_TAG="gcr.io/$PROJECT_ID/kong-$ENV:v1"
     ```
 
 1. Build and tag the docker image locally
@@ -47,15 +47,15 @@ The base [Kong image](https://hub.docker.com/_/kong) provides several bundled pl
    And confirm the tagged image exists:
 
    ```bash
-   docker image ls gcr.io/$PROJECT_ID/kong
+   docker image ls gcr.io/$PROJECT_ID/kong-$ENV
    ```
 
 1. Now that the image exists in our remote registry, we need to update our deployment configuration to properly reference this image. Update the corresponding `kong.$ENV.yaml` like so:
 
     ```yaml
     image:
-      repository: gcr.io/voice-service-2-313121/kong
-      tag: wellsaid-$ENV
+      repository: gcr.io/voice-service-2-313121/kong-$ENV
+      tag: v1
     ```
 
 ### Configuring the Kong deployment
@@ -172,6 +172,19 @@ cd ops/gateway/kong/plugins/
     ```bash
     gcloud logging read "labels.source=kong-google-logging" --limit=1
     ```
+
+### Deploying the `latest-version-transformation` plugin
+
+This plugin allows us to "pin" all traffic containing the `Accept-Version: latest`
+header to a specific model release. Note that `$LATEST_VERSION` refers to a
+model name used during the tts deployment (see ../run/README.md).
+
+```bash
+jsonnet ./ops/gateway/kong/plugins/latest-pinned-service.jsonnet \
+  -y \
+  --tla-str latestVersion=$LATEST_VERSION \
+  | kubectl apply -f -
+```
 
 ### Deploying the `cert-manager` and setting up TLS
 

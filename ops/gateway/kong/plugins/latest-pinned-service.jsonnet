@@ -1,4 +1,4 @@
-function(serviceName)
+function(latestVersion)
   [{
     apiVersion: 'configuration.konghq.com/v1',
     kind: 'KongClusterPlugin',
@@ -13,7 +13,7 @@ function(serviceName)
       },
     },
     config: {
-      latest_version: serviceName
+      latest_version: latestVersion
     },
     plugin: 'latest-version-transformer',
   }]
