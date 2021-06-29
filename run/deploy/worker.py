@@ -128,6 +128,8 @@ SPEAKER_ID_TO_SPEAKER: typing.Dict[int, typing.Tuple[Speaker, Session]] = {
     95313811: (_loader.JOSIE__CUSTOM__MANUAL_POST, Session("")),
     78252076: (Speaker(""), Session("")),  # TODO: Add Veritone Custom Voice
     70695443: (Speaker(""), Session("")),  # TODO: Add Super Hi-Fi Custom Voice
+    64197676: (Speaker(""), Session("")),  # TODO: Add USP Custom Voice
+    41935205: (Speaker(""), Session("")),  # TODO: Add Happify Custom Voice
 }
 
 

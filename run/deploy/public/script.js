@@ -50,6 +50,10 @@ document.addEventListener('DOMContentLoaded', async function (_) {
     } else if (version == "v9"|| version == "latest") {
       speakers = [...Array(33).keys()];
       speakers.splice(1, 1); // Macy is not available in v6 / v7
+    } else if (version == "usp.v1") {
+      speakers = [64197676];
+    } else if (version == "happify.v1") {
+      speakers = [41935205];
     }
     speakerOptionElements.forEach(option => {
       option.disabled = !speakers.includes(parseInt(option.value));
