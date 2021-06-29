@@ -21,7 +21,7 @@ Setup your local development environment by following [these instructions](LOCAL
 
    ```zsh
    TRAIN_SCRIPT_PATH='path/to/train' # EXAMPLE: run/train/spectrogram_model
-   ZONE='your-vm-zone' # EXAMPLE: us-central1-a
+   ZONE='your-vm-zone' # EXAMPLE: us-east1-c
    NAME=$USER"-your-instance-name" # EXAMPLE: michaelp-baseline
    GCP_USER='your-gcp-user-name' # Example: michaelp
    ```

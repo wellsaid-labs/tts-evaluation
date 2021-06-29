@@ -177,11 +177,11 @@ def web_path_to_url(path: WebPath) -> RelativeUrl:
 def path_to_web_path(path: pathlib.Path) -> WebPath:
     """Get a system linked web path given a `path`."""
     STREAMLIT_STATIC_SYMLINK_PATH.mkdir(exist_ok=True, parents=True)
-    web_path = STREAMLIT_STATIC_SYMLINK_PATH / path.relative_to(lib.environment.ROOT_PATH)
+    web_path = STREAMLIT_STATIC_SYMLINK_PATH / str(path.resolve()).strip("/")
     if not web_path.exists():
         web_path.parent.mkdir(exist_ok=True, parents=True)
         web_path.symlink_to(path)
-    return WebPath(path)
+    return WebPath(web_path)
 
 
 def audio_to_web_path(audio: np.ndarray, name: str = "audio.wav", **kwargs) -> WebPath:

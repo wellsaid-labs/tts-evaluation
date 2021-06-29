@@ -65,11 +65,11 @@ def _make_configuration(
     signal_to_spectrogram_params = [
         dict(
             fft_length=length,
-            frame_hop=length // 8,
-            window=get_window("hann", length // 2, length // 8),
-            num_mel_bins=length // 16,
+            frame_hop=length // 4,
+            window=get_window("hann", length, length // 4),
+            num_mel_bins=length // 8,
         )
-        for length in (512, 1024, 2048)
+        for length in (256, 1024, 4096)
     ]
 
     real_label = True

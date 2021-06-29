@@ -33,7 +33,7 @@ document.addEventListener('DOMContentLoaded', async function (_) {
       speakers = [...Array(12).keys()];
     } else if (version == "v3" || version == "v4" || version == "v5") {
       speakers = [...Array(20).keys()];
-    } else if (version == "v6" || version == "v7" || version == "v8" || version == "latest") {
+    } else if (version == "v6" || version == "v7" || version == "v8") {
       speakers = [...Array(20).keys()];
       speakers.splice(1, 1); // Macy is not available in v6 / v7
     } else if (version == "lincoln.v1") {
@@ -47,9 +47,13 @@ document.addEventListener('DOMContentLoaded', async function (_) {
       speakers = [78252076];
     } else if (version == "super-hi-fi.v1") {
       speakers = [70695443];
-    } else if (version == "v9") {
+    } else if (version == "v9"|| version == "latest") {
       speakers = [...Array(33).keys()];
       speakers.splice(1, 1); // Macy is not available in v6 / v7
+    } else if (version == "usp.v1") {
+      speakers = [64197676];
+    } else if (version == "happify.v1") {
+      speakers = [41935205];
     }
     speakerOptionElements.forEach(option => {
       option.disabled = !speakers.includes(parseInt(option.value));

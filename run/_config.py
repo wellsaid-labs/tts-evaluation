@@ -448,10 +448,15 @@ def _configure_models():
             speaker_embedding_size=128,
         ),
         lib.signal_model.SignalModel.__init__: HParams(
-            input_size=NUM_FRAME_CHANNELS, hidden_size=32, max_channel_size=512
+            speaker_embedding_size=128,
+            input_size=NUM_FRAME_CHANNELS,
+            hidden_size=32,
+            max_channel_size=512,
         ),
         # NOTE: We found this hidden size to be effective on Comet in April 2020.
-        lib.signal_model.SpectrogramDiscriminator.__init__: HParams(hidden_size=512),
+        lib.signal_model.SpectrogramDiscriminator.__init__: HParams(
+            speaker_embedding_size=128, hidden_size=512
+        ),
     }
     add_config(config)
 

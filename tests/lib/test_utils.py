@@ -176,7 +176,7 @@ def test_log_runtime__type_hints__documentation():
         return arg
 
     assert typing.get_type_hints(_helper)["arg"] == str
-    assert _helper.__doc__ == " Docs "
+    assert _helper.__doc__ == "Docs"
 
 
 def test_sort_together():

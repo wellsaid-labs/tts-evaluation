@@ -139,6 +139,12 @@ class Batch(_utils.Batch):
     # SequenceBatch[torch.BoolTensor [batch_size, signal_length], torch.LongTensor [batch_size])
     signal_mask: SequenceBatch
 
+    # torch.LongTensor [batch_size]
+    speaker: torch.Tensor
+
+    # torch.LongTensor [batch_size]
+    session: torch.Tensor
+
     def __len__(self):
         return len(self.indicies)
 
@@ -173,6 +179,7 @@ class DataProcessor(torch.utils.data.IterableDataset):
         self.slice_padding = slice_padding
         self.slice_size = slice_size
         self.spectrogram_model = spectrogram_model
+        self.input_encoder = spectrogram_model_input_encoder
         self._slice = partial(
             _get_slice, spectrogram_slice_size=slice_size, spectrogram_slice_pad=slice_padding
         )
@@ -209,6 +216,9 @@ class DataProcessor(torch.utils.data.IterableDataset):
         for _ in range(num_batches):
             indicies = torch.multinomial(weights, self.batch_size, replacement=True).tolist()
             slices = [self._slice(get_spectrogram(i), batch.audio[i]) for i in indicies]
+            decoded = [(batch.spans[i].speaker, batch.spans[i].session) for i in indicies]
+            speaker = [self.input_encoder.speaker_encoder.encode(d[0]).view(1) for d in decoded]
+            session = [self.input_encoder.session_encoder.encode(d).view(1) for d in decoded]
             yield Batch(
                 batch=SpectrogramModelBatch(
                     **lib.utils.dataclass_as_dict(batch),
@@ -219,6 +229,8 @@ class DataProcessor(torch.utils.data.IterableDataset):
                 spectrogram_mask=self._stack([s.spectrogram_mask for s in slices]),
                 target_signal=self._stack([s.target_signal for s in slices]),
                 signal_mask=self._stack([s.signal_mask for s in slices]),
+                speaker=torch.cat(speaker),
+                session=torch.cat(session),
             )
 
     def __iter__(self) -> typing.Iterator[Batch]:

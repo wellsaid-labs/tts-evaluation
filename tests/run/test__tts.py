@@ -31,7 +31,7 @@ def test_text_to_speech_ffmpeg_generator():
     with fork_rng(seed=123):
         package, encoded = _make_args()
         generator = text_to_speech_ffmpeg_generator(package, encoded)
-        assert len(b"".join([s for s in generator])) == 12045
+        assert len(b"".join([s for s in generator])) == 23565
 
 
 def test_text_to_speech_ffmpeg_generator__thread_leak():
