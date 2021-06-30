@@ -146,7 +146,7 @@ def main():
     format_: typing.Callable[[Checkpoints], str] = lambda s: s.value
     checkpoints_key: Checkpoints = st.selectbox("Checkpoints", options=options, format_func=format_)
 
-    with st.spinner("Loading checkpoint(s)..."):
+    with st.spinner(f"Loading `{checkpoints_key.value}` checkpoint(s)..."):
         tts = load_tts(checkpoints_key)
 
     format_speaker: typing.Callable[[Speaker], str] = lambda s: s.label
