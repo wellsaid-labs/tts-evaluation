@@ -18,19 +18,14 @@ from typing import cast
 
 import pandas as pd
 import streamlit as st
+from streamlit_datatable import st_datatable
 
 import lib
 import run
 from lib.environment import PT_EXTENSION, load
 from run import train
 from run._config import SIGNAL_MODEL_EXPERIMENTS_PATH, SPECTROGRAM_MODEL_EXPERIMENTS_PATH
-from run._streamlit import (
-    audio_to_web_path,
-    paths_to_html_download_link,
-    st_data_frame,
-    st_html,
-    web_path_to_url,
-)
+from run._streamlit import audio_to_web_path, paths_to_html_download_link, st_html, web_path_to_url
 from run._tts import TTSPackage, text_to_speech
 
 st.set_page_config(layout="wide")
@@ -109,13 +104,13 @@ def main():
     sessions: typing.List[typing.Tuple[run.data._loader.Speaker, run.data._loader.Session]]
     sessions = list(set(s for c in spec_ckpts for s in c.input_encoder.session_encoder.vocab))
     sessions_sample = get_sample_sessions(speakers, sessions, max_sessions)
-    iter_ = list(itertools.product(sessions_sample, spec_export, sig_export, scripts))
-    for (speaker, session), spec_items, (sig_model, sig_path), script in iter_:
+    iter_ = list(itertools.product(spec_export, sig_export, sessions_sample, scripts))
+    for i, (spec_items, (sig_model, sig_path), (speaker, session), script) in enumerate(iter_):
         (input_encoder, spec_model), spec_path = spec_items
         package = TTSPackage(input_encoder, spec_model, sig_model)
         audio = text_to_speech(package, script, speaker, session)
         sesh = str(session).replace("/", "__")
-        name = f"spec={spec_path.stem},sig={sig_path.stem},spk={speaker.label},"
+        name = f"i={i},spec={spec_path.stem},sig={sig_path.stem},spk={speaker.label},"
         name += f"sesh={sesh},script={id(script)}.wav"
         audio_web_path = audio_to_web_path(audio, name=name)
         row = {
@@ -130,11 +125,12 @@ def main():
         paths.append(audio_web_path)
         bar.progress(len(rows) / len(iter_))
     bar.empty()
-    st_data_frame(pd.DataFrame(rows))
+    st_datatable(pd.DataFrame(rows))
 
     with st.spinner("Making Zipfile..."):
         st.text("")
-        st_html(paths_to_html_download_link("audios.zip", "Download Audio(s)", paths))
+        app_name = __file__.rstrip(".py")
+        st_html(paths_to_html_download_link(f"{app_name}_audios.zip", "Download Audio(s)", paths))
 
 
 if __name__ == "__main__":

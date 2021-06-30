@@ -52,6 +52,16 @@ SAM_SCHOLL__PROMO = Speaker("sam_scholl__promo", "Sam Scholl (Promo)")
 MARI_MONGE__PROMO = Speaker("mari_monge__promo", "Mari Monge (Promo)")
 OTIS_JIRY__STORY = Speaker("otis_jiry__promo", "Otis Jiry (Story-Telling)")
 
+#################
+# CUSTOM VOICES #
+#################
+ENERGY_INDUSTRY_ACADEMY__CUSTOM_VOICE = Speaker(
+    "energy_industry_academy__custom_voice", "Energy Industry Academy (Custom Voice)"
+)
+THE_EXPLANATION_COMPANY__CUSTOM_VOICE = Speaker(
+    "the_explanation_company__custom_voice", "The Explanation Company (Custom Voice)"
+)
+
 
 def _dataset_loader(directory: Path, speaker: Speaker, **kwargs) -> typing.List[Passage]:
     manual_post_suffix = "__manual_post"
