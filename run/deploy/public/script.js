@@ -54,7 +54,7 @@ document.addEventListener('DOMContentLoaded', async function (_) {
       speakers = [64197676];
     } else if (version == "happify.v1") {
       speakers = [41935205];
-    } else if (version == "v9_2021_6_30_custom_voices") {
+    } else if (version == "v9.2021_6_30_custom_voices") {
       speakers = [42400423, 61137774];
     }
     speakerOptionElements.forEach(option => {
