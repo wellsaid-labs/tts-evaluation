@@ -17,6 +17,7 @@
  *      --tla-str model=v3 \
  *      --tla-str version=1 \
  *      --tla-str image=gcr.io/voice/tts@sha256:... \
+ *      --tla-str imageEntrypoint=src.service.worker:app \
  *      --tla-str includeImageApiKeys=false \
  *      --tla-str minScale=0
  *
@@ -29,6 +30,10 @@
  * acceptbale.
  *
  * The image parameter is the docker image to run.
+ *
+ * The imageEntrypoint parameter (optional) is passed to the docker container
+ * args. Currently, this is for legacy image support (images prior to v9
+ * that required a different entry).
  *
  * The includeImageApiKeys parameter (optional) is intended to support our
  * existing docker images that require api key authentication. These values
@@ -51,7 +56,16 @@
  */
 local common = import 'svc.libsonnet';
 
-function(env, model, version, image, includeImageApiKeys='false', minScale=0, maxScale=32)
+function(
+  env,
+  model,
+  version,
+  image,
+  imageEntrypoint='run.deploy.worker:app',
+  includeImageApiKeys='false',
+  minScale=0,
+  maxScale=32,
+)
 
   local ns = {
     apiVersion: 'v1',
@@ -88,6 +102,7 @@ function(env, model, version, image, includeImageApiKeys='false', minScale=0, ma
     name: 'validate',
     namespace: ns.metadata.name,
     image: image,
+    entrypoint: imageEntrypoint,
     version: version,
     scale: { min: minScale, max: maxScale },
     concurrency: 4,
@@ -100,6 +115,7 @@ function(env, model, version, image, includeImageApiKeys='false', minScale=0, ma
     name: 'stream',
     namespace: ns.metadata.name,
     image: image,
+    entrypoint: imageEntrypoint,
     version: version,
     scale: { min: minScale, max: maxScale },
     concurrency: 1,

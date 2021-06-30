@@ -133,6 +133,9 @@ To deploy a new version of a service, follow these steps:
       gcr.io/voice-service-2-313121/speech-api-worker@sha256:3af2c7a3a88806e0ff5e5c0659ab6a97c42eba7f6e5d61e33dbc9244163e17d3
       ```
 
+    - `$imageEntrypoint` is a string value that references the python service entry point.
+      Currently, this is for legacy image support (images prior to v9 that required a different entry).
+
     - `$includeImageApiKeys` is a boolean flag that determines whether or not to
       inject api keys into the proxied upstream request. This is only for backwards
       compatibility, enabled support of our existing tts worker images.
@@ -160,7 +163,6 @@ To deploy a new version of a service, follow these steps:
 
     Then depending on the output use commands like `kubectl describe`
     and `kubectl logs` to further debug things.
-
 
 ## Management
 

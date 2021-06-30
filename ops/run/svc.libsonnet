@@ -30,7 +30,7 @@
               image: spec.image,
               args: [
                 'venv/bin/gunicorn',
-                'src.service.worker:app',
+                spec.entrypoint,
                 '--bind=0.0.0.0:8000',
                 '--timeout=' + spec.timeout,
                 '--graceful-timeout=' + spec.restartTimeout,
