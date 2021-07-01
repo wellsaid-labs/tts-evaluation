@@ -140,7 +140,7 @@ class TTSPackage(typing.NamedTuple):
         ...
         spectrogram_model_comet_experiment_key: In order to identify the model orgin, the
             comet ml experiment key is required.
-        spectrogram_model_step: In order to identify the model orgin, the checkpoint step which
+        spectrogram_model_step: In order to identify the model origin, the checkpoint step which
             corresponds to the comet ml experiment is required.
         ...
     """
