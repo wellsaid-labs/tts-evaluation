@@ -173,8 +173,9 @@ def split_dataset(
     no duplicate passages.
 
     NOTE: This assumes that the amount of data in each passage can be estimated with
-    `segmented_audio_length`. For example, if there was a long pause within a passage, this
-    estimate wouldn't make sense.
+    `segmented_audio_length` (via `_passages_len`). For example, if there was a long pause within a
+    passage, this metric would include the long pause into the calculation of the dataset size,
+    even though the long pause doesn't typically have useful data.
     NOTE: Any duplicate data for a speaker, not in `dev_speakers` will be discarded.
     NOTE: The duplicate cache is cleared after this function is run assuming it's not relevant
     any more.
@@ -190,12 +191,13 @@ def split_dataset(
         approx_dev_len: Number of seconds per speaker in the development dataset. The
             deduping algorithm may add extra items above the `approx_dev_length`.
         min_sim: The minimum percentage similarity for two passages to be considered duplicates.
-        groups: Groups of speakers to be deduplicated, together.
+        groups: These are groups of speakers that may share similar scripts.
         ...
     """
     logger.info("Splitting dataset...")
     speakers = {s for g in groups for s in g}
-    assert len(speakers) == sum(len(g) for g in groups), "Groups have overlapping speakers."
+    message = f"Groups have overlapping speakers: {groups}"
+    assert len(speakers) == sum(len(g) for g in groups), message
     assert len(set(dataset.keys()) - speakers) == 0, "Dataset speakers not found in groups."
     train: Dataset = {}
     dev: Dataset = {}
