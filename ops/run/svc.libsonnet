@@ -10,6 +10,9 @@
     metadata: {
       name: spec.name,
       namespace: spec.namespace,
+      labels: {
+        'serving.knative.dev/visibility': 'cluster-local'
+      },
     },
     spec: {
       template: {
@@ -18,6 +21,8 @@
           annotations: {
             'autoscaling.knative.dev/minScale': '' + spec.scale.min,  // cast to str
             'autoscaling.knative.dev/maxScale': '' + spec.scale.max,  // cast to str
+            'autoscaling.knative.dev/scaleDownDelay': '1m',
+            // 'autoscaling.knative.dev/targetBurstCapacity': '-1',
             'run.googleapis.com/ingress': 'internal',
           },
         },
@@ -97,12 +102,12 @@
     local requestTransformerConfig = {
       replace: {
         headers: [
-          'host:' + spec.serviceName + '.' + spec.namespace + '.svc.cluster.local',
+          'host:' + spec.serviceName + '.' + spec.namespace + '.example.com',
         ],
       },
       add: {
         headers: [
-          'host:' + spec.serviceName + '.' + spec.namespace + '.svc.cluster.local',
+          'host:' + spec.serviceName + '.' + spec.namespace + '.example.com',
         ],
       } + if spec.apiKey != null then {
         body: [
@@ -156,10 +161,10 @@
       proxy: {
         # defaults: https://docs.konghq.com/gateway-oss/2.4.x/admin-api/#service-object
         protocol: 'http',
-        retries: 5,
-        connect_timeout: 60000,
-        read_timeout: 60000,
-        write_timeout: 60000
+        retries: 4,
+        connect_timeout: 90000,
+        read_timeout: 90000,
+        write_timeout: 90000
       } + (if "proxy" in spec then spec.proxy else {}),
       route: {
         request_buffering: true,

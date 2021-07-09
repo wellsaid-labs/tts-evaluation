@@ -18,18 +18,18 @@ image:
 resources:
   # TODO: refine limits after we perform some load testing
   limits:
-    cpu: 100m
-    memory: 256Mi
+    cpu: 2000m
+    memory: 2048Mi
   requests:
-    cpu: 100m
-    memory: 256Mi
+    cpu: 1000m
+    memory: 1024Mi
 
 replicaCount: 1
 
 autoscaling:
   enabled: true
   minReplicas: 1
-  maxReplicas: 2
+  maxReplicas: 3
   ## Otherwise for clusters that do support autoscaling/v2beta, use metrics
   metrics:
     - type: Resource

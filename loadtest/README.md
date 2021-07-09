@@ -14,6 +14,7 @@ To run the tests:
     ```env
     ORIGIN=https://ttsdev.wellsaidlabs.com
     API_KEY=XXXXXXXXXXXX
+    API_KEY_LOCATION=<header|body>
     ```
 
   Where `ORIGIN` is the HTTP origin of the TTS service that you'd like to test, and `API_KEY`
@@ -22,7 +23,7 @@ To run the tests:
 2. Build and run the tests like so:
 
     ```
-    docker run --rm -it --env-file dev.env (docker build -q .) | tee results_(date +%Y_%m_%d_%H:%M).txt
+    docker run --rm -it --env-file dev.env $(docker build -q .) | tee results_$(date +%Y_%m_%d_%H:%M).txt
     ```
 
    The results will be written both to stdout and to a a file named `results_YYYY_MM_DD_HH:MM.txt`
@@ -37,7 +38,7 @@ add a line here noting what the file contains and the characteristics of the dat
 
 The WellSaidLabs terms of use: https://wellsaidlabs.com/legal?document=terms_of_service.
 
-Each line is a single paragraph of text. The character distribution per line is as 
+Each line is a single paragraph of text. The character distribution per line is as
 follows:
 
 ```

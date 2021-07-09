@@ -40,6 +40,7 @@ namespace: "kong"
 env:
   database: "off"
   # TODO: turn off for prod?
+  # log_level: "debug"
   headers: "server_tokens, latency_tokens"
   nginx_worker_processes: "2"
   proxy_access_log: /dev/stdout
@@ -65,6 +66,16 @@ env:
   # Setting the max tmp file size for nginx to consume upstream response.
   # http://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_max_temp_file_size
   nginx_proxy_proxy_max_temp_file_size: "1024m"
+  # At this time, we are using a request-transformer plugin to modify the request body (inject
+  # api_key into upstream request). This means the entire request body must be buffered at the
+  # proxy layer. For this reason we have a constraint on how large the request can be, otherwise
+  # requests will begin failing. Note that the 16k value was decided on based on our 10k character
+  # hardcoded limit in the tts worker.
+  # https://docs.konghq.com/enterprise/2.3.x/property-reference/#nginx_http_client_body_buffer_size
+  # default: 8k
+  nginx_http_client_body_buffer_size: "16k"
+  # https://docs.konghq.com/enterprise/2.3.x/property-reference/#nginx_http_client_max_body_size
+  nginx_http_client_max_body_size: "16k"
 
 # Specify Kong's Docker image and repository details here
 image:
@@ -131,8 +142,7 @@ proxy:
     # Set a nodePort which is available if service type is NodePort
     # nodePort: 32443
     # Additional listen parameters, e.g. "reuseport", "backlog=16384"
-    parameters:
-      - http2
+    parameters: ["reuseport"]
 
   # Define stream (TCP) listen
   # To enable, remove "{}", uncomment the section below, and select your desired
