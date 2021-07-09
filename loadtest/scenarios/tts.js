@@ -76,10 +76,10 @@ export default function main() {
       'Content-Type': 'application/json',
       'Accept-Version': 'latest',
       'X-Api-Key': apiKeyLocation === 'header' ? apiKey : undefined,
-      'Host': hostHeader
     },
     timeout: '5m',
   };
+  if (hostHeader) options.headers['Host'] = hostHeader
   const streamResponse = http.post(url, body, options);
   check(streamResponse, {
     'received_200_response': (r) => {
