@@ -19,7 +19,10 @@
  *      --tla-str image=gcr.io/voice/tts@sha256:... \
  *      --tla-str imageEntrypoint=src.service.worker:app \
  *      --tla-str includeImageApiKeys=false \
- *      --tla-str minScale=0
+ *      --tla-str minScaleStream=0 \
+ *      --tla-str maxScaleStream=32 \
+ *      --tla-str minScaleValidate=0 \
+ *      --tla-str maxScaleValidate=32
  *
  * The model parameter is a unique identifier for the model contained
  * in the image.
@@ -43,10 +46,14 @@
  * that note, consumer-facing credentials will be handled via Kong so make
  * sure not to get includeImageApiKeys confused with consumer-facing api keys.
  *
- * The minScale option determines the min number of cloud run containers to
- * run at all time. For our staging environment and low demand model versions
- * we will want to scale to 0. Note that changes to this value will require
- * a bump in the `version` parameter
+ * The minScaleStream|minScaleValidate option determines the min number of
+ * cloud run containers to run at all time. For our staging environment and
+ * low demand model versions we will want to scale to 0. Note that changes
+ * to this value will require a bump in the `version` parameter.
+ *
+ * The maxScaleStream|maxScaleValidate option places a ceiling on the number
+ * of cloud run containers that can be scaled to. Note that changes
+ * to this value will require a bump in the `version` parameter.
  *
  * The output of the command can be redirected to a file, or piped to
  * kubectl directly like so:
@@ -63,8 +70,10 @@ function(
   image,
   imageEntrypoint='run.deploy.worker:app',
   includeImageApiKeys='false',
-  minScale=0,
-  maxScale=32,
+  minScaleStream=0,
+  maxScaleStream=32,
+  minScaleValidate=0,
+  maxScaleValidate=32,
 )
 
   local ns = {
@@ -104,7 +113,7 @@ function(
     image: image,
     entrypoint: imageEntrypoint,
     version: version,
-    scale: { min: minScale, max: maxScale },
+    scale: { min: minScaleValidate, max: maxScaleValidate },
     concurrency: 4,
     timeout: 10,
     restartTimeout: 10,
@@ -117,7 +126,7 @@ function(
     image: image,
     entrypoint: imageEntrypoint,
     version: version,
-    scale: { min: minScale, max: maxScale },
+    scale: { min: minScaleStream, max: maxScaleStream },
     concurrency: 1,
     timeout: 3600,  // 1hr
     restartTimeout: 600,  // 10 minutes

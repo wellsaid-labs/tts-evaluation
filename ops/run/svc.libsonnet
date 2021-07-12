@@ -21,8 +21,7 @@
           annotations: {
             'autoscaling.knative.dev/minScale': '' + spec.scale.min,  // cast to str
             'autoscaling.knative.dev/maxScale': '' + spec.scale.max,  // cast to str
-            'autoscaling.knative.dev/scaleDownDelay': '1m',
-            // 'autoscaling.knative.dev/targetBurstCapacity': '-1',
+            // 'autoscaling.knative.dev/scaleDownDelay': '1m',
             'run.googleapis.com/ingress': 'internal',
           },
         },
@@ -39,8 +38,10 @@
                 '--bind=0.0.0.0:8000',
                 '--timeout=' + spec.timeout,
                 '--graceful-timeout=' + spec.restartTimeout,
-                '--workers=' + spec.concurrency,
-                "--access-logfile='-'",
+                // NOTE: min 2 workers to ensure readiness probes / health checks
+                // work properly while under load
+                '--workers=' + std.max(spec.concurrency, 2),
+                "--access-logfile=-",
                 '--preload',
               ],
               ports: [
@@ -56,6 +57,10 @@
                  * improve cold-start latency and reduce costs.
                  */
                 requests: {
+                  cpu: '7',
+                  memory: '5G',
+                },
+                limits: {
                   cpu: '7',
                   memory: '5G',
                 },
@@ -164,7 +169,7 @@
         retries: 4,
         connect_timeout: 90000,
         read_timeout: 90000,
-        write_timeout: 90000
+        write_timeout: 60000
       } + (if "proxy" in spec then spec.proxy else {}),
       route: {
         request_buffering: true,

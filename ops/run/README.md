@@ -140,12 +140,14 @@ To deploy a new version of a service, follow these steps:
       inject api keys into the proxied upstream request. This is only for backwards
       compatibility, enabled support of our existing tts worker images.
 
-    - `$minScale` is an integer value determining how many container instances
-      should remain idle, see the [cloud run configuration](https://cloud.google.com/run/docs/configuring/min-instances) for more details. For our staging environment and low demand model versions we will want to scale to 0. Note that changes to this value will require a bump in the `version` parameter.
+    - `$minScaleStream|$minScaleValidate` is an integer value determining how many container
+      instances should remain idle, see the [cloud run configuration](https://cloud.google.com/run/docs/configuring/min-instances) for more details. Considering our validation service can
+      handle multiple concurrent short-lived requests it would make sense to have a smaller min
+      scale value than the stream service. For our staging environment and low demand model versions we will want to scale to 0.
 
-    - `$maxScale` is an integer value that puts a ceiling on the number of container
-      instances we can scale to. This may be useful for preventing over-scaling in
-      response to a spike in requests and/or managing costs.
+    - `$maxScaleStream|$maxScaleValidate` is an integer value that puts a ceiling on
+      the number of container instances we can scale to. This may be useful for preventing
+      over-scaling in response to a spike in requests and/or managing costs.
 
 1. After running the command you can see the status of what was deployed via
    this command:
