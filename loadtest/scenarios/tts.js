@@ -58,7 +58,8 @@ export default function main() {
   // We use these two values to deterministically select a line of text, so that the tests
   // are consistent while still maintaining some degree of variability to better simulate "real"
   // traffic.
-  const url = `${origin}/api/text_to_speech/stream`;
+  const validateUrl = `${origin}/api/text_to_speech/input_validated`;
+  const streamUrl = `${origin}/api/text_to_speech/stream`;
   // text
   const maxLineNo = lines.length - 1;
   const lineNo = Math.min(__VU + __ITER, (__VU + __ITER) % maxLineNo);
@@ -83,15 +84,26 @@ export default function main() {
     timeout: '5m',
   };
   if (hostHeader) options.headers['Host'] = hostHeader
-  const streamResponse = http.post(url, body, options);
+
+  // A: validate inputs
+  const validateResponse = http.post(validateUrl, body, options);
+  check(validateResponse, {
+    'validate_200_response': (r) => {
+      return r.status === 200
+    },
+  })
+
+  // B: stream
+  const streamResponse = http.post(streamUrl, body, options);
   check(streamResponse, {
-    'received_200_response': (r) => {
+    'stream_200_response': (r) => {
       return r.status === 200
     },
     'received_audio_response': (r) => {
       return r.headers['Content-Type'] === 'audio/mpeg'
     },
   })
+
   // Incoorperate some randomness, see: https://stackoverflow.com/a/61118956/2578619
   sleep(Math.floor(Math.random() * 4) + 1);
 }

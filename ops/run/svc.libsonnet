@@ -92,12 +92,12 @@
     local requestTransformerConfig = {
       replace: {
         headers: [
-          'host:' + spec.serviceName + '.' + spec.namespace + '.example.com',
+          'host:' + spec.serviceName + '.' + spec.namespace + '.svc.cluster.local',
         ],
       },
       add: {
         headers: [
-          'host:' + spec.serviceName + '.' + spec.namespace + '.example.com',
+          'host:' + spec.serviceName + '.' + spec.namespace + '.svc.cluster.local',
         ],
       } + if spec.apiKey != null then {
         body: [
