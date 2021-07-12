@@ -22,7 +22,15 @@
  *      --tla-str minScaleStream=0 \
  *      --tla-str maxScaleStream=32 \
  *      --tla-str minScaleValidate=0 \
- *      --tla-str maxScaleValidate=32
+ *      --tla-str maxScaleValidate=32 \
+ *      --ext-code config={}
+ *
+ * Alternatively, you can store the configurations in a json file and
+ * the following command
+ *
+ *    jsonnet tts.jsonnet \
+ *      -y \
+ *      --ext-code-file config=<path_to_config>
  *
  * The model parameter is a unique identifier for the model contained
  * in the image.
@@ -63,19 +71,20 @@
  */
 local common = import 'svc.libsonnet';
 
-function(
-  env,
-  model,
-  version,
-  image,
-  imageEntrypoint='run.deploy.worker:app',
-  includeImageApiKeys='false',
-  minScaleStream=0,
-  maxScaleStream=32,
-  minScaleValidate=0,
-  maxScaleValidate=32,
-)
+local config = std.extVar("config");
 
+function(
+  env=config.env,
+  model=config.model,
+  version=config.version,
+  image=config.image,
+  imageEntrypoint=config.imageEntrypoint,
+  includeImageApiKeys=config.includeImageApiKeys,
+  minScaleStream=config.minScaleStream,
+  maxScaleStream=config.maxScaleStream,
+  minScaleValidate=config.minScaleValidate,
+  maxScaleValidate=config.maxScaleValidate,
+)
   local ns = {
     apiVersion: 'v1',
     kind: 'Namespace',
