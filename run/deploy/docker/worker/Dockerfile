@@ -99,4 +99,4 @@ RUN echo 'Top N largest directories\n' && du -h / | sort -rh | head -100
 # http://docs.gunicorn.org/en/stable/settings.html#logging
 ENV GUNICORN=1
 CMD ["venv/bin/gunicorn", "run.deploy.worker:app", "--bind=0.0.0.0:8000", "--timeout=3600", \
-  "--graceful-timeout=600", "--workers=2", "--access-logfile='-'", "--preload"]
+  "--graceful-timeout=600", "--workers=2", "--access-logfile=-", "--preload"]

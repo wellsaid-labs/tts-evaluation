@@ -19,10 +19,14 @@ export let options = {
       stages: [
         // Based off of real usage (on 1-min interval)
         { target: 10, duration: '1m' },
+        { target: 30, duration: '10s' },
         { target: 30, duration: '1m' },
         { target: 25, duration: '1m' },
+        { target: 50, duration: '10s' },
         { target: 50, duration: '1m' },
+        { target: 10, duration: '10s' },
         { target: 10, duration: '1m' },
+        { target: 30, duration: '10s' },
         { target: 30, duration: '1m' },
       ],
       preAllocatedVUs: 4,
@@ -35,7 +39,6 @@ export let options = {
     http_req_waiting: ['p(95)<30000'], // 95 percentile of requests should be below 30s
     checks: ['rate>0.98']
   },
-  noConnectionReuse: true, // disable keep-alive connections
   minIterationDuration: '1s',
   // Recommended: https://k6.io/docs/using-k6/options/#discard-response-bodies
   discardResponseBodies: true,
