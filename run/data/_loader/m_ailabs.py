@@ -94,7 +94,7 @@ def m_ailabs_en_uk_elizabeth_klett_speech_dataset(*args, books=ELIZABETH_KLETT_B
 
 def m_ailabs_en_us_speech_dataset(
     directory,
-    url="http://www.caito.de/data/Training/stt_tts/en_US.tgz",
+    url="https://data.solak.de/data/Training/stt_tts/en_US.tgz",
     extracted_name=str(US_DATASET),
     books=US_BOOKS,
     check_files=["en_US/by_book/info.txt"],
@@ -113,7 +113,7 @@ def m_ailabs_en_us_speech_dataset(
 
 def m_ailabs_en_uk_speech_dataset(
     directory,
-    url="http://www.caito.de/data/Training/stt_tts/en_UK.tgz",
+    url="https://data.solak.de/data/Training/stt_tts/en_UK.tgz",
     extracted_name=str(UK_DATASET),
     books=UK_BOOKS,
     check_files=["en_UK/by_book/info.txt"],
@@ -164,7 +164,7 @@ def _m_ailabs_speech_dataset(
 ) -> typing.List[Passage]:
     """Download, extract, and process a M-AILABS dataset.
 
-    NOTE: The original URL is `http://www.caito.de/2019/01/the-m-ailabs-speech-dataset/`. Use
+    NOTE: The original URL is `https://data.solak.de/2019/01/the-m-ailabs-speech-dataset/`. Use
     `curl -I <URL>` to find the redirected URL.
 
     Args:
