@@ -57,7 +57,11 @@ def is_streamlit_running() -> bool:
 
 
 def get_session_state() -> dict:
-    """Get a reference to a session state represented as a `dict`."""
+    """Get a reference to a session state represented as a `dict`.
+
+    TODO: Upgrade to `streamlit`s official `session_state` implementation, learn more:
+    https://blog.streamlit.io/session-state-for-streamlit/
+    """
     return session_state.get(cache={})
 
 
