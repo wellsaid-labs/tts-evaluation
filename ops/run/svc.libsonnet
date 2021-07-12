@@ -49,22 +49,7 @@
                   containerPort: 8000,
                 },
               ],
-              resources: {
-                /**
-                 * TODO: This might be something we need to tweak per service,
-                 * as the input validation service might use less resources.
-                 * If that's the case we could binpack better, which would
-                 * improve cold-start latency and reduce costs.
-                 */
-                requests: {
-                  cpu: '7',
-                  memory: '5G',
-                },
-                limits: {
-                  cpu: '7',
-                  memory: '5G',
-                },
-              },
+              resources: spec.resources,
               readinessProbe: {
                 successThreshold: 1,
                 httpGet: {

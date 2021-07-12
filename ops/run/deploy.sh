@@ -14,36 +14,50 @@
 if ! command -v kubectl &> /dev/null
 then
   echo "kubectl could not be found"
-  exit
+  exit 1
 fi
 
 # Assert `jsonnet` command exists
 if ! command -v jsonnet &> /dev/null
 then
   echo "jsonnet could not be found"
-  exit
+  exit 1
 fi
 
 # Assert argument was passed
 if [ -z "$1" ]
 then
   echo "Usage: ./deploy <path_to_deployment_config>"
-  exit
+  exit 1
 fi
 
 # Assert env argument file exists
 if [ ! -f $1 ]; then
   echo "File not found: $1"
-  exit
+  exit 1
 fi
 
 # Pull $model argument from input configuration file
 MODEL=$(jq -r '.model' $1)
+VERSION=$(jq -r '.version' $1)
 
 if [ -z "${MODEL}" ] || [ $MODEL == "null" ]
 then
   echo "Missing 'model' field in deployment configuration"
-  exit
+  exit 1
+fi
+if [ -z "${VERSION}" ] || [ $VERSION == "null" ]
+then
+  echo "Missing 'version' field in deployment configuration"
+  exit 1
+fi
+
+# Quick sanity check, avoid deploying cloud run service with same version.
+# The deployment will fail, but we can provide a more straightforward error
+# message here.
+if kubectl get deployment stream-$VERSION-deployment -n $MODEL &> /dev/null; then
+  echo "Deployment version '${VERSION}' already exists for model '${MODEL}'! Try bumping the version number and running again."
+  exit 1
 fi
 
 # Generate manifests

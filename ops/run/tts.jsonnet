@@ -123,6 +123,12 @@ function(
     entrypoint: imageEntrypoint,
     version: version,
     scale: { min: minScaleValidate, max: maxScaleValidate },
+    resources: {
+      requests: {
+        cpu: '1',
+        memory: '1G',
+      },
+    },
     concurrency: 4,
     timeout: 10,
     restartTimeout: 10,
@@ -136,6 +142,16 @@ function(
     entrypoint: imageEntrypoint,
     version: version,
     scale: { min: minScaleStream, max: maxScaleStream },
+    resources: {
+      requests: {
+        cpu: '6',
+        memory: '4G',
+      },
+      limits: {
+        cpu: '7',
+        memory: '5G',
+      },
+    },
     concurrency: 1,
     timeout: 3600,  // 1hr
     restartTimeout: 600,  // 10 minutes
