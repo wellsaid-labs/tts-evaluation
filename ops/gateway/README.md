@@ -159,7 +159,7 @@ cd ops/gateway/kong/plugins/
 
     ```bash
     gcloud iam service-accounts keys create ./kong-google-logging-service-account.secrets.json \
-    --iam-account=kong-google-logging@voice-service-2-313121.iam.gserviceaccount.com
+      --iam-account=kong-google-logging@voice-service-2-313121.iam.gserviceaccount.com
     ```
 
 1. Deploy the `google-logging` plugin. Note that the configuration for this plugin includes the
@@ -172,6 +172,13 @@ cd ops/gateway/kong/plugins/
       --tla-str cluster=staging \
       | kubectl apply -f -
    ```
+
+1. Delete the service account credentials from your local machine once the previous resources
+   are applied.
+
+    ```bash
+    rm ./kong-google-logging-service-account.secrets.json
+    ```
 
 1. Confirm that this plugin has been successfully picked up by the kong ingress controller.
 
