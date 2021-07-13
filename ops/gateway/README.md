@@ -19,7 +19,7 @@ This document assumes the following dependencies have been installed and [cluste
 Our current Kong setup leverages the kong [Kubernetes Ingress Controller](https://docs.konghq.com/kubernetes-ingress-controller/).
 The controller listens for changes to our kubernetes resources and updates the Kong service
 accordingly. This allows us to run Kong without a database, meaning all of the configurations
-are defined using kubernetes manifests and custom resource definitions.
+are defined by Kubernetes manifests in this codebase.
 
 ### Configuring the base Kong docker image
 
