@@ -37,33 +37,40 @@ The base [Kong image](https://hub.docker.com/_/kong) provides several bundled pl
     export PROJECT_ID=voice-service-2-313121
     export ENV=$ENV # example: staging
     export KONG_IMAGE_VERSION=$KONG_IMAGE_VERSION # ex: v1
-    export KONG_IMAGE_TAG="gcr.io/$PROJECT_ID/kong-$ENV:$KONG_IMAGE_VERSION"
+    export KONG_IMAGE="gcr.io/$PROJECT_ID/kong:$ENV-$KONG_IMAGE_VERSION"
     ```
 
 1. Build and tag the docker image locally
 
    ```bash
-   docker build -t $KONG_IMAGE_TAG ./ops/gateway/kong
+   docker build -t $KONG_IMAGE ./ops/gateway/kong
    ```
 
 1. Push the image to our cloud registry
 
    ```bash
-   docker push $KONG_IMAGE_TAG
+   docker push $KONG_IMAGE
    ```
 
    And confirm the tagged image exists:
 
    ```bash
-   docker image ls gcr.io/$PROJECT_ID/kong-$ENV
+   docker image ls gcr.io/$PROJECT_ID/kong
    ```
 
 1. Now that the image exists in our remote registry, we need to update our deployment configuration to properly reference this image. Update the corresponding `kong.$ENV.yaml` like so:
 
+    ```bash
+    # Grab the image digest
+    docker inspect \
+         $KONG_IMAGE \
+         --format="{{index .RepoDigests 0}}"
+    ```
+
     ```yaml
     image:
-      repository: gcr.io/voice-service-2-313121/kong-$ENV
-      tag: $KONG_IMAGE_VERSION
+      repository: gcr.io/voice-service-2-313121/kong@sha256
+      tag: <IMAGE_DIGEST>
     ```
 
 ### Configuring the Kong deployment
@@ -112,7 +119,8 @@ Let's confirm the proxy is live on our cluster.
 ```bash
 # Display the kong proxy service
 kubectl get service gateway-kong-proxy
-# Using, the External IP from above command, make a request to the proxy
+# Using the External IP from above command, make a request to the proxy
+# Note that this should be the static ip reserved during the cluster setup
 curl -XGET http://$KONG_IP
 ```
 

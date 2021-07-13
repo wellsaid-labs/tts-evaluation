@@ -12,8 +12,8 @@ ingressController:
     ]
 
 image:
-  repository: gcr.io/voice-service-2-313121/kong-staging
-  tag: "v4"
+  repository: gcr.io/voice-service-2-313121/kong-staging@sha256
+  tag: 86870350684e7446fc0aa910415e158f35dba0220ec154ac43019496fbbf9943
 
 resources:
   # TODO: refine limits after we perform some load testing
