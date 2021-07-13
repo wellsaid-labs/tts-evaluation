@@ -39,9 +39,7 @@ namespace: "kong"
 # is set below. In general, you should not set values here if they are set elsewhere.
 env:
   database: "off"
-  # TODO: turn off for prod?
-  # log_level: "debug"
-  headers: "server_tokens, latency_tokens"
+  headers: "off"
   nginx_worker_processes: "2"
   proxy_access_log: /dev/stdout
   admin_access_log: /dev/stdout
