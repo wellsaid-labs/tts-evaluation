@@ -30,7 +30,7 @@ web audio api; therefore, the server must manage it via some database.
 
 Example (Flask):
 
-      $ CHECKPOINTS=""  # Example: v9_staging
+      $ CHECKPOINTS=""  # Example: v9
       $ python -m run.deploy.package_tts $CHECKPOINTS
       $ PYTHONPATH=. YOUR_SPEECH_API_KEY=123 python -m run.deploy.worker
 
@@ -130,6 +130,11 @@ SPEAKER_ID_TO_SPEAKER: typing.Dict[int, typing.Tuple[Speaker, Session]] = {
     70695443: (Speaker(""), Session("")),  # TODO: Add Super Hi-Fi Custom Voice
     64197676: (Speaker(""), Session("")),  # TODO: Add USP Custom Voice
     41935205: (Speaker(""), Session("")),  # TODO: Add Happify Custom Voice
+    42400423: (
+        _loader.THE_EXPLANATION_COMPANY__CUSTOM_VOICE,
+        Session("is_it_possible_to_become_invisible.wav"),
+    ),
+    61137774: (_loader.ENERGY_INDUSTRY_ACADEMY__CUSTOM_VOICE, Session("sample_script_4.wav")),
 }
 
 

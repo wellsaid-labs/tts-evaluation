@@ -1163,6 +1163,7 @@ if (require.main === module) {
     v9: new PodPool(process.env.V9_WORKER_POD_IMAGE, 4),
     "usp.v1": new PodPool(process.env.USP_WORKER_POD_IMAGE, 1),
     "happify.v1": new PodPool(process.env.HAPPIFY_WORKER_POD_IMAGE, 1),
+    "v9.2021_6_30_custom_voices": new PodPool(process.env.V9_2021_6_30_CUSTOM_VOICES_WORKER_POD_IMAGE, 1),
   };
   app.locals.podPools.latest = app.locals.podPools.v9;
 

@@ -178,11 +178,12 @@ Setup your local development environment by following [these instructions](LOCAL
 1. (Optional) Download checkpoints to your local drive...
 
    ```bash
+   VM_NAME=$(python -m run.utils.gcp most-recent --name $NAME)
+   VM_ZONE=$(python -m run.utils.gcp zone --name $VM_NAME)
+
    DIR_NAME='' # EXAMPLE: spectrogram_model
    CHECKPOINT='' # EXAMPLE: '**/**/checkpoints/step_630927.pt'
 
-   VM_NAME=$(python -m run.utils.gcp most-recent --name $NAME)
-   VM_ZONE=$(python -m run.utils.gcp zone --name $VM_NAME)
    DEST="disk/experiments/$DIR_NAME/$VM_NAME/"
    mkdir -p $DEST
    gcloud compute scp \
