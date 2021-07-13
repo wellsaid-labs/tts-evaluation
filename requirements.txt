@@ -28,6 +28,7 @@ comet-ml[cpu_logging]==3.8.0
 tabulate
 streamlit
 altair
+git+https://github.com/wellsaid-labs/streamlit-mui-datatable
 
 # Testing
 pytest
