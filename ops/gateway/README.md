@@ -246,13 +246,31 @@ response.
 
 At some point we may want to update our kong configurations (proxy configs,
 scaling, resource requirements, etc..). Similar to installing kong, we will
-also use `helm` to "upgrade" the release. In the event that the (ROLLBACK)
+also use `helm` to "upgrade" the release.
 
 ```bash
 helm upgrade gateway kong/kong \
   --version 2.1.0 \
   -f ./ops/gateway/kong/kong.base.yaml \
   -f ./ops/gateway/kong/kong.$ENV.yaml
+```
+
+It may be helpful to see the configured values for a previous release. Omit the
+`--all` flag if you just want to see our user-defined configurations for the
+current release.
+
+```bash
+helm get values gateway --all
+```
+
+In the event that we need to rollback a release (for example, due to a bad
+configuration) we can easily do that via helm.
+
+```bash
+# Find the current revision number for the `gateway` release
+helm list
+# Rollback to a previous version
+helm rollback gateway <REVISION_NUMBER>
 ```
 
 ### Kong Consumers
