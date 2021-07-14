@@ -148,10 +148,10 @@ class TTSPackage(typing.NamedTuple):
     input_encoder: InputEncoder
     spectrogram_model: SpectrogramModel
     signal_model: SignalModel
-    spectrogram_model_comet_experiment_key: str
-    spectrogram_model_step: int
-    signal_model_comet_experiment_key: str
-    signal_model_step: int
+    spectrogram_model_comet_experiment_key: typing.Optional[str] = None
+    spectrogram_model_step: typing.Optional[int] = None
+    signal_model_comet_experiment_key: typing.Optional[str] = None
+    signal_model_step: typing.Optional[int] = None
 
 
 def package_tts(
