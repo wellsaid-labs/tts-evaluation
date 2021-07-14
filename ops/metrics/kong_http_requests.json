@@ -1,0 +1,24 @@
+{
+  "name": "kong/http_requests_test",
+  "description": "Requests handled by the Kong proxy",
+  "filter": "resource.type=\"k8s_container\"\nresource.labels.namespace_name=\"kong\"\nresource.labels.container_name=\"proxy\"\njsonPayload.request:*",
+  "labelExtractors": {
+    "consumer_name": "EXTRACT(jsonPayload.consumer.username)",
+    "service_name": "REGEXP_EXTRACT(jsonPayload.service.name, \"^(.+)[.]\\\\d+$\")"
+  },
+  "metricDescriptor": {
+    "labels": [
+      {
+        "description": "Name of the Kong Consumer",
+        "key": "consumer_name"
+      },
+      {
+        "description": "The name of the upstream service",
+        "key": "service_name"
+      }
+    ],
+    "metricKind": "DELTA",
+    "unit": "1",
+    "valueType": "INT64"
+  }
+}

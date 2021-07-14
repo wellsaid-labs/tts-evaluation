@@ -8,9 +8,9 @@
 
 ## Deploying `cert-manager`
 
-[Cert-manager](https://cert-manager.io/docs/) is a service that can be
-deployed in a kubernetes environment for managing TLS certificate issuance
-and renewal. For the most part, we are following the
+[Cert-manager](https://cert-manager.io/docs/) is a service that can be deployed
+in a kubernetes environment for managing TLS certificate issuance and renewal.
+For the most part, we are following the
 [Using cert-manager with Kong](https://docs.konghq.com/kubernetes-ingress-controller/1.3.x/guides/cert-manager/)
 guide to obtain a certificate and then configure our routes to use https.
 
@@ -36,8 +36,8 @@ kubectl logs -n cert-manager $CERT_MANAGER_POD -f
 ```
 
 Once the Issuer is in an `ACMEAccountRegistered` state, the cluster should be
-ready to issue a certificate for us. The `cert-manager` service will listen
-for resources with specific annotations and respond accordingly
+ready to issue a certificate for us. The `cert-manager` service will listen for
+resources with specific annotations and respond accordingly
 
 - `kubernetes.io/tls-acme: "true"`: tells cert-manager to provision a cert for
   the host(s) defined in this Ingress resource. The host(s) are defined under
@@ -45,5 +45,5 @@ for resources with specific annotations and respond accordingly
 - `cert-manager.io/cluster-issuer: letsencrypt-cluster-issuer`: specify the
   issuer to be used, see our `./clusterIssuer.yaml`
 
-An Ingress resource with the above configurations is created as part of the
-Kong deployment process.
+An Ingress resource with the above configurations is created as part of the Kong
+deployment process.

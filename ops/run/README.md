@@ -1,8 +1,8 @@
 # Runtime Service Configuration
 
 This directory contains code for deploying the TTS service. The service is
-deployed to a [GKE Cluster](https://cloud.google.com/kubernetes-engine),
-and orchestrated via [Cloud Run](https://cloud.google.com/run).
+deployed to a [GKE Cluster](https://cloud.google.com/kubernetes-engine), and
+orchestrated via [Cloud Run](https://cloud.google.com/run).
 
 ## Prerequisites
 
@@ -27,12 +27,12 @@ Two versions of the TTS service are deployed per model:
 - One for validating input.
 
 This decision was made because the resource needs and concurrency of these
-endpoints are different. Deploying them separately allows us to adjust
-their scaling factors to reduce cost and increase service resiliency.
+endpoints are different. Deploying them separately allows us to adjust their
+scaling factors to reduce cost and increase service resiliency.
 
-Each TTS service instance isn't exposed to the public internet. Rather they
-can only be queried from the cluster, using cluster-local DNS. The
-DNS name for a service is of the following format:
+Each TTS service instance isn't exposed to the public internet. Rather they can
+only be queried from the cluster, using cluster-local DNS. The DNS name for a
+service is of the following format:
 
 ```bash
 # input validation
@@ -51,9 +51,9 @@ That's not in place yet, so it's not documented.
 
 ## Building an Image
 
-The TTS software is packaged via [Docker](https://docker.com). If
-you already know the image you want to deploy you can skip this step.
-Otherwise you'll need to build and push an image.
+The TTS software is packaged via [Docker](https://docker.com). If you already
+know the image you want to deploy you can skip this step. Otherwise you'll need
+to build and push an image.
 
 TODO: Document how to build and push the image(s).
 
@@ -65,122 +65,127 @@ releases. To deploy a new model, follow these steps:
 
 1. Connect to the target cluster:
 
-    ```bash
-    gcloud container clusters get-credentials $cluster --region us-central1
-    ```
+   ```bash
+   gcloud container clusters get-credentials $cluster --region us-central1
+   ```
 
 1. (optional) As of now our tts service no longer needs to handle
    authentication, as it is handled at the gateway layer. However, in order to
    support our existing images we need to pass an api key from the gateway to
    the tts service. This api key is only used on-cluster and is somewhat
-   arbitrary. The api key must be present in a file named `apikeys.json` that lives
-   in the same directory as this README. WellSaidLabs should eventually store
-   this file in something like [Google Secret Manager](https://cloud.google.com/secret-manager)
-   and add the command for downloading it here.
+   arbitrary. The api key must be present in a file named `apikeys.json` that
+   lives in the same directory as this README. WellSaidLabs should eventually
+   store this file in something like
+   [Google Secret Manager](https://cloud.google.com/secret-manager) and add the
+   command for downloading it here.
 
    The contents of that file should look something like this (note the
    `_SPEECH_API_KEY` suffix):
 
-    ```json
-    {
-        "SAMS_SPEECH_API_KEY": "XXX"
-    }
-    ```
-
-1. Create the configuration for the new model release, ex: `deployments/staging/v9.config.json`.
-   These configurations map directly to arguments found in `tts.jsonnet`.
-
    ```json
    {
-      "env": "staging",
-      "model": "v9",
-      "version": "4",
-      "image": "gcr.io/voice-service-2-313121/speech-api-worker@sha256:c5de71f13aff22b9171f23f9921796f93e1765fefa9ba5ca6426836696996a75",
-      "imageEntrypoint": "run.deploy.worker:app",
-      "includeImageApiKeys": "true",
-      "minScaleStream": "0",
-      "maxScaleStream": "32",
-      "minScaleValidate": "0",
-      "maxScaleValidate": "32"
+     "SAMS_SPEECH_API_KEY": "XXX"
    }
    ```
 
-    A few notes about the parameters:
+1. Create the configuration for the new model release, ex:
+   `deployments/staging/v9.config.json`. These configurations map directly to
+   arguments found in `tts.jsonnet`.
 
-     - `$env` refers to the cluster environment (currently `staging` or `prod`)
-       and is mainly used for hostname configuration.
+   ```json
+   {
+     "env": "staging",
+     "model": "v9",
+     "version": "4",
+     "image": "gcr.io/voice-service-2-313121/speech-api-worker@sha256:c5de71f13aff22b9171f23f9921796f93e1765fefa9ba5ca6426836696996a75",
+     "imageEntrypoint": "run.deploy.worker:app",
+     "includeImageApiKeys": "true",
+     "minScaleStream": "0",
+     "maxScaleStream": "32",
+     "minScaleValidate": "0",
+     "maxScaleValidate": "32"
+   }
+   ```
 
-     - `$model` is a unique identifier for the model being deployed. It'll
-       determine the on-cluster DNS name for the service, which will be
-       `[stream|validate].$model.svc.cluster.local`. It can only contain
-       lowercase alphanumeric characters and dashes.
+   A few notes about the parameters:
 
-     - `$version` is a unique identifier for the revision being released.
-       It can only include lowercase alphanumeric characters and dashes,
-       so we choose to use a simple monotonic integer. So if it's the first
-       time it's being released us `1`, then `2` and so on.
+   - `$env` refers to the cluster environment (currently `staging` or `prod`)
+     and is mainly used for hostname configuration.
 
-     - `$image` is the fully qualified image to deploy. You should use an
-       [image digest](https://cloud.google.com/architecture/using-container-images)
-       instead of a tag, since they're immutable. If you know the tag you'd
-       like to release you can use the command below to determine the
-       digest:
+   - `$model` is a unique identifier for the model being deployed. It'll
+     determine the on-cluster DNS name for the service, which will be
+     `[stream|validate].$model.svc.cluster.local`. It can only contain lowercase
+     alphanumeric characters and dashes.
 
-       ```bash
-       docker inspect \
-         gcr.io/voice-service-2-313121/speech-api-worker:latest \
-         --format="{{index .RepoDigests 0}}"
-       ```
+   - `$version` is a unique identifier for the revision being released. It can
+     only include lowercase alphanumeric characters and dashes, so we choose to
+     use a simple monotonic integer. So if it's the first time it's being
+     released us `1`, then `2` and so on.
 
-       The result should look something like this:
+   - `$image` is the fully qualified image to deploy. You should use an
+     [image digest](https://cloud.google.com/architecture/using-container-images)
+     instead of a tag, since they're immutable. If you know the tag you'd like
+     to release you can use the command below to determine the digest:
 
-       ```bash
-       gcr.io/voice-service-2-313121/speech-api-worker@sha256:3af2c7a3a88806e0ff5e5c0659ab6a97c42eba7f6e5d61e33dbc9244163e17d3
-       ```
+     ```bash
+     docker inspect \
+       gcr.io/voice-service-2-313121/speech-api-worker:latest \
+       --format="{{index .RepoDigests 0}}"
+     ```
 
-     - `$imageEntrypoint` is a string value that references the python service entry point.
-       Currently, this is for legacy image support (images prior to v9 that required a different entry).
+     The result should look something like this:
 
-     - `$includeImageApiKeys` is a boolean flag that determines whether or not to
-       inject api keys into the proxied upstream request. This is only for backwards
-       compatibility, enabled support of our existing tts worker images.
+     ```bash
+     gcr.io/voice-service-2-313121/speech-api-worker@sha256:3af2c7a3a88806e0ff5e5c0659ab6a97c42eba7f6e5d61e33dbc9244163e17d3
+     ```
 
-     - `$minScaleStream|$minScaleValidate` is an integer value determining how many container
-       instances should remain idle, see the [cloud run configuration](https://cloud.google.com/run/docs/configuring/min-instances) for more details. Considering our validation service can
-       handle multiple concurrent short-lived requests it would make sense to have a smaller min
-       scale value than the stream service. For our staging environment and low demand model versions we will want to scale to 0.
+   - `$imageEntrypoint` is a string value that references the python service
+     entry point. Currently, this is for legacy image support (images prior to
+     v9 that required a different entry).
 
-     - `$maxScaleStream|$maxScaleValidate` is an integer value that puts a ceiling on
-       the number of container instances we can scale to. This may be useful for preventing
-       over-scaling in response to a spike in requests and/or managing costs.
+   - `$includeImageApiKeys` is a boolean flag that determines whether or not to
+     inject api keys into the proxied upstream request. This is only for
+     backwards compatibility, enabled support of our existing tts worker images.
+
+   - `$minScaleStream|$minScaleValidate` is an integer value determining how
+     many container instances should remain idle, see the
+     [cloud run configuration](https://cloud.google.com/run/docs/configuring/min-instances)
+     for more details. Considering our validation service can handle multiple
+     concurrent short-lived requests it would make sense to have a smaller min
+     scale value than the stream service. For our staging environment and low
+     demand model versions we will want to scale to 0.
+
+   - `$maxScaleStream|$maxScaleValidate` is an integer value that puts a ceiling
+     on the number of container instances we can scale to. This may be useful
+     for preventing over-scaling in response to a spike in requests and/or
+     managing costs.
 
 1. Deploy the configured model release. If you would like to debug the release
    manifests prior to deployment, run the `jsonnet` command below
 
-    ```bash
-    # (optional) dump the release manifests
-    jsonnet -y tts.jsonnet \
-      --ext-code-file "config=./ops/run/deployments/$env/$model.config.json"
-    # deploy
-    ./deploy deployments/$env/$model.config.json
-    ```
+   ```bash
+   # (optional) dump the release manifests
+   jsonnet -y tts.jsonnet \
+     --ext-code-file "config=./ops/run/deployments/$env/$model.config.json"
+   # deploy
+   ./deploy.sh deployments/$env/$model.config.json
+   ```
 
-2. After running the command you can see the status of what was deployed via
+1. After running the command you can see the status of what was deployed via
    this command:
 
-    ```bash
-    kubectl get --namespace $model service.serving.knative.dev
-    ```
+   ```bash
+   kubectl get --namespace $model service.serving.knative.dev
+   ```
 
-    If something didn't work, you can investigate by first listing all
-    resources:
+   If something didn't work, you can investigate by first listing all resources:
 
-    ```bash
-    kubectl get --namespace $model all
-    ```
+   ```bash
+   kubectl get --namespace $model all
+   ```
 
-    Then depending on the output use commands like `kubectl describe`
-    and `kubectl logs` to further debug things.
+   Then depending on the output use commands like `kubectl describe` and
+   `kubectl logs` to further debug things.
 
 ## Management
 
@@ -193,8 +198,9 @@ jsonnet ./ops/gateway/kong/plugins/latest-pinned-service.jsonnet \
   | kubectl apply -f -
 ```
 
-Refer to [Deploying the `latest-version-transformation` plugin](../gateway/README.md)
-for additional details.
+Refer to
+[Deploying the `latest-version-transformation` plugin](../gateway/README.md) for
+additional details.
 
 ### Updating an existing release
 
@@ -206,18 +212,19 @@ a bump in the `version` parameter. For example, if this model was released with
 `version=1` and then we want to update that release to modify the scaling
 parameters, you would run this command with `version=2`.
 
-1. Modify the relevant release configuration. This will involve bumping the `version` number.
+1. Modify the relevant release configuration. This will involve bumping the
+   `version` number.
 
 1. Re-run the deploy script:
 
-    ```bash
-    # (optional) kubectl dry run
-    jsonnet -y tts.jsonnet \
-      --ext-code-file "config=./ops/run/deployments/$env/$model.config.json" \
-      | kubectl apply --dry-run=server -f -
-    # deploy
-    ./deploy deployments/$env/$model.config.json
-    ```
+   ```bash
+   # (optional) kubectl dry run
+   jsonnet -y tts.jsonnet \
+     --ext-code-file "config=./ops/run/deployments/$env/$model.config.json" \
+     | kubectl apply --dry-run=server -f -
+   # deploy
+   ./deploy deployments/$env/$model.config.json
+   ```
 
 ### Deleting a release
 

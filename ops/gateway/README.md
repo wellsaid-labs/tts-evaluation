@@ -1,14 +1,19 @@
 # Kong Gateway
 
-This directory contains the configuration and documentation around managing our Kong gateway;
-a service which routes traffic to our internal Cloud Run containers.
+This directory contains the configuration and documentation around managing our
+Kong gateway; a service which routes traffic to our internal Cloud Run
+containers.
 
-TODO: reference/resources for quick start using kong
-TODO: embed architecture diagram (probably in ../README.md)
+TODO: reference/resources for quick start using kong TODO: embed architecture
+diagram (probably in ../README.md)
 
 ## Prerequisites
 
-This document assumes the following dependencies have been installed and [cluster setup](../ClusterSetup.md) has been completed. Additionally, you may need [authorize docker](https://cloud.google.com/container-registry/docs/advanced-authentication) in order to push images to the cloud registry.
+This document assumes the following dependencies have been installed and
+[cluster setup](../ClusterSetup.md) has been completed. Additionally, you may
+need
+[authorize docker](https://cloud.google.com/container-registry/docs/advanced-authentication)
+in order to push images to the cloud registry.
 
 - [gcloud](https://cloud.google.com/sdk/docs/quickstart)
 - [kubectl](https://kubernetes.io/docs/tasks/tools/)
@@ -16,29 +21,35 @@ This document assumes the following dependencies have been installed and [cluste
 
 ## Kong Gateway Configuration
 
-Our current Kong setup leverages the kong [Kubernetes Ingress Controller](https://docs.konghq.com/kubernetes-ingress-controller/).
-The controller listens for changes to our kubernetes resources and updates the Kong service
-accordingly. This allows us to run Kong without a database, meaning all of the configurations
-are defined by Kubernetes manifests in this codebase.
+Our current Kong setup leverages the kong
+[Kubernetes Ingress Controller](https://docs.konghq.com/kubernetes-ingress-controller/).
+The controller listens for changes to our kubernetes resources and updates the
+Kong service accordingly. This allows us to run Kong without a database, meaning
+all of the configurations are defined by Kubernetes manifests in this codebase.
 
 ### Configuring the base Kong docker image
 
-The base [Kong image](https://hub.docker.com/_/kong) provides several bundled plugins by default. In order to add custom or third-party plugins to our deployment, we need to rebuild the image to include the plugin _and_ add those plugins to our [kong configuration](./kong/kong.yaml). See [kong plugin distribution](https://docs.konghq.com/gateway-oss/1.0.x/plugin-development/distribution/) for more details.
+The base [Kong image](https://hub.docker.com/_/kong) provides several bundled
+plugins by default. In order to add custom or third-party plugins to our
+deployment, we need to rebuild the image to include the plugin _and_ add those
+plugins to our [kong configuration](./kong/kong.yaml). See
+[kong plugin distribution](https://docs.konghq.com/gateway-oss/1.0.x/plugin-development/distribution/)
+for more details.
 
 1. Ensure the custom plugins exist locally (via git submodules)
 
-    ```bash
-    git submodule update --init --recursive
-    ```
+   ```bash
+   git submodule update --init --recursive
+   ```
 
 1. Setup env variables for image tagging
 
-    ```bash
-    export ENV=$ENV # ex: staging
-    export PROJECT_ID=voice-service-2-313121
-    export KONG_IMAGE_TAG=$KONG_IMAGE_TAG # ex: v1
-    export KONG_IMAGE="gcr.io/$PROJECT_ID/kong:$KONG_IMAGE_TAG"
-    ```
+   ```bash
+   export ENV=$ENV # ex: staging
+   export PROJECT_ID=voice-service-2-313121
+   export KONG_IMAGE_TAG=$KONG_IMAGE_TAG # ex: v1
+   export KONG_IMAGE="gcr.io/$PROJECT_ID/kong:$KONG_IMAGE_TAG"
+   ```
 
 1. Build and tag the docker image locally
 
@@ -58,27 +69,30 @@ The base [Kong image](https://hub.docker.com/_/kong) provides several bundled pl
    docker image ls gcr.io/$PROJECT_ID/kong
    ```
 
-1. Now that the image exists in our remote registry, we need to update our deployment configuration to properly reference this image. Update the corresponding `kong.$ENV.yaml` like so:
+1. Now that the image exists in our remote registry, we need to update our
+   deployment configuration to properly reference this image. Update the
+   corresponding `kong.$ENV.yaml` like so:
 
-    ```bash
-    # Grab the image digest
-    docker inspect \
-         $KONG_IMAGE \
-         --format="{{index .RepoDigests 0}}"
-    ```
+   ```bash
+   # Grab the image digest
+   docker inspect \
+        $KONG_IMAGE \
+        --format="{{index .RepoDigests 0}}"
+   ```
 
-    ```yaml
-    image:
-      repository: gcr.io/voice-service-2-313121/kong@sha256
-      tag: <IMAGE_DIGEST>
-    ```
+   ```yaml
+   image:
+     repository: gcr.io/voice-service-2-313121/kong@sha256
+     tag: <IMAGE_DIGEST>
+   ```
 
 ### Configuring the Kong deployment
 
-The configuration for our Kong deployment is located in the `kong.base.yaml` and `kong.$ENV.yaml`
-files, where the `kong.$ENV.yaml` file provides environment specific configuration overrides to the
-base helm chart config. The first update you will want to make is to configure the static IP
-used by the proxy. If you have not setup the static IP yet, see
+The configuration for our Kong deployment is located in the `kong.base.yaml` and
+`kong.$ENV.yaml` files, where the `kong.$ENV.yaml` file provides environment
+specific configuration overrides to the base helm chart config. The first update
+you will want to make is to configure the static IP used by the proxy. If you
+have not setup the static IP yet, see
 [Reserving a static IP](../ClusterSetup.md).
 
 ```yaml
@@ -140,9 +154,10 @@ kubectl apply -f ./ops/gateway/kong/plugins/file-log.yaml
 
 ### Deploying the `latest-version-transformation` plugin
 
-This plugin allows us to "pin" all traffic containing the `Accept-Version: latest`
-header to a specific model release. Note that `$LATEST_VERSION` refers to a
-model name used during the tts deployment (see ../run/README.md).
+This plugin allows us to "pin" all traffic containing the
+`Accept-Version: latest` header to a specific model release. Note that
+`$LATEST_VERSION` refers to a model name used during the tts deployment (see
+../run/README.md).
 
 ```bash
 jsonnet ./ops/gateway/kong/plugins/latest-pinned-service.jsonnet \
@@ -187,8 +202,8 @@ response.
 ### Updating our Kong Gateway configuration
 
 At some point we may want to update our kong configurations (proxy configs,
-scaling, resource requirements, etc..). Similar to installing kong, we will
-also use `helm` to "upgrade" the release.
+scaling, resource requirements, etc..). Similar to installing kong, we will also
+use `helm` to "upgrade" the release.
 
 ```bash
 helm upgrade gateway kong/kong \
@@ -218,7 +233,8 @@ helm rollback gateway <REVISION_NUMBER>
 ### Kong Consumers
 
 Once the `key-auth` plugin is enabled, a `KongConsumer` is required to make
-authenticated requests to the API. For reference, see [Provisioning a consumer](https://docs.konghq.com/kubernetes-ingress-controller/1.3.x/guides/using-consumer-credential-resource/#provision-a-consumer).
+authenticated requests to the API. For reference, see
+[Provisioning a consumer](https://docs.konghq.com/kubernetes-ingress-controller/1.3.x/guides/using-consumer-credential-resource/#provision-a-consumer).
 
 ```bash
 # We will be namespacing all of the kong consumers
@@ -239,13 +255,13 @@ kubectl get secrets/$KONG_CONSUMER_USERNAME-consumer-apikey \
   | base64 -D
 ```
 
-At this point you should be able to test that the new consumer
-credentials are working
+At this point you should be able to test that the new consumer credentials are
+working
 
 ```bash
 # Should respond with 401 Unauthorized
 curl -I https://tts.wellsaidlabs.com
-# Should response with a 404 Not Found
+# Should respond with a 404 Not Found
 curl -I https://tts.wellsaidlabs.com -H "X-Api-Key: $CONSUMER_API_KEY"
 ```
 
@@ -271,8 +287,9 @@ TODO
 ### Debugging Kong Ingress Controller
 
 The Kong Ingress Controller is in charge of responding to changes in kubernetes
-resources and updating kong with the derived configurations (services/routes/plugins). At some point it may be helpful to see what the Kong proxy configuration looks
-like.
+resources and updating kong with the derived configurations
+(services/routes/plugins). At some point it may be helpful to see what the Kong
+proxy configuration looks like.
 
 ```bash
 # Grab kong gateway pod name
