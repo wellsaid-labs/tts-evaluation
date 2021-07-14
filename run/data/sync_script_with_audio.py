@@ -24,6 +24,7 @@ from functools import lru_cache, partial
 from io import StringIO
 from itertools import chain, groupby, repeat
 
+import numpy as np
 import pandas
 import tabulate
 import typer
@@ -628,13 +629,15 @@ def _sync_and_upload(
     assert len(audio_blobs) == len(stt_blobs), "Expected the same number of blobs."
     assert len(audio_blobs) == len(alignment_blobs), "Expected the same number of blobs."
 
-    logger.info("Downloading voice-over scripts...")
+    logger.info("Downloading voice-over script(s)...")
     scripts_ = [s.download_as_string().decode("utf-8") for s in script_blobs]
     scripts: typing.List[typing.List[str]] = [
         typing.cast(pandas.DataFrame, pandas.read_csv(StringIO(s)))[text_column].tolist()
         for s in scripts_
     ]
-    message = "Scripts cannot contain funky characters."
+    message = "Some or all script(s) are missing."
+    assert all(not np.isnan(t) for t in lib.utils.flatten_2d(scripts)), message
+    message = "Script(s) cannot contain funky characters."
     assert all(lib.text.is_normalized_vo_script(t) for t in lib.utils.flatten_2d(scripts)), message
 
     logger.info("Maybe running speech-to-text and caching results...")
