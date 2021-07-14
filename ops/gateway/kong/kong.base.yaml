@@ -52,7 +52,7 @@ env:
   prefix: /kong_prefix/
   # Include additional third-party/custom plugins. Anything after "bundled" will need to be
   # included in the kong `image`.
-  plugins: "bundled,google-logging,latest-version-transformer"
+  plugins: "bundled,latest-version-transformer"
   # nginx overrides, see https://docs.konghq.com/gateway-oss/2.4.x/configuration/#injecting-nginx-directives
   #
   # Enable buffering of responses from upstream services. This should help free up our upstream

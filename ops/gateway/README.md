@@ -35,9 +35,8 @@ The base [Kong image](https://hub.docker.com/_/kong) provides several bundled pl
 
     ```bash
     export PROJECT_ID=voice-service-2-313121
-    export ENV=$ENV # example: staging
-    export KONG_IMAGE_VERSION=$KONG_IMAGE_VERSION # ex: v1
-    export KONG_IMAGE="gcr.io/$PROJECT_ID/kong:$ENV-$KONG_IMAGE_VERSION"
+    export KONG_IMAGE_TAG=$KONG_IMAGE_TAG # ex: v1
+    export KONG_IMAGE="gcr.io/$PROJECT_ID/kong:$KONG_IMAGE_TAG"
     ```
 
 1. Build and tag the docker image locally
