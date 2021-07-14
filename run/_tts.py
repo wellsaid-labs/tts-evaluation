@@ -93,9 +93,37 @@ def load_checkpoints(
 
 
 class Checkpoints(enum.Enum):
-    # V9_STAGING: typing.Final = "v9_staging"
-    V9_CUSTOM: typing.Final = "v9_2021_6_30_custom_voices"
-    V9_CUSTOM_TEST: typing.Final = "test_energy_explanation_voices"
+    """
+    Catalog of checkpoints uploaded to "wellsaid_labs_checkpoints".
+
+    You can upload a new checkpoint, for example, like so:
+
+        $ gsutil -m cp -r disk/checkpoints/2021_7_30_custom_voices \
+                        gs://wellsaid_labs_checkpoints/v9_2021_6_30_custom_voices
+    """
+
+    """
+    These checkpoints were deployed into production as Version 9.
+
+    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/302
+    Spectrogram Model Experiment (Step: 569,580):
+    https://www.comet.ml/wellsaid-labs/1-stft-mike-2020-12/f52cc3ca9a394367a13bd06f26d78832
+    Signal Model Experiment (Step: 770,773):
+    https://www.comet.ml/wellsaid-labs/1-wav-mike-2021-03/0f4a4de9937c445bb7292d2a8f719fe1
+    """
+
+    V9: typing.Final = "v9"
+
+    """
+    These checkpoints include the Energy Industry Academy and The Explanation Company custom voices.
+
+    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/334
+    Spectrogram Model Experiment (Step: 649,128):
+    https://www.comet.ml/wellsaid-labs/1-stft-mike-2020-12/881cea24682e470480786d1b2e20596b
+    Signal Model Experiment (Step: 1,030,968):
+    https://www.comet.ml/wellsaid-labs/1-wav-mike-2021-03/07a194f3bb99489d83061d3f2331536d
+    """
+    V9_2021_6_30_CUSTOM_VOICES: typing.Final = "v9_2021_6_30_custom_voices"
 
 
 _GCS_PATH = "gs://wellsaid_labs_checkpoints/"
@@ -106,22 +134,39 @@ CHECKPOINTS_LOADERS = {
 
 
 class TTSPackage(typing.NamedTuple):
-    """A package of Python objects required to run TTS in inference mode."""
+    """A package of Python objects required to run TTS in inference mode.
+
+    Args:
+        ...
+        spectrogram_model_comet_experiment_key: In order to identify the model origin, the
+            comet ml experiment key is required.
+        spectrogram_model_step: In order to identify the model origin, the checkpoint step which
+            corresponds to the comet ml experiment is required.
+        ...
+    """
 
     input_encoder: InputEncoder
     spectrogram_model: SpectrogramModel
     signal_model: SignalModel
+    spectrogram_model_comet_experiment_key: str
+    spectrogram_model_step: int
+    signal_model_comet_experiment_key: str
+    signal_model_step: int
 
 
 def package_tts(
     spectrogram_checkpoint: train.spectrogram_model._worker.Checkpoint,
     signal_checkpoint: train.signal_model._worker.Checkpoint,
 ):
-    """Package together objects required for running TTS inference.
-
-    TODO: Include the experiment key and step in the `TTSPackage`, so it can be identified.
-    """
-    return TTSPackage(*spectrogram_checkpoint.export(), signal_checkpoint.export())
+    """Package together objects required for running TTS inference."""
+    return TTSPackage(
+        *spectrogram_checkpoint.export(),
+        signal_checkpoint.export(),
+        spectrogram_model_comet_experiment_key=spectrogram_checkpoint.comet_experiment_key,
+        spectrogram_model_step=spectrogram_checkpoint.step,
+        signal_model_comet_experiment_key=signal_checkpoint.comet_experiment_key,
+        signal_model_step=signal_checkpoint.step,
+    )
 
 
 class PublicTextValueError(ValueError):
