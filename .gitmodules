@@ -4,6 +4,3 @@
 [submodule "ops/gateway/kong/kong-latest-version-transformer"]
 	path = ops/gateway/kong/kong-latest-version-transformer
 	url = git@github.com:wellsaid-labs/kong-latest-version-transformer.git
-[submodule "ops/gateway/kong/kong-google-logging-plugin"]
-	path = ops/gateway/kong/kong-google-logging-plugin
-	url = git@github.com:wellsaid-labs/kong-google-logging-plugin.git

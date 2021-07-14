@@ -128,73 +128,15 @@ At this point we should get back a 404 response with the following message:
 `{"message":"no Route matched with those values"}`. Kong is deployed, but we
 have yet to configure any routes/services.
 
-### Deploying the `google-logging` plugin
+### Deploying the `file-log` plugin
 
-Logging is currently handled via the [google-logging](https://github.com/SmartParkingTechnology/kong-google-logging-plugin) Kong plugin.
+We leverage the [file-log](https://docs.konghq.com/hub/kong-inc/file-log/)
+plugin in order to write request information to stdout which is picked up by
+Stackdriver.
 
 ```bash
-cd ops/gateway/kong/plugins/
+kubectl apply -f ./ops/gateway/kong/plugins/file-log.yaml
 ```
-
-1. Setup a service account to allow this plugin to write logs directly to Google Cloud Logging.
-
-    Create the Service Account
-
-    ```bash
-    gcloud iam service-accounts create kong-google-logging \
-      --description="Service account used for writing detailed logs directly from our Kong proxy" \
-      --display-name="kong-google-logging"
-    ```
-
-    Grant the Service Account an IAM Role that will allow writing to Google Cloud Logging.
-
-    ```bash
-    gcloud projects add-iam-policy-binding voice-service-2-313121 \
-      --member="serviceAccount:kong-google-logging@voice-service-2-313121.iam.gserviceaccount.com" \
-      --role="roles/logging.logWriter"
-    ```
-
-    Generate the Service Account Key that the `kong-google-logging` plugin will use to
-       authenticate with.
-
-    ```bash
-    gcloud iam service-accounts keys create ./kong-google-logging-service-account.secrets.json \
-      --iam-account=kong-google-logging@voice-service-2-313121.iam.gserviceaccount.com
-    ```
-
-1. Deploy the `google-logging` plugin. Note that the configuration for this plugin includes the
-   service account credentials which are stored in a `Secret`.
-
-   ```bash
-   jsonnet google-logging.jsonnet \
-      -y \
-      --tla-str location=us-central1 \
-      --tla-str cluster=staging \
-      | kubectl apply -f -
-   ```
-
-1. Delete the service account credentials from your local machine once the previous resources
-   are applied.
-
-    ```bash
-    rm ./kong-google-logging-service-account.secrets.json
-    ```
-
-1. Confirm that this plugin has been successfully picked up by the kong ingress controller.
-
-    ```bash
-    # Fetch a kong gateway pod
-    kubectl get pods -n kong
-    # Monitor logs on the `ingress-controller` container. These logs will tell us if the resources
-    # deployed in the previous step were synced properly by kong
-    kubectl logs POD_NAME -n kong -c ingress-controller --tail=20 --follow
-    ```
-
-    Finally, once the plugin is synced by kong we can start reading logs!
-
-    ```bash
-    gcloud logging read "labels.source=kong-google-logging" --limit=1
-    ```
 
 ### Deploying the `latest-version-transformation` plugin
 
@@ -342,4 +284,17 @@ kubectl exec -it POD_NAME -n kong -c ingress-controller -- /bin/sh
 /kong-ingress-controller --dump-config=enabled
 # output the configuration
 cat /tmp/controller.../last_good.json
+```
+
+### Debugging Kong Custom Resource Definitions (CRDs)
+
+```bash
+# list kong crds
+kubectl get crd | grep kong
+# list globally applied plugins
+kubectl get kongclusterplugins.configuration.konghq.com
+# list scoped plugins
+kubectl get kongplugins.configuration.konghq.com --all-namespaces
+# list consumers
+kubectl get kongconsumers.configuration.konghq.com -n kong-consumers
 ```
