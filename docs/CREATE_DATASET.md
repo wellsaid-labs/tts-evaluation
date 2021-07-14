@@ -219,8 +219,6 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
       2>&1 | tee $PROCESSED/csv-normalize.log
    ```
 
-   💡 TIP: Add the flag `--tab-separated` to process a TSV file.
-
 1. Upload the processed files back to GCS, like so...
 
    ```bash
