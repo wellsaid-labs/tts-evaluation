@@ -1,0 +1,30 @@
+{
+  "env": "staging",
+  "model": "v9-2021-8-03-custom-voices",
+  "version": "1",
+  "image": "gcr.io/voice-service-2-313121/speech-api-worker@sha256:dffe11d0b24a4d124bc9d76c0f09b5aebff67c2cb9eb7fedfe39df1d290b62ea",
+  "imageEntrypoint": "run.deploy.worker:app",
+  "provideApiKeyAuthForLegacyContainerSupport": "true",
+  "stream": {
+    "minScale": 0,
+    "maxScale": 32,
+    "concurrency": 1,
+    "paths": [
+      "/api/text_to_speech/stream"
+    ]
+  },
+  "validate": {
+    "minScale": 0,
+    "maxScale": 8,
+    "concurrency": 4,
+    "paths": [
+      "/api/text_to_speech/input_validated"
+    ]
+  },
+  "traffic": [
+    {
+      "tag": "1",
+      "percent": 100
+    }
+  ]
+}

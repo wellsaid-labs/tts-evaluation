@@ -58,9 +58,16 @@ OTIS_JIRY__STORY = Speaker("otis_jiry__promo", "Otis Jiry (Story-Telling)")
 ENERGY_INDUSTRY_ACADEMY__CUSTOM_VOICE = Speaker(
     "energy_industry_academy__custom_voice", "Energy Industry Academy (Custom Voice)"
 )
+HAPPIFY__CUSTOM_VOICE = Speaker("happify__custom_voice", "Happify (Custom Voice)")
+SUPER_HI_FI__CUSTOM_VOICE = Speaker("super_hi_fi__custom_voice", "Super HiFi (Custom Voice)")
 THE_EXPLANATION_COMPANY__CUSTOM_VOICE = Speaker(
     "the_explanation_company__custom_voice", "The Explanation Company (Custom Voice)"
 )
+US_PHARMACOPEIA__CUSTOM_VOICE = Speaker(
+    "us_pharmacopeia__custom_voice", "US Pharmacopeia (Custom Voice)"
+)
+VERITONE__CUSTOM_VOICE = Speaker("veritone__custom_voice", "Veritone (Custom Voice)")
+VIACOM__CUSTOM_VOICE = Speaker("viacom__custom_voice", "Viacom (Custom Voice)")
 
 
 def _dataset_loader(directory: Path, speaker: Speaker, **kwargs) -> typing.List[Passage]:
