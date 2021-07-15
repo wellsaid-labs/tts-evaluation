@@ -24,7 +24,6 @@ from functools import lru_cache, partial
 from io import StringIO
 from itertools import chain, groupby, repeat
 
-import numpy as np
 import pandas
 import tabulate
 import typer
