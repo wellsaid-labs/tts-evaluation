@@ -233,11 +233,11 @@ def text_to_speech(
     nlp = load_en_core_web_md(disable=("parser", "ner"))
     encoded = encode_tts_inputs(nlp, package.input_encoder, script, speaker, session)
     params = Params(tokens=encoded.phonemes, speaker=encoded.speaker, session=encoded.session)
-    preds = typing.cast(Infer, package.spectrogram_model(params=params, mode=Mode.INFER))
-    splits = preds.frames.split(split_size)
 
     results = []
     for _ in range(num_clips):
+        preds = typing.cast(Infer, package.spectrogram_model(params=params, mode=Mode.INFER))
+        splits = preds.frames.split(split_size)
         predicted = list(
             generate_waveform(package.signal_model, splits, encoded.speaker, encoded.session)
         )

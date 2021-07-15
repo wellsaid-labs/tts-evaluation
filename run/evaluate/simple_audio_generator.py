@@ -17,7 +17,7 @@ from run._streamlit import (
     st_html,
     web_path_to_url,
 )
-from run._tts import CHECKPOINTS_LOADERS, Checkpoints, text_to_speech
+from run._tts import CHECKPOINTS_LOADERS, Checkpoints, batch_text_to_speech
 from run.data._loader import Speaker
 
 DEFAULT_SCRIPT = (
@@ -34,12 +34,14 @@ def _generate_audio(tts, script, speaker, session, num_clips, session_count):
     paths = []
     speaker_name = _get_speaker_name(speaker)
 
-    for clip_count, audio in enumerate(text_to_speech(tts, script, speaker, session, num_clips)):
+    inputs = [(script, speaker, session)] * num_clips
+    print(inputs)
+    for clip_count, (params, pred, audio) in enumerate(batch_text_to_speech(tts, inputs)):
         audio_web_path = audio_to_web_path(
             audio, name="%s_session%d_%d.wav" % (speaker_name, session_count, clip_count + 1)
         )
-        st_html(f'<audio controls src="{web_path_to_url(audio_web_path)}"></audio>')
         url = web_path_to_url(audio_web_path)
+        st_html(f'<audio controls src="{url}"></audio>')
         st_html(f'<a href="{url}" download="{audio_web_path.name}">Download Generated Audio</a>')
         st.text("")
         paths.append(audio_web_path)
@@ -67,7 +69,9 @@ def main():
     sessions = sorted([sesh for spk, sesh in sessions if spk == speaker], key=natural_keys)
 
     all_sessions = st.checkbox("Sample all %d sessions" % len(sessions))
-    session = st.selectbox("Session", options=["All"] if all_sessions else sessions)
+
+    if not all_sessions:
+        session = st.selectbox("Session", options=sessions)
     script = st.text_area("Script", value=DEFAULT_SCRIPT, height=300)
     st.info(f"The script has {len(script):,} character(s).")
 
