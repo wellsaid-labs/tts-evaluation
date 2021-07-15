@@ -28,6 +28,18 @@ Setup your local development environment by following [these instructions](LOCAL
 
    💡 TIP: Don't place all your preemptible instances in the same zone, just in case one zone
    runs out of capacity.
+   
+   If starting from scratch, use a standard ubuntu image:
+   ```
+   IMAGE_PROJECT='ubuntu-os-cloud'
+   IMAGE_FAMILY='ubuntu-1804-lts'
+   ```
+   If starting from your own image, set the image project and family appropriately:
+   ```
+   IMAGE_PROJECT='voice-research-255602'
+   IMAGE_FAMILY='you-image-family-name'    # Example: you set this variable when imaging your machine, at the end of these instructions
+   ```
+   
 
 1. Create an instance for training...
 
@@ -40,8 +52,8 @@ Setup your local development environment by following [these instructions](LOCAL
       --gpu-count=4 \
       --disk-size=512 \
       --disk-type='pd-balanced' \
-      --image-project='ubuntu-os-cloud' \
-      --image-family='ubuntu-1804-lts' \
+      --image-project=$IMAGE_PROJECT \
+      --image-family=$IMAGE_FAMILY \
       --metadata="startup-script-user=$GCP_USER" \
       --metadata="train-script-path=$TRAIN_SCRIPT_PATH" \
       --metadata-from-file="startup-script=run/utils/gcp/resume_training_on_start_up.sh"
@@ -218,5 +230,6 @@ Setup your local development environment by following [these instructions](LOCAL
       --name=$NAME \
       --vm-name=$VM_NAME \
       --zone=$VM_ZONE
-   gcloud compute disks delete $VM_NAME --zone=$VM_ZONE
    ```
+   
+   When you're ready to begin signal model training, start from the top of these instructions and use your `$IMAGE_FAMILY` envrionment variable to build your new instance!
