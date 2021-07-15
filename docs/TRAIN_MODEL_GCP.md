@@ -154,16 +154,19 @@ Setup your local development environment by following [these instructions](LOCAL
    ```
 
 1. Start training... 
+   
    For example, run this command to train a spectrogram model:
 
    ```bash
    pkill -9 python; sleep 5s; nvidia-smi; \
    PYTHONPATH=. python $TRAIN_SCRIPT_PATH start $COMET_PROJECT "$EXPERIMENT_NAME";
    ```
-   Or select a `SPECTROGRAM_CHECKPOINT` and run this commant to train a signal model:
+   ---
+   Or select a `SPECTROGRAM_CHECKPOINT`...
    ```
    SPECTROGRAM_CHECKPOINT="/opt/wellsaid-labs/Text-to-Speech/path/to/spectrogram/checkpoint"
    ```
+   ...and run this command to train a signal model:
    ```bash
    pkill -9 python; sleep 5s; nvidia-smi; \
    PYTHONPATH=. python $TRAIN_SCRIPT_PATH start $SPECTROGRAM_CHECKPOINT $COMET_PROJECT "$EXPERIMENT_NAME";
