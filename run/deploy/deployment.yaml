@@ -65,7 +65,7 @@ spec:
             - name: HAPPIFY_WORKER_POD_IMAGE
               value: gcr.io/voice-service-255602/speech-api-worker:happify.v1.00
             - name: V9_2021_6_30_CUSTOM_VOICES_WORKER_POD_IMAGE
-              value: gcr.io/voice-service-255602/speech-api-worker:v9.2021_6_30_custom_voices
+              value: gcr.io/voice-service-255602/speech-api-worker:v9.2021_6_30_custom_voices.02
             - name: WORKER_POD_EXPOSED_PORT # Port master communicates with its workers on
               value: "8000"
             - name: WORKER_POD_PREFIX
