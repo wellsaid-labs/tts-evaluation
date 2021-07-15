@@ -68,6 +68,11 @@ MANIFESTS=$(jsonnet ./tts.jsonnet \
 # Apply manifests
 echo "${MANIFESTS}" | kubectl apply -f -
 
+# Check for non-zero exit from kubectl apply and bail early
+if [ $? -gt 0 ]; then
+  exit 1
+fi
+
 # Wait for service to exist before attempting patch
 until kubectl get service stream -n $MODEL &> /dev/null
 do
