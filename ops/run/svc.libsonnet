@@ -81,7 +81,23 @@
    *    - Ingress: path/service routing (augmented by the KongIngress resource)
    */
   Route(spec):
-    // https://docs.konghq.com/hub/kong-inc/request-transformer/
+    // NOTE: this transformer allows us to route `Accept-Version` headers to individual
+    // Cloud Run revisions.
+    // @see https://docs.konghq.com/hub/kong-inc/request-transformer/
+    local hostNameTransformer = |||
+      $((function()
+        local value = headers['accept-version'] or ''
+        local version, revision = value, nil
+        local index = value:find('.', 1, true)
+        if index then
+          version = value:sub(1, index - 1)
+          revision = value:sub(index + 1)
+          return 'revision-'..revision..'-%(serviceName)s.%(namespace)s.svc.cluster.local'
+        end
+        return '%(serviceName)s.%(namespace)s.svc.cluster.local';
+      end)())
+    ||| % spec;
+
     local requestTransformer = {
       apiVersion: 'configuration.konghq.com/v1',
       kind: 'KongPlugin',
@@ -93,12 +109,12 @@
       config: {
         replace: {
           headers: [
-            'host:' + spec.serviceName + '.' + spec.namespace + '.svc.cluster.local',
+            'host:' + hostNameTransformer
           ],
         },
         add: {
           headers: [
-            'host:' + spec.serviceName + '.' + spec.namespace + '.svc.cluster.local',
+            'host:' + hostNameTransformer
           ],
         } + if spec.legacyContainerApiKey != null then {
           body: [

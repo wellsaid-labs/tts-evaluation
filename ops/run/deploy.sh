@@ -60,7 +60,6 @@ if kubectl get deployment stream-$VERSION-deployment -n $MODEL &> /dev/null; the
   echo "This is not an issue if updating traffic configurations for existing revisions."
   echo "For changes to scaling or image configs, try bumping the version number and running again."
   read -p "Continue? (Y/N): " confirm && [[ $confirm == [yY] || $confirm == [yY][eE][sS] ]] || exit 1
-  exit 1
 fi
 
 # Generate manifests
