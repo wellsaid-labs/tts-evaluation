@@ -98,7 +98,8 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
    VM_IP=$(python -m run.utils.gcp ip --name $VM_NAME --zone=$VM_ZONE)
    VM_USER=$(python -m run.utils.gcp user --name $VM_NAME --zone=$VM_ZONE)
    ```
-   ```
+
+   ```zsh
    sudo python3 -m run.utils.lsyncd $(pwd) /opt/wellsaid-labs/Text-to-Speech \
                                     --public-dns $VM_IP \
                                     --user $VM_USER \

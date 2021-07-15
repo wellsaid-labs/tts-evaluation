@@ -84,7 +84,8 @@ Setup your local development environment by following [these instructions](LOCAL
    VM_IP=$(python -m run.utils.gcp ip --name $VM_NAME --zone=$VM_ZONE)
    VM_USER=$(python -m run.utils.gcp user --name $VM_NAME --zone=$VM_ZONE)
    ```
-   ```
+
+   ```bash
    sudo python3 -m run.utils.lsyncd $(pwd) /opt/wellsaid-labs/Text-to-Speech \
                                     --public-dns $VM_IP \
                                     --user $VM_USER \
