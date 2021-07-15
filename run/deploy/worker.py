@@ -134,7 +134,7 @@ SPEAKER_ID_TO_SPEAKER: typing.Dict[int, typing.Tuple[Speaker, Session]] = {
         _loader.THE_EXPLANATION_COMPANY__CUSTOM_VOICE,
         Session("is_it_possible_to_become_invisible.wav"),
     ),
-    61137774: (_loader.ENERGY_INDUSTRY_ACADEMY__CUSTOM_VOICE, Session("sample_script_4.wav")),
+    61137774: (_loader.ENERGY_INDUSTRY_ACADEMY__CUSTOM_VOICE, Session("sample_script_2.wav")),
 }
 
 
