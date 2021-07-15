@@ -107,6 +107,11 @@ function(
     // communications.
     'pKfRepQY-ln4pCOnCxZOoHNXArHbxLwj5To26aS92OY';
 
+  // list of headers derived from namespace and traffic revisions
+  // ex: v8, v8.1, v8.2 that map to individual cloud run revision tags
+  local acceptVersionHeaders = [ns.metadata.name] +
+    [ns.metadata.name + '.' + t.tag for t in traffic];
+
   local validateSvc = common.Service({
     name: 'validate',
     namespace: ns.metadata.name,
@@ -169,6 +174,7 @@ function(
     serviceName: validateSvc.metadata.name,
     servicePaths: ['/api/text_to_speech/input_validated'],
     legacyContainerApiKey: legacyContainerApiKey,
+    acceptVersionHeaders: acceptVersionHeaders,
   });
 
   local streamRoute = common.Route({
@@ -177,6 +183,7 @@ function(
     serviceName: streamSvc.metadata.name,
     servicePaths: ['/api/text_to_speech/stream'],
     legacyContainerApiKey: legacyContainerApiKey,
+    acceptVersionHeaders: acceptVersionHeaders,
   });
 
   [

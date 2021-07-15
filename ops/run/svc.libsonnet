@@ -128,9 +128,7 @@
         request_buffering: true,
         response_buffering: true,
         headers: {
-          'accept-version': [
-            spec.namespace,
-          ],
+          'accept-version': spec.acceptVersionHeaders,
         },
         methods: [
           'POST',
