@@ -60,10 +60,12 @@ env:
   # proxy. (nginx defualts to "on", simply setting explicitely for verbosity)
   # http://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_buffering
   nginx_proxy_proxy_buffering: "on"
-  #
-  # Setting the max tmp file size for nginx to consume upstream response.
+  # Setting the max tmp file size for nginx to consume upstream response. Note that this value is
+  # roughly based on the hardcoded 10k character input limit, which produces an mp3 audio file of
+  # around ~15mb. 512m should still leave room for uncompressed audio & higher bitrates
+  # (default: 1024m)
   # http://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_max_temp_file_size
-  nginx_proxy_proxy_max_temp_file_size: "1024m"
+  nginx_proxy_proxy_max_temp_file_size: "512m"
   # At this time, we are using a request-transformer plugin to modify the request body (inject
   # api_key into upstream request). This means the entire request body must be buffered at the
   # proxy layer. For this reason we have a constraint on how large the request can be, otherwise
