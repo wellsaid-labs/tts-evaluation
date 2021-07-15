@@ -285,7 +285,7 @@ def batch_text_to_speech(
         spectrogram = preds.frames.transpose(0, 1)
         spectrogram_mask = lengths_to_mask(preds.lengths)
         signals = package.signal_model(
-            spectrogram, spectrogram_mask, params.session, params.speaker
+            spectrogram, params.speaker, params.session, spectrogram_mask
         )
         lengths = preds.lengths * package.signal_model.upscale_factor
         more_results = {
