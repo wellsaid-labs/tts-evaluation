@@ -204,6 +204,10 @@ additional details.
 
 ### Updating an existing release
 
+**_Warning: avoid using the Cloud Console UI for deploying new Cloud Run
+revisions. The UI currently fails to include all of our annotations and
+configurations. You may, however, use the UI for managing revision traffic._**
+
 This scenario is likely in the event we need to update a model image or change
 the scaling configuration of an existing deployment. It is recommended to use
 the `--dry-run=server` flag as a sanity check to see which resources will be
