@@ -136,7 +136,7 @@ Setup your local development environment by following [these instructions](LOCAL
    ```
 
    💡 TIP: After setting up your VM, you may want to
-   [create an Google Machine Image](https://cloud.google.com/compute/docs/machine-images/create-machine-images)
+   [create a Google Machine Image](https://cloud.google.com/compute/docs/machine-images/create-machine-images)
    so you don't need to setup your VM from scratch again.
 
 1. Start a `screen` session with a new virtual environment...
