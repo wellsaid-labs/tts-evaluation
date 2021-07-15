@@ -85,6 +85,7 @@ function(
   maxScaleStream=config.maxScaleStream,
   minScaleValidate=config.minScaleValidate,
   maxScaleValidate=config.maxScaleValidate,
+  traffic=config.traffic
 )
   local ns = {
     apiVersion: 'v1',
@@ -123,6 +124,13 @@ function(
     timeout: 10,
     restartTimeout: 10,
     legacyContainerApiKey: legacyContainerApiKey,
+    traffic: [
+      {
+        tag: 'revision-' + t.tag,
+        percent: t.percent,
+        revisionName: 'validate-' + t.tag
+      } for t in traffic
+    ]
   });
 
   local streamSvc = common.Service({
@@ -146,6 +154,13 @@ function(
     timeout: 3600,  // 1hr
     restartTimeout: 600,  // 10 minutes
     legacyContainerApiKey: legacyContainerApiKey,
+    traffic: [
+      {
+        tag: 'revision-' + t.tag,
+        percent: t.percent,
+        revisionName: 'stream-' + t.tag
+      } for t in traffic
+    ]
   });
 
   local validateRoute = common.Route({

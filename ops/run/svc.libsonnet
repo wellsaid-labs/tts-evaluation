@@ -68,12 +68,7 @@
           ],
         },
       },
-      traffic: [
-        {
-          percent: 100,
-          latestRevision: true,
-        },
-      ],
+      traffic: spec.traffic
     },
   },
   /**
