@@ -10,7 +10,7 @@ workers.
 
 The TTS workers are deployed via Google Cloud Run, using Cloud Run for Anthos.
 The setup utilizes a GKE cluster as the execution runtime for the Cloud Run
-services. Cloud Run for Anthos is powered by knative; the service in charge of
+services. Cloud Run for Anthos is powered by Knative; the service in charge of
 scaling our "serverless" TTS workers.
 
 ![Visual Architecture Diagram](./architecture_diagram.png)
