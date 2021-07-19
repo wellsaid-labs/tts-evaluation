@@ -22,9 +22,13 @@ and `API_KEY` is the API key that should be used by the tests. Reference the
 [Kong Consumers](../ops/gateway/README.md) section of the gateway docs for
 instructions on how to generate an api key.
 
+The `API_KEY_LOCATION` variable defaults to `header`, authenticating via the
+`X-Api-Key` header. This value is configurable in order to support our previous
+infrastructure setup that authenticated via the `api_key` body parameter.
+
 2. Build and run the tests like so:
 
-   ```
+   ```bash
    docker run --rm -it --env-file dev.env $(docker build -q .) | tee results_$(date +%Y_%m_%d_%H:%M).txt
    ```
 
