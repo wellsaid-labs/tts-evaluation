@@ -45,7 +45,7 @@ https://wellsaidlabs.com/legal?document=terms_of_service.
 Each line is a single paragraph of text. The character distribution per line is
 as follows:
 
-```
+```txt
   11 300-400
   11 200-300
    9 400-500
@@ -55,4 +55,17 @@ as follows:
    3 600-700
    2 700-800
    1 1400-1500
+```
+
+### data/actors.txt
+
+A list of valid actor ids available in the `latest` model release. This is
+helpful in accounting for variances in model output and better reflects API
+usage.
+
+```txt
+   2
+   3
+   7
+   12
 ```
