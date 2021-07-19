@@ -6,7 +6,7 @@ an execution runtime for the TTS service.
 1. First enable the required services. You'll only need to do this once per
    Google Cloud Project.
 
-   ```
+   ```bash
    gcloud services enable \
        container.googleapis.com \
        containerregistry.googleapis.com \
@@ -15,9 +15,9 @@ an execution runtime for the TTS service.
 
 2. Next, create a GKE cluster:
 
-   ```
-   export name="dev"
-   gcloud beta container clusters create "$name" \
+   ```bash
+   export CLUSTER_NAME="staging"
+   gcloud beta container clusters create "$CLUSTER_NAME" \
        --region "us-central1" \
        --no-enable-basic-auth \
        --release-channel "regular" \
@@ -60,8 +60,8 @@ The static IP will be referenced in the configuration/deployment of our
 [not support global static ips](https://docs.konghq.com/kubernetes-ingress-controller/1.3.x/deployment/gke/#requirements).
 
 ```bash
-~ export ENV=$ENV
-~ gcloud compute addresses create gateway-$ENV --region=us-central1
-~ # View newly reserved ip address
-~ gcloud compute addresses list
+export ENV=$ENV
+gcloud compute addresses create gateway-$ENV --region=us-central1
+# View newly reserved ip address
+gcloud compute addresses list
 ```
