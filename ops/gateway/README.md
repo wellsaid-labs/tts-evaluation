@@ -119,7 +119,8 @@ The following will deploy the configured Kong gateway along with the Kong
 Ingress Controller.
 
 ```bash
-# We deploy the kong gateway into the kong namespace
+# Namespace required for helm install, see `namespace` argument in
+# `./kong/kong.base.yaml`
 kubectl create namespace kong
 # Install helm chart, referencing our configurations (order of file paths is important!)
 helm install gateway kong/kong \
