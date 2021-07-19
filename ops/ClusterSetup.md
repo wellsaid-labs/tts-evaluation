@@ -60,7 +60,6 @@ The static IP will be referenced in the configuration/deployment of our
 [not support global static ips](https://docs.konghq.com/kubernetes-ingress-controller/1.3.x/deployment/gke/#requirements).
 
 ```bash
-export ENV=$ENV
 gcloud compute addresses create gateway-$ENV --region=us-central1
 # View newly reserved ip address
 gcloud compute addresses list
