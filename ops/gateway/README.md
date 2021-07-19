@@ -42,13 +42,19 @@ for more details.
    git submodule update --init --recursive
    ```
 
-1. Setup env variables for image tagging
+1. Setup env variables for image tagging.
 
    ```bash
    export ENV=$ENV # ex: staging
    export PROJECT_ID=voice-service-2-313121
    export KONG_IMAGE_TAG=$KONG_IMAGE_TAG # ex: v1
    export KONG_IMAGE="gcr.io/$PROJECT_ID/kong:$KONG_IMAGE_TAG"
+   ```
+
+   ```bash
+   # List existing tags for the kong image, useful for incrementing the
+   # `$KONG_IMAGE_TAG` off a previous tag.
+   gcloud container images list-tags gcr.io/$PROJECT_ID/kong
    ```
 
 1. Build and tag the docker image locally
