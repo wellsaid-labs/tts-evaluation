@@ -21,7 +21,7 @@
           annotations: {
             'autoscaling.knative.dev/minScale': '' + spec.scale.min,  // cast to str
             'autoscaling.knative.dev/maxScale': '' + spec.scale.max,  // cast to str
-            // 'autoscaling.knative.dev/scaleDownDelay': '1m',
+            'autoscaling.knative.dev/scaleDownDelay': '90s',
             'run.googleapis.com/ingress': 'internal',
           },
         },
