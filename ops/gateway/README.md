@@ -1,11 +1,11 @@
 # Kong Gateway
 
 This directory contains the configuration and documentation around managing our
-Kong gateway; a service which routes traffic to our internal Cloud Run
-containers.
+Kong gateway; a service which routes traffic to our internal TTS services.
 
-TODO: reference/resources for quick start using kong TODO: embed architecture
-diagram (probably in ../README.md)
+Visit the
+[Getting Started with Kong Gateway](https://docs.konghq.com/getting-started-guide/2.4.x/overview/)
+guide for a better understanding of Kong-related concepts.
 
 ## Prerequisites
 
@@ -109,8 +109,6 @@ proxy:
 ### Configuring the Kubernetes Ingress Controller
 
 ## Kong Gateway Deployment
-
-TODO: sanity check: `kubectl config current-context`
 
 Useful commands:
 
@@ -289,7 +287,10 @@ kubectl delete secret/$KONG_CONSUMER_USERNAME-consumer-apikey -n kong-consumers
 
 ### Logging and Metrics
 
-TODO
+Once the `file-log` plugin has been configured, the Kong proxy will write
+detailed logs to stdout. These logs are
+[automatically picked up by Stackdriver](https://cloud.google.com/stackdriver/docs/solutions/gke/managing-logs#what_logs).
+View [instructions](../metrics/README.md) for enabling log-based metrics.
 
 ### Debugging Kong Ingress Controller
 

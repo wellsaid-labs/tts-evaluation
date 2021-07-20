@@ -8,7 +8,7 @@ latency, observable at the Kong gateway layer. The following filter will show us
 request logs on the Kong proxy service. Note the `jsonPayload.request:*` filter
 that distinguishes between request logs and the actual proxy service logs.
 
-```
+```txt
 resource.type="k8s_container"
 resource.labels.namespace_name="kong"
 resource.labels.container_name="proxy"
