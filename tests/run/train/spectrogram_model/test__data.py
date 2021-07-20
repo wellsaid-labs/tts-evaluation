@@ -46,6 +46,19 @@ def test_input_encoder():
     assert encoder.decode(encoded) == input_
 
 
+def test_input_encoder__with_mixed_cases():
+    """Test `_data.InputEncoder` handles a mixed cases in input graphemes."""
+    graphemes = ["aBc", "deF"]
+    phonemes = ["ˈ|eɪ|b|ˌ|iː|s|ˈ|iː|", "d|ˈ|ɛ|f"]
+    phoneme_separator = "|"
+    speakers = [run.data._loader.MARK_ATHERLAY]
+    sessions = ["mark"]
+    encoder = _data.InputEncoder(graphemes, phonemes, speakers, sessions, phoneme_separator)
+    input_ = _data.DecodedInput("B", "|b|ˌ|iː", run.data._loader.MARK_ATHERLAY, "mark")
+    encoded = encoder.encode(input_)
+    assert encoder.decode(encoded) == input_
+
+
 def test__random_nonoverlapping_alignments():
     """Test `_data._random_nonoverlapping_alignments` samples uniformly given a uniform
     distribution of alignments."""
