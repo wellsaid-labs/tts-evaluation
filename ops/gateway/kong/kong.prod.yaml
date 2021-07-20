@@ -30,14 +30,5 @@ resources:
     memory: 1024Mi
 
 autoscaling:
-  enabled: true
   minReplicas: 3
   maxReplicas: 9
-  ## Otherwise for clusters that do support autoscaling/v2beta, use metrics
-  metrics:
-    - type: Resource
-      resource:
-        name: cpu
-        target:
-          type: Utilization
-          averageUtilization: 75
