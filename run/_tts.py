@@ -108,7 +108,7 @@ class Checkpoints(enum.Enum):
     Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/302
     Spectrogram Model Experiment (Step: 569,580):
     https://www.comet.ml/wellsaid-labs/1-stft-mike-2020-12/f52cc3ca9a394367a13bd06f26d78832
-    Signal Model Experiment (Step: 770,773):
+    Signal Model Experiment (Step: 770,733):
     https://www.comet.ml/wellsaid-labs/1-wav-mike-2021-03/0f4a4de9937c445bb7292d2a8f719fe1
     """
 
