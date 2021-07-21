@@ -8,6 +8,7 @@ import logging
 import typing
 from concurrent import futures
 from dataclasses import field
+from enum import Enum
 from functools import partial
 from pathlib import Path
 
@@ -134,10 +135,16 @@ class Alignment(typing.NamedTuple):
         return lib.utils.stow(alignments, dtype=alignment_dtype)
 
 
+class WSL_Languages(Enum):
+    ENGLISH = "English"
+    GERMAN = "German"
+
+
 class Speaker(typing.NamedTuple):
     label: str
     name: typing.Optional[str] = None
     gender: typing.Optional[str] = None
+    language: typing.Optional[typing.Any] = WSL_Languages.ENGLISH
 
 
 @dataclasses.dataclass(frozen=True)

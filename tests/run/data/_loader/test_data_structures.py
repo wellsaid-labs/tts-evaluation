@@ -9,7 +9,6 @@ import pytest
 
 import lib
 from lib.utils import Timeline
-from run.data import _loader
 from run.data._loader.data_structures import (
     Alignment,
     IntInt,
@@ -27,6 +26,7 @@ from run.data._loader.data_structures import (
     make_passages,
 )
 from run.data._loader.utils import get_non_speech_segments_and_cache
+from run.data._loader.wsl_init__english import LINDA_JOHNSON
 from tests._utils import TEST_DATA_PATH
 
 TEST_DATA_LJ = TEST_DATA_PATH / "audio" / "bit(rate(lj_speech,24000),32).wav"
@@ -241,7 +241,7 @@ def test_passage_span__identity():
     passage = Passage(
         audio_file=metadata,
         session=Session(audio_path.name),
-        speaker=_loader.LINDA_JOHNSON,
+        speaker=LINDA_JOHNSON,
         script=script,
         transcript=script,
         alignments=Alignment.stow([alignment]),

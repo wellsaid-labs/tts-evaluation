@@ -13,6 +13,7 @@ from lib.utils import flatten_2d
 from run.data import _loader
 from run.data._loader.data_structures import Alignment
 from run.data._loader.utils import SpanGenerator, get_non_speech_segments_and_cache
+from run.data._loader.wsl_init__english import HILARY_NORIEGA
 from tests._utils import (
     TEST_DATA_PATH,
     assert_uniform_distribution,
@@ -300,7 +301,7 @@ def test_dataset_loader(mock_run, mock_get_audio_metadata):
         TEST_DATA_PATH / "datasets",
         "hilary_noriega",
         "",
-        _loader.HILARY_NORIEGA,
+        HILARY_NORIEGA,
     )
     alignments = [
         Alignment(a[0], a[1], a[2])
@@ -334,7 +335,7 @@ def test_dataset_loader(mock_run, mock_get_audio_metadata):
     assert passages[0].audio_file.sample_rate == 24000
     assert passages[0].audio_file.encoding == lib.audio.AudioEncoding.PCM_FLOAT_32_BIT
     assert path.stem in passages[0].audio_file.path.stem
-    assert passages[0].speaker == _loader.HILARY_NORIEGA
+    assert passages[0].speaker == HILARY_NORIEGA
     assert passages[0].script == "Author of the danger trail, Philip Steels, etc."
     assert passages[0].transcript == (
         "author of the danger Trail Philip Steels Etc. Not at this particular case Tom "

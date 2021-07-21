@@ -82,59 +82,92 @@ TTS_PACKAGE: TTSPackage
 SPACY: English
 # NOTE: The keys need to stay the same for backwards compatibility.
 SPEAKER_ID_TO_SPEAKER: typing.Dict[int, typing.Tuple[Speaker, Session]] = {
-    0: (_loader.JUDY_BIEBER, Session(Session("emerald_city_of_oz/wavs/emerald_city_of_oz_06"))),
-    1: (_loader.MARY_ANN, Session("northandsouth/wavs/northandsouth_09")),
-    2: (_loader.LINDA_JOHNSON, Session("LJ003")),
-    3: (_loader.HILARY_NORIEGA, Session("script_3.wav")),
-    4: (_loader.BETH_CAMERON, Session("7.wav")),
-    5: (_loader.BETH_CAMERON__CUSTOM, Session("sukutdental_021819.wav")),
-    6: (_loader.LINDA_JOHNSON, Session("LJ003")),
-    7: (_loader.SAM_SCHOLL, Session("102-107.wav")),
-    8: (_loader.ADRIENNE_WALKER_HELLER, Session("14.wav")),
-    9: (_loader.FRANK_BONACQUISTI, Session("copy_of_wsl-_script_022-027.wav")),
-    10: (_loader.SUSAN_MURPHY, Session("76-81.wav")),
-    11: (_loader.HEATHER_DOE, Session("heather_4-21_a.wav")),
-    12: (_loader.ALICIA_HARRIS, Session("well_said_script_16-21.wav")),
-    13: (_loader.GEORGE_DRAKE_JR, Session("copy_of_drake_jr-script_46-51.wav")),
-    14: (_loader.MEGAN_SINCLAIR, Session("copy_of_wsl_-_megansinclairscript40-45.wav")),
-    15: (_loader.ELISE_RANDALL, Session("wsl_elise_randall_enthusiastic_script-16.wav")),
-    16: (_loader.HANUMAN_WELCH, Session("wsl_hanuman_welch_enthusiastic_script-7.wav")),
-    17: (_loader.JACK_RUTKOWSKI, Session("wsl_jackrutkowski_enthusiastic_script_24.wav")),
-    18: (_loader.MARK_ATHERLAY, Session("wsl_markatherlay_diphone_script-4.wav")),
-    19: (_loader.STEVEN_WAHLBERG, Session("WSL_StevenWahlberg_DIPHONE_Script-6.wav")),
-    20: (_loader.ADRIENNE_WALKER_HELLER__PROMO, Session("promo_script_3_walker.wav")),
-    21: (_loader.DAMON_PAPADOPOULOS__PROMO, Session("promo_script_2_papadopoulos.wav")),
-    22: (_loader.DANA_HURLEY__PROMO, Session("promo_script_8_hurley.wav")),
-    23: (_loader.ED_LACOMB__PROMO, Session("promo_script_1_la_comb.wav")),
-    24: (_loader.LINSAY_ROUSSEAU__PROMO, Session("promo_script_1_rousseau.wav")),
-    25: (_loader.MARI_MONGE__PROMO, Session("promo_script_1_monge.wav")),
-    26: (_loader.SAM_SCHOLL__PROMO, Session("promo_script_3_scholl.wav")),
-    27: (_loader.JOHN_HUNERLACH__NARRATION, Session("johnhunerlach_enthusiastic_21.wav")),
-    28: (_loader.JOHN_HUNERLACH__RADIO, Session("johnhunerlach_diphone_1.wav")),
-    29: (_loader.OTIS_JIRY__STORY, Session("otis-jiry_the_happening_at_crossroads.wav")),
-    30: (_loader.SAM_SCHOLL__MANUAL_POST, Session("70-75.wav")),
+    0: (
+        _loader.wsl_init__english.JUDY_BIEBER,
+        Session(Session("emerald_city_of_oz/wavs/emerald_city_of_oz_06")),
+    ),
+    1: (_loader.wsl_init__english.MARY_ANN, Session("northandsouth/wavs/northandsouth_09")),
+    2: (_loader.wsl_init__english.LINDA_JOHNSON, Session("LJ003")),
+    3: (_loader.wsl_init__english.HILARY_NORIEGA, Session("script_3.wav")),
+    4: (_loader.wsl_init__english.BETH_CAMERON, Session("7.wav")),
+    5: (_loader.wsl_init__english.BETH_CAMERON__CUSTOM, Session("sukutdental_021819.wav")),
+    6: (_loader.wsl_init__english.LINDA_JOHNSON, Session("LJ003")),
+    7: (_loader.wsl_init__english.SAM_SCHOLL, Session("102-107.wav")),
+    8: (_loader.wsl_init__english.ADRIENNE_WALKER_HELLER, Session("14.wav")),
+    9: (_loader.wsl_init__english.FRANK_BONACQUISTI, Session("copy_of_wsl-_script_022-027.wav")),
+    10: (_loader.wsl_init__english.SUSAN_MURPHY, Session("76-81.wav")),
+    11: (_loader.wsl_init__english.HEATHER_DOE, Session("heather_4-21_a.wav")),
+    12: (_loader.wsl_init__english.ALICIA_HARRIS, Session("well_said_script_16-21.wav")),
+    13: (_loader.wsl_init__english.GEORGE_DRAKE_JR, Session("copy_of_drake_jr-script_46-51.wav")),
+    14: (
+        _loader.wsl_init__english.MEGAN_SINCLAIR,
+        Session("copy_of_wsl_-_megansinclairscript40-45.wav"),
+    ),
+    15: (
+        _loader.wsl_init__english.ELISE_RANDALL,
+        Session("wsl_elise_randall_enthusiastic_script-16.wav"),
+    ),
+    16: (
+        _loader.wsl_init__english.HANUMAN_WELCH,
+        Session("wsl_hanuman_welch_enthusiastic_script-7.wav"),
+    ),
+    17: (
+        _loader.wsl_init__english.JACK_RUTKOWSKI,
+        Session("wsl_jackrutkowski_enthusiastic_script_24.wav"),
+    ),
+    18: (_loader.wsl_init__english.MARK_ATHERLAY, Session("wsl_markatherlay_diphone_script-4.wav")),
+    19: (
+        _loader.wsl_init__english.STEVEN_WAHLBERG,
+        Session("WSL_StevenWahlberg_DIPHONE_Script-6.wav"),
+    ),
+    20: (
+        _loader.wsl_init__english.ADRIENNE_WALKER_HELLER__PROMO,
+        Session("promo_script_3_walker.wav"),
+    ),
+    21: (
+        _loader.wsl_init__english.DAMON_PAPADOPOULOS__PROMO,
+        Session("promo_script_2_papadopoulos.wav"),
+    ),
+    22: (_loader.wsl_init__english.DANA_HURLEY__PROMO, Session("promo_script_8_hurley.wav")),
+    23: (_loader.wsl_init__english.ED_LACOMB__PROMO, Session("promo_script_1_la_comb.wav")),
+    24: (_loader.wsl_init__english.LINSAY_ROUSSEAU__PROMO, Session("promo_script_1_rousseau.wav")),
+    25: (_loader.wsl_init__english.MARI_MONGE__PROMO, Session("promo_script_1_monge.wav")),
+    26: (_loader.wsl_init__english.SAM_SCHOLL__PROMO, Session("promo_script_3_scholl.wav")),
+    27: (
+        _loader.wsl_init__english.JOHN_HUNERLACH__NARRATION,
+        Session("johnhunerlach_enthusiastic_21.wav"),
+    ),
+    28: (_loader.wsl_init__english.JOHN_HUNERLACH__RADIO, Session("johnhunerlach_diphone_1.wav")),
+    29: (
+        _loader.wsl_init__english.OTIS_JIRY__STORY,
+        Session("otis-jiry_the_happening_at_crossroads.wav"),
+    ),
+    30: (_loader.wsl_init__english.SAM_SCHOLL__MANUAL_POST, Session("70-75.wav")),
     31: (
-        _loader.ALICIA_HARRIS__MANUAL_POST,
+        _loader.wsl_init__english.ALICIA_HARRIS__MANUAL_POST,
         Session("copy_of_well_said_script_40-45-processed.wav"),
     ),
     32: (
-        _loader.JACK_RUTKOWSKI__MANUAL_POST,
+        _loader.wsl_init__english.JACK_RUTKOWSKI__MANUAL_POST,
         Session("wsl_jackrutkowski_enthusiastic_script_27-processed.wav"),
     ),
     # NOTE: Custom voice IDs are random numbers larger than 10,000...
     # TODO: Retrain some of these voices, and reconfigure them.
-    11541: (_loader.LINCOLN__CUSTOM, Session("")),
-    13268907: (_loader.JOSIE__CUSTOM, Session("")),
-    95313811: (_loader.JOSIE__CUSTOM__MANUAL_POST, Session("")),
+    11541: (_loader.wsl_init__english.LINCOLN__CUSTOM, Session("")),
+    13268907: (_loader.wsl_init__english.JOSIE__CUSTOM, Session("")),
+    95313811: (_loader.wsl_init__english.JOSIE__CUSTOM__MANUAL_POST, Session("")),
     78252076: (Speaker(""), Session("")),  # TODO: Add Veritone Custom Voice
     70695443: (Speaker(""), Session("")),  # TODO: Add Super Hi-Fi Custom Voice
     64197676: (Speaker(""), Session("")),  # TODO: Add USP Custom Voice
     41935205: (Speaker(""), Session("")),  # TODO: Add Happify Custom Voice
     42400423: (
-        _loader.THE_EXPLANATION_COMPANY__CUSTOM_VOICE,
+        _loader.wsl_init__english.THE_EXPLANATION_COMPANY__CUSTOM_VOICE,
         Session("is_it_possible_to_become_invisible.wav"),
     ),
-    61137774: (_loader.ENERGY_INDUSTRY_ACADEMY__CUSTOM_VOICE, Session("sample_script_2.wav")),
+    61137774: (
+        _loader.wsl_init__english.ENERGY_INDUSTRY_ACADEMY__CUSTOM_VOICE,
+        Session("sample_script_2.wav"),
+    ),
 }
 
 

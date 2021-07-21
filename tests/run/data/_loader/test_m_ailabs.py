@@ -6,6 +6,8 @@ from unittest import mock
 import lib
 import run.data._loader
 from run.data._loader import Alignment
+from run.data._loader.m_ailabs__english_datasets import US_DATASET, m_ailabs_en_us_speech_dataset
+from run.data._loader.wsl_init__english import JUDY_BIEBER
 from tests import _utils
 from tests.run.data._loader._utils import maybe_normalize_audio_and_cache_side_effect
 
@@ -33,7 +35,7 @@ def test_m_ailabs_speech_dataset(
         directory = pathlib.Path(path)
         (directory / archive.parent.name).mkdir()
         shutil.copy(archive, directory / archive.parent.name / archive.name)
-        data = run.data._loader.m_ailabs.m_ailabs_en_us_speech_dataset(directory=directory)
+        data = m_ailabs_en_us_speech_dataset(directory=directory)
         assert len(data) == 2046
         assert sum([len(r.script) for r in data]) == 226649
         path = directory / archive.parent.name / "en_US/by_book/female/judy_bieber"
@@ -41,15 +43,15 @@ def test_m_ailabs_speech_dataset(
         assert data[0] == run.data._loader.Passage(
             audio_file=_utils.make_metadata(path),
             session=run.data._loader.Session("dorothy_and_wizard_oz/wavs/dorothy_and_wizard_oz_01"),
-            speaker=run.data._loader.JUDY_BIEBER,
+            speaker=JUDY_BIEBER,
             script="To My Readers.",
             transcript="To My Readers.",
             alignments=Alignment.stow([Alignment((0, 14), (0.0, 0.0), (0, 14))]),
             other_metadata={
                 1: "To My Readers.",
                 "book": run.data._loader.m_ailabs.Book(
-                    dataset=run.data._loader.m_ailabs.US_DATASET,
-                    speaker=run.data._loader.JUDY_BIEBER,
+                    dataset=US_DATASET,
+                    speaker=JUDY_BIEBER,
                     title="dorothy_and_wizard_oz",
                 ),
             },

@@ -7,7 +7,8 @@ import pytest
 import lib
 import run
 from lib.text import _line_grapheme_to_phoneme
-from run.data._loader import JUDY_BIEBER, Session
+from run.data._loader import Session
+from run.data._loader.wsl_init__english import JUDY_BIEBER
 from run.deploy.worker import FlaskException, validate_and_unpack
 from run.train.spectrogram_model._data import InputEncoder
 
