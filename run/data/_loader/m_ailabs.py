@@ -26,7 +26,13 @@ from pathlib import Path
 
 from torchnlp.download import download_file_maybe_extract
 
-from run.data._loader.data_structures import Passage, Session, Speaker, UnprocessedPassage
+from run.data._loader.data_structures import (
+    Passage,
+    Session,
+    Speaker,
+    UnprocessedPassage,
+    WSL_Languages,
+)
 from run.data._loader.utils import conventional_dataset_loader, make_passages
 
 logger = logging.getLogger(__name__)
@@ -46,12 +52,12 @@ def _book_to_metadata_path(book: Book, root: Path) -> Path:
     return root / "by_book" / gender / book.speaker.label / book.title / "metadata.csv"
 
 
-def _metadata_path_to_book(metadata_path: Path, root: Path) -> Book:
+def _metadata_path_to_book(metadata_path: Path, root: Path, language: WSL_Languages) -> Book:
     """Given a path to a book's "metadata.csv", returns the corresponding `Book` object."""
     # EXAMPLE: "by_book/female/judy_bieber/dorothy_and_wizard_oz/metadata.csv"
     metadata_path = metadata_path.relative_to(root)
     speaker_gender, speaker_label, book_title = metadata_path.parts[1:4]
-    speaker = Speaker(speaker_label, gender=speaker_gender.lower())
+    speaker = Speaker(speaker_label, gender=speaker_gender.lower(), language=language)
     return Book(Dataset(root.name), speaker, book_title)
 
 
@@ -68,6 +74,7 @@ def m_ailabs_speech_dataset(
     extracted_name: str,
     url: str,
     books: typing.List[Book],
+    language: WSL_Languages,
     check_files: typing.List[str],
     root_directory_name: str = "M-AILABS",
     metadata_pattern: str = "**/metadata.csv",
@@ -99,7 +106,7 @@ def m_ailabs_speech_dataset(
     directory = directory / extracted_name
 
     metadata_paths = list(directory.glob(metadata_pattern))
-    downloaded_books = set([_metadata_path_to_book(p, directory) for p in metadata_paths])
+    downloaded_books = set([_metadata_path_to_book(p, directory, language) for p in metadata_paths])
     assert len(set(books) - downloaded_books) == 0, "Unable to find every book in `books`."
 
     passages: typing.List[typing.List[UnprocessedPassage]] = []

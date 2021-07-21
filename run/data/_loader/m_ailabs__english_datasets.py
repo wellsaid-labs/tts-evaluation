@@ -1,7 +1,7 @@
 """
 Sub-module of M-AILABS module for downloading and processing ENGLISH datasets.
 """
-from run.data._loader.data_structures import Speaker
+from run.data._loader.data_structures import Speaker, WSL_Languages
 from run.data._loader.m_ailabs import Book, Dataset, m_ailabs_speech_dataset
 
 UK_DATASET = Dataset("en_UK")
@@ -62,6 +62,7 @@ def m_ailabs_en_us_speech_dataset(
     url="https://data.solak.de/data/Training/stt_tts/en_US.tgz",
     extracted_name=str(US_DATASET),
     books=US_BOOKS,
+    language=WSL_Languages.ENGLISH,
     check_files=["en_US/by_book/info.txt"],
     **kwargs,
 ):
@@ -73,7 +74,9 @@ def m_ailabs_en_us_speech_dataset(
     NOTE: Based on 100 clips from the M-AILABS dataset, around 10% of the clips would end too early.
     Furthermore, it seemed like the text was verbalized accuractely.
     """
-    return m_ailabs_speech_dataset(directory, extracted_name, url, books, check_files, **kwargs)
+    return m_ailabs_speech_dataset(
+        directory, extracted_name, url, books, language, check_files, **kwargs
+    )
 
 
 def m_ailabs_en_uk_speech_dataset(
@@ -81,6 +84,7 @@ def m_ailabs_en_uk_speech_dataset(
     url="https://data.solak.de/data/Training/stt_tts/en_UK.tgz",
     extracted_name=str(UK_DATASET),
     books=UK_BOOKS,
+    language=WSL_Languages.ENGLISH,
     check_files=["en_UK/by_book/info.txt"],
     **kwargs,
 ):
@@ -89,4 +93,6 @@ def m_ailabs_en_uk_speech_dataset(
     The dataset is 4GB compressed. The file to be downloaded is called `en_UK.tgz`. It contains
     45 hours of audio. When extracted, it creates a list of 2 books.
     """
-    return m_ailabs_speech_dataset(directory, extracted_name, url, books, check_files, **kwargs)
+    return m_ailabs_speech_dataset(
+        directory, extracted_name, url, books, language, check_files, **kwargs
+    )

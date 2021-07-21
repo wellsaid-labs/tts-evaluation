@@ -90,6 +90,7 @@ def m_ailabs_de_de_speech_dataset(
     url="https://data.solak.de/data/Training/stt_tts/de_DE.tgz",
     extracted_name=str(DE_DATASET),
     books=DE_BOOKS,
+    language=WSL_Languages.GERMAN,
     check_files=["de_DE/by_book/info.txt"],
     **kwargs,
 ):
@@ -98,4 +99,6 @@ def m_ailabs_de_de_speech_dataset(
     The dataset is 21GB compressed. The file to be downloaded is called `de_DE.tgz`. It contains
     237 hours of audio. When extracted, it creates a list of 32 books.
     """
-    return m_ailabs_speech_dataset(directory, extracted_name, url, books, check_files, **kwargs)
+    return m_ailabs_speech_dataset(
+        directory, extracted_name, url, books, language, check_files, **kwargs
+    )
