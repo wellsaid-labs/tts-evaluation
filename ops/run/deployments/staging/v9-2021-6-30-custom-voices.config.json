@@ -4,7 +4,7 @@
   "version": "1",
   "image": "gcr.io/voice-service-2-313121/speech-api-worker@sha256:5f240da01e1c43e464351ca8c18b3c602058d6e7b001b6134795fbc313f7e450",
   "imageEntrypoint": "run.deploy.worker:app",
-  "includeImageApiKeys": "true",
+  "provideApiKeyAuthForLegacyContainerSupport": "true",
   "minScaleStream": "0",
   "maxScaleStream": "32",
   "minScaleValidate": "0",

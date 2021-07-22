@@ -100,7 +100,7 @@ releases. To deploy a new model, follow these steps:
      "version": "4",
      "image": "gcr.io/voice-service-2-313121/speech-api-worker@sha256:c5de71f13aff22b9171f23f9921796f93e1765fefa9ba5ca6426836696996a75",
      "imageEntrypoint": "run.deploy.worker:app",
-     "includeImageApiKeys": "true",
+     "provideApiKeyAuthForLegacyContainerSupport": "true",
      "minScaleStream": "0",
      "maxScaleStream": "32",
      "minScaleValidate": "0",
@@ -110,20 +110,20 @@ releases. To deploy a new model, follow these steps:
 
    A few notes about the parameters:
 
-   - `$env` refers to the cluster environment (currently `staging` or `prod`)
-     and is mainly used for hostname configuration.
+   - `env` refers to the cluster environment (currently `staging` or `prod`) and
+     is mainly used for hostname configuration.
 
-   - `$model` is a unique identifier for the model being deployed. It'll
+   - `model` is a unique identifier for the model being deployed. It'll
      determine the on-cluster DNS name for the service, which will be
      `[stream|validate].$model.svc.cluster.local`. It can only contain lowercase
      alphanumeric characters and dashes.
 
-   - `$version` is a unique identifier for the revision being released. It can
+   - `version` is a unique identifier for the revision being released. It can
      only include lowercase alphanumeric characters and dashes, so we choose to
      use a simple monotonic integer. So if it's the first time it's being
      released us `1`, then `2` and so on.
 
-   - `$image` is the fully qualified image to deploy. You should use an
+   - `image` is the fully qualified image to deploy. You should use an
      [image digest](https://cloud.google.com/architecture/using-container-images)
      instead of a tag, since they're immutable. If you know the tag you'd like
      to release you can use the command below to determine the digest:
@@ -140,23 +140,24 @@ releases. To deploy a new model, follow these steps:
      gcr.io/voice-service-2-313121/speech-api-worker@sha256:3af2c7a3a88806e0ff5e5c0659ab6a97c42eba7f6e5d61e33dbc9244163e17d3
      ```
 
-   - `$imageEntrypoint` is a string value that references the python service
+   - `imageEntrypoint` is a string value that references the python service
      entry point. Currently, this is for legacy image support (images prior to
      v9 that required a different entry).
 
-   - `$includeImageApiKeys` is a boolean flag that determines whether or not to
-     inject api keys into the proxied upstream request. This is only for
-     backwards compatibility, enabled support of our existing tts worker images.
+   - `provideApiKeyAuthForLegacyContainerSupport` is a boolean flag that
+     determines whether or not to inject api keys into the proxied upstream
+     request. This is only for backwards compatibility, enabling support of our
+     existing tts worker images.
 
-   - `$minScaleStream|$minScaleValidate` is an integer value determining how
-     many container instances should remain idle, see the
+   - `minScaleStream|minScaleValidate` is an integer value determining how many
+     container instances should remain idle, see the
      [cloud run configuration](https://cloud.google.com/run/docs/configuring/min-instances)
      for more details. Considering our validation service can handle multiple
      concurrent short-lived requests it would make sense to have a smaller min
      scale value than the stream service. For our staging environment and low
      demand model versions we will want to scale to 0.
 
-   - `$maxScaleStream|$maxScaleValidate` is an integer value that puts a ceiling
+   - `maxScaleStream|maxScaleValidate` is an integer value that puts a ceiling
      on the number of container instances we can scale to. This may be useful
      for preventing over-scaling in response to a spike in requests and/or
      managing costs.

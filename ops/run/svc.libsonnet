@@ -56,12 +56,11 @@
                   path: '/healthy',
                 },
               },
-            } + (if "apiKeySecretName" in spec && spec.apiKeySecretName != null then {
-              envFrom: [
+            } + (if "legacyContainerApiKey" in spec && spec.legacyContainerApiKey != null then {
+              env: [
                 {
-                  secretRef: {
-                    name: spec.apiKeySecretName,
-                  },
+                  name: 'LEGACY_SPEECH_API_KEY',
+                  value: spec.legacyContainerApiKey,
                 },
               ],
             } else {}),
@@ -86,40 +85,7 @@
    *    - Ingress: path/service routing (augmented by the KongIngress resource)
    */
   Route(spec):
-    // NOTE: in the event that we add the api_key to body transformation we store the plugin
-    // configuration in a Secret.
     // https://docs.konghq.com/hub/kong-inc/request-transformer/
-    local requestTransformerConfig = {
-      replace: {
-        headers: [
-          'host:' + spec.serviceName + '.' + spec.namespace + '.svc.cluster.local',
-        ],
-      },
-      add: {
-        headers: [
-          'host:' + spec.serviceName + '.' + spec.namespace + '.svc.cluster.local',
-        ],
-      } + if spec.apiKey != null then {
-        body: [
-          'api_key:' + spec.apiKey
-        ],
-      } else {},
-    };
-
-    local requestTransformerConfigSecret = if spec.apiKey != null then {
-      apiVersion: 'v1',
-      kind: 'Secret',
-      metadata: {
-        name: 'route-' + spec.serviceName + '-request-transformer-config',
-        namespace: spec.namespace,
-      },
-      stringData: {
-        // https://docs.konghq.com/hub/kong-inc/request-transformer/
-        'request-transformer-config': std.manifestYamlDoc(requestTransformerConfig, true),
-      },
-      type: 'Opaque',
-    };
-
     local requestTransformer = {
       apiVersion: 'configuration.konghq.com/v1',
       kind: 'KongPlugin',
@@ -128,17 +94,23 @@
         namespace: spec.namespace,
       },
       plugin: 'request-transformer',
-    } + (if spec.apiKey != null then {
-      configFrom: {
-        secretKeyRef: {
-          namespace: spec.namespace,
-          name: requestTransformerConfigSecret.metadata.name,
-          key: std.objectFields(requestTransformerConfigSecret.stringData)[0]
+      config: {
+        replace: {
+          headers: [
+            'host:' + spec.serviceName + '.' + spec.namespace + '.svc.cluster.local',
+          ],
         },
-      },
-    } else {
-      config: requestTransformerConfig
-    });
+        add: {
+          headers: [
+            'host:' + spec.serviceName + '.' + spec.namespace + '.svc.cluster.local',
+          ],
+        } + if spec.legacyContainerApiKey != null then {
+          body: [
+            'api_key:' + spec.legacyContainerApiKey
+          ],
+        } else {}
+      }
+    };
 
     // https://docs.konghq.com/kubernetes-ingress-controller/1.2.x/references/custom-resources/#kongingress
     local kongIngress = {
@@ -208,6 +180,5 @@
         ],
       },
     };
-    // NOTE: prune simply removes requestTransformerConfigSecret if null
-    std.prune([requestTransformerConfigSecret, requestTransformer, kongIngress, ingress])
+    [requestTransformer, kongIngress, ingress]
 }

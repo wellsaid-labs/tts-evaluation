@@ -18,7 +18,7 @@
  *      --tla-str version=1 \
  *      --tla-str image=gcr.io/voice/tts@sha256:... \
  *      --tla-str imageEntrypoint=src.service.worker:app \
- *      --tla-str includeImageApiKeys=false \
+ *      --tla-str provideApiKeyAuthForLegacyContainerSupport=false \
  *      --tla-str minScaleStream=0 \
  *      --tla-str maxScaleStream=32 \
  *      --tla-str minScaleValidate=0 \
@@ -46,13 +46,14 @@
  * args. Currently, this is for legacy image support (images prior to v9
  * that required a different entry).
  *
- * The includeImageApiKeys parameter (optional) is intended to support our
- * existing docker images that require api key authentication. These values
- * are stored in a Secret and will be injected as environment variables to
+ * The provideApiKeyAuthForLegacyContainerSupport parameter (optional) is
+ * intended to support our existing docker images that require api key
+ * authentication. These values will be injected as environment variables to
  * the tts image. Kong will inject these api keys prior to proxying the
  * upstream request and will only exist for backwards compatibility. On
  * that note, consumer-facing credentials will be handled via Kong so make
- * sure not to get includeImageApiKeys confused with consumer-facing api keys.
+ * sure not to get provideApiKeyAuthForLegacyContainerSupport confused with
+ * consumer-facing api keys.
  *
  * The minScaleStream|minScaleValidate option determines the min number of
  * cloud run containers to run at all time. For our staging environment and
@@ -79,7 +80,7 @@ function(
   version=config.version,
   image=config.image,
   imageEntrypoint=config.imageEntrypoint,
-  includeImageApiKeys=config.includeImageApiKeys,
+  provideApiKeyAuthForLegacyContainerSupport=config.provideApiKeyAuthForLegacyContainerSupport,
   minScaleStream=config.minScaleStream,
   maxScaleStream=config.maxScaleStream,
   minScaleValidate=config.minScaleValidate,
@@ -98,23 +99,12 @@ function(
     else if env == 'prod' then
     'tts.wellsaidlabs.com';
 
-  local apiKey = if includeImageApiKeys == 'true' then
-    local apiKeys = import 'apikeys.json';
-    std.objectValues(apiKeys)[0];
-
-  local apiKeySecret = if includeImageApiKeys == 'true' then
-    local apiKeys = import 'apikeys.json';
-    {
-      apiVersion: 'v1',
-      kind: 'Secret',
-      metadata: {
-        name: 'api-keys',
-        namespace: ns.metadata.name,
-      },
-      data: { [k]: std.base64(apiKeys[k]) for k in std.objectFields(apiKeys) },
-    };
-
-  local apiKeySecretName = if apiKeySecret != null then apiKeySecret.metadata.name;
+  local legacyContainerApiKey = if provideApiKeyAuthForLegacyContainerSupport == 'true' then
+    // NOTE: this value is arbitrary and is only intended to support the auth
+    // interface of our existing TTS docker images. It cannot be used for
+    // authenticating external users and is only applicable to internal cluster
+    // communications.
+    'pKfRepQY-ln4pCOnCxZOoHNXArHbxLwj5To26aS92OY';
 
   local validateSvc = common.Service({
     name: 'validate',
@@ -132,7 +122,7 @@ function(
     concurrency: 4,
     timeout: 10,
     restartTimeout: 10,
-    apiKeySecretName: apiKeySecretName,
+    legacyContainerApiKey: legacyContainerApiKey,
   });
 
   local streamSvc = common.Service({
@@ -155,7 +145,7 @@ function(
     concurrency: 1,
     timeout: 3600,  // 1hr
     restartTimeout: 600,  // 10 minutes
-    apiKeySecretName: apiKeySecretName,
+    legacyContainerApiKey: legacyContainerApiKey,
   });
 
   local validateRoute = common.Route({
@@ -163,7 +153,7 @@ function(
     namespace: ns.metadata.name,
     serviceName: validateSvc.metadata.name,
     servicePaths: ['/api/text_to_speech/input_validated'],
-    apiKey: apiKey,
+    legacyContainerApiKey: legacyContainerApiKey,
   });
 
   local streamRoute = common.Route({
@@ -171,13 +161,11 @@ function(
     namespace: ns.metadata.name,
     serviceName: streamSvc.metadata.name,
     servicePaths: ['/api/text_to_speech/stream'],
-    apiKey: apiKey,
+    legacyContainerApiKey: legacyContainerApiKey,
   });
 
-  // Note: prune simply removes the apiKeySecret entry if null
-  std.prune([
+  [
     ns,
-    apiKeySecret,
     validateSvc,
     streamSvc
-  ] + validateRoute + streamRoute)
+  ] + validateRoute + streamRoute
