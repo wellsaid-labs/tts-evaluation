@@ -8,5 +8,11 @@
   "minScaleStream": "1",
   "maxScaleStream": "32",
   "minScaleValidate": "1",
-  "maxScaleValidate": "8"
+  "maxScaleValidate": "8",
+  "traffic": [
+    {
+      "tag": "1",
+      "percent": 100
+    }
+  ]
 }
