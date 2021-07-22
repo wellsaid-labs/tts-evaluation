@@ -59,6 +59,7 @@
             } + (if "legacyContainerApiKey" in spec && spec.legacyContainerApiKey != null then {
               env: [
                 {
+                  // NOTE: _SPEECH_API_KEY suffix required per legacy container auth logic
                   name: 'LEGACY_SPEECH_API_KEY',
                   value: spec.legacyContainerApiKey,
                 },

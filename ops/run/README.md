@@ -70,25 +70,6 @@ releases. To deploy a new model, follow these steps:
    gcloud container clusters get-credentials $CLUSTER_NAME --region us-central1
    ```
 
-1. (optional) As of now our tts service no longer needs to handle
-   authentication, as it is handled at the gateway layer. However, in order to
-   support our existing images we need to pass an api key from the gateway to
-   the tts service. This api key is only used on-cluster and is somewhat
-   arbitrary. The api key must be present in a file named `apikeys.json` that
-   lives in the same directory as this README. WellSaidLabs should eventually
-   store this file in something like
-   [Google Secret Manager](https://cloud.google.com/secret-manager) and add the
-   command for downloading it here.
-
-   The contents of that file should look something like this (note the
-   `_SPEECH_API_KEY` suffix):
-
-   ```json
-   {
-     "SAMS_SPEECH_API_KEY": "XXX"
-   }
-   ```
-
 1. Create the configuration for the new model release, ex:
    `deployments/staging/v9.config.json`. These configurations map directly to
    arguments found in `tts.jsonnet`.
@@ -166,24 +147,31 @@ releases. To deploy a new model, follow these steps:
    manifests prior to deployment, run the `jsonnet` command below
 
    ```bash
+   export ENV=$ENV # ex: staging
+   export MODEL=$MODEL # ex: v9
+   # deploy
+   ./deploy.sh deployments/$ENV/$MODEL.config.json
+   ```
+
+   Optionally, if you need to debug or view the generated manifests:
+
+   ```bash
    # (optional) dump the release manifests
    jsonnet -y tts.jsonnet \
-     --ext-code-file "config=./ops/run/deployments/$env/$model.config.json"
-   # deploy
-   ./deploy.sh deployments/$env/$model.config.json
+     --ext-code-file "config=./ops/run/deployments/$ENV/$MODEL.config.json"
    ```
 
 1. After running the command you can see the status of what was deployed via
    this command:
 
    ```bash
-   kubectl get --namespace $model service.serving.knative.dev
+   kubectl get --namespace $MODEL service.serving.knative.dev
    ```
 
    If something didn't work, you can investigate by first listing all resources:
 
    ```bash
-   kubectl get --namespace $model all
+   kubectl get --namespace $MODEL all
    ```
 
    Then depending on the output use commands like `kubectl describe` and
@@ -226,10 +214,10 @@ parameters, you would run this command with `version=2`.
    ```bash
    # (optional) kubectl dry run
    jsonnet -y tts.jsonnet \
-     --ext-code-file "config=./ops/run/deployments/$env/$model.config.json" \
+     --ext-code-file "config=./ops/run/deployments/$ENV/$MODEL.config.json" \
      | kubectl apply --dry-run=server -f -
    # deploy
-   ./deploy deployments/$env/$model.config.json
+   ./deploy deployments/$ENV/$MODEL.config.json
    ```
 
 ### Deleting a release
@@ -238,5 +226,5 @@ Since all resources related to a model release are namespace'd we can simply
 delete the namespace.
 
 ```bash
-kubectl delete namespace $model
+kubectl delete namespace $MODEL
 ```
