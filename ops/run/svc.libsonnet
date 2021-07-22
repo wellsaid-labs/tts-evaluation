@@ -83,20 +83,24 @@
   Route(spec):
     // NOTE: this transformer allows us to route `Accept-Version` headers to individual
     // Cloud Run revisions.
-    // @see https://docs.konghq.com/hub/kong-inc/request-transformer/
-    local hostNameTransformer = |||
-      $((function()
-        local value = headers['accept-version'] or ''
-        local version, revision = value, nil
-        local index = value:find('.', 1, true)
-        if index then
-          version = value:sub(1, index - 1)
-          revision = value:sub(index + 1)
-          return 'revision-'..revision..'-%(serviceName)s.%(namespace)s.svc.cluster.local'
-        end
-        return '%(serviceName)s.%(namespace)s.svc.cluster.local';
-      end)())
-    ||| % spec;
+    // https://docs.konghq.com/hub/kong-inc/request-transformer/
+    local hostNameTransformer = std.strReplace(|||
+        $((function()
+          local value = headers['accept-version'] or ''
+          local version, revision = value, nil
+          local index = value:find('.', 1, true)
+          if index then
+            version = value:sub(1, index - 1)
+            revision = value:sub(index + 1)
+            return 'revision-'..revision..'-%(serviceName)s.%(namespace)s.svc.cluster.local';
+          end
+          return '%(serviceName)s.%(namespace)s.svc.cluster.local';
+        end)())
+      ||| % spec,
+      // Remove newline that was being added to end of lua lambda function output
+      'end)())\n',
+      'end)())'
+    );
 
     local requestTransformer = {
       apiVersion: 'configuration.konghq.com/v1',
