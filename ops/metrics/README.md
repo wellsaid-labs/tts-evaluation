@@ -24,7 +24,6 @@ gcloud logging read \
    resource.labels.namespace_name=kong AND\
    resource.labels.container_name=proxy AND\
    jsonPayload.request:*" --limit 1 --format json
-
 ```
 
 ## Creating log-based Metrics

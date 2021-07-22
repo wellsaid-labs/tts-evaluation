@@ -66,7 +66,8 @@ releases. To deploy a new model, follow these steps:
 1. Connect to the target cluster:
 
    ```bash
-   gcloud container clusters get-credentials $cluster --region us-central1
+   export CLUSTER_NAME="staging"
+   gcloud container clusters get-credentials $CLUSTER_NAME --region us-central1
    ```
 
 1. (optional) As of now our tts service no longer needs to handle

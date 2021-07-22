@@ -26,7 +26,8 @@ The `API_KEY_LOCATION` variable defaults to `header`, authenticating via the
 `X-Api-Key` header. This value is configurable in order to support our previous
 infrastructure setup that authenticated via the `api_key` body parameter.
 
-2. Build and run the tests like so:
+1. Build and run the tests like so (replacing `dev.env` with your environment
+   configuration file):
 
    ```bash
    docker run --rm -it --env-file dev.env $(docker build -q .) | tee results_$(date +%Y_%m_%d_%H:%M).txt
