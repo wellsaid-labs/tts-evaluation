@@ -9,10 +9,10 @@
  * @see https://k6.io/docs/using-k6/options/ `options`
  * @see https://k6.io/docs/using-k6/test-life-cycle `default export`
  */
-import http from "k6/http";
+import { check, sleep } from "k6";
 import { SharedArray } from "k6/data";
+import http from "k6/http";
 import { Trend } from "k6/metrics";
-import { sleep, check } from "k6";
 
 const origin = __ENV.ORIGIN;
 const apiKey = __ENV.API_KEY;
@@ -24,6 +24,7 @@ let characterLengthTrend = new Trend("character_length");
 export let options = {
   scenarios: {
     ramping_request_rate: {
+      // https://k6.io/docs/using-k6/scenarios/executors/ramping-arrival-rate/
       executor: "ramping-arrival-rate",
       startRate: 8,
       timeUnit: "1m",
@@ -71,16 +72,16 @@ export default function main() {
   // traffic.
   const validateUrl = `${origin}/api/text_to_speech/input_validated`;
   const streamUrl = `${origin}/api/text_to_speech/stream`;
-  // text
+
   const maxLineNo = lines.length - 1;
   const lineNo = Math.min(__VU + __ITER, (__VU + __ITER) % maxLineNo);
   const text = lines[lineNo];
   characterLengthTrend.add(text.length);
-  // actor
+
   const maxActorIdx = actors.length - 1;
   const actorIdx = Math.min(__VU + __ITER, (__VU + __ITER) % maxActorIdx);
   const actor = actors[actorIdx];
-  // request
+
   const body = JSON.stringify({
     text,
     speaker_id: actor,
