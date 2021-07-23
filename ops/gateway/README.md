@@ -192,11 +192,10 @@ jsonnet ./ops/gateway/kong/plugins/fallback-route.jsonnet \
 
 The [`key-auth`](https://docs.konghq.com/hub/kong-inc/key-auth/) plugin allows
 us to secure our API using API key authorization. It is possible to restrict
-access on a route, service, or consumer basis but for now we will be enabling
-the key-auth plugin globally.
+access on a route, service, or consumer basis.
 
 ```bash
-kubectl apply -f ./ops/gateway/kong/plugins/global-key-auth.yaml
+kubectl apply -f ./ops/gateway/kong/plugins/key-auth.yaml
 ```
 
 Once applied, any requests to the gateway will now fail with a 401 Unauthorized

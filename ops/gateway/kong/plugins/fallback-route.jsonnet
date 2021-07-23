@@ -3,9 +3,13 @@
  * fallback route. This is a catch-all route that uses Kong's request-termination
  * plugin that ends the request at the proxy layer.
  *
+ * Note that the `includeTls` argument is needed as part of our TLS Certificate
+ * issuance process (see `~/ops/tls/README.md)
+ *
  *    jsonnet fallback-route.jsonnet \
  *      -y \
  *      --tla-str env=staging
+ *      --tla-str includeTls=true
  *
  *    jsonnet fallback-route.jsonnet ... | kubectl apply -f -
  *
@@ -14,36 +18,46 @@
  * Reference: https://docs.konghq.com/hub/kong-inc/request-termination/
  */
 
-function(env)
+function(env, includeTls='true')
 
   local hostname = if env == 'staging' then
     'staging.tts.wellsaidlabs.com'
     else if env == 'prod' then
     'tts.wellsaidlabs.com';
 
+  local plugin = {
+    apiVersion: 'configuration.konghq.com/v1',
+    kind: 'KongPlugin',
+    metadata: {
+      name: 'tts-wellsaidlabs-com-request-termination',
+      namespace: 'kong',
+    },
+    config: {
+      status_code: 404,
+      message: 'WellSaid Labs - Resource Not Found',
+    },
+    plugin: 'request-termination',
+  };
+
   local ingress = {
     apiVersion: 'extensions/v1beta1',
     kind: 'Ingress',
     metadata: {
-      name: 'fallback-route',
+      name: 'tts-wellsaidlabs-com',
       namespace: 'kong',
       annotations: {
         'kubernetes.io/ingress.class': 'kong',
-        'konghq.com/plugins': 'fallback-route-request-termination',
+        'konghq.com/plugins': plugin.metadata.name,
+      } + (if includeTls == 'true' then {
         // Value must match name of ClusterIssuer, see ../../tls/clsuterIssuer.yaml
         'cert-manager.io/cluster-issuer': 'letsencrypt-cluster-issuer',
         'kubernetes.io/tls-acme': 'true',
-      },
+      } else {}),
     },
     spec: {
-      tls: [
-        {
-          secretName: 'tts-wellsaidlabs-com',
-          hosts: [hostname],
-        },
-      ],
       rules: [
         {
+          host: hostname,
           http: {
             paths: [
               {
@@ -58,21 +72,14 @@ function(env)
           },
         },
       ],
-    },
-  };
-
-  local plugin = {
-    apiVersion: 'configuration.konghq.com/v1',
-    kind: 'KongPlugin',
-    metadata: {
-      name: 'fallback-route-request-termination',
-      namespace: 'kong',
-    },
-    config: {
-      status_code: 404,
-      message: 'WellSaid Labs - Resource Not Found',
-    },
-    plugin: 'request-termination',
+    } + (if includeTls == 'true' then {
+      tls: [
+        {
+          secretName: 'tts-wellsaidlabs-com',
+          hosts: [hostname],
+        },
+      ],
+    } else {}),
   };
 
   [ingress, plugin]

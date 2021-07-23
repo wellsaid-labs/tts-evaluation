@@ -169,7 +169,7 @@
         annotations: {
           'kubernetes.io/ingress.class': 'kong',
           'konghq.com/override': kongIngress.metadata.name,
-          'konghq.com/plugins': requestTransformer.metadata.name,
+          'konghq.com/plugins': 'kong-cluster-key-auth,' + requestTransformer.metadata.name,
           'konghq.com/protocols':'https',
           'konghq.com/https-redirect-status-code':'301',
         },
