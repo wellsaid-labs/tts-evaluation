@@ -97,6 +97,9 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
    VM_ZONE=$(python -m run.utils.gcp zone --name $VM_NAME)
    VM_IP=$(python -m run.utils.gcp ip --name $VM_NAME --zone=$VM_ZONE)
    VM_USER=$(python -m run.utils.gcp user --name $VM_NAME --zone=$VM_ZONE)
+   ```
+
+   ```zsh
    sudo python3 -m run.utils.lsyncd $(pwd) /opt/wellsaid-labs/Text-to-Speech \
                                     --public-dns $VM_IP \
                                     --user $VM_USER \
@@ -131,7 +134,8 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
    cd /opt/wellsaid-labs/Text-to-Speech
    sudo apt-get update
    . run/utils/apt_install.sh
-
+    ```
+    ```
    python3.8 -m venv venv
    . venv/bin/activate
    python -m pip install wheel pip --upgrade

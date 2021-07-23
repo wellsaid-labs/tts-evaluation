@@ -108,7 +108,7 @@ class Checkpoints(enum.Enum):
     Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/302
     Spectrogram Model Experiment (Step: 569,580):
     https://www.comet.ml/wellsaid-labs/1-stft-mike-2020-12/f52cc3ca9a394367a13bd06f26d78832
-    Signal Model Experiment (Step: 770,773):
+    Signal Model Experiment (Step: 770,733):
     https://www.comet.ml/wellsaid-labs/1-wav-mike-2021-03/0f4a4de9937c445bb7292d2a8f719fe1
     """
 
@@ -148,10 +148,10 @@ class TTSPackage(typing.NamedTuple):
     input_encoder: InputEncoder
     spectrogram_model: SpectrogramModel
     signal_model: SignalModel
-    spectrogram_model_comet_experiment_key: str
-    spectrogram_model_step: int
-    signal_model_comet_experiment_key: str
-    signal_model_step: int
+    spectrogram_model_comet_experiment_key: typing.Optional[str] = None
+    spectrogram_model_step: typing.Optional[int] = None
+    signal_model_comet_experiment_key: typing.Optional[str] = None
+    signal_model_step: typing.Optional[int] = None
 
 
 def package_tts(
@@ -285,7 +285,7 @@ def batch_text_to_speech(
         spectrogram = preds.frames.transpose(0, 1)
         spectrogram_mask = lengths_to_mask(preds.lengths)
         signals = package.signal_model(
-            spectrogram, spectrogram_mask, params.session, params.speaker
+            spectrogram, params.speaker, params.session, spectrogram_mask
         )
         lengths = preds.lengths * package.signal_model.upscale_factor
         more_results = {

@@ -28,6 +28,18 @@ Setup your local development environment by following [these instructions](LOCAL
 
    💡 TIP: Don't place all your preemptible instances in the same zone, just in case one zone
    runs out of capacity.
+   
+   If starting from scratch, use a standard ubuntu image:
+   ```
+   IMAGE_PROJECT='ubuntu-os-cloud'
+   IMAGE_FAMILY='ubuntu-1804-lts'
+   ```
+   If starting from your own image, set the image project and family appropriately:
+   ```
+   IMAGE_PROJECT='voice-research-255602'
+   IMAGE_FAMILY='you-image-family-name'    # Example: $IMAGE_FAMILY used to image your machine
+   ```
+   
 
 1. Create an instance for training...
 
@@ -40,8 +52,8 @@ Setup your local development environment by following [these instructions](LOCAL
       --gpu-count=4 \
       --disk-size=512 \
       --disk-type='pd-balanced' \
-      --image-project='ubuntu-os-cloud' \
-      --image-family='ubuntu-1804-lts' \
+      --image-project=$IMAGE_PROJECT \
+      --image-family=$IMAGE_FAMILY \
       --metadata="startup-script-user=$GCP_USER" \
       --metadata="train-script-path=$TRAIN_SCRIPT_PATH" \
       --metadata-from-file="startup-script=run/utils/gcp/resume_training_on_start_up.sh"
@@ -83,6 +95,9 @@ Setup your local development environment by following [these instructions](LOCAL
    VM_ZONE=$(python -m run.utils.gcp zone --name $VM_NAME)
    VM_IP=$(python -m run.utils.gcp ip --name $VM_NAME --zone=$VM_ZONE)
    VM_USER=$(python -m run.utils.gcp user --name $VM_NAME --zone=$VM_ZONE)
+   ```
+
+   ```bash
    sudo python3 -m run.utils.lsyncd $(pwd) /opt/wellsaid-labs/Text-to-Speech \
                                     --public-dns $VM_IP \
                                     --user $VM_USER \
@@ -105,8 +120,9 @@ Setup your local development environment by following [these instructions](LOCAL
 
    . run/utils/gcp/install_drivers.sh
    . run/utils/apt_install.sh
-
-   # NOTE: You will always want to be in an active `venv` whenever you want to work with python.
+   ```
+   **NOTE:** You will always want to be in an active `venv` whenever you want to work with python.
+   ```
    python3.8 -m venv venv
    . venv/bin/activate
 
@@ -120,7 +136,7 @@ Setup your local development environment by following [these instructions](LOCAL
    ```
 
    💡 TIP: After setting up your VM, you may want to
-   [create an Google Machine Image](https://cloud.google.com/compute/docs/machine-images/create-machine-images)
+   [create a Google Machine Image](https://cloud.google.com/compute/docs/machine-images/create-machine-images)
    so you don't need to setup your VM from scratch again.
 
 1. Start a `screen` session with a new virtual environment...
@@ -137,11 +153,23 @@ Setup your local development environment by following [these instructions](LOCAL
    EXPERIMENT_NAME='Your experiment name'
    ```
 
-1. Start training... For example, run this command to train a spectrogram model:
+1. Start training... 
+   
+   For example, run this command to train a spectrogram model:
 
    ```bash
    pkill -9 python; sleep 5s; nvidia-smi; \
    PYTHONPATH=. python $TRAIN_SCRIPT_PATH start $COMET_PROJECT "$EXPERIMENT_NAME";
+   ```
+   ---
+   Or select a `SPECTROGRAM_CHECKPOINT`...
+   ```
+   SPECTROGRAM_CHECKPOINT="/opt/wellsaid-labs/Text-to-Speech/path/to/spectrogram/checkpoint"
+   ```
+   ...and run this command to train a signal model:
+   ```bash
+   pkill -9 python; sleep 5s; nvidia-smi; \
+   PYTHONPATH=. python $TRAIN_SCRIPT_PATH start $SPECTROGRAM_CHECKPOINT $COMET_PROJECT "$EXPERIMENT_NAME";
    ```
 
    ❓ LEARN MORE: PyTorch leaves zombie processes that must be killed, check out:
@@ -214,5 +242,6 @@ Setup your local development environment by following [these instructions](LOCAL
       --name=$NAME \
       --vm-name=$VM_NAME \
       --zone=$VM_ZONE
-   gcloud compute disks delete $VM_NAME --zone=$VM_ZONE
    ```
+   
+   When you're ready to begin signal model training, start from the top of these instructions and use your `$IMAGE_FAMILY` envrionment variable to build your new instance!

@@ -299,7 +299,7 @@ def _configure_audio_processing():
         lib.audio.get_pyloudnorm_meter: HParams(filter_class="DeMan"),
         lib.spectrogram_model.SpectrogramModel.__init__: HParams(
             # NOTE: This is based on one of the slowest legitimate alignments in
-            # `dataset_dashboard`. With a sample size of 8192, we found that 0.18 frames per token
+            # `dataset_dashboard`. With a sample size of 8192, we found that 0.18 seconds per token
             # included everything but 3 alignments. The last three alignments were 0.19 "or",
             # 0.21 "or", and 0.24 "EEOC". The slowest alignment was the acronym "EEOC" with the
             # last letter taking 0.5 seconds.

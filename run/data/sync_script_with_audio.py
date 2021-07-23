@@ -634,7 +634,9 @@ def _sync_and_upload(
         typing.cast(pandas.DataFrame, pandas.read_csv(StringIO(s)))[text_column].tolist()
         for s in scripts_
     ]
-    message = "Scripts cannot contain funky characters."
+    message = "Some or all script(s) are missing or incorrecly formatted."
+    assert all(isinstance(t, str) for t in lib.utils.flatten_2d(scripts)), message
+    message = "Script(s) cannot contain funky characters."
     assert all(lib.text.is_normalized_vo_script(t) for t in lib.utils.flatten_2d(scripts)), message
 
     logger.info("Maybe running speech-to-text and caching results...")
