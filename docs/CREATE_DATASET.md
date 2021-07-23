@@ -76,6 +76,7 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
       --scopes=https://www.googleapis.com/auth/cloud-platform \
       --image-family=ubuntu-2004-lts \
       --image-project=ubuntu-os-cloud
+   python -m run.utils.gcp watch-instance --name=$NAME --zone=$ZONE
    ```
 
    ❓ NOTE: 24-hours of "n1-standard-2" VM usage can cost up to 3$.
