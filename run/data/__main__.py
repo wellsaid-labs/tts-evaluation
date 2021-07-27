@@ -321,15 +321,15 @@ def _read_csv(
     read_csv_kwgs = dict(sep=separator, keep_default_na=False, index_col=False)
     data_frame = read_csv(path, **read_csv_kwgs)
     if not any(c in data_frame.columns for c in all_columns):
-        logger.warning("None of the optional or required column(s) were found...")
+        logger.warning("[%s] None of the optional or required column(s) were found..." % path.name)
         if len(data_frame.columns) == 1:
             message = "There is only 1 column so this will assume that column is the "
             message += f"reqiured '{required_column}' column."
-            logger.warning(message)
+            logger.warning("[%s] " + message, path.name)
             data_frame = read_csv(path, header=None, names=[required_column], **read_csv_kwgs)
     if required_column not in data_frame.columns:
         message = f"The required '{required_column}' column couldn't be found or inferred."
-        logger.error(message)
+        logger.error("[%s] " + message, path.name)
         raise typer.Exit(code=1)
 
     dropped = list(set(data_frame.columns) - set(all_columns))
