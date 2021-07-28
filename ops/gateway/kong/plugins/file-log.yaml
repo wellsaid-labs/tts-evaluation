@@ -13,7 +13,7 @@ config:
   custom_fields_by_lua:
     route: "return nill"
     response_code_class: |
-      local response_status = kong.service.response.get_status()
+      local response_status = kong.response.get_status()
       if response_status >= 500 then
         return '5xx'
       end
