@@ -171,6 +171,14 @@ jsonnet ./ops/gateway/kong/plugins/latest-pinned-service.jsonnet \
   | kubectl apply -f -
 ```
 
+Additionally, once deployed, you can fetch the latest release using the
+following command
+
+```bash
+kubectl get kongclusterplugin.configuration.konghq.com \
+  latest-pinned-service -n kong -o jsonpath='{.config.latest_version}'
+```
+
 ### Deploying the `cert-manager` and setting up TLS
 
 See [TLS Certificate issuance for HTTPS](../tls/README.md).
