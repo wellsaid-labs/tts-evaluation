@@ -46,8 +46,11 @@ For instance, if we were deploying a model whose identifier is `v3` we'd use
 hostnames `validate.v3.svc.cluster.local` and `stream.v3.svc.cluster.local`,
 respectively.
 
-Public access will handled by a [Kong](https://konghq.com/) proxy instance.
-That's not in place yet, so it's not documented.
+Public access will handled by via a
+[Kong gateway service](../gateway/README.md). Before proceeding, ensure that the
+gateway has been deployed to the cluster. The TTS service deployment has
+kong-related configurations in order to properly register and route requests
+through Kong to our internal Cloud Run instances.
 
 ## Building an Image
 
