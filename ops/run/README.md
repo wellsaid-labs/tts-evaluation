@@ -211,7 +211,17 @@ gcloud run revisions list \
 
 ### Pinning `latest` release
 
+Kong will route any request with the `Accept-Version: latest` header to a
+"pinned" model release. This is used for directing traffic from one major model
+release to another (ex: v8 -> v9). For minor, incremental releases it is
+recommended to use the Cloud Run revisioning feature (ie update the
+configuration/version tag for that model and re-deploy).
+
 ```bash
+# Fetching the currently pinned version
+kubectl get kongclusterplugin.configuration.konghq.com \
+  latest-pinned-service -n kong -o jsonpath='{.config.latest_version}'
+# Updating the latest pinned version
 jsonnet ./ops/gateway/kong/plugins/latest-pinned-service.jsonnet \
   -y \
   --tla-str latestVersion=$LATEST_VERSION \
