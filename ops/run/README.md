@@ -199,6 +199,16 @@ releases. To deploy a new model, follow these steps:
 
 ## Management
 
+### Viewing a list of Cloud Run revisions
+
+The following command will list all Cloud Run revisions for a given model.
+
+```bash
+gcloud run revisions list \
+  --platform=kubernetes \
+  --namespace=$MODEL
+```
+
 ### Pinning `latest` release
 
 ```bash
