@@ -19,10 +19,9 @@
  *      --tla-str image=gcr.io/voice/tts@sha256:... \
  *      --tla-str imageEntrypoint=src.service.worker:app \
  *      --tla-str provideApiKeyAuthForLegacyContainerSupport=false \
- *      --tla-str minScaleStream=0 \
- *      --tla-str maxScaleStream=32 \
- *      --tla-str minScaleValidate=0 \
- *      --tla-str maxScaleValidate=32 \
+ *      --tla-code stream="{minScale:0,maxScale:32,concurrency:1,paths:['/api/text_to_speech/stream']}" \
+ *      --tla-code validate="{minScale:0,maxScale:32,concurrency:4,paths:['/api/text_to_speech/input_validated']}" \
+ *      --tla-code traffic="[{tag:'1',percent:100}]" \
  *      --ext-code config={}
  *
  * Alternatively, you can store the configurations in a json file and
@@ -55,14 +54,20 @@
  * sure not to get provideApiKeyAuthForLegacyContainerSupport confused with
  * consumer-facing api keys.
  *
- * The minScaleStream|minScaleValidate option determines the min number of
+ * The stream.minScale|validate.minScale option determines the min number of
  * cloud run containers to run at all time. For our staging environment and
  * low demand model versions we will want to scale to 0. Note that changes
  * to this value will require a bump in the `version` parameter.
  *
- * The maxScaleStream|maxScaleValidate option places a ceiling on the number
+ * The stream.maxScale|validate.maxScale option places a ceiling on the number
  * of cloud run containers that can be scaled to. Note that changes
  * to this value will require a bump in the `version` parameter.
+ *
+ * The stream.concurrency|validate.concurrency option defines the number
+ * of concurrent requests that this service can handle.
+ *
+ * The stream.paths|validate.paths option defines the http endpoints that
+ * the service will respond to.
  *
  * The output of the command can be redirected to a file, or piped to
  * kubectl directly like so:
@@ -81,10 +86,9 @@ function(
   image=config.image,
   imageEntrypoint=config.imageEntrypoint,
   provideApiKeyAuthForLegacyContainerSupport=config.provideApiKeyAuthForLegacyContainerSupport,
-  minScaleStream=config.minScaleStream,
-  maxScaleStream=config.maxScaleStream,
-  minScaleValidate=config.minScaleValidate,
-  maxScaleValidate=config.maxScaleValidate,
+  stream=config.stream,
+  validate=config.validate,
+  traffic=config.traffic
 )
   local ns = {
     apiVersion: 'v1',
@@ -106,23 +110,38 @@ function(
     // communications.
     'pKfRepQY-ln4pCOnCxZOoHNXArHbxLwj5To26aS92OY';
 
+  // list of headers derived from namespace and traffic revisions
+  // ex: v8, v8.1, v8.2 that map to individual cloud run revision tags
+  local acceptVersionHeaders = [ns.metadata.name] +
+    [ns.metadata.name + '.' + t.tag for t in traffic];
+
   local validateSvc = common.Service({
     name: 'validate',
     namespace: ns.metadata.name,
     image: image,
     entrypoint: imageEntrypoint,
     version: version,
-    scale: { min: minScaleValidate, max: maxScaleValidate },
+    scale: {
+      min: validate.minScale,
+      max: validate.maxScale
+    },
     resources: {
       requests: {
         cpu: '1',
         memory: '1G',
       },
     },
-    concurrency: 4,
+    concurrency: validate.concurrency,
     timeout: 10,
     restartTimeout: 10,
     legacyContainerApiKey: legacyContainerApiKey,
+    traffic: [
+      {
+        tag: 'revision-' + t.tag,
+        percent: t.percent,
+        revisionName: 'validate-' + t.tag
+      } for t in traffic
+    ]
   });
 
   local streamSvc = common.Service({
@@ -131,7 +150,10 @@ function(
     image: image,
     entrypoint: imageEntrypoint,
     version: version,
-    scale: { min: minScaleStream, max: maxScaleStream },
+    scale: {
+      min: stream.minScale,
+      max: stream.maxScale
+    },
     resources: {
       requests: {
         cpu: '6',
@@ -142,26 +164,35 @@ function(
         memory: '5G',
       },
     },
-    concurrency: 1,
+    concurrency: stream.concurrency,
     timeout: 3600,  // 1hr
     restartTimeout: 600,  // 10 minutes
     legacyContainerApiKey: legacyContainerApiKey,
+    traffic: [
+      {
+        tag: 'revision-' + t.tag,
+        percent: t.percent,
+        revisionName: 'stream-' + t.tag
+      } for t in traffic
+    ]
   });
 
   local validateRoute = common.Route({
     hostname: hostname,
     namespace: ns.metadata.name,
     serviceName: validateSvc.metadata.name,
-    servicePaths: ['/api/text_to_speech/input_validated'],
+    servicePaths: validate.paths,
     legacyContainerApiKey: legacyContainerApiKey,
+    acceptVersionHeaders: acceptVersionHeaders,
   });
 
   local streamRoute = common.Route({
     hostname: hostname,
     namespace: ns.metadata.name,
     serviceName: streamSvc.metadata.name,
-    servicePaths: ['/api/text_to_speech/stream'],
+    servicePaths: stream.paths,
     legacyContainerApiKey: legacyContainerApiKey,
+    acceptVersionHeaders: acceptVersionHeaders,
   });
 
   [

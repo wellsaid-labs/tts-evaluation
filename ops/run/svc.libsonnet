@@ -68,12 +68,7 @@
           ],
         },
       },
-      traffic: [
-        {
-          percent: 100,
-          latestRevision: true,
-        },
-      ],
+      traffic: spec.traffic
     },
   },
   /**
@@ -86,7 +81,27 @@
    *    - Ingress: path/service routing (augmented by the KongIngress resource)
    */
   Route(spec):
+    // NOTE: this transformer allows us to route `Accept-Version` headers to individual
+    // Cloud Run revisions.
     // https://docs.konghq.com/hub/kong-inc/request-transformer/
+    local hostNameTransformer = std.strReplace(|||
+        $((function()
+          local value = headers['accept-version'] or ''
+          local version, revision = value, nil
+          local index = value:find('.', 1, true)
+          if index then
+            version = value:sub(1, index - 1)
+            revision = value:sub(index + 1)
+            return 'revision-'..revision..'-%(serviceName)s.%(namespace)s.svc.cluster.local';
+          end
+          return '%(serviceName)s.%(namespace)s.svc.cluster.local';
+        end)())
+      ||| % spec,
+      // Remove newline that was being added to end of lua lambda function output
+      'end)())\n',
+      'end)())'
+    );
+
     local requestTransformer = {
       apiVersion: 'configuration.konghq.com/v1',
       kind: 'KongPlugin',
@@ -98,12 +113,12 @@
       config: {
         replace: {
           headers: [
-            'host:' + spec.serviceName + '.' + spec.namespace + '.svc.cluster.local',
+            'host:' + hostNameTransformer
           ],
         },
         add: {
           headers: [
-            'host:' + spec.serviceName + '.' + spec.namespace + '.svc.cluster.local',
+            'host:' + hostNameTransformer
           ],
         } + if spec.legacyContainerApiKey != null then {
           body: [
@@ -133,9 +148,7 @@
         request_buffering: true,
         response_buffering: true,
         headers: {
-          'accept-version': [
-            spec.namespace,
-          ],
+          'accept-version': spec.acceptVersionHeaders,
         },
         methods: [
           'POST',
@@ -156,7 +169,7 @@
         annotations: {
           'kubernetes.io/ingress.class': 'kong',
           'konghq.com/override': kongIngress.metadata.name,
-          'konghq.com/plugins': requestTransformer.metadata.name,
+          'konghq.com/plugins': 'kong-cluster-key-auth,' + requestTransformer.metadata.name,
           'konghq.com/protocols':'https',
           'konghq.com/https-redirect-status-code':'301',
         },

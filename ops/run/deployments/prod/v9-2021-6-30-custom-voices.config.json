@@ -1,12 +1,12 @@
 {
-  "env": "staging",
-  "model": "super-hi-fi",
-  "version": "2",
-  "image": "gcr.io/voice-service-2-313121/speech-api-worker@sha256:4bf471455f1e72a9cb63807134bb94fdc812fbdace8d52e4fc9b12435ff45aa7",
-  "imageEntrypoint": "src.service.worker:app",
+  "env": "prod",
+  "model": "v9-2021-6-30-custom-voices",
+  "version": "1",
+  "image": "gcr.io/voice-service-2-313121/speech-api-worker@sha256:5f240da01e1c43e464351ca8c18b3c602058d6e7b001b6134795fbc313f7e450",
+  "imageEntrypoint": "run.deploy.worker:app",
   "provideApiKeyAuthForLegacyContainerSupport": "true",
   "stream": {
-    "minScale": 0,
+    "minScale": 1,
     "maxScale": 32,
     "concurrency": 1,
     "paths": [
@@ -14,7 +14,7 @@
     ]
   },
   "validate": {
-    "minScale": 0,
+    "minScale": 1,
     "maxScale": 8,
     "concurrency": 4,
     "paths": [
@@ -23,7 +23,7 @@
   },
   "traffic": [
     {
-      "tag": "2",
+      "tag": "1",
       "percent": 100
     }
   ]

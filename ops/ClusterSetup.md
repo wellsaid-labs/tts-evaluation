@@ -10,7 +10,7 @@ an execution runtime for the TTS service.
    gcloud services enable \
        container.googleapis.com \
        containerregistry.googleapis.com \
-       cloudbuild.googleapis.com \
+       cloudbuild.googleapis.com
    ```
 
 2. Next, create a GKE cluster:

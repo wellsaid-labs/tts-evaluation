@@ -56,8 +56,10 @@ fi
 # The deployment will fail, but we can provide a more straightforward error
 # message here.
 if kubectl get deployment stream-$VERSION-deployment -n $MODEL &> /dev/null; then
-  echo "Deployment version '${VERSION}' already exists for model '${MODEL}'! Try bumping the version number and running again."
-  exit 1
+  echo "Deployment version '${VERSION}' already exists for model '${MODEL}'!"
+  echo "This is not an issue if updating traffic configurations for existing revisions."
+  echo "For changes to scaling or image configs, try bumping the version number and running again."
+  read -p "Continue? (Y/N): " confirm && [[ $confirm == [yY] || $confirm == [yY][eE][sS] ]] || exit 1
 fi
 
 # Generate manifests

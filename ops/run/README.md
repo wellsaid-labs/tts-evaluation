@@ -46,8 +46,11 @@ For instance, if we were deploying a model whose identifier is `v3` we'd use
 hostnames `validate.v3.svc.cluster.local` and `stream.v3.svc.cluster.local`,
 respectively.
 
-Public access will handled by a [Kong](https://konghq.com/) proxy instance.
-That's not in place yet, so it's not documented.
+Public access will handled by via a
+[Kong gateway service](../gateway/README.md). Before proceeding, ensure that the
+gateway has been deployed to the cluster. The TTS service deployment has
+kong-related configurations in order to properly register and route requests
+through Kong to our internal Cloud Run instances.
 
 ## Building an Image
 
@@ -78,14 +81,28 @@ releases. To deploy a new model, follow these steps:
    {
      "env": "staging",
      "model": "v9",
-     "version": "4",
+     "version": "1",
      "image": "gcr.io/voice-service-2-313121/speech-api-worker@sha256:c5de71f13aff22b9171f23f9921796f93e1765fefa9ba5ca6426836696996a75",
      "imageEntrypoint": "run.deploy.worker:app",
      "provideApiKeyAuthForLegacyContainerSupport": "true",
-     "minScaleStream": "0",
-     "maxScaleStream": "32",
-     "minScaleValidate": "0",
-     "maxScaleValidate": "32"
+     "stream": {
+       "minScale": 0,
+       "maxScale": 32,
+       "concurrency": 1,
+       "paths": ["/api/text_to_speech/stream"]
+     },
+     "validate": {
+       "minScale": 0,
+       "maxScale": 32,
+       "concurrency": 4,
+       "paths": ["/api/text_to_speech/input_validated"]
+     },
+     "traffic": [
+       {
+         "tag": "1",
+         "percent": 100
+       }
+     ]
    }
    ```
 
@@ -130,18 +147,24 @@ releases. To deploy a new model, follow these steps:
      request. This is only for backwards compatibility, enabling support of our
      existing tts worker images.
 
-   - `minScaleStream|minScaleValidate` is an integer value determining how many
-     container instances should remain idle, see the
+   - `stream.minScale|validate.minScale` is an integer value determining how
+     many container instances should remain idle, see the
      [cloud run configuration](https://cloud.google.com/run/docs/configuring/min-instances)
      for more details. Considering our validation service can handle multiple
      concurrent short-lived requests it would make sense to have a smaller min
      scale value than the stream service. For our staging environment and low
      demand model versions we will want to scale to 0.
 
-   - `maxScaleStream|maxScaleValidate` is an integer value that puts a ceiling
+   - `stream.maxScale|validate.maxScale` is an integer value that puts a ceiling
      on the number of container instances we can scale to. This may be useful
      for preventing over-scaling in response to a spike in requests and/or
      managing costs.
+
+   - `stream.concurrency|validate.concurrency` option defines the number of
+     concurrent requests that this service can handle.
+
+   - `stream.paths|validate.paths` option defines the http endpoints that the
+     service will respond to.
 
 1. Deploy the configured model release. If you would like to debug the release
    manifests prior to deployment, run the `jsonnet` command below
@@ -179,9 +202,29 @@ releases. To deploy a new model, follow these steps:
 
 ## Management
 
-### Pinning `latest` release
+### Viewing a list of Cloud Run revisions
+
+The following command will list all Cloud Run revisions for a given model.
 
 ```bash
+gcloud run revisions list \
+  --platform=kubernetes \
+  --namespace=$MODEL
+```
+
+### Pinning `latest` release
+
+Kong will route any request with the `Accept-Version: latest` header to a
+"pinned" model release. This is used for directing traffic from one major model
+release to another (ex: v8 -> v9). For minor, incremental releases it is
+recommended to use the Cloud Run revisioning feature (ie update the
+configuration/version tag for that model and re-deploy).
+
+```bash
+# Fetching the currently pinned version
+kubectl get kongclusterplugin.configuration.konghq.com \
+  latest-pinned-service -n kong -o jsonpath='{.config.latest_version}'
+# Updating the latest pinned version
 jsonnet ./ops/gateway/kong/plugins/latest-pinned-service.jsonnet \
   -y \
   --tla-str latestVersion=$LATEST_VERSION \

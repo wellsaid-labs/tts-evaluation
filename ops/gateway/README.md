@@ -171,6 +171,14 @@ jsonnet ./ops/gateway/kong/plugins/latest-pinned-service.jsonnet \
   | kubectl apply -f -
 ```
 
+Additionally, once deployed, you can fetch the latest release using the
+following command
+
+```bash
+kubectl get kongclusterplugin.configuration.konghq.com \
+  latest-pinned-service -n kong -o jsonpath='{.config.latest_version}'
+```
+
 ### Deploying the `cert-manager` and setting up TLS
 
 See [TLS Certificate issuance for HTTPS](../tls/README.md).
@@ -192,11 +200,10 @@ jsonnet ./ops/gateway/kong/plugins/fallback-route.jsonnet \
 
 The [`key-auth`](https://docs.konghq.com/hub/kong-inc/key-auth/) plugin allows
 us to secure our API using API key authorization. It is possible to restrict
-access on a route, service, or consumer basis but for now we will be enabling
-the key-auth plugin globally.
+access on a route, service, or consumer basis.
 
 ```bash
-kubectl apply -f ./ops/gateway/kong/plugins/global-key-auth.yaml
+kubectl apply -f ./ops/gateway/kong/plugins/key-auth.yaml
 ```
 
 Once applied, any requests to the gateway will now fail with a 401 Unauthorized

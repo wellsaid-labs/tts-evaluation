@@ -4,7 +4,7 @@ env:
   headers: "off"
 
 proxy:
-  loadBalancerIP: <TBD>
+  loadBalancerIP: 104.198.240.60
 
 ingressController:
   # https://docs.konghq.com/kubernetes-ingress-controller/1.3.x/references/cli-arguments/
@@ -17,8 +17,8 @@ ingressController:
     ]
 
 image:
-  repository: gcr.io/voice-service-2-313121/kong-staging@sha256
-  tag: 86870350684e7446fc0aa910415e158f35dba0220ec154ac43019496fbbf9943
+  repository: gcr.io/voice-service-2-313121/kong@sha256
+  tag: 85e527a5ba5ee95f12ad3d0458e97614eafc96d94344a273d08d5eabb956250b
 
 # https://docs.konghq.com/gateway-oss/2.4.x/sizing-guidelines/#scaling-dimensions
 resources:

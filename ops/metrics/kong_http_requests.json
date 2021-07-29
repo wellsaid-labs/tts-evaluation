@@ -4,7 +4,9 @@
   "filter": "resource.type=\"k8s_container\"\nresource.labels.namespace_name=\"kong\"\nresource.labels.container_name=\"proxy\"\njsonPayload.request:*",
   "labelExtractors": {
     "consumer_name": "EXTRACT(jsonPayload.consumer.username)",
-    "service_name": "REGEXP_EXTRACT(jsonPayload.service.name, \"^(.+)[.]\\\\d+$\")"
+    "service_name": "REGEXP_EXTRACT(jsonPayload.service.name, \"^(.+)[.]\\\\d+$\")",
+    "http_response_code": "REGEXP_EXTRACT(jsonPayload.response.status, \"(\\\\d{3})\")",
+    "http_response_code_class": "EXTRACT(jsonPayload.response_code_class)"
   },
   "metricDescriptor": {
     "labels": [
@@ -15,6 +17,15 @@
       {
         "description": "The name of the upstream service",
         "key": "service_name"
+      },
+      {
+        "description": "HTTP Response code",
+        "key": "http_response_code",
+        "valueType": "INT64"
+      },
+      {
+        "description": "HTTP Response code class (1xx, 2xx, 3xx, 4xx, 5xx)",
+        "key": "http_response_code_class"
       }
     ],
     "metricKind": "DELTA",
