@@ -108,7 +108,7 @@ function(
     // interface of our existing TTS docker images. It cannot be used for
     // authenticating external users and is only applicable to internal cluster
     // communications.
-    'pKfRepQY-ln4pCOnCxZOoHNXArHbxLwj5To26aS92OY';
+    'pKfRepQY-ln4pCOnCxZOoHNXArHbxLwj';
 
   // list of headers derived from namespace and traffic revisions
   // ex: v8, v8.1, v8.2 that map to individual cloud run revision tags
