@@ -78,7 +78,7 @@ releases. To deploy a new model, follow these steps:
 1. Connect to the target cluster:
 
    ```bash
-   CLUSTER_NAME="staging"
+   CLUSTER_NAME=$CLUSTER_NAME # ex: "staging"
    gcloud container clusters get-credentials $CLUSTER_NAME --region us-central1
    ```
 

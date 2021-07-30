@@ -21,7 +21,7 @@ guide to obtain a certificate and then configure our routes to use https.
    cert-manager to setup the ClusterIssuer prior to Certificate request)
 
 ```bash
- jsonnet fallback-route.jsonnet \
+ jsonnet ops/gateway/kong/plugins/fallback-route.jsonnet \
     -y \
     --tla-str env=$ENV \
     --tla-str includeTls=false \
@@ -44,7 +44,7 @@ guide to obtain a certificate and then configure our routes to use https.
 1. Setup the ClusterIssuer resource.
 
    ```bash
-   kubectl apply -f clusterIssuer.yaml
+   kubectl apply -f ops/tls/clusterIssuer.yaml
    # Monitor the status of the Issuer via
    kubectl describe ClusterIssuer/letsencrypt-cluster-issuer
    # If you need to dig further, look into logs of the cert-manager service
@@ -52,9 +52,10 @@ guide to obtain a certificate and then configure our routes to use https.
    kubectl logs -n cert-manager $CERT_MANAGER_POD -f
    ```
 
-   Once the Issuer is in an `ACMEAccountRegistered` state, the cluster should be
-   ready to issue a certificate for us. The `cert-manager` service will listen
-   for resources with specific annotations and respond accordingly
+   Once `Status.Conditions.Reason` reads `ACMEAccountRegistered` for the
+   `ClusterIssuer`, the cluster should be ready to issue a certificate for us.
+   The `cert-manager` service will listen for resources with specific
+   annotations and respond accordingly
 
    - `kubernetes.io/tls-acme: "true"`: tells cert-manager to provision a cert
      for the host(s) defined in this Ingress resource. The host(s) are defined
@@ -69,7 +70,7 @@ guide to obtain a certificate and then configure our routes to use https.
    the Certificate Request
 
    ```bash
-   jsonnet fallback-route.jsonnet \
+   jsonnet ops/gateway/kong/plugins/fallback-route.jsonnet \
       -y \
       --tla-str env=$ENV \
       --tla-str includeTls=true \

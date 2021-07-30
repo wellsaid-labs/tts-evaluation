@@ -123,6 +123,8 @@ The following will deploy the configured Kong gateway along with the Kong
 Ingress Controller.
 
 ```bash
+# Add repository so we can reference the kong/kong helm chart
+helm repo add kong https://charts.konghq.com
 # Namespace required for helm install, see `namespace` argument in
 # `./kong/kong.base.yaml`
 kubectl create namespace kong
@@ -137,7 +139,7 @@ Let's confirm the proxy is live on our cluster.
 
 ```bash
 # Display the kong proxy service
-kubectl get service gateway-kong-proxy
+kubectl get service gateway-kong-proxy -n kong
 # Using the External IP from above command, make a request to the proxy
 # Note that this should be the static ip reserved during the cluster setup
 curl -XGET http://$KONG_IP
@@ -162,7 +164,7 @@ kubectl apply -f ./ops/gateway/kong/plugins/file-log.yaml
 This plugin allows us to "pin" all traffic containing the
 `Accept-Version: latest` header to a specific model release. Note that
 `$LATEST_VERSION` refers to a model name used during the tts deployment (see
-../run/README.md).
+[../run/README.md](../run/README.md)).
 
 ```bash
 jsonnet ./ops/gateway/kong/plugins/latest-pinned-service.jsonnet \
@@ -192,7 +194,7 @@ annotations!
 ```bash
 jsonnet ./ops/gateway/kong/plugins/fallback-route.jsonnet \
   -y \
-  --tla-str env=staging \
+  --tla-str env=$ENV \
   | kubectl apply -f -
 ```
 
@@ -271,10 +273,8 @@ At this point you should be able to test that the new consumer credentials are
 working
 
 ```bash
-# Should respond with 401 Unauthorized
-curl -I https://tts.wellsaidlabs.com
-# Should respond with a 404 Not Found
-curl -I https://tts.wellsaidlabs.com -H "X-Api-Key: $CONSUMER_API_KEY"
+# Should respond with 404 Not Found
+curl -I http://$KONG_IP
 ```
 
 Listing existing KongConsumers

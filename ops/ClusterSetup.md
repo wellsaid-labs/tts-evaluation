@@ -16,7 +16,7 @@ an execution runtime for the TTS service.
 2. Next, create a GKE cluster:
 
    ```bash
-   CLUSTER_NAME="staging"
+   CLUSTER_NAME=$CLUSTER_NAME # ex: "staging"
    gcloud beta container clusters create "$CLUSTER_NAME" \
        --region "us-central1" \
        --no-enable-basic-auth \

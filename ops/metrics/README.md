@@ -26,12 +26,16 @@ gcloud logging read \
    jsonPayload.request:*" --limit 1 --format json
 ```
 
+Note that these metrics are project-wide and do not need to be re-created
+per-environment. You must filter logs based on `resource.labels.cluster_name` in
+order to differentiate between environments such as staging/prod.
+
 ## Creating log-based Metrics
 
 ```bash
-gcloud logging metrics create kong/http_requests --config-from-file=./kong_http_requests.json
+gcloud logging metrics create kong/http_requests --config-from-file=ops/metrics/kong_http_requests.json
 
-gcloud logging metrics create kong/upstream_latency --config-from-file=./kong_upstream_latency.json
+gcloud logging metrics create kong/upstream_latency --config-from-file=ops/metrics/kong_upstream_latency.json
 ```
 
 ## Viewing Metric Configuration
@@ -47,7 +51,7 @@ this scenario you would update the metric configuration and then run the
 following:
 
 ```bash
-gcloud logging metrics update kong/http_requests --config-from-file=../metrics/kong_http_requests.json
+gcloud logging metrics update kong/http_requests --config-from-file=ops/metrics/kong_http_requests.json
 ```
 
 However, changes to metrics are not retroactive.
