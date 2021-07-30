@@ -1156,14 +1156,14 @@ if (require.main === module) {
     v6: new PodPool(process.env.V6_WORKER_POD_IMAGE, 0),
     v7: new PodPool(process.env.V7_WORKER_POD_IMAGE, 0),
     v8: new PodPool(process.env.V8_WORKER_POD_IMAGE, 0),
-    "uneeq.v1": new PodPool(process.env.UNEEQ_V1_WORKER_POD_IMAGE, 1),
+    "uneeq.v1": new PodPool(process.env.UNEEQ_V1_WORKER_POD_IMAGE, 0),
     "v8.1": new PodPool(process.env.V8_1_WORKER_POD_IMAGE, 0),
-    "veritone.v1": new PodPool(process.env.VERITONE_V1_WORKER_POD_IMAGE, 1),
-    "super-hi-fi.v1": new PodPool(process.env.SUPER_HI_FI_V1_WORKER_POD_IMAGE, 1),
-    v9: new PodPool(process.env.V9_WORKER_POD_IMAGE, 4),
-    "usp.v1": new PodPool(process.env.USP_WORKER_POD_IMAGE, 1),
-    "happify.v1": new PodPool(process.env.HAPPIFY_WORKER_POD_IMAGE, 1),
-    "v9.2021_6_30_custom_voices": new PodPool(process.env.V9_2021_6_30_CUSTOM_VOICES_WORKER_POD_IMAGE, 1),
+    "veritone.v1": new PodPool(process.env.VERITONE_V1_WORKER_POD_IMAGE, 0),
+    "super-hi-fi.v1": new PodPool(process.env.SUPER_HI_FI_V1_WORKER_POD_IMAGE, 0),
+    v9: new PodPool(process.env.V9_WORKER_POD_IMAGE, 0),
+    "usp.v1": new PodPool(process.env.USP_WORKER_POD_IMAGE, 0),
+    "happify.v1": new PodPool(process.env.HAPPIFY_WORKER_POD_IMAGE, 0),
+    "v9.2021_6_30_custom_voices": new PodPool(process.env.V9_2021_6_30_CUSTOM_VOICES_WORKER_POD_IMAGE, 0),
   };
   app.locals.podPools.latest = app.locals.podPools.v9;
 
