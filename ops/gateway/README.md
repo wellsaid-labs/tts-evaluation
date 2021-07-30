@@ -45,10 +45,10 @@ for more details.
 1. Setup env variables for image tagging.
 
    ```bash
-   export ENV=$ENV # ex: staging
-   export PROJECT_ID=voice-service-2-313121
-   export KONG_IMAGE_TAG=$KONG_IMAGE_TAG # ex: v1
-   export KONG_IMAGE="gcr.io/$PROJECT_ID/kong:$KONG_IMAGE_TAG"
+   ENV=$ENV # ex: staging
+   PROJECT_ID=voice-service-2-313121
+   KONG_IMAGE_TAG=$KONG_IMAGE_TAG # ex: v1
+   KONG_IMAGE="gcr.io/$PROJECT_ID/kong:$KONG_IMAGE_TAG"
    ```
 
    ```bash
@@ -252,7 +252,7 @@ authenticated requests to the API. For reference, see
 # We will be namespacing all of the kong consumers
 kubectl create namespace kong-consumers
 # Export the username
-export KONG_CONSUMER_USERNAME=$KONG_CONSUMER_USERNAME
+KONG_CONSUMER_USERNAME=$KONG_CONSUMER_USERNAME
 # Create the consumer!
 jsonnet ./ops/gateway/kong/auth/consumer.jsonnet \
   -y \

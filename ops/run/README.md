@@ -78,7 +78,7 @@ releases. To deploy a new model, follow these steps:
 1. Connect to the target cluster:
 
    ```bash
-   export CLUSTER_NAME="staging"
+   CLUSTER_NAME="staging"
    gcloud container clusters get-credentials $CLUSTER_NAME --region us-central1
    ```
 
@@ -179,9 +179,9 @@ releases. To deploy a new model, follow these steps:
    manifests prior to deployment, run the `jsonnet` command below
 
    ```bash
-   export ENV=$ENV # ex: staging
-   export MODEL=$MODEL # ex: v9
-   # deploy
+   cd ops/run
+   ENV=$ENV # ex: staging
+   MODEL=$MODEL # ex: v9
    ./deploy.sh deployments/$ENV/$MODEL.config.json
    ```
 
