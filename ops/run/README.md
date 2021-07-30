@@ -12,7 +12,16 @@ You'll need the following installed:
 - [jsonnet](https://github.com/google/jsonnet#packages)
 - [kubectl](https://kubernetes.io/docs/tasks/tools/)
 
-You'll also need access to the appropriate Google Cloud Project.
+You'll also need access to the appropriate Google Cloud Project. Prior to
+running the deploy script ensure that your gcloud/kubectl context is correct.
+
+```bash
+gcloud config set project $PROJECT_ID
+gcloud config set container/clsuter $CLUSTER_NAME
+gcloud container clusters get-credentials $CLUSTER_NAME --region=us-central1
+# Sanity check
+kubectl config current-context
+```
 
 ## High Level Architecture
 
@@ -199,6 +208,51 @@ releases. To deploy a new model, follow these steps:
 
    Then depending on the output use commands like `kubectl describe` and
    `kubectl logs` to further debug things.
+
+## Accessing the model
+
+Once the model is deployed, it should be accessible via the Kong gateway
+interface. You may need to follow the guide for
+[generating a Kong Consumer api key](../gateway/README.md) in the gateway docs.
+
+```bash
+# Assumes staging environment
+curl https://staging.tts.wellsaidlabs.com/api/text_to_speech/stream \
+  -H "X-Api-Key: $API_KEY" \
+  -H "Accept-Version: $MODEL" \
+  -H "Content-Type: application/json" \
+  -X POST --data '{"speaker_id":"4","text":"Lorem ipsum"}' \
+  -o sample.mp3
+```
+
+You may also access specific model revisions via the `Accept-Version` header.
+For example, given the following deployment configuration:
+
+```json
+{
+  "model": "v9",
+  "version": "2",
+  "traffic": [
+    {
+      "tag": "1",
+      "percent": 100
+    },
+    {
+      "tag": "2",
+      "percent": 0
+    }
+  ]
+  ...
+}
+```
+
+The `Accept-Version` header will behave like:
+
+```bash
+Accept-Version: v9 # obeys the traffic policy, in this case routes to revision 1
+Accept-Version: v9.1 # manually specify revision 1, ignoring traffic policy
+Accept-Version: v9.2 # manually specify revision 2, ignoring traffic policy
+```
 
 ## Management
 
