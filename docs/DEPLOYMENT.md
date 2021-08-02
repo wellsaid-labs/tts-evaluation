@@ -36,8 +36,6 @@ Refer to the above guides in case there are missing details in the below steps.
    docker images gcr.io/${PROJECT_ID}/speech-api-worker:v9.00
    ```
 
-   The image size should be around 750mb.
-
 1. Push the build:
 
    ```bash
@@ -49,22 +47,6 @@ Refer to the above guides in case there are missing details in the below steps.
    ```bash
    docker run --rm -p 8000:8000 -e "YOUR_SPEECH_API_KEY=123" \
       gcr.io/${PROJECT_ID}/speech-api-worker:v9.00
-   ```
-
-   Or:
-
-   ```bash
-   docker run --rm -p 8000:8000 -e "AUTOSCALE_LOOP=5000 YOUR_SPEECH_API_KEY=123" \
-      gcr.io/${PROJECT_ID}/speech-api:v8.31
-   ```
-
-1. Update the Kubernetes deployment manifest (e.g. `run/deploy/deployment.yaml`)
-   with the updated images.
-
-1. Update the Kubernetes deployment with:
-
-   ```bash
-   kubectl apply -f run/deploy/deployment.yaml
    ```
 
 ### Update Container from GCP Machine
