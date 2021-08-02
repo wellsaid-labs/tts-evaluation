@@ -48,7 +48,7 @@ import warnings
 import en_core_web_sm
 import torch
 import torch.backends.mkl
-from flask import Flask, Response, jsonify, request, send_file, send_from_directory
+from flask import Flask, Response, jsonify, request
 from spacy.lang.en import English
 
 from lib.environment import load, set_basic_logging_config
@@ -274,10 +274,6 @@ def healthy():
     return "ok"
 
 
-# NOTE: `/api/speech_synthesis/v1/` was added for backward compatibility.
-
-
-@app.route("/api/speech_synthesis/v1/text_to_speech/input_validated", methods=["GET", "POST"])
 @app.route("/api/text_to_speech/input_validated", methods=["GET", "POST"])
 def get_input_validated():
     """Validate the input to our text-to-speech endpoint before making a stream request.
@@ -297,7 +293,6 @@ def get_input_validated():
     return jsonify({"message": "OK"})
 
 
-@app.route("/api/speech_synthesis/v1/text_to_speech/stream", methods=["GET", "POST"])
 @app.route("/api/text_to_speech/stream", methods=["GET", "POST"])
 def get_stream():
     """Get speech given `text` and `speaker`.
@@ -320,16 +315,6 @@ def get_stream():
         TTS_PACKAGE, input, app.logger, output_flags=output_flags
     )
     return Response(generator, headers=headers, mimetype="audio/mpeg")
-
-
-@app.route("/")
-def index():
-    return send_file("public/index.html")
-
-
-@app.route("/<path:path>")
-def send_static(path):
-    return send_from_directory("public", path)
 
 
 if __name__ == "__main__" or "GUNICORN" in os.environ:
