@@ -17,7 +17,7 @@ running the deploy script ensure that your gcloud/kubectl context is correct.
 
 ```bash
 gcloud config set project $PROJECT_ID
-gcloud config set container/clsuter $CLUSTER_NAME
+gcloud config set container/cluster $CLUSTER_NAME
 gcloud container clusters get-credentials $CLUSTER_NAME --region=us-central1
 # Sanity check
 kubectl config current-context

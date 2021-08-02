@@ -49,7 +49,7 @@ function(env, includeTls='true')
         'kubernetes.io/ingress.class': 'kong',
         'konghq.com/plugins': plugin.metadata.name,
       } + (if includeTls == 'true' then {
-        // Value must match name of ClusterIssuer, see ../../tls/clsuterIssuer.yaml
+        // Value must match name of ClusterIssuer, see ../../tls/clusterIssuer.yaml
         'cert-manager.io/cluster-issuer': 'letsencrypt-cluster-issuer',
         'kubernetes.io/tls-acme': 'true',
       } else {}),
