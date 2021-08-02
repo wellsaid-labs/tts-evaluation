@@ -65,9 +65,8 @@ through Kong to our internal Cloud Run instances.
 
 The TTS software is packaged via [Docker](https://docker.com). If you already
 know the image you want to deploy you can skip this step. Otherwise you'll need
-to build and push an image.
-
-TODO: Document how to build and push the image(s).
+to build and push an image. These steps can be found in
+[docs/BUILD.md](/docs/BUILD.md).
 
 ## Deploying
 
