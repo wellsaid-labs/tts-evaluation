@@ -25,7 +25,7 @@ Refer to the above guides in case there are missing details in the below steps.
    PROJECT_ID="voice-service-2-313121"
    CHECKPOINTS="" # Example: v9
    TTS_PACKAGE_PATH=$(python -m run.deploy.package_tts $CHECKPOINTS)
-   docker build -f run/deploy/docker/worker/Dockerfile \
+   docker build -f run/deploy/Dockerfile \
         --build-arg TTS_PACKAGE_PATH=${TTS_PACKAGE_PATH} \
         -t gcr.io/${PROJECT_ID}/speech-api-worker:v9.00 .
    ```
