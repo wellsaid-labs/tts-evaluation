@@ -41,7 +41,6 @@ Refer to the above guides in case there are missing details in the below steps.
 1. Push the build:
 
    ```bash
-   docker push gcr.io/${PROJECT_ID}/speech-api:v8.31
    docker push gcr.io/${PROJECT_ID}/speech-api-worker:v9.00
    ```
 
