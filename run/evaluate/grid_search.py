@@ -50,7 +50,8 @@ def path_label(path: pathlib.Path) -> str:
 
 
 def st_select_paths(label: str, dir: pathlib.Path) -> typing.List[pathlib.Path]:
-    """Display a path selector for the directory `dir`."""
+    """Display a subdirectory selector for the directory `dir`. Then display a checkpoint selector
+    for the selected subdirectory `subdir`. Return list of checkpoint paths."""
     options = [p for p in dir.iterdir()]
     options.sort(reverse=True)
     path = typing.cast(
@@ -115,8 +116,6 @@ def main():
     scripts = [s.strip() for s in scripts.split("\n") if len(s.strip()) > 0]
     file_name = st.text_input(label="Zipfile Name")
 
-    # if not st.button("Generate"):
-    #     st.stop()
     with st.form(key="data_form"):
         submit = st.form_submit_button(label="Generate")
     if submit:
