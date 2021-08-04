@@ -1,0 +1,33 @@
+apiVersion: configuration.konghq.com/v1
+kind: KongClusterPlugin
+metadata:
+  name: kong-global-file-log
+  namespace: kong
+  annotations:
+    kubernetes.io/ingress.class: kong
+  labels:
+    global: "true"
+config:
+  path: /dev/stdout
+  reopen: false
+  custom_fields_by_lua:
+    route: "return nill"
+    response_code_class: |
+      local response_status = kong.response.get_status()
+      if response_status >= 500 then
+        return '5xx'
+      end
+      if response_status >= 400 then
+        return '4xx'
+      end
+      if response_status >= 300 then
+        return '3xx'
+      end
+      if response_status >= 200 then
+        return '2xx'
+      end
+      if response_status >= 100 then
+        return '1xx'
+      end
+      return ''
+plugin: file-log
