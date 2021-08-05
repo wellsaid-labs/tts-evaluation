@@ -14,6 +14,7 @@ function(username, secretKey)
       kongCredType: 'key-auth',
       key: secretKey
     },
+    immutable: true,
   };
 
   local consumer = {
