@@ -253,7 +253,9 @@ authenticated requests to the API. For reference, see
 ```bash
 # We will be namespacing all of the kong consumers
 kubectl create namespace kong-consumers
-# Export the username
+# Export the username. For example, we use the username `studio` as the consumer
+# of our Studio product, and `api` as the developer-facing api gateway. For local
+# consumer credentials, you might us `johndoe-local`.
 KONG_CONSUMER_USERNAME=$KONG_CONSUMER_USERNAME
 # Create the consumer!
 jsonnet ./ops/gateway/kong/auth/consumer.jsonnet \
