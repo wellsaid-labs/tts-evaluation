@@ -126,14 +126,8 @@ SPEAKER_ID_TO_SPEAKER: typing.Dict[int, typing.Tuple[Speaker, Session]] = {
     11541: (_loader.LINCOLN__CUSTOM, Session("")),
     13268907: (_loader.JOSIE__CUSTOM, Session("")),
     95313811: (_loader.JOSIE__CUSTOM__MANUAL_POST, Session("")),
-    78252076: (
-        Speaker(""),
-        Session(""),
-    ),  # TODO: Add Veritone Custom Voice ## Update: No need. Veritone no longer has access
-    70695443: (
-        _loader.SUPER_HI_FI__CUSTOM_VOICE,
-        Session("promo_script_5_superhifi.wav"),
-    ),
+    78252076: (_loader.VERITONE__CUSTOM_VOICE, Session("")),
+    70695443: (_loader.SUPER_HI_FI__CUSTOM_VOICE, Session("promo_script_5_superhifi.wav")),
     64197676: (_loader.US_PHARMACOPEIA__CUSTOM_VOICE, Session("enthusiastic_script-22.wav")),
     41935205: (
         _loader.HAPPIFY__CUSTOM_VOICE,
