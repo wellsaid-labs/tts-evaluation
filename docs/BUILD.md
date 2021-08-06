@@ -7,19 +7,29 @@ directory.
 
 ## Building the Docker image
 
+_Hint_: See precedence for image tagging by running
+
+```bash
+gcloud container images list-tags gcr.io/${PROJECT_ID}/speech-api-worker
+```
+
+Set image variables and build Docker image:
+
 ```bash
 PROJECT_ID="voice-service-2-313121"
-CHECKPOINTS="" # Example: v9
+CHECKPOINTS="" # Example: "v9" (see list of Checkpoints in [run/_tts.py](/run/_tts.py)])
 TTS_PACKAGE_PATH=$(python -m run.deploy.package_tts $CHECKPOINTS)
+IMAGE_TAG="" # Example: v9.00
+
 docker build -f run/deploy/Dockerfile \
     --build-arg TTS_PACKAGE_PATH=${TTS_PACKAGE_PATH} \
-    -t gcr.io/${PROJECT_ID}/speech-api-worker:v9.00 .
+    -t gcr.io/${PROJECT_ID}/speech-api-worker:${IMAGE_TAG} .
 ```
 
 Check the worker image size:
 
 ```bash
-docker images gcr.io/${PROJECT_ID}/speech-api-worker:v9.00
+docker images gcr.io/${PROJECT_ID}/speech-api-worker:${IMAGE_TAG}
 ```
 
 ## Running the Docker image locally
@@ -31,7 +41,7 @@ image. For reference, see the resource requests in
 
 ```bash
 docker run --rm -p 8000:8000 -e "YOUR_SPEECH_API_KEY=123" \
-  gcr.io/${PROJECT_ID}/speech-api-worker:v9.00
+  gcr.io/${PROJECT_ID}/speech-api-worker:${IMAGE_TAG}
 ```
 
 ## Pushing the Docker image
@@ -39,6 +49,7 @@ docker run --rm -p 8000:8000 -e "YOUR_SPEECH_API_KEY=123" \
 Prior to pushing the docker image, ensure the proper GKE context is set:
 
 ```bash
+CLUSTER_NAME="" # Example: "staging"
 gcloud config set project $PROJECT_ID
 gcloud config set container/cluster $CLUSTER_NAME
 gcloud container clusters get-credentials $CLUSTER_NAME --region=us-central1
@@ -53,7 +64,7 @@ the local image to the remote repository.
 Push the local image to our remote repository:
 
 ```bash
-docker push gcr.io/${PROJECT_ID}/speech-api-worker:v9.00
+docker push gcr.io/${PROJECT_ID}/speech-api-worker:${IMAGE_TAG}
 ```
 
 Viewing a list of images in the remote repository:
@@ -66,6 +77,12 @@ Viewing a list of image tags:
 
 ```bash
 gcloud container images list-tags gcr.io/${PROJECT_ID}/speech-api-worker
+```
+
+If you've made a mistake and need to remove your tts package from the image, run
+
+```bash
+gcloud container images untag gcr.io/${PROJECT_ID}/speech-api-worker:${IMAGE_TAG}
 ```
 
 ## Next Steps

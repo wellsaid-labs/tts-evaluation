@@ -125,6 +125,17 @@ class Checkpoints(enum.Enum):
     """
     V9_2021_6_30_CUSTOM_VOICES: typing.Final = "v9_2021_6_30_custom_voices"
 
+    """
+    These checkpoints include the Viacom custom voice.
+
+    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/334
+    Spectrogram Model Experiment (Step: 590,423):
+    https://www.comet.ml/wellsaid-labs/train-v9-viacom/eb24e3fb70f74f9c9a9490aa96d96f55
+    Signal Model Experiment (Step: 734,542):
+    https://www.comet.ml/wellsaid-labs/train-v9-viacom/df670689773b48608dd1ebb3dd6d7ea0
+    """
+    V9_2021_8_05_VIACOM_CUSTOM_VOICE: typing.Final = "v9_2021_8_05_viacom_custom_voice"
+
 
 _GCS_PATH = "gs://wellsaid_labs_checkpoints/"
 CHECKPOINTS_LOADERS = {

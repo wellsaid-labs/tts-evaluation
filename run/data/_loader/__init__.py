@@ -73,6 +73,7 @@ from run.data._loader.wsl_datasets import (
     STEVEN_WAHLBERG,
     SUSAN_MURPHY,
     THE_EXPLANATION_COMPANY__CUSTOM_VOICE,
+    VIACOM__CUSTOM_VOICE,
     WSL_DATASETS,
 )
 
@@ -154,6 +155,7 @@ __all__ = [
     "STEVEN_WAHLBERG",
     "SUSAN_MURPHY",
     "THE_EXPLANATION_COMPANY__CUSTOM_VOICE",
+    "VIACOM__CUSTOM_VOICE",
     "WSL_DATASETS",
     "DATASETS",
 ]

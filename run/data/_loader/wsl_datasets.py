@@ -63,6 +63,12 @@ THE_EXPLANATION_COMPANY__CUSTOM_VOICE = Speaker(
 )
 
 
+#################
+# CUSTOM VOICES #
+#################
+VIACOM__CUSTOM_VOICE = Speaker("viacom__custom_voice", "Viacom (Custom Voice)")
+
+
 def _dataset_loader(directory: Path, speaker: Speaker, **kwargs) -> typing.List[Passage]:
     manual_post_suffix = "__manual_post"
     suffix = manual_post_suffix if manual_post_suffix in speaker.label else ""
