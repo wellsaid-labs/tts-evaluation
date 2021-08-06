@@ -61,11 +61,6 @@ ENERGY_INDUSTRY_ACADEMY__CUSTOM_VOICE = Speaker(
 THE_EXPLANATION_COMPANY__CUSTOM_VOICE = Speaker(
     "the_explanation_company__custom_voice", "The Explanation Company (Custom Voice)"
 )
-
-
-#################
-# CUSTOM VOICES #
-#################
 VIACOM__CUSTOM_VOICE = Speaker("viacom__custom_voice", "Viacom (Custom Voice)")
 
 

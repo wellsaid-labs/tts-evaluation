@@ -54,6 +54,14 @@ curl http://localhost:8000/api/text_to_speech/stream \
   -o sample.mp3
 ```
 
+If this fails and you need to rebuild your Docker image, first remove the tag:
+
+```bash
+gcloud container images untag gcr.io/${PROJECT_ID}/speech-api-worker:${IMAGE_TAG}
+```
+
+Then fix, and rebuild from the top ^^
+
 ## Pushing the Docker image
 
 Prior to pushing the docker image, ensure the proper GKE context is set:
@@ -87,12 +95,6 @@ Viewing a list of image tags:
 
 ```bash
 gcloud container images list-tags gcr.io/${PROJECT_ID}/speech-api-worker
-```
-
-If you've made a mistake and need to remove your tts package from the image, run
-
-```bash
-gcloud container images untag gcr.io/${PROJECT_ID}/speech-api-worker:${IMAGE_TAG}
 ```
 
 ## Next Steps
