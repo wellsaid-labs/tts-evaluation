@@ -199,7 +199,7 @@ def validate_and_unpack(
     max_chars: int = MAX_CHARS,
     speaker_id_to_speaker: typing.Dict[int, typing.Tuple[Speaker, Session]] = SPEAKER_ID_TO_SPEAKER,
 ) -> EncodedInput:
-    # Validate and unpack the request object.
+    """ Validate and unpack the request object. """
 
     if not ("speaker_id" in request_args and "text" in request_args):
         message = "Must call with keys `speaker_id` and `text`."
