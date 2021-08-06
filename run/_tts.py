@@ -128,7 +128,7 @@ class Checkpoints(enum.Enum):
     """
     These checkpoints include the Viacom custom voice.
 
-    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/334
+    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/355
     Spectrogram Model Experiment (Step: 590,423):
     https://www.comet.ml/wellsaid-labs/train-v9-viacom/eb24e3fb70f74f9c9a9490aa96d96f55
     Signal Model Experiment (Step: 734,542):
