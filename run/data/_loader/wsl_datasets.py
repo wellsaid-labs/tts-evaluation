@@ -61,6 +61,7 @@ ENERGY_INDUSTRY_ACADEMY__CUSTOM_VOICE = Speaker(
 THE_EXPLANATION_COMPANY__CUSTOM_VOICE = Speaker(
     "the_explanation_company__custom_voice", "The Explanation Company (Custom Voice)"
 )
+VIACOM__CUSTOM_VOICE = Speaker("viacom__custom_voice", "Viacom (Custom Voice)")
 
 
 def _dataset_loader(directory: Path, speaker: Speaker, **kwargs) -> typing.List[Passage]:
