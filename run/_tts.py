@@ -123,7 +123,21 @@ class Checkpoints(enum.Enum):
     Signal Model Experiment (Step: 1,030,968):
     https://www.comet.ml/wellsaid-labs/1-wav-mike-2021-03/07a194f3bb99489d83061d3f2331536d
     """
+    
     V9_2021_6_30_CUSTOM_VOICES: typing.Final = "v9_2021_6_30_custom_voices"
+
+    """
+    These checkpoints include V9 versions of the following custom voices:
+    Energy Industry Academy, Happify, Super HiFi, The Explanation Company, US Pharmacopeia, Veritone
+
+    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/356
+    Spectrogram Model Experiment (Step: 597,312):
+    https://www.comet.ml/wellsaid-labs/v9-custom-voices/17289f19e0294d919bad9267cab4d5a0
+    Signal Model Experiment (Step: 1,054,080):
+    https://www.comet.ml/wellsaid-labs/v9-custom-voices/03ca7b7191c84fc7bd6bd348343e3d9e
+    """
+    
+    V9_2021_8_03_CUSTOM_VOICES: typing.Final = "v9_2021_8_03_custom_voices"
 
     """
     These checkpoints include the Viacom custom voice.
@@ -134,6 +148,7 @@ class Checkpoints(enum.Enum):
     Signal Model Experiment (Step: 734,542):
     https://www.comet.ml/wellsaid-labs/train-v9-viacom/df670689773b48608dd1ebb3dd6d7ea0
     """
+    
     V9_2021_8_05_VIACOM_CUSTOM_VOICE: typing.Final = "v9_2021_8_05_viacom_custom_voice"
 
 
