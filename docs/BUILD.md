@@ -57,7 +57,7 @@ curl http://localhost:8000/api/text_to_speech/stream \
 If this fails and you need to rebuild your Docker image, first remove the tag:
 
 ```bash
-gcloud container images untag gcr.io/${PROJECT_ID}/speech-api-worker:${IMAGE_TAG}
+docker images untag gcr.io/${PROJECT_ID}/speech-api-worker:${IMAGE_TAG}
 ```
 
 Then fix, and rebuild from the top ^^
