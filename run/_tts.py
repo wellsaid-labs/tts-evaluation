@@ -123,7 +123,7 @@ class Checkpoints(enum.Enum):
     Signal Model Experiment (Step: 1,030,968):
     https://www.comet.ml/wellsaid-labs/1-wav-mike-2021-03/07a194f3bb99489d83061d3f2331536d
     """
-    
+
     V9_2021_6_30_CUSTOM_VOICES: typing.Final = "v9_2021_6_30_custom_voices"
 
     """
@@ -136,7 +136,7 @@ class Checkpoints(enum.Enum):
     Signal Model Experiment (Step: 1,054,080):
     https://www.comet.ml/wellsaid-labs/v9-custom-voices/03ca7b7191c84fc7bd6bd348343e3d9e
     """
-    
+
     V9_2021_8_03_CUSTOM_VOICES: typing.Final = "v9_2021_8_03_custom_voices"
 
     """
@@ -148,8 +148,22 @@ class Checkpoints(enum.Enum):
     Signal Model Experiment (Step: 734,542):
     https://www.comet.ml/wellsaid-labs/train-v9-viacom/df670689773b48608dd1ebb3dd6d7ea0
     """
-    
+
     V9_2021_8_05_VIACOM_CUSTOM_VOICE: typing.Final = "v9_2021_8_05_viacom_custom_voice"
+
+    """
+    These checkpoints include the Viacom custom voice.
+
+    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/35*
+    Spectrogram Model Experiment (Step: 722,352):
+    https://www.comet.ml/wellsaid-labs/v9-custom-voices/abf7e103ef824b7ab45bdfb35d07d6b3
+    Signal Model Experiment (Step: 722,352):
+    https://www.comet.ml/wellsaid-labs/v9-custom-voices/b8f3a52f181f4d67b245a85476fe5b0c
+    """
+
+    V9_2021_8_09_UPDATE_EIA_TEC_CUSTOM_VOICES: typing.Final = (
+        "v9_2021_8_09_update_eia_tec_custom_voices"
+    )
 
 
 _GCS_PATH = "gs://wellsaid_labs_checkpoints/"
