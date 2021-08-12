@@ -1,8 +1,8 @@
 import typing
 
-from run.data._loader.data_structures import Speaker, WSL_Languages
+from run.data._loader.data_structures import Languages, Speaker
 from run.data._loader.lj_speech import LINDA_JOHNSON, lj_speech_dataset
-from run.data._loader.m_ailabs__english_datasets import (
+from run.data._loader.m_ailabs.english import (
     ELIZABETH_KLETT,
     ELLIOT_MILLER,
     JUDY_BIEBER,
@@ -12,14 +12,14 @@ from run.data._loader.m_ailabs__english_datasets import (
     m_ailabs_en_us_judy_bieber_speech_dataset,
     m_ailabs_en_us_mary_ann_speech_dataset,
 )
-from run.data._loader.old_wsl_datasets import (
+from run.data._loader.utils import DataLoader
+from run.data._loader.wellsaid_labs.old_wsl_datasets import (
     JOSIE__CUSTOM,
     JOSIE__CUSTOM__MANUAL_POST,
     LINCOLN__CUSTOM,
     OLD_WSL_DATASETS,
 )
-from run.data._loader.utils import DataLoader
-from run.data._loader.wsl_datasets import (
+from run.data._loader.wellsaid_labs.wsl_datasets import (
     ADRIENNE_WALKER_HELLER,
     ADRIENNE_WALKER_HELLER__PROMO,
     ALICIA_HARRIS,
@@ -67,7 +67,7 @@ DATASETS[ELIZABETH_KLETT] = m_ailabs_en_uk_elizabeth_klett_speech_dataset
 
 __all__ = [
     "Speaker",
-    "WSL_Languages",
+    "Languages",
     "ELIZABETH_KLETT",
     "ELLIOT_MILLER",
     "JUDY_BIEBER",

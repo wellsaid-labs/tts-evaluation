@@ -13,7 +13,7 @@ from lib.utils import Tuple
 from run import train
 from run._tts import TTSPackage, package_tts
 from run.data._loader import Alignment, Session, Span
-from run.data._loader.wsl_init__english import (
+from run.data._loader.english_datasets import (
     JUDY_BIEBER,
     LINDA_JOHNSON,
     lj_speech_dataset,
@@ -64,7 +64,7 @@ def make_small_dataset() -> run._config.Dataset:
     directory = _utils.TEST_DATA_PATH / "datasets"
     temp_directory = pathlib.Path(tempfile.TemporaryDirectory().name)
     shutil.copytree(directory, temp_directory)
-    books = [run.data._loader.m_ailabs__english_datasets.DOROTHY_AND_WIZARD_OZ]
+    books = [run.data._loader.m_ailabs.english.DOROTHY_AND_WIZARD_OZ]
     return {
         JUDY_BIEBER: m_ailabs_en_us_judy_bieber_speech_dataset(temp_directory, books=books),
         LINDA_JOHNSON: lj_speech_dataset(temp_directory),

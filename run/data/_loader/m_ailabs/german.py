@@ -1,19 +1,19 @@
 """
 Sub-module of M-AILABS module for downloading and processing GERMAN datasets.
 """
-from run.data._loader.data_structures import Speaker, WSL_Languages
-from run.data._loader.m_ailabs import Book, Dataset, m_ailabs_speech_dataset
+from run.data._loader.data_structures import Languages, Speaker
+from run.data._loader.m_ailabs._utils import Book, Dataset, m_ailabs_speech_dataset
 
 DE_DATASET = Dataset("de_DE")
 
-ANGELA_MERKEL = Speaker("angela_merkel", gender="female", language=WSL_Languages.GERMAN)
-EVA_K = Speaker("eva_k", gender="female", language=WSL_Languages.GERMAN)
-RAMONA_DEININGER = Speaker("ramona_deininger", gender="female", language=WSL_Languages.GERMAN)
+ANGELA_MERKEL = Speaker("angela_merkel", gender="female", language=Languages.GERMAN)
+EVA_K = Speaker("eva_k", gender="female", language=Languages.GERMAN)
+RAMONA_DEININGER = Speaker("ramona_deininger", gender="female", language=Languages.GERMAN)
 REBECCA_BRAUNERT_PLUNKETT = Speaker(
-    "rebecca_braunert_plunkett", gender="female", language=WSL_Languages.GERMAN
+    "rebecca_braunert_plunkett", gender="female", language=Languages.GERMAN
 )
 
-KARLSSON = Speaker("karlsson", gender="male", language=WSL_Languages.GERMAN)
+KARLSSON = Speaker("karlsson", gender="male", language=Languages.GERMAN)
 
 MERKEL_ALONE = Book(DE_DATASET, ANGELA_MERKEL, "merkel_alone")
 
@@ -90,7 +90,7 @@ def m_ailabs_de_de_speech_dataset(
     url="https://data.solak.de/data/Training/stt_tts/de_DE.tgz",
     extracted_name=str(DE_DATASET),
     books=DE_BOOKS,
-    language=WSL_Languages.GERMAN,
+    language=Languages.GERMAN,
     check_files=["de_DE/by_book/info.txt"],
     **kwargs,
 ):

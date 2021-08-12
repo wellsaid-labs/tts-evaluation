@@ -7,7 +7,7 @@ from unittest import mock
 import lib
 import run.data._loader
 from run.data._loader import Alignment
-from run.data._loader.wsl_init__english import LINDA_JOHNSON, lj_speech_dataset
+from run.data._loader.english_datasets import LINDA_JOHNSON, lj_speech_dataset
 from tests import _utils
 from tests.run.data._loader._utils import maybe_normalize_audio_and_cache_side_effect
 

@@ -31,13 +31,13 @@ def test_input_encoder():
     phonemes = ["ˈ|eɪ|b|ˌ|iː|s|ˈ|iː|", "d|ˈ|ɛ|f"]
     phoneme_separator = "|"
     speakers = [
-        run.data._loader.wsl_init__english.MARK_ATHERLAY,
-        run.data._loader.wsl_init__english.MARY_ANN,
+        run.data._loader.english_datasets.MARK_ATHERLAY,
+        run.data._loader.english_datasets.MARY_ANN,
     ]
     sessions = ["mark", "mary"]
     encoder = _data.InputEncoder(graphemes, phonemes, speakers, sessions, phoneme_separator)
     input_ = _data.DecodedInput(
-        "a", "ˈ|eɪ", run.data._loader.wsl_init__english.MARK_ATHERLAY, "mark"
+        "a", "ˈ|eɪ", run.data._loader.english_datasets.MARK_ATHERLAY, "mark"
     )
     assert encoder._get_case("A") == encoder._CASE_LABELS[0]
     assert encoder._get_case("a") == encoder._CASE_LABELS[1]

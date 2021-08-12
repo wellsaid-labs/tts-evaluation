@@ -135,7 +135,7 @@ class Alignment(typing.NamedTuple):
         return lib.utils.stow(alignments, dtype=alignment_dtype)
 
 
-class WSL_Languages(Enum):
+class Languages(Enum):
     ENGLISH = "English"
     GERMAN = "German"
 
@@ -144,7 +144,7 @@ class Speaker(typing.NamedTuple):
     label: str
     name: typing.Optional[str] = None
     gender: typing.Optional[str] = None
-    language: typing.Optional[typing.Any] = WSL_Languages.ENGLISH
+    language: typing.Optional[typing.Any] = Languages.ENGLISH
 
 
 @dataclasses.dataclass(frozen=True)

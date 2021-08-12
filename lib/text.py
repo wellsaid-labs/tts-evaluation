@@ -611,6 +611,8 @@ def strip(text: str) -> typing.Tuple[str, str, str]:
 def normalize_vo_script(text: str, strip: bool = True) -> str:
     """Normalize a voice-over script such that only readable characters remain.
 
+    TODO: Consider unidecode alternatives for new languages with important special characters!
+
     References:
     - Generic package for text cleaning: https://github.com/jfilter/clean-text
     - ASCII characters: https://www.ascii-code.com/

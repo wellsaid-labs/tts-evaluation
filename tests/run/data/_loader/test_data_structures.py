@@ -26,7 +26,7 @@ from run.data._loader.data_structures import (
     make_passages,
 )
 from run.data._loader.utils import get_non_speech_segments_and_cache
-from run.data._loader.wsl_init__english import LINDA_JOHNSON
+from run.data._loader.english_datasets import LINDA_JOHNSON
 from tests._utils import TEST_DATA_PATH
 
 TEST_DATA_LJ = TEST_DATA_PATH / "audio" / "bit(rate(lj_speech,24000),32).wav"
