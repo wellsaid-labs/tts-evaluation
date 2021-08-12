@@ -20,6 +20,7 @@ import lib
 import run
 from lib.audio import get_audio_metadata
 from lib.text import natural_keys
+from run._config import PHONEME_SEPARATOR
 from run._streamlit import (
     WebPath,
     get_session_state,
@@ -167,8 +168,10 @@ def main():
         nlp = load_en_core_web_md(disable=("parser", "ner"))
 
     with st.spinner("Processing inputs..."):
-        inputs = encode_tts_inputs(nlp, tts.input_encoder, script, speaker, session)
-        st.info(f"{inputs.phonemes.shape[0]:,} token(s) were inputted.")
+        inputs = encode_tts_inputs(
+            nlp, tts.input_encoder, script, speaker, session, PHONEME_SEPARATOR
+        )
+        st.info(f"{inputs.tokens.shape[0]:,} token(s) were inputted.")
 
     if "service" in state and state["service"].is_alive():
         logger.info("Shutting down streaming service...")

@@ -52,7 +52,7 @@ from flask import Flask, Response, jsonify, request, send_file, send_from_direct
 from spacy.lang.en import English
 
 from lib.environment import load, set_basic_logging_config
-from run._config import TTS_PACKAGE_PATH, configure
+from run._config import PHONEME_SEPARATOR, TTS_PACKAGE_PATH, configure
 from run._tts import (
     PublicSpeakerValueError,
     PublicTextValueError,
@@ -293,7 +293,7 @@ def validate_and_unpack(
     gc.collect()
 
     try:
-        return encode_tts_inputs(nlp, input_encoder, text, speaker, session)
+        return encode_tts_inputs(nlp, input_encoder, text, speaker, session, PHONEME_SEPARATOR)
     except PublicSpeakerValueError as error:
         app.logger.exception("Invalid speaker: %r", text)
         raise FlaskException(str(error), code="INVALID_SPEAKER_ID")

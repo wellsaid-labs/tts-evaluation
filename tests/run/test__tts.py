@@ -5,6 +5,7 @@ import threading
 from torchnlp.random import fork_rng
 
 import lib
+from run._config import PHONEME_SEPARATOR
 from run._tts import encode_tts_inputs, text_to_speech_ffmpeg_generator
 from tests.run._utils import make_mock_tts_package
 
@@ -19,7 +20,9 @@ def _make_args():
     script, speaker, session = passage.script, passage.speaker, passage.session
     # NOTE: The script needs to be long enough to pass the below tests.
     script = " ".join([script] * 3)
-    encoded = encode_tts_inputs(nlp, package.input_encoder, script, speaker, session)
+    encoded = encode_tts_inputs(
+        nlp, package.input_encoder, script, speaker, session, PHONEME_SEPARATOR
+    )
     return package, encoded
 
 

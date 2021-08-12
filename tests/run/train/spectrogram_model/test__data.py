@@ -35,7 +35,7 @@ def test_input_encoder():
         run.data._loader.english_datasets.MARY_ANN,
     ]
     sessions = ["mark", "mary"]
-    encoder = _data.InputEncoder(graphemes, phonemes, speakers, sessions, phoneme_separator)
+    encoder = _data.InputEncoder(graphemes, phonemes, phoneme_separator, speakers, sessions)
     input_ = _data.DecodedInput(
         "a", "ˈ|eɪ", run.data._loader.english_datasets.MARK_ATHERLAY, "mark"
     )
@@ -45,7 +45,7 @@ def test_input_encoder():
     encoded = encoder.encode(input_)
     assert torch.equal(encoded.graphemes, torch.tensor([5]))
     assert torch.equal(encoded.letter_cases, torch.tensor([1]))
-    assert torch.equal(encoded.phonemes, torch.tensor([5, 6]))
+    assert torch.equal(encoded.tokens, torch.tensor([5, 6]))
     assert torch.equal(encoded.speaker, torch.tensor([0]))
     assert torch.equal(encoded.session, torch.tensor([0]))
     assert encoder.decode(encoded) == input_
