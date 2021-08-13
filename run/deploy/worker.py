@@ -135,9 +135,9 @@ SPEAKER_ID_TO_SPEAKER: typing.Dict[int, typing.Tuple[Speaker, Session]] = {
     ),
     42400423: (
         _loader.THE_EXPLANATION_COMPANY__CUSTOM_VOICE,
-        Session("is_it_possible_to_become_invisible.wav"),
+        Session("what_were_the_first_computers_like.wav"),
     ),
-    61137774: (_loader.ENERGY_INDUSTRY_ACADEMY__CUSTOM_VOICE, Session("sample_script_2.wav")),
+    61137774: (_loader.ENERGY_INDUSTRY_ACADEMY__CUSTOM_VOICE, Session("sample_script_4.wav")),
     30610881: (_loader.VIACOM__CUSTOM_VOICE, Session("kelsey_speech_synthesis_section1.wav")),
     50481197: (_loader.HOUR_ONE_NBC__BB_CUSTOM_VOICE, Session("hour_one_nbc_dataset_5.wav")),
 }
