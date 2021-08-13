@@ -608,7 +608,7 @@ def strip(text: str) -> typing.Tuple[str, str, str]:
     return text, left, right
 
 
-def normalize_vo_script(text: str, strip: bool = True) -> str:
+def normalize_vo_script(text: str, strip: bool = True, decode: bool = True) -> str:
     """Normalize a voice-over script such that only readable characters remain.
 
     References:
@@ -621,13 +621,18 @@ def normalize_vo_script(text: str, strip: bool = True) -> str:
     text = ftfy.fix_text(text)
     text = text.replace("\f", "\n")
     text = text.replace("\t", "  ")
-    text = str(unidecode.unidecode(text))
+    if decode:
+        text = str(unidecode.unidecode(text))
     if strip:
         text = text.strip()
     return text
 
 
-_READABLE_CHARACTERS = set(normalize_vo_script(chr(i), strip=False) for i in range(0, 128))
+_READABLE_CHARACTERS = set(
+    normalize_vo_script(chr(i), strip=False, decode=False) for i in range(0, 128)
+)
+_GERMAN_SPECIAL_CHARACTERS = ["ß", "ä", "ö", "ü", "Ä", "Ö", "Ü", "«", "»"]
+_READABLE_CHARACTERS.update(_GERMAN_SPECIAL_CHARACTERS)
 
 
 def is_normalized_vo_script(text: str) -> bool:
@@ -635,6 +640,7 @@ def is_normalized_vo_script(text: str) -> bool:
     return len(set(text) - _READABLE_CHARACTERS) == 0
 
 
+# TODO: Could update `ALPHANUMERIC_REGEX` with German special characters, but it works as is too
 ALPHANUMERIC_REGEX = re.compile(r"[a-zA-Z0-9@#$%&+=*]")
 
 
