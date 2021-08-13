@@ -271,7 +271,7 @@ def text(
         pandas.DataFrame({column: [text]}).to_csv(dest_path, index=False)
 
 
-def _csv_normalize(text: str, nlp: spacy_en.English) -> str:
+def _csv_normalize(text: str, nlp: typing.Optional[spacy_en.English], decode: bool = True) -> str:
     """Helper for the `csv_normalize` command.
 
     TODO: Consider adding:
@@ -283,14 +283,16 @@ def _csv_normalize(text: str, nlp: spacy_en.English) -> str:
     - Visualize any text changes for quality assurance
     - Visualize any strange words that may need to be normalized
     """
-    text = lib.text.normalize_vo_script(text)
+    text = lib.text.normalize_vo_script(text, decode)
     text = text.replace("®", "")
     text = text.replace("™", "")
     # NOTE: Remove HTML tags
     text = re.sub("<.*?>", "", text)
+    # TODO: For non-English, could use nlp if available. Didn't seem critical for German case.
     # NOTE: Fix for a missing space between end and beginning of a sentence. For example:
     #   the cold war.The term 'business ethics'
-    text = lib.text.add_space_between_sentences(nlp(text))
+    if nlp:
+        text = lib.text.add_space_between_sentences(nlp(text))
     return text
 
 
@@ -347,12 +349,14 @@ def _read_csv(
 def csv_normalize(
     paths: typing.List[pathlib.Path] = typer.Argument(..., exists=True, dir_okay=False),
     dest: pathlib.Path = typer.Argument(..., exists=True, file_okay=False),
+    no_spacy: bool = typer.Option(False, "--no_spacy"),
     required_column: str = typer.Option("Content"),
     optional_columns: typing.List[str] = typer.Option(["Source", "Title"]),
     encoding: str = typer.Option("utf-8"),
 ):
     """Normalize csv file(s) in PATHS and save to directory DEST."""
-    nlp = lib.text.load_en_core_web_md(disable=("tagger", "ner"))
+    nlp = None if no_spacy else lib.text.load_en_core_web_md(disable=("tagger", "ner"))
+
     results = []
     for path in tqdm.tqdm(paths):
         dest_path = dest / path.name
@@ -362,7 +366,9 @@ def csv_normalize(
 
         text = path.read_text(encoding=encoding)
         data_frame = _read_csv(path, required_column, optional_columns, encoding)
-        data_frame = data_frame.applymap(functools.partial(_csv_normalize, nlp=nlp))
+        data_frame = data_frame.applymap(
+            functools.partial(_csv_normalize, nlp=nlp, decode=not no_spacy)
+        )
         data_frame.to_csv(dest_path, index=False)
 
         # TODO: Count the number of alphanumeric edits instead of punctuation mark edits.
