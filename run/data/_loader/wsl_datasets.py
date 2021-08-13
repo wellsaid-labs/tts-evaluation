@@ -70,6 +70,9 @@ US_PHARMACOPEIA__CUSTOM_VOICE = Speaker(
 )
 VERITONE__CUSTOM_VOICE = Speaker("veritone__custom_voice", "Veritone (Custom Voice)")
 VIACOM__CUSTOM_VOICE = Speaker("viacom__custom_voice", "Viacom (Custom Voice)")
+HOUR_ONE_NBC__BB_CUSTOM_VOICE = Speaker(
+    "hour_one_nbc__bb_custom_voice", "HourOne X NBC (BB Custom Voice)"
+)
 
 
 def _dataset_loader(directory: Path, speaker: Speaker, **kwargs) -> typing.List[Passage]:
