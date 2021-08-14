@@ -41,7 +41,9 @@ DEFAULT_SCRIPT = (
     " your gut. Don’t overthink it. And allow yourself a little room to play."
 )
 
-FILE_FORMAT: typing.Callable[[pathlib.Path], str] = lambda p: f"{p.name}/" if p.is_dir() else p.name
+ST_FORMAT_FILE: typing.Callable[[pathlib.Path], str] = (
+    lambda p: f"{p.name}/" if p.is_dir() else p.name
+)
 
 
 def path_label(path: pathlib.Path) -> str:
@@ -56,43 +58,34 @@ def st_select_paths(label: str, dir: pathlib.Path) -> pathlib.Path:
     options.sort(reverse=True)
     path = typing.cast(
         pathlib.Path,
-        st.selectbox("%s Training Path" % label, options=options, format_func=FILE_FORMAT),
+        st.selectbox("%s Training Path" % label, options=options, format_func=ST_FORMAT_FILE),
     )
     subdirs = [p for p in path.iterdir()]
     subdirs.sort(reverse=True)
     assert subdirs, "Subdirs empty:\t%s" % path
     subdir = typing.cast(
         pathlib.Path,
-        st.selectbox("%s Checkpoints Path" % label, options=subdirs, format_func=FILE_FORMAT)
+        st.selectbox("%s Checkpoints Path" % label, options=subdirs, format_func=ST_FORMAT_FILE)
         if subdirs
         else ["None Available"],
     )
-    # ckpt_options = list(subdir.glob(f"**/*{PT_EXTENSION}"))
-    # ckpt_options.sort(reverse=True)
-    # default = ckpt_options[:3]
-    # ckpts_selected = st.multiselect(
-    #     label="%s Checkpoint(s)" % label,
-    #     options=ckpt_options,
-    #     default=default,
-    #     format_func=FILE_FORMAT,
-    # )
-    # ckpts_selected.sort()
-    # st.info(
-    #     "Selected %s Checkpoint(s):\n" % label
-    #     + "".join(["\n - " + path_label(p) for p in ckpts_selected])
-    # )
+
     return subdir
 
 
-def st_select_checkpoints(label: str, subdir: pathlib.Path) -> typing.List[pathlib.Path]:
+def st_select_checkpoints(
+    label: str, subdir: pathlib.Path, num_ckpts=3
+) -> typing.List[pathlib.Path]:
     ckpt_options = list(subdir.glob(f"**/*{PT_EXTENSION}"))
     ckpt_options.sort(reverse=True)
-    default = ckpt_options[:3]
-    ckpts_selected = st.multiselect(
-        label="%s Checkpoint(s)" % label,
-        options=ckpt_options,
-        default=default,
-        format_func=FILE_FORMAT,
+    ckpts_selected = typing.cast(
+        typing.List[pathlib.Path],
+        st.multiselect(
+            label="%s Checkpoint(s)" % label,
+            options=ckpt_options,
+            default=ckpt_options[:num_ckpts],
+            format_func=ST_FORMAT_FILE,
+        ),
     )
     ckpts_selected.sort()
     st.info(
@@ -124,24 +117,29 @@ def main():
     run._config.configure()
     get_paths = functools.partial(st_select_paths)
     sig_ckpt_paths = get_paths("Signal", SIGNAL_MODEL_EXPERIMENTS_PATH)
+    sig_ckpts_selected = st_select_checkpoints("Signal", sig_ckpt_paths, 1)
     spec_ckpt_paths = get_paths("Spectrogram", SPECTROGRAM_MODEL_EXPERIMENTS_PATH)
 
     with st.form(key="data_form"):
-        sig_ckpts_selected = st_select_checkpoints("Signal", sig_ckpt_paths)
-        spec_ckpts_selected = st_select_checkpoints("Spectrogram", spec_ckpt_paths)
+        spec_ckpts_selected = st_select_checkpoints("Spectrogram", spec_ckpt_paths, 1)
+
         speakers = list(run._config.DATASETS.keys())
         speakers.sort()
         is_all = st.sidebar.checkbox("Select all speakers by default")
         format_: typing.Callable[[run.data._loader.Speaker], str] = lambda s: s.label
         default = speakers if is_all else speakers[:1]
-        speakers = st.multiselect(
-            "Speaker(s)", options=speakers, format_func=format_, default=default
+        speakers = typing.cast(
+            typing.List[run.data._loader.Speaker],
+            st.multiselect("Speaker(s)", options=speakers, format_func=format_, default=default),
         )
-        max_sessions = st.number_input("Maximum Recording Sessions", min_value=1, value=1, step=1)
+        max_sessions = typing.cast(
+            int, st.number_input("Maximum Recording Sessions", min_value=1, value=1, step=1)
+        )
         scripts = st.text_area("Script(s)", value=DEFAULT_SCRIPT)
         scripts = [s.strip() for s in scripts.split("\n") if len(s.strip()) > 0]
         file_name = st.text_input(label="Zipfile Name", value="audio(s)")
         submit = st.form_submit_button(label="Generate")
+
     if submit:
         with st.spinner("Loading checkpoints..."):
             spec_ckpts = [
