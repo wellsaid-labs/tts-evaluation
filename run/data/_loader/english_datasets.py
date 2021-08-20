@@ -57,7 +57,7 @@ from run.data._loader.wellsaid_labs.wsl_datasets import (
 # TODO: Consider updating M-AILABS and LJSpeech to Google Storage, so that we can download
 # and upload them faster. It'll also give us protection, if the datasets are deleted.
 
-
+DATASETS_LANGUAGE = Languages.ENGLISH
 DATASETS = typing.cast(typing.Dict[Speaker, DataLoader], WSL_DATASETS.copy())
 DATASETS[LINDA_JOHNSON] = lj_speech_dataset  # type: ignore
 DATASETS[JUDY_BIEBER] = m_ailabs_en_us_judy_bieber_speech_dataset
@@ -113,5 +113,6 @@ __all__ = [
     "SUSAN_MURPHY",
     "THE_EXPLANATION_COMPANY__CUSTOM_VOICE",
     "WSL_DATASETS",
+    "DATASETS_LANGUAGE",
     "DATASETS",
 ]

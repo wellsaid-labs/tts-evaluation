@@ -9,7 +9,13 @@ from run.data._loader.data_structures import (
     has_a_mistranscription,
     voiced_nonalignment_spans,
 )
-from run.data._loader.english_datasets import DATASETS, DataLoader, Languages, Speaker
+from run.data._loader.english_datasets import (
+    DATASETS,
+    DATASETS_LANGUAGE,
+    DataLoader,
+    Languages,
+    Speaker,
+)
 from run.data._loader.utils import (
     SpanGenerator,
     conventional_dataset_loader,
@@ -25,7 +31,7 @@ from run.data._loader.utils import (
 # from run.data._loader import wsl_init__german
 # from run.data._loader.wsl_init__german import DATASETS, DataLoader, Speaker
 
-
+DATASETS_LANGUAGE = DATASETS_LANGUAGE
 DATASETS = DATASETS
 
 __all__ = [
@@ -50,6 +56,7 @@ __all__ = [
     "normalize_audio",
     "normalize_audio_suffix",
     "read_audio",
+    "DATASETS_LANGUAGE",
     "DATASETS",
     "DataLoader",
     "Speaker",

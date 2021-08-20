@@ -1,6 +1,6 @@
 import typing
 
-from run.data._loader.data_structures import Speaker
+from run.data._loader.data_structures import Languages, Speaker
 from run.data._loader.m_ailabs.german import (
     ANGELA_MERKEL,
     EVA_K,
@@ -16,6 +16,7 @@ from run.data._loader.m_ailabs.german import (
 from run.data._loader.utils import DataLoader
 from run.data._loader.wellsaid_labs.wsl_datasets__international import WSL_DATASETS__GERMAN
 
+DATASETS_LANGUAGE = Languages.GERMAN
 DATASETS = typing.cast(typing.Dict[Speaker, DataLoader], WSL_DATASETS__GERMAN)
 DATASETS[ANGELA_MERKEL] = m_ailabs_de_de_angela_merkel_speech_dataset
 DATASETS[EVA_K] = m_ailabs_de_de_eva_k_speech_dataset
@@ -36,5 +37,6 @@ __all__ = [
     "m_ailabs_de_de_rebecca_braunert_plunkett_speech_dataset",
     "m_ailabs_de_de_karlsson_speech_dataset",
     "DataLoader",
+    "DATASETS_LANGUAGE",
     "DATASETS",
 ]

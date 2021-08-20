@@ -15,7 +15,7 @@ import lib
 import run
 import run.data._loader.utils
 from run.data import _loader
-from run.data._loader import DATASETS, Passage, Span, Speaker
+from run.data._loader import DATASETS, DATASETS_LANGUAGE, Passage, Span, Speaker
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import IPython
@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 pprinter = pprint.PrettyPrinter(indent=4)
 
 RANDOM_SEED = 1212212
+DATASET_LANGUAGE = copy.copy(DATASETS_LANGUAGE)
 PHONEME_SEPARATOR = "|"
 DATASETS = copy.copy(DATASETS)
 del DATASETS[
