@@ -12,6 +12,15 @@ Usage Example:
       --voice-over "$PREFIX/recordings/script_1.wav" \
       --script "$PREFIX/scripts/script_1_-_hilary.csv" \
       --destination "$PREFIX/"
+
+Usage Example (German):
+    PREFIX=gs://wellsaid_labs_datasets/experiment__german__unser_weld
+    python -m run.data.sync_script_with_audio \
+      --voice-over "$PREFIX/processed/speech_to_text/*.wav" \
+      --script "$PREFIX/processed/scripts/*.csv" \
+      --destination "$PREFIX/processed_local/" \
+      --language "de-DE" \
+      --no_decode
 """
 import dataclasses
 import json
@@ -97,6 +106,11 @@ STT_CONFIGS: typing.Dict[str, RecognitionConfig] = {
     "de-DE": STT_CONFIG__DE_DE,
 }
 
+# TODO: Use run/data/_loader/data_structures.py:Languages
+DATASET_LANGUAGE: str = "en-US"
+STT_CONFIG: RecognitionConfig = STT_CONFIG__EN_US
+DECODE: bool = True
+
 # TODO: Use `pydantic` for loading speech-to-text results into a data structure, learn more:
 # https://pydantic-docs.helpmanual.io/. It'll also validate the data during runtime.
 
@@ -115,7 +129,6 @@ class _SttAlternative(typing.TypedDict):
 
 class _SttAlternatives(typing.TypedDict):
     alternatives: typing.List[_SttAlternative]
-    languageCode: typing.Literal["en-us"]
 
 
 class SttResult(typing.TypedDict):
@@ -179,7 +192,8 @@ class Stats:
 STATS = Stats()
 CONTROL_CHARACTERS_REGEX = re.compile(r"[\x00-\x08\x0b\x0c\x0d\x0e-\x1f]")
 MULTIPLE_WHITE_SPACES_REGEX = re.compile(r"\s\s+")
-PUNCTUATION_REGEX = re.compile(r"[^a-zA-Z0-9äöüÄÖÜß\s]+")
+PUNCTUATION_REGEX = re.compile(r"[^\w\s]")
+PUNCTUATION_REGEX_DE = re.compile(r"[^a-zA-Z0-9äöüÄÖÜß\s]+")
 
 
 normalize_vo_script = lru_cache(maxsize=2 ** 20)(lib.text.normalize_vo_script)
@@ -197,6 +211,7 @@ def format_ratio(a: float, b: float) -> str:
 @lru_cache(maxsize=2 ** 20)
 def _remove_punctuation(string: str) -> str:
     """Remove all punctuation from a string.
+    TODO: Add support for more languages as they are integrated into the model
 
     Example:
         >>> remove_punctuation('123 abc !.?')
@@ -204,7 +219,8 @@ def _remove_punctuation(string: str) -> str:
         >>> remove_punctuation('Hello. You\'ve')
         'Hello You ve'
     """
-    return MULTIPLE_WHITE_SPACES_REGEX.sub(" ", PUNCTUATION_REGEX.sub(" ", string).strip())
+    punct_regex = PUNCTUATION_REGEX_DE if DATASET_LANGUAGE == "de-DE" else PUNCTUATION_REGEX
+    return MULTIPLE_WHITE_SPACES_REGEX.sub(" ", punct_regex.sub(" ", string).strip())
 
 
 @lru_cache(maxsize=2 ** 20)
@@ -229,13 +245,17 @@ def is_sound_alike(a: str, b: str) -> bool:
         >>> is_sound_alike('financingA', 'financing a')
         True
     """
-    a = normalize_vo_script(a, decode=False)
-    b = normalize_vo_script(b, decode=False)
+    a = normalize_vo_script(a, decode=DECODE)
+    b = normalize_vo_script(b, decode=DECODE)
     return_ = (
         a.lower() == b.lower()
         or _remove_punctuation(a.lower()).replace(" ", "")
         == _remove_punctuation(b.lower()).replace(" ", "")
-        # or _grapheme_to_phoneme(a) == _grapheme_to_phoneme(b)
+        or (
+            _grapheme_to_phoneme(a) == _grapheme_to_phoneme(b)
+            if DATASET_LANGUAGE == "en-US"
+            else False
+        )
     )
     if return_:
         STATS.sound_alike.add(frozenset([a, b]))
@@ -447,8 +467,8 @@ def align_stt_with_script(
 
     # Align `script_tokens` and `stt_tokens`.
     args = (
-        [normalize_vo_script(t.text.lower(), decode=False) for t in script_tokens],
-        [normalize_vo_script(t.text.lower(), decode=False) for t in stt_tokens],
+        [normalize_vo_script(t.text.lower(), decode=DECODE) for t in script_tokens],
+        [normalize_vo_script(t.text.lower(), decode=DECODE) for t in stt_tokens],
         get_window_size(len(script_tokens), len(stt_tokens)),
     )
     alignments = lib.text.align_tokens(*args, allow_substitution=is_sound_alike)[1]
@@ -587,7 +607,7 @@ def run_stt(
     scripts: typing.List[str],
     dest_blobs: typing.List[storage.Blob],
     poll_interval: float = 1 / 10,
-    stt_config: RecognitionConfig = STT_CONFIG__EN_US,
+    stt_config: RecognitionConfig = STT_CONFIG,
     max_connections: int = 256,
 ):
     """Run speech-to-text on `audio_blobs` and save them at `dest_blobs`.
@@ -626,7 +646,7 @@ def run_stt(
     assert len(audio_blobs) == len(dest_blobs)
     chunk = partial(get_chunks, n=max_connections)
     batches = list(zip(chunk(audio_blobs), chunk(scripts), chunk(dest_blobs)))
-    logger.info(f"Running %{len(audio_blobs)} STT operation(s) in {len(batches)} batch(es).")
+    logger.info(f"Running {len(audio_blobs)} STT operation(s) in {len(batches)} batch(es).")
     for args in batches:
         _run_stt(*args, poll_interval, stt_config)
 
@@ -639,7 +659,6 @@ def _sync_and_upload(
     alignment_blobs: typing.List[storage.Blob],
     text_column: str,
     recorder: lib.environment.RecordStandardStreams,
-    stt_config: RecognitionConfig,
 ):
     """Sync `script_blobs` with `audio_blobs` and upload to `alignment_blobs`."""
     assert len(audio_blobs) == len(script_blobs), "Expected the same number of blobs."
@@ -667,7 +686,7 @@ def _sync_and_upload(
             typing.Tuple[typing.List[storage.Blob], typing.List[str], typing.List[storage.Blob]],
             zip(*filtered),
         )
-        run_stt(*args, stt_config=stt_config)
+        run_stt(*args, stt_config=STT_CONFIG)
     stt_results: typing.List[SttResult]
     stt_results = [json.loads(b.download_as_bytes()) for b in stt_blobs]
 
@@ -708,6 +727,7 @@ def main(
         "alignments/", help="Upload alignment results to this folder in --destinations."
     ),
     language: str = typer.Option("en-US", help="Specify the language of the dataset being synced"),
+    no_decode: bool = typer.Option(False, "--no-decode"),
 ):
     """Align --scripts with --voice-overs and upload alignments to --destinations."""
     if len(voice_over) > len(destination):
@@ -717,11 +737,18 @@ def main(
     message = "There should be the same number of voice-overs (%d) and scripts (%d)."
     assert len(voice_over) == len(script), message % (len(voice_over), len(script))
 
+    global DATASET_LANGUAGE
+    DATASET_LANGUAGE = language
+    global STT_CONFIG
+    STT_CONFIG = STT_CONFIGS.get(DATASET_LANGUAGE)
     message = "The language code provided does not have an associated STT_CONFIG. "
-    message += "Please choose from the following existing configs or provide your own "
-    message += f"STT_CONFIG: {STT_CONFIGS.keys()}"
-    stt_config = STT_CONFIGS.get(language)
-    assert stt_config, message
+    message += "Please choose from the following existing configs or add a new config to "
+    message += f"run/data/sync_script_with_audio.py: {STT_CONFIGS.keys()}"
+    assert STT_CONFIG, message
+
+    global DECODE
+    DECODE = not no_decode
+    logger.info("Scripts will normalize " + ("with unidecode" if DECODE else "without unidecode."))
 
     # NOTE: Save a log of the execution for future reference
     recorder = lib.environment.RecordStandardStreams()
@@ -746,7 +773,6 @@ def main(
         alignment_blobs,
         text_column,
         recorder,
-        stt_config,
     )
 
 

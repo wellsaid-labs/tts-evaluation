@@ -529,8 +529,12 @@ def test_strip():
     )
 
 
+_GERMAN_SPECIAL_CHARACTERS = ["ß", "ä", "ö", "ü", "Ä", "Ö", "Ü", "«", "»", "—"]
+
+
 def test_normalize_vo_script():
-    """Test `lib.text.normalize_vo_script` handles all characters from 0 - 128."""
+    """Test `lib.text.normalize_vo_script` handles all characters from 0 - 128. And
+    test `lib.text.normalize_vo_script` handles all German special characters when decode=False."""
     # fmt: off
     assert list(lib.text.normalize_vo_script(chr(i), strip=False) for i in range(0, 128)) == [
         "", "", "", "", "", "", "", "", "", "  ", "\n", "", "\n", "\n", "", "", "", "", "", "", "",
@@ -541,14 +545,20 @@ def test_normalize_vo_script():
         "_", "`", "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p",
         "q", "r", "s", "t", "u", "v", "w", "x", "y", "z", "{", "|", "}", "~", ""
     ]
+    assert list(lib.text.normalize_vo_script(c, strip=False, decode=False) for c in _GERMAN_SPECIAL_CHARACTERS) == _GERMAN_SPECIAL_CHARACTERS
     # fmt: on
 
 
 def test_is_normalized_vo_script():
-    """Test `lib.text.is_normalized_vo_script` handles all characters from 0 - 128."""
+    """Test `lib.text.is_normalized_vo_script` handles all characters from 0 - 128.
+    And test `lib.text.is_normalized_vo_script` handles all German special characters."""
     assert all(
         lib.text.is_normalized_vo_script(lib.text.normalize_vo_script(chr(i), strip=False))
         for i in range(0, 128)
+    )
+    assert all(
+        lib.text.is_normalized_vo_script(lib.text.normalize_vo_script(c, strip=False))
+        for c in _GERMAN_SPECIAL_CHARACTERS
     )
 
 
