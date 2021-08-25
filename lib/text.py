@@ -631,7 +631,7 @@ def normalize_vo_script(text: str, strip: bool = True, decode: bool = True) -> s
 _READABLE_CHARACTERS = set(
     normalize_vo_script(chr(i), strip=False, decode=False) for i in range(0, 128)
 )
-_GERMAN_SPECIAL_CHARACTERS = ["ß", "ä", "ö", "ü", "Ä", "Ö", "Ü", "«", "»"]
+_GERMAN_SPECIAL_CHARACTERS = ["ß", "ä", "ö", "ü", "Ä", "Ö", "Ü", "«", "»", "—"]
 _READABLE_CHARACTERS.update(_GERMAN_SPECIAL_CHARACTERS)
 
 

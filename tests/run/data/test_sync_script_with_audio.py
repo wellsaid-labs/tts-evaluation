@@ -1,5 +1,6 @@
 import re
 import typing
+from unittest.mock import patch
 
 from lib.environment import AnsiCodes
 from lib.utils import flatten_2d
@@ -22,6 +23,20 @@ def test__remove_punctuation():
     assert _remove_punctuation("Hello. \n\fYou've") == "Hello You ve"
 
 
+@patch("run.data.sync_script_with_audio.DATASET_LANGUAGE", "de-DE")
+def test__remove_punctuation__de():
+    """Test `_remove_punctuation` removes punctuation and fixes spacing in German cases."""
+    assert _remove_punctuation("123 äöüÄÖÜß !.?") == "123 äöüÄÖÜß"
+    assert (
+        _remove_punctuation("Die Prinzessin sagte: «Du garstiger Frosch!»")
+        == "Die Prinzessin sagte Du garstiger Frosch"
+    )
+    assert (
+        _remove_punctuation("„Hänsel und Gretel\" ist ein Grimm-Märchen. \n\fwie geht's? ")
+        == "Hänsel und Gretel ist ein Grimm Märchen wie geht s"
+    )
+
+
 def test_is_sound_alike():
     """Test `is_sound_alike` if determines if two phrase sound-alike."""
     assert not is_sound_alike("Hello", "Hi")
@@ -37,6 +52,14 @@ def test_is_sound_alike():
     # NOTE: These cases are not supported, yet,
     assert not is_sound_alike("fifteen", "15")
     assert not is_sound_alike("forty", "40")
+
+
+@patch("run.data.sync_script_with_audio.DATASET_LANGUAGE", "de-DE")
+def test_is_sound_alike__de():
+    """Test `is_sound_alike` if determines if two phrase sound-alike in German cases."""
+    assert not is_sound_alike("Hänsel", "Gretel")
+    assert is_sound_alike("Pimpel, Schlafmütz und -- Seppl", "pimpel schlafmütz und seppl")
+    assert is_sound_alike("Die sieben Zwerge sind Brummbär...", "Die sieben Zwerge sind: Brummbär")
 
 
 def test_format_ratio():

@@ -355,6 +355,7 @@ def csv_normalize(
     paths: typing.List[pathlib.Path] = typer.Argument(..., exists=True, dir_okay=False),
     dest: pathlib.Path = typer.Argument(..., exists=True, file_okay=False),
     no_spacy: bool = typer.Option(False, "--no_spacy"),
+    no_decode: bool = typer.Option(False, "--no-decode"),
     required_column: str = typer.Option("Content"),
     optional_columns: typing.List[str] = typer.Option(["Source", "Title"]),
     encoding: str = typer.Option("utf-8"),
@@ -372,7 +373,7 @@ def csv_normalize(
         text = path.read_text(encoding=encoding)
         data_frame = _read_csv(path, required_column, optional_columns, encoding)
         data_frame = data_frame.applymap(
-            functools.partial(_csv_normalize, nlp=nlp, decode=not no_spacy)
+            functools.partial(_csv_normalize, nlp=nlp, decode=not no_decode)
         )
         data_frame.to_csv(dest_path, index=False)
 
