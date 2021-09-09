@@ -56,10 +56,22 @@ OTIS_JIRY__STORY = Speaker("otis_jiry__promo", "Otis Jiry (Story-Telling)")
 # CUSTOM VOICES #
 #################
 ENERGY_INDUSTRY_ACADEMY__CUSTOM_VOICE = Speaker(
-    "energy_industry_academy__custom_voice", "Energy Industry Academy (Custom Voice)"
+    "energy_industry_academy__custom_voice__no_compression",
+    "Energy Industry Academy (Custom Voice, v2)",
 )
+HAPPIFY__CUSTOM_VOICE = Speaker("happify__custom_voice", "Happify (Custom Voice)")
+SUPER_HI_FI__CUSTOM_VOICE = Speaker("super_hi_fi__custom_voice", "Super HiFi (Custom Voice)")
 THE_EXPLANATION_COMPANY__CUSTOM_VOICE = Speaker(
-    "the_explanation_company__custom_voice", "The Explanation Company (Custom Voice)"
+    "the_explanation_company__custom_voice__w_questions",
+    "The Explanation Company (Custom Voice, v2)",
+)
+US_PHARMACOPEIA__CUSTOM_VOICE = Speaker(
+    "us_pharmacopeia__custom_voice", "US Pharmacopeia (Custom Voice)"
+)
+VERITONE__CUSTOM_VOICE = Speaker("veritone__custom_voice", "Veritone (Custom Voice)")
+VIACOM__CUSTOM_VOICE = Speaker("viacom__custom_voice", "Viacom (Custom Voice)")
+HOUR_ONE_NBC__BB_CUSTOM_VOICE = Speaker(
+    "hour_one_nbc__bb_custom_voice", "HourOne X NBC (BB Custom Voice)"
 )
 
 
