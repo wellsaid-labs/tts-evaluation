@@ -42,7 +42,7 @@ image. For reference, see the resource requests in
 
 ```bash
 # TODO: Remove API_KEY authentication
-docker run --rm -p 8000:8000 -e "YOUR_SPEECH_API_KEY=123" \
+docker run --rm -p 8000:8000 \
   gcr.io/${PROJECT_ID}/speech-api-worker:${IMAGE_TAG}
 ```
 
@@ -51,7 +51,7 @@ In a new terminal window, generate an audio sample like so:
 ```bash
 curl http://localhost:8000/api/text_to_speech/stream \
   -H "Content-Type: application/json" \
-  -X POST --data '{"api_key":"123", "speaker_id":"4","text":"Lorem ipsum"}' \
+  -X POST --data '{"speaker_id":"4","text":"Lorem ipsum"}' \
   -o sample.mp3
 ```
 

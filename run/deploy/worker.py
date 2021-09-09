@@ -32,13 +32,13 @@ Example (Flask):
 
       $ CHECKPOINTS=""  # Example: v9
       $ python -m run.deploy.package_tts $CHECKPOINTS
-      $ PYTHONPATH=. YOUR_SPEECH_API_KEY=123 python -m run.deploy.worker
+      $ PYTHONPATH=. python -m run.deploy.worker
 
 Example (Gunicorn):
 
       $ CHECKPOINTS=""
       $ python -m run.deploy.package_tts $CHECKPOINTS
-      $ YOUR_SPEECH_API_KEY=123 gunicorn run.deploy.worker:app --timeout=3600 --env='GUNICORN=1'
+      $ gunicorn run.deploy.worker:app --timeout=3600 --env='GUNICORN=1'
 """
 import gc
 import os
@@ -75,9 +75,7 @@ if __name__ == "__main__":
 app = Flask(__name__)
 
 DEVICE = torch.device("cpu")
-API_KEY_SUFFIX = "_SPEECH_API_KEY"
 MAX_CHARS = 10000
-API_KEYS: typing.Set[str] = set([v for k, v in os.environ.items() if API_KEY_SUFFIX in k])
 TTS_PACKAGE: TTSPackage
 SPACY: English
 # NOTE: The keys need to stay the same for backwards compatibility.
@@ -197,7 +195,6 @@ def before_first_request():
 class RequestArgs(typing.TypedDict):
     speaker_id: int
     text: str
-    api_key: str
 
 
 def validate_and_unpack(
@@ -205,30 +202,9 @@ def validate_and_unpack(
     input_encoder: InputEncoder,
     nlp: English,
     max_chars: int = MAX_CHARS,
-    api_keys: typing.Set[str] = API_KEYS,
     speaker_id_to_speaker: typing.Dict[int, typing.Tuple[Speaker, Session]] = SPEAKER_ID_TO_SPEAKER,
 ) -> EncodedInput:
-    """Validate and unpack the request object.
-
-    TODO: Consider using the authorization header instead of a parameter `api_key`.
-    """
-    if "api_key" not in request_args:
-        raise FlaskException("API key was not provided.", status_code=401, code="MISSING_ARGUMENT")
-
-    api_key = request_args.get("api_key")
-    min_api_key_len = min(len(key) for key in api_keys)
-    max_api_key_len = max(len(key) for key in api_keys)
-
-    if not (
-        isinstance(api_key, str)
-        and (len(api_key) >= min_api_key_len and len(api_key) <= max_api_key_len)
-    ):
-        message = "API key must be a string between"
-        message += f" {min_api_key_len} and {max_api_key_len} characters."
-        raise FlaskException(message, status_code=401, code="INVALID_API_KEY")
-
-    if api_key not in api_keys:
-        raise FlaskException("API key is not valid.", status_code=401, code="INVALID_API_KEY")
+    """ Validate and unpack the request object. """
 
     if not ("speaker_id" in request_args and "text" in request_args):
         message = "Must call with keys `speaker_id` and `text`."
