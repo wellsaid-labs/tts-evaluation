@@ -1,13 +1,13 @@
 {
   "env": "prod",
   "model": "v9",
-  "version": "1",
+  "version": "2",
   "image": "gcr.io/voice-service-2-313121/speech-api-worker@sha256:c5de71f13aff22b9171f23f9921796f93e1765fefa9ba5ca6426836696996a75",
   "imageEntrypoint": "run.deploy.worker:app",
   "provideApiKeyAuthForLegacyContainerSupport": "true",
   "stream": {
     "minScale": 3,
-    "maxScale": 32,
+    "maxScale": 48,
     "concurrency": 1,
     "paths": [
       "/api/text_to_speech/stream"
@@ -23,8 +23,12 @@
   },
   "traffic": [
     {
-      "tag": "1",
+      "tag": "2",
       "percent": 100
+    },
+    {
+      "tag": "1",
+      "percent": 0
     }
   ]
 }
