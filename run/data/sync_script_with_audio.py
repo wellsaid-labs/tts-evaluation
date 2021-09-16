@@ -20,7 +20,7 @@ Usage Example (German):
       --script "$PREFIX/processed/scripts/*.csv" \
       --destination "$PREFIX/processed_local/" \
       --language "de-DE" \
-      --no_decode
+      --no-decode
 """
 import dataclasses
 import json
