@@ -621,6 +621,9 @@ def normalize_vo_script(text: str, strip: bool = True, decode: bool = True) -> s
     text = ftfy.fix_text(text)
     text = text.replace("\f", "\n")
     text = text.replace("\t", "  ")
+    text = text.replace("—", "-")  # em dash
+    text = text.replace("–", "-")  # en dash
+    text = text.replace("\xa0", " ")  # non-breaking space
     if decode:
         text = str(unidecode.unidecode(text))
     if strip:
@@ -631,8 +634,37 @@ def normalize_vo_script(text: str, strip: bool = True, decode: bool = True) -> s
 _READABLE_CHARACTERS = set(
     normalize_vo_script(chr(i), strip=False, decode=False) for i in range(0, 128)
 )
-_GERMAN_SPECIAL_CHARACTERS = ["ß", "ä", "ö", "ü", "Ä", "Ö", "Ü", "«", "»", "—"]
+_GERMAN_SPECIAL_CHARACTERS = ["ß", "ä", "ö", "ü", "Ä", "Ö", "Ü", "«", "»", "‹", "›"]
+_FRENCH_SPECIAL_CHARACTERS = [
+    "â",
+    "Â",
+    "à",
+    "À",
+    "á",
+    "Á",
+    "ê",
+    "Ê",
+    "é",
+    "É",
+    "è",
+    "È",
+    "ë",
+    "Ë",
+    "î",
+    "Î",
+    "ï",
+    "Ï",
+    "ô",
+    "Ô",
+    "ù",
+    "Ù",
+    "û",
+    "Û",
+    "ç",
+    "Ç",
+]
 _READABLE_CHARACTERS.update(_GERMAN_SPECIAL_CHARACTERS)
+_READABLE_CHARACTERS.update(_FRENCH_SPECIAL_CHARACTERS)
 
 
 def is_normalized_vo_script(text: str) -> bool:
