@@ -95,7 +95,7 @@ STT_CONFIG__EN_US = RecognitionConfig(
 
 STT_CONFIG__DE_DE = RecognitionConfig(
     language_code="de-DE",
-    model="default",
+    model="command_and_search",
     use_enhanced=True,
     enable_automatic_punctuation=True,
     enable_word_time_offsets=True,
