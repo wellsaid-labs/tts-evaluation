@@ -256,6 +256,14 @@ def is_sound_alike(a: str, b: str) -> bool:
             if DATASET_LANGUAGE == "en-US"
             else False
         )
+        or (
+            _remove_punctuation(a.lower()).replace("ß", "ss").replace(" ", "")
+            == _remove_punctuation(b.lower()).replace(" ", "")
+        )
+        or (
+            _remove_punctuation(a.lower()).replace(" ", "")
+            == _remove_punctuation(b.lower()).replace("ß", "ss").replace(" ", "")
+        )
     )
     if return_:
         STATS.sound_alike.add(frozenset([a, b]))
