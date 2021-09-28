@@ -17,8 +17,8 @@ from run._streamlit import (
     st_html,
     web_path_to_url,
 )
-from run._tts import CHECKPOINTS_LOADERS, Checkpoints, text_to_speech
-from run.data._loader import Speaker
+from run._tts import CHECKPOINTS_LOADERS, Checkpoints, batch_text_to_speech
+from run.data._loader import Session, Speaker
 
 DEFAULT_SCRIPT = (
     "Your creative life will evolve in ways that you can’t possibly imagine. Trust"
@@ -26,29 +26,8 @@ DEFAULT_SCRIPT = (
 )
 
 
-def _get_speaker_name(speaker):
-    return typing.cast(Speaker, speaker).name.split()[0]
-
-
-def _generate_audio(tts, script, speaker, session, num_clips, session_count):
-    paths = []
-    speaker_name = _get_speaker_name(speaker)
-
-    for clip_count, audio in enumerate(text_to_speech(tts, script, speaker, session, num_clips)):
-        audio_web_path = audio_to_web_path(
-            audio, name="%s_session%d_%d.wav" % (speaker_name, session_count, clip_count + 1)
-        )
-        st_html(f'<audio controls src="{web_path_to_url(audio_web_path)}"></audio>')
-        url = web_path_to_url(audio_web_path)
-        st_html(f'<a href="{url}" download="{audio_web_path.name}">Download Generated Audio</a>')
-        st.text("")
-        paths.append(audio_web_path)
-
-    return paths
-
-
 def main():
-    st.markdown("# Simple Audio Generator ")
+    st.markdown("# Simple Audio Generator")
     st.markdown("Use this workbook to generate audio for quick evaluation.")
     run._config.configure()
 
@@ -59,43 +38,44 @@ def main():
     with st.spinner("Loading checkpoint(s)..."):
         tts = load_tts(checkpoints_key)
 
+    frm = st.form(key="form")
     format_speaker: typing.Callable[[Speaker], str] = lambda s: s.label
     speakers = sorted(tts.input_encoder.speaker_encoder.index_to_token)
-    speaker = st.selectbox("Speaker", options=speakers, format_func=format_speaker)
+    speaker: Speaker = frm.selectbox("Speaker", options=speakers, format_func=format_speaker)
+    assert speaker.name is not None
+    speaker_name = speaker.name.split()[0].lower()
 
-    sessions = tts.input_encoder.session_encoder.index_to_token
-    sessions = sorted([sesh for spk, sesh in sessions if spk == speaker], key=natural_keys)
+    spk_sesh: typing.List[typing.Tuple[Speaker, Session]]
+    spk_sesh = tts.input_encoder.session_encoder.index_to_token
+    sessions = sorted([sesh for spk, sesh in spk_sesh if spk == speaker], key=natural_keys)
 
-    all_sessions = st.checkbox("Sample all %d sessions" % len(sessions))
-    session = st.selectbox("Session", options=["All"] if all_sessions else sessions)
-    script = st.text_area("Script", value=DEFAULT_SCRIPT, height=300)
+    all_sessions: bool = frm.checkbox("Sample all %d sessions" % len(sessions))
+    session: Session = frm.selectbox("Session", options=["All"] if all_sessions else sessions)
+    script: str = frm.text_area("Script", value=DEFAULT_SCRIPT, height=300)
+
+    label = "Number of Clips Per Session"
+    num_clips: int = frm.number_input(label, min_value=1, max_value=None, value=5)
+
+    if not frm.form_submit_button("Submit"):
+        return
+
     st.info(f"The script has {len(script):,} character(s).")
-
-    num_clips = st.number_input(
-        "Number of Clips",
-        min_value=1,
-        max_value=1 if all_sessions else None,
-        value=1 if all_sessions else 5,
-    )
-
-    if not st.button("Generate"):
-        st.stop()
 
     paths = []
     with st.spinner("Generating Audio..."):
-        if all_sessions:
-            for s, sesh in enumerate(sessions):
-                paths.extend(_generate_audio(tts, script, speaker, sesh, num_clips, s + 1))
-        else:
-            paths.extend(
-                _generate_audio(
-                    tts, script, speaker, session, num_clips, sessions.index(session) + 1
-                )
-            )
+        inputs = [(script, speaker, s) for s in (sessions if all_sessions else [session])]
+        inputs = [i for i in inputs for _ in range(num_clips)]
+        for i, generated in enumerate(batch_text_to_speech(tts, inputs)):
+            clip_num = i % num_clips + 1
+            st.markdown(f"Session: **{inputs[i][-1]}**; Clip Num: **{clip_num}**")
+            name = f"{speaker_name}_session{i // num_clips}_{clip_num}.wav"
+            audio_web_path = audio_to_web_path(generated.sig_model, name)
+            st_html(f'<audio controls src="{web_path_to_url(audio_web_path)}"></audio>')
+            paths.append(audio_web_path)
 
     with st.spinner("Making Zipfile..."):
         st.text("")
-        zip_name = "%s_samples.zip" % _get_speaker_name(speaker)
+        zip_name = f"{speaker_name}_samples.zip"
         st_html(paths_to_html_download_link(zip_name, "Download All (zip)", paths))
 
     st.success(f"Finished! {lib.utils.mazel_tov()}")
