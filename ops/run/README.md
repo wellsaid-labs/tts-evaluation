@@ -16,6 +16,8 @@ You'll also need access to the appropriate Google Cloud Project. Prior to
 running the deploy script ensure that your gcloud/kubectl context is correct.
 
 ```bash
+CLUSTER_NAME="" # Example: "staging"
+PROJECT_ID="voice-service-2-313121"
 gcloud config set project $PROJECT_ID
 gcloud config set container/cluster $CLUSTER_NAME
 gcloud container clusters get-credentials $CLUSTER_NAME --region=us-central1
