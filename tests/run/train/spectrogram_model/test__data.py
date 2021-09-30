@@ -12,7 +12,7 @@ from torchnlp.encoders.text import SequenceBatch
 
 import lib
 import run
-from run.data._loader import Alignment
+from run.data._loader import Alignment, Session
 from run.train.spectrogram_model import _data
 from tests._utils import assert_almost_equal, assert_uniform_distribution
 
@@ -27,17 +27,22 @@ def run_around_tests():
 
 def test_input_encoder():
     """Test `_data.InputEncoder` handles a basic case."""
-    graphemes = ["abc", "def"]
+    graphemes = ["aBc", "deF"]
     phonemes = ["ˈ|eɪ|b|ˌ|iː|s|ˈ|iː|", "d|ˈ|ɛ|f"]
     phoneme_separator = "|"
     speakers = [run.data._loader.MARK_ATHERLAY, run.data._loader.MARY_ANN]
-    sessions = ["mark", "mary"]
+    sessions = [
+        (run.data._loader.MARK_ATHERLAY, Session("mark")),
+        (run.data._loader.MARY_ANN, Session("mary")),
+    ]
     encoder = _data.InputEncoder(graphemes, phonemes, speakers, sessions, phoneme_separator)
-    input_ = _data.DecodedInput("a", "ˈ|eɪ", run.data._loader.MARK_ATHERLAY, "mark")
+    input_ = _data.DecodedInput("a", "ˈ|eɪ", run.data._loader.MARK_ATHERLAY, sessions[0])
+
     assert encoder._get_case("A") == encoder._CASE_LABELS[0]
     assert encoder._get_case("a") == encoder._CASE_LABELS[1]
     assert encoder._get_case("1") == encoder._CASE_LABELS[2]
     encoded = encoder.encode(input_)
+
     assert torch.equal(encoded.graphemes, torch.tensor([5]))
     assert torch.equal(encoded.letter_cases, torch.tensor([1]))
     assert torch.equal(encoded.phonemes, torch.tensor([5, 6]))
@@ -45,16 +50,7 @@ def test_input_encoder():
     assert torch.equal(encoded.session, torch.tensor([0]))
     assert encoder.decode(encoded) == input_
 
-
-def test_input_encoder__with_mixed_cases():
-    """Test `_data.InputEncoder` handles a mixed cases in input graphemes."""
-    graphemes = ["aBc", "deF"]
-    phonemes = ["ˈ|eɪ|b|ˌ|iː|s|ˈ|iː|", "d|ˈ|ɛ|f"]
-    phoneme_separator = "|"
-    speakers = [run.data._loader.MARK_ATHERLAY]
-    sessions = ["mark"]
-    encoder = _data.InputEncoder(graphemes, phonemes, speakers, sessions, phoneme_separator)
-    input_ = _data.DecodedInput("B", "|b|ˌ|iː", run.data._loader.MARK_ATHERLAY, "mark")
+    input_ = _data.DecodedInput("B", "|b|ˌ|iː", run.data._loader.MARK_ATHERLAY, sessions[0])
     encoded = encoder.encode(input_)
     assert encoder.decode(encoded) == input_
 
