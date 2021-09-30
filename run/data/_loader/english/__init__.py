@@ -1,8 +1,7 @@
 import typing
 
-from run.data._loader.data_structures import Languages, Speaker
-from run.data._loader.lj_speech import LINDA_JOHNSON, lj_speech_dataset
-from run.data._loader.m_ailabs.english import (
+from run.data._loader.data_structures import Language, Speaker
+from run.data._loader.english.m_ailabs import (
     ELIZABETH_KLETT,
     ELLIOT_MILLER,
     JUDY_BIEBER,
@@ -12,14 +11,7 @@ from run.data._loader.m_ailabs.english import (
     m_ailabs_en_us_judy_bieber_speech_dataset,
     m_ailabs_en_us_mary_ann_speech_dataset,
 )
-from run.data._loader.utils import DataLoader
-from run.data._loader.wellsaid_labs.old_wsl_datasets import (
-    JOSIE__CUSTOM,
-    JOSIE__CUSTOM__MANUAL_POST,
-    LINCOLN__CUSTOM,
-    OLD_WSL_DATASETS,
-)
-from run.data._loader.wellsaid_labs.wsl_datasets import (
+from run.data._loader.english.wsl import (
     ADRIENNE_WALKER_HELLER,
     ADRIENNE_WALKER_HELLER__PROMO,
     ALICIA_HARRIS,
@@ -53,11 +45,19 @@ from run.data._loader.wellsaid_labs.wsl_datasets import (
     THE_EXPLANATION_COMPANY__CUSTOM_VOICE,
     WSL_DATASETS,
 )
+from run.data._loader.english.wsl_archive import (
+    JOSIE__CUSTOM,
+    JOSIE__CUSTOM__MANUAL_POST,
+    LINCOLN__CUSTOM,
+    OLD_WSL_DATASETS,
+)
+from run.data._loader.lj_speech import LINDA_JOHNSON, lj_speech_dataset
+from run.data._loader.utils import DataLoader
 
 # TODO: Consider updating M-AILABS and LJSpeech to Google Storage, so that we can download
 # and upload them faster. It'll also give us protection, if the datasets are deleted.
 
-DATASETS_LANGUAGE = Languages.ENGLISH
+DATASETS_LANGUAGE = Language.ENGLISH
 DATASETS = typing.cast(typing.Dict[Speaker, DataLoader], WSL_DATASETS.copy())
 DATASETS[LINDA_JOHNSON] = lj_speech_dataset  # type: ignore
 DATASETS[JUDY_BIEBER] = m_ailabs_en_us_judy_bieber_speech_dataset
@@ -67,7 +67,6 @@ DATASETS[ELIZABETH_KLETT] = m_ailabs_en_uk_elizabeth_klett_speech_dataset
 
 __all__ = [
     "Speaker",
-    "Languages",
     "ELIZABETH_KLETT",
     "ELLIOT_MILLER",
     "JUDY_BIEBER",

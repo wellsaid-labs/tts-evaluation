@@ -1,16 +1,16 @@
 """
 Sub-module of M-AILABS module for downloading and processing ENGLISH datasets.
 """
-from run.data._loader.data_structures import Languages, Speaker
-from run.data._loader.m_ailabs._utils import Book, Dataset, m_ailabs_speech_dataset
+from run.data._loader.data_structures import Language, make_english_speaker
+from run.data._loader.m_ailabs import Book, Dataset, m_ailabs_speech_dataset
 
 UK_DATASET = Dataset("en_UK")
 US_DATASET = Dataset("en_US")
 
-JUDY_BIEBER = Speaker("judy_bieber", gender="female")
-MARY_ANN = Speaker("mary_ann", gender="female")
-ELLIOT_MILLER = Speaker("elliot_miller", gender="male")
-ELIZABETH_KLETT = Speaker("elizabeth_klett", gender="female")
+JUDY_BIEBER = make_english_speaker("judy_bieber", gender="female")
+MARY_ANN = make_english_speaker("mary_ann", gender="female")
+ELLIOT_MILLER = make_english_speaker("elliot_miller", gender="male")
+ELIZABETH_KLETT = make_english_speaker("elizabeth_klett", gender="female")
 
 THE_SEA_FAIRIES = Book(US_DATASET, JUDY_BIEBER, "the_sea_fairies")
 THE_MASTER_KEY = Book(US_DATASET, JUDY_BIEBER, "the_master_key")
@@ -62,7 +62,7 @@ def m_ailabs_en_us_speech_dataset(
     url="https://data.solak.de/data/Training/stt_tts/en_US.tgz",
     extracted_name=str(US_DATASET),
     books=US_BOOKS,
-    language=Languages.ENGLISH,
+    language=Language.ENGLISH,
     check_files=["en_US/by_book/info.txt"],
     **kwargs,
 ):
@@ -84,7 +84,7 @@ def m_ailabs_en_uk_speech_dataset(
     url="https://data.solak.de/data/Training/stt_tts/en_UK.tgz",
     extracted_name=str(UK_DATASET),
     books=UK_BOOKS,
-    language=Languages.ENGLISH,
+    language=Language.ENGLISH,
     check_files=["en_UK/by_book/info.txt"],
     **kwargs,
 ):

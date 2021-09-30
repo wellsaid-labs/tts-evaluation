@@ -9,8 +9,8 @@ from pathlib import Path
 from third_party import LazyLoader
 from torchnlp.download import download_file_maybe_extract
 
-from run.data._loader.utils import Passage, Speaker, conventional_dataset_loader, make_passages
-from run.data._loader.wellsaid_labs.wsl_datasets import (
+from run.data._loader.data_structures import Passage, Speaker, make_english_speaker
+from run.data._loader.english.wsl import (
     ADRIENNE_WALKER_HELLER,
     ADRIENNE_WALKER_HELLER__PROMO,
     ALICIA_HARRIS,
@@ -38,6 +38,7 @@ from run.data._loader.wellsaid_labs.wsl_datasets import (
     STEVEN_WAHLBERG,
     SUSAN_MURPHY,
 )
+from run.data._loader.utils import conventional_dataset_loader, make_passages
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import pandas
@@ -319,23 +320,23 @@ OLD_WSL_DATASETS = {
 }
 
 
-LINCOLN__CUSTOM = Speaker("Lincoln_custom_ma", "Lincoln (Custom)")
-JOSIE__CUSTOM = Speaker("Josie_Custom", "Josie (Custom)")
-JOSIE__CUSTOM__MANUAL_POST = Speaker(
+LINCOLN__CUSTOM = make_english_speaker("Lincoln_custom_ma", "Lincoln (Custom)")
+JOSIE__CUSTOM = make_english_speaker("Josie_Custom", "Josie (Custom)")
+JOSIE__CUSTOM__MANUAL_POST = make_english_speaker(
     "Josie_Custom_Loudnorm", "Josie (Custom, Loudness Standardized)"
 )
 
 _deprecated_metadata = {
     (
         "Sean Hannity",
-        Speaker("Sean Hannity"),
+        make_english_speaker("Sean Hannity"),
         "https://drive.google.com/uc?export=download&id=1YHX6yl1kX7lQguxSs4sJ1FPrAS9NZ8O4",
         "Sean Hannity.tar.gz",
         False,
     ),
     (
         "Nadine Nagamatsu",
-        Speaker("Nadine Nagamatsu"),
+        make_english_speaker("Nadine Nagamatsu"),
         "https://drive.google.com/uc?export=download&id=1fwW6oV7x3QYImSfG811vhfjp8jKXVMGZ",
         "Nadine Nagamatsu.tar.gz",
         False,
