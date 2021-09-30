@@ -6,8 +6,8 @@ from unittest import mock
 import lib
 import run.data._loader
 from run.data._loader import Alignment
-from run.data._loader.english_datasets import JUDY_BIEBER
-from run.data._loader.m_ailabs.english import US_DATASET, m_ailabs_en_us_speech_dataset
+from run.data._loader.english import JUDY_BIEBER
+from run.data._loader.english.m_ailabs import US_DATASET, m_ailabs_en_us_speech_dataset
 from tests import _utils
 from tests.run.data._loader._utils import maybe_normalize_audio_and_cache_side_effect
 
@@ -49,7 +49,7 @@ def test_m_ailabs_speech_dataset(
             alignments=Alignment.stow([Alignment((0, 14), (0.0, 0.0), (0, 14))]),
             other_metadata={
                 1: "To My Readers.",
-                "book": run.data._loader.m_ailabs._utils.Book(
+                "book": run.data._loader.m_ailabs.Book(
                     dataset=US_DATASET,
                     speaker=JUDY_BIEBER,
                     title="dorothy_and_wizard_oz",
