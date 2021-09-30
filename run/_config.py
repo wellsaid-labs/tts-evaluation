@@ -15,7 +15,7 @@ import lib
 import run
 import run.data._loader.utils
 from run.data import _loader
-from run.data._loader import DATASETS, DATASETS_LANGUAGE, Passage, Span, Speaker
+from run.data._loader import Passage, Span, Speaker
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import IPython
@@ -29,14 +29,11 @@ logger = logging.getLogger(__name__)
 pprinter = pprint.PrettyPrinter(indent=4)
 
 RANDOM_SEED = 1212212
-DATASET_LANGUAGE = copy.copy(DATASETS_LANGUAGE)
 PHONEME_SEPARATOR = "|"
-DATASETS = copy.copy(DATASETS)
+DATASETS = copy.copy(_loader.english.DATASETS)
+del DATASETS[_loader.english.ELLIOT_MILLER]  # NOTE: Elliot has unannotated character portrayals.
 del DATASETS[
-    _loader.english_datasets.ELLIOT_MILLER
-]  # NOTE: Elliot has unannotated character portrayals.
-del DATASETS[
-    _loader.english_datasets.ELIZABETH_KLETT
+    _loader.english.ELIZABETH_KLETT
 ]  # NOTE: Elizabeth has unannotated character portrayals.
 
 # NOTE: It's theoretically impossible to know all the phonemes eSpeak might predict because
@@ -545,8 +542,8 @@ def _include_passage(passage: Passage) -> bool:
     # NOTE: Filter out the North & South book because it uses English in a way that's not consistent
     # with editor usage, for example: "To-morrow, you will-- Come back to-night, John!"
     books = (
-        _loader.m_ailabs.english.MIDNIGHT_PASSENGER,
-        _loader.m_ailabs.english.NORTH_AND_SOUTH,
+        _loader.english.m_ailabs.MIDNIGHT_PASSENGER,
+        _loader.english.m_ailabs.NORTH_AND_SOUTH,
     )
     metadata = passage.other_metadata
     if metadata is not None and "books" in metadata and (metadata["books"] in books):
@@ -591,16 +588,16 @@ def _include_span(span: Span):
     return True
 
 
-DEV_SPEAKERS = _loader.english_datasets.WSL_DATASETS.copy()
+DEV_SPEAKERS = _loader.english.WSL_DATASETS.copy()
 # NOTE: The `MARI_MONGE__PROMO` dataset is too short for evaluation, at 15 minutes long.
-del DEV_SPEAKERS[_loader.english_datasets.MARI_MONGE__PROMO]
+del DEV_SPEAKERS[_loader.english.MARI_MONGE__PROMO]
 # NOTE: The `ALICIA_HARRIS`, `JACK_RUTKOWSKI`, and `SAM_SCHOLL` datasets are duplicate datasets.
 # There is an improved version of their datasets already in `dev_speakers`.
-del DEV_SPEAKERS[_loader.english_datasets.ALICIA_HARRIS]
-del DEV_SPEAKERS[_loader.english_datasets.JACK_RUTKOWSKI]
-del DEV_SPEAKERS[_loader.english_datasets.SAM_SCHOLL]
+del DEV_SPEAKERS[_loader.english.ALICIA_HARRIS]
+del DEV_SPEAKERS[_loader.english.JACK_RUTKOWSKI]
+del DEV_SPEAKERS[_loader.english.SAM_SCHOLL]
 # NOTE: The `BETH_CAMERON__CUSTOM` dataset isn't included in the studio.
-del DEV_SPEAKERS[_loader.english_datasets.BETH_CAMERON__CUSTOM]
+del DEV_SPEAKERS[_loader.english.BETH_CAMERON__CUSTOM]
 DEV_SPEAKERS = set(DEV_SPEAKERS.keys())
 
 
@@ -610,11 +607,11 @@ def _configure_data_processing():
     TODO: Remove `BETH_CAMERON__CUSTOM` from the `WSL_DATASETS` groups because it has it's own
     custom script.
     """
-    groups = [set(_loader.english_datasets.WSL_DATASETS.keys())]
+    groups = [set(_loader.english.WSL_DATASETS.keys())]
     # NOTE: For other datasets like M-AILABS and LJ, this assumes that there is no duplication
     # between different speakers.
     groups += [
-        {s} for s in _loader.DATASETS.keys() if s not in _loader.english_datasets.WSL_DATASETS
+        {s} for s in _loader.english.DATASETS.keys() if s not in _loader.english.WSL_DATASETS
     ]
     config = {
         lib.text.grapheme_to_phoneme: HParams(separator=PHONEME_SEPARATOR),
