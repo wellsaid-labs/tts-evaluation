@@ -63,6 +63,7 @@ RUN apt-get update --fix-missing \
 # weight of our ffmpeg dependency down from ~268mb to ~26mb.
 #   - Official compilation guide: https://trac.ffmpeg.org/wiki/CompilationGuide/Generic
 #   - Dockerfile reference: https://github.com/alfg/docker-ffmpeg/blob/master/Dockerfile
+#   - Informative guide: https://github.com/alberthdev/alberthdev-misc/wiki/Build-your-own-tiny-FFMPEG
 FROM base as ffmpeg-build
 
 ARG FFMPEG_VERSION=4.4
