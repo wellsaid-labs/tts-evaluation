@@ -119,7 +119,7 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
 If aligning data for multiple speakers, it can be helpful to process each in their own named screen session
 
    ```
-   screen -s [name]
+   screen -S [name]
    ```
 Press any key. Create a virtual environment for processing.
    ```
