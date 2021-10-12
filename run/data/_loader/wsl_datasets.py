@@ -35,16 +35,26 @@ SAM_SCHOLL__MANUAL_POST = Speaker("sam_scholl__manual_post", "Sam Scholl (Manual
 STEVEN_WAHLBERG = Speaker("steven_wahlberg", "Steven Wahlberg")
 SUSAN_MURPHY = Speaker("susan_murphy", "Susan Murphy")
 
+ALISTAIR_DAVIS__EN_GB = Speaker("alistair_davis__en_gb", "Alistair Davis (en_GB)")
+
 ###############
 # PROMOTIONAL #
 ###############
 ADRIENNE_WALKER_HELLER__PROMO = Speaker("adrienne_walker__promo", "Adrienne Walker-Heller (Promo)")
+BRIAN_DIAMOND__EN_IE__PROMO = Speaker("brian_diamond__en_ie__promo", "Brian Diamond (Promo, en_IE)")
+CHRISTOPHER_DANIELS__PROMO = Speaker("christopher_daniels__promo", "Christopher Daniels (Promo)")
 DAMON_PAPADOPOULOS__PROMO = Speaker("damon_papadopoulos__promo", "Damon Papadopoulos (Promo)")
+DAN_FURCA__PROMO = Speaker("dan_furca__promo", "Dan Furca (Promo)")
 DANA_HURLEY__PROMO = Speaker("dana_hurley__promo", "Dana Hurley (Promo)")
+DARBY_CUPIT__PROMO = Speaker("darby_cupit__promo", "Darby Cupit (Promo)")
 ED_LACOMB__PROMO = Speaker("ed_lacomb__promo", "Ed LaComb (Promo)")
+IZZY_TUGMAN = Speaker("izzy_tugman__promo", "Izzy Tugman (Promo)")
 JOHN_HUNERLACH__RADIO = Speaker("john_hunerlach__radio", "John Hunerlach (Radio)")
 LINSAY_ROUSSEAU__PROMO = Speaker("linsay_rousseau__promo", "Linsay Rousseau (Promo)")
+NAOMI_MERCER_MCKELL__PROMO = Speaker("naomi_mercer_mckell", "Naomi Mercer McKell (Promo)")
 SAM_SCHOLL__PROMO = Speaker("sam_scholl__promo", "Sam Scholl (Promo)")
+SHARON_GAULD_ALEXANDER = Speaker("sharon_gauld_alexander__promo", "Sharon Gauld Alexander (Promo)")
+SHAWN_WILLIAMS__PROMO = Speaker("shawn_williams__promo", "Shawn Williams (Promo)")
 
 #########
 # OTHER #
