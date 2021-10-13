@@ -48,12 +48,14 @@ DAN_FURCA__PROMO = Speaker("dan_furca__promo", "Dan Furca (Promo)")
 DANA_HURLEY__PROMO = Speaker("dana_hurley__promo", "Dana Hurley (Promo)")
 DARBY_CUPIT__PROMO = Speaker("darby_cupit__promo", "Darby Cupit (Promo)")
 ED_LACOMB__PROMO = Speaker("ed_lacomb__promo", "Ed LaComb (Promo)")
-IZZY_TUGMAN = Speaker("izzy_tugman__promo", "Izzy Tugman (Promo)")
+IZZY_TUGMAN__PROMO = Speaker("izzy_tugman__promo", "Izzy Tugman (Promo)")
 JOHN_HUNERLACH__RADIO = Speaker("john_hunerlach__radio", "John Hunerlach (Radio)")
 LINSAY_ROUSSEAU__PROMO = Speaker("linsay_rousseau__promo", "Linsay Rousseau (Promo)")
-NAOMI_MERCER_MCKELL__PROMO = Speaker("naomi_mercer_mckell", "Naomi Mercer McKell (Promo)")
+NAOMI_MERCER_MCKELL__PROMO = Speaker("naomi_mercer_mckell__promo", "Naomi Mercer McKell (Promo)")
 SAM_SCHOLL__PROMO = Speaker("sam_scholl__promo", "Sam Scholl (Promo)")
-SHARON_GAULD_ALEXANDER = Speaker("sharon_gauld_alexander__promo", "Sharon Gauld Alexander (Promo)")
+SHARON_GAULD_ALEXANDER__PROMO = Speaker(
+    "sharon_gauld_alexander__promo", "Sharon Gauld Alexander (Promo)"
+)
 SHAWN_WILLIAMS__PROMO = Speaker("shawn_williams__promo", "Shawn Williams (Promo)")
 
 #########
