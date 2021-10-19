@@ -124,20 +124,12 @@ SPEAKER_ID_TO_SPEAKER: typing.Dict[int, typing.Tuple[Speaker, Session]] = {
     11541: (_loader.LINCOLN__CUSTOM, Session("")),
     13268907: (_loader.JOSIE__CUSTOM, Session("")),
     95313811: (_loader.JOSIE__CUSTOM__MANUAL_POST, Session("")),
-    78252076: (_loader.VERITONE__CUSTOM_VOICE, Session("")),
     70695443: (_loader.SUPER_HI_FI__CUSTOM_VOICE, Session("promo_script_5_superhifi.wav")),
     64197676: (_loader.US_PHARMACOPEIA__CUSTOM_VOICE, Session("enthusiastic_script-22.wav")),
     41935205: (
         _loader.HAPPIFY__CUSTOM_VOICE,
         Session("anna_long_emotional_clusters_1st_half_clean.wav"),
     ),
-    42400423: (
-        _loader.THE_EXPLANATION_COMPANY__CUSTOM_VOICE,
-        Session("what_were_the_first_computers_like.wav"),
-    ),
-    61137774: (_loader.ENERGY_INDUSTRY_ACADEMY__CUSTOM_VOICE, Session("sample_script_4.wav")),
-    30610881: (_loader.VIACOM__CUSTOM_VOICE, Session("kelsey_speech_synthesis_section1.wav")),
-    50481197: (_loader.HOUR_ONE_NBC__BB_CUSTOM_VOICE, Session("hour_one_nbc_dataset_5.wav")),
 }
 
 
@@ -204,7 +196,7 @@ def validate_and_unpack(
     max_chars: int = MAX_CHARS,
     speaker_id_to_speaker: typing.Dict[int, typing.Tuple[Speaker, Session]] = SPEAKER_ID_TO_SPEAKER,
 ) -> EncodedInput:
-    """ Validate and unpack the request object. """
+    """Validate and unpack the request object."""
 
     if not ("speaker_id" in request_args and "text" in request_args):
         message = "Must call with keys `speaker_id` and `text`."
