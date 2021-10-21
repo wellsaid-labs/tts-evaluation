@@ -108,7 +108,7 @@ def main():
     for i, (spec_items, (sig_model, sig_path), (speaker, session), script) in enumerate(iter_):
         (input_encoder, spec_model), spec_path = spec_items
         package = TTSPackage(input_encoder, spec_model, sig_model)
-        audio = text_to_speech(package, script, speaker, session)[0]
+        audio = text_to_speech(package, script, speaker, session)
         sesh = str(session).replace("/", "__")
         name = f"i={i},spec={spec_path.stem},sig={sig_path.stem},spk={speaker.label},"
         name += f"sesh={sesh},script={id(script)}.wav"

@@ -226,25 +226,19 @@ def text_to_speech(
     script: str,
     speaker: Speaker,
     session: Session,
-    num_clips: int = 1,
     split_size: int = 32,
-) -> typing.List[numpy.ndarray]:
+) -> numpy.ndarray:
     """Run TTS end-to-end with friendly errors."""
     nlp = load_en_core_web_md(disable=("parser", "ner"))
     encoded = encode_tts_inputs(nlp, package.input_encoder, script, speaker, session)
     params = Params(tokens=encoded.phonemes, speaker=encoded.speaker, session=encoded.session)
-
-    results = []
-    for _ in range(num_clips):
-        preds = typing.cast(Infer, package.spectrogram_model(params=params, mode=Mode.INFER))
-        splits = preds.frames.split(split_size)
-        predicted = list(
-            generate_waveform(package.signal_model, splits, encoded.speaker, encoded.session)
-        )
-        predicted = typing.cast(torch.Tensor, torch.cat(predicted, dim=-1))
-        results.append(predicted.detach().numpy())
-
-    return results
+    preds = typing.cast(Infer, package.spectrogram_model(params=params, mode=Mode.INFER))
+    splits = preds.frames.split(split_size)
+    predicted = list(
+        generate_waveform(package.signal_model, splits, encoded.speaker, encoded.session)
+    )
+    predicted = typing.cast(torch.Tensor, torch.cat(predicted, dim=-1))
+    return predicted.detach().numpy()
 
 
 class TTSInputOutput(typing.NamedTuple):
@@ -291,7 +285,7 @@ def batch_text_to_speech(
         spectrogram = preds.frames.transpose(0, 1)
         spectrogram_mask = lengths_to_mask(preds.lengths)
         signals = package.signal_model(
-            spectrogram, spectrogram_mask, params.session, params.speaker
+            spectrogram, params.speaker, params.session, spectrogram_mask
         )
         lengths = preds.lengths * package.signal_model.upscale_factor
         more_results = {
