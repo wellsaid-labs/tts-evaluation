@@ -1,0 +1,30 @@
+{
+  "env": "staging",
+  "model": "v9-2021-q4-marketplace-expansion",
+  "version": "1",
+  "image": "gcr.io/voice-service-2-313121/speech-api-worker@sha256:0e263a7eec55f5caf3f5ca35cd8bd7e58e833c108e39b2d3ce2425834c45ba46",
+  "imageEntrypoint": "run.deploy.worker:app",
+  "provideApiKeyAuthForLegacyContainerSupport": "true",
+  "stream": {
+    "minScale": 0,
+    "maxScale": 32,
+    "concurrency": 1,
+    "paths": [
+      "/api/text_to_speech/stream"
+    ]
+  },
+  "validate": {
+    "minScale": 0,
+    "maxScale": 8,
+    "concurrency": 4,
+    "paths": [
+      "/api/text_to_speech/input_validated"
+    ]
+  },
+  "traffic": [
+    {
+      "tag": "1",
+      "percent": 100
+    }
+  ]
+}

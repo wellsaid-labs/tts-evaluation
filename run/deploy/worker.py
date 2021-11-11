@@ -119,6 +119,24 @@ SPEAKER_ID_TO_SPEAKER: typing.Dict[int, typing.Tuple[Speaker, Session]] = {
         _loader.JACK_RUTKOWSKI__MANUAL_POST,
         Session("wsl_jackrutkowski_enthusiastic_script_27-processed.wav"),
     ),
+    33: (_loader.ALISTAIR_DAVIS__EN_GB, Session("enthusiastic_script_5_davis.wav")),
+    34: (_loader.BRIAN_DIAMOND__EN_IE__PROMO, Session("promo_script_7_diamond.wav")),
+    35: (
+        _loader.CHRISTOPHER_DANIELS__PROMO,
+        Session("promo_script_5_daniels.wav"),
+    ),  # Test in staging due to low quality
+    36: (
+        _loader.DAN_FURCA__PROMO,
+        Session("furca_audio_part3.wav"),
+    ),  # Test in staging due to low quality
+    37: (_loader.DARBY_CUPIT__PROMO, Session("promo_script_1_cupit_02.wav")),
+    38: (_loader.IZZY_TUGMAN__PROMO, Session("promo_script_5_tugman.wav")),
+    39: (_loader.NAOMI_MERCER_MCKELL__PROMO, Session("promo_script_6_mckell.wav")),
+    40: (
+        _loader.SHARON_GAULD_ALEXANDER__PROMO,
+        Session("promo_script_5_alexander.wav"),
+    ),  # Do not release till paid
+    41: (_loader.SHAWN_WILLIAMS__PROMO, Session("promo_script_9_williams.wav")),
     # NOTE: Custom voice IDs are random numbers larger than 10,000...
     # TODO: Retrain some of these voices, and reconfigure them.
     11541: (_loader.LINCOLN__CUSTOM, Session("")),

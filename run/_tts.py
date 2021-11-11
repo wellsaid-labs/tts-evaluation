@@ -138,7 +138,7 @@ class Checkpoints(enum.Enum):
     """
 
     V9_2021_8_03_CUSTOM_VOICES: typing.Final = "v9_2021_8_03_custom_voices"
-    
+
     """
 
     These checkpoints include the Viacom custom voice.
@@ -180,6 +180,20 @@ class Checkpoints(enum.Enum):
     V9_2021_8_11_HOUR_ONE_X_NBC_CUSTOM_VOICE: typing.Final = (
         "v9_2021_8_11_hour_one_x_nbc_custom_voice"
     )
+
+    """
+
+    These checkpoints include the 2021 Q4 Marketplace Expansion voices:
+    Steve B., Paul B., Eric S., Marcus G., Chase J., Jude D., Charlie Z., Bella B., Tilda C.
+
+    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/***
+    Spectrogram Model Experiment (Step: 703,927):
+    https://www.comet.ml/wellsaid-labs/v9-marketplace-voices/011893b50e4947ba9480cd0bc6d4dd1e
+    Signal Model Experiment (Step: 958,209):
+    https://www.comet.ml/wellsaid-labs/v9-marketplace-voices/90a55cdfc1174a9d8399e014fcee5fc8
+    """
+
+    V9_2021_Q4_MARKETPLACE_EXPANSION: typing.Final = "v9_2021_q4_marketplace_expansion"
 
 
 _GCS_PATH = "gs://wellsaid_labs_checkpoints/"
