@@ -116,17 +116,22 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
 
 ### Screen sessions
 
-If aligning data for multiple speakers, it can be helpful to process each in their own named screen session
-
-   ```
-   screen -S [name]
-   ```
-Press any key. Create a virtual environment for processing.
+Create a virtual environment for processing.
    ```
    python3.8 -m venv venv
    . venv/bin/activate
    python -m pip install wheel pip --upgrade
    python -m pip install -r requirements.txt --upgrade
+   ```
+If aligning data for multiple speakers, it can be helpful to process each in their own named screen session
+
+   ```
+   screen -S [name]
+   ```
+Press any key.
+
+   ```
+   . venv/bin/activate
    ```
 At any time, press `ctrl+a, d` to detach from the screen session. Then `screen -r [name]` to reattach to the session named `[name]`.
 
