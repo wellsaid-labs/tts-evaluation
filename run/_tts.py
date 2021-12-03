@@ -186,7 +186,7 @@ class Checkpoints(enum.Enum):
     These checkpoints include the 2021 Q4 Marketplace Expansion voices:
     Steve B., Paul B., Eric S., Marcus G., Chase J., Jude D., Charlie Z., Bella B., Tilda C.
 
-    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/***
+    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/374
     Spectrogram Model Experiment (Step: 703,927):
     https://www.comet.ml/wellsaid-labs/v9-marketplace-voices/011893b50e4947ba9480cd0bc6d4dd1e
     Signal Model Experiment (Step: 958,209):
