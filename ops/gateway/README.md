@@ -72,7 +72,10 @@ for more details.
    And confirm the tagged image exists:
 
    ```bash
+   # locally
    docker image ls gcr.io/$PROJECT_ID/kong
+   # remote registry
+   gcloud container images list-tags gcr.io/$PROJECT_ID/kong
    ```
 
 1. Now that the image exists in our remote registry, we need to update our
@@ -157,6 +160,16 @@ Stackdriver.
 
 ```bash
 kubectl apply -f ./ops/gateway/kong/plugins/file-log.yaml
+```
+
+### Deploying the `content-moderation` plugin
+
+The [content-moderation](./kong/kong-content-moderation/README.md) plugin is
+used to moderate content going through our streaming services. This plugin
+relies on a separately deployed moderation service (currently a Cloud Function)
+
+```bash
+kubectl apply -f ./ops/gateway/kong/plugins/content-moderation.$ENV.yaml
 ```
 
 ### Deploying the `latest-version-transformation` plugin
