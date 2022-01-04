@@ -1,7 +1,7 @@
 import typing
 
 from run.data._loader.data_structures import Speaker
-from run.data._loader.english import m_ailabs, wsl
+from run.data._loader.german import m_ailabs, wsl
 from run.data._loader.german.m_ailabs import (
     ANGELA_MERKEL,
     EVA_K,
