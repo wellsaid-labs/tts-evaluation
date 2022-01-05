@@ -41,6 +41,7 @@ del DATASETS[_loader.english.ELIZABETH_KLETT]
 # TODO: Remove this once `grapheme_to_phoneme` is deprecated.
 # fmt: off
 PHONEME_SEPARATOR = "|"
+GRAPHEME_TO_PHONEME_RESTRICTED = list(lib.text.GRAPHEME_TO_PHONEME_RESTRICTED) + [PHONEME_SEPARATOR]
 DATASET_PHONETIC_CHARACTERS = [
     '\n', ' ', '!', '"', "'", '(', ')', '*', ',', '-', '.', '/', ':', ';', '?', '[', ']', '=', 'aɪ',
     'aɪə', 'aɪɚ', 'aɪʊ', 'aɪʊɹ', 'aʊ', 'b', 'd', 'dʒ', 'eɪ', 'f', 'h', 'i', 'iə', 'iː', 'j',
@@ -364,6 +365,9 @@ def _configure_audio_processing():
             standard_deviation=2,
         ),
         run._tts.text_to_speech_ffmpeg_generator: HParams(sample_rate=format_.sample_rate),
+        # NOTE: This configuration is dependent on language.
+        # TODO: Remove this dependency
+        run._tts.encode_tts_inputs: HParams(seperator=PHONEME_SEPARATOR),
     }
     add_config(config)
 

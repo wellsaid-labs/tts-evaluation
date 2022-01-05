@@ -32,8 +32,7 @@ from lib.audio import sec_to_sample
 from lib.distributed import get_rank, get_world_size, is_initialized
 from lib.samplers import BucketBatchSampler
 from lib.utils import Tuple, flatten_2d
-from run._config import DATASETS_LANGUAGE
-from run.data._loader import Alignment, Languages, Session, Span, Speaker
+from run.data._loader import Alignment, Language, Session, Span, Speaker
 from run.train import _utils
 
 if typing.TYPE_CHECKING:  # pragma: no cover
@@ -78,9 +77,10 @@ class InputEncoder(Encoder):
     """Handles encoding and decoding input to the spectrogram model.
 
     Args:
-        ....
-        tokens: dataset vocabulary; could be characters or phonemes.
-        token_separator: Delimiter to split tokens (used for phonemes).
+        ...
+        tokens: List of token strings that may be encoded.
+        ...
+        token_separator: Tokens are split on characters unless a different seperate is provided.
         **args: Additional arguments passed to `super()`.
         **kwargs: Additional key-word arguments passed to `super()`.
     """
@@ -97,9 +97,9 @@ class InputEncoder(Encoder):
         self,
         graphemes: typing.List[str],
         tokens: typing.List[str],
-        token_separator: typing.Optional[str],
         speakers: typing.List[Speaker],
         sessions: typing.List[typing.Tuple[Speaker, Session]],
+        token_separator: typing.Optional[str] = HParam(),
         *args,
         **kwargs,
     ):
@@ -418,6 +418,18 @@ class Batch(_utils.Batch):
         return len(self.spans)
 
 
+def _en_span_to_tokens(spans: typing.List[Span]) -> typing.List[str]:
+    """Process English `Span` of text into tokens."""
+    nlp = lib.text.load_en_core_web_md(disable=("parser", "ner"))
+    en_docs: typing.List[spacy.tokens.Doc] = list(nlp.pipe([s.passage.script for s in spans]))
+    for i in range(len(spans)):
+        script_slice = spans[i].script_slice
+        span = en_docs[i].char_span(script_slice.start, script_slice.stop)  # type: ignore
+        assert span is not None, "Invalid `spacy.tokens.Span` selected."
+        en_docs[i] = span.as_doc()
+    return typing.cast(typing.List[str], lib.text.grapheme_to_phoneme(en_docs))
+
+
 def make_batch(
     spans: typing.List[Span], input_encoder: InputEncoder, max_workers: int = 6
 ) -> Batch:
@@ -455,24 +467,13 @@ def make_batch(
 
     assert len(spans) > 0, "Batch must have at least one item."
 
-    nlp = lib.text.load_en_core_web_md(disable=("parser", "ner"))
-    docs: typing.List[spacy.tokens.Doc] = list(nlp.pipe([s.passage.script for s in spans]))
-    for i in range(len(spans)):
-        script_slice = spans[i].script_slice
-        span = docs[i].char_span(script_slice.start, script_slice.stop)  # type: ignore
-        assert span is not None, "Invalid `spacy.tokens.Span` selected."
-        docs[i] = span.as_doc()
+    en_spans = [(i, s) for i, s in enumerate(spans) if s.speaker.language == Language.ENGLISH]
+    en_tokens = _en_span_to_tokens([s for _, s in en_spans])
 
-    if DATASETS_LANGUAGE == Languages.ENGLISH:
-        tokens = typing.cast(typing.List[str], lib.text.grapheme_to_phoneme(docs))
-        decoded = [
-            DecodedInput(s.script, p, s.speaker, (s.speaker, s.session))
-            for s, p in zip(spans, tokens)
-        ]
-    else:
-        decoded = [
-            DecodedInput(s.script, s.script, s.speaker, (s.speaker, s.session)) for s in spans
-        ]
+    decoded = [DecodedInput(s.script, s.script, s.speaker, (s.speaker, s.session)) for s in spans]
+    for (i, span), token in zip(en_spans, en_tokens):
+        decoded[i] = DecodedInput(span.script, token, span.speaker, (span.speaker, span.session))
+
     encoded = [input_encoder.encode(d) for d in decoded]
     with futures.ThreadPoolExecutor(max_workers=min(max_workers, len(spans))) as pool:
         signals_ = list(pool.map(lambda s: s.audio(), spans))

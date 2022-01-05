@@ -24,16 +24,11 @@ from torchnlp.utils import lengths_to_mask
 from lib.environment import PT_EXTENSION, load
 from lib.signal_model import SignalModel, generate_waveform
 from lib.spectrogram_model import Infer, Mode, Params, SpectrogramModel
-from lib.text import (
-    GRAPHEME_TO_PHONEME_RESTRICTED,
-    grapheme_to_phoneme,
-    load_en_core_web_md,
-    normalize_vo_script,
-)
+from lib.text import grapheme_to_phoneme, load_en_core_web_md, normalize_vo_script
 from lib.utils import get_chunks, tqdm_
 from run import train
-from run._config import CHECKPOINTS_PATH, DATASETS_LANGUAGE, PHONEME_SEPARATOR
-from run.data._loader import Languages, Session, Span, Speaker
+from run._config import CHECKPOINTS_PATH, GRAPHEME_TO_PHONEME_RESTRICTED
+from run.data._loader import Language, Session, Span, Speaker
 from run.train.spectrogram_model._data import DecodedInput, EncodedInput, InputEncoder
 
 if typing.TYPE_CHECKING:  # pragma: no cover
@@ -177,14 +172,8 @@ class PublicSpeakerValueError(ValueError):
     pass
 
 
-@configurable
 def encode_tts_inputs(
-    nlp: English,
-    input_encoder: InputEncoder,
-    script: str,
-    speaker: Speaker,
-    session: Session,
-    separator: typing.Optional[str],
+    nlp: English, input_encoder: InputEncoder, script: str, speaker: Speaker, session: Session
 ) -> EncodedInput:
     """Encode TTS `script`, `speaker` and `session` for use with the model(s) with friendly errors
     for common issues.
@@ -192,28 +181,25 @@ def encode_tts_inputs(
     normalized = normalize_vo_script(script)
     if len(normalized) == 0:
         raise PublicTextValueError("Text cannot be empty.")
-    restricted = list(GRAPHEME_TO_PHONEME_RESTRICTED)
-    if separator:
-        restricted += [separator]
-    for substring in restricted:
-        if substring in normalized:
-            raise PublicTextValueError(f"Text cannot contain these characters: {substring}")
 
-    tokens = (
-        typing.cast(str, grapheme_to_phoneme(nlp(normalized)))
-        if DATASETS_LANGUAGE == Languages.ENGLISH
-        else normalized
-    )
+    if Speaker.language == Language.ENGLISH:
+        for substring in GRAPHEME_TO_PHONEME_RESTRICTED:
+            if substring in normalized:
+                raise PublicTextValueError(f"Text cannot contain these characters: {substring}")
+        tokens = typing.cast(str, grapheme_to_phoneme(nlp(normalized)))
+    else:
+        tokens = normalized
+
     if len(tokens) == 0:
         raise PublicTextValueError(f'Invalid text: "{script}"')
 
     decoded = DecodedInput(normalized, tokens, speaker, (speaker, session))
-    phoneme_encoder = input_encoder.token_encoder
+    token_encoder = input_encoder.token_encoder
     try:
-        phoneme_encoder.encode(decoded.tokens)
+        token_encoder.encode(decoded.tokens)
     except ValueError:
-        vocab = set(phoneme_encoder.vocab)
-        difference = set(phoneme_encoder.tokenize(decoded.tokens)).difference(vocab)
+        vocab = set(token_encoder.vocab)
+        difference = set(token_encoder.tokenize(decoded.tokens)).difference(vocab)
         difference = ", ".join([repr(c)[1:-1] for c in sorted(list(difference))])
         raise PublicTextValueError("Text cannot contain these characters: %s" % difference)
 
@@ -237,9 +223,7 @@ def text_to_speech(
 ) -> numpy.ndarray:
     """Run TTS end-to-end with friendly errors."""
     nlp = load_en_core_web_md(disable=("parser", "ner"))
-    encoded = encode_tts_inputs(
-        nlp, package.input_encoder, script, speaker, session, PHONEME_SEPARATOR
-    )
+    encoded = encode_tts_inputs(nlp, package.input_encoder, script, speaker, session)
     params = Params(tokens=encoded.tokens, speaker=encoded.speaker, session=encoded.session)
     preds = typing.cast(Infer, package.spectrogram_model(params=params, mode=Mode.INFER))
     splits = preds.frames.split(split_size)

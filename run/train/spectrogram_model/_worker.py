@@ -26,7 +26,6 @@ import lib
 from lib.distributed import is_master
 from run._config import (
     DATASET_PHONETIC_CHARACTERS,
-    PHONEME_SEPARATOR,
     Cadence,
     Dataset,
     DatasetType,
@@ -139,7 +138,6 @@ class _State:
         input_encoder = InputEncoder(
             [p.script for p in passages],
             DATASET_PHONETIC_CHARACTERS,
-            PHONEME_SEPARATOR,
             list(train_dataset.keys()) + list(dev_dataset.keys()),
             [(p.speaker, p.session) for p in passages],
         )
