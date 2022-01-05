@@ -5,7 +5,6 @@ import threading
 from torchnlp.random import fork_rng
 
 import lib
-from run._config import PHONEME_SEPARATOR
 from run._tts import encode_tts_inputs, text_to_speech_ffmpeg_generator
 from tests.run._utils import make_mock_tts_package
 

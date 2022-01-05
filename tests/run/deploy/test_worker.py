@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 def run_around_tests():
     config = {
         lib.text.grapheme_to_phoneme: hparams.HParams(separator=run._config.PHONEME_SEPARATOR),
-        # run._tts.encode_tts_inputs: hparams.HParams(seperator=run._config.PHONEME_SEPARATOR),
+        run._tts.encode_tts_inputs: hparams.HParams(seperator=run._config.PHONEME_SEPARATOR),
         InputEncoder.__init__: hparams.HParams(token_separator=run._config.PHONEME_SEPARATOR),
     }
     hparams.add_config(config)
