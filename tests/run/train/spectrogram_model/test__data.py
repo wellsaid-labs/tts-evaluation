@@ -33,7 +33,7 @@ def test_input_encoder():
     phoneme_separator = "|"
     speakers = [MARK_ATHERLAY, MARY_ANN]
     sessions = [(MARK_ATHERLAY, Session("mark")), (MARY_ANN, Session("mary"))]
-    encoder = _data.InputEncoder(graphemes, phonemes, phoneme_separator, speakers, sessions)
+    encoder = _data.InputEncoder(graphemes, phonemes, speakers, sessions, phoneme_separator)
     input_ = _data.DecodedInput("a", "ˈ|eɪ", MARK_ATHERLAY, sessions[0])
     assert encoder._get_case("A") == encoder._CASE_LABELS[0]
     assert encoder._get_case("a") == encoder._CASE_LABELS[1]

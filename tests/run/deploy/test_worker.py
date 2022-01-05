@@ -40,7 +40,7 @@ def test_validate_and_unpack():
     script = "This is a test. ABC."
     phonemes = _line_grapheme_to_phoneme([script], separator=run._config.PHONEME_SEPARATOR)[0]
     input_encoder = InputEncoder(
-        [script], [phonemes], run._config.PHONEME_SEPARATOR, [speaker], [(speaker, session)]
+        [script], [phonemes], [speaker], [(speaker, session)], run._config.PHONEME_SEPARATOR
     )
     speaker_id = input_encoder.speaker_encoder.token_to_index[speaker]
     speaker_id_to_speaker = {0: (speaker, session)}

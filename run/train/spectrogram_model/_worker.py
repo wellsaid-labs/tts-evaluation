@@ -132,7 +132,7 @@ class _State:
     ) -> InputEncoder:
         """Initialize an input encoder to encode model input.
 
-        TODO: For some reason, Comet doesn't log: "phoneme_vocab".
+        TODO: For some reason, Comet doesn't log: "phoneme_vocab". (Now known as "token_vocab".)
         """
         passages = list(chain(*tuple(chain(train_dataset.values(), dev_dataset.values()))))
         input_encoder = InputEncoder(
