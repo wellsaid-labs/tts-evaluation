@@ -20,9 +20,7 @@ def _make_args():
     script, speaker, session = passage.script, passage.speaker, passage.session
     # NOTE: The script needs to be long enough to pass the below tests.
     script = " ".join([script] * 3)
-    encoded = encode_tts_inputs(
-        nlp, package.input_encoder, script, speaker, session, PHONEME_SEPARATOR
-    )
+    encoded = encode_tts_inputs(nlp, package.input_encoder, script, speaker, session)
     return package, encoded
 
 
