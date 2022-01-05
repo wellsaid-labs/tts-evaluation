@@ -24,6 +24,10 @@ from run.data._loader.utils import (
     read_audio,
 )
 
+DATASETS = {**german.DATASETS, **english.DATASETS}
+WSL_DATASETS = {**german.WSL_DATASETS, **english.WSL_DATASETS}
+
+
 __all__ = [
     "data_structures",
     "english",
