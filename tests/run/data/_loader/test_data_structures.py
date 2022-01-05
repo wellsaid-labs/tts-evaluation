@@ -13,6 +13,7 @@ from run.data._loader.data_structures import (
     Alignment,
     IntInt,
     IsLinked,
+    Language,
     Passage,
     Session,
     Span,
@@ -25,15 +26,19 @@ from run.data._loader.data_structures import (
     has_a_mistranscription,
     make_passages,
 )
+from run.data._loader.english import LINDA_JOHNSON
 from run.data._loader.utils import get_non_speech_segments_and_cache
-from run.data._loader.english_datasets import LINDA_JOHNSON
 from tests._utils import TEST_DATA_PATH
 
 TEST_DATA_LJ = TEST_DATA_PATH / "audio" / "bit(rate(lj_speech,24000),32).wav"
 
 
 def make_unprocessed_passage(
-    audio_path=pathlib.Path("."), speaker=Speaker(""), script="", transcript="", alignments=None
+    audio_path=pathlib.Path("."),
+    speaker=Speaker("", Language.ENGLISH),
+    script="",
+    transcript="",
+    alignments=None,
 ) -> UnprocessedPassage:
     """Make a `UnprocessedPassage` for testing."""
     return UnprocessedPassage(audio_path, speaker, script, transcript, alignments)
@@ -290,7 +295,7 @@ def _make_unprocessed_passage_helper(
     found = [(find_script(script, t), find_transcript(transcript, t)) for t in tokens]
     return UnprocessedPassage(
         audio_path=TEST_DATA_LJ,
-        speaker=Speaker(""),
+        speaker=Speaker("", Language.ENGLISH),
         script=script,
         transcript=transcript,
         alignments=tuple(Alignment(s, (0.0, 0.0), t) for s, t in found),

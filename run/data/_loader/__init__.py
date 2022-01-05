@@ -1,22 +1,18 @@
-from run.data._loader import data_structures, english_datasets, m_ailabs, utils
+from run.data._loader import data_structures, english, german, m_ailabs, utils
 from run.data._loader.data_structures import (
     Alignment,
+    Language,
     NonalignmentSpans,
     Passage,
     Session,
     Span,
+    Speaker,
     alignment_dtype,
     has_a_mistranscription,
     voiced_nonalignment_spans,
 )
-from run.data._loader.english_datasets import (
-    DATASETS,
-    DATASETS_LANGUAGE,
-    DataLoader,
-    Languages,
-    Speaker,
-)
 from run.data._loader.utils import (
+    DataLoader,
     SpanGenerator,
     conventional_dataset_loader,
     dataset_loader,
@@ -28,25 +24,27 @@ from run.data._loader.utils import (
     read_audio,
 )
 
-# from run.data._loader import wsl_init__german
-# from run.data._loader.wsl_init__german import DATASETS, DataLoader, Speaker
+DATASETS = {**german.DATASETS, **english.DATASETS}
+WSL_DATASETS = {**german.WSL_DATASETS, **english.WSL_DATASETS}
 
-DATASETS_LANGUAGE = DATASETS_LANGUAGE
-DATASETS = DATASETS
 
 __all__ = [
     "data_structures",
-    "english_datasets",
-    "utils",
+    "english",
+    "german",
     "m_ailabs",
+    "utils",
     "Alignment",
+    "Language",
     "NonalignmentSpans",
     "Passage",
     "Session",
     "Span",
+    "Speaker",
     "alignment_dtype",
     "has_a_mistranscription",
     "voiced_nonalignment_spans",
+    "DataLoader",
     "SpanGenerator",
     "conventional_dataset_loader",
     "dataset_loader",
@@ -56,9 +54,4 @@ __all__ = [
     "normalize_audio",
     "normalize_audio_suffix",
     "read_audio",
-    "DATASETS_LANGUAGE",
-    "DATASETS",
-    "DataLoader",
-    "Speaker",
-    "Languages",
 ]

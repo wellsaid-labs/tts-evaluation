@@ -12,7 +12,8 @@ from torchnlp.encoders.text import SequenceBatch
 
 import lib
 import run
-from run.data._loader import Alignment
+from run.data._loader import Alignment, Session
+from run.data._loader.english import MARK_ATHERLAY, MARY_ANN
 from run.train.spectrogram_model import _data
 from tests._utils import assert_almost_equal, assert_uniform_distribution
 
@@ -30,15 +31,10 @@ def test_input_encoder():
     graphemes = ["abc", "def"]
     phonemes = ["ˈ|eɪ|b|ˌ|iː|s|ˈ|iː|", "d|ˈ|ɛ|f"]
     phoneme_separator = "|"
-    speakers = [
-        run.data._loader.english_datasets.MARK_ATHERLAY,
-        run.data._loader.english_datasets.MARY_ANN,
-    ]
-    sessions = ["mark", "mary"]
+    speakers = [MARK_ATHERLAY, MARY_ANN]
+    sessions = [(MARK_ATHERLAY, Session("mark")), (MARY_ANN, Session("mary"))]
     encoder = _data.InputEncoder(graphemes, phonemes, phoneme_separator, speakers, sessions)
-    input_ = _data.DecodedInput(
-        "a", "ˈ|eɪ", run.data._loader.english_datasets.MARK_ATHERLAY, "mark"
-    )
+    input_ = _data.DecodedInput("a", "ˈ|eɪ", MARK_ATHERLAY, sessions[0])
     assert encoder._get_case("A") == encoder._CASE_LABELS[0]
     assert encoder._get_case("a") == encoder._CASE_LABELS[1]
     assert encoder._get_case("1") == encoder._CASE_LABELS[2]

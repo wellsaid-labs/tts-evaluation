@@ -135,16 +135,22 @@ class Alignment(typing.NamedTuple):
         return lib.utils.stow(alignments, dtype=alignment_dtype)
 
 
-class Languages(Enum):
-    ENGLISH = "English"
-    GERMAN = "German"
+class Language(Enum):
+    ENGLISH: typing.Final = "English"
+    GERMAN: typing.Final = "German"
 
 
 class Speaker(typing.NamedTuple):
+    # TODO: Add style and post processing attributes to speaker instead of relying on the
+    # speaker label.
     label: str
+    language: Language
     name: typing.Optional[str] = None
     gender: typing.Optional[str] = None
-    language: typing.Optional[typing.Any] = Languages.ENGLISH
+
+
+make_english_speaker = partial(Speaker, language=Language.ENGLISH)
+make_german_speaker = partial(Speaker, language=Language.GERMAN)
 
 
 @dataclasses.dataclass(frozen=True)

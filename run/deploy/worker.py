@@ -60,8 +60,7 @@ from run._tts import (
     encode_tts_inputs,
     text_to_speech_ffmpeg_generator,
 )
-from run.data import _loader
-from run.data._loader import Session, Speaker
+from run.data._loader import Session, Speaker, english
 from run.train.spectrogram_model._data import EncodedInput, InputEncoder
 
 if "NUM_CPU_THREADS" in os.environ:
@@ -81,93 +80,60 @@ API_KEYS: typing.Set[str] = set([v for k, v in os.environ.items() if API_KEY_SUF
 TTS_PACKAGE: TTSPackage
 SPACY: English
 # NOTE: The keys need to stay the same for backwards compatibility.
-SPEAKER_ID_TO_SPEAKER: typing.Dict[int, typing.Tuple[Speaker, Session]] = {
-    0: (
-        _loader.english_datasets.JUDY_BIEBER,
-        Session(Session("emerald_city_of_oz/wavs/emerald_city_of_oz_06")),
-    ),
-    1: (_loader.english_datasets.MARY_ANN, Session("northandsouth/wavs/northandsouth_09")),
-    2: (_loader.english_datasets.LINDA_JOHNSON, Session("LJ003")),
-    3: (_loader.english_datasets.HILARY_NORIEGA, Session("script_3.wav")),
-    4: (_loader.english_datasets.BETH_CAMERON, Session("7.wav")),
-    5: (_loader.english_datasets.BETH_CAMERON__CUSTOM, Session("sukutdental_021819.wav")),
-    6: (_loader.english_datasets.LINDA_JOHNSON, Session("LJ003")),
-    7: (_loader.english_datasets.SAM_SCHOLL, Session("102-107.wav")),
-    8: (_loader.english_datasets.ADRIENNE_WALKER_HELLER, Session("14.wav")),
-    9: (_loader.english_datasets.FRANK_BONACQUISTI, Session("copy_of_wsl-_script_022-027.wav")),
-    10: (_loader.english_datasets.SUSAN_MURPHY, Session("76-81.wav")),
-    11: (_loader.english_datasets.HEATHER_DOE, Session("heather_4-21_a.wav")),
-    12: (_loader.english_datasets.ALICIA_HARRIS, Session("well_said_script_16-21.wav")),
-    13: (_loader.english_datasets.GEORGE_DRAKE_JR, Session("copy_of_drake_jr-script_46-51.wav")),
-    14: (
-        _loader.english_datasets.MEGAN_SINCLAIR,
-        Session("copy_of_wsl_-_megansinclairscript40-45.wav"),
-    ),
-    15: (
-        _loader.english_datasets.ELISE_RANDALL,
-        Session("wsl_elise_randall_enthusiastic_script-16.wav"),
-    ),
-    16: (
-        _loader.english_datasets.HANUMAN_WELCH,
-        Session("wsl_hanuman_welch_enthusiastic_script-7.wav"),
-    ),
-    17: (
-        _loader.english_datasets.JACK_RUTKOWSKI,
-        Session("wsl_jackrutkowski_enthusiastic_script_24.wav"),
-    ),
-    18: (_loader.english_datasets.MARK_ATHERLAY, Session("wsl_markatherlay_diphone_script-4.wav")),
-    19: (
-        _loader.english_datasets.STEVEN_WAHLBERG,
-        Session("WSL_StevenWahlberg_DIPHONE_Script-6.wav"),
-    ),
-    20: (
-        _loader.english_datasets.ADRIENNE_WALKER_HELLER__PROMO,
-        Session("promo_script_3_walker.wav"),
-    ),
-    21: (
-        _loader.english_datasets.DAMON_PAPADOPOULOS__PROMO,
-        Session("promo_script_2_papadopoulos.wav"),
-    ),
-    22: (_loader.english_datasets.DANA_HURLEY__PROMO, Session("promo_script_8_hurley.wav")),
-    23: (_loader.english_datasets.ED_LACOMB__PROMO, Session("promo_script_1_la_comb.wav")),
-    24: (_loader.english_datasets.LINSAY_ROUSSEAU__PROMO, Session("promo_script_1_rousseau.wav")),
-    25: (_loader.english_datasets.MARI_MONGE__PROMO, Session("promo_script_1_monge.wav")),
-    26: (_loader.english_datasets.SAM_SCHOLL__PROMO, Session("promo_script_3_scholl.wav")),
-    27: (
-        _loader.english_datasets.JOHN_HUNERLACH__NARRATION,
-        Session("johnhunerlach_enthusiastic_21.wav"),
-    ),
-    28: (_loader.english_datasets.JOHN_HUNERLACH__RADIO, Session("johnhunerlach_diphone_1.wav")),
-    29: (
-        _loader.english_datasets.OTIS_JIRY__STORY,
-        Session("otis-jiry_the_happening_at_crossroads.wav"),
-    ),
-    30: (_loader.english_datasets.SAM_SCHOLL__MANUAL_POST, Session("70-75.wav")),
-    31: (
-        _loader.english_datasets.ALICIA_HARRIS__MANUAL_POST,
-        Session("copy_of_well_said_script_40-45-processed.wav"),
-    ),
+_SPEAKER_ID_TO_SPEAKER: typing.Dict[int, typing.Tuple[Speaker, str]] = {
+    0: (english.JUDY_BIEBER, "emerald_city_of_oz/wavs/emerald_city_of_oz_06"),
+    1: (english.MARY_ANN, "northandsouth/wavs/northandsouth_09"),
+    2: (english.LINDA_JOHNSON, "LJ003"),
+    3: (english.HILARY_NORIEGA, "script_3.wav"),
+    4: (english.BETH_CAMERON, "7.wav"),
+    5: (english.BETH_CAMERON__CUSTOM, "sukutdental_021819.wav"),
+    6: (english.LINDA_JOHNSON, "LJ003"),
+    7: (english.SAM_SCHOLL, "102-107.wav"),
+    8: (english.ADRIENNE_WALKER_HELLER, "14.wav"),
+    9: (english.FRANK_BONACQUISTI, "copy_of_wsl-_script_022-027.wav"),
+    10: (english.SUSAN_MURPHY, "76-81.wav"),
+    11: (english.HEATHER_DOE, "heather_4-21_a.wav"),
+    12: (english.ALICIA_HARRIS, "well_said_script_16-21.wav"),
+    13: (english.GEORGE_DRAKE_JR, "copy_of_drake_jr-script_46-51.wav"),
+    14: (english.MEGAN_SINCLAIR, "copy_of_wsl_-_megansinclairscript40-45.wav"),
+    15: (english.ELISE_RANDALL, "wsl_elise_randall_enthusiastic_script-16.wav"),
+    16: (english.HANUMAN_WELCH, "wsl_hanuman_welch_enthusiastic_script-7.wav"),
+    17: (english.JACK_RUTKOWSKI, "wsl_jackrutkowski_enthusiastic_script_24.wav"),
+    18: (english.MARK_ATHERLAY, "wsl_markatherlay_diphone_script-4.wav"),
+    19: (english.STEVEN_WAHLBERG, "WSL_StevenWahlberg_DIPHONE_Script-6.wav"),
+    20: (english.ADRIENNE_WALKER_HELLER__PROMO, "promo_script_3_walker.wav"),
+    21: (english.DAMON_PAPADOPOULOS__PROMO, "promo_script_2_papadopoulos.wav"),
+    22: (english.DANA_HURLEY__PROMO, "promo_script_8_hurley.wav"),
+    23: (english.ED_LACOMB__PROMO, "promo_script_1_la_comb.wav"),
+    24: (english.LINSAY_ROUSSEAU__PROMO, "promo_script_1_rousseau.wav"),
+    25: (english.MARI_MONGE__PROMO, "promo_script_1_monge.wav"),
+    26: (english.SAM_SCHOLL__PROMO, "promo_script_3_scholl.wav"),
+    27: (english.JOHN_HUNERLACH__NARRATION, "johnhunerlach_enthusiastic_21.wav"),
+    28: (english.JOHN_HUNERLACH__RADIO, "johnhunerlach_diphone_1.wav"),
+    29: (english.OTIS_JIRY__STORY, "otis-jiry_the_happening_at_crossroads.wav"),
+    30: (english.SAM_SCHOLL__MANUAL_POST, "70-75.wav"),
+    31: (english.ALICIA_HARRIS__MANUAL_POST, "copy_of_well_said_script_40-45-processed.wav"),
     32: (
-        _loader.english_datasets.JACK_RUTKOWSKI__MANUAL_POST,
-        Session("wsl_jackrutkowski_enthusiastic_script_27-processed.wav"),
+        english.JACK_RUTKOWSKI__MANUAL_POST,
+        "wsl_jackrutkowski_enthusiastic_script_27-processed.wav",
     ),
     # NOTE: Custom voice IDs are random numbers larger than 10,000...
     # TODO: Retrain some of these voices, and reconfigure them.
-    11541: (_loader.english_datasets.LINCOLN__CUSTOM, Session("")),
-    13268907: (_loader.english_datasets.JOSIE__CUSTOM, Session("")),
-    95313811: (_loader.english_datasets.JOSIE__CUSTOM__MANUAL_POST, Session("")),
-    78252076: (Speaker(""), Session("")),  # TODO: Add Veritone Custom Voice
-    70695443: (Speaker(""), Session("")),  # TODO: Add Super Hi-Fi Custom Voice
-    64197676: (Speaker(""), Session("")),  # TODO: Add USP Custom Voice
-    41935205: (Speaker(""), Session("")),  # TODO: Add Happify Custom Voice
+    11541: (english.LINCOLN__CUSTOM, ""),
+    13268907: (english.JOSIE__CUSTOM, ""),
+    95313811: (english.JOSIE__CUSTOM__MANUAL_POST, ""),
+    78252076: (Speaker(""), ""),  # TODO: Add Veritone Custom Voice
+    70695443: (Speaker(""), ""),  # TODO: Add Super Hi-Fi Custom Voice
+    64197676: (Speaker(""), ""),  # TODO: Add USP Custom Voice
+    41935205: (Speaker(""), ""),  # TODO: Add Happify Custom Voice
     42400423: (
-        _loader.english_datasets.THE_EXPLANATION_COMPANY__CUSTOM_VOICE,
-        Session("is_it_possible_to_become_invisible.wav"),
+        english.THE_EXPLANATION_COMPANY__CUSTOM_VOICE,
+        "is_it_possible_to_become_invisible.wav",
     ),
-    61137774: (
-        _loader.english_datasets.ENERGY_INDUSTRY_ACADEMY__CUSTOM_VOICE,
-        Session("sample_script_2.wav"),
-    ),
+    61137774: (english.ENERGY_INDUSTRY_ACADEMY__CUSTOM_VOICE, "sample_script_2.wav"),
+}
+SPEAKER_ID_TO_SPEAKER = {
+    k: (spk, Session(sesh)) for k, (spk, sesh) in _SPEAKER_ID_TO_SPEAKER.items()
 }
 
 

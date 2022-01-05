@@ -8,7 +8,7 @@ from run._config import (
     get_dataset_label,
     get_model_label,
 )
-from run.data._loader.english_datasets import SAM_SCHOLL
+from run.data._loader.english import SAM_SCHOLL
 
 
 def test__label():
