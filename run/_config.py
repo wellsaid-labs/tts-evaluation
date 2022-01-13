@@ -29,7 +29,6 @@ logger = logging.getLogger(__name__)
 pprinter = pprint.PrettyPrinter(indent=4)
 
 RANDOM_SEED = 1212212
-PHONEME_SEPARATOR = "|"
 DATASETS = copy.copy(_loader.DATASETS)
 # NOTE: Elliot and Elizabeth has unannotated character portrayals.
 del DATASETS[_loader.english.ELLIOT_MILLER]
@@ -512,9 +511,7 @@ def _configure_models():
 
 
 @configurable
-def _include_passage(
-    passage: Passage, language: typing.Optional[_loader.Language] = HParam()
-) -> bool:
+def _include_passage(passage: Passage, language: _loader.Language = HParam()) -> bool:
     """Return `True` iff `passage` should be included in the dataset."""
     repr_ = f"{passage.__class__.__name__}("
     repr_ += f"{passage.audio_file.path.relative_to(DATA_PATH)},"

@@ -61,6 +61,7 @@ from run._tts import (
     text_to_speech_ffmpeg_generator,
 )
 from run.data._loader import Session, Speaker, english
+from run.data._loader.data_structures import Language
 from run.train.spectrogram_model._data import EncodedInput, InputEncoder
 
 if "NUM_CPU_THREADS" in os.environ:
@@ -122,10 +123,10 @@ _SPEAKER_ID_TO_SPEAKER: typing.Dict[int, typing.Tuple[Speaker, str]] = {
     11541: (english.LINCOLN__CUSTOM, ""),
     13268907: (english.JOSIE__CUSTOM, ""),
     95313811: (english.JOSIE__CUSTOM__MANUAL_POST, ""),
-    78252076: (Speaker(""), ""),  # TODO: Add Veritone Custom Voice
-    70695443: (Speaker(""), ""),  # TODO: Add Super Hi-Fi Custom Voice
-    64197676: (Speaker(""), ""),  # TODO: Add USP Custom Voice
-    41935205: (Speaker(""), ""),  # TODO: Add Happify Custom Voice
+    78252076: (Speaker("", language=Language.ENGLISH), ""),  # TODO: Add Veritone Custom Voice
+    70695443: (Speaker("", language=Language.ENGLISH), ""),  # TODO: Add Super Hi-Fi Custom Voice
+    64197676: (Speaker("", language=Language.ENGLISH), ""),  # TODO: Add USP Custom Voice
+    41935205: (Speaker("", language=Language.ENGLISH), ""),  # TODO: Add Happify Custom Voice
     42400423: (
         english.THE_EXPLANATION_COMPANY__CUSTOM_VOICE,
         "is_it_possible_to_become_invisible.wav",
