@@ -12,7 +12,7 @@ RUN cd kong-latest-version-transformer \
   && luarocks make *.rockspec
 
 # Manually install custom `content-moderation` plugin
-COPY kong-content-moderation/ kong-content-moderation/
+COPY kong-content-moderation/kong-content-moderation kong-content-moderation/
 RUN cd kong-content-moderation \
   && luarocks make *.rockspec
 

@@ -18,7 +18,7 @@ ingressController:
 
 image:
   repository: gcr.io/voice-service-2-313121/kong@sha256
-  tag: d578cf4f38f876c41a78208e20059ef44d88407954ee9309c7e92c762380c3ac
+  tag: bcc9338da946733f1909dafe3735ce282eaa204513f19cd502351c6a5cb9bd0c
 
 # https://docs.konghq.com/gateway-oss/2.4.x/sizing-guidelines/#scaling-dimensions
 resources:

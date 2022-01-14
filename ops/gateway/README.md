@@ -164,13 +164,12 @@ kubectl apply -f ./ops/gateway/kong/plugins/file-log.yaml
 
 ### Deploying the `content-moderation` plugin
 
-The [content-moderation](./kong/kong-content-moderation/README.md) plugin is
-used to moderate content going through our streaming services. This plugin
-relies on a separately deployed moderation service (currently a Cloud Function)
-
-```bash
-kubectl apply -f ./ops/gateway/kong/plugins/content-moderation.$ENV.yaml
-```
+Although this repository contains the actual bundling and deployment of our
+custom
+[`kong-content-moderation`](https://github.com/wellsaid-labs/content-moderation/tree/main/kong-content-moderation)
+plugin, the actual enabling and configuration of this plugin is handled in the
+[Content Moderation](https://github.com/wellsaid-labs/content-moderation)
+repository.
 
 ### Deploying the `latest-version-transformation` plugin
 
