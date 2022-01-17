@@ -182,7 +182,7 @@ def encode_tts_inputs(
     if len(normalized) == 0:
         raise PublicTextValueError("Text cannot be empty.")
 
-    if Speaker.language == Language.ENGLISH:
+    if speaker.language == Language.ENGLISH:
         for substring in GRAPHEME_TO_PHONEME_RESTRICTED:
             if substring in normalized:
                 raise PublicTextValueError(f"Text cannot contain these characters: {substring}")

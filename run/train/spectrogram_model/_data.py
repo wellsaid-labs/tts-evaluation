@@ -419,7 +419,7 @@ class Batch(_utils.Batch):
 
 
 def _en_span_to_tokens(spans: typing.List[Span]) -> typing.List[str]:
-    """Process English `Span` of text into tokens."""
+    """Process English `Span`s of text into a list of tokens."""
     nlp = lib.text.load_en_core_web_md(disable=("parser", "ner"))
     en_docs: typing.List[spacy.tokens.Doc] = list(nlp.pipe([s.passage.script for s in spans]))
     for i in range(len(spans)):
