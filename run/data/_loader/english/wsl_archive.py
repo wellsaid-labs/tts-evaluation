@@ -320,10 +320,10 @@ OLD_WSL_DATASETS = {
 }
 
 
-LINCOLN__CUSTOM = make_english_speaker("Lincoln_custom_ma", "Lincoln (Custom)")
-JOSIE__CUSTOM = make_english_speaker("Josie_Custom", "Josie (Custom)")
+LINCOLN__CUSTOM = make_english_speaker(label="Lincoln_custom_ma", name="Lincoln (Custom)")
+JOSIE__CUSTOM = make_english_speaker(label="Josie_Custom", name="Josie (Custom)")
 JOSIE__CUSTOM__MANUAL_POST = make_english_speaker(
-    "Josie_Custom_Loudnorm", "Josie (Custom, Loudness Standardized)"
+    label="Josie_Custom_Loudnorm", name="Josie (Custom, Loudness Standardized)"
 )
 
 _deprecated_metadata = {

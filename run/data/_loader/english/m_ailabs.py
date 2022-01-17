@@ -7,10 +7,10 @@ from run.data._loader.m_ailabs import Book, Dataset, m_ailabs_speech_dataset
 UK_DATASET = Dataset("en_UK")
 US_DATASET = Dataset("en_US")
 
-JUDY_BIEBER = make_english_speaker("judy_bieber", gender="female")
-MARY_ANN = make_english_speaker("mary_ann", gender="female")
-ELLIOT_MILLER = make_english_speaker("elliot_miller", gender="male")
-ELIZABETH_KLETT = make_english_speaker("elizabeth_klett", gender="female")
+JUDY_BIEBER = make_english_speaker(label="judy_bieber", gender="female")
+MARY_ANN = make_english_speaker(label="mary_ann", gender="female")
+ELLIOT_MILLER = make_english_speaker(label="elliot_miller", gender="male")
+ELIZABETH_KLETT = make_english_speaker(label="elizabeth_klett", gender="female")
 
 THE_SEA_FAIRIES = Book(US_DATASET, JUDY_BIEBER, "the_sea_fairies")
 THE_MASTER_KEY = Book(US_DATASET, JUDY_BIEBER, "the_master_key")

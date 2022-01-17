@@ -508,9 +508,7 @@ def _configure_models():
 
 
 @configurable
-def _include_passage(
-    passage: Passage, language: typing.Optional[_loader.Language] = HParam()
-) -> bool:
+def _include_passage(passage: Passage, language: _loader.Language = HParam()) -> bool:
     """Return `True` iff `passage` should be included in the dataset."""
     repr_ = f"{passage.__class__.__name__}("
     repr_ += f"{passage.audio_file.path.relative_to(DATA_PATH)},"

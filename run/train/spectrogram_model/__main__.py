@@ -114,6 +114,8 @@ def _make_configuration(
             amsgrad=False,
             betas=(0.9, 0.999),
         ),
+        # NOTE: This configuration is dependent on language.
+        # TODO: Consider moving this dependency?
         InputEncoder.__init__: HParams(token_separator=PHONEME_SEPARATOR),
     }
 
