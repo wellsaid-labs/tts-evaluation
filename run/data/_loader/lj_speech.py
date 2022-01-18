@@ -13,7 +13,7 @@ from run.data._loader.data_structures import (
     Session,
     Speaker,
     UnprocessedPassage,
-    make_english_speaker,
+    make_en_speaker,
 )
 from run.data._loader.utils import conventional_dataset_loader, make_passages
 
@@ -24,7 +24,7 @@ else:
 
 
 logger = logging.getLogger(__name__)
-LINDA_JOHNSON = make_english_speaker(label="linda_johnson")
+LINDA_JOHNSON = make_en_speaker("linda_johnson")
 
 
 def _get_session(passage: UnprocessedPassage) -> Session:

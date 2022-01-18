@@ -1,17 +1,17 @@
 """
 Sub-module of M-AILABS module for downloading and processing GERMAN datasets.
 """
-from run.data._loader.data_structures import Language, make_german_speaker
+from run.data._loader.data_structures import Language, make_de_speaker
 from run.data._loader.m_ailabs import Book, Dataset, m_ailabs_speech_dataset
 
 DE_DATASET = Dataset("de_DE")
 
-ANGELA_MERKEL = make_german_speaker(label="angela_merkel", gender="female")
-EVA_K = make_german_speaker(label="eva_k", gender="female")
-RAMONA_DEININGER = make_german_speaker(label="ramona_deininger", gender="female")
-REBECCA_BRAUNERT_PLUNKETT = make_german_speaker(label="rebecca_braunert_plunkett", gender="female")
+ANGELA_MERKEL = make_de_speaker("angela_merkel", gender="female")
+EVA_K = make_de_speaker("eva_k", gender="female")
+RAMONA_DEININGER = make_de_speaker("ramona_deininger", gender="female")
+REBECCA_BRAUNERT_PLUNKETT = make_de_speaker("rebecca_braunert_plunkett", gender="female")
 
-KARLSSON = make_german_speaker("karlsson", gender="male")
+KARLSSON = make_de_speaker("karlsson", gender="male")
 
 MERKEL_ALONE = Book(DE_DATASET, ANGELA_MERKEL, "merkel_alone")
 

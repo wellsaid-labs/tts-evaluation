@@ -9,7 +9,7 @@ from pathlib import Path
 from third_party import LazyLoader
 from torchnlp.download import download_file_maybe_extract
 
-from run.data._loader.data_structures import Passage, Speaker, make_english_speaker
+from run.data._loader.data_structures import Passage, Speaker, make_en_speaker
 from run.data._loader.english.wsl import (
     ADRIENNE_WALKER_HELLER,
     ADRIENNE_WALKER_HELLER__PROMO,
@@ -320,23 +320,23 @@ OLD_WSL_DATASETS = {
 }
 
 
-LINCOLN__CUSTOM = make_english_speaker(label="Lincoln_custom_ma", name="Lincoln (Custom)")
-JOSIE__CUSTOM = make_english_speaker(label="Josie_Custom", name="Josie (Custom)")
-JOSIE__CUSTOM__MANUAL_POST = make_english_speaker(
-    label="Josie_Custom_Loudnorm", name="Josie (Custom, Loudness Standardized)"
+LINCOLN__CUSTOM = make_en_speaker("Lincoln_custom_ma", "Lincoln (Custom)")
+JOSIE__CUSTOM = make_en_speaker("Josie_Custom", "Josie (Custom)")
+JOSIE__CUSTOM__MANUAL_POST = make_en_speaker(
+    "Josie_Custom_Loudnorm", "Josie (Custom, Loudness Standardized)"
 )
 
 _deprecated_metadata = {
     (
         "Sean Hannity",
-        make_english_speaker("Sean Hannity"),
+        make_en_speaker("Sean Hannity"),
         "https://drive.google.com/uc?export=download&id=1YHX6yl1kX7lQguxSs4sJ1FPrAS9NZ8O4",
         "Sean Hannity.tar.gz",
         False,
     ),
     (
         "Nadine Nagamatsu",
-        make_english_speaker("Nadine Nagamatsu"),
+        make_en_speaker("Nadine Nagamatsu"),
         "https://drive.google.com/uc?export=download&id=1fwW6oV7x3QYImSfG811vhfjp8jKXVMGZ",
         "Nadine Nagamatsu.tar.gz",
         False,
