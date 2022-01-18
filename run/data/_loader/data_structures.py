@@ -141,8 +141,8 @@ class Language(Enum):
 
 
 class Speaker(typing.NamedTuple):
-    # TODO: Add style and post processing attributes to speaker instead of relying on the
-    # speaker label.
+    # TODO: Move style, language, post processing attributes to `Passage` because the same speaker
+    # could have multiple styles, languages, and filters applied.
     label: str
     language: Language
     name: typing.Optional[str] = None
