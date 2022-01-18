@@ -9,15 +9,14 @@ import pytest
 
 import lib
 from lib.utils import Timeline
+from run.data._loader import make_en_speaker
 from run.data._loader.data_structures import (
     Alignment,
     IntInt,
     IsLinked,
-    Language,
     Passage,
     Session,
     Span,
-    Speaker,
     UnprocessedPassage,
     _check_updated_script,
     _filter_non_speech_segments,
@@ -35,7 +34,7 @@ TEST_DATA_LJ = TEST_DATA_PATH / "audio" / "bit(rate(lj_speech,24000),32).wav"
 
 def make_unprocessed_passage(
     audio_path=pathlib.Path("."),
-    speaker=Speaker("", Language.ENGLISH),
+    speaker=make_en_speaker(""),
     script="",
     transcript="",
     alignments=None,
@@ -295,7 +294,7 @@ def _make_unprocessed_passage_helper(
     found = [(find_script(script, t), find_transcript(transcript, t)) for t in tokens]
     return UnprocessedPassage(
         audio_path=TEST_DATA_LJ,
-        speaker=Speaker("", Language.ENGLISH),
+        speaker=make_en_speaker(""),
         script=script,
         transcript=transcript,
         alignments=tuple(Alignment(s, (0.0, 0.0), t) for s, t in found),

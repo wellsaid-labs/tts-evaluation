@@ -12,7 +12,7 @@ import run
 from lib.utils import Tuple
 from run import train
 from run._tts import TTSPackage, package_tts
-from run.data._loader import Alignment, Language, Session, Span
+from run.data._loader import Alignment, Session, Span, make_en_speaker
 from run.data._loader.english import (
     JUDY_BIEBER,
     LINDA_JOHNSON,
@@ -27,7 +27,7 @@ from tests._utils import make_metadata
 def make_passage(
     alignments: Tuple[Alignment] = Alignment.stow([]),
     nonalignments: Tuple[Alignment] = Alignment.stow([]),
-    speaker: run.data._loader.Speaker = run.data._loader.Speaker("", Language.ENGLISH),
+    speaker: run.data._loader.Speaker = make_en_speaker(""),
     audio_file: lib.audio.AudioMetadata = make_metadata(),
     script: typing.Optional[str] = None,
     transcript: typing.Optional[str] = None,
