@@ -5,7 +5,7 @@ import pytest
 
 import run
 from run._utils import _find_duplicate_passages, _len_of_dups, split_dataset
-from run.data._loader import Alignment
+from run.data._loader import Alignment, make_en_speaker
 from tests._utils import TEST_DATA_PATH
 from tests.run._utils import make_passage
 
@@ -62,10 +62,10 @@ def test__len_of_dups():
 @mock.patch("random.shuffle", return_value=None)
 def test_split_dataset__deduplication(_):
     """Test `run._utils.split_dataset` handles deduplication accross multiple speakers."""
-    speaker_a = run.data._loader.Speaker("a")
-    speaker_b = run.data._loader.Speaker("b")
-    speaker_c = run.data._loader.Speaker("c")
-    speaker_d = run.data._loader.Speaker("d")
+    speaker_a = make_en_speaker("a")
+    speaker_b = make_en_speaker("b")
+    speaker_c = make_en_speaker("c")
+    speaker_d = make_en_speaker("d")
     groups = [set([speaker_a, speaker_b, speaker_c, speaker_d])]
     alignments = Alignment.stow([Alignment((0, 1), (0, 1), (0, 1))])
     passage = lambda script, speaker: make_passage(
@@ -124,8 +124,8 @@ def test_split_dataset__deduplication(_):
 @mock.patch("random.shuffle", return_value=None)
 def test_split_dataset__order(_):
     """Test `run._utils.split_dataset` handles different dictionary orderings."""
-    speaker_a = run.data._loader.Speaker("a")
-    speaker_b = run.data._loader.Speaker("b")
+    speaker_a = make_en_speaker("a")
+    speaker_b = make_en_speaker("b")
     groups = [set([speaker_a, speaker_b])]
     alignments = Alignment.stow([Alignment((0, 1), (0, 1), (0, 1))])
     passage = lambda script, speaker: make_passage(
@@ -156,8 +156,8 @@ def test_split_dataset__order(_):
 @mock.patch("random.shuffle", return_value=None)
 def test_split_dataset__groups(_):
     """Test `run._utils.split_dataset` handles independent speakers."""
-    speaker_a = run.data._loader.Speaker("a")
-    speaker_b = run.data._loader.Speaker("b")
+    speaker_a = make_en_speaker("a")
+    speaker_b = make_en_speaker("b")
     groups = [{speaker_a}, {speaker_b}]
     alignments = Alignment.stow([Alignment((0, 1), (0, 1), (0, 1))])
     passage = lambda script, speaker: make_passage(

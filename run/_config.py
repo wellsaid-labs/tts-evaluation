@@ -15,7 +15,7 @@ import lib
 import run
 import run.data._loader.utils
 from run.data import _loader
-from run.data._loader import Passage, Span, Speaker
+from run.data._loader import Language, Passage, Span, Speaker
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import IPython
@@ -508,9 +508,7 @@ def _configure_models():
 
 
 @configurable
-def _include_passage(
-    passage: Passage, language: typing.Optional[_loader.Language] = HParam()
-) -> bool:
+def _include_passage(passage: Passage, language: typing.Optional[Language] = HParam()) -> bool:
     """Return `True` iff `passage` should be included in the dataset."""
     repr_ = f"{passage.__class__.__name__}("
     repr_ += f"{passage.audio_file.path.relative_to(DATA_PATH)},"
@@ -624,7 +622,7 @@ def _configure_data_processing():
             include_passage=_include_passage,
             handle_passage=lib.utils.identity,
         ),
-        _include_passage: HParams(language=_loader.Language.ENGLISH),
+        _include_passage: HParams(language=Language.ENGLISH),
         run._utils.split_dataset: HParams(
             groups=groups, dev_speakers=DEV_SPEAKERS, approx_dev_len=30 * 60, min_sim=0.9
         ),

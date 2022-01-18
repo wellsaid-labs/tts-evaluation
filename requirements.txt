@@ -26,7 +26,7 @@ pyloudnorm
 matplotlib
 comet-ml[cpu_logging]==3.8.0
 tabulate
-streamlit
+streamlit==0.89.0
 altair
 git+https://github.com/wellsaid-labs/streamlit-mui-datatable
 
