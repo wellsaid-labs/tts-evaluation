@@ -42,63 +42,48 @@ def test_validate_and_unpack():
     input_encoder = InputEncoder([script], [phonemes], [speaker], [(speaker, session)])
     speaker_id = input_encoder.speaker_encoder.token_to_index[speaker]
     speaker_id_to_speaker = {0: (speaker, session)}
-    args = {"speaker_id": speaker_id, "text": script, "api_key": "abc"}
-    api_keys = ["abc"]
+    args = {"speaker_id": speaker_id, "text": script}
     nlp = lib.text.load_en_core_web_sm(disable=("parser", "ner"))
     validate_ = partial(validate_and_unpack, nlp=nlp, input_encoder=input_encoder)
     with pytest.raises(FlaskException):
         validate_({})
 
-    with pytest.raises(FlaskException):  # API key must be a string
-        validate_({**args, "api_key": 1}, api_keys=api_keys)
-
-    with pytest.raises(FlaskException):  # API key length must be larger than the minimum
-        validate_({**args, "api_key": "ab"}, api_keys=api_keys)
-
-    with pytest.raises(FlaskException):  # API key length must be smaller than the maximum
-        validate_({**args, "api_key": "abcd"}, api_keys=api_keys)
-
-    with pytest.raises(FlaskException):  # API key must be in `api_keys`
-        validate_({**args, "api_key": "cba"}, api_keys=api_keys)
-
     with pytest.raises(FlaskException):  # `text` argument missing
-        validate_({"api_key": "abc", "speaker_id": 0}, api_keys=api_keys)
+        validate_({"speaker_id": 0})
 
     with pytest.raises(FlaskException):  # `speaker_id` argument missing
-        validate_({"api_key": "abc", "text": script}, api_keys=api_keys)
+        validate_({"text": script})
 
     with pytest.raises(FlaskException):  # `speaker_id` must be an integer
-        validate_({**args, "speaker_id": "blah"}, api_keys=api_keys)
+        validate_({**args, "speaker_id": "blah"})
 
     with pytest.raises(FlaskException):  # `speaker_id` must be an integer
-        validate_({**args, "speaker_id": 2.1}, api_keys=api_keys)
+        validate_({**args, "speaker_id": 2.1})
 
     with pytest.raises(FlaskException):  # `text` must be smaller than `max_chars`
         request_args = {**args, "text": "a" * 20000}
-        validate_(request_args, api_keys=api_keys, max_chars=1000)
+        validate_(request_args, max_chars=1000)
 
     with pytest.raises(FlaskException):  # `text` must be a string
-        validate_({**args, "text": 1.0}, api_keys=api_keys)
+        validate_({**args, "text": 1.0})
 
     with pytest.raises(FlaskException):  # `text` must be not empty
-        validate_({**args, "text": ""}, api_keys=api_keys)
+        validate_({**args, "text": ""})
 
     with pytest.raises(FlaskException):  # `speaker_id` must be in `input_encoder`
-        validate_({**args, "speaker_id": 2 ** 31}, api_keys=api_keys)
+        validate_({**args, "speaker_id": 2 ** 31})
 
     with pytest.raises(FlaskException):  # `speaker_id` must be positive
-        validate_({**args, "speaker_id": -1}, api_keys=api_keys)
+        validate_({**args, "speaker_id": -1})
 
     with pytest.raises(FlaskException, match=r".*cannot contain these characters: i, j,*"):
         # NOTE: "wɛɹɹˈɛvɚ kˌoːɹzənjˈuːski" should contain phonemes that are not already in
         # mock `input_encoder`.
-        validate_({**args, "text": "wherever korzeniewski"}, api_keys=api_keys)
+        validate_({**args, "text": "wherever korzeniewski"})
 
     # `text` gets normalized and `speaker` is dereferenced
     request_args = {**args, "text": "á😁"}
-    encoded = validate_(
-        request_args, api_keys=api_keys, speaker_id_to_speaker=speaker_id_to_speaker
-    )
+    encoded = validate_(request_args, speaker_id_to_speaker=speaker_id_to_speaker)
     decoded = input_encoder.decode(encoded)
     # NOTE: The emoji is removed because there is no unicode equivilent.
     assert decoded.graphemes == "a"
