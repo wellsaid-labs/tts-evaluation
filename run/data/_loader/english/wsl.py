@@ -38,7 +38,7 @@ SAM_SCHOLL__MANUAL_POST = make_en_speaker(
 STEVEN_WAHLBERG = make_en_speaker("steven_wahlberg", "Steven Wahlberg")
 SUSAN_MURPHY = make_en_speaker("susan_murphy", "Susan Murphy")
 
-ALISTAIR_DAVIS__EN_GB = Speaker("alistair_davis__en_gb", "Alistair Davis (en_GB)")
+ALISTAIR_DAVIS__EN_GB = Speaker("alistair_davis__en_gb", "Alistair Davis (British English)")
 
 ###############
 # PROMOTIONAL #
@@ -47,7 +47,7 @@ ADRIENNE_WALKER_HELLER__PROMO = make_en_speaker(
     "adrienne_walker__promo", "Adrienne Walker-Heller (Promo)"
 )
 BRIAN_DIAMOND__EN_IE__PROMO = make_en_speaker(
-    "brian_diamond__en_ie__promo", "Brian Diamond (Promo, en_IE)"
+    "brian_diamond__en_ie__promo", "Brian Diamond (Promo, Ireland)"
 )
 CHRISTOPHER_DANIELS__PROMO = make_en_speaker(
     "christopher_daniels__promo", "Christopher Daniels (Promo)"

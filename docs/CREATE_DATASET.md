@@ -114,26 +114,33 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
    . run/utils/apt_install.sh
    ```
 
-### Screen sessions
+1. Create a virtual environment for processing and install Python dependencies onto the VM,
+   like so...
 
-Create a virtual environment for processing.
-   ```
+   ```bash
    python3.8 -m venv venv
    . venv/bin/activate
    python -m pip install wheel pip --upgrade
    python -m pip install -r requirements.txt --upgrade
    ```
-If aligning data for multiple speakers, it can be helpful to process each in their own named screen session
 
-   ```
+### Screen sessions (Optional)
+
+1. If aligning data for multiple speakers, it can be helpful to process each in their own named
+   screen session.
+
+   ```bash
    screen -S [name]
    ```
-Press any key.
 
-   ```
+1. Press any key.
+
+   ```bash
    . venv/bin/activate
    ```
-At any time, press `ctrl+a, d` to detach from the screen session. Then `screen -r [name]` to reattach to the session named `[name]`.
+
+1. At any time, press `ctrl+a, d` to detach from the screen session. Then `screen -r [name]` to
+   reattach to the session named `[name]`.
 
 ### Download Data
 
@@ -142,7 +149,8 @@ At any time, press `ctrl+a, d` to detach from the screen session. Then `screen -
    ```bash
    NAME=actor_name # Example: hilary_noriega
    ```
-   ```
+
+   ```bash
    ROOT=/opt/wellsaid-labs/Text-to-Speech/disk/data/$NAME
    PROCESSED=$ROOT/processed
    GCS_URI=gs://wellsaid_labs_datasets/$NAME
@@ -198,7 +206,8 @@ At any time, press `ctrl+a, d` to detach from the screen session. Then `screen -
       2>&1 | tee $PROCESSED/script-recordings-pair.log
    ```
 
-   💡 TIP: Learn more about `2>&1 | tee`, here: https://stackoverflow.com/questions/418896/how-to-redirect-output-to-a-file-and-stdout
+   💡 TIP: Learn more about `2>&1 | tee`, here:
+   https://stackoverflow.com/questions/418896/how-to-redirect-output-to-a-file-and-stdout
 
 1. (Optional) Review dataset audio file format(s) for inconsistencies...
 
