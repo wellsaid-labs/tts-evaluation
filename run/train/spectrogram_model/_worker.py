@@ -33,6 +33,7 @@ from run._config import (
     get_dataset_label,
     get_model_label,
 )
+from run.data._loader import Language
 from run.train import _utils
 from run.train._utils import (
     CometMLExperiment,
@@ -133,11 +134,15 @@ class _State:
         """Initialize an input encoder to encode model input.
 
         TODO: For some reason, Comet doesn't log: "phoneme_vocab". (Now known as "token_vocab".)
+        TODO: Remove special rules for `English` in v10 after eSpeak and `InputEncoder` are
+        deprecated.
         """
         passages = list(chain(*tuple(chain(train_dataset.values(), dev_dataset.values()))))
+        speakers = list(train_dataset.keys()) + list(dev_dataset.keys())
+        is_english = all([s.language == Language.ENGLISH for s in speakers])
         input_encoder = InputEncoder(
             [p.script for p in passages],
-            DATASET_PHONETIC_CHARACTERS,
+            DATASET_PHONETIC_CHARACTERS if is_english else [p.script for p in passages],
             list(train_dataset.keys()) + list(dev_dataset.keys()),
             [(p.speaker, p.session) for p in passages],
         )
