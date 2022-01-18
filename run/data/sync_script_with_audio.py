@@ -19,7 +19,7 @@ Usage Example (German):
       --voice-over "$PREFIX/processed/speech_to_text/*.wav" \
       --script "$PREFIX/processed/scripts/*.csv" \
       --destination "$PREFIX/processed_local/" \
-      --language "de-DE" \
+      --language German \
       --no-decode
 """
 import dataclasses
@@ -90,6 +90,7 @@ _conf_kwargs = dict(
     enable_automatic_punctuation=True,
     enable_word_time_offsets=True,
 )
+# TODO: Allow for dialects to be selected as well.
 STT_CONFIGS = {
     Language.ENGLISH: RecognitionConfig(language_code="en-US", model="video", **_conf_kwargs),
     Language.GERMAN: RecognitionConfig(

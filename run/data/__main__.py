@@ -370,9 +370,8 @@ def csv_normalize(
 
         text = path.read_text(encoding=encoding)
         data_frame = _read_csv(path, required_column, optional_columns, encoding)
-        data_frame = data_frame.applymap(
-            functools.partial(_csv_normalize, nlp=nlp, language=language)
-        )
+        partial_ = functools.partial(_csv_normalize, nlp=nlp, language=language)
+        data_frame = data_frame.applymap(partial_)
         data_frame.to_csv(dest_path, index=False)
 
         # TODO: Count the number of alphanumeric edits instead of punctuation mark edits.
