@@ -9,6 +9,8 @@ from run.data._loader.data_structures import (
     Speaker,
     alignment_dtype,
     has_a_mistranscription,
+    make_de_speaker,
+    make_en_speaker,
     voiced_nonalignment_spans,
 )
 from run.data._loader.utils import (
@@ -41,6 +43,8 @@ __all__ = [
     "Session",
     "Span",
     "Speaker",
+    "make_de_speaker",
+    "make_en_speaker",
     "alignment_dtype",
     "has_a_mistranscription",
     "voiced_nonalignment_spans",

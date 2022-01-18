@@ -37,7 +37,7 @@ Setup your local development environment by following [these instructions](LOCAL
    If starting from your own image, set the image project and family appropriately:
    ```
    IMAGE_PROJECT='voice-research-255602'
-   IMAGE_FAMILY='you-image-family-name'    # Example: $IMAGE_FAMILY used to image your machine
+   IMAGE_FAMILY='your-image-family-name'    # Example: $IMAGE_FAMILY used to image your machine
    ```
    
 

@@ -1,3 +1,6 @@
 [submodule "third_party/amepd"]
 	path = third_party/amepd
 	url = git@github.com:wellsaid-labs/amepd.git
+[submodule "ops/gateway/kong/kong-latest-version-transformer"]
+	path = ops/gateway/kong/kong-latest-version-transformer
+	url = git@github.com:wellsaid-labs/kong-latest-version-transformer.git

@@ -160,6 +160,8 @@ def main():
     use_process = st.checkbox("Multiprocessing")
     st.info(f"The script has {len(script):,} character(s).")
 
+    # TODO: Use `streamlit`s official form submit button, instead. Learn more:
+    # https://blog.streamlit.io/introducing-submit-button-and-forms/
     if not st.button("Generate"):
         st.stop()
 

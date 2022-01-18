@@ -28,7 +28,7 @@ def run_around_tests():
 
 def test_input_encoder():
     """Test `_data.InputEncoder` handles a basic case."""
-    graphemes = ["abc", "def"]
+    graphemes = ["aBc", "deF"]
     phonemes = ["ˈ|eɪ|b|ˌ|iː|s|ˈ|iː|", "d|ˈ|ɛ|f"]
     phoneme_separator = "|"
     speakers = [MARK_ATHERLAY, MARY_ANN]
@@ -39,11 +39,16 @@ def test_input_encoder():
     assert encoder._get_case("a") == encoder._CASE_LABELS[1]
     assert encoder._get_case("1") == encoder._CASE_LABELS[2]
     encoded = encoder.encode(input_)
+
     assert torch.equal(encoded.graphemes, torch.tensor([5]))
     assert torch.equal(encoded.letter_cases, torch.tensor([1]))
     assert torch.equal(encoded.tokens, torch.tensor([5, 6]))
     assert torch.equal(encoded.speaker, torch.tensor([0]))
     assert torch.equal(encoded.session, torch.tensor([0]))
+    assert encoder.decode(encoded) == input_
+
+    input_ = _data.DecodedInput("B", "|b|ˌ|iː", run.data._loader.MARK_ATHERLAY, sessions[0])
+    encoded = encoder.encode(input_)
     assert encoder.decode(encoded) == input_
 
 

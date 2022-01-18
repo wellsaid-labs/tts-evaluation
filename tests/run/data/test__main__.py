@@ -6,9 +6,11 @@ import typing
 from pathlib import Path
 from unittest import mock
 
+import pandas
 import pytest
+import typer
 
-from run.data.__main__ import _normalize_file_name, logger, numberings, rename
+from run.data.__main__ import _normalize_file_name, _read_csv, logger, numberings, rename
 
 
 def _rename_side_effect(path: Path, _expected=Path):
@@ -126,3 +128,78 @@ def test_numberings__missing():
         random.choice(recordings + scripts).unlink()
         with pytest.raises(AssertionError):
             numberings(recordings_path, scripts_path)
+
+
+def test__read_csv__no_required():
+    """Test `_read_csv` handles when the required column isn't present."""
+    temp = tempfile.NamedTemporaryFile()
+    path = Path(temp.name)
+    df = pandas.DataFrame({"Script 1": ["Script 2", "Script 3"]})
+    df.to_csv(path, index=False)
+    df = _read_csv(path, required_column="Content", encoding="utf-8")
+    assert df.columns == ["Content"]
+    assert list(df["Content"]) == ["Script 1", "Script 2", "Script 3"]
+
+
+def test__read_csv__no_required__multiple_columns():
+    """Test `_read_csv` handles where there are multiple columns none of which is the
+    required column."""
+    temp = tempfile.NamedTemporaryFile()
+    path = Path(temp.name)
+    df = pandas.DataFrame(
+        {"Script 1": ["Script 2", "Script 3"], "Script 4": ["Script 5", "Script 6"]}
+    )
+    df.to_csv(path, index=False)
+    with pytest.raises(typer.Exit):
+        _read_csv(path, required_column="Content", encoding="utf-8")
+
+
+def test__read_csv__has_required():
+    """Test `_read_csv` handles when the required column is present."""
+    temp = tempfile.NamedTemporaryFile()
+    path = Path(temp.name)
+    df = pandas.DataFrame({"Content": ["Script 1", "Script 2"]})
+    df.to_csv(path, index=False)
+    df = _read_csv(path, required_column="Content", optional_columns=["Title"], encoding="utf-8")
+    assert list(df.columns) == ["Title", "Content"]
+    assert list(df["Content"]) == ["Script 1", "Script 2"]
+    assert list(df["Title"]) == ["", ""]
+
+
+def test__read_csv__has_required_and_optional_and_extra():
+    """Test `_read_csv` handles there is a required, optional, and extra column."""
+    temp = tempfile.NamedTemporaryFile()
+    path = Path(temp.name)
+    data = {
+        "Content": ["Blah blah", "Boo Boo"],
+        "Title": ["Script 1", "Script 2"],
+        "Meta": ["123", "456"],
+    }
+    df = pandas.DataFrame(data)
+    df.to_csv(path, index=False)
+    df = _read_csv(path, required_column="Content", optional_columns=["Title"], encoding="utf-8")
+    assert list(df.columns) == ["Title", "Content"]
+    assert list(df["Title"]) == ["Script 1", "Script 2"]
+    assert list(df["Content"]) == ["Blah blah", "Boo Boo"]
+
+
+def test__read_csv__has_required_and_optional__tsv():
+    """Test `_read_csv` handles there is a required and optional column in a TSV format."""
+    temp = tempfile.NamedTemporaryFile()
+    path = Path(temp.name)
+    df = pandas.DataFrame({"Content": ["Blah blah", "Boo Boo"], "Title": ["Script 1", "Script 2"]})
+    df.to_csv(path, index=False, sep="\t")
+    df = _read_csv(path, required_column="Content", optional_columns=["Title"], encoding="utf-8")
+    assert list(df.columns) == ["Title", "Content"]
+    assert list(df["Title"]) == ["Script 1", "Script 2"]
+    assert list(df["Content"]) == ["Blah blah", "Boo Boo"]
+
+
+def test__read_csv__only_optional_columns():
+    """Test `_read_csv` handles when there are only optional columns."""
+    temp = tempfile.NamedTemporaryFile()
+    path = Path(temp.name)
+    df = pandas.DataFrame({"Title": ["Script 1", "Script 2"]})
+    df.to_csv(path, index=False)
+    with pytest.raises(typer.Exit):
+        _read_csv(path, required_column="Content", optional_columns=["Title"], encoding="utf-8")
