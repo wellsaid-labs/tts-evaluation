@@ -133,7 +133,6 @@ class _State:
     ) -> InputEncoder:
         """Initialize an input encoder to encode model input.
 
-        TODO: For some reason, Comet doesn't log: "phoneme_vocab". (Now known as "token_vocab".)
         TODO: Remove special rules for `English` in v10 after eSpeak and `InputEncoder` are
         deprecated.
         """
