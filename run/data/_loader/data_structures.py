@@ -149,8 +149,8 @@ class Speaker(typing.NamedTuple):
     gender: typing.Optional[str] = None
 
 
-make_english_speaker = partial(Speaker, language=Language.ENGLISH)
-make_german_speaker = partial(Speaker, language=Language.GERMAN)
+make_en_speaker = lambda label, *args, **kwargs: Speaker(label, Language.ENGLISH, *args, **kwargs)
+make_de_speaker = lambda label, *args, **kwargs: Speaker(label, Language.GERMAN, *args, **kwargs)
 
 
 @dataclasses.dataclass(frozen=True)
