@@ -218,6 +218,15 @@ def _grapheme_to_phoneme(grapheme: str):
     return lib.text._line_grapheme_to_phoneme([grapheme], separator="|")[0]
 
 
+# NOTE: Phonetic rules to help determine if two words sound-a-like.
+_SOUND_OUT = {
+    Language.ENGLISH: _grapheme_to_phoneme,
+    Language.GERMAN: lambda w: _remove_punctuation(w.lower(), Language.GERMAN)
+    .replace("ß", "ss")
+    .replace(" ", ""),
+}
+
+
 @lru_cache(maxsize=2 ** 20)
 def is_sound_alike(a: str, b: str, language: Language) -> bool:
     """Return `True` if `str` `a` and `str` `b` sound a-like.
@@ -236,13 +245,9 @@ def is_sound_alike(a: str, b: str, language: Language) -> bool:
     """
     a = normalize_vo_script(a, NON_ASCII_CHARS[language])
     b = normalize_vo_script(b, NON_ASCII_CHARS[language])
-    is_en = language == Language.ENGLISH
-    without_punc = lambda t: _remove_punctuation(t.lower(), language).replace(" ", "")
-    return_ = (
-        a.lower() == b.lower()
-        or without_punc(a) == without_punc(b)
-        or (_grapheme_to_phoneme(a) == _grapheme_to_phoneme(b) if is_en else False)
-    )
+    no_punc = lambda t: _remove_punctuation(t.lower(), language).replace(" ", "")
+    sound_out = _SOUND_OUT[language] if language in _SOUND_OUT else lib.utils.identity
+    return_ = a.lower() == b.lower() or no_punc(a) == no_punc(b) or sound_out(a) == sound_out(b)
     if return_:
         STATS.sound_alike.add(frozenset([a, b]))
         return True
