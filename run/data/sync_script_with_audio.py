@@ -221,6 +221,8 @@ def _grapheme_to_phoneme(grapheme: str):
 # NOTE: Phonetic rules to help determine if two words sound-a-like.
 _SOUND_OUT = {
     Language.ENGLISH: _grapheme_to_phoneme,
+    # NOTE: (Rhyan) The "ß" is used to denote a "ss" sound. Google STT is inconsistent with how it
+    # chooses to spell its transcriptions. Sometimes it uses "ß" and sometimes it uses "ss".
     Language.GERMAN: lambda w: _remove_punctuation(w.lower(), Language.GERMAN)
     .replace("ß", "ss")
     .replace(" ", ""),
