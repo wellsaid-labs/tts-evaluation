@@ -47,7 +47,7 @@ def test_input_encoder():
     assert torch.equal(encoded.session, torch.tensor([0]))
     assert encoder.decode(encoded) == input_
 
-    input_ = _data.DecodedInput("B", "|b|ˌ|iː", run.data._loader.MARK_ATHERLAY, sessions[0])
+    input_ = _data.DecodedInput("B", "|b|ˌ|iː", MARK_ATHERLAY, sessions[0])
     encoded = encoder.encode(input_)
     assert encoder.decode(encoded) == input_
 
