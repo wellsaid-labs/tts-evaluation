@@ -725,7 +725,7 @@ def main(
         "alignments/", help="Upload alignment results to this folder in --destinations."
     ),
     language: Language = typer.Option(
-        Language.ENGLISH, help="Specify the language of the dataset being synced"
+        Language.ENGLISH, help="Specify the language of the dataset being synced. Ex: German, French"
     ),
 ):
     """Align --scripts with --voice-overs and upload alignments to --destinations."""
