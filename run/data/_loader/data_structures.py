@@ -8,6 +8,7 @@ import logging
 import typing
 from concurrent import futures
 from dataclasses import field
+from enum import Enum
 from functools import partial
 from pathlib import Path
 
@@ -132,6 +133,13 @@ class Alignment(typing.NamedTuple):
     @staticmethod
     def stow(alignments: typing.Sequence[Alignment]) -> Tuple[Alignment]:
         return lib.utils.stow(alignments, dtype=alignment_dtype)
+
+
+class Language(Enum):
+    ENGLISH: typing.Final = "English"
+    GERMAN: typing.Final = "German"
+    PORTUGUESE_BR: typing.Final = "Portuguese"
+    SPANISH_CO: typing.Final = "Spanish"
 
 
 class Speaker(typing.NamedTuple):

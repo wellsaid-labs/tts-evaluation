@@ -3,6 +3,7 @@ import typing
 from run.data._loader import data_structures, m_ailabs, utils
 from run.data._loader.data_structures import (
     Alignment,
+    Language,
     NonalignmentSpans,
     Passage,
     Session,
@@ -103,6 +104,7 @@ __all__ = [
     "m_ailabs",
     "utils",
     "Alignment",
+    "Language",
     "NonalignmentSpans",
     "Passage",
     "Session",
