@@ -25,7 +25,6 @@ from torchnlp.utils import get_total_parameters, lengths_to_mask
 import lib
 from lib.distributed import is_master
 from run._config import (
-    DATASET_PHONETIC_CHARACTERS,
     Cadence,
     Dataset,
     DatasetType,
@@ -33,6 +32,7 @@ from run._config import (
     get_dataset_label,
     get_model_label,
 )
+from run._lang_config import DATASET_PHONETIC_CHARACTERS
 from run.train import _utils
 from run.train._utils import (
     CometMLExperiment,
@@ -137,7 +137,7 @@ class _State:
         passages = list(chain(*tuple(chain(train_dataset.values(), dev_dataset.values()))))
         input_encoder = InputEncoder(
             [p.script for p in passages],
-            DATASET_PHONETIC_CHARACTERS,
+            list(DATASET_PHONETIC_CHARACTERS),
             list(train_dataset.keys()) + list(dev_dataset.keys()),
             [(p.speaker, p.session) for p in passages],
         )

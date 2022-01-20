@@ -29,25 +29,9 @@ logger = logging.getLogger(__name__)
 pprinter = pprint.PrettyPrinter(indent=4)
 
 RANDOM_SEED = 1212212
-PHONEME_SEPARATOR = "|"
 DATASETS = copy.copy(DATASETS)
 del DATASETS[_loader.ELLIOT_MILLER]  # NOTE: Elliot has unannotated character portrayals.
 del DATASETS[_loader.ELIZABETH_KLETT]  # NOTE: Elizabeth has unannotated character portrayals.
-
-# NOTE: It's theoretically impossible to know all the phonemes eSpeak might predict because
-# the predictions vary with context. We cannot practically generate every possible permutation
-# to generate the vocab.
-# TODO: Remove this once `grapheme_to_phoneme` is deprecated.
-# fmt: off
-DATASET_PHONETIC_CHARACTERS = [
-    '\n', ' ', '!', '"', "'", '(', ')', '*', ',', '-', '.', '/', ':', ';', '?', '[', ']', '=', 'aɪ',
-    'aɪə', 'aɪɚ', 'aɪʊ', 'aɪʊɹ', 'aʊ', 'b', 'd', 'dʒ', 'eɪ', 'f', 'h', 'i', 'iə', 'iː', 'j',
-    'k', 'l', 'm', 'n', 'nʲ', 'n̩', 'oʊ', 'oː', 'oːɹ', 'p', 'r', 's', 't', 'tʃ', 'uː', 'v', 'w',
-    'x', 'z', 'æ', 'æː', 'ð', 'ø', 'ŋ', 'ɐ', 'ɐː', 'ɑː', 'ɑːɹ', 'ɑ̃', 'ɔ', 'ɔɪ', 'ɔː', 'ɔːɹ',
-    'ə', 'əl', 'ɚ', 'ɛ', 'ɛɹ', 'ɜː', 'ɡ', 'ɣ', 'ɪ', 'ɪɹ', 'ɫ', 'ɹ', 'ɾ', 'ʃ', 'ʊ', 'ʊɹ', 'ʌ',
-    'ʒ', 'ʔ', 'ˈ', 'ˌ', 'θ', 'ᵻ', 'ɬ'
-]
-# fmt: on
 
 TTS_DISK_CACHE_NAME = ".tts_cache"  # NOTE: Hidden directory stored in other directories for caching
 DISK_PATH = lib.environment.ROOT_PATH / "disk"
@@ -362,7 +346,6 @@ def _configure_audio_processing():
             standard_deviation=2,
         ),
         run._tts.text_to_speech_ffmpeg_generator: HParams(sample_rate=format_.sample_rate),
-        run._tts.encode_tts_inputs: HParams(seperator=PHONEME_SEPARATOR),
     }
     add_config(config)
 
@@ -607,7 +590,6 @@ def _configure_data_processing():
     # between different speakers.
     groups += [{s} for s in _loader.DATASETS.keys() if s not in _loader.WSL_DATASETS]
     config = {
-        lib.text.grapheme_to_phoneme: HParams(separator=PHONEME_SEPARATOR),
         run._utils.get_dataset: HParams(
             datasets=DATASETS,
             path=DATA_PATH,
@@ -639,3 +621,4 @@ def configure():
     _configure_audio_processing()
     _configure_models()
     _configure_data_processing()
+    run._lang_config.configure()

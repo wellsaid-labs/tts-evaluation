@@ -8,7 +8,6 @@ import string
 import subprocess
 import typing
 from collections import defaultdict
-from enum import Enum
 from typing import get_args
 
 import ftfy
@@ -609,42 +608,7 @@ def strip(text: str) -> typing.Tuple[str, str, str]:
     return text, left, right
 
 
-class Language(Enum):
-    ENGLISH: typing.Final = "English"
-    GERMAN: typing.Final = "German"
-    PORTUGUESE_BR: typing.Final = "Portuguese"
-    SPANISH_CO: typing.Final = "Spanish"
-
-
-# fmt: off
-NON_ASCII_CHARS = {
-    # src: https://en.wikipedia.org/wiki/English_terms_with_diacritical_marks
-    Language.ENGLISH: {
-        "â", "Â", "à", "À", "á", "Á", "ê", "Ê", "é", "É", "è", "È", "ë", "Ë", "î", "Î", "ï", "Ï",
-        "ô", "Ô", "ù", "Ù", "û", "Û", "ç", "Ç", "ä", "ö", "ü", "Ä", "Ö", "Ü", "ñ", "Ñ",
-    },
-    Language.GERMAN: {"ß", "ä", "ö", "ü", "Ä", "Ö", "Ü", "«", "»", "‹", "›"},
-    # Portuguese makes use of five diacritics: the cedilla (ç), acute accent (á, é, í, ó, ú),
-    # circumflex accent (â, ê, ô), tilde (ã, õ), and grave accent (à, and rarely è, ì, ò, and ù).
-    # src: https://en.wikipedia.org/wiki/Portuguese_orthography
-    Language.PORTUGUESE_BR: {
-        "á", "Á", "é", "É", "í", "Í", "ó", "Ó", "ú", "Ú", "ç", "Ç", "â", "Â", "ê", "Ê", "ô", "Ô",
-        "ã", "Ã", "õ", "Õ", "à", "À", "è", "È", "ì", "Ì", "ò", "Ò", "ù", "Ù", "«", "»", "‹", "›"
-    },
-    # Spanish uses only the acute accent, over any vowel: ⟨á é í ó ú⟩. The only other diacritics
-    # used are the tilde on the letter ⟨ñ⟩ and the diaeresis used in the sequences ⟨güe⟩ and ⟨güi⟩.
-    # The special characters required are ⟨á⟩, ⟨é⟩, ⟨í⟩, ⟨ó⟩, ⟨ú⟩, ⟨ñ⟩, ⟨Ñ⟩, ⟨ü⟩, ⟨Ü⟩, ⟨¿⟩, ⟨¡⟩
-    # and the uppercase ⟨Á⟩, ⟨É⟩, ⟨Í⟩, ⟨Ó⟩, and ⟨Ú⟩.
-    # src: https://en.wikipedia.org/wiki/Spanish_orthography
-    Language.SPANISH_CO: {
-        "á", "Á", "é", "É", "í", "Í", "ó", "Ó", "ú", "Ú", "ñ", "Ñ", "ü", "Ü", "¿", "¡", "«", "»",
-        "‹", "›"
-    },
-}
-# fmt: on
-
-
-def normalize_vo_script(text: str, non_ascii: set = set(), strip: bool = True) -> str:
+def normalize_vo_script(text: str, non_ascii: frozenset = frozenset(), strip: bool = True) -> str:
     """Normalize a voice-over script such that only readable characters remain.
 
     TODO: Use `unidecode.unidecode` in "strict" mode so that data isn't lost.
@@ -675,7 +639,7 @@ def normalize_vo_script(text: str, non_ascii: set = set(), strip: bool = True) -
 _READABLE_CHARACTERS = set(normalize_vo_script(chr(i), strip=False) for i in range(0, 128))
 
 
-def is_normalized_vo_script(text: str, non_ascii: set = set()) -> bool:
+def is_normalized_vo_script(text: str, non_ascii: frozenset = frozenset()) -> bool:
     """Return `True` if `text` has been normalized to a small set of characters."""
     return len(set(text) - _READABLE_CHARACTERS - non_ascii) == 0
 
@@ -684,7 +648,7 @@ def is_normalized_vo_script(text: str, non_ascii: set = set()) -> bool:
 ALPHANUMERIC_REGEX = re.compile(r"[a-zA-Z0-9@#$%&+=*]")
 
 
-def is_voiced(text: str, non_ascii: set = set()) -> bool:
+def is_voiced(text: str, non_ascii: frozenset = frozenset()) -> bool:
     """Return `True` if any of the text is spoken.
 
     NOTE: This isn't perfect. For example, this function assumes a "-" isn't voiced; however, it
@@ -703,6 +667,31 @@ DIGIT_REGEX = re.compile(r"\d")
 
 def has_digit(text: str) -> bool:
     return bool(DIGIT_REGEX.search(text))
+
+
+SPACES_REGEX = re.compile(r"\s+")
+
+
+@functools.lru_cache(maxsize=2 ** 20)
+def get_spoken_chars(text: str, punc_regex: re.Pattern) -> str:
+    """Remove all unspoken characters from string including spaces, marks, etc.
+
+    Example:
+        >>> remove_punctuation('123 abc !.?')
+        '123abc'
+        >>> remove_punctuation('Hello. You\'ve')
+        'HelloYouve'
+
+    Args:
+        ...
+        punc_regex: Regex for selecting all marks in `text`.
+
+    Returns: String without unspoken characters.
+    """
+    text = text.lower()
+    text = punc_regex.sub(" ", text)
+    text = text.strip()
+    return SPACES_REGEX.sub("", text)
 
 
 def add_space_between_sentences(doc: spacy.tokens.Doc) -> str:

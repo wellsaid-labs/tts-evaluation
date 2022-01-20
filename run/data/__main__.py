@@ -272,7 +272,7 @@ def text(
 
 
 def _csv_normalize(
-    text: str, nlp: typing.Optional[spacy_en.English], language: lib.text.Language
+    text: str, nlp: typing.Optional[spacy_en.English], language: _loader.Language
 ) -> str:
     """Helper for the `csv_normalize` command.
 
@@ -285,7 +285,7 @@ def _csv_normalize(
     - Visualize any text changes for quality assurance
     - Visualize any strange words that may need to be normalized
     """
-    text = lib.text.normalize_vo_script(text, lib.text.NON_ASCII_CHARS[language])
+    text = lib.text.normalize_vo_script(text, run._lang_config.NON_ASCII_CHARS[language])
     text = text.replace("®", "")
     text = text.replace("™", "")
     # NOTE: Remove HTML tags
@@ -357,13 +357,13 @@ def _read_csv(
 def csv_normalize(
     paths: typing.List[pathlib.Path] = typer.Argument(..., exists=True, dir_okay=False),
     dest: pathlib.Path = typer.Argument(..., exists=True, file_okay=False),
-    language: lib.text.Language = typer.Argument(...),
+    language: _loader.Language = typer.Argument(...),
     required_column: str = typer.Option("Content"),
     optional_columns: typing.List[str] = typer.Option(["Source", "Title"]),
     encoding: str = typer.Option("utf-8"),
 ):
     """Normalize csv file(s) in PATHS and save to directory DEST."""
-    is_en = language is lib.text.Language.ENGLISH
+    is_en = language is _loader.Language.ENGLISH
     nlp = lib.text.load_en_core_web_md(disable=("tagger", "ner")) if is_en else None
 
     results = []
