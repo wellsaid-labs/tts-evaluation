@@ -11,10 +11,10 @@ from lib.text import _line_grapheme_to_phoneme, get_spoken_chars, normalize_vo_s
 from lib.utils import identity
 from run.data._loader import Language
 
-PHONEME_SEPARATOR = "|"
-
 # NOTE: eSpeak doesn't have a dictionary of all the phonetic characters.
-# TODO: Remove this once `grapheme_to_phoneme` is deprecated.
+# TODO: Remove this once `grapheme_to_phoneme` is deprecated
+PHONEME_SEPARATOR = "|"
+GRAPHEME_TO_PHONEME_RESTRICTED = list(lib.text.GRAPHEME_TO_PHONEME_RESTRICTED) + [PHONEME_SEPARATOR]
 # fmt: off
 DATASET_PHONETIC_CHARACTERS = (
     '\n', ' ', '!', '"', "'", '(', ')', '*', ',', '-', '.', '/', ':', ';', '?', '[', ']', '=', 'aɪ',

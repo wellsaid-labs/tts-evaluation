@@ -27,7 +27,8 @@ from lib.spectrogram_model import Infer, Mode, Params, SpectrogramModel
 from lib.text import grapheme_to_phoneme, load_en_core_web_md, normalize_vo_script
 from lib.utils import get_chunks, tqdm_
 from run import train
-from run._config import CHECKPOINTS_PATH, GRAPHEME_TO_PHONEME_RESTRICTED
+from run._config import CHECKPOINTS_PATH
+from run._lang_config import GRAPHEME_TO_PHONEME_RESTRICTED
 from run.data._loader import Language, Session, Span, Speaker
 from run.train.spectrogram_model._data import DecodedInput, EncodedInput, InputEncoder
 
