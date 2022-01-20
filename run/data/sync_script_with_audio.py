@@ -96,6 +96,12 @@ STT_CONFIGS = {
     Language.GERMAN: RecognitionConfig(
         language_code="de-DE", model="command_and_search", **_conf_kwargs
     ),
+    Language.PORTUGUESE_BR: RecognitionConfig(
+        language_code="pt-BR", model="command_and_search", **_conf_kwargs
+    ),
+    Language.SPANISH_CO: RecognitionConfig(
+        language_code="es-CO", model="command_and_search", **_conf_kwargs
+    ),
 }
 LanguageCode = typing.Literal["en-us", "de-de"]
 
@@ -183,7 +189,9 @@ CONTROL_CHARACTERS_REGEX = re.compile(r"[\x00-\x08\x0b\x0c\x0d\x0e-\x1f]")
 MULTIPLE_WHITE_SPACES_REGEX = re.compile(r"\s\s+")
 PUNCTUATION_REGEXES = {
     Language.ENGLISH: re.compile(r"[^\w\s]"),
-    Language.GERMAN: re.compile(r"[^a-zA-Z0-9äöüÄÖÜß\s]"),
+    Language.GERMAN: re.compile(r"[^\w\säöüÄÖÜß]"),
+    Language.PORTUGUESE_BR: re.compile(r"[^\w\sáÁéÉíÍóÓúÚçÇâÂêÊôÔãÃõÕàÀèÈìÌòÒùÙ]"),
+    Language.SPANISH_CO: re.compile(r"[^\w\sáÁéÉíÍóÓúÚñÑüÜ]"),
 }
 
 normalize_vo_script = lru_cache(maxsize=2 ** 20)(lib.text.normalize_vo_script)
