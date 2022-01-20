@@ -9,7 +9,7 @@ import pytest
 
 import lib
 from lib.utils import Timeline
-from run.data import _loader
+from run.data._loader import make_en_speaker
 from run.data._loader.data_structures import (
     Alignment,
     IntInt,
@@ -17,7 +17,6 @@ from run.data._loader.data_structures import (
     Passage,
     Session,
     Span,
-    Speaker,
     UnprocessedPassage,
     _check_updated_script,
     _filter_non_speech_segments,
@@ -26,6 +25,7 @@ from run.data._loader.data_structures import (
     has_a_mistranscription,
     make_passages,
 )
+from run.data._loader.english import LINDA_JOHNSON
 from run.data._loader.utils import get_non_speech_segments_and_cache
 from tests._utils import TEST_DATA_PATH
 
@@ -33,7 +33,11 @@ TEST_DATA_LJ = TEST_DATA_PATH / "audio" / "bit(rate(lj_speech,24000),32).wav"
 
 
 def make_unprocessed_passage(
-    audio_path=pathlib.Path("."), speaker=Speaker(""), script="", transcript="", alignments=None
+    audio_path=pathlib.Path("."),
+    speaker=make_en_speaker(""),
+    script="",
+    transcript="",
+    alignments=None,
 ) -> UnprocessedPassage:
     """Make a `UnprocessedPassage` for testing."""
     return UnprocessedPassage(audio_path, speaker, script, transcript, alignments)
@@ -241,7 +245,7 @@ def test_passage_span__identity():
     passage = Passage(
         audio_file=metadata,
         session=Session(audio_path.name),
-        speaker=_loader.LINDA_JOHNSON,
+        speaker=LINDA_JOHNSON,
         script=script,
         transcript=script,
         alignments=Alignment.stow([alignment]),
@@ -290,7 +294,7 @@ def _make_unprocessed_passage_helper(
     found = [(find_script(script, t), find_transcript(transcript, t)) for t in tokens]
     return UnprocessedPassage(
         audio_path=TEST_DATA_LJ,
-        speaker=Speaker(""),
+        speaker=make_en_speaker(""),
         script=script,
         transcript=transcript,
         alignments=tuple(Alignment(s, (0.0, 0.0), t) for s, t in found),

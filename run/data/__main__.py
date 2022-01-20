@@ -320,9 +320,8 @@ def _read_csv(
     separator = ","
     if text.count("\t") > len(text.split("\n")) // 2:
         tab_count = text.count("\t")
-        message = (
-            f"There are a lot of tabs ({tab_count}) so this ({path}) will be parsed as a TSV file."
-        )
+        message = f"There are a lot of tabs ({tab_count}) so this "
+        message += f"({path}) will be parsed as a TSV file."
         logger.warning(message)
         separator = "\t"
 
@@ -336,9 +335,8 @@ def _read_csv(
             logger.warning(message)
             data_frame = read_csv(path, header=None, names=[required_column], **read_csv_kwgs)
     if required_column not in data_frame.columns:
-        message = (
-            f"[{path.name}] The required '{required_column}' column couldn't be found or inferred."
-        )
+        message = f"[{path.name}] The required '{required_column}' "
+        message += "column couldn't be found or inferred."
         logger.error(message)
         raise typer.Exit(code=1)
 

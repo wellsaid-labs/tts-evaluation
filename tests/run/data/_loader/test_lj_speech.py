@@ -7,6 +7,7 @@ from unittest import mock
 import lib
 import run.data._loader
 from run.data._loader import Alignment
+from run.data._loader.english import LINDA_JOHNSON, lj_speech_dataset
 from tests import _utils
 from tests.run.data._loader._utils import maybe_normalize_audio_and_cache_side_effect
 
@@ -62,13 +63,13 @@ def test_lj_speech_dataset(
     with tempfile.TemporaryDirectory() as path:
         directory = pathlib.Path(path)
         shutil.copy(archive, directory / archive.name)
-        data = run.data._loader.lj_speech_dataset(directory=directory)
+        data = lj_speech_dataset(directory=directory)
         assert len(data) == 13100
         assert sum([len(r.script) for r in data]) == 1310332
         assert data[0] == run.data._loader.Passage(
             audio_file=_utils.make_metadata(directory / "LJSpeech-1.1/wavs/LJ001-0001.wav"),
             session=run.data._loader.Session("LJ001"),
-            speaker=run.data._loader.LINDA_JOHNSON,
+            speaker=LINDA_JOHNSON,
             script=(
                 "Printing, in the only sense with which we are at present concerned, differs "
                 "from most if not from all the arts and crafts represented in the Exhibition"

@@ -143,9 +143,16 @@ class Language(Enum):
 
 
 class Speaker(typing.NamedTuple):
+    # TODO: Move style, language, post processing attributes to `Passage` because the same speaker
+    # could have multiple styles, languages, and filters applied.
     label: str
+    language: Language
     name: typing.Optional[str] = None
     gender: typing.Optional[str] = None
+
+
+make_en_speaker = lambda label, *args, **kwargs: Speaker(label, Language.ENGLISH, *args, **kwargs)
+make_de_speaker = lambda label, *args, **kwargs: Speaker(label, Language.GERMAN, *args, **kwargs)
 
 
 @dataclasses.dataclass(frozen=True)

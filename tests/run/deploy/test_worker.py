@@ -7,7 +7,8 @@ import pytest
 import lib
 import run
 from lib.text import _line_grapheme_to_phoneme
-from run.data._loader import JUDY_BIEBER, Session
+from run.data._loader import Session
+from run.data._loader.english import JUDY_BIEBER
 from run.deploy.worker import FlaskException, validate_and_unpack
 from run.train.spectrogram_model._data import InputEncoder
 
@@ -18,8 +19,7 @@ logger = logging.getLogger(__name__)
 def run_around_tests():
     config = {
         lib.text.grapheme_to_phoneme: hparams.HParams(separator=run._config.PHONEME_SEPARATOR),
-        run._tts.encode_tts_inputs: hparams.HParams(seperator=run._config.PHONEME_SEPARATOR),
-        InputEncoder.__init__: hparams.HParams(phoneme_separator=run._config.PHONEME_SEPARATOR),
+        InputEncoder.__init__: hparams.HParams(token_separator=run._config.PHONEME_SEPARATOR),
     }
     hparams.add_config(config)
     yield

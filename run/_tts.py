@@ -24,16 +24,11 @@ from torchnlp.utils import lengths_to_mask
 from lib.environment import PT_EXTENSION, load
 from lib.signal_model import SignalModel, generate_waveform
 from lib.spectrogram_model import Infer, Mode, Params, SpectrogramModel
-from lib.text import (
-    GRAPHEME_TO_PHONEME_RESTRICTED,
-    grapheme_to_phoneme,
-    load_en_core_web_md,
-    normalize_vo_script,
-)
+from lib.text import grapheme_to_phoneme, load_en_core_web_md, normalize_vo_script
 from lib.utils import get_chunks, tqdm_
 from run import train
-from run._config import CHECKPOINTS_PATH
-from run.data._loader import Session, Span, Speaker
+from run._config import CHECKPOINTS_PATH, GRAPHEME_TO_PHONEME_RESTRICTED
+from run.data._loader import Language, Session, Span, Speaker
 from run.train.spectrogram_model._data import DecodedInput, EncodedInput, InputEncoder
 
 if typing.TYPE_CHECKING:  # pragma: no cover
@@ -247,14 +242,8 @@ class PublicSpeakerValueError(ValueError):
     pass
 
 
-@configurable
 def encode_tts_inputs(
-    nlp: English,
-    input_encoder: InputEncoder,
-    script: str,
-    speaker: Speaker,
-    session: Session,
-    seperator: str = HParam(),
+    nlp: English, input_encoder: InputEncoder, script: str, speaker: Speaker, session: Session
 ) -> EncodedInput:
     """Encode TTS `script`, `speaker` and `session` for use with the model(s) with friendly errors
     for common issues.
@@ -262,21 +251,25 @@ def encode_tts_inputs(
     normalized = normalize_vo_script(script)
     if len(normalized) == 0:
         raise PublicTextValueError("Text cannot be empty.")
-    for substring in list(GRAPHEME_TO_PHONEME_RESTRICTED) + [seperator]:
-        if substring in normalized:
-            raise PublicTextValueError(f"Text cannot contain these characters: {substring}")
 
-    phonemes = typing.cast(str, grapheme_to_phoneme(nlp(normalized)))
-    if len(phonemes) == 0:
+    if speaker.language == Language.ENGLISH:
+        for substring in GRAPHEME_TO_PHONEME_RESTRICTED:
+            if substring in normalized:
+                raise PublicTextValueError(f"Text cannot contain these characters: {substring}")
+        tokens = typing.cast(str, grapheme_to_phoneme(nlp(normalized)))
+    else:
+        tokens = normalized
+
+    if len(tokens) == 0:
         raise PublicTextValueError(f'Invalid text: "{script}"')
 
-    decoded = DecodedInput(normalized, phonemes, speaker, (speaker, session))
-    phoneme_encoder = input_encoder.phoneme_encoder
+    decoded = DecodedInput(normalized, tokens, speaker, (speaker, session))
+    token_encoder = input_encoder.token_encoder
     try:
-        phoneme_encoder.encode(decoded.phonemes)
+        token_encoder.encode(decoded.tokens)
     except ValueError:
-        vocab = set(phoneme_encoder.vocab)
-        difference = set(phoneme_encoder.tokenize(decoded.phonemes)).difference(vocab)
+        vocab = set(token_encoder.vocab)
+        difference = set(token_encoder.tokenize(decoded.tokens)).difference(vocab)
         difference = ", ".join([repr(c)[1:-1] for c in sorted(list(difference))])
         raise PublicTextValueError("Text cannot contain these characters: %s" % difference)
 
@@ -301,7 +294,7 @@ def text_to_speech(
     """Run TTS end-to-end with friendly errors."""
     nlp = load_en_core_web_md(disable=("parser", "ner"))
     encoded = encode_tts_inputs(nlp, package.input_encoder, script, speaker, session)
-    params = Params(tokens=encoded.phonemes, speaker=encoded.speaker, session=encoded.session)
+    params = Params(tokens=encoded.tokens, speaker=encoded.speaker, session=encoded.session)
     preds = typing.cast(Infer, package.spectrogram_model(params=params, mode=Mode.INFER))
     splits = preds.frames.split(split_size)
     predicted = list(
@@ -338,13 +331,13 @@ def batch_text_to_speech(
     nlp = load_en_core_web_md(disable=("parser", "ner"))
     inputs = [(normalize_vo_script(sc), sp, se) for sc, sp, se in inputs]
     docs: typing.List[spacy.tokens.Doc] = list(nlp.pipe([i[0] for i in inputs]))
-    phonemes = typing.cast(typing.List[str], grapheme_to_phoneme(docs))
-    decoded = [DecodedInput(sc, p, sp, (sp, se)) for (sc, sp, se), p in zip(inputs, phonemes)]
+    tokens = typing.cast(typing.List[str], grapheme_to_phoneme(docs))
+    decoded = [DecodedInput(sc, p, sp, (sp, se)) for (sc, sp, se), p in zip(inputs, tokens)]
     encoded = [(i, package.input_encoder.encode(d)) for i, d in enumerate(decoded)]
-    encoded = sorted(encoded, key=lambda i: i[1].phonemes.numel())
+    encoded = sorted(encoded, key=lambda i: i[1].tokens.numel())
     results: typing.Dict[int, TTSInputOutput] = {}
     for batch in tqdm_(list(get_chunks(encoded, batch_size))):
-        tokens = stack_and_pad_tensors([e.phonemes for _, e in batch], dim=1)
+        tokens = stack_and_pad_tensors([e.tokens for _, e in batch], dim=1)
         params = Params(
             tokens=tokens.tensor,
             speaker=torch.stack([e.speaker for _, e in batch]).view(1, len(batch)),
@@ -361,7 +354,7 @@ def batch_text_to_speech(
         more_results = {
             j: TTSInputOutput(
                 Params(
-                    tokens=batch[i][1].phonemes,
+                    tokens=batch[i][1].tokens,
                     speaker=batch[i][1].speaker,
                     session=batch[i][1].session,
                 ),
@@ -417,7 +410,7 @@ def text_to_speech_ffmpeg_generator(
     """
 
     def get_spectrogram():
-        params = Params(tokens=input.phonemes, speaker=input.speaker, session=input.session)
+        params = Params(tokens=input.tokens, speaker=input.speaker, session=input.session)
         for pred in package.spectrogram_model(params=params, mode=Mode.GENERATE):
             # [num_frames, batch_size (optional), num_frame_channels] →
             # [batch_size (optional), num_frames, num_frame_channels]
