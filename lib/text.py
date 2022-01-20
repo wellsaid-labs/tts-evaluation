@@ -612,16 +612,33 @@ def strip(text: str) -> typing.Tuple[str, str, str]:
 class Language(Enum):
     ENGLISH: typing.Final = "English"
     GERMAN: typing.Final = "German"
-    FRENCH: typing.Final = "French"
+    PORTUGUESE: typing.Final = "Portuguese"
+    SPANISH: typing.Final = "Spanish"
 
 
 # fmt: off
 NON_ASCII_CHARS = {
-    Language.ENGLISH: {},
+    # src: https://en.wikipedia.org/wiki/English_terms_with_diacritical_marks
+    Language.ENGLISH: {
+        "â", "Â", "à", "À", "á", "Á", "ê", "Ê", "é", "É", "è", "È", "ë", "Ë", "î", "Î", "ï", "Ï",
+        "ô", "Ô", "ù", "Ù", "û", "Û", "ç", "Ç", "ä", "ö", "ü", "Ä", "Ö", "Ü", "ñ", "Ñ",
+    },
     Language.GERMAN: {"ß", "ä", "ö", "ü", "Ä", "Ö", "Ü", "«", "»", "‹", "›"},
-    Language.FRENCH: {
-        "â", "Â", "à", "À", "á", "Á", "ê", "Ê", "é", "É", "è", "È", "ë", "Ë", "î", "Î", "ï", "Ï", "ô",
-        "Ô", "ù", "Ù", "û", "Û", "ç", "Ç"
+    # Portuguese makes use of five diacritics: the cedilla (ç), acute accent (á, é, í, ó, ú),
+    # circumflex accent (â, ê, ô), tilde (ã, õ), and grave accent (à, and rarely è, ì, ò, and ù).
+    # src: https://en.wikipedia.org/wiki/Portuguese_orthography
+    Language.PORTUGUESE: {
+        "á", "Á", "é", "É", "í", "Í", "ó", "Ó", "ú", "Ú", "ç", "Ç", "â", "Â", "ê", "Ê", "ô", "Ô",
+        "ã", "Ã", "õ", "Õ", "à", "À", "è", "È", "ì", "Ì", "ò", "Ò", "ù", "Ù", "«", "»", "‹", "›"
+    },
+    # Spanish uses only the acute accent, over any vowel: ⟨á é í ó ú⟩. The only other diacritics
+    # used are the tilde on the letter ⟨ñ⟩ and the diaeresis used in the sequences ⟨güe⟩ and ⟨güi⟩.
+    # The special characters required are ⟨á⟩, ⟨é⟩, ⟨í⟩, ⟨ó⟩, ⟨ú⟩, ⟨ñ⟩, ⟨Ñ⟩, ⟨ü⟩, ⟨Ü⟩, ⟨¿⟩, ⟨¡⟩
+    # and the uppercase ⟨Á⟩, ⟨É⟩, ⟨Í⟩, ⟨Ó⟩, and ⟨Ú⟩.
+    # src: https://en.wikipedia.org/wiki/Spanish_orthography
+    Language.SPANISH: {
+        "á", "Á", "é", "É", "í", "Í", "ó", "Ó", "ú", "Ú", "ñ", "Ñ", "ü", "Ü", "¿", "¡", "«", "»",
+        "‹", "›"
     },
 }
 # fmt: on
