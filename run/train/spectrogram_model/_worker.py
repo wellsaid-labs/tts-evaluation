@@ -33,6 +33,7 @@ from run._config import (
     get_dataset_label,
     get_model_label,
 )
+from run.data._loader import Language
 from run.train import _utils
 from run.train._utils import (
     CometMLExperiment,
@@ -81,7 +82,7 @@ class Checkpoint(_utils.Checkpoint):
         )
         assert set(p.data_ptr() for p in self.clipper.parameters) == ptrs
         assert set(p.data_ptr() for p in self.ema.parameters) == ptrs
-        assert self.model.vocab_size == self.input_encoder.phoneme_encoder.vocab_size
+        assert self.model.vocab_size == self.input_encoder.token_encoder.vocab_size
         assert self.model.num_speakers == self.input_encoder.speaker_encoder.vocab_size
         assert self.model.num_sessions == self.input_encoder.session_encoder.vocab_size
         assert self.ema.backup == []  # NOTE: Ensure EMA hasn't been applied.
@@ -132,12 +133,15 @@ class _State:
     ) -> InputEncoder:
         """Initialize an input encoder to encode model input.
 
-        TODO: For some reason, Comet doesn't log: "phoneme_vocab".
+        TODO: Remove special rules for `English` in v10 after eSpeak and `InputEncoder` are
+        deprecated.
         """
         passages = list(chain(*tuple(chain(train_dataset.values(), dev_dataset.values()))))
+        speakers = list(train_dataset.keys()) + list(dev_dataset.keys())
+        is_english = all([s.language == Language.ENGLISH for s in speakers])
         input_encoder = InputEncoder(
             [p.script for p in passages],
-            DATASET_PHONETIC_CHARACTERS,
+            DATASET_PHONETIC_CHARACTERS if is_english else [p.script for p in passages],
             list(train_dataset.keys()) + list(dev_dataset.keys()),
             [(p.speaker, p.session) for p in passages],
         )
@@ -146,8 +150,8 @@ class _State:
         stats = {
             label("grapheme_vocab_size"): input_encoder.grapheme_encoder.vocab_size,
             label("grapheme_vocab"): sorted(input_encoder.grapheme_encoder.vocab),
-            label("phoneme_vocab_size"): input_encoder.phoneme_encoder.vocab_size,
-            label("phoneme_vocab"): sorted(input_encoder.phoneme_encoder.vocab),
+            label("token_vocab_size"): input_encoder.token_encoder.vocab_size,
+            label("token_vocab"): sorted(input_encoder.token_encoder.vocab),
             label("num_speakers"): input_encoder.speaker_encoder.vocab_size,
             label("speakers"): sorted([s.label for s in input_encoder.speaker_encoder.vocab]),
             label("num_sessions"): input_encoder.session_encoder.vocab_size,
@@ -178,7 +182,7 @@ class _State:
     ) -> lib.spectrogram_model.SpectrogramModel:
         """Initialize a model onto `device`."""
         model = lib.spectrogram_model.SpectrogramModel(
-            vocab_size=input_encoder.phoneme_encoder.vocab_size,
+            vocab_size=input_encoder.token_encoder.vocab_size,
             num_speakers=input_encoder.speaker_encoder.vocab_size,
             num_sessions=input_encoder.session_encoder.vocab_size,
         ).to(device, non_blocking=True)
@@ -358,7 +362,7 @@ def _visualize_source_vs_target(args: _HandleBatchArgs, preds: lib.spectrogram_m
 
     item = random.randint(0, len(args.batch) - 1)
     spectrogram_length = int(args.batch.spectrogram.lengths[0, item].item())
-    text_length = int(args.batch.encoded_phonemes.lengths[0, item].item())
+    text_length = int(args.batch.encoded_tokens.lengths[0, item].item())
 
     # predicted_spectrogram, gold_spectrogram [num_frames, frame_channels]
     predicted_spectrogram = preds.frames[:spectrogram_length, item]
@@ -412,11 +416,11 @@ def _run_step(
     """
     args.timer.record_event(args.timer.MODEL_FORWARD)
     params = lib.spectrogram_model.Params(
-        tokens=args.batch.encoded_phonemes.tensor,
+        tokens=args.batch.encoded_tokens.tensor,
         speaker=args.batch.encoded_speaker.tensor,
         session=args.batch.encoded_session.tensor,
-        num_tokens=args.batch.encoded_phonemes.lengths,
-        tokens_mask=args.batch.encoded_phonemes_mask.tensor,
+        num_tokens=args.batch.encoded_tokens.lengths,
+        tokens_mask=args.batch.encoded_tokens_mask.tensor,
     )
     preds = args.state.model(
         params=params,
@@ -506,7 +510,7 @@ def _min_alignment_norm(
     args: _HandleBatchArgs, preds: lib.spectrogram_model.Infer, spectrogram_mask: torch.Tensor
 ) -> int:
     """Get the index of the prediction that has the smallest alignment norm."""
-    tokens_mask = args.batch.encoded_phonemes_mask.tensor
+    tokens_mask = args.batch.encoded_tokens_mask.tensor
     return int(torch.argmin(get_alignment_norm(preds.alignments, tokens_mask, spectrogram_mask)))
 
 
@@ -549,7 +553,7 @@ def _visualize_inferred(
     item = pick(args, preds, spectrogram_mask)
     num_frames = int(args.batch.spectrogram.lengths[0, item].item())
     num_frames_predicted = int(preds.lengths[0, item].item())
-    text_length = int(args.batch.encoded_phonemes.lengths[0, item].item())
+    text_length = int(args.batch.encoded_tokens.lengths[0, item].item())
     # gold_spectrogram [num_frames, frame_channels]
     gold_spectrogram = args.batch.spectrogram.tensor[:num_frames, item]
     # spectrogram [num_frames, frame_channels]
@@ -598,11 +602,11 @@ def _run_inference(args: _HandleBatchArgs):
     """
     args.timer.record_event(args.timer.MODEL_FORWARD)
     params = lib.spectrogram_model.Params(
-        tokens=args.batch.encoded_phonemes.tensor,
+        tokens=args.batch.encoded_tokens.tensor,
         speaker=args.batch.encoded_speaker.tensor,
         session=args.batch.encoded_session.tensor,
-        num_tokens=args.batch.encoded_phonemes.lengths,
-        tokens_mask=args.batch.encoded_phonemes_mask.tensor,
+        num_tokens=args.batch.encoded_tokens.lengths,
+        tokens_mask=args.batch.encoded_tokens_mask.tensor,
     )
     preds = args.state.model.module(params, mode=lib.spectrogram_model.Mode.INFER)
     preds = typing.cast(lib.spectrogram_model.Infer, preds)

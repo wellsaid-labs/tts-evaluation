@@ -31,7 +31,7 @@ def test_integration():
     # fmt: on
     speakers = state.input_encoder.speaker_encoder.vocab
     assert speakers == list(train_dataset.keys())
-    assert state.model.vocab_size == state.input_encoder.phoneme_encoder.vocab_size
+    assert state.model.vocab_size == state.input_encoder.token_encoder.vocab_size
     assert state.model.num_speakers == state.input_encoder.speaker_encoder.vocab_size
     assert state.model.num_sessions == state.input_encoder.session_encoder.vocab_size
 
@@ -63,7 +63,7 @@ def test_integration():
         assert all(metrics.data[metrics.NUM_CORRECT_STOP_TOKEN]) == 1
 
         num_frames = [(batch.spectrogram.lengths[0].item(),)]
-        num_tokens = [(batch.encoded_phonemes.lengths[0].item(),)]
+        num_tokens = [(batch.encoded_tokens.lengths[0].item(),)]
         num_seconds = [(batch.spans[0].audio_length,)]
         bucket = len(batch.spans[0].script) // metrics.TEXT_LENGTH_BUCKET_SIZE
         values = {

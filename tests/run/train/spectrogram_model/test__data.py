@@ -42,7 +42,7 @@ def test_input_encoder():
 
     assert torch.equal(encoded.graphemes, torch.tensor([5]))
     assert torch.equal(encoded.letter_cases, torch.tensor([1]))
-    assert torch.equal(encoded.phonemes, torch.tensor([5, 6]))
+    assert torch.equal(encoded.tokens, torch.tensor([5, 6]))
     assert torch.equal(encoded.speaker, torch.tensor([0]))
     assert torch.equal(encoded.session, torch.tensor([0]))
     assert encoder.decode(encoded) == input_

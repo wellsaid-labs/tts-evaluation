@@ -29,7 +29,6 @@ logger = logging.getLogger(__name__)
 pprinter = pprint.PrettyPrinter(indent=4)
 
 RANDOM_SEED = 1212212
-PHONEME_SEPARATOR = "|"
 DATASETS = copy.copy(_loader.DATASETS)
 # NOTE: Elliot and Elizabeth has unannotated character portrayals.
 del DATASETS[_loader.english.ELLIOT_MILLER]
@@ -40,6 +39,8 @@ del DATASETS[_loader.english.ELIZABETH_KLETT]
 # to generate the vocab.
 # TODO: Remove this once `grapheme_to_phoneme` is deprecated.
 # fmt: off
+PHONEME_SEPARATOR = "|"
+GRAPHEME_TO_PHONEME_RESTRICTED = list(lib.text.GRAPHEME_TO_PHONEME_RESTRICTED) + [PHONEME_SEPARATOR]
 DATASET_PHONETIC_CHARACTERS = [
     '\n', ' ', '!', '"', "'", '(', ')', '*', ',', '-', '.', '/', ':', ';', '?', '[', ']', '=', 'aɪ',
     'aɪə', 'aɪɚ', 'aɪʊ', 'aɪʊɹ', 'aʊ', 'b', 'd', 'dʒ', 'eɪ', 'f', 'h', 'i', 'iə', 'iː', 'j',
@@ -363,7 +364,6 @@ def _configure_audio_processing():
             standard_deviation=2,
         ),
         run._tts.text_to_speech_ffmpeg_generator: HParams(sample_rate=format_.sample_rate),
-        run._tts.encode_tts_inputs: HParams(seperator=PHONEME_SEPARATOR),
     }
     add_config(config)
 

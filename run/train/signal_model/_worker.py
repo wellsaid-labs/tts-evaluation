@@ -606,9 +606,9 @@ def _visualize_inferred_end_to_end(
 
     batch = typing.cast(Batch, next(iter(data_loader)))
     item = random.randint(0, len(batch.batch) - 1)
-    num_tokens = batch.batch.encoded_phonemes.lengths[:, item]
+    num_tokens = batch.batch.encoded_tokens.lengths[:, item]
     params = lib.spectrogram_model.Params(
-        tokens=batch.batch.encoded_phonemes.tensor[:num_tokens, item],
+        tokens=batch.batch.encoded_tokens.tensor[:num_tokens, item],
         speaker=batch.batch.encoded_speaker.tensor[:, item],
         session=batch.batch.encoded_session.tensor[:, item],
     )
