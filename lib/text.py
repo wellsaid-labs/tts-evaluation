@@ -8,6 +8,7 @@ import string
 import subprocess
 import typing
 from collections import defaultdict
+from enum import Enum
 from typing import get_args
 
 import ftfy
@@ -608,75 +609,65 @@ def strip(text: str) -> typing.Tuple[str, str, str]:
     return text, left, right
 
 
-def normalize_vo_script(text: str, strip: bool = True, decode: bool = True) -> str:
+class Language(Enum):
+    ENGLISH: typing.Final = "English"
+    GERMAN: typing.Final = "German"
+    FRENCH: typing.Final = "French"
+
+
+# fmt: off
+NON_ASCII_CHARS = {
+    Language.ENGLISH: {},
+    Language.GERMAN: {"ß", "ä", "ö", "ü", "Ä", "Ö", "Ü", "«", "»", "‹", "›"},
+    Language.FRENCH: {
+        "â", "Â", "à", "À", "á", "Á", "ê", "Ê", "é", "É", "è", "È", "ë", "Ë", "î", "Î", "ï", "Ï", "ô",
+        "Ô", "ù", "Ù", "û", "Û", "ç", "Ç"
+    },
+}
+# fmt: on
+
+
+def normalize_vo_script(text: str, non_ascii: set = set(), strip: bool = True) -> str:
     """Normalize a voice-over script such that only readable characters remain.
+
+    TODO: Use `unidecode.unidecode` in "strict" mode so that data isn't lost.
 
     References:
     - Generic package for text cleaning: https://github.com/jfilter/clean-text
     - ASCII characters: https://www.ascii-code.com/
     - `Unidecode` vs `unicodedata`:
       https://stackoverflow.com/questions/517923/what-is-the-best-way-to-remove-accents-normalize-in-a-python-unicode-string
+
+    Args:
+        text
+        non_ascii: Allowed Non-ASCII characters.
+        strip: If `True`, strip white spaces at the ends of script.
+
+    Returns: Normalized string.
     """
     text = str(text)
     text = ftfy.fix_text(text)
     text = text.replace("\f", "\n")
     text = text.replace("\t", "  ")
-    text = text.replace("—", "-")  # em dash
-    text = text.replace("–", "-")  # en dash
-    text = text.replace("\xa0", " ")  # non-breaking space
-    if decode:
-        text = str(unidecode.unidecode(text))
+    text = "".join([c if c in non_ascii else str(unidecode.unidecode(text)) for c in text])
     if strip:
         text = text.strip()
     return text
 
 
-_READABLE_CHARACTERS = set(
-    normalize_vo_script(chr(i), strip=False, decode=False) for i in range(0, 128)
-)
-_GERMAN_SPECIAL_CHARACTERS = ["ß", "ä", "ö", "ü", "Ä", "Ö", "Ü", "«", "»", "‹", "›"]
-_FRENCH_SPECIAL_CHARACTERS = [
-    "â",
-    "Â",
-    "à",
-    "À",
-    "á",
-    "Á",
-    "ê",
-    "Ê",
-    "é",
-    "É",
-    "è",
-    "È",
-    "ë",
-    "Ë",
-    "î",
-    "Î",
-    "ï",
-    "Ï",
-    "ô",
-    "Ô",
-    "ù",
-    "Ù",
-    "û",
-    "Û",
-    "ç",
-    "Ç",
-]
-_READABLE_CHARACTERS.update(_GERMAN_SPECIAL_CHARACTERS)
-_READABLE_CHARACTERS.update(_FRENCH_SPECIAL_CHARACTERS)
+_READABLE_CHARACTERS = set(normalize_vo_script(chr(i), strip=False) for i in range(0, 128))
 
 
-def is_normalized_vo_script(text: str) -> bool:
+def is_normalized_vo_script(text: str, non_ascii: set = set()) -> bool:
     """Return `True` if `text` has been normalized to a small set of characters."""
-    return len(set(text) - _READABLE_CHARACTERS) == 0
+    return len(set(text) - _READABLE_CHARACTERS - non_ascii) == 0
 
 
 # TODO: Could update `ALPHANUMERIC_REGEX` with German special characters, but it works as is too
 ALPHANUMERIC_REGEX = re.compile(r"[a-zA-Z0-9@#$%&+=*]")
 
 
-def is_voiced(text: str) -> bool:
+def is_voiced(text: str, non_ascii: set = set()) -> bool:
     """Return `True` if any of the text is spoken.
 
     NOTE: This isn't perfect. For example, this function assumes a "-" isn't voiced; however, it
@@ -686,8 +677,8 @@ def is_voiced(text: str) -> bool:
     text = text.strip()
     if len(text) == 0:
         return False
-    assert is_normalized_vo_script(text), "Text must be normalized."
-    return ALPHANUMERIC_REGEX.search(text) is not None
+    assert is_normalized_vo_script(text, non_ascii), "Text must be normalized."
+    return ALPHANUMERIC_REGEX.search(text) is not None or any(c in non_ascii for c in text)
 
 
 DIGIT_REGEX = re.compile(r"\d")
