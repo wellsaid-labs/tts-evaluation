@@ -67,11 +67,12 @@ STT_CONFIGS = {
 LanguageCode = typing.Literal["en-US", "de-DE", "pt-BR", "es-CO"]
 
 
-@lru_cache(maxsize=None)
+@lru_cache(maxsize=2 ** 20)
 def _grapheme_to_phoneme(grapheme: str):
     """Fast grapheme to phoneme implementation where punctuation is ignored.
 
-    NOTE: Use private `_line_grapheme_to_phoneme` for performance..."""
+    NOTE: Use private `_line_grapheme_to_phoneme` for performance...
+    """
     return _line_grapheme_to_phoneme([grapheme], separator="|")[0]
 
 
@@ -93,7 +94,7 @@ _GRAPHEME_TO_PHONEME = {
 }
 
 
-@lru_cache(maxsize=None)
+@lru_cache(maxsize=2 ** 20)
 def is_sound_alike(a: str, b: str, language: Language) -> bool:
     """Return `True` if `str` `a` and `str` `b` sound a-like.
 
