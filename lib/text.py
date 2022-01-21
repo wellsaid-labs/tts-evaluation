@@ -682,7 +682,7 @@ def get_spoken_chars(text: str, punc_regex: re.Pattern) -> str:
         >>> get_spoken_chars('123 abc !.?')
         '123abc'
         >>> get_spoken_chars('Hello. You\'ve')
-        'HelloYouve'
+        'helloyouve'
 
     Args:
         ...

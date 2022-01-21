@@ -49,7 +49,7 @@ def test__maybe_normalize_vo_script():
     normal_script = "abc"
     assert _maybe_normalize_vo_script(normal_script, Language.ENGLISH) == normal_script
     script = "áƀć"
-    assert _maybe_normalize_vo_script(script, Language.ENGLISH) == "aƀc"
+    assert _maybe_normalize_vo_script(script, Language.ENGLISH) == "ábc"
 
 
 def test__filter_non_speech_segments():

@@ -291,7 +291,6 @@ def _csv_normalize(
     # NOTE: Remove HTML tags
     text = re.sub("<.*?>", "", text)
 
-    # TODO: For non-English, could use nlp if available. Didn't seem critical for German case.
     # NOTE: Fix for a missing space between end and beginning of a sentence. For example:
     #   the cold war.The term 'business ethics'
     text = lib.text.add_space_between_sentences(nlp(text)) if nlp else text
@@ -361,6 +360,7 @@ def csv_normalize(
     encoding: str = typer.Option("utf-8"),
 ):
     """Normalize csv file(s) in PATHS and save to directory DEST."""
+    # TODO: It may be worthwhile to process text with SpaCy in non-English languages.
     is_en = language is _loader.Language.ENGLISH
     nlp = lib.text.load_en_core_web_md(disable=("tagger", "ner")) if is_en else None
 
