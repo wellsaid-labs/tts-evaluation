@@ -3,6 +3,7 @@ import typing
 
 from lib.environment import AnsiCodes
 from lib.utils import flatten_2d
+from run.data._loader import Language
 from run.data.sync_script_with_audio import (
     ScriptToken,
     SttToken,
@@ -20,25 +21,23 @@ def test_format_ratio():
 
 def test__get_speech_context():
     """Test `_get_speech_context` creates a speech context with limited length phrases."""
-    assert set(_get_speech_context("a b c d e f g h i j", 5, 0.0).phrases) == set(  # type: ignore
-        ["a b c", "d e f", "g h i", "j"]
-    )
+    context = _get_speech_context("a b c d e f g h i j", Language.ENGLISH, 5, 0.0)
+    assert set(context.phrases) == set(["a b c", "d e f", "g h i", "j"])  # type: ignore
 
 
 def test__get_speech_context__overlap():
     """Test `_get_speech_context` creates a speech context with limited length overlapping
     phrases."""
-    assert set(_get_speech_context("a b c d e f g h i j", 5, 0.2).phrases) == set(  # type: ignore
-        ["a b c", "c d e", "e f g", "g h i", "i j"]
-    )
+    context = _get_speech_context("a b c d e f g h i j", Language.ENGLISH, 5, 0.2)
+    assert set(context.phrases) == set(["a b c", "c d e", "e f g", "g h i", "i j"])
 
 
 def test__get_speech_context__continuous():
     """Test `_get_speech_context` ignores long continuous sequences of text longer than the
     `max_phrase_length`."""
-    assert set(_get_speech_context("abcdef g h i j", 5, 0.2).phrases) == set(  # type: ignore
-        ["g h i", "i j"]
-    )
+    expected = set(["g h i", "i j"])
+    context = _get_speech_context("abcdef g h i j", Language.ENGLISH, 5, 0.2)
+    assert set(context.phrases) == expected
 
 
 def _get_script_tokens(scripts: typing.List[str]) -> typing.List[ScriptToken]:
@@ -240,7 +239,7 @@ def test__fix_alignments():
     tokens = _get_script_tokens(scripts)
     stt_tokens = _get_stt_tokens(stt_results)
     updated_tokens, updated_stt_tokens, updated_alignments = _fix_alignments(
-        scripts, alignments, tokens, stt_tokens
+        scripts, alignments, tokens, stt_tokens, Language.ENGLISH
     )
     assert updated_alignments == [(0, 0), (1, 1), (2, 2)]
     assert [s.text for s in updated_stt_tokens] == ["a", "b c d", "e"]
@@ -255,7 +254,7 @@ def test__fix_alignments__edges():
     tokens = _get_script_tokens(scripts)
     stt_tokens = _get_stt_tokens(stt_results)
     updated_tokens, updated_stt_tokens, updated_alignments = _fix_alignments(
-        scripts, alignments, tokens, stt_tokens
+        scripts, alignments, tokens, stt_tokens, Language.ENGLISH
     )
     assert updated_alignments == [(0, 0), (1, 1), (2, 2)]
     assert [s.text for s in updated_stt_tokens] == ["a b", "c", "d e"]
@@ -271,7 +270,7 @@ def test__fix_alignments__stt_edges():
     tokens = _get_script_tokens(scripts)
     stt_tokens = _get_stt_tokens(stt_results)
     _, updated_stt_tokens, updated_alignments = _fix_alignments(
-        scripts, alignments, tokens, stt_tokens
+        scripts, alignments, tokens, stt_tokens, Language.ENGLISH
     )
     assert updated_alignments == [(0, 0), (1, 1), (2, 2)]
     assert [s.text for s in updated_stt_tokens] == ["a b", "c", "d e"]
@@ -285,7 +284,9 @@ def test__fix_alignments__script_edges():
     alignments = [(2, 1)]
     tokens = _get_script_tokens(scripts)
     stt_tokens = _get_stt_tokens(stt_results)
-    updated_tokens, _, updated_alignments = _fix_alignments(scripts, alignments, tokens, stt_tokens)
+    updated_tokens, _, updated_alignments = _fix_alignments(
+        scripts, alignments, tokens, stt_tokens, Language.ENGLISH
+    )
     assert updated_alignments == [(0, 0), (1, 1), (2, 2)]
     assert [s.text for s in updated_tokens] == ["a b", "c", "d e"]
 
@@ -298,7 +299,7 @@ def test__fix_alignments__between_scripts():
     tokens = _get_script_tokens(scripts)
     stt_tokens = _get_stt_tokens(stt_results)
     updated_tokens, updated_stt_tokens, updated_alignments = _fix_alignments(
-        scripts, alignments, tokens, stt_tokens
+        scripts, alignments, tokens, stt_tokens, Language.ENGLISH
     )
     assert updated_alignments == [(0, 0), (1, 1), (4, 4)]
     assert [s.text for s in updated_tokens] == ["a", "b", "c", "d", "e"]

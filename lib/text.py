@@ -680,9 +680,9 @@ def get_spoken_chars(text: str, punc_regex: re.Pattern) -> str:
     """Remove all unspoken characters from string including spaces, marks, casing, etc.
 
     Example:
-        >>> remove_punctuation('123 abc !.?')
+        >>> get_spoken_chars('123 abc !.?')
         '123abc'
-        >>> remove_punctuation('Hello. You\'ve')
+        >>> get_spoken_chars('Hello. You\'ve')
         'HelloYouve'
 
     Args:

@@ -18,8 +18,8 @@ logger = logging.getLogger(__name__)
 @pytest.fixture(autouse=True)
 def run_around_tests():
     config = {
-        lib.text.grapheme_to_phoneme: hparams.HParams(separator=run._config.PHONEME_SEPARATOR),
-        InputEncoder.__init__: hparams.HParams(token_separator=run._config.PHONEME_SEPARATOR),
+        lib.text.grapheme_to_phoneme: hparams.HParams(separator=run._lang_config.PHONEME_SEPARATOR),
+        InputEncoder.__init__: hparams.HParams(token_separator=run._lang_config.PHONEME_SEPARATOR),
     }
     hparams.add_config(config)
     yield
@@ -37,7 +37,7 @@ def test_validate_and_unpack():
     speaker = JUDY_BIEBER
     session = Session("sesh")
     script = "This is a test. ABC."
-    phonemes = _line_grapheme_to_phoneme([script], separator=run._config.PHONEME_SEPARATOR)[0]
+    phonemes = _line_grapheme_to_phoneme([script], separator=run._lang_config.PHONEME_SEPARATOR)[0]
     input_encoder = InputEncoder([script], [phonemes], [speaker], [(speaker, session)])
     speaker_id = input_encoder.speaker_encoder.token_to_index[speaker]
     speaker_id_to_speaker = {0: (speaker, session)}
@@ -45,44 +45,44 @@ def test_validate_and_unpack():
     nlp = lib.text.load_en_core_web_sm(disable=("parser", "ner"))
     validate_ = partial(validate_and_unpack, nlp=nlp, input_encoder=input_encoder)
     with pytest.raises(FlaskException):
-        validate_({})
+        validate_({})  # type: ignore
 
     with pytest.raises(FlaskException):  # `text` argument missing
-        validate_({"speaker_id": 0})
+        validate_({"speaker_id": 0})  # type: ignore
 
     with pytest.raises(FlaskException):  # `speaker_id` argument missing
-        validate_({"text": script})
+        validate_({"text": script})  # type: ignore
 
     with pytest.raises(FlaskException):  # `speaker_id` must be an integer
-        validate_({**args, "speaker_id": "blah"})
+        validate_({**args, "speaker_id": "blah"})  # type: ignore
 
     with pytest.raises(FlaskException):  # `speaker_id` must be an integer
-        validate_({**args, "speaker_id": 2.1})
+        validate_({**args, "speaker_id": 2.1})  # type: ignore
 
     with pytest.raises(FlaskException):  # `text` must be smaller than `max_chars`
         request_args = {**args, "text": "a" * 20000}
-        validate_(request_args, max_chars=1000)
+        validate_(request_args, max_chars=1000)  # type: ignore
 
     with pytest.raises(FlaskException):  # `text` must be a string
-        validate_({**args, "text": 1.0})
+        validate_({**args, "text": 1.0})  # type: ignore
 
     with pytest.raises(FlaskException):  # `text` must be not empty
-        validate_({**args, "text": ""})
+        validate_({**args, "text": ""})  # type: ignore
 
     with pytest.raises(FlaskException):  # `speaker_id` must be in `input_encoder`
-        validate_({**args, "speaker_id": 2 ** 31})
+        validate_({**args, "speaker_id": 2 ** 31})  # type: ignore
 
     with pytest.raises(FlaskException):  # `speaker_id` must be positive
-        validate_({**args, "speaker_id": -1})
+        validate_({**args, "speaker_id": -1})  # type: ignore
 
     with pytest.raises(FlaskException, match=r".*cannot contain these characters: i, j,*"):
         # NOTE: "wɛɹɹˈɛvɚ kˌoːɹzənjˈuːski" should contain phonemes that are not already in
         # mock `input_encoder`.
-        validate_({**args, "text": "wherever korzeniewski"})
+        validate_({**args, "text": "wherever korzeniewski"})  # type: ignore
 
     # `text` gets normalized and `speaker` is dereferenced
     request_args = {**args, "text": "á😁"}
-    encoded = validate_(request_args, speaker_id_to_speaker=speaker_id_to_speaker)
+    encoded = validate_(request_args, speaker_id_to_speaker=speaker_id_to_speaker)  # type: ignore
     decoded = input_encoder.decode(encoded)
     # NOTE: The emoji is removed because there is no unicode equivilent.
     assert decoded.graphemes == "a"

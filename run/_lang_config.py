@@ -139,7 +139,7 @@ def configure():
         run._tts.encode_tts_inputs: HParams(seperator=PHONEME_SEPARATOR),
         lib.text.grapheme_to_phoneme: HParams(separator=PHONEME_SEPARATOR),
         run.train.spectrogram_model._data.InputEncoder.__init__: HParams(
-            phoneme_separator=PHONEME_SEPARATOR
+            token_seperator=PHONEME_SEPARATOR
         ),
     }
     add_config(config)
