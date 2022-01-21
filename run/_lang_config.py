@@ -111,13 +111,13 @@ def is_sound_alike(a: str, b: str, language: Language) -> bool:
     NOTE: If two words have same sounds are spoken in the same order, then they sound-a-like.
 
     Example:
-        >>> is_sound_alike("Hello-you've", "Hello. You've")
+        >>> is_sound_alike("Hello-you've", "Hello. You've", Language.ENGLISH)
         True
-        >>> is_sound_alike('screen introduction', 'screen--Introduction,')
+        >>> is_sound_alike('screen introduction', 'screen--Introduction,', Language.ENGLISH)
         True
-        >>> is_sound_alike('twentieth', '20th')
+        >>> is_sound_alike('twentieth', '20th', Language.ENGLISH)
         True
-        >>> is_sound_alike('financingA', 'financing a')
+        >>> is_sound_alike('financingA', 'financing a', Language.ENGLISH)
         True
     """
     a = normalize_vo_script(a, NON_ASCII_ALL[language])
