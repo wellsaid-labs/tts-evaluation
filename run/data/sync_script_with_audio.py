@@ -493,9 +493,8 @@ def _run_stt(
         audio = RecognitionAudio(uri=blob_to_gcs_uri(audio_blob))
         operations.append(speech.SpeechClient().long_running_recognize(config=config, audio=audio))
         logger.info(f"STT running in {stt_config.language_code}, {stt_config.model} model...")
-        message = (
-            f'STT operation {operations[-1].operation.name} "{blob_to_gcs_uri(dest_blob)}" started.'
-        )
+        message = f"STT operation {operations[-1].operation.name}"
+        message += f'"{blob_to_gcs_uri(dest_blob)}" started.'
         logger.info(message)
 
     progress = [0] * len(operations)
