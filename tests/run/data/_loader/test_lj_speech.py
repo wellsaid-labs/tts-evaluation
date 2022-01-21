@@ -33,9 +33,9 @@ verbalize_test_cases = {
     # Test Normalized White Space
     "LJ047-0160": "found it to be four one one Elm Street. End quote.",
     "LJ017-0007": "Henry the eighth a new",  # Test Roman Numbers
-    "LJ016-0257": "d'etre",  # Test Remove Accents
-    "LJ018-0029": "Muller",  # Test Remove Accents
-    "LJ018-0396": "celebre",  # Test Remove Accents
+    "LJ016-0257": "d'être",  # Test Allow Accents
+    "LJ018-0029": "Müller",  # Test Allow Accents
+    "LJ018-0396": "célèbre",  # Test Allow Accents
     "LJ020-0106": "three hours'",  # Test Quotation Normalization
     "LJ020-0002": '"sponge,"',  # Test Quotation Normalization
 }

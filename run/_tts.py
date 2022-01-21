@@ -28,7 +28,7 @@ from lib.text import grapheme_to_phoneme, load_en_core_web_md, normalize_vo_scri
 from lib.utils import get_chunks, tqdm_
 from run import train
 from run._config import CHECKPOINTS_PATH
-from run._lang_config import GRAPHEME_TO_PHONEME_RESTRICTED
+from run._lang_config import GRAPHEME_TO_PHONEME_RESTRICTED, NON_ASCII_CHARS
 from run.data._loader import Language, Session, Span, Speaker
 from run.train.spectrogram_model._data import DecodedInput, EncodedInput, InputEncoder
 
@@ -249,7 +249,7 @@ def encode_tts_inputs(
     """Encode TTS `script`, `speaker` and `session` for use with the model(s) with friendly errors
     for common issues.
     """
-    normalized = normalize_vo_script(script)
+    normalized = normalize_vo_script(script, NON_ASCII_CHARS[speaker.language])
     if len(normalized) == 0:
         raise PublicTextValueError("Text cannot be empty.")
 
@@ -330,7 +330,10 @@ def batch_text_to_speech(
 ) -> typing.List[TTSInputOutput]:
     """Run TTS end-to-end quickly with a verbose output."""
     nlp = load_en_core_web_md(disable=("parser", "ner"))
-    inputs = [(normalize_vo_script(sc), sp, se) for sc, sp, se in inputs]
+    inputs = [
+        (normalize_vo_script(script, NON_ASCII_CHARS[speaker.language]), speaker, session)
+        for script, speaker, session in inputs
+    ]
     docs: typing.List[spacy.tokens.Doc] = list(nlp.pipe([i[0] for i in inputs]))
     tokens = typing.cast(typing.List[str], grapheme_to_phoneme(docs))
     decoded = [DecodedInput(sc, p, sp, (sp, se)) for (sc, sp, se), p in zip(inputs, tokens)]

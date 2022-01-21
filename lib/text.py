@@ -608,10 +608,11 @@ def strip(text: str) -> typing.Tuple[str, str, str]:
     return text, left, right
 
 
-def normalize_vo_script(text: str, non_ascii: frozenset = frozenset(), strip: bool = True) -> str:
+def normalize_vo_script(text: str, non_ascii: frozenset, strip: bool = True) -> str:
     """Normalize a voice-over script such that only readable characters remain.
 
     TODO: Use `unidecode.unidecode` in "strict" mode so that data isn't lost.
+    NOTE: `non_ascii` needs to be explicitly set so that text isn't processed incorrecly accidently.
 
     References:
     - Generic package for text cleaning: https://github.com/jfilter/clean-text
@@ -620,9 +621,9 @@ def normalize_vo_script(text: str, non_ascii: frozenset = frozenset(), strip: bo
       https://stackoverflow.com/questions/517923/what-is-the-best-way-to-remove-accents-normalize-in-a-python-unicode-string
 
     Args:
-        text
+        ...
         non_ascii: Allowed Non-ASCII characters.
-        strip: If `True`, strip white spaces at the ends of script.
+        strip: If `True`, strip white spaces at the ends of `text`.
 
     Returns: Normalized string.
     """
@@ -630,16 +631,18 @@ def normalize_vo_script(text: str, non_ascii: frozenset = frozenset(), strip: bo
     text = ftfy.fix_text(text)
     text = text.replace("\f", "\n")
     text = text.replace("\t", "  ")
-    text = "".join([c if c in non_ascii else str(unidecode.unidecode(text)) for c in text])
+    text = "".join([c if c in non_ascii else str(unidecode.unidecode(c)) for c in text])
     if strip:
         text = text.strip()
     return text
 
 
-_READABLE_CHARACTERS = set(normalize_vo_script(chr(i), strip=False) for i in range(0, 128))
+_READABLE_CHARACTERS = set(
+    normalize_vo_script(chr(i), frozenset(), strip=False) for i in range(0, 128)
+)
 
 
-def is_normalized_vo_script(text: str, non_ascii: frozenset = frozenset()) -> bool:
+def is_normalized_vo_script(text: str, non_ascii: frozenset) -> bool:
     """Return `True` if `text` has been normalized to a small set of characters."""
     return len(set(text) - _READABLE_CHARACTERS - non_ascii) == 0
 
@@ -648,7 +651,7 @@ def is_normalized_vo_script(text: str, non_ascii: frozenset = frozenset()) -> bo
 ALPHANUMERIC_REGEX = re.compile(r"[a-zA-Z0-9@#$%&+=*]")
 
 
-def is_voiced(text: str, non_ascii: frozenset = frozenset()) -> bool:
+def is_voiced(text: str, non_ascii: frozenset) -> bool:
     """Return `True` if any of the text is spoken.
 
     NOTE: This isn't perfect. For example, this function assumes a "-" isn't voiced; however, it
@@ -674,7 +677,7 @@ SPACES_REGEX = re.compile(r"\s+")
 
 @functools.lru_cache(maxsize=2 ** 20)
 def get_spoken_chars(text: str, punc_regex: re.Pattern) -> str:
-    """Remove all unspoken characters from string including spaces, marks, etc.
+    """Remove all unspoken characters from string including spaces, marks, casing, etc.
 
     Example:
         >>> remove_punctuation('123 abc !.?')

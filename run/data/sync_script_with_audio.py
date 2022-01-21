@@ -599,7 +599,10 @@ def _sync_and_upload(
     message = "Some or all script(s) are missing or incorrecly formatted."
     assert all(isinstance(t, str) for t in lib.utils.flatten_2d(scripts)), message
     message = "Script(s) cannot contain funky characters."
-    assert all(lib.text.is_normalized_vo_script(t) for t in lib.utils.flatten_2d(scripts)), message
+    assert all(
+        lib.text.is_normalized_vo_script(t, _lang_config.NON_ASCII_CHARS[language])
+        for t in lib.utils.flatten_2d(scripts)
+    ), message
 
     logger.info("Maybe running speech-to-text and caching results...")
     filtered = list(filter(lambda i: not i[-1].exists(), zip(audio_blobs, scripts, stt_blobs)))

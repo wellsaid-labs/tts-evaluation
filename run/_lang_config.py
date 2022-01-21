@@ -86,12 +86,17 @@ _PUNCTUATION_REGEXES = {
 }
 
 
+def _grapheme_to_phoneme_approx_de(text: str):
+    """
+    NOTE: (Rhyan) The "ß" is used to denote a "ss" sound.
+    """
+    return get_spoken_chars(text, _PUNCTUATION_REGEXES[Language.GERMAN]).replace("ß", "ss")
+
+
 # NOTE: Phonetic rules to help determine if two words sound-a-like.
 _GRAPHEME_TO_PHONEME = {
     Language.ENGLISH: _grapheme_to_phoneme,
-    # NOTE: (Rhyan) The "ß" is used to denote a "ss" sound. Google STT is inconsistent with how it
-    # chooses to spell its transcriptions. Sometimes it uses "ß" and sometimes it uses "ss".
-    Language.GERMAN: lambda w: get_spoken_chars(w, Language.GERMAN).replace("ß", "ss"),
+    Language.GERMAN: _grapheme_to_phoneme_approx_de,
 }
 
 

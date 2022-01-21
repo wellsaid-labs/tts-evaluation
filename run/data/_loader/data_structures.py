@@ -16,6 +16,7 @@ import numpy as np
 from hparams import HParam, configurable
 
 import lib
+import run
 from lib.audio import AudioMetadata, get_audio_metadata
 from lib.utils import Timeline, Tuple, flatten_2d, tqdm_
 from run.data import _loader
@@ -58,7 +59,8 @@ def voiced_nonalignment_spans(
     if spans.passage.is_linked.transcript:
         text[0] += "" if spans.prev is None else spans.prev.script + spans.prev.transcript
         text[-1] += "" if spans.next is None else spans.next.script + spans.next.transcript
-    return spans, [lib.text.is_voiced(t) for t in text]
+    non_ascii = run._lang_config.NON_ASCII_CHARS[span.speaker.language]
+    return spans, [lib.text.is_voiced(t, non_ascii) for t in text]
 
 
 def _is_alignment_voiced(passage: Passage, alignment: Alignment) -> bool:
@@ -66,7 +68,8 @@ def _is_alignment_voiced(passage: Passage, alignment: Alignment) -> bool:
     for attr in ("script", "transcript"):
         interval = getattr(alignment, attr)
         if interval[0] < interval[-1] and lib.text.is_voiced(
-            getattr(passage, attr)[interval[0] : interval[-1]]
+            getattr(passage, attr)[interval[0] : interval[-1]],
+            run._lang_config.NON_ASCII_CHARS[passage.speaker.language],
         ):
             return True
     return False
@@ -698,10 +701,10 @@ def _make_speech_segments_helper(
     return tuple(speech_segments)
 
 
-def _maybe_normalize_vo_script(script: str) -> str:
+def _maybe_normalize_vo_script(script: str, language: Language) -> str:
     """Normalize a script if it's not normalized."""
-    if not lib.text.is_normalized_vo_script(script):
-        return lib.text.normalize_vo_script(script)
+    if not lib.text.is_normalized_vo_script(script, run._lang_config.NON_ASCII_CHARS[language]):
+        return lib.text.normalize_vo_script(script, run._lang_config.NON_ASCII_CHARS[language])
     return script
 
 
@@ -778,8 +781,16 @@ def _normalize_scripts(
 
     TODO: Support `Passage`s with no content. At the moment `Passage` requires some content.
     """
-    scripts = set(s for l in dataset for p in l for s in (p.script, p.transcript))
-    new_scripts = {s: _maybe_normalize_vo_script(s) for s in tqdm_(scripts, disable=no_tqdm)}
+    scripts = set(
+        (script, passage.speaker.language)
+        for document in dataset
+        for passage in document
+        for script in (passage.script, passage.transcript)
+    )
+    new_scripts = {
+        (script, language): _maybe_normalize_vo_script(script, language)
+        for script, language in tqdm_(scripts, disable=no_tqdm)
+    }
     new_dataset: UnprocessedDataset = [[] for _ in range(len(dataset))]
     iterator = tqdm_([(p, n) for d, n in zip(dataset, new_dataset) for p in d], disable=no_tqdm)
     for passage, new_document in iterator:
@@ -787,8 +798,8 @@ def _normalize_scripts(
             message = f"[{label}] Skipping, passage ({passage.audio_path.name}) has no content."
             logger.error(message)
             continue
-        script = new_scripts[passage.script]
-        transcript = new_scripts[passage.transcript]
+        script = new_scripts[(passage.script, passage.speaker.language)]
+        transcript = new_scripts[(passage.transcript, passage.speaker.language)]
         _check_updated_script(label, passage, script, transcript)
         new_document.append(dataclasses.replace(passage, script=script, transcript=transcript))
     return new_dataset
