@@ -27,18 +27,20 @@ DATASET_PHONETIC_CHARACTERS = (
 )
 
 NON_ASCII_CHARS: typing.Dict[Language, frozenset] = {
-    # src: https://en.wikipedia.org/wiki/English_terms_with_diacritical_marks
+    # Resources:
+    # https://en.wikipedia.org/wiki/English_terms_with_diacritical_marks
+    # https://en-academic.com/dic.nsf/enwiki/3894487
     Language.ENGLISH: frozenset([
         "â", "Â", "à", "À", "á", "Á", "ê", "Ê", "é", "É", "è", "È", "ë", "Ë", "î", "Î", "ï", "Ï",
         "ô", "Ô", "ù", "Ù", "û", "Û", "ç", "Ç", "ä", "ö", "ü", "Ä", "Ö", "Ü", "ñ", "Ñ",
     ]),
-    Language.GERMAN: frozenset(["ß", "ä", "ö", "ü", "Ä", "Ö", "Ü", "«", "»", "‹", "›"]),
+    Language.GERMAN: frozenset(["ß", "ä", "ö", "ü", "Ä", "Ö", "Ü"]),
     # Portuguese makes use of five diacritics: the cedilla (ç), acute accent (á, é, í, ó, ú),
     # circumflex accent (â, ê, ô), tilde (ã, õ), and grave accent (à, and rarely è, ì, ò, and ù).
     # src: https://en.wikipedia.org/wiki/Portuguese_orthography
     Language.PORTUGUESE_BR: frozenset([
         "á", "Á", "é", "É", "í", "Í", "ó", "Ó", "ú", "Ú", "ç", "Ç", "â", "Â", "ê", "Ê", "ô", "Ô",
-        "ã", "Ã", "õ", "Õ", "à", "À", "è", "È", "ì", "Ì", "ò", "Ò", "ù", "Ù", "«", "»", "‹", "›"
+        "ã", "Ã", "õ", "Õ", "à", "À", "è", "È", "ì", "Ì", "ò", "Ò", "ù", "Ù"
     ]),
     # Spanish uses only the acute accent, over any vowel: ⟨á é í ó ú⟩. The only other diacritics
     # used are the tilde on the letter ⟨ñ⟩ and the diaeresis used in the sequences ⟨güe⟩ and ⟨güi⟩.
@@ -46,11 +48,17 @@ NON_ASCII_CHARS: typing.Dict[Language, frozenset] = {
     # and the uppercase ⟨Á⟩, ⟨É⟩, ⟨Í⟩, ⟨Ó⟩, and ⟨Ú⟩.
     # src: https://en.wikipedia.org/wiki/Spanish_orthography
     Language.SPANISH_CO: frozenset([
-        "á", "Á", "é", "É", "í", "Í", "ó", "Ó", "ú", "Ú", "ñ", "Ñ", "ü", "Ü", "¿", "¡", "«", "»",
-        "‹", "›"
+        "á", "Á", "é", "É", "í", "Í", "ó", "Ó", "ú", "Ú", "ñ", "Ñ", "ü", "Ü"
     ]),
 }
 # fmt: on
+NON_ASCII_MARKS: typing.Dict[Language, frozenset] = {
+    Language.ENGLISH: frozenset([]),
+    Language.GERMAN: frozenset(["«", "»", "‹", "›"]),
+    Language.PORTUGUESE_BR: frozenset(["«", "»", "‹", "›"]),
+    Language.SPANISH_CO: frozenset(["¿", "¡", "«", "»", "‹", "›"]),
+}
+NON_ASCII_ALL = {l: NON_ASCII_CHARS[l].union(NON_ASCII_MARKS[l]) for l in Language}
 
 _make_config = partial(
     RecognitionConfig,
@@ -77,12 +85,8 @@ def _grapheme_to_phoneme(grapheme: str):
     return _line_grapheme_to_phoneme([grapheme], separator="|")[0]
 
 
-# TODO: Use `NON_ASCII_CHARS` to fill out list minus the symbols.
 _PUNCTUATION_REGEXES = {
-    Language.ENGLISH: re.compile(r"[^\w\s]"),
-    Language.GERMAN: re.compile(r"[^\w\säöüÄÖÜß]"),
-    Language.PORTUGUESE_BR: re.compile(r"[^\w\sáÁéÉíÍóÓúÚçÇâÂêÊôÔãÃõÕàÀèÈìÌòÒùÙ]"),
-    Language.SPANISH_CO: re.compile(r"[^\w\sáÁéÉíÍóÓúÚñÑüÜ]"),
+    l: re.compile(r"[^\w\s" + "".join(NON_ASCII_CHARS[l]) + r"]") for l in Language
 }
 
 
@@ -116,8 +120,8 @@ def is_sound_alike(a: str, b: str, language: Language) -> bool:
         >>> is_sound_alike('financingA', 'financing a')
         True
     """
-    a = normalize_vo_script(a, NON_ASCII_CHARS[language])
-    b = normalize_vo_script(b, NON_ASCII_CHARS[language])
+    a = normalize_vo_script(a, NON_ASCII_ALL[language])
+    b = normalize_vo_script(b, NON_ASCII_ALL[language])
     spoken_chars = (
         partial(get_spoken_chars, punc_regex=_PUNCTUATION_REGEXES[language])
         if language in _PUNCTUATION_REGEXES
@@ -139,7 +143,7 @@ def configure():
         run._tts.encode_tts_inputs: HParams(seperator=PHONEME_SEPARATOR),
         lib.text.grapheme_to_phoneme: HParams(separator=PHONEME_SEPARATOR),
         run.train.spectrogram_model._data.InputEncoder.__init__: HParams(
-            token_seperator=PHONEME_SEPARATOR
+            token_separator=PHONEME_SEPARATOR
         ),
     }
     add_config(config)

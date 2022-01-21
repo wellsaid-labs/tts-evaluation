@@ -126,9 +126,8 @@ def _process_text(passage: UnprocessedPassage, verbalize: bool) -> UnprocessedPa
         script = _verbalize_roman_number(script)
 
     # NOTE: Messes up pound sign (£); therefore, this is after `_verbalize_currency`
-    script = lib.text.normalize_vo_script(
-        script, run._lang_config.NON_ASCII_CHARS[Language.ENGLISH]
-    )
+    non_ascii = run._lang_config.NON_ASCII_ALL[Language.ENGLISH]
+    script = lib.text.normalize_vo_script(script, non_ascii)
     return dataclasses.replace(passage, script=script, transcript=script)
 
 

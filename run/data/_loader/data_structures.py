@@ -703,8 +703,8 @@ def _make_speech_segments_helper(
 
 def _maybe_normalize_vo_script(script: str, language: Language) -> str:
     """Normalize a script if it's not normalized."""
-    if not lib.text.is_normalized_vo_script(script, run._lang_config.NON_ASCII_CHARS[language]):
-        return lib.text.normalize_vo_script(script, run._lang_config.NON_ASCII_CHARS[language])
+    if not lib.text.is_normalized_vo_script(script, run._lang_config.NON_ASCII_ALL[language]):
+        return lib.text.normalize_vo_script(script, run._lang_config.NON_ASCII_ALL[language])
     return script
 
 

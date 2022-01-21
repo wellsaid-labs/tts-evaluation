@@ -647,7 +647,6 @@ def is_normalized_vo_script(text: str, non_ascii: frozenset) -> bool:
     return len(set(text) - _READABLE_CHARACTERS - non_ascii) == 0
 
 
-# TODO: Could update `ALPHANUMERIC_REGEX` with German special characters, but it works as is too
 ALPHANUMERIC_REGEX = re.compile(r"[a-zA-Z0-9@#$%&+=*]")
 
 

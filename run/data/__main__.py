@@ -285,7 +285,7 @@ def _csv_normalize(
     - Visualize any text changes for quality assurance
     - Visualize any strange words that may need to be normalized
     """
-    text = lib.text.normalize_vo_script(text, run._lang_config.NON_ASCII_CHARS[language])
+    text = lib.text.normalize_vo_script(text, run._lang_config.NON_ASCII_ALL[language])
     text = text.replace("®", "")
     text = text.replace("™", "")
     # NOTE: Remove HTML tags

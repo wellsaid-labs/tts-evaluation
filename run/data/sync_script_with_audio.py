@@ -383,7 +383,7 @@ def align_stt_with_script(
     transcript, stt_tokens = _flatten_stt_result(stt_result)
 
     # Align `script_tokens` and `stt_tokens`.
-    non_ascii = _lang_config.NON_ASCII_CHARS[language]
+    non_ascii = _lang_config.NON_ASCII_ALL[language]
     args = (
         [normalize_vo_script(t.text.lower(), non_ascii) for t in script_tokens],
         [normalize_vo_script(t.text.lower(), non_ascii) for t in stt_tokens],
@@ -449,7 +449,7 @@ def _get_speech_context(
         ['a b c', 'c d e', 'e f g', 'g h i', 'i j']
 
     """
-    iter_ = re.finditer(r"\S+", normalize_vo_script(script, _lang_config.NON_ASCII_CHARS[language]))
+    iter_ = re.finditer(r"\S+", normalize_vo_script(script, _lang_config.NON_ASCII_ALL[language]))
     spans = [(m.start(), m.end()) for m in iter_]
     phrases = []
     start, next_start = 0, 0
@@ -600,7 +600,7 @@ def _sync_and_upload(
     assert all(isinstance(t, str) for t in lib.utils.flatten_2d(scripts)), message
     message = "Script(s) cannot contain funky characters."
     assert all(
-        lib.text.is_normalized_vo_script(t, _lang_config.NON_ASCII_CHARS[language])
+        lib.text.is_normalized_vo_script(t, _lang_config.NON_ASCII_ALL[language])
         for t in lib.utils.flatten_2d(scripts)
     ), message
 
