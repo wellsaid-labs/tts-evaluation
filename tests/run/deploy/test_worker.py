@@ -36,7 +36,7 @@ def test_validate_and_unpack():
     """Test `validate_and_unpack` handles all sorts of arguments."""
     speaker = JUDY_BIEBER
     session = Session("sesh")
-    script = "This is a test. ABC."
+    script = "This is a exposé. ABC."
     phonemes = _line_grapheme_to_phoneme([script], separator=run._lang_config.PHONEME_SEPARATOR)[0]
     input_encoder = InputEncoder([script], [phonemes], [speaker], [(speaker, session)])
     speaker_id = input_encoder.speaker_encoder.token_to_index[speaker]
@@ -81,10 +81,10 @@ def test_validate_and_unpack():
         validate_({**args, "text": "wherever korzeniewski"})  # type: ignore
 
     # `text` gets normalized and `speaker` is dereferenced
-    request_args = {**args, "text": "á😁"}
+    request_args = {**args, "text": "exposé😁"}
     encoded = validate_(request_args, speaker_id_to_speaker=speaker_id_to_speaker)  # type: ignore
     decoded = input_encoder.decode(encoded)
     # NOTE: The emoji is removed because there is no unicode equivilent.
-    assert decoded.graphemes == "a"
+    assert decoded.graphemes == "exposé"
     assert decoded.speaker == speaker
     assert decoded.session == (speaker, session)
