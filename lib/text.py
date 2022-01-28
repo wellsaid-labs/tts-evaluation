@@ -637,14 +637,14 @@ def normalize_vo_script(text: str, non_ascii: frozenset, strip: bool = True) -> 
     return text
 
 
-_READABLE_CHARACTERS = set(
+_NORMALIZED_ASCII_CHARS = set(
     normalize_vo_script(chr(i), frozenset(), strip=False) for i in range(0, 128)
 )
 
 
 def is_normalized_vo_script(text: str, non_ascii: frozenset) -> bool:
     """Return `True` if `text` has been normalized to a small set of characters."""
-    return len(set(text) - _READABLE_CHARACTERS - non_ascii) == 0
+    return len(set(text) - _NORMALIZED_ASCII_CHARS - non_ascii) == 0
 
 
 ALPHANUMERIC_REGEX = re.compile(r"[a-zA-Z0-9@#$%&+=*]")
