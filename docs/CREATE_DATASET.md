@@ -147,6 +147,7 @@ At any time, press `ctrl+a, d` to detach from the screen session. Then `screen -
    PROCESSED=$ROOT/processed
    GCS_URI=gs://wellsaid_labs_datasets/$NAME
    ENCODING=.wav # Example: .wav, .mp3
+   LANGUAGE=English # Example: English, German, Spanish, Portuguese
    ```
 
 1. Download the dataset, like so...
@@ -236,7 +237,7 @@ At any time, press `ctrl+a, d` to detach from the screen session. Then `screen -
 
    ```bash
    mkdir $PROCESSED/scripts
-   python -m run.data csv normalize $ROOT/scripts/*.csv $PROCESSED/scripts \
+   python -m run.data csv normalize $ROOT/scripts/*.csv $PROCESSED/scripts $LANGUAGE \
       2>&1 | tee $PROCESSED/csv-normalize.log
    ```
 
