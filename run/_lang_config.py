@@ -98,23 +98,25 @@ def _grapheme_to_phoneme(grapheme: str):
     return _line_grapheme_to_phoneme([grapheme], separator="|")[0]
 
 
-_PUNCTUATION_REGEXES = {
-    l: re.compile(r"[^\w\s" + "".join(_NON_ASCII_CHARS[l]) + r"]") for l in Language
-}
+_PUNCT_REGEXES = {l: re.compile(r"[^\w\s" + "".join(_NON_ASCII_CHARS[l]) + r"]") for l in Language}
 
 
-def _grapheme_to_phoneme_approx_de(text: str):
+def _de_eszett_transliteration(text: str):
     """
     NOTE: (Rhyan) The "ß" is used to denote a "ss" sound.
     """
-    return get_spoken_chars(text, _PUNCTUATION_REGEXES[Language.GERMAN]).replace("ß", "ss")
+    return get_spoken_chars(text, _PUNCT_REGEXES[Language.GERMAN]).replace("ß", "ss")
 
 
 # NOTE: Phonetic rules to help determine if two words sound-a-like.
-_GRAPHEME_TO_PHONEME = {
+_SOUND_OUT = {
     Language.ENGLISH: _grapheme_to_phoneme,
-    Language.GERMAN: _grapheme_to_phoneme_approx_de,
+    Language.GERMAN: _de_eszett_transliteration,
 }
+
+
+def _remove_letter_casing(a: str) -> str:
+    return a.lower()
 
 
 @lru_cache(maxsize=2 ** 20)
@@ -135,19 +137,10 @@ def is_sound_alike(a: str, b: str, language: Language) -> bool:
     """
     a = normalize_vo_script(a, language)
     b = normalize_vo_script(b, language)
-    spoken_chars = (
-        partial(get_spoken_chars, punc_regex=_PUNCTUATION_REGEXES[language])
-        if language in _PUNCTUATION_REGEXES
-        else identity
-    )
-    grapheme_to_phoneme = (
-        _GRAPHEME_TO_PHONEME[language] if language in _GRAPHEME_TO_PHONEME else identity
-    )
-    return (
-        a.lower() == b.lower()
-        or spoken_chars(a) == spoken_chars(b)
-        or grapheme_to_phoneme(a) == grapheme_to_phoneme(b)
-    )
+    punc_regex = _PUNCT_REGEXES[language] if language in _PUNCT_REGEXES else None
+    spoken_chars = partial(get_spoken_chars, punc_regex=punc_regex) if punc_regex else identity
+    sound_out = _SOUND_OUT[language] if language in _SOUND_OUT else identity
+    return any(func(a) == func(b) for func in (_remove_letter_casing, spoken_chars, sound_out))
 
 
 def configure():
