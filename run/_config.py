@@ -34,23 +34,6 @@ DATASETS = copy.copy(_loader.DATASETS)
 del DATASETS[_loader.english.ELLIOT_MILLER]
 del DATASETS[_loader.english.ELIZABETH_KLETT]
 
-# NOTE: It's theoretically impossible to know all the phonemes eSpeak might predict because
-# the predictions vary with context. We cannot practically generate every possible permutation
-# to generate the vocab.
-# TODO: Remove this once `grapheme_to_phoneme` is deprecated.
-# fmt: off
-PHONEME_SEPARATOR = "|"
-GRAPHEME_TO_PHONEME_RESTRICTED = list(lib.text.GRAPHEME_TO_PHONEME_RESTRICTED) + [PHONEME_SEPARATOR]
-DATASET_PHONETIC_CHARACTERS = [
-    '\n', ' ', '!', '"', "'", '(', ')', '*', ',', '-', '.', '/', ':', ';', '?', '[', ']', '=', 'aɪ',
-    'aɪə', 'aɪɚ', 'aɪʊ', 'aɪʊɹ', 'aʊ', 'b', 'd', 'dʒ', 'eɪ', 'f', 'h', 'i', 'iə', 'iː', 'j',
-    'k', 'l', 'm', 'n', 'nʲ', 'n̩', 'oʊ', 'oː', 'oːɹ', 'p', 'r', 's', 't', 'tʃ', 'uː', 'v', 'w',
-    'x', 'z', 'æ', 'æː', 'ð', 'ø', 'ŋ', 'ɐ', 'ɐː', 'ɑː', 'ɑːɹ', 'ɑ̃', 'ɔ', 'ɔɪ', 'ɔː', 'ɔːɹ',
-    'ə', 'əl', 'ɚ', 'ɛ', 'ɛɹ', 'ɜː', 'ɡ', 'ɣ', 'ɪ', 'ɪɹ', 'ɫ', 'ɹ', 'ɾ', 'ʃ', 'ʊ', 'ʊɹ', 'ʌ',
-    'ʒ', 'ʔ', 'ˈ', 'ˌ', 'θ', 'ᵻ', 'ɬ'
-]
-# fmt: on
-
 TTS_DISK_CACHE_NAME = ".tts_cache"  # NOTE: Hidden directory stored in other directories for caching
 DISK_PATH = lib.environment.ROOT_PATH / "disk"
 DATA_PATH = DISK_PATH / "data"
@@ -615,7 +598,6 @@ def _configure_data_processing():
     # between different speakers.
     groups += [{s} for s in _loader.DATASETS.keys() if s not in _loader.WSL_DATASETS]
     config = {
-        lib.text.grapheme_to_phoneme: HParams(separator=PHONEME_SEPARATOR),
         run._utils.get_dataset: HParams(
             datasets=DATASETS,
             path=DATA_PATH,
@@ -648,3 +630,4 @@ def configure():
     _configure_audio_processing()
     _configure_models()
     _configure_data_processing()
+    run._lang_config.configure()

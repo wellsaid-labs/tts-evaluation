@@ -25,7 +25,6 @@ from torchnlp.utils import get_total_parameters, lengths_to_mask
 import lib
 from lib.distributed import is_master
 from run._config import (
-    DATASET_PHONETIC_CHARACTERS,
     Cadence,
     Dataset,
     DatasetType,
@@ -33,6 +32,7 @@ from run._config import (
     get_dataset_label,
     get_model_label,
 )
+from run._lang_config import DATASET_PHONETIC_CHARACTERS
 from run.data._loader import Language
 from run.train import _utils
 from run.train._utils import (
@@ -141,7 +141,7 @@ class _State:
         is_english = all([s.language == Language.ENGLISH for s in speakers])
         input_encoder = InputEncoder(
             [p.script for p in passages],
-            DATASET_PHONETIC_CHARACTERS if is_english else [p.script for p in passages],
+            list(DATASET_PHONETIC_CHARACTERS) if is_english else [p.script for p in passages],
             list(train_dataset.keys()) + list(dev_dataset.keys()),
             [(p.speaker, p.session) for p in passages],
         )

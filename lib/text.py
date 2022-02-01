@@ -608,39 +608,49 @@ def strip(text: str) -> typing.Tuple[str, str, str]:
     return text, left, right
 
 
-def normalize_vo_script(text: str, strip: bool = True) -> str:
+def normalize_vo_script(text: str, non_ascii: frozenset, strip: bool = True) -> str:
     """Normalize a voice-over script such that only readable characters remain.
 
-    TODO: Consider unidecode alternatives for new languages with important special characters!
+    TODO: Use `unidecode.unidecode` in "strict" mode so that data isn't lost.
+    NOTE: `non_ascii` needs to be explicitly set so that text isn't processed incorrecly accidently.
 
     References:
     - Generic package for text cleaning: https://github.com/jfilter/clean-text
     - ASCII characters: https://www.ascii-code.com/
     - `Unidecode` vs `unicodedata`:
       https://stackoverflow.com/questions/517923/what-is-the-best-way-to-remove-accents-normalize-in-a-python-unicode-string
+
+    Args:
+        ...
+        non_ascii: Allowed Non-ASCII characters.
+        strip: If `True`, strip white spaces at the ends of `text`.
+
+    Returns: Normalized string.
     """
     text = str(text)
     text = ftfy.fix_text(text)
     text = text.replace("\f", "\n")
     text = text.replace("\t", "  ")
-    text = str(unidecode.unidecode(text))
+    text = "".join([c if c in non_ascii else str(unidecode.unidecode(c)) for c in text])
     if strip:
         text = text.strip()
     return text
 
 
-_READABLE_CHARACTERS = set(normalize_vo_script(chr(i), strip=False) for i in range(0, 128))
+_NORMALIZED_ASCII_CHARS = set(
+    normalize_vo_script(chr(i), frozenset(), strip=False) for i in range(0, 128)
+)
 
 
-def is_normalized_vo_script(text: str) -> bool:
+def is_normalized_vo_script(text: str, non_ascii: frozenset) -> bool:
     """Return `True` if `text` has been normalized to a small set of characters."""
-    return len(set(text) - _READABLE_CHARACTERS) == 0
+    return len(set(text) - _NORMALIZED_ASCII_CHARS - non_ascii) == 0
 
 
 ALPHANUMERIC_REGEX = re.compile(r"[a-zA-Z0-9@#$%&+=*]")
 
 
-def is_voiced(text: str) -> bool:
+def is_voiced(text: str, non_ascii: frozenset) -> bool:
     """Return `True` if any of the text is spoken.
 
     NOTE: This isn't perfect. For example, this function assumes a "-" isn't voiced; however, it
@@ -650,8 +660,8 @@ def is_voiced(text: str) -> bool:
     text = text.strip()
     if len(text) == 0:
         return False
-    assert is_normalized_vo_script(text), "Text must be normalized."
-    return ALPHANUMERIC_REGEX.search(text) is not None
+    assert is_normalized_vo_script(text, non_ascii), "Text must be normalized."
+    return ALPHANUMERIC_REGEX.search(text) is not None or any(c in non_ascii for c in text)
 
 
 DIGIT_REGEX = re.compile(r"\d")
@@ -659,6 +669,31 @@ DIGIT_REGEX = re.compile(r"\d")
 
 def has_digit(text: str) -> bool:
     return bool(DIGIT_REGEX.search(text))
+
+
+SPACES_REGEX = re.compile(r"\s+")
+
+
+@functools.lru_cache(maxsize=2 ** 20)
+def get_spoken_chars(text: str, punc_regex: re.Pattern) -> str:
+    """Remove all unspoken characters from string including spaces, marks, casing, etc.
+
+    Example:
+        >>> get_spoken_chars('123 abc !.?')
+        '123abc'
+        >>> get_spoken_chars('Hello. You\'ve')
+        'helloyouve'
+
+    Args:
+        ...
+        punc_regex: Regex for selecting all marks in `text`.
+
+    Returns: String without unspoken characters.
+    """
+    text = text.lower()
+    text = punc_regex.sub(" ", text)
+    text = text.strip()
+    return SPACES_REGEX.sub("", text)
 
 
 def add_space_between_sentences(doc: spacy.tokens.Doc) -> str:

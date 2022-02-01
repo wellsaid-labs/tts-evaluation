@@ -14,6 +14,7 @@ from run.data._loader.data_structures import (
     Alignment,
     IntInt,
     IsLinked,
+    Language,
     Passage,
     Session,
     Span,
@@ -46,9 +47,9 @@ def make_unprocessed_passage(
 def test__maybe_normalize_vo_script():
     """Test `_maybe_normalize_vo_script` against some basic cases."""
     normal_script = "abc"
-    assert _maybe_normalize_vo_script(normal_script) == normal_script
+    assert _maybe_normalize_vo_script(normal_script, Language.ENGLISH) == normal_script
     script = "áƀć"
-    assert _maybe_normalize_vo_script(script) == normal_script
+    assert _maybe_normalize_vo_script(script, Language.ENGLISH) == "ábc"
 
 
 def test__filter_non_speech_segments():

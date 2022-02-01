@@ -10,13 +10,7 @@ from hparams import HParams, add_config, parse_hparam_args
 from third_party import LazyLoader
 
 import lib
-from run._config import (
-    NUM_FRAME_CHANNELS,
-    PHONEME_SEPARATOR,
-    RANDOM_SEED,
-    SPECTROGRAM_MODEL_EXPERIMENTS_PATH,
-    Dataset,
-)
+from run._config import NUM_FRAME_CHANNELS, RANDOM_SEED, SPECTROGRAM_MODEL_EXPERIMENTS_PATH, Dataset
 from run.train._utils import (
     CometMLExperiment,
     get_config_parameters,
@@ -114,9 +108,6 @@ def _make_configuration(
             amsgrad=False,
             betas=(0.9, 0.999),
         ),
-        # NOTE: This configuration is dependent on language.
-        # TODO: Consider moving this dependency?
-        InputEncoder.__init__: HParams(token_separator=PHONEME_SEPARATOR),
     }
 
 
