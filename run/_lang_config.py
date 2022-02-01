@@ -7,7 +7,7 @@ from hparams import HParams, add_config
 
 import lib
 import run
-from lib.text import _line_grapheme_to_phoneme, get_spoken_chars, normalize_vo_script
+from lib.text import _line_grapheme_to_phoneme, get_spoken_chars
 from lib.utils import identity
 from run.data._loader import Language
 
@@ -26,7 +26,7 @@ DATASET_PHONETIC_CHARACTERS = (
     'ʒ', 'ʔ', 'ˈ', 'ˌ', 'θ', 'ᵻ', 'ɬ'
 )
 
-NON_ASCII_CHARS: typing.Dict[Language, frozenset] = {
+_NON_ASCII_CHARS: typing.Dict[Language, frozenset] = {
     # Resources:
     # https://en.wikipedia.org/wiki/English_terms_with_diacritical_marks
     # https://en-academic.com/dic.nsf/enwiki/3894487
@@ -52,13 +52,26 @@ NON_ASCII_CHARS: typing.Dict[Language, frozenset] = {
     ]),
 }
 # fmt: on
-NON_ASCII_MARKS: typing.Dict[Language, frozenset] = {
+_NON_ASCII_MARKS: typing.Dict[Language, frozenset] = {
     Language.ENGLISH: frozenset([]),
     Language.GERMAN: frozenset(["«", "»", "‹", "›"]),
     Language.PORTUGUESE_BR: frozenset(["«", "»", "‹", "›"]),
     Language.SPANISH_CO: frozenset(["¿", "¡", "«", "»", "‹", "›"]),
 }
-NON_ASCII_ALL = {l: NON_ASCII_CHARS[l].union(NON_ASCII_MARKS[l]) for l in Language}
+_NON_ASCII_ALL = {l: _NON_ASCII_CHARS[l].union(_NON_ASCII_MARKS[l]) for l in Language}
+
+
+def normalize_vo_script(text: str, language: Language) -> str:
+    return lib.text.normalize_vo_script(text, _NON_ASCII_ALL[language])
+
+
+def is_normalized_vo_script(text: str, language: Language) -> bool:
+    return lib.text.is_normalized_vo_script(text, _NON_ASCII_ALL[language])
+
+
+def is_voiced(text: str, language: Language) -> bool:
+    return lib.text.is_voiced(text, _NON_ASCII_CHARS[language])
+
 
 _make_config = partial(
     RecognitionConfig,
@@ -86,7 +99,7 @@ def _grapheme_to_phoneme(grapheme: str):
 
 
 _PUNCTUATION_REGEXES = {
-    l: re.compile(r"[^\w\s" + "".join(NON_ASCII_CHARS[l]) + r"]") for l in Language
+    l: re.compile(r"[^\w\s" + "".join(_NON_ASCII_CHARS[l]) + r"]") for l in Language
 }
 
 
@@ -120,8 +133,8 @@ def is_sound_alike(a: str, b: str, language: Language) -> bool:
         >>> is_sound_alike('financingA', 'financing a', Language.ENGLISH)
         True
     """
-    a = normalize_vo_script(a, NON_ASCII_ALL[language])
-    b = normalize_vo_script(b, NON_ASCII_ALL[language])
+    a = normalize_vo_script(a, language)
+    b = normalize_vo_script(b, language)
     spoken_chars = (
         partial(get_spoken_chars, punc_regex=_PUNCTUATION_REGEXES[language])
         if language in _PUNCTUATION_REGEXES

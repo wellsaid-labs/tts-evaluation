@@ -7,7 +7,6 @@ import typing
 from third_party import LazyLoader
 from torchnlp.download import download_file_maybe_extract
 
-import lib
 import run
 from run.data._loader.data_structures import (
     Language,
@@ -126,8 +125,7 @@ def _process_text(passage: UnprocessedPassage, verbalize: bool) -> UnprocessedPa
         script = _verbalize_roman_number(script)
 
     # NOTE: Messes up pound sign (£); therefore, this is after `_verbalize_currency`
-    non_ascii = run._lang_config.NON_ASCII_ALL[Language.ENGLISH]
-    script = lib.text.normalize_vo_script(script, non_ascii)
+    script = run._lang_config.normalize_vo_script(script, Language.ENGLISH)
     return dataclasses.replace(passage, script=script, transcript=script)
 
 

@@ -59,17 +59,15 @@ def voiced_nonalignment_spans(
     if spans.passage.is_linked.transcript:
         text[0] += "" if spans.prev is None else spans.prev.script + spans.prev.transcript
         text[-1] += "" if spans.next is None else spans.next.script + spans.next.transcript
-    non_ascii = run._lang_config.NON_ASCII_CHARS[span.speaker.language]
-    return spans, [lib.text.is_voiced(t, non_ascii) for t in text]
+    return spans, [run._lang_config.is_voiced(t, span.speaker.language) for t in text]
 
 
 def _is_alignment_voiced(passage: Passage, alignment: Alignment) -> bool:
     """Return `True` if a `passage` voiced at `alignment`."""
     for attr in ("script", "transcript"):
         interval = getattr(alignment, attr)
-        if interval[0] < interval[-1] and lib.text.is_voiced(
-            getattr(passage, attr)[interval[0] : interval[-1]],
-            run._lang_config.NON_ASCII_CHARS[passage.speaker.language],
+        if interval[0] < interval[-1] and run._lang_config.is_voiced(
+            getattr(passage, attr)[interval[0] : interval[-1]], passage.speaker.language
         ):
             return True
     return False
@@ -703,8 +701,8 @@ def _make_speech_segments_helper(
 
 def _maybe_normalize_vo_script(script: str, language: Language) -> str:
     """Normalize a script if it's not normalized."""
-    if not lib.text.is_normalized_vo_script(script, run._lang_config.NON_ASCII_ALL[language]):
-        return lib.text.normalize_vo_script(script, run._lang_config.NON_ASCII_ALL[language])
+    if not run._lang_config.is_normalized_vo_script(script, language):
+        return run._lang_config.normalize_vo_script(script, language)
     return script
 
 

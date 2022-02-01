@@ -49,7 +49,7 @@ from tqdm import tqdm
 import lib
 import run
 from lib.environment import AnsiCodes
-from lib.utils import get_chunks
+from lib.utils import flatten_2d, get_chunks
 from run import _lang_config
 from run._utils import blob_to_gcs_uri, gcs_uri_to_blob
 from run.data._loader import Language
@@ -166,7 +166,7 @@ class Stats:
 STATS = Stats()
 CONTROL_CHARACTERS_REGEX = re.compile(r"[\x00-\x08\x0b\x0c\x0d\x0e-\x1f]")
 
-normalize_vo_script = lru_cache(maxsize=2 ** 20)(lib.text.normalize_vo_script)
+normalize_vo_script = lru_cache(maxsize=2 ** 20)(_lang_config.normalize_vo_script)
 
 
 def format_ratio(a: float, b: float) -> str:
@@ -379,14 +379,13 @@ def align_stt_with_script(
         [ScriptToken(i, m.group(0), (m.start(), m.end())) for m in re.finditer(r"\S+", script)]
         for i, script in enumerate(scripts)
     ]
-    script_tokens: typing.List[ScriptToken] = lib.utils.flatten_2d(script_tokens_)
+    script_tokens: typing.List[ScriptToken] = flatten_2d(script_tokens_)
     transcript, stt_tokens = _flatten_stt_result(stt_result)
 
     # Align `script_tokens` and `stt_tokens`.
-    non_ascii = _lang_config.NON_ASCII_ALL[language]
     args = (
-        [normalize_vo_script(t.text.lower(), non_ascii) for t in script_tokens],
-        [normalize_vo_script(t.text.lower(), non_ascii) for t in stt_tokens],
+        [normalize_vo_script(t.text.lower(), language) for t in script_tokens],
+        [normalize_vo_script(t.text.lower(), language) for t in stt_tokens],
         get_window_size(len(script_tokens), len(stt_tokens)),
     )
     alignments = lib.text.align_tokens(*args, allow_substitution=_lang_config.is_sound_alike)[1]
@@ -449,7 +448,7 @@ def _get_speech_context(
         ['a b c', 'c d e', 'e f g', 'g h i', 'i j']
 
     """
-    iter_ = re.finditer(r"\S+", normalize_vo_script(script, _lang_config.NON_ASCII_ALL[language]))
+    iter_ = re.finditer(r"\S+", normalize_vo_script(script, language))
     spans = [(m.start(), m.end()) for m in iter_]
     phrases = []
     start, next_start = 0, 0
@@ -597,11 +596,10 @@ def _sync_and_upload(
         for s in scripts_
     ]
     message = "Some or all script(s) are missing or incorrecly formatted."
-    assert all(isinstance(t, str) for t in lib.utils.flatten_2d(scripts)), message
+    assert all(isinstance(t, str) for t in flatten_2d(scripts)), message
     message = "Script(s) cannot contain funky characters."
     assert all(
-        lib.text.is_normalized_vo_script(t, _lang_config.NON_ASCII_ALL[language])
-        for t in lib.utils.flatten_2d(scripts)
+        _lang_config.is_normalized_vo_script(t, language) for t in flatten_2d(scripts)
     ), message
 
     logger.info("Maybe running speech-to-text and caching results...")
