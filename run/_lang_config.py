@@ -90,7 +90,7 @@ LanguageCode = typing.Literal["en-US", "de-DE", "pt-BR", "es-CO"]
 
 
 @lru_cache(maxsize=2 ** 20)
-def _grapheme_to_phoneme(grapheme: str):
+def _grapheme_to_phoneme(grapheme: str) -> str:
     """Fast grapheme to phoneme implementation where punctuation is ignored.
 
     NOTE: Use private `_line_grapheme_to_phoneme` for performance...
@@ -101,7 +101,7 @@ def _grapheme_to_phoneme(grapheme: str):
 _PUNCT_REGEXES = {l: re.compile(r"[^\w\s" + "".join(_NON_ASCII_CHARS[l]) + r"]") for l in Language}
 
 
-def _de_eszett_transliteration(text: str):
+def _spoken_chars_and_de_eszett_transliteration(text: str) -> str:
     """
     NOTE: (Rhyan) The "ß" is used to denote a "ss" sound.
     """
@@ -111,7 +111,7 @@ def _de_eszett_transliteration(text: str):
 # NOTE: Phonetic rules to help determine if two words sound-a-like.
 _SOUND_OUT = {
     Language.ENGLISH: _grapheme_to_phoneme,
-    Language.GERMAN: _de_eszett_transliteration,
+    Language.GERMAN: _spoken_chars_and_de_eszett_transliteration,
 }
 
 
