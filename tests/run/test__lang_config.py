@@ -28,3 +28,4 @@ def test_is_sound_alike__de():
     assert not _isa("Hänsel", "Gretel")
     assert _isa("Pimpel, Schlafmütz und -- Seppl", "pimpel schlafmütz und seppl")
     assert _isa("Die sieben Zwerge sind Brummbär...", "Die sieben Zwerge sind: Brummbär")
+    assert _isa("fließen die Straße", "fliessen die Strasse")
