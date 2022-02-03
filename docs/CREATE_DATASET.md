@@ -266,6 +266,7 @@ At any time, press `ctrl+a, d` to detach from the screen session. Then `screen -
    python -m run.data.sync_script_with_audio \
       $(python -m run.utils.prefix --voice-over $RECORDINGS) \
       $(python -m run.utils.prefix --script $SCRIPTS) \
+      --language $LANGUAGE \
       --destination $GCS_URI/processed/
    ```
 
