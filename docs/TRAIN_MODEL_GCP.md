@@ -143,6 +143,8 @@ Setup your local development environment by following [these instructions](LOCAL
 
    ```bash
    screen
+   ```
+   ```bash
    . venv/bin/activate
    ```
 
