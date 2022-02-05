@@ -60,7 +60,7 @@ def get_dataset(
             items = list(pool.starmap(load, datasets.items()))
     else:
         items = [load(s, d, add_tqdm=True) for s, d in datasets.items()]
-    return {k: v for k, v in items}
+    return {k: v for k, v in items if v}
 
 
 @functools.lru_cache(maxsize=None)
