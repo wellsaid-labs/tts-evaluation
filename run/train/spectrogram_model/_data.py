@@ -80,7 +80,7 @@ class InputEncoder(Encoder):
         ...
         tokens: List of token strings that may be encoded.
         ...
-        token_separator: Tokens are split on characters unless a different seperate is provided.
+        token_separator: (Optional) If provided, a DelimiterEncoder will be used to encode `tokens`.
         **args: Additional arguments passed to `super()`.
         **kwargs: Additional key-word arguments passed to `super()`.
     """
@@ -92,14 +92,13 @@ class InputEncoder(Encoder):
         "other",
     ]
 
-    @configurable
     def __init__(
         self,
         graphemes: typing.List[str],
         tokens: typing.List[str],
         speakers: typing.List[Speaker],
         sessions: typing.List[typing.Tuple[Speaker, Session]],
-        token_separator: typing.Optional[str] = HParam(),
+        token_separator: typing.Optional[str] = None,
         *args,
         **kwargs,
     ):

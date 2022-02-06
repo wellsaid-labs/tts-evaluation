@@ -146,10 +146,6 @@ def is_sound_alike(a: str, b: str, language: Language) -> bool:
 def configure():
     """Configure modules involved in processing text."""
     config = {
-        run._tts.encode_tts_inputs: HParams(seperator=PHONEME_SEPARATOR),
         lib.text.grapheme_to_phoneme: HParams(separator=PHONEME_SEPARATOR),
-        run.train.spectrogram_model._data.InputEncoder.__init__: HParams(
-            token_separator=PHONEME_SEPARATOR
-        ),
     }
     add_config(config)

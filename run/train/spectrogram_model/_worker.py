@@ -32,7 +32,7 @@ from run._config import (
     get_dataset_label,
     get_model_label,
 )
-from run._lang_config import DATASET_PHONETIC_CHARACTERS
+from run._lang_config import DATASET_PHONETIC_CHARACTERS, PHONEME_SEPARATOR
 from run.data._loader import Language
 from run.train import _utils
 from run.train._utils import (
@@ -144,6 +144,7 @@ class _State:
             list(DATASET_PHONETIC_CHARACTERS) if is_english else [p.script for p in passages],
             list(train_dataset.keys()) + list(dev_dataset.keys()),
             [(p.speaker, p.session) for p in passages],
+            PHONEME_SEPARATOR if is_english else None,
         )
 
         label = partial(get_dataset_label, cadence=Cadence.STATIC, type_=DatasetType.TRAIN)
