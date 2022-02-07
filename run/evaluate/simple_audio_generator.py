@@ -33,14 +33,16 @@ def main():
 
     options = list(CHECKPOINTS_LOADERS.keys())
     format_: typing.Callable[[Checkpoints], str] = lambda s: s.value
-    checkpoints_key: Checkpoints = st.selectbox("Checkpoints", options=options, format_func=format_)
+    checkpoints_key = st.selectbox("Checkpoints", options=options, format_func=format_)
+    checkpoints_key = typing.cast(Checkpoints, checkpoints_key)
 
     with st.spinner("Loading checkpoint(s)..."):
         tts = load_tts(checkpoints_key)
 
     format_speaker: typing.Callable[[Speaker], str] = lambda s: s.label
     speakers = sorted(tts.input_encoder.speaker_encoder.index_to_token)
-    speaker: Speaker = st.selectbox("Speaker", options=speakers, format_func=format_speaker)
+    speaker = st.selectbox("Speaker", options=speakers, format_func=format_speaker)
+    speaker = typing.cast(Speaker, speaker)
     assert speaker.name is not None
     speaker_name = speaker.name.split()[0].lower()
 
@@ -49,9 +51,14 @@ def main():
     sessions = sorted([sesh for spk, sesh in spk_sesh if spk == speaker], key=natural_keys)
 
     all_sessions: bool = st.checkbox("Sample all %d sessions" % len(sessions))
-    selected_sessions: typing.List[Session] = st.multiselect(
-        "Session(s)", options=["All"] if all_sessions else sessions
-    )
+    if all_sessions:
+        selected_sessions = sessions
+    else:
+        selected_sessions = st.multiselect("Session(s)", options=sessions)
+        selected_sessions = typing.cast(typing.List[Session], selected_sessions)
+
+    if len(selected_sessions) == 0:
+        return
 
     frm = st.form(key="form")
     script: str = frm.text_area("Script", value=DEFAULT_SCRIPT, height=150)
@@ -63,18 +70,22 @@ def main():
         return
 
     paths = []
-    with st.spinner("Generating Audio..."):
+    with st.spinner("Generating audio..."):
         inputs = [(script, speaker, s) for s in selected_sessions]
         inputs = [i for i in inputs for _ in range(num_clips)]
         for i, generated in enumerate(batch_text_to_speech(tts, inputs)):
             clip_num = i % num_clips + 1
-            st.markdown(f"Session: **{inputs[i][-1]}**\t Clip: **{clip_num}**")
-            name = f"{speaker_name}_session{i // num_clips}_{clip_num}.wav"
+            sesh = inputs[i][-1]
+            sesh = sesh[:-4] if sesh.endswith(".wav") else sesh
+            if clip_num == 1:
+                st.markdown(f"##### Session: **{sesh}**")
+            st.markdown(f"###### Clip: **{clip_num}**")
+            name = f"speaker={speaker_name},session={sesh},clip={clip_num}.wav"
             audio_web_path = audio_to_web_path(generated.sig_model, name)
             st_html(f'<audio controls src="{web_path_to_url(audio_web_path)}"></audio>')
             paths.append(audio_web_path)
 
-    with st.spinner("Making Zipfile..."):
+    with st.spinner("Making zipfile..."):
         st.text("")
         zip_name = f"{speaker_name}_samples.zip"
         st_html(paths_to_html_download_link(zip_name, f"📁 Download All {len(paths)} (zip)", paths))
