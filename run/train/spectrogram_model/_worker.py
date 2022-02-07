@@ -138,13 +138,17 @@ class _State:
         """
         passages = list(chain(*tuple(chain(train_dataset.values(), dev_dataset.values()))))
         speakers = list(train_dataset.keys()) + list(dev_dataset.keys())
-        is_english = all([s.language == Language.ENGLISH for s in speakers])
+        tokens = [p.script for p in passages]
+        token_separator = None
+        if all([s.language == Language.ENGLISH for s in speakers]):
+            tokens = list(DATASET_PHONETIC_CHARACTERS)
+            token_separator = PHONEME_SEPARATOR
         input_encoder = InputEncoder(
             [p.script for p in passages],
-            list(DATASET_PHONETIC_CHARACTERS) if is_english else [p.script for p in passages],
+            tokens,
             list(train_dataset.keys()) + list(dev_dataset.keys()),
             [(p.speaker, p.session) for p in passages],
-            PHONEME_SEPARATOR if is_english else None,
+            token_separator,
         )
 
         label = partial(get_dataset_label, cadence=Cadence.STATIC, type_=DatasetType.TRAIN)
