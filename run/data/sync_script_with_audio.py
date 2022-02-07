@@ -629,12 +629,14 @@ def _sync_and_upload(
     assert len(audio_blobs) == len(alignment_blobs), "Expected the same number of blobs."
 
     logger.info("Downloading voice-over scripts...")
-    scripts_ = [s.download_as_string().decode("utf-8") for s in script_blobs]
+    scripts_ = [s.download_as_bytes().decode("utf-8") for s in script_blobs]
     scripts: typing.List[typing.List[str]] = [
         typing.cast(pandas.DataFrame, pandas.read_csv(StringIO(s)))[text_column].tolist()
         for s in scripts_
     ]
-    message = "Scripts cannot contain funky characters."
+    message = "Some or all script(s) are missing or incorrecly formatted."
+    assert all(isinstance(t, str) for t in lib.utils.flatten_2d(scripts)), message
+    message = "Script(s) cannot contain funky characters."
     assert all(lib.text.is_normalized_vo_script(t) for t in lib.utils.flatten_2d(scripts)), message
 
     logger.info("Maybe running speech-to-text and caching results...")
@@ -646,7 +648,7 @@ def _sync_and_upload(
         )
         run_stt(*args)
     stt_results: typing.List[SttResult]
-    stt_results = [json.loads(b.download_as_string()) for b in stt_blobs]
+    stt_results = [json.loads(b.download_as_bytes()) for b in stt_blobs]
 
     for script, stt_result, alignment_blob in zip(scripts, stt_results, alignment_blobs):
         message = 'Running alignment "%s" and uploading results...'
@@ -698,7 +700,7 @@ def main(
 
     dest_blobs = [gcs_uri_to_blob(d) for d in destination]
     audio_blobs = [gcs_uri_to_blob(v) for v in voice_over]
-    script_blobs = [gcs_uri_to_blob(v) for v in script]
+    script_blobs = [gcs_uri_to_blob(s) for s in script]
     for item in zip(audio_blobs, script_blobs, dest_blobs):
         args = tuple([blob_to_gcs_uri(blob) for blob in item])
         logger.info('Processing... \n "%s" \n "%s" \n and saving to... "%s"', *args)

@@ -97,18 +97,52 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
    VM_ZONE=$(python -m run.utils.gcp zone --name $VM_NAME)
    VM_IP=$(python -m run.utils.gcp ip --name $VM_NAME --zone=$VM_ZONE)
    VM_USER=$(python -m run.utils.gcp user --name $VM_NAME --zone=$VM_ZONE)
+   ```
+
+   ```zsh
    sudo python3 -m run.utils.lsyncd $(pwd) /opt/wellsaid-labs/Text-to-Speech \
                                     --public-dns $VM_IP \
                                     --user $VM_USER \
                                     --identity-file ~/.ssh/google_compute_engine
    ```
 
-### Download your data onto the VM
+1. Back on the VM, install dependencies, like so...
+
+   ```bash
+   cd /opt/wellsaid-labs/Text-to-Speech
+   sudo apt-get update
+   . run/utils/apt_install.sh
+   ```
+
+### Screen sessions
+
+Create a virtual environment for processing.
+   ```
+   python3.8 -m venv venv
+   . venv/bin/activate
+   python -m pip install wheel pip --upgrade
+   python -m pip install -r requirements.txt --upgrade
+   ```
+If aligning data for multiple speakers, it can be helpful to process each in their own named screen session
+
+   ```
+   screen -S [name]
+   ```
+Press any key.
+
+   ```
+   . venv/bin/activate
+   ```
+At any time, press `ctrl+a, d` to detach from the screen session. Then `screen -r [name]` to reattach to the session named `[name]`.
+
+### Download Data
 
 1. Set these variables...
 
    ```bash
    NAME=actor_name # Example: hilary_noriega
+   ```
+   ```
    ROOT=/opt/wellsaid-labs/Text-to-Speech/disk/data/$NAME
    PROCESSED=$ROOT/processed
    GCS_URI=gs://wellsaid_labs_datasets/$NAME
@@ -124,19 +158,6 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
    ```
 
 ### Process data
-
-1. Install these dependencies onto the VM, like so...
-
-   ```bash
-   cd /opt/wellsaid-labs/Text-to-Speech
-   sudo apt-get update
-   . run/utils/apt_install.sh
-
-   python3.8 -m venv venv
-   . venv/bin/activate
-   python -m pip install wheel pip --upgrade
-   python -m pip install -r requirements.txt --upgrade
-   ```
 
 1. (Optional) Ensure the directories have similar numberings...
 
@@ -218,8 +239,6 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
    python -m run.data csv normalize $ROOT/scripts/*.csv $PROCESSED/scripts \
       2>&1 | tee $PROCESSED/csv-normalize.log
    ```
-
-   💡 TIP: Add the flag `--tab-separated` to process a TSV file.
 
 1. Upload the processed files back to GCS, like so...
 

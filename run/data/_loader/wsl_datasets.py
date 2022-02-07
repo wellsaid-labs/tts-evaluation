@@ -35,16 +35,28 @@ SAM_SCHOLL__MANUAL_POST = Speaker("sam_scholl__manual_post", "Sam Scholl (Manual
 STEVEN_WAHLBERG = Speaker("steven_wahlberg", "Steven Wahlberg")
 SUSAN_MURPHY = Speaker("susan_murphy", "Susan Murphy")
 
+ALISTAIR_DAVIS__EN_GB = Speaker("alistair_davis__en_gb", "Alistair Davis (en_GB)")
+
 ###############
 # PROMOTIONAL #
 ###############
 ADRIENNE_WALKER_HELLER__PROMO = Speaker("adrienne_walker__promo", "Adrienne Walker-Heller (Promo)")
+BRIAN_DIAMOND__EN_IE__PROMO = Speaker("brian_diamond__en_ie__promo", "Brian Diamond (Promo, en_IE)")
+CHRISTOPHER_DANIELS__PROMO = Speaker("christopher_daniels__promo", "Christopher Daniels (Promo)")
 DAMON_PAPADOPOULOS__PROMO = Speaker("damon_papadopoulos__promo", "Damon Papadopoulos (Promo)")
+DAN_FURCA__PROMO = Speaker("dan_furca__promo", "Dan Furca (Promo)")
 DANA_HURLEY__PROMO = Speaker("dana_hurley__promo", "Dana Hurley (Promo)")
+DARBY_CUPIT__PROMO = Speaker("darby_cupit__promo", "Darby Cupit (Promo)")
 ED_LACOMB__PROMO = Speaker("ed_lacomb__promo", "Ed LaComb (Promo)")
+IZZY_TUGMAN__PROMO = Speaker("izzy_tugman__promo", "Izzy Tugman (Promo)")
 JOHN_HUNERLACH__RADIO = Speaker("john_hunerlach__radio", "John Hunerlach (Radio)")
 LINSAY_ROUSSEAU__PROMO = Speaker("linsay_rousseau__promo", "Linsay Rousseau (Promo)")
+NAOMI_MERCER_MCKELL__PROMO = Speaker("naomi_mercer_mckell__promo", "Naomi Mercer McKell (Promo)")
 SAM_SCHOLL__PROMO = Speaker("sam_scholl__promo", "Sam Scholl (Promo)")
+SHARON_GAULD_ALEXANDER__PROMO = Speaker(
+    "sharon_gauld_alexander__promo", "Sharon Gauld Alexander (Promo)"
+)
+SHAWN_WILLIAMS__PROMO = Speaker("shawn_williams__promo", "Shawn Williams (Promo)")
 
 #########
 # OTHER #
@@ -55,11 +67,10 @@ OTIS_JIRY__STORY = Speaker("otis_jiry__promo", "Otis Jiry (Story-Telling)")
 #################
 # CUSTOM VOICES #
 #################
-ENERGY_INDUSTRY_ACADEMY__CUSTOM_VOICE = Speaker(
-    "energy_industry_academy__custom_voice", "Energy Industry Academy (Custom Voice)"
-)
-THE_EXPLANATION_COMPANY__CUSTOM_VOICE = Speaker(
-    "the_explanation_company__custom_voice", "The Explanation Company (Custom Voice)"
+HAPPIFY__CUSTOM_VOICE = Speaker("happify__custom_voice", "Happify (Custom Voice)")
+SUPER_HI_FI__CUSTOM_VOICE = Speaker("super_hi_fi__custom_voice", "Super HiFi (Custom Voice)")
+US_PHARMACOPEIA__CUSTOM_VOICE = Speaker(
+    "us_pharmacopeia__custom_voice", "US Pharmacopeia (Custom Voice)"
 )
 
 

@@ -158,7 +158,7 @@ def rename(
         if only_numbers and any(c.isdigit() for c in stem):
             stem = "-".join(re.findall(r"\d+", stem))
         elif only_numbers:
-            logger.error("Skipping, path has no numbers: %s", path)
+            logger.error(f"Skipping, path has no numbers: {path}")
         updates.append((path, path.parent / (stem + path.suffix)))
 
     unique = set()
@@ -169,10 +169,10 @@ def rename(
 
     for path, updated in updates:
         if updated != path:
-            logger.info('Renaming file name "%s" to "%s"', path.name, updated.name)
+            logger.info(f'Renaming file name "{path.name}" to "{updated.name}')
             path.rename(updated)
         else:
-            logger.info("Skipping, file already exists: %s", updated)
+            logger.info(f"Skipping, file already exists: {updated}")
 
 
 def _download(gcs_uri: str) -> typing.Tuple[typing.IO[bytes], str]:
@@ -227,7 +227,7 @@ def print_format(
         groups[format_].append(metadata.path)
     for format_, paths in groups.items():
         list_ = "\n".join([str(p.relative_to(p.parent.parent)) for p in paths])
-        logger.info("Found %d file(s) with `%s` audio file format:\n%s", len(paths), format_, list_)
+        logger.info(f"Found {len(paths)} file(s) with `{format_}` audio file format:\n{list_}")
 
 
 @audio_app.command("normalize")
@@ -247,7 +247,7 @@ def audio_normalize(
     for path in paths:
         dest_path = _loader.normalize_audio_suffix(dest / path.name)
         if dest_path.exists():
-            logger.error("Skipping, file already exists: %s", dest_path)
+            logger.error(f"Skipping, file already exists: {dest_path}")
         else:
             _loader.normalize_audio(path, dest_path)
             progress_bar.update(round(lib.audio.get_audio_metadata(path).length))
@@ -265,7 +265,7 @@ def text(
     for path in tqdm.tqdm(paths):
         dest_path = dest / (path.stem + ".csv")
         if dest_path.exists():
-            logger.error("Skipping, file already exists: %s", dest_path)
+            logger.error(f"Skipping, file already exists: {dest_path}")
             continue
         text = path.read_text(encoding=encoding)
         pandas.DataFrame({column: [text]}).to_csv(dest_path, index=False)
@@ -294,49 +294,80 @@ def _csv_normalize(text: str, nlp: spacy_en.English) -> str:
     return text
 
 
+def _read_csv(
+    path: pathlib.Path,
+    required_column: str,
+    optional_columns: typing.List[str] = [],
+    encoding: str = "utf-8",
+) -> pandas.DataFrame:
+    """Read a CSV or TSV file with required and optional column(s).
+
+    TODO: Improve the TSV vs CSV logic so that it is more precise.
+    """
+    # NOTE: There is a bug with `setprofile` and `read_csv`:
+    # https://github.com/pandas-dev/pandas/issues/41069
+    sys.setprofile(None)
+
+    read_csv = lambda *a, **k: typing.cast(pandas.DataFrame, pandas.read_csv(*a, **k))
+    all_columns = list(optional_columns) + [required_column]
+
+    text = path.read_text(encoding=encoding)
+    separator = ","
+    if text.count("\t") > len(text.split("\n")) // 2:
+        tab_count = text.count("\t")
+        message = (
+            f"There are a lot of tabs ({tab_count}) so this ({path}) will be parsed as a TSV file."
+        )
+        logger.warning(message)
+        separator = "\t"
+
+    read_csv_kwgs = dict(sep=separator, keep_default_na=False, index_col=False)
+    data_frame = read_csv(path, **read_csv_kwgs)
+    if not any(c in data_frame.columns for c in all_columns):
+        logger.warning(f"[{path.name}] None of the optional or required column(s) were found...")
+        if len(data_frame.columns) == 1:
+            message = f"[{path.name}] There is only 1 column so this will assume that column is the"
+            message += f" reqiured '{required_column}' column."
+            logger.warning(message)
+            data_frame = read_csv(path, header=None, names=[required_column], **read_csv_kwgs)
+    if required_column not in data_frame.columns:
+        message = (
+            f"[{path.name}] The required '{required_column}' column couldn't be found or inferred."
+        )
+        logger.error(message)
+        raise typer.Exit(code=1)
+
+    dropped = list(set(data_frame.columns) - set(all_columns))
+    if len(dropped) > 0:
+        logger.warning(f"[{path.name}] Dropping extra columns: {dropped}")
+    data_frame = data_frame.drop(columns=dropped)
+    for column in optional_columns:
+        if column not in data_frame.columns:
+            logger.warning(f"[{path.name}] Adding missing column: '{column}'")
+            data_frame[column] = ""
+    return data_frame[all_columns]
+
+
 @csv_app.command("normalize")
 def csv_normalize(
     paths: typing.List[pathlib.Path] = typer.Argument(..., exists=True, dir_okay=False),
     dest: pathlib.Path = typer.Argument(..., exists=True, file_okay=False),
-    tab_separated: bool = typer.Option(False, help="Parse this file as a TSV."),
-    expected_columns: typing.List[str] = typer.Option(["Source", "Title", "Content"]),
-    columns: typing.Optional[typing.List[str]] = typer.Option(None),
+    required_column: str = typer.Option("Content"),
+    optional_columns: typing.List[str] = typer.Option(["Source", "Title"]),
     encoding: str = typer.Option("utf-8"),
 ):
     """Normalize csv file(s) in PATHS and save to directory DEST."""
     nlp = lib.text.load_en_core_web_md(disable=("tagger", "ner"))
-    partial = functools.partial(_csv_normalize, nlp=nlp)
     results = []
-    # NOTE: There is a bug with `setprofile` and `read_csv`:
-    # https://github.com/pandas-dev/pandas/issues/41069
-    sys.setprofile(None)
     for path in tqdm.tqdm(paths):
         dest_path = dest / path.name
         if dest_path.exists():
-            logger.error("Skipping, file already exists: %s", dest_path)
+            logger.error(f"Skipping, file already exists: {dest_path}")
             continue
 
         text = path.read_text(encoding=encoding)
-        if not tab_separated and text.count("\t") > len(text.split("\n")) // 2:
-            message = (
-                "There are a lot of tabs (%d) so this (%s) might be a TSV file. "
-                "Add the flag --tab-separated to parse this file as a TSV file."
-            )
-            logger.warning(message, text.count("\t"), path)
-
-        separator = "\t" if tab_separated else ","
-        data_frame = pandas.read_csv(path, sep=separator, keep_default_na=False, names=columns)
-        data_frame = typing.cast(pandas.DataFrame, data_frame)
-        data_frame = data_frame.applymap(partial)
-        dropped = list(set(data_frame.columns) - set(expected_columns))
-        if len(dropped) > 0:
-            logger.warning("[%s] Dropping extra columns: %s", path.name, dropped)
-        data_frame = data_frame.drop(columns=dropped)
-        for column in expected_columns:
-            if column not in data_frame.columns:
-                logger.warning("[%s] Adding missing column: '%s'", path.name, column)
-                data_frame[column] = ""
-        data_frame = data_frame[list(expected_columns)]
+        data_frame = _read_csv(path, required_column, optional_columns, encoding)
+        data_frame = data_frame.applymap(functools.partial(_csv_normalize, nlp=nlp))
         data_frame.to_csv(dest_path, index=False)
 
         # TODO: Count the number of alphanumeric edits instead of punctuation mark edits.

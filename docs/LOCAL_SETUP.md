@@ -75,7 +75,7 @@ Learn more about where to find the `api_key` and `rest_api_key` configurations o
 This repository relies on GCP, and you'll need to ask team member to get access to our GCP projects,
 "Voice Research" and "Voice Service".
 
-Afterwards, install [Google Cloud SDK](https://cloud.google.com/sdk/) with these
+Afterwards, install [Google Cloud SDK](https://cloud.google.com/sdk/docs/quickstart) with these
 [installation scripts](https://cloud.google.com/sdk/docs/downloads-interactive) and authorize
 Google Cloud SDK tools, like so:
 

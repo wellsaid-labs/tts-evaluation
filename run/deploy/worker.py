@@ -32,13 +32,13 @@ Example (Flask):
 
       $ CHECKPOINTS=""  # Example: v9
       $ python -m run.deploy.package_tts $CHECKPOINTS
-      $ PYTHONPATH=. YOUR_SPEECH_API_KEY=123 python -m run.deploy.worker
+      $ PYTHONPATH=. python -m run.deploy.worker
 
 Example (Gunicorn):
 
       $ CHECKPOINTS=""
       $ python -m run.deploy.package_tts $CHECKPOINTS
-      $ YOUR_SPEECH_API_KEY=123 gunicorn run.deploy.worker:app --timeout=3600 --env='GUNICORN=1'
+      $ gunicorn run.deploy.worker:app --timeout=3600 --env='GUNICORN=1'
 """
 import gc
 import os
@@ -48,7 +48,7 @@ import warnings
 import en_core_web_sm
 import torch
 import torch.backends.mkl
-from flask import Flask, Response, jsonify, request, send_file, send_from_directory
+from flask import Flask, Response, jsonify, request
 from spacy.lang.en import English
 
 from lib.environment import load, set_basic_logging_config
@@ -75,9 +75,7 @@ if __name__ == "__main__":
 app = Flask(__name__)
 
 DEVICE = torch.device("cpu")
-API_KEY_SUFFIX = "_SPEECH_API_KEY"
 MAX_CHARS = 10000
-API_KEYS: typing.Set[str] = set([v for k, v in os.environ.items() if API_KEY_SUFFIX in k])
 TTS_PACKAGE: TTSPackage
 SPACY: English
 # NOTE: The keys need to stay the same for backwards compatibility.
@@ -121,20 +119,35 @@ SPEAKER_ID_TO_SPEAKER: typing.Dict[int, typing.Tuple[Speaker, Session]] = {
         _loader.JACK_RUTKOWSKI__MANUAL_POST,
         Session("wsl_jackrutkowski_enthusiastic_script_27-processed.wav"),
     ),
+    33: (_loader.ALISTAIR_DAVIS__EN_GB, Session("enthusiastic_script_5_davis.wav")),
+    34: (_loader.BRIAN_DIAMOND__EN_IE__PROMO, Session("promo_script_7_diamond.wav")),
+    35: (
+        _loader.CHRISTOPHER_DANIELS__PROMO,
+        Session("promo_script_5_daniels.wav"),
+    ),  # Test in staging due to low quality
+    36: (
+        _loader.DAN_FURCA__PROMO,
+        Session("furca_audio_part3.wav"),
+    ),  # Test in staging due to low quality
+    37: (_loader.DARBY_CUPIT__PROMO, Session("promo_script_1_cupit_02.wav")),
+    38: (_loader.IZZY_TUGMAN__PROMO, Session("promo_script_5_tugman.wav")),
+    39: (_loader.NAOMI_MERCER_MCKELL__PROMO, Session("promo_script_6_mckell.wav")),
+    40: (
+        _loader.SHARON_GAULD_ALEXANDER__PROMO,
+        Session("promo_script_5_alexander.wav"),
+    ),  # Do not release till paid
+    41: (_loader.SHAWN_WILLIAMS__PROMO, Session("promo_script_9_williams.wav")),
     # NOTE: Custom voice IDs are random numbers larger than 10,000...
     # TODO: Retrain some of these voices, and reconfigure them.
     11541: (_loader.LINCOLN__CUSTOM, Session("")),
     13268907: (_loader.JOSIE__CUSTOM, Session("")),
     95313811: (_loader.JOSIE__CUSTOM__MANUAL_POST, Session("")),
-    78252076: (Speaker(""), Session("")),  # TODO: Add Veritone Custom Voice
-    70695443: (Speaker(""), Session("")),  # TODO: Add Super Hi-Fi Custom Voice
-    64197676: (Speaker(""), Session("")),  # TODO: Add USP Custom Voice
-    41935205: (Speaker(""), Session("")),  # TODO: Add Happify Custom Voice
-    42400423: (
-        _loader.THE_EXPLANATION_COMPANY__CUSTOM_VOICE,
-        Session("is_it_possible_to_become_invisible.wav"),
+    70695443: (_loader.SUPER_HI_FI__CUSTOM_VOICE, Session("promo_script_5_superhifi.wav")),
+    64197676: (_loader.US_PHARMACOPEIA__CUSTOM_VOICE, Session("enthusiastic_script-22.wav")),
+    41935205: (
+        _loader.HAPPIFY__CUSTOM_VOICE,
+        Session("anna_long_emotional_clusters_1st_half_clean.wav"),
     ),
-    61137774: (_loader.ENERGY_INDUSTRY_ACADEMY__CUSTOM_VOICE, Session("sample_script_4.wav")),
 }
 
 
@@ -192,7 +205,6 @@ def before_first_request():
 class RequestArgs(typing.TypedDict):
     speaker_id: int
     text: str
-    api_key: str
 
 
 def validate_and_unpack(
@@ -200,30 +212,9 @@ def validate_and_unpack(
     input_encoder: InputEncoder,
     nlp: English,
     max_chars: int = MAX_CHARS,
-    api_keys: typing.Set[str] = API_KEYS,
     speaker_id_to_speaker: typing.Dict[int, typing.Tuple[Speaker, Session]] = SPEAKER_ID_TO_SPEAKER,
 ) -> EncodedInput:
-    """Validate and unpack the request object.
-
-    TODO: Consider using the authorization header instead of a parameter `api_key`.
-    """
-    if "api_key" not in request_args:
-        raise FlaskException("API key was not provided.", status_code=401, code="MISSING_ARGUMENT")
-
-    api_key = request_args.get("api_key")
-    min_api_key_len = min(len(key) for key in api_keys)
-    max_api_key_len = max(len(key) for key in api_keys)
-
-    if not (
-        isinstance(api_key, str)
-        and (len(api_key) >= min_api_key_len and len(api_key) <= max_api_key_len)
-    ):
-        message = "API key must be a string between"
-        message += f" {min_api_key_len} and {max_api_key_len} characters."
-        raise FlaskException(message, status_code=401, code="INVALID_API_KEY")
-
-    if api_key not in api_keys:
-        raise FlaskException("API key is not valid.", status_code=401, code="INVALID_API_KEY")
+    """Validate and unpack the request object."""
 
     if not ("speaker_id" in request_args and "text" in request_args):
         message = "Must call with keys `speaker_id` and `text`."
@@ -274,10 +265,6 @@ def healthy():
     return "ok"
 
 
-# NOTE: `/api/speech_synthesis/v1/` was added for backward compatibility.
-
-
-@app.route("/api/speech_synthesis/v1/text_to_speech/input_validated", methods=["GET", "POST"])
 @app.route("/api/text_to_speech/input_validated", methods=["GET", "POST"])
 def get_input_validated():
     """Validate the input to our text-to-speech endpoint before making a stream request.
@@ -297,7 +284,6 @@ def get_input_validated():
     return jsonify({"message": "OK"})
 
 
-@app.route("/api/speech_synthesis/v1/text_to_speech/stream", methods=["GET", "POST"])
 @app.route("/api/text_to_speech/stream", methods=["GET", "POST"])
 def get_stream():
     """Get speech given `text` and `speaker`.
@@ -320,16 +306,6 @@ def get_stream():
         TTS_PACKAGE, input, app.logger, output_flags=output_flags
     )
     return Response(generator, headers=headers, mimetype="audio/mpeg")
-
-
-@app.route("/")
-def index():
-    return send_file("public/index.html")
-
-
-@app.route("/<path:path>")
-def send_static(path):
-    return send_from_directory("public", path)
 
 
 if __name__ == "__main__" or "GUNICORN" in os.environ:
