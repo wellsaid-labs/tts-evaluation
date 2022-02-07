@@ -158,7 +158,7 @@ def rename(
         if only_numbers and any(c.isdigit() for c in stem):
             stem = "-".join(re.findall(r"\d+", stem))
         elif only_numbers:
-            logger.error("Skipping, path has no numbers: %s", path)
+            logger.error(f"Skipping, path has no numbers: {path}")
         updates.append((path, path.parent / (stem + path.suffix)))
 
     unique = set()
@@ -169,10 +169,10 @@ def rename(
 
     for path, updated in updates:
         if updated != path:
-            logger.info('Renaming file name "%s" to "%s"', path.name, updated.name)
+            logger.info(f'Renaming file name "{path.name}" to "{updated.name}')
             path.rename(updated)
         else:
-            logger.info("Skipping, file already exists: %s", updated)
+            logger.info(f"Skipping, file already exists: {updated}")
 
 
 def _download(gcs_uri: str) -> typing.Tuple[typing.IO[bytes], str]:
@@ -227,7 +227,7 @@ def print_format(
         groups[format_].append(metadata.path)
     for format_, paths in groups.items():
         list_ = "\n".join([str(p.relative_to(p.parent.parent)) for p in paths])
-        logger.info("Found %d file(s) with `%s` audio file format:\n%s", len(paths), format_, list_)
+        logger.info(f"Found {len(paths)} file(s) with `{format_}` audio file format:\n{list_}")
 
 
 @audio_app.command("normalize")
@@ -247,7 +247,7 @@ def audio_normalize(
     for path in paths:
         dest_path = _loader.normalize_audio_suffix(dest / path.name)
         if dest_path.exists():
-            logger.error("Skipping, file already exists: %s", dest_path)
+            logger.error(f"Skipping, file already exists: {dest_path}")
         else:
             _loader.normalize_audio(path, dest_path)
             progress_bar.update(round(lib.audio.get_audio_metadata(path).length))
@@ -265,7 +265,7 @@ def text(
     for path in tqdm.tqdm(paths):
         dest_path = dest / (path.stem + ".csv")
         if dest_path.exists():
-            logger.error("Skipping, file already exists: %s", dest_path)
+            logger.error(f"Skipping, file already exists: {dest_path}")
             continue
         text = path.read_text(encoding=encoding)
         pandas.DataFrame({column: [text]}).to_csv(dest_path, index=False)
@@ -314,31 +314,36 @@ def _read_csv(
     text = path.read_text(encoding=encoding)
     separator = ","
     if text.count("\t") > len(text.split("\n")) // 2:
-        message = "There are a lot of tabs (%d) so this (%s) will be parsed as a TSV file."
-        logger.warning(message, text.count("\t"), path)
+        tab_count = text.count("\t")
+        message = (
+            f"There are a lot of tabs ({tab_count}) so this ({path}) will be parsed as a TSV file."
+        )
+        logger.warning(message)
         separator = "\t"
 
     read_csv_kwgs = dict(sep=separator, keep_default_na=False, index_col=False)
     data_frame = read_csv(path, **read_csv_kwgs)
     if not any(c in data_frame.columns for c in all_columns):
-        logger.warning("None of the optional or required column(s) were found...")
+        logger.warning(f"[{path.name}] None of the optional or required column(s) were found...")
         if len(data_frame.columns) == 1:
-            message = "There is only 1 column so this will assume that column is the "
-            message += f"reqiured '{required_column}' column."
+            message = f"[{path.name}] There is only 1 column so this will assume that column is the"
+            message += f" reqiured '{required_column}' column."
             logger.warning(message)
             data_frame = read_csv(path, header=None, names=[required_column], **read_csv_kwgs)
     if required_column not in data_frame.columns:
-        message = f"The required '{required_column}' column couldn't be found or inferred."
+        message = (
+            f"[{path.name}] The required '{required_column}' column couldn't be found or inferred."
+        )
         logger.error(message)
         raise typer.Exit(code=1)
 
     dropped = list(set(data_frame.columns) - set(all_columns))
     if len(dropped) > 0:
-        logger.warning("[%s] Dropping extra columns: %s", path.name, dropped)
+        logger.warning(f"[{path.name}] Dropping extra columns: {dropped}")
     data_frame = data_frame.drop(columns=dropped)
     for column in optional_columns:
         if column not in data_frame.columns:
-            logger.warning("[%s] Adding missing column: '%s'", path.name, column)
+            logger.warning(f"[{path.name}] Adding missing column: '{column}'")
             data_frame[column] = ""
     return data_frame[all_columns]
 
@@ -357,7 +362,7 @@ def csv_normalize(
     for path in tqdm.tqdm(paths):
         dest_path = dest / path.name
         if dest_path.exists():
-            logger.error("Skipping, file already exists: %s", dest_path)
+            logger.error(f"Skipping, file already exists: {dest_path}")
             continue
 
         text = path.read_text(encoding=encoding)

@@ -15,14 +15,17 @@ You might be interested in:
 - [Training a spectrogram or signal model on GCP](./docs/TRAIN_MODEL_GCP.md)
 - [Creating a new dataset](./docs/CREATE_DATASET.md)
 - [See some tips and tricks](./docs/TIPS_AND_TRICKS.md)
-- [Learn more about deployment](./docs/DEPLOYMENT.md)
+- [Learn how to build our service locally](./docs/BUILD.md)
+- [Learn about our deployments & infrastructure](./ops/README.md)
 
 ## Architecture: Functional Core, Imperative Shell
 
-Our library (`lib`) is the functional core of our application. Our services are defined in `run` as
-part of the imperative shell. The imperative shell interacts with the the external world.
+Our library (`lib`) is the functional core of our application. Our services are
+defined in `run` as part of the imperative shell. The imperative shell interacts
+with the the external world.
 
 Learn more:
+
 - https://www.destroyallsoftware.com/talks/boundaries
 - https://www.destroyallsoftware.com/screencasts/catalog/functional-core-imperative-shell
 - https://www.javiercasas.com/articles/functional-programming-patterns-functional-core-imperative-shell

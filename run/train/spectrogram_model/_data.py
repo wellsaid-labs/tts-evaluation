@@ -132,7 +132,7 @@ class InputEncoder(Encoder):
 
     def decode(self, encoded: EncodedInput) -> DecodedInput:
         graphemes = self.grapheme_encoder.decode(encoded.graphemes)
-        cases = self.case_encoder.decode(encoded.letter_cases)
+        cases = self.case_encoder.batch_decode(encoded.letter_cases)
         iterator = zip(graphemes, cases)
         return DecodedInput(
             "".join([g.upper() if c == self._CASE_LABELS[0] else g for g, c in iterator]),

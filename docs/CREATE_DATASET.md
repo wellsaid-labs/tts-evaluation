@@ -106,12 +106,43 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
                                     --identity-file ~/.ssh/google_compute_engine
    ```
 
-### Download your data onto the VM
+1. Back on the VM, install dependencies, like so...
+
+   ```bash
+   cd /opt/wellsaid-labs/Text-to-Speech
+   sudo apt-get update
+   . run/utils/apt_install.sh
+   ```
+
+### Screen sessions
+
+Create a virtual environment for processing.
+   ```
+   python3.8 -m venv venv
+   . venv/bin/activate
+   python -m pip install wheel pip --upgrade
+   python -m pip install -r requirements.txt --upgrade
+   ```
+If aligning data for multiple speakers, it can be helpful to process each in their own named screen session
+
+   ```
+   screen -S [name]
+   ```
+Press any key.
+
+   ```
+   . venv/bin/activate
+   ```
+At any time, press `ctrl+a, d` to detach from the screen session. Then `screen -r [name]` to reattach to the session named `[name]`.
+
+### Download Data
 
 1. Set these variables...
 
    ```bash
    NAME=actor_name # Example: hilary_noriega
+   ```
+   ```
    ROOT=/opt/wellsaid-labs/Text-to-Speech/disk/data/$NAME
    PROCESSED=$ROOT/processed
    GCS_URI=gs://wellsaid_labs_datasets/$NAME
@@ -127,20 +158,6 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
    ```
 
 ### Process data
-
-1. Install these dependencies onto the VM, like so...
-
-   ```bash
-   cd /opt/wellsaid-labs/Text-to-Speech
-   sudo apt-get update
-   . run/utils/apt_install.sh
-    ```
-    ```
-   python3.8 -m venv venv
-   . venv/bin/activate
-   python -m pip install wheel pip --upgrade
-   python -m pip install -r requirements.txt --upgrade
-   ```
 
 1. (Optional) Ensure the directories have similar numberings...
 
