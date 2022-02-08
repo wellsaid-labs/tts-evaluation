@@ -79,23 +79,20 @@ def main():
     sig_paths = get_paths("Signal Checkpoints(s)", SIGNAL_MODEL_EXPERIMENTS_PATH)
     spec_paths = get_paths("Spectrogram Checkpoints(s)", SPECTROGRAM_MODEL_EXPERIMENTS_PATH)
 
-    with st.form(key="data_form"):
-        speakers = list(run._config.DATASETS.keys())
-        speakers.sort()
-        is_all = st.sidebar.checkbox("Select all speakers by default")
-        format_: typing.Callable[[run.data._loader.Speaker], str] = lambda s: s.label
-        default = speakers if is_all else speakers[:1]
-        label = "Speaker(s)"
-        speakers = st.multiselect(label, options=speakers, format_func=format_, default=default)
-        speakers = cast(typing.List[run.data._loader.Speaker], speakers)
-        max_sessions = st.number_input("Maximum Recording Sessions", min_value=1, value=1, step=1)
-        max_sessions = cast(int, max_sessions)
-        scripts = st.text_area("Script(s)", value=DEFAULT_SCRIPT)
-        scripts = [s.strip() for s in scripts.split("\n") if len(s.strip()) > 0]
-        file_name = st.text_input(label="Zipfile Name", value="audio(s)")
-        submit = st.form_submit_button(label="Generate")
-
-    if not submit:
+    form = st.form("data_form")
+    speakers = sorted(list(run._config.DATASETS.keys()))
+    is_all = st.sidebar.checkbox("Select all speakers by default")
+    format_: typing.Callable[[run.data._loader.Speaker], str] = lambda s: s.label
+    default = speakers if is_all else speakers[:1]
+    label = "Speaker(s)"
+    speakers = form.multiselect(label, options=speakers, format_func=format_, default=default)
+    speakers = cast(typing.List[run.data._loader.Speaker], speakers)
+    max_sessions = form.number_input("Maximum Recording Sessions", min_value=1, value=1, step=1)
+    max_sessions = cast(int, max_sessions)
+    scripts = form.text_area("Script(s)", value=DEFAULT_SCRIPT)
+    scripts = [s.strip() for s in scripts.split("\n") if len(s.strip()) > 0]
+    file_name = form.text_input(label="Zipfile Name", value="audio(s)")
+    if not form.form_submit_button(label="Generate"):
         return
 
     with st.spinner("Loading checkpoints..."):
