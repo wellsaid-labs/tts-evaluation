@@ -136,7 +136,8 @@ def main():
 
     with st.spinner("Making Zipfile..."):
         st.text("")
-        st_html(paths_to_html_download_link(f"{file_name}.zip", "Download Audio(s)", paths))
+        label = "📁 Download Audio(s) (zip)"
+        st_html(paths_to_html_download_link(f"{file_name}.zip", label, paths))
 
 
 if __name__ == "__main__":
