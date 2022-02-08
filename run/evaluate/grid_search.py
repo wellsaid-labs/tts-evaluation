@@ -45,8 +45,7 @@ def path_label(path: pathlib.Path) -> str:
 
 def st_select_paths(label: str, dir: pathlib.Path, suffix: str) -> typing.List[pathlib.Path]:
     """Display a path selector for the directory `dir`."""
-    options = [p for p in dir.glob("**/*") if p.suffix == suffix or p.is_dir()] + [dir]
-    options = sorted(options)
+    options = sorted([p for p in dir.glob("**/*") if p.suffix == suffix or p.is_dir()] + [dir])
     paths = st.multiselect(label, options=options, format_func=path_label)
     paths = cast(typing.List[pathlib.Path], paths)
     paths = [f for p in paths for f in ([p] if p.is_file() else list(p.glob(f"**/*{suffix}")))]
@@ -75,6 +74,7 @@ def main():
         "set of model(s), a speaker, a recording session, and a script."
     )
     run._config.configure()
+
     get_paths = functools.partial(st_select_paths, suffix=PT_EXTENSION)
     sig_paths = get_paths("Signal Checkpoints(s)", SIGNAL_MODEL_EXPERIMENTS_PATH)
     spec_paths = get_paths("Spectrogram Checkpoints(s)", SPECTROGRAM_MODEL_EXPERIMENTS_PATH)
