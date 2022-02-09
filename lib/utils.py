@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import enum
 import functools
 import itertools
 import logging
@@ -353,67 +354,196 @@ class LSTMCell(torch.nn.LSTMCell):
         return super().forward(input, hx=hx)
 
 
+def is_sortable(obj):
+    # NOTE: https://stackoverflow.com/questions/19614260/check-if-an-object-is-order-able-in-python
+    cls = obj.__class__
+    return cls.__lt__ != object.__lt__ or cls.__gt__ != object.__gt__
+
+
 class LazyEmbedding(torch.nn.Module):
-    def __init__(self, num_embeddings: int, *args, **kwargs):
-        """
-        Args:
-            num_embeddings: The maximum number of embeddings needed.
-        """
+    """An `Embedding` layer with `max_embeddings` that progressively maps new tokens to embeddings.
+
+    Args:
+        max_embeddings: The maximum number of embeddings needed, in addition to the standard
+            unknown and padding embedding.
+        proactive_updates: The number of forward passes this will update proactively (before the
+            forward pass) rather than reactively (after the forward pass).
+
+            A reactive update...
+                - Will use a placeholder "Unknown token" for the foward pass.
+                - Is faster than a proactive update because it can be skipped if not needed.
+                - Will be batched with a proactive update in the next forward pass.
+
+            This option is only relevant in a distributed context where updates are expensive. In
+            a non-distributed context, all the updates are trivial and proactive.
+        allow_unk_on_eval: Iff then the "Unknown token" may be used during evaluation, otherwise
+            this will error if a new token is encountered during evaluation.
+        *args: Arguments passed to `torch.nn.Embedding`.
+        **kwargs: Keyword arguments passed to `torch.nn.Embedding`.
+    """
+
+    class _Tokens(enum.Enum):
+        PAD_TOKEN: typing.Final = 0  # NOTE: It's standard to use 0 for padding.
+        UNK_TOKEN: typing.Final = 1
+
+    def __init__(
+        self,
+        max_embeddings: int,
+        *args,
+        proactive_updates: int = 100,
+        allow_unk_on_eval: bool = False,
+        **kwargs,
+    ):
         super().__init__()
-        self.pad_idx = 0
-        self.unk_idx = 1
-        self.pad_token = "pad"
-        self.unk_token = "unk"
-        self.vocab: typing.Dict[str, int] = {}
-        self.vocab[self.pad_token] = self.pad_idx
-        self.vocab[self.unk_token] = self.unk_idx
-        num_embeddings = len(self.vocab) + num_embeddings
-        self.embed = torch.nn.Embedding(num_embeddings, *args, padding_idx=self.pad_idx, **kwargs)
+
+        self.allow_unk_on_eval = allow_unk_on_eval
+        self.proactive_updates = proactive_updates
+        self._forward_pass_counter = 0
+
+        # NOTE: Create a unique hashable object for `pad_token` and `unk_token`, that's unique
+        # from any object that could be inputted to `forward`.
+        self.pad_idx = self._Tokens.PAD_TOKEN.value
+        self.unk_idx = self._Tokens.UNK_TOKEN.value
+        self.pad_token = self._Tokens.PAD_TOKEN
+        self.unk_token = self._Tokens.UNK_TOKEN
+
+        self.vocab: typing.Dict[typing.Hashable, int]
+        self.vocab = {self.pad_token: self.pad_idx, self.unk_token: self.unk_idx}
+
+        max_embeddings = len(self.vocab) + max_embeddings
+        self.embed = torch.nn.Embedding(max_embeddings, *args, padding_idx=self.pad_idx, **kwargs)
+        self.weight = self.embed.weight
+        self.num_embeddings = self.embed.num_embeddings
+        self.embedding_dim = self.embed.embedding_dim
+        self.padding_idx = self.embed.padding_idx
+
         self._new_tokens = set()
-        self.register_buffer("_unk_embedding_hash", torch.tensor(0))
+        self.register_buffer("_unk_embedding_hash", torch.tensor(0.0))
 
     def _get_unk_embedding_hash(self) -> torch.Tensor:
-        idx = torch.tensor(self.vocab[self.unk_token], device=self.embed.weight.device)
+        """Hash representing the current value of the `unk_token`."""
+        idx = torch.tensor(self.vocab[self.unk_token], device=self.weight.device)
         return self.embed(idx).sum().detach().clone().requires_grad_(False)
 
-    def _update_vocab(self, eps=0.0001):
-        """Update `self.vocab` if there are new tokens."""
-        new_unk_embedding_hash = self._get_unk_embedding_hash()
-        if (self._unk_embedding_hash - new_unk_embedding_hash).abs() > eps:
-            outputs = [None for _ in range(lib.distributed.get_world_size())]
-            new_tokens = sorted(list(self._new_tokens))
-            torch.distributed.all_gather_object(outputs, new_tokens)
-            outputs = typing.cast(typing.List[typing.List[str]], outputs)
-            for output in outputs:
-                for token in output:
-                    self.vocab[token] = len(self.vocab)
-            self._unk_embedding_hash = new_unk_embedding_hash
-            self._new_tokens = set()
+    def update_tokens(
+        self, tokens: typing.List[typing.Hashable], embeddings: typing.Optional[torch.Tensor] = None
+    ):
+        """Add or update tokens in `self.vocab`.
 
-    def _token_to_idx(self, token: str, allow_unk_on_eval: bool = False) -> int:
-        if (
-            not allow_unk_on_eval
-            and not self.training
-            and token not in self.vocab
-            and token not in self._new_tokens
-        ):
-            raise KeyError(f"Token not found: {token}")
-        return self.vocab.get(token, self.vocab[self.unk_token])
+        TODO: Test, if the updated `embeddings` is zeros?
 
-    def forward(self, tokens: typing.List[typing.List[str]], **kwargs) -> torch.Tensor:
-        """
         Args:
-            tokens ([batch_size, num_tokens]): List of sequences with tokens represented as strings.
+            tokens: The tokens to add or update.
+            embeddings: The corresponding embeddings for each token.
+        """
+        self._new_tokens.update([t for t in tokens if t not in self.vocab])
+        if len(self._new_tokens) > 0:
+            self._update_vocab()
 
-        Returns: torch.FloatTensor([num_tokens, batch_size, embedding_dim])
+        if embeddings is None:
+            return
+
+        if embeddings.shape != (len(tokens), self.embed.embedding_dim):
+            raise ValueError("The updated `embeddings` are the wrong shape.")
+
+        indicies = [self.vocab[t] for t in tokens]
+
+        if not lib.distributed.is_initialized():
+            with torch.no_grad():
+                self.weight[indicies] = embeddings
+            return
+
+        device = self.weight.device
+        shape = self.weight.shape
+        world_size = lib.distributed.get_world_size()
+
+        update = torch.zeros(shape, device=device)
+        update[indicies] = embeddings
+
+        outputs = [torch.zeros(shape, device=device) for _ in range(world_size)]
+        torch.distributed.all_gather(outputs, update)
+        all_updates = torch.stack(outputs, dim=0).sum(dim=0)
+
+        outputs = [None for _ in range(world_size)]
+        torch.distributed.all_gather_object(outputs, indicies)
+        outputs = typing.cast(typing.List[typing.List[int]], outputs)
+        all_indicies: typing.List[int] = [i for l in outputs for i in l]
+
+        if not torch.allclose(all_updates[indicies], embeddings):
+            raise ValueError("This recieved a conflicting update from a another device.")
+
+        with torch.no_grad():
+            self.weight[all_indicies] = all_updates
+
+    def _update_vocab(self):
+        """Update `self.vocab` with `self._new_tokens`."""
+        new_tokens = list(self._new_tokens)
+
+        if lib.distributed.is_initialized():
+            outputs = [None for _ in range(lib.distributed.get_world_size())]
+            torch.distributed.all_gather_object(outputs, new_tokens)
+            outputs = typing.cast(typing.List[typing.List[typing.Hashable]], outputs)
+            # TODO: Test, if two devices, submit the same token.
+            new_tokens = list(set(t for l in outputs for t in l))
+            # NOTE: Ensure that the order `new_tokens` are added in is consistent.
+            new_tokens = (
+                sorted(new_tokens) if all(is_sortable(t) for t in new_tokens) else new_tokens
+            )
+
+        for token in new_tokens:
+            self.vocab[token] = len(self.vocab)
+
+        self._unk_embedding_hash = self._get_unk_embedding_hash()
+        self._new_tokens = set()
+
+    def _has_trained_on_new_tokens(self, eps=1e-5):
+        # NOTE: Iff the `unk_token` was updated, then the model has trained on a new token it hasn't
+        # seen before.
+        return (self._unk_embedding_hash - self._get_unk_embedding_hash()).abs() > eps
+
+    def _token_to_idx(self, token: typing.Hashable) -> int:
+        """Get the index of `token` and return `unk_token` if `token` is not found.
+
+        Raises:
+            KeyError: Iff the module is in evaluation mode and "Unknown token" is disabled this
+                will error iff `token` isn't in `self.vocab`.
         """
         if self.training:
+            assert token in self.vocab or token in self._new_tokens, "Invariant failure."
+
+        if not self.training and not self.allow_unk_on_eval and token not in self.vocab:
+            raise KeyError(f"Token not found: {token}")
+
+        return self.vocab.get(token, self.vocab[self.unk_token])
+
+    def forward(
+        self, tokens: typing.List[typing.List[typing.Hashable]], **kwargs
+    ) -> typing.Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Args:
+            tokens ([batch_size, num_tokens]): List of sequences with tokens.
+
+        Returns:
+            embedded (torch.FloatTensor [num_tokens, batch_size, embedding_dim])
+            mask (torch.BoolTensor [num_tokens, batch_size])
+        """
+        if self.training:
+            self._forward_pass_counter += 1
             self._new_tokens.update([t for s in tokens for t in s if t not in self.vocab])
-            self._update_vocab()
+            update_proactively = self._forward_pass_counter <= self.proactive_updates
+            if (
+                update_proactively
+                or self._has_trained_on_new_tokens()
+                or not lib.distributed.is_initialized()
+            ):
+                self._update_vocab()
+
         indices = [[self._token_to_idx(t, **kwargs) for t in s] for s in tokens]
-        device = self.embed.weight.device
+        device = self.weight.device
         sequences = [torch.tensor(s, device=device, dtype=torch.long) for s in indices]
-        return self.embed(torch.nn.utils.rnn.pad_sequence(sequences))
+        padded = torch.nn.utils.rnn.pad_sequence(sequences, padding_value=self.pad_idx)
+        mask = padded != self.pad_idx
+        return self.embed(padded), mask
 
 
 _ClampReturnType = typing.TypeVar("_ClampReturnType")
