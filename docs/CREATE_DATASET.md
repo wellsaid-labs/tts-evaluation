@@ -155,6 +155,7 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
    PROCESSED=$ROOT/processed
    GCS_URI=gs://wellsaid_labs_datasets/$NAME
    ENCODING=.wav # Example: .wav, .mp3
+   LANGUAGE=English # Example: English, German, Spanish, Portuguese
    ```
 
 1. Download the dataset, like so...
@@ -245,7 +246,7 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
 
    ```bash
    mkdir $PROCESSED/scripts
-   python -m run.data csv normalize $ROOT/scripts/*.csv $PROCESSED/scripts \
+   python -m run.data csv normalize $ROOT/scripts/*.csv $PROCESSED/scripts $LANGUAGE \
       2>&1 | tee $PROCESSED/csv-normalize.log
    ```
 
@@ -274,6 +275,7 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
    python -m run.data.sync_script_with_audio \
       $(python -m run.utils.prefix --voice-over $RECORDINGS) \
       $(python -m run.utils.prefix --script $SCRIPTS) \
+      --language $LANGUAGE \
       --destination $GCS_URI/processed/
    ```
 

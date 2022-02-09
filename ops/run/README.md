@@ -222,7 +222,7 @@ curl https://staging.tts.wellsaidlabs.com/api/text_to_speech/stream \
   -H "X-Api-Key: $API_KEY" \
   -H "Accept-Version: $MODEL" \
   -H "Content-Type: application/json" \
-  -X POST --data '{"speaker_id":"4","text":"Lorem ipsum"}' \
+  -X POST --data '{"speaker_id":"4","text":"Lorem ipsum","consumerId":"id","consumerSource":"source"}' \
   -o sample.mp3
 ```
 

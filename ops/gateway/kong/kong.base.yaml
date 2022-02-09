@@ -56,7 +56,7 @@ env:
   prefix: /kong_prefix/
   # Include additional third-party/custom plugins. Anything after "bundled" will need to be
   # included in the kong `image`.
-  plugins: "bundled,latest-version-transformer"
+  plugins: "bundled,latest-version-transformer,content-moderation"
   # nginx overrides, see https://docs.konghq.com/gateway-oss/2.4.x/configuration/#injecting-nginx-directives
   #
   # Enable buffering of responses from upstream services. This should help free up our upstream
@@ -80,6 +80,12 @@ env:
   nginx_http_client_body_buffer_size: "16k"
   # https://docs.konghq.com/enterprise/2.3.x/property-reference/#nginx_http_client_max_body_size
   nginx_http_client_max_body_size: "16k"
+  # Configuration that allows SSL connections in our Kong plugins
+  # Relevant issue: https://github.com/ledgetech/lua-resty-http/issues/42#issuecomment-359959429
+  # https://docs.konghq.com/gateway-oss/2.4.x/configuration/#lua_ssl_verify_depth
+  lua_ssl_verify_depth: "2"
+  # https://docs.konghq.com/gateway-oss/2.4.x/configuration/#lua_ssl_trusted_certificate
+  lua_ssl_trusted_certificate: "/etc/ssl/certs/ca-certificates.crt"
 
 # Specify Kong's Docker image and repository details here
 image:
