@@ -32,7 +32,7 @@ from lib.audio import sec_to_sample
 from lib.distributed import get_rank, get_world_size, is_initialized
 from lib.samplers import BucketBatchSampler
 from lib.utils import Tuple, flatten_2d
-from run.data._loader import Alignment, Span, Speaker
+from run.data._loader import Alignment, Session, Span, Speaker
 from run.train import _utils
 
 if typing.TYPE_CHECKING:  # pragma: no cover
@@ -158,7 +158,7 @@ def _random_speed_annotations(
 
 
 def _get_char_to_word(doc: spacy.tokens.Doc) -> typing.List[int]:
-    """ Get a mapping from characters to words in `doc`. """
+    """Get a mapping from characters to words in `doc`."""
     char_to_word = [-1] * len(doc.text)
     for token in doc:
         char_to_word[token.idx : token.idx + len(token.text)] = [token.i] * len(token.text)
@@ -166,7 +166,7 @@ def _get_char_to_word(doc: spacy.tokens.Doc) -> typing.List[int]:
 
 
 def _get_word_vectors(char_to_word: typing.List[int], doc: spacy.tokens.Doc) -> torch.Tensor:
-    """ Get word vectors mapped onto a character length vector. """
+    """Get word vectors mapped onto a character length vector."""
     zeros = torch.zeros(doc.vector.size)
     word_vectors_ = numpy.stack([zeros if w < 0 else doc[w].vector for w in char_to_word])
     return torch.from_numpy(word_vectors_)
@@ -188,6 +188,7 @@ def _pad_and_trim_signal(signal: numpy.ndarray) -> torch.Tensor:
     padding does not affect the spectrogram due to overlap between the padding and the
     real audio.
     TODO: Instead of padding with zeros, we should consider padding with real-data.
+    TODO: Add some randomness to the audio file trimming so that the stop token cannot overfit.
     """
     signal = lib.audio.pad_remainder(signal)
     _, trim = librosa.effects.trim(signal)
@@ -302,10 +303,12 @@ class Batch(_utils.Batch):
     # SequenceBatch[torch.FloatTensor [num_frames, batch_size], torch.LongTensor [1, batch_size])
     stop_token: SequenceBatch
 
-    phonemes: typing.List[typing.List[str]]
-
+    # TODO: How come this is a `SequenceBatch`? It's not a sequence.
     # SequenceBatch[torch.LongTensor [1, batch_size], torch.LongTensor [1, batch_size])
     encoded_speaker: SequenceBatch
+
+    # SequenceBatch[torch.LongTensor [1, batch_size], torch.LongTensor [1, batch_size])
+    encoded_session: SequenceBatch
 
     # SequenceBatch[torch.LongTensor [num_phonemes, batch_size], torch.LongTensor [1, batch_size])
     encoded_phonemes: SequenceBatch
@@ -361,7 +364,10 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
         docs[i] = span.as_doc()
 
     phonemes = typing.cast(typing.List[str], lib.text.grapheme_to_phoneme(docs))
-    decoded = [DecodedInput(s.script, p, s.speaker) for s, p in zip(spans, phonemes)]
+    decoded = [
+        DecodedInput(s.script, p, s.speaker, (s.speaker, s.session))
+        for s, p in zip(spans, phonemes)
+    ]
     encoded = [input_encoder.encode(d) for d in decoded]
     with futures.ThreadPoolExecutor(max_workers=min(max_workers, len(spans))) as pool:
         signals_ = list(pool.map(lambda s: s.audio(), spans))
@@ -379,6 +385,7 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
         stop_token=_make_stop_token(spectrogram),
         phonemes=[p.split(run._config.PHONEME_SEPARATOR) for p in phonemes],
         encoded_speaker=_stack([s.speaker for s in encoded]),
+        encoded_session=_stack([s.session for s in encoded]),
         encoded_phonemes=_stack([s.phonemes for s in encoded]),
         encoded_phonemes_mask=_stack([_make_mask(e.phonemes.shape[0]) for e in encoded]),
     )
@@ -391,6 +398,7 @@ class DataProcessor(typing.Mapping[int, Batch]):
         batch_size: int,
         input_encoder: InputEncoder,
         step: int = 0,
+        **kwargs,
     ):
         """Given an index, generate the appropriate batch indefinitely.
 
@@ -410,7 +418,7 @@ class DataProcessor(typing.Mapping[int, Batch]):
         - Checkpoint the random state of every worker, and use it to restart those workers. We'd
           likely need to setup a communication channel with workers, in order to implement this.
         """
-        iter_ = run._utils.SpanGenerator(dataset)
+        iter_ = run._utils.SpanGenerator(dataset, **kwargs)
         iter_ = BucketBatchSampler(iter_, batch_size, False, self._data_iterator_sort_key)
         iter_ = DeterministicSampler(iter_, run._config.RANDOM_SEED + step, cuda=False)
         if is_initialized():

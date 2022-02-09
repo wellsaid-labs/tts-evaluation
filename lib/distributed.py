@@ -26,12 +26,12 @@ logger = logging.getLogger(__name__)
 
 
 def is_initialized() -> bool:
-    """ Return `True` if distributed mode is initialized. """
+    """Return `True` if distributed mode is initialized."""
     return torch.distributed.is_available() and torch.distributed.is_initialized()
 
 
 def get_master_rank() -> typing.Literal[0]:
-    """ Returns the rank of the master processs. """
+    """Returns the rank of the master processs."""
     return 0
 
 

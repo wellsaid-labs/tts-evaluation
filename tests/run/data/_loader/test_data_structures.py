@@ -1,4 +1,5 @@
 import functools
+import pathlib
 import pickle
 import typing
 from unittest import mock
@@ -14,6 +15,7 @@ from run.data._loader.data_structures import (
     IntInt,
     IsLinked,
     Passage,
+    Session,
     Span,
     Speaker,
     UnprocessedPassage,
@@ -25,13 +27,20 @@ from run.data._loader.data_structures import (
     make_passages,
 )
 from run.data._loader.utils import get_non_speech_segments_and_cache
-from tests._utils import TEST_DATA_PATH, make_unprocessed_passage
+from tests._utils import TEST_DATA_PATH
 
 TEST_DATA_LJ = TEST_DATA_PATH / "audio" / "bit(rate(lj_speech,24000),32).wav"
 
 
+def make_unprocessed_passage(
+    audio_path=pathlib.Path("."), speaker=Speaker(""), script="", transcript="", alignments=None
+) -> UnprocessedPassage:
+    """Make a `UnprocessedPassage` for testing."""
+    return UnprocessedPassage(audio_path, speaker, script, transcript, alignments)
+
+
 def test__maybe_normalize_vo_script():
-    """ Test `_maybe_normalize_vo_script` against some basic cases. """
+    """Test `_maybe_normalize_vo_script` against some basic cases."""
     normal_script = "abc"
     assert _maybe_normalize_vo_script(normal_script) == normal_script
     script = "áƀć"
@@ -206,7 +215,7 @@ def test__make_speech_segments_helper__padding():
 
 @mock.patch("run.data._loader.data_structures.logger.error")
 def test__check_updated_script(mock_error):
-    """ Test `_check_updated_script` against some basic cases. """
+    """Test `_check_updated_script` against some basic cases."""
     passage = make_unprocessed_passage(script="abc", transcript="abc", alignments=tuple())
     _check_updated_script("", passage, "abc", "abc")
     assert mock_error.called == 0
@@ -231,6 +240,7 @@ def test_passage_span__identity():
     alignment = Alignment((0, len(script)), (0.0, metadata.length), (0, len(script)))
     passage = Passage(
         audio_file=metadata,
+        session=Session(audio_path.name),
         speaker=_loader.LINDA_JOHNSON,
         script=script,
         transcript=script,
@@ -276,7 +286,7 @@ def _make_unprocessed_passage_helper(
     find_transcript: typing.Callable[[str, str], typing.Tuple[int, int]] = _find,
     find_script: typing.Callable[[str, str], typing.Tuple[int, int]] = _find,
 ):
-    """ Helper function for `test_passage_span__unaligned*`. """
+    """Helper function for `test_passage_span__unaligned*`."""
     found = [(find_script(script, t), find_transcript(transcript, t)) for t in tokens]
     return UnprocessedPassage(
         audio_path=TEST_DATA_LJ,
@@ -425,7 +435,7 @@ def _has_a_mistranscription_helper(
     args: typing.Sequence[typing.Tuple[str, str, typing.Sequence[typing.Tuple[IntInt, IntInt]]]],
     **kwargs,
 ) -> typing.List[Passage]:
-    """ Helper function for `_has_a_mistranscription`. """
+    """Helper function for `_has_a_mistranscription`."""
     unprocessed_passages = [
         make_unprocessed_passage(
             audio_path=TEST_DATA_LJ,
@@ -439,7 +449,7 @@ def _has_a_mistranscription_helper(
 
 
 def _has_a_mistranscription(*args, **kwargs) -> typing.List[bool]:
-    """ Helper function for `test_has_a_mistranscription`. """
+    """Helper function for `test_has_a_mistranscription`."""
     return [has_a_mistranscription(p) for p in _has_a_mistranscription_helper(*args, **kwargs)]
 
 

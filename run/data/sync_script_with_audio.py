@@ -105,7 +105,7 @@ class _SttAlternatives(typing.TypedDict):
 
 
 class SttResult(typing.TypedDict):
-    """ The expected typing of a Google Speech-to-Text call. """
+    """The expected typing of a Google Speech-to-Text call."""
 
     results: typing.List[_SttAlternatives]
 
@@ -203,15 +203,7 @@ def _grapheme_to_phoneme(grapheme: str):
 def is_sound_alike(a: str, b: str) -> bool:
     """Return `True` if `str` `a` and `str` `b` sound a-like.
 
-    TODO: If the strings have the same voiced characters, in the same order, regardless of spaces,
-    can we consider them aligned? For example, these didn't align:
-    " Smallbone ", "small bone"
-    " backlit ", "black-lit"
-    " misjudgments, ", "Miss judgments"
-    " Dreamfields. ", "dream Fields"
-    " Fireside ", "fire site"
-    " Pre-game ", "pregame"
-    TODO: If the strings have the same set of characters, can we conisder them aligned?
+    NOTE: If two words have same sounds are spoken in the same order, then they sound-a-like.
 
     Example:
         >>> is_sound_alike("Hello-you've", "Hello. You've")
@@ -227,7 +219,8 @@ def is_sound_alike(a: str, b: str) -> bool:
     b = normalize_vo_script(b)
     return_ = (
         a.lower() == b.lower()
-        or _remove_punctuation(a.lower()) == _remove_punctuation(b.lower())
+        or _remove_punctuation(a.lower()).replace(" ", "")
+        == _remove_punctuation(b.lower()).replace(" ", "")
         or _grapheme_to_phoneme(a) == _grapheme_to_phoneme(b)
     )
     if return_:
@@ -237,13 +230,13 @@ def is_sound_alike(a: str, b: str) -> bool:
 
 
 def _minus(text: str):
-    """ Helper function for `_format_gap`. """
+    """Helper function for `_format_gap`."""
     STATS.script_unaligned.add(text)
     return f'\n{AnsiCodes.RED}--- "{text}"{AnsiCodes.RESET_ALL}\n'
 
 
 def _plus(text: str):
-    """ Helper function for `_format_gap`. """
+    """Helper function for `_format_gap`."""
     STATS.transcript_unaligned.add(text)
     return f'{AnsiCodes.GREEN}+++ "{text}"{AnsiCodes.RESET_ALL}\n'
 
@@ -251,7 +244,7 @@ def _plus(text: str):
 def _format_gap(
     scripts: typing.List[str], tokens: typing.List[ScriptToken], stt_tokens: typing.List[SttToken]
 ) -> typing.Iterable[str]:
-    """ Format the span of `tokens` and `stt_tokens` that lie between two alignments, the gap. """
+    """Format the span of `tokens` and `stt_tokens` that lie between two alignments, the gap."""
     if len(tokens) > 2 or len(stt_tokens) > 0:
         if tokens[0].script_index != tokens[-1].script_index:
             yield _minus(scripts[tokens[0].script_index][tokens[0].slice[-1] :])
@@ -380,7 +373,7 @@ _default_get_window_size = lambda a, b: int(max(round(a * 0.05), 256) + abs(a - 
 
 
 def _flatten_stt_result(stt_result: SttResult) -> typing.Tuple[str, typing.List[SttToken]]:
-    """ Flatten a `SttResult` into a list of `SttToken` tokens and a transcript. """
+    """Flatten a `SttResult` into a list of `SttToken` tokens and a transcript."""
     stt_tokens = []
     transcript = ""
     offset = 0
@@ -600,8 +593,6 @@ def run_stt(
 
     TODO: Look into how many requests are made every poll, in order to better calibrate against
     Google's quota.
-    TODO: Look into `set(dest_blobs)` and the following `upload_from_string`. This line got called
-    multiple times for a single log file, and it caused the program to exceeds Google's quota.
 
     Args:
         audio_blobs: List of GCS voice-over blobs.
@@ -631,19 +622,21 @@ def _sync_and_upload(
     text_column: str,
     recorder: lib.environment.RecordStandardStreams,
 ):
-    """ Sync `script_blobs` with `audio_blobs` and upload to `alignment_blobs`. """
+    """Sync `script_blobs` with `audio_blobs` and upload to `alignment_blobs`."""
     assert len(audio_blobs) == len(script_blobs), "Expected the same number of blobs."
     assert len(audio_blobs) == len(dest_blobs), "Expected the same number of blobs."
     assert len(audio_blobs) == len(stt_blobs), "Expected the same number of blobs."
     assert len(audio_blobs) == len(alignment_blobs), "Expected the same number of blobs."
 
     logger.info("Downloading voice-over scripts...")
-    scripts_ = [s.download_as_string().decode("utf-8") for s in script_blobs]
+    scripts_ = [s.download_as_bytes().decode("utf-8") for s in script_blobs]
     scripts: typing.List[typing.List[str]] = [
         typing.cast(pandas.DataFrame, pandas.read_csv(StringIO(s)))[text_column].tolist()
         for s in scripts_
     ]
-    message = "Scripts cannot contain funky characters."
+    message = "Some or all script(s) are missing or incorrecly formatted."
+    assert all(isinstance(t, str) for t in lib.utils.flatten_2d(scripts)), message
+    message = "Script(s) cannot contain funky characters."
     assert all(lib.text.is_normalized_vo_script(t) for t in lib.utils.flatten_2d(scripts)), message
 
     logger.info("Maybe running speech-to-text and caching results...")
@@ -655,7 +648,7 @@ def _sync_and_upload(
         )
         run_stt(*args)
     stt_results: typing.List[SttResult]
-    stt_results = [json.loads(b.download_as_string()) for b in stt_blobs]
+    stt_results = [json.loads(b.download_as_bytes()) for b in stt_blobs]
 
     for script, stt_result, alignment_blob in zip(scripts, stt_results, alignment_blobs):
         message = 'Running alignment "%s" and uploading results...'
@@ -665,9 +658,11 @@ def _sync_and_upload(
 
     STATS.log()
 
-    logger.info("Uploading logs...")
-    for dest_blob in set(dest_blobs):
+    # NOTE: `storage.Blob` doesn't implement `__hash__`.
+    for dest_gcs_uri in set(blob_to_gcs_uri(b) for b in dest_blobs):
+        dest_blob = gcs_uri_to_blob(dest_gcs_uri)
         blob = dest_blob.bucket.blob(dest_blob.name + recorder.log_path.name)
+        logger.info("Uploading logs to `%s`...", blob)
         blob.upload_from_string(recorder.log_path.read_text())
 
 
@@ -692,7 +687,7 @@ def main(
         "alignments/", help="Upload alignment results to this folder in --destinations."
     ),
 ):
-    """ Align --scripts with --voice-overs and upload alignments to --destinations. """
+    """Align --scripts with --voice-overs and upload alignments to --destinations."""
     if len(voice_over) > len(destination):
         ratio = len(voice_over) // len(destination)
         destination = list(chain.from_iterable(repeat(x, ratio) for x in destination))
@@ -705,7 +700,7 @@ def main(
 
     dest_blobs = [gcs_uri_to_blob(d) for d in destination]
     audio_blobs = [gcs_uri_to_blob(v) for v in voice_over]
-    script_blobs = [gcs_uri_to_blob(v) for v in script]
+    script_blobs = [gcs_uri_to_blob(s) for s in script]
     for item in zip(audio_blobs, script_blobs, dest_blobs):
         args = tuple([blob_to_gcs_uri(blob) for blob in item])
         logger.info('Processing... \n "%s" \n "%s" \n and saving to... "%s"', *args)

@@ -26,13 +26,8 @@ from pathlib import Path
 
 from torchnlp.download import download_file_maybe_extract
 
-from run.data._loader.utils import (
-    Passage,
-    Speaker,
-    UnprocessedPassage,
-    conventional_dataset_loader,
-    make_passages,
-)
+from run.data._loader.data_structures import Passage, Session, Speaker, UnprocessedPassage
+from run.data._loader.utils import conventional_dataset_loader, make_passages
 
 logger = logging.getLogger(__name__)
 Dataset = typing.NewType("Dataset", str)
@@ -99,7 +94,7 @@ def m_ailabs_en_uk_elizabeth_klett_speech_dataset(*args, books=ELIZABETH_KLETT_B
 
 def m_ailabs_en_us_speech_dataset(
     directory,
-    url="http://www.caito.de/data/Training/stt_tts/en_US.tgz",
+    url="https://data.solak.de/data/Training/stt_tts/en_US.tgz",
     extracted_name=str(US_DATASET),
     books=US_BOOKS,
     check_files=["en_US/by_book/info.txt"],
@@ -118,7 +113,7 @@ def m_ailabs_en_us_speech_dataset(
 
 def m_ailabs_en_uk_speech_dataset(
     directory,
-    url="http://www.caito.de/data/Training/stt_tts/en_UK.tgz",
+    url="https://data.solak.de/data/Training/stt_tts/en_UK.tgz",
     extracted_name=str(UK_DATASET),
     books=UK_BOOKS,
     check_files=["en_UK/by_book/info.txt"],
@@ -148,6 +143,14 @@ def _metadata_path_to_book(metadata_path: Path, root: Path) -> Book:
     return Book(Dataset(root.name), speaker, book_title)
 
 
+def _get_session(passage: UnprocessedPassage) -> Session:
+    """For the M-AILABS speech dataset, we define each chapter as an individual recording
+    session."""
+    chapter = passage.audio_path.stem.rsplit("_", 1)[0]
+    label = f"{passage.audio_path.parent.parent.name}/{passage.audio_path.parent.name}/{chapter}"
+    return Session(label)
+
+
 def _m_ailabs_speech_dataset(
     directory: Path,
     extracted_name: str,
@@ -157,10 +160,11 @@ def _m_ailabs_speech_dataset(
     root_directory_name: str = "M-AILABS",
     metadata_pattern: str = "**/metadata.csv",
     add_tqdm: bool = False,
+    get_session: typing.Callable[[UnprocessedPassage], Session] = _get_session,
 ) -> typing.List[Passage]:
     """Download, extract, and process a M-AILABS dataset.
 
-    NOTE: The original URL is `http://www.caito.de/2019/01/the-m-ailabs-speech-dataset/`. Use
+    NOTE: The original URL is `https://data.solak.de/2019/01/the-m-ailabs-speech-dataset/`. Use
     `curl -I <URL>` to find the redirected URL.
 
     Args:
@@ -172,6 +176,7 @@ def _m_ailabs_speech_dataset(
         root_directory_name: Name of the dataset directory.
         metadata_pattern: Pattern for all `metadata.csv` files containing (filename, text)
             information.
+        get_session
         add_tqdm
     """
     name = f"{root_directory_name} {extracted_name}"
@@ -192,4 +197,4 @@ def _m_ailabs_speech_dataset(
             metadata_path.parent, book.speaker, additional_metadata={"book": book}
         )
         passages.append(loaded)
-    return list(make_passages(name, passages, add_tqdm=add_tqdm))
+    return list(make_passages(name, passages, add_tqdm, get_session))

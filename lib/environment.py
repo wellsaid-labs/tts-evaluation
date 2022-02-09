@@ -158,9 +158,13 @@ def set_basic_logging_config(id_: int = os.getpid(), reset=False, level=logging.
     `sys.stdout` and `sys.stderr`, set a formatter, and
     add the handler to the root logger.
 
+    TODO: For CLIs, it'd be more helpful to write all log messages to `sys.stderr`, so that the
+    CLI output is written to `sys.stdout`. Should we support that?
+
     Args:
         id_: An id to be printed along with all logs.
         reset: Reset root logger handlers.
+        level: The logging level of the root logger.
     """
     root = logging.getLogger()
 
@@ -202,7 +206,7 @@ def assert_enough_disk_space(min_space):
 
 
 def check_module_versions(requirements_path: Path = ROOT_PATH / "requirements.txt"):
-    """ Check if installed module versions respect `requirements.txt` specifications. """
+    """Check if installed module versions respect `requirements.txt` specifications."""
     freeze = subprocess.check_output([sys.executable, "-m", "pip", "freeze"])
     split = freeze.decode("utf-8").split()
     for line in requirements_path.read_text().split():
@@ -222,7 +226,7 @@ def check_module_versions(requirements_path: Path = ROOT_PATH / "requirements.tx
 
 
 def set_seed(seed: int):
-    """ Set package random generator seed(s). """
+    """Set package random generator seed(s)."""
     logger.info("Setting seed to be %d", seed)
     torchnlp.random.set_seed(seed)
 
@@ -283,7 +287,7 @@ def _duplicate_stream(from_: typing.TextIO, to: Path) -> typing.Callable[[], Non
     os.dup2(tee.stdin.fileno(), from_.fileno())
 
     def _clean_up():
-        """ Clean up called during exit or by user. """
+        """Clean up called during exit or by user."""
         # (High Level) Ensure ``from_`` flushes before tee is closed
         from_.flush()
 
@@ -298,7 +302,7 @@ def _duplicate_stream(from_: typing.TextIO, to: Path) -> typing.Callable[[], Non
         os.close(original_fileno)
 
     def stop():
-        """ Stop duplication early before the program exits. """
+        """Stop duplication early before the program exits."""
         atexit.unregister(_clean_up)
         _clean_up()
 
@@ -328,7 +332,7 @@ class RecordStandardStreams:
         assert not (directory / log_filename).exists(), "Cannot overwrite existing file."
 
     def _start(self) -> RecordStandardStreams:
-        """ Start recording `sys.stdout` and `sys.stderr`. """
+        """Start recording `sys.stdout` and `sys.stderr`."""
         self.stop_stream_stdout = _duplicate_stream(sys.stdout, self.log_path)
         self.stop_stream_stderr = _duplicate_stream(sys.stderr, self.log_path)
         return self
@@ -366,7 +370,7 @@ class RecordStandardStreams:
 PT_EXTENSION = ".pt"
 
 
-def save(path: Path, data: typing.Any, overwrite: bool = False):
+def save(path: Path, data: typing.Any, overwrite: bool = False, min_space: float = 0.01):
     """Use `torch.save` to save an object to `path`.
 
     Raises:
@@ -376,10 +380,13 @@ def save(path: Path, data: typing.Any, overwrite: bool = False):
         path: File path to save to.
         data: Data to save.
         overwrite: If `True` this allows for `path` to be overwritten.
+        min_space: The minimum required space before writing a file.
     """
     assert path.suffix == PT_EXTENSION
     if not overwrite and path.exists():
         raise ValueError("File already exists (%s).", path)
+    # TODO: Ensure that the next `torch.save` doesn't go below the `min_space`.
+    assert_enough_disk_space(min_space=min_space)
     torch.save(data, str(path))
     logger.info("Saved: %s", str(path))
 
@@ -414,6 +421,7 @@ def load_most_recent_file(
 
     Args:
         pattern: Pattern to search for files.
+        read: Callable for loading a file given a `Path`.
 
     Returns:
         The most recent non-corrupted file that is found based on modification time.
@@ -501,7 +509,7 @@ def get_tracked_changes() -> str:
 
 
 def has_tracked_changes() -> bool:
-    """ Return `True` if there are active tracked changes by `git` in the working area. """
+    """Return `True` if there are active tracked changes by `git` in the working area."""
     return len(get_tracked_changes()) > 0
 
 
@@ -521,7 +529,7 @@ def get_cuda_gpus() -> str:
 
 
 def get_num_cuda_gpus() -> int:
-    """ Get the number of Nvidia CUDA enabled GPUs. """
+    """Get the number of Nvidia CUDA enabled GPUs."""
     if torch.cuda.is_available():
         return torch.cuda.device_count()
     return 0

@@ -21,6 +21,9 @@ lib.environment.set_basic_logging_config()
 @pytest.fixture(autouse=True)
 def run_before_test():
     set_lazy_resolution(True)  # NOTE: This improves performance for `hparams`.
+    # NOTE: `get_signal_to_db_mel_spectrogram` doesn't consider `hparams` in the cache key, so,
+    # if the hyperparameters change, then the cache needs to be invalidated.
+    lib.audio.get_signal_to_db_mel_spectrogram.cache_clear()
     with warnings.catch_warnings():
         warnings.filterwarnings(
             "ignore",

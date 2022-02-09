@@ -1,4 +1,5 @@
 import contextlib
+import copy
 import dataclasses
 import logging
 import math
@@ -42,6 +43,7 @@ from run.train._utils import (
     save_checkpoint,
     set_context,
     set_epoch,
+    set_train_mode,
 )
 from run.train.signal_model._data import Batch, DataProcessor
 from run.train.signal_model._metrics import Metrics, MetricsValues
@@ -63,6 +65,52 @@ class Checkpoint(_utils.Checkpoint):
     discrim_optimizers: typing.List[torch.optim.Adam]
     spectrogram_model_checkpoint_path: pathlib.Path
 
+    def check_invariants(self):
+        """Check datastructure invariants.
+
+        TODO: Check that there are no non-leaf nodes in the model, so that it can be copied. Learn
+        more:
+        https://github.com/pytorch/pytorch/issues/28594
+        """
+        assert len(self.discrims) == len(self.discrim_optimizers)
+        assert self.scheduler._step_count == self.step + 1
+        assert self.scheduler.last_epoch == self.step
+        assert self.scheduler.optimizer == self.optimizer
+        assert self.ema.step == self.step + 1
+        ptrs = set(p.data_ptr() for p in self.model.parameters() if p.requires_grad)
+        assert len(self.optimizer.param_groups) == 1
+        assert set(p.data_ptr() for p in self.optimizer.param_groups[0]["params"]) == ptrs
+        assert self.scheduler.get_last_lr() == [self.optimizer.param_groups[0]["lr"]]
+        assert set(p.data_ptr() for p in self.clipper.parameters) == ptrs
+        assert set(p.data_ptr() for p in self.ema.parameters) == ptrs
+        for discrim, discrim_optimizer in zip(self.discrims, self.discrim_optimizers):
+            ptrs = set(p.data_ptr() for p in discrim.parameters() if p.requires_grad)
+            assert len(discrim_optimizer.param_groups) == 1
+            assert set(p.data_ptr() for p in discrim_optimizer.param_groups[0]["params"]) == ptrs
+            assert discrim.training
+            assert all([p.grad is None for p in discrim.parameters()])
+        assert self.ema.backup == []  # NOTE: Ensure EMA hasn't been applied.
+        assert self.model.training  # NOTE: Ensure `model` is in training mode.
+        # NOTE: Ensure there are no gradients.
+        assert all([p.grad is None for p in self.model.parameters()])
+
+    def __post_init__(self):
+        self.check_invariants()
+
+    def export(self) -> lib.signal_model.SignalModel:
+        """Export inference ready `InputEncoder` and `SpectrogramModel` without needing additional
+        context managers."""
+        self.check_invariants()
+        self.model.grad_enabled = None  # NOTE: For backwards compatibility
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(set_train_mode(self.model, False, self.ema))
+            self.model.del_weight_norm_temp_tensor_()
+            model = copy.deepcopy(self.model)
+            model.set_grad_enabled(False)
+            model.remove_weight_norm_()
+        self.check_invariants()
+        return model
+
 
 @dataclasses.dataclass(frozen=True)
 class _State:
@@ -74,38 +122,35 @@ class _State:
     signal_to_spectrogram_modules: typing.List[SignalTodBMelSpectrogram]
     discrims: typing.List[DistributedDataParallel]
     discrim_optimizers: typing.List[torch.optim.Adam]
-    spectrogram_model_checkpoint: spectrogram_model._worker.Checkpoint
+    spectrogram_model_input_encoder: spectrogram_model._worker.InputEncoder
+    # NOTE: An additional underscore was added because Pylance had issues with the former naming.
+    spectrogram_model_: lib.spectrogram_model.SpectrogramModel
     spectrogram_model_checkpoint_path: pathlib.Path
     comet: CometMLExperiment
     device: torch.device
     step: torch.Tensor = torch.tensor(0, dtype=torch.long)
 
     def __post_init__(self):
-        """ Check datastructure invariants. """
-        assert len(self.discrims) == len(self.discrim_optimizers)
-        assert len(self.discrims) == len(self.signal_to_spectrogram_modules)
-        assert self.scheduler._step_count == self.step.item() + 1
-        assert self.scheduler.last_epoch == self.step.item()
-        assert self.scheduler.optimizer == self.optimizer
-        assert self.ema.step == self.step.item() + 1
+        """Check datastructure invariants."""
         ptrs = set(p.data_ptr() for p in self.model.parameters() if p.requires_grad)
         assert set(p.data_ptr() for p in self.model.module.parameters() if p.requires_grad) == ptrs
-        assert len(self.optimizer.param_groups) == 1
-        assert set(p.data_ptr() for p in self.optimizer.param_groups[0]["params"]) == ptrs
-        assert set(p.data_ptr() for p in self.clipper.parameters) == ptrs
-        assert set(p.data_ptr() for p in self.ema.parameters) == ptrs
-        for discrim, discrim_optimizer in zip(self.discrims, self.discrim_optimizers):
+        assert self.model.training
+        for discrim in self.discrims:
             ptrs = set(p.data_ptr() for p in discrim.parameters() if p.requires_grad)
             assert set(p.data_ptr() for p in discrim.module.parameters() if p.requires_grad) == ptrs
-            assert len(discrim_optimizer.param_groups) == 1
-            assert set(p.data_ptr() for p in discrim_optimizer.param_groups[0]["params"]) == ptrs
+            assert discrim.training
+        assert len(self.discrims) == len(self.signal_to_spectrogram_modules)
+        self.to_checkpoint().check_invariants()
 
     @staticmethod
     def _get_model(
+        input_encoder: spectrogram_model._data.InputEncoder,
         device: torch.device,
         comet: CometMLExperiment,
     ) -> SignalModel:
-        model = SignalModel().to(device, non_blocking=True)
+        num_speakers = input_encoder.speaker_encoder.vocab_size
+        num_sessions = input_encoder.session_encoder.vocab_size
+        model = SignalModel(num_speakers, num_sessions).to(device, non_blocking=True)
         comet.set_model_graph(str(model))
         label = get_model_label("num_parameters", Cadence.STATIC)
         comet.log_parameter(label, get_total_parameters(model))
@@ -155,9 +200,16 @@ class _State:
     @staticmethod
     @configurable
     def _get_discrims(
-        device: torch.device, args: typing.List[typing.Tuple[int, int]] = HParam()
+        input_encoder: spectrogram_model._data.InputEncoder,
+        device: torch.device,
+        args: typing.List[typing.Tuple[int, int]] = HParam(),
     ) -> typing.List[SpectrogramDiscriminator]:
-        return [SpectrogramDiscriminator(*a).to(device, non_blocking=True) for a in args]
+        num_speakers = input_encoder.speaker_encoder.vocab_size
+        num_sessions = input_encoder.session_encoder.vocab_size
+        return [
+            SpectrogramDiscriminator(*a, num_speakers, num_sessions).to(device, non_blocking=True)
+            for a in args
+        ]
 
     @staticmethod
     @configurable
@@ -169,10 +221,12 @@ class _State:
         return [optimizer(filter(is_include, d.parameters())) for d in discrims]
 
     def to_checkpoint(self):
-        """ Create a checkpoint to save the signal model training state. """
+        """Create a checkpoint to save the signal model training state."""
+        model = typing.cast(SignalModel, self.model.module)
+        model.del_weight_norm_temp_tensor_()
         return Checkpoint(
             comet_experiment_key=self.comet.get_key(),
-            model=typing.cast(SignalModel, self.model.module),
+            model=model,
             optimizer=self.optimizer,
             clipper=self.clipper,
             ema=self.ema,
@@ -190,13 +244,15 @@ class _State:
     @staticmethod
     def load_spectrogram_model(
         comet: CometMLExperiment, spectrogram_model_checkpoint_path: pathlib.Path
-    ) -> spectrogram_model._worker.Checkpoint:
+    ) -> typing.Tuple[
+        spectrogram_model._worker.InputEncoder, lib.spectrogram_model.SpectrogramModel
+    ]:
         checkpoint = lib.environment.load(spectrogram_model_checkpoint_path)
         comet.log_other(
             get_config_label("spectrogram_model_experiment_key"),
             checkpoint.comet_experiment_key,
         )
-        return checkpoint
+        return checkpoint.export()
 
     @classmethod
     def from_checkpoint(
@@ -210,7 +266,11 @@ class _State:
         NOTE: `dataclasses.astuple` isn't compatible with PyTorch, learn more:
         https://github.com/pytorch/pytorch/issues/52127
         """
+        checkpoint.model.grad_enabled = None  # NOTE: For backwards compatibility
         discrims = [DistributedDataParallel(d, [device], device) for d in checkpoint.discrims]
+        input_encoder, spectrogram_model = cls.load_spectrogram_model(
+            comet, checkpoint.spectrogram_model_checkpoint_path
+        )
         return cls(
             DistributedDataParallel(checkpoint.model, [device], device),
             checkpoint.optimizer,
@@ -220,7 +280,8 @@ class _State:
             cls._get_signal_to_spectrogram_modules(device),
             discrims,
             checkpoint.discrim_optimizers,
-            cls.load_spectrogram_model(comet, checkpoint.spectrogram_model_checkpoint_path),
+            input_encoder,
+            spectrogram_model,
             checkpoint.spectrogram_model_checkpoint_path,
             comet,
             device,
@@ -236,15 +297,19 @@ class _State:
     ):
         """Initialize signal model training state."""
         distribute = partial(DistributedDataParallel, device_ids=[device], output_device=device)
-        model = distribute(cls._get_model(device, comet))
-        discrims = [distribute(d) for d in cls._get_discrims(device)]
+        input_encoder, spectrogram_model = cls.load_spectrogram_model(
+            comet, spectrogram_model_checkpoint_path
+        )
+        model = distribute(cls._get_model(input_encoder, device, comet))
+        discrims = [distribute(d) for d in cls._get_discrims(input_encoder, device)]
         return cls(
             model,
             *cls._get_optimizers(model),
             cls._get_signal_to_spectrogram_modules(device),
             discrims,
             cls._get_discrim_optimizers(discrims),
-            cls.load_spectrogram_model(comet, spectrogram_model_checkpoint_path),
+            input_encoder,
+            spectrogram_model,
             spectrogram_model_checkpoint_path,
             comet,
             device,
@@ -281,11 +346,15 @@ def _get_data_loaders(
     num_workers: int = HParam(),
     prefetch_factor: int = HParam(),
 ) -> typing.Tuple[DataLoader[Batch], DataLoader[Batch]]:
-    """ Initialize training and development data loaders.  """
+    """Initialize training and development data loaders."""
     model = state.model.module if isinstance(state.model, DistributedDataParallel) else state.model
     padding = typing.cast(int, model.padding)
-    checkpoint = state.spectrogram_model_checkpoint
-    processor = partial(DataProcessor, slice_padding=padding, checkpoint=checkpoint)
+    processor = partial(
+        DataProcessor,
+        slice_padding=padding,
+        spectrogram_model_input_encoder=state.spectrogram_model_input_encoder,
+        spectrogram_model=state.spectrogram_model_,
+    )
     train = processor(train_dataset, train_slice_size, train_batch_size, train_span_bucket_size)
     dev = processor(dev_dataset, dev_slice_size, dev_batch_size, dev_span_bucket_size)
     kwargs = dict(
@@ -355,7 +424,10 @@ def _run_discriminator(
     db_mel = torch.cat([real_specs.db_mel, fake_specs.db_mel.detach()])
     db = torch.cat([real_specs.db, fake_specs.db.detach()])
     amp = torch.cat([real_specs.amp, fake_specs.amp.detach()])
-    predictions = typing.cast(torch.Tensor, discriminator(amp, db, db_mel))
+    speaker = torch.cat([args.batch.speaker, args.batch.speaker])
+    session = torch.cat([args.batch.session, args.batch.session])
+    predictions = discriminator(amp, db, db_mel, speaker, session)
+    predictions = typing.cast(torch.Tensor, predictions)
     discriminator_loss = binary_cross_entropy_with_logits(predictions, labels, reduction="none")
     get_discrim_values = partial(
         args.metrics.get_discrim_values,
@@ -369,13 +441,20 @@ def _run_discriminator(
 
     if discriminator.training:
         args.timer.record_event(args.timer.MODEL_BACKWARD)
-        discriminator.zero_grad(set_to_none=True)
+        assert all([p.grad is None for p in discriminator_optimizer.param_groups[0]["params"]])
         discriminator_loss.mean().backward()
         discriminator_optimizer.step()
+        discriminator.zero_grad(set_to_none=True)
 
     args.timer.record_event(args.timer.MODEL_FORWARD)
     # NOTE: Use real labels instead of fake to flip the gradient for the generator.
-    predictions = discriminator(fake_specs.amp, fake_specs.db, fake_specs.db_mel)
+    predictions = discriminator(
+        fake_specs.amp,
+        fake_specs.db,
+        fake_specs.db_mel,
+        args.batch.speaker,
+        args.batch.session,
+    )
     predictions = typing.cast(torch.Tensor, predictions)
     generator_loss = binary_cross_entropy_with_logits(predictions, real_labels, reduction="none")
     get_discrim_values = partial(
@@ -386,6 +465,15 @@ def _run_discriminator(
     return generator_loss, get_discrim_values
 
 
+def _random_volume(
+    signal: torch.Tensor, target_signal: torch.Tensor
+) -> typing.Tuple[torch.Tensor, torch.Tensor]:
+    """Randomly adjust the volume level for `target_signal` and `signal`."""
+    peek = torch.max(torch.max(signal.abs()), torch.max(target_signal.abs()))
+    volume = torch.zeros(1, device=signal.device).uniform_(0.0, 1.0 / float(peek.item()))
+    return (signal * volume, target_signal * volume)
+
+
 def _run_step(args: _HandleBatchArgs):
     """Run the `model` on the next batch from `data_loader`, and maybe update it.
 
@@ -394,39 +482,46 @@ def _run_step(args: _HandleBatchArgs):
 
     TODO: For the target signal, the `signal_to_spec` can be computed during data processing.
 
-    TODO: Parallelize loop with multiple independent discriminators.
+    TODO: Parallelize loop with multiple independent discriminators. Or, we could batch together
+    the multiple resolutions via padding or proportional frame hop. And, we'd could use grouped
+    convolutions, in order, to process the spectrograms seperately.
     """
     args.timer.record_event(args.timer.MODEL_FORWARD)
     signal = args.state.model(
         spectrogram=args.batch.spectrogram.tensor,
+        speaker=args.batch.speaker,
+        session=args.batch.session,
         spectrogram_mask=args.batch.spectrogram_mask.tensor,
         pad_input=False,
     )
     signal = typing.cast(torch.Tensor, signal)
+    signal, target_signal = _random_volume(signal, args.batch.target_signal.tensor)
 
     loss = torch.tensor(0.0, device=signal.device)
     get_values = []
     for i, signal_to_spectrogram in enumerate(args.state.signal_to_spectrogram_modules):
         pred_specs = signal_to_spectrogram(signal, intermediate=True)
-        gold_specs = signal_to_spectrogram(args.batch.target_signal.tensor, intermediate=True)
+        gold_specs = signal_to_spectrogram(target_signal, intermediate=True)
         generator_loss, get_discrim_values = _run_discriminator(args, i, pred_specs, gold_specs)
-        l1_loss_ = l1_loss(pred_specs.db_mel, gold_specs.db_mel, reduction="none").mean(dim=1)
-        mse_loss_ = mse_loss(pred_specs.db_mel, gold_specs.db_mel, reduction="none").mean(dim=1)
-        loss += l1_loss_.mean() + mse_loss_.mean() + generator_loss.mean()
+        l1 = l1_loss(pred_specs.db_mel, gold_specs.db_mel, reduction="none").mean(dim=[1, 2])
+        mse = mse_loss(pred_specs.db_mel, gold_specs.db_mel, reduction="none").mean(dim=[1, 2])
+        loss += l1.mean() + mse.mean() + generator_loss.mean()
 
         fft_length = signal_to_spectrogram.fft_length
         get_model_values = args.metrics.get_model_values
-        get_values.append(partial(get_model_values, fft_length, args.batch, l1_loss_, mse_loss_))
+        get_values.append(partial(get_model_values, fft_length, args.batch, l1, mse))
         get_values.append(get_discrim_values)
 
     if args.state.model.training:
-        args.state.model.zero_grad(set_to_none=True)
         args.timer.record_event(args.timer.MODEL_BACKWARD)
+        params = args.state.optimizer.param_groups[0]["params"]
+        discrim_optimizers = args.state.discrim_optimizers
+        discrim_params = [p for o in discrim_optimizers for p in o.param_groups[0]["params"]]
+        assert all([p.grad is None for s in (params, discrim_params) for p in s])
         (loss / len(args.state.signal_to_spectrogram_modules)).backward()
 
         args.timer.record_event(args.timer.MODEL_STEP)
         # NOTE: `optimizer` will not error if there are no gradients so we check beforehand.
-        params = args.state.optimizer.param_groups[0]["params"]
         assert all([p.grad is not None for p in params]), "`None` gradients found."
         # NOTE: Measure the "grad_norm" before `state.step_()`.
         norm_inf = get_parameter_norm(params, math.inf) if is_master() else torch.tensor(math.nan)
@@ -438,6 +533,8 @@ def _run_step(args: _HandleBatchArgs):
         args.state.scheduler.step()
         args.state.step.add_(1)
         args.state.comet.set_step(typing.cast(int, args.state.step.item()))
+        args.state.model.zero_grad(set_to_none=True)
+        [discrim.zero_grad(set_to_none=True) for discrim in args.state.discrims]
 
         args.timer.record_event(args.timer.LOG_METRICS)
         norm_inf_ = float(norm_inf.item())
@@ -481,7 +578,11 @@ def _visualize_inferred(
     item = random.randint(0, len(batch.batch) - 1)
     length = batch.batch.predicted_spectrogram.lengths[:, item]
     spectrogram = batch.batch.predicted_spectrogram.tensor[:length, item].to(state.device)
-    predicted = list(generate_waveform(state.model.module, spectrogram.split(split_size)))
+    speaker = batch.batch.encoded_speaker.tensor[:, item].to(state.device)
+    session = batch.batch.encoded_session.tensor[:, item].to(state.device)
+    splits = spectrogram.split(split_size)
+    predicted = generate_waveform(state.model.module, splits, speaker, session)
+    predicted = list(predicted)
     predicted = typing.cast(torch.Tensor, torch.cat(predicted, dim=-1))
     target = batch.batch.audio[item]
     state.comet.log_html_audio(
@@ -506,15 +607,18 @@ def _visualize_inferred_end_to_end(
     batch = typing.cast(Batch, next(iter(data_loader)))
     item = random.randint(0, len(batch.batch) - 1)
     num_tokens = batch.batch.encoded_phonemes.lengths[:, item]
-    spectrogram_model = state.spectrogram_model_checkpoint.model
-    spectrogram_model = spectrogram_model.train(False)
-    predicted_spectrogram, predicted_stop_token, predicted_alignments, _, _ = spectrogram_model(
+    params = lib.spectrogram_model.Params(
         tokens=batch.batch.encoded_phonemes.tensor[:num_tokens, item],
         speaker=batch.batch.encoded_speaker.tensor[:, item],
-        mode=lib.spectrogram_model.Mode.INFER,
+        session=batch.batch.encoded_session.tensor[:, item],
     )
-    splits = predicted_spectrogram.to(state.device).split(split_size)
-    predicted = list(generate_waveform(state.model.module, splits))
+    # NOTE: The `spectrogram_model` runs on CPU to conserve GPU memory.
+    preds = state.spectrogram_model_(params=params, mode=lib.spectrogram_model.Mode.INFER)
+    preds = typing.cast(lib.spectrogram_model.Infer, preds)
+    splits = preds.frames.to(state.device).split(split_size)
+    speaker = batch.batch.encoded_speaker.tensor[:, item].to(state.device)
+    session = batch.batch.encoded_session.tensor[:, item].to(state.device)
+    predicted = list(generate_waveform(state.model.module, splits, speaker, session))
     predicted = typing.cast(torch.Tensor, torch.cat(predicted, dim=-1))
     target = batch.batch.audio[item]
     model_label_ = partial(get_model_label, cadence=Cadence.STEP)
@@ -523,13 +627,13 @@ def _visualize_inferred_end_to_end(
     gold_spectrogram = batch.batch.spectrogram.tensor[:num_frames, item]
     figures = {
         dataset_label_("gold_spectrogram"): plot_mel_spectrogram(gold_spectrogram),
-        model_label_("predicted_spectrogram"): plot_mel_spectrogram(predicted_spectrogram),
-        model_label_("alignment"): lib.visualize.plot_alignments(predicted_alignments),
-        model_label_("stop_token"): lib.visualize.plot_logits(predicted_stop_token),
+        model_label_("predicted_spectrogram"): plot_mel_spectrogram(preds.frames),
+        model_label_("alignment"): lib.visualize.plot_alignments(preds.alignments),
+        model_label_("stop_token"): lib.visualize.plot_logits(preds.stop_tokens),
     }
     state.comet.log_figures(figures)
     audio = {
-        "predicted_griffin_lim_audio": lib.audio.griffin_lim(predicted_spectrogram.numpy()),
+        "predicted_griffin_lim_audio": lib.audio.griffin_lim(preds.frames.numpy()),
         "gold_griffin_lim_audio": lib.audio.griffin_lim(gold_spectrogram.numpy()),
         "predicted_signal_model_audio": predicted.cpu().numpy(),
         "gold_audio": target.numpy(),
@@ -556,12 +660,10 @@ def _run_steps(
     """Run the `handle_batch` in a loop over `data_loader` batches."""
     make_args = partial(_HandleBatchArgs, state, data_loader, context, dataset_type)
     with contextlib.ExitStack() as stack:
-        stack.enter_context(set_context(context, state.comet, *state.models))
+        stack.enter_context(set_context(context, state.comet, *state.models, ema=state.ema))
         stack.enter_context(set_epoch(state.comet, step=state.step.item(), **kwargs))
-        stack.enter_context(contextlib.nullcontext() if context == Context.TRAIN else state.ema)
 
-        speakers = state.spectrogram_model_checkpoint.input_encoder.speaker_encoder.vocab
-        metrics = Metrics(state.comet, speakers)
+        metrics = Metrics(state.comet, state.spectrogram_model_input_encoder.speaker_encoder.vocab)
         timer = Timer().record_event(Timer.LOAD_DATA)
         iterator = iter(data_loader)
         while True:
@@ -606,16 +708,15 @@ def run_worker(
         (Context.TRAIN, DatasetType.TRAIN, train_loader, _run_step),
         (Context.EVALUATE, DatasetType.DEV, dev_loader, _run_step),
     ]
+    save_checkpoint(state.to_checkpoint(), checkpoints_directory, f"step_{state.step.item()}")
     while True:
         steps_per_epoch = train_loader.num_steps_per_epoch
         [_run_steps(state, *args, steps_per_epoch=steps_per_epoch) for args in contexts]
 
-        with set_context(Context.EVALUATE_INFERENCE, state.comet, *state.models):
-            with state.ema:
-                _visualize_inferred(state, dev_loader, DatasetType.DEV)
+        with set_context(Context.EVALUATE_INFERENCE, state.comet, *state.models, ema=state.ema):
+            _visualize_inferred(state, dev_loader, DatasetType.DEV)
 
-        with set_context(Context.EVALUATE_END_TO_END, state.comet, *state.models):
-            with state.ema:
-                _visualize_inferred_end_to_end(state, dev_loader, DatasetType.DEV)
+        with set_context(Context.EVALUATE_END_TO_END, state.comet, *state.models, ema=state.ema):
+            _visualize_inferred_end_to_end(state, dev_loader, DatasetType.DEV)
 
         save_checkpoint(state.to_checkpoint(), checkpoints_directory, f"step_{state.step.item()}")

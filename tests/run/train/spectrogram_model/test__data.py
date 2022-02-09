@@ -12,35 +12,46 @@ from torchnlp.encoders.text import SequenceBatch
 
 import lib
 import run
-from run.data._loader import Alignment
+from run.data._loader import Alignment, Session
 from run.train.spectrogram_model import _data
 from tests._utils import assert_almost_equal, assert_uniform_distribution
 
 
 @pytest.fixture(autouse=True)
 def run_around_tests():
-    """ Set a basic configuration. """
+    """Set a basic configuration."""
     run._config.configure()
     yield
     hparams.clear_config()
 
 
 def test_input_encoder():
-    """ Test `_data.InputEncoder` handles a basic case. """
-    graphemes = ["abc", "def"]
+    """Test `_data.InputEncoder` handles a basic case."""
+    graphemes = ["aBc", "deF"]
     phonemes = ["ˈ|eɪ|b|ˌ|iː|s|ˈ|iː|", "d|ˈ|ɛ|f"]
     phoneme_separator = "|"
     speakers = [run.data._loader.MARK_ATHERLAY, run.data._loader.MARY_ANN]
-    encoder = _data.InputEncoder(graphemes, phonemes, speakers, phoneme_separator)
-    input_ = _data.DecodedInput("a", "ˈ|eɪ", run.data._loader.MARK_ATHERLAY)
+    sessions = [
+        (run.data._loader.MARK_ATHERLAY, Session("mark")),
+        (run.data._loader.MARY_ANN, Session("mary")),
+    ]
+    encoder = _data.InputEncoder(graphemes, phonemes, speakers, sessions, phoneme_separator)
+    input_ = _data.DecodedInput("a", "ˈ|eɪ", run.data._loader.MARK_ATHERLAY, sessions[0])
+
     assert encoder._get_case("A") == encoder._CASE_LABELS[0]
     assert encoder._get_case("a") == encoder._CASE_LABELS[1]
     assert encoder._get_case("1") == encoder._CASE_LABELS[2]
     encoded = encoder.encode(input_)
-    assert torch.equal(encoded[0], torch.tensor([5]))
-    assert torch.equal(encoded[1], torch.tensor([1]))
-    assert torch.equal(encoded[2], torch.tensor([5, 6]))
-    assert torch.equal(encoded[3], torch.tensor([0]))
+
+    assert torch.equal(encoded.graphemes, torch.tensor([5]))
+    assert torch.equal(encoded.letter_cases, torch.tensor([1]))
+    assert torch.equal(encoded.phonemes, torch.tensor([5, 6]))
+    assert torch.equal(encoded.speaker, torch.tensor([0]))
+    assert torch.equal(encoded.session, torch.tensor([0]))
+    assert encoder.decode(encoded) == input_
+
+    input_ = _data.DecodedInput("B", "|b|ˌ|iː", run.data._loader.MARK_ATHERLAY, sessions[0])
+    encoded = encoder.encode(input_)
     assert encoder.decode(encoded) == input_
 
 
@@ -59,13 +70,13 @@ def test__random_nonoverlapping_alignments():
 
 
 def test__random_nonoverlapping_alignments__empty():
-    """Test `_data._random_nonoverlapping_alignments` handles empty list. """
+    """Test `_data._random_nonoverlapping_alignments` handles empty list."""
     input_ = Alignment.stow([])
     assert _data._random_nonoverlapping_alignments(input_, 3) == tuple()
 
 
 def test__random_nonoverlapping_alignments__large_max():
-    """Test `_data._random_nonoverlapping_alignments` handles a large maximum. """
+    """Test `_data._random_nonoverlapping_alignments` handles a large maximum."""
     make = lambda a, b: Alignment((a, b), (a, b), (a, b))
     with torchnlp.random.fork_rng(1234):
         alignments = Alignment.stow(
@@ -75,7 +86,7 @@ def test__random_nonoverlapping_alignments__large_max():
 
 
 def test__get_loudness():
-    """Test `_data._get_loudnes` slices, measures, and rounds loudness correctly. """
+    """Test `_data._get_loudnes` slices, measures, and rounds loudness correctly."""
     sample_rate = 1000
     length = 10
     implementation = "K-weighting"
@@ -101,7 +112,7 @@ def test__get_loudness():
 
 
 def test__get_char_to_word():
-    """Test `_data._get_char_to_word` maps characters to words correctly. """
+    """Test `_data._get_char_to_word` maps characters to words correctly."""
     nlp = lib.text.load_en_english()
     doc = nlp("It was time to present the present abcdefghi.")
     char_to_word = _data._get_char_to_word(doc)
@@ -111,7 +122,7 @@ def test__get_char_to_word():
 
 
 def test__get_word_vectors():
-    """Test `_data._get_word_vectors` maps word vectors onto characters. """
+    """Test `_data._get_word_vectors` maps word vectors onto characters."""
     text = "It was time to present the present abcdefghi."
     doc = lib.text.load_en_core_web_md()(text)
     char_to_word = _data._get_char_to_word(doc)
@@ -131,7 +142,7 @@ def test__get_word_vectors():
 
 
 def test__signals_to_spectrograms():
-    """ Test `_data._signals_to_spectrograms` is invariant to the batch size. """
+    """Test `_data._signals_to_spectrograms` is invariant to the batch size."""
     fft_length = 2048
     hop_length = fft_length // 4
     window = torch.from_numpy(librosa.filters.get_window("hann", fft_length)).float()
@@ -161,7 +172,7 @@ def test__get_normalized_half_gaussian():
 
 
 def test__make_stop_token():
-    """ Test `_data._make_stop_token` makes a batched stop token. """
+    """Test `_data._make_stop_token` makes a batched stop token."""
     spectrogram = SequenceBatch(torch.ones(8, 4, 16), torch.tensor([2, 4, 6, 8]).unsqueeze(0))
     stop_token = _data._make_stop_token(spectrogram, 6, 2)
     assert_almost_equal(stop_token.lengths, spectrogram.lengths)

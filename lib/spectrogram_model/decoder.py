@@ -39,12 +39,14 @@ class DecoderOut(typing.NamedTuple):
             frame in logits.
         alignments (torch.FloatTensor [num_frames, batch_size, num_tokens]): Attention alignment
             between `frames` and `tokens`.
+        window_starts (torch.LongTensor [num_frames, batch_size])
         hidden_state
     """
 
     frames: torch.Tensor
     stop_tokens: torch.Tensor
     alignments: torch.Tensor
+    window_starts: torch.Tensor
     hidden_state: DecoderHiddenState
 
 
@@ -81,29 +83,18 @@ class Decoder(torch.nn.Module):
         self.speaker_embedding_size = speaker_embedding_size
         self.lstm_hidden_size = lstm_hidden_size
         self.encoder_output_size = encoder_output_size
-
-        initial_state_input_size = speaker_embedding_size + encoder_output_size
+        input_size = speaker_embedding_size + encoder_output_size
         initial_state_ouput_size = num_frame_channels + 1 + encoder_output_size
         self.initial_state = torch.nn.Sequential(
-            torch.nn.Linear(initial_state_input_size, initial_state_input_size),
+            torch.nn.Linear(input_size, input_size),
             torch.nn.ReLU(),
-            torch.nn.Linear(initial_state_input_size, initial_state_ouput_size),
+            torch.nn.Linear(input_size, initial_state_ouput_size),
         )
-
-        self.pre_net = PreNet(num_frame_channels=num_frame_channels, size=pre_net_size)
-        self.lstm_layer_one = LSTMCell(
-            input_size=pre_net_size + self.encoder_output_size + speaker_embedding_size,
-            hidden_size=lstm_hidden_size,
-        )
-        self.lstm_layer_two = LSTM(
-            input_size=lstm_hidden_size + self.encoder_output_size + speaker_embedding_size,
-            hidden_size=lstm_hidden_size,
-        )
+        self.pre_net = PreNet(num_frame_channels, speaker_embedding_size, pre_net_size)
+        self.lstm_layer_one = LSTMCell(pre_net_size + input_size, lstm_hidden_size)
+        self.lstm_layer_two = LSTM(lstm_hidden_size + input_size, lstm_hidden_size)
         self.attention = Attention(query_hidden_size=lstm_hidden_size)
-        self.linear_out = torch.nn.Linear(
-            in_features=lstm_hidden_size + self.encoder_output_size + speaker_embedding_size,
-            out_features=num_frame_channels,
-        )
+        self.linear_out = torch.nn.Linear(lstm_hidden_size + input_size, num_frame_channels)
         self.linear_stop_token = torch.nn.Sequential(
             torch.nn.Dropout(stop_net_dropout),
             torch.nn.Linear(lstm_hidden_size, 1),
@@ -116,7 +107,7 @@ class Decoder(torch.nn.Module):
 
         Args:
             tokens (torch.FloatTensor [num_tokens, batch_size, encoder_output_size])
-            speaker (torch.LongTensor [batch_size, speaker_embedding_dim])
+            speaker (torch.FloatTensor [batch_size, speaker_embedding_dim])
         """
         max_num_tokens, batch_size, _ = tokens.shape
         device = tokens.device
@@ -195,7 +186,7 @@ class Decoder(torch.nn.Module):
             tokens (torch.FloatTensor [num_tokens, batch_size, encoder_output_size])
             tokens_mask (torch.BoolTensor [batch_size, num_tokens])
             num_tokens (torch.LongTensor [batch_size])
-            speaker (torch.LongTensor [batch_size, speaker_embedding_dim])
+            speaker (torch.FloatTensor [batch_size, speaker_embedding_dim])
             target_frames (torch.FloatTensor [num_frames, batch_size, num_frame_channels],
                 optional): Ground truth frames for "teacher forcing" and loss.
             hidden_state: Hidden state from previous time steps, used to predict the next time step.
@@ -230,13 +221,14 @@ class Decoder(torch.nn.Module):
 
         # [num_frames, batch_size, num_frame_channels] →
         # [num_frames, batch_size, pre_net_hidden_size]
-        pre_net_frames = self.pre_net(frames)
+        pre_net_frames = self.pre_net(frames, speaker)
 
         # Iterate over all frames for incase teacher-forcing; in sequential prediction, iterates
         # over a single frame.
         frames_list: typing.List[torch.Tensor] = []
         attention_contexts_list: typing.List[torch.Tensor] = []
         alignments_list: typing.List[torch.Tensor] = []
+        window_start_list: typing.List[torch.Tensor] = []
         for frame in pre_net_frames.split(1, dim=0):
             frame = frame.squeeze(0)
 
@@ -267,6 +259,7 @@ class Decoder(torch.nn.Module):
             frames_list.append(frame)
             attention_contexts_list.append(last_attention_context)
             alignments_list.append(alignment)
+            window_start_list.append(attention_hidden_state.window_start)
 
             del alignment
             del frame
@@ -279,6 +272,8 @@ class Decoder(torch.nn.Module):
         frames = torch.stack(frames_list, dim=0)
         # [num_frames, batch_size, encoder_output_size]
         attention_contexts = torch.stack(attention_contexts_list, dim=0)
+        # [num_frames, batch_size]
+        window_starts = torch.stack(window_start_list, dim=0)
         del alignments_list
         del frames_list
         del attention_contexts_list
@@ -319,4 +314,4 @@ class Decoder(torch.nn.Module):
             lstm_two_hidden_state=lstm_two_hidden_state,
         )
 
-        return DecoderOut(frames, stop_token, alignments.detach(), hidden_state)
+        return DecoderOut(frames, stop_token, alignments.detach(), window_starts, hidden_state)

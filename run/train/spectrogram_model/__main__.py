@@ -2,11 +2,12 @@ import logging
 import pathlib
 import typing
 from functools import partial
+from unittest.mock import MagicMock
 
 import torch
 import torch.optim
-import typer
 from hparams import HParams, add_config, parse_hparam_args
+from third_party import LazyLoader
 
 import lib
 from run._config import (
@@ -24,11 +25,21 @@ from run.train._utils import (
     set_run_seed,
     start_experiment,
 )
-from run.train.spectrogram_model import _worker
-from run.train.spectrogram_model._metrics import Metrics
+from run.train.spectrogram_model import _metrics, _worker
+
+if typing.TYPE_CHECKING:  # pragma: no cover
+    import typer
+else:
+    typer = LazyLoader("typer", globals(), "typer")
 
 logger = logging.getLogger(__name__)
-app = typer.Typer()
+
+try:
+    app = typer.Typer()
+except (ModuleNotFoundError, NameError):
+    app = MagicMock()
+    typer = MagicMock()
+    logger.info("Ignoring optional `typer` dependency.")
 
 
 def _make_configuration(
@@ -36,15 +47,16 @@ def _make_configuration(
 ) -> typing.Dict[typing.Callable, typing.Any]:
     """Make additional configuration for spectrogram model training."""
 
-    train_size = sum([sum([p.aligned_audio_length() for p in d]) for d in train_dataset.values()])
-    dev_size = sum([sum([p.aligned_audio_length() for p in d]) for d in dev_dataset.values()])
+    train_size = sum(sum(p.segmented_audio_length() for p in d) for d in train_dataset.values())
+    dev_size = sum(sum(p.segmented_audio_length() for p in d) for d in dev_dataset.values())
     ratio = train_size / dev_size
     logger.info("The training dataset is approx %fx bigger than the development dataset.", ratio)
     train_batch_size = 28 if debug else 56
     batch_size_ratio = 4
     dev_batch_size = train_batch_size * batch_size_ratio
-    dev_steps_per_epoch = 1 if debug else 16
-    train_steps_per_epoch = 1 if debug else dev_steps_per_epoch * batch_size_ratio * round(ratio)
+    dev_steps_per_epoch = 1 if debug else 64
+    train_steps_per_epoch = int(round(dev_steps_per_epoch * batch_size_ratio * ratio))
+    train_steps_per_epoch = 1 if debug else train_steps_per_epoch
     assert train_batch_size % lib.distributed.get_device_count() == 0
     assert dev_batch_size % lib.distributed.get_device_count() == 0
 
@@ -56,7 +68,8 @@ def _make_configuration(
             ),
             # SOURCE (Tacotron 2):
             # We use the Adam optimizer [29] with β1 = 0.9, β2 = 0.999
-            optimizer=torch.optim.Adam,
+            optimizer=torch.optim.AdamW,
+            exclude_from_decay=_worker.exclude_from_decay,
         ),
         _worker._run_step: HParams(
             # NOTE: This scalar calibrates the loss so that it's scale is similar to Tacotron-2.
@@ -65,9 +78,9 @@ def _make_configuration(
             # NOTE: This value is the minimum loss the test set achieves before the model
             # starts overfitting on the train set.
             # TODO: Try increasing the stop token minimum loss because it still overfit.
-            stop_token_min_loss=0.0105,
+            stop_token_min_loss=0.027,
             # NOTE: This value is the average spectrogram length in the training dataset.
-            average_spectrogram_length=315.0,
+            average_spectrogram_length=117.5,
         ),
         _worker._get_data_loaders: HParams(
             # SOURCE: Tacotron 2
@@ -80,19 +93,24 @@ def _make_configuration(
             dev_batch_size=dev_batch_size,
             train_steps_per_epoch=train_steps_per_epoch,
             dev_steps_per_epoch=int(dev_steps_per_epoch),
+            is_train_balanced=False,
+            is_dev_balanced=True,
             num_workers=2,
             prefetch_factor=2 if debug else 10,
         ),
-        Metrics._get_model_metrics: HParams(num_frame_channels=NUM_FRAME_CHANNELS),
+        _metrics.Metrics._get_model_metrics: HParams(num_frame_channels=NUM_FRAME_CHANNELS),
+        # NOTE: Based on the alignment visualizations, if the maximum alignment is less than 30%
+        # then a misalignment has likely occured.
+        _metrics.get_num_small_max: HParams(threshold=0.3),
         # SOURCE (Tacotron 2):
         # We use the Adam optimizer with β1 = 0.9, β2 = 0.999, eps = 10−6 learning rate of 10−3
         # We also apply L2 regularization with weight 10−6
         # NOTE: No L2 regularization performed better based on Comet experiments in March 2020.
-        torch.optim.Adam.__init__: HParams(
+        torch.optim.AdamW.__init__: HParams(
             eps=10 ** -6,
-            weight_decay=0,
+            weight_decay=0.01,
             lr=10 ** -3,
-            amsgrad=True,
+            amsgrad=False,
             betas=(0.9, 0.999),
         ),
     }
@@ -149,7 +167,7 @@ def start(
     tags: typing.List[str] = typer.Option([], help="Experiment tags."),
     debug: bool = typer.Option(False, help="Turn on debugging mode."),
 ):
-    """ Start a training run in PROJECT named NAME with TAGS. """
+    """Start a training run in PROJECT named NAME with TAGS."""
     args = start_experiment(SPECTROGRAM_MODEL_EXPERIMENTS_PATH, project, name, tags, debug=debug)
     cli_config = parse_hparam_args(context.args)
     _run_app(*args, None, cli_config, debug)

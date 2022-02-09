@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 try:
     pyplot.style.use("ggplot")  # type: ignore
-except NameError:
+except (ModuleNotFoundError, NameError):
     logger.info("Ignoring optional `matplotlib` dependency.")
 
 
@@ -28,7 +28,9 @@ def _to_numpy(array: typing.Union[torch.Tensor, np.ndarray]) -> np.ndarray:
     return array.detach().cpu().numpy() if isinstance(array, torch.Tensor) else array
 
 
-def plot_alignments(alignment: typing.Union[torch.Tensor, np.ndarray]) -> matplotlib.figure.Figure:
+def plot_alignments(
+    alignment: typing.Union[torch.Tensor, np.ndarray]
+) -> "matplotlib.figure.Figure":
     """Plot an alignment of two sequences.
 
     Args:
@@ -53,7 +55,7 @@ def plot_alignments(alignment: typing.Union[torch.Tensor, np.ndarray]) -> matplo
     return figure
 
 
-def plot_logits(logits: typing.Union[torch.Tensor, np.ndarray]) -> matplotlib.figure.Figure:
+def plot_logits(logits: typing.Union[torch.Tensor, np.ndarray]) -> "matplotlib.figure.Figure":
     """Given a time-series of logits, plot a line graph.
 
     Args:
@@ -73,7 +75,7 @@ def plot_logits(logits: typing.Union[torch.Tensor, np.ndarray]) -> matplotlib.fi
 @configurable
 def plot_waveform(
     signal: typing.Union[torch.Tensor, np.ndarray], sample_rate: int = HParam()
-) -> matplotlib.figure.Figure:
+) -> "matplotlib.figure.Figure":
     """Plot the amplitude envelope of a waveform.
 
     Args:
@@ -97,7 +99,7 @@ def plot_mel_spectrogram(
     upper_hertz: typing.Optional[int] = HParam(),
     y_axis: str = "mel",
     **kwargs,
-) -> matplotlib.figure.Figure:
+) -> "matplotlib.figure.Figure":
     """Plot a mel spectrogram.
 
     Args:
@@ -122,7 +124,7 @@ def plot_spectrogram(
     x_axis: str = "time",
     fmax: typing.Optional[float] = None,
     **kwargs,
-) -> matplotlib.figure.Figure:
+) -> "matplotlib.figure.Figure":
     """Plot a spectrogram.
 
     Args:

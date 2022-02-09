@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 def _window_helper(
     length: int, dimension: int, num_dimensions: int, device: torch.device
 ) -> typing.Tuple[torch.Tensor, int]:
-    """ Helper to ensure `indices` and `dimension` are not recalculated unnecessarily. """
+    """Helper to ensure `indices` and `dimension` are not recalculated unnecessarily."""
     dimension = num_dimensions + dimension if dimension < 0 else dimension
     indices = torch.arange(0, length, device=device)
     indices_shape = [1] * dimension + [-1] + [1] * (num_dimensions - dimension - 1)
@@ -47,9 +47,8 @@ def _window(
     if check_invariants:
         assert start.min() >= 0, "The window `start` must be positive."
         assert length <= tensor.shape[dim], "The `length` is larger than the `tensor`."
-        assert (
-            start.max() + length <= tensor.shape[dim]
-        ), "The window `start` must smaller or equal to than `tensor.shape[dim] - length`."
+        message = "The window `start` must smaller or equal to than `tensor.shape[dim] - length`."
+        assert start.max() + length <= tensor.shape[dim], message
 
     indices, dim = _window_helper(length, dim, tensor.dim(), tensor.device)
     indices_shape = list(tensor.shape)
@@ -58,12 +57,17 @@ def _window(
     start = start.unsqueeze(dim)
 
     if check_invariants:
-        assert (
-            start.dim() == tensor.dim()
-        ), "The `start` tensor must be the same size as `tensor` without the `dim` dimension."
+        message = "`start` tensor must be the same size as `tensor` without the `dim` dimension."
+        assert start.dim() == tensor.dim(), message
 
     indices = indices + start
-    return torch.gather(tensor, dim, indices), indices
+    gather = torch.gather(tensor, dim, indices)
+
+    if check_invariants:
+        assert gather.shape[dim] == length
+        assert indices.shape[dim] == length
+
+    return gather, indices
 
 
 class AttentionHiddenState(typing.NamedTuple):
@@ -106,6 +110,7 @@ class Attention(torch.nn.Module):
         convolution_filter_size: int = HParam(),
         dropout: float = HParam(),
         window_length: int = HParam(),
+        avg_frames_per_token: float = HParam(),
     ):
         super().__init__()
         # Learn more:
@@ -125,6 +130,7 @@ class Attention(torch.nn.Module):
         self.project_scores = torch.nn.Sequential(
             LockedDropout(dropout), torch.nn.Linear(hidden_size, 1, bias=False)
         )
+        self.avg_frames_per_token = avg_frames_per_token
 
     def __call__(
         self,
@@ -150,7 +156,7 @@ class Attention(torch.nn.Module):
     ) -> typing.Tuple[torch.Tensor, torch.Tensor, AttentionHiddenState]:
         """
         Args:
-            tokens (torch.FloatTensor [num_tokens, batch_size, hidden_size]): Batch of sequences.
+            tokens (torch.FloatTensor [num_tokens, batch_size, token_size]): Batch of sequences.
             tokens_mask (torch.BoolTensor [batch_size, num_tokens]): Sequence mask(s) to deliminate
                 padding in `tokens` with zeros.
             num_tokens (torch.LongTensor [batch_size]): Number of tokens in each sequence.
@@ -160,7 +166,7 @@ class Attention(torch.nn.Module):
                 a `logger.warning` will be logged.
 
         Returns:
-            context (torch.FloatTensor [batch_size, hidden_size]): Attention context vector.
+            context (torch.FloatTensor [batch_size, token_size]): Attention context vector.
             alignment (torch.FloatTensor [batch_size, num_tokens]): Attention alignment.
             hidden_state
         """
@@ -173,21 +179,13 @@ class Attention(torch.nn.Module):
 
         part = slice(cumulative_alignment_padding, -cumulative_alignment_padding)
 
-        # [batch_size, num_tokens + 2 * cumulative_alignment_padding] →
-        # [batch_size, 1, num_tokens + 2 * cumulative_alignment_padding]
-        location_features = cumulative_alignment.unsqueeze(1)
-
         tokens_mask, window_indices = _window(tokens_mask, window_start, window_length, 1, False)
         tokens = _window(tokens, window_start.unsqueeze(1), window_length, 0, False)[0]
-        location_features = _window(
-            location_features,
-            window_start.unsqueeze(1),
-            window_length + cumulative_alignment_padding * 2,
-            2,
-            False,
-        )[0]
+        length = window_length + cumulative_alignment_padding * 2
+        cum_alignment_window = _window(cumulative_alignment, window_start, length, 1, False)[0]
 
         # [batch_size, 1, num_tokens] → [batch_size, hidden_size, num_tokens]
+        location_features = cum_alignment_window.unsqueeze(1) / self.avg_frames_per_token - 1.0
         location_features = self.alignment_conv(location_features)
 
         # [1, batch_size, query_hidden_size] → [batch_size, hidden_size, 1]
@@ -207,21 +205,21 @@ class Attention(torch.nn.Module):
         alignment = torch.softmax(score, dim=1)
 
         # NOTE: Transpose and unsqueeze to fit the requirements for `torch.bmm`
-        # [num_tokens, batch_size, hidden_size] →
-        # [batch_size, num_tokens, hidden_size]
+        # [num_tokens, batch_size, token_size] →
+        # [batch_size, num_tokens, token_size]
         tokens = tokens.transpose(0, 1)
 
         # alignment [batch_size (b), 1 (n), num_tokens (m)] (bmm)
-        # tokens [batch_size (b), num_tokens (m), hidden_size (p)] →
-        # [batch_size (b), 1 (n), hidden_size (p)]
+        # tokens [batch_size (b), num_tokens (m), token_size (p)] →
+        # [batch_size (b), 1 (n), token_size (p)]
         context = torch.bmm(alignment.unsqueeze(1), tokens)
 
-        # [batch_size, 1, hidden_size] → [batch_size, hidden_size]
+        # [batch_size, 1, token_size] → [batch_size, token_size]
         context = context.squeeze(1)
 
-        alignment = torch.zeros(
-            batch_size, max_num_tokens + cumulative_alignment_padding * 2, device=device
-        ).scatter_(1, window_indices + cumulative_alignment_padding, alignment)
+        length = max_num_tokens + cumulative_alignment_padding * 2
+        indices = window_indices + cumulative_alignment_padding
+        alignment = torch.zeros(batch_size, length, device=device).scatter_(1, indices, alignment)
 
         last_window_start = window_start
         window_start = alignment.max(dim=1)[1] - window_length // 2 - cumulative_alignment_padding
@@ -231,6 +229,7 @@ class Attention(torch.nn.Module):
         # fixed? For example, we could pad the alignment and encoder output so that `window_start`
         # can progress to the end.
         window_start = torch.clamp(torch.min(window_start, num_tokens - window_length), min=0)
+        window_start = torch.max(last_window_start, window_start)
         if not math.isinf(token_skip_warning):
             assert token_skip_warning >= 0, "The number of tokens skipped is a positive number."
             max_tokens_skipped = (window_start - last_window_start).max()

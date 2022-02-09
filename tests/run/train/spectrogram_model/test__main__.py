@@ -2,8 +2,8 @@ from unittest import mock
 
 from hparams import add_config
 
-from run.data._loader import JUDY_BIEBER
 from run._config import Cadence, DatasetType
+from run.data._loader import JUDY_BIEBER
 from run.train._utils import Context, Timer, set_context
 from run.train.spectrogram_model.__main__ import _make_configuration
 from run.train.spectrogram_model._metrics import Metrics
@@ -12,19 +12,16 @@ from run.train.spectrogram_model._worker import (
     _HandleBatchArgs,
     _run_inference,
     _run_step,
-    _State,
 )
-from tests.run.train._utils import mock_distributed_data_parallel, setup_experiment
+from tests.run._utils import make_spec_worker_state, mock_distributed_data_parallel
+from tests.run.train._utils import setup_experiment
 
 
 def test_integration():
     train_dataset, dev_dataset, comet, device = setup_experiment()
-
     add_config(_make_configuration(train_dataset, dev_dataset, True))
+    state = make_spec_worker_state(train_dataset, dev_dataset, comet, device)
 
-    with mock.patch("torch.nn.parallel.DistributedDataParallel") as module:
-        module.side_effect = mock_distributed_data_parallel
-        state = _State.from_dataset(train_dataset, dev_dataset, comet, device)
     assert state.model.module == state.model  # Enusre the mock worked
     # fmt: off
     assert sorted(state.input_encoder.grapheme_encoder.vocab) == sorted([
@@ -36,10 +33,11 @@ def test_integration():
     assert speakers == list(train_dataset.keys())
     assert state.model.vocab_size == state.input_encoder.phoneme_encoder.vocab_size
     assert state.model.num_speakers == state.input_encoder.speaker_encoder.vocab_size
+    assert state.model.num_sessions == state.input_encoder.session_encoder.vocab_size
 
     batch_size = 1
     train_loader, dev_loader = _get_data_loaders(
-        state, train_dataset, dev_dataset, batch_size, batch_size, 1, 1, 0, 2
+        state, train_dataset, dev_dataset, batch_size, batch_size, 1, 1, False, True, 0, 2
     )
 
     # Test `_run_step` with `Metrics` and `_State`

@@ -8,13 +8,8 @@ from third_party import LazyLoader
 from torchnlp.download import download_file_maybe_extract
 
 import lib
-from run.data._loader.utils import (
-    Passage,
-    Speaker,
-    UnprocessedPassage,
-    conventional_dataset_loader,
-    make_passages,
-)
+from run.data._loader.data_structures import Passage, Session, Speaker, UnprocessedPassage
+from run.data._loader.utils import conventional_dataset_loader, make_passages
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import num2words
@@ -26,6 +21,11 @@ logger = logging.getLogger(__name__)
 LINDA_JOHNSON = Speaker("linda_johnson")
 
 
+def _get_session(passage: UnprocessedPassage) -> Session:
+    """For the LJ speech dataset, we define each chapter as an individual recording session."""
+    return Session(str(passage.audio_path.stem.rsplit("-", 1)[0]))
+
+
 def lj_speech_dataset(
     directory: pathlib.Path,
     root_directory_name: str = "LJSpeech-1.1",
@@ -35,6 +35,7 @@ def lj_speech_dataset(
     verbalize: bool = True,
     metadata_text_column: typing.Union[str, int] = 1,
     add_tqdm: bool = False,
+    get_session: typing.Callable[[UnprocessedPassage], Session] = _get_session,
     **kwargs,
 ) -> typing.List[Passage]:
     """Load the Linda Johnson (LJ) Speech dataset.
@@ -72,6 +73,7 @@ def lj_speech_dataset(
         verbalize: If `True`, verbalize the text.
         metadata_text_column
         add_tqdm
+        get_session
         **kwargs: Key word arguments passed to `conventional_dataset_loader`.
     """
     logger.info(f'Loading "{root_directory_name}" speech dataset...')
@@ -83,7 +85,7 @@ def lj_speech_dataset(
         metadata_text_column=metadata_text_column,
     )
     passages = [_process_text(p, verbalize) for p in passages]
-    return list(make_passages(root_directory_name, [passages], add_tqdm=add_tqdm))
+    return list(make_passages(root_directory_name, [passages], add_tqdm, get_session))
 
 
 """

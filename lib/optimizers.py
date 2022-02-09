@@ -57,7 +57,7 @@ class AdaptiveGradientNormClipper:
         self.parameters = parameters
 
     def _insert(self, norm: float):
-        """ Insert `norm` into `window` and `sorted_window`, and remove the oldest value. """
+        """Insert `norm` into `window` and `sorted_window`, and remove the oldest value."""
         if len(self.window) == self.window_size:
             old_value = self.window.pop(0)
             del self.sorted_window[bisect_left(self.sorted_window, old_value)]
@@ -65,7 +65,7 @@ class AdaptiveGradientNormClipper:
         insort(self.sorted_window, norm)
 
     def _get_median(self) -> float:
-        """ Get the middle value in `sorted_window`. """
+        """Get the middle value in `sorted_window`."""
         half = len(self.sorted_window) / 2
         if len(self.sorted_window) % 2 == 1:
             return self.sorted_window[int(floor(half))]
@@ -113,13 +113,13 @@ class ExponentialMovingParameterAverage:
         self.step = 1
 
     def update(self):
-        """ Update the parameter average. """
+        """Update the parameter average."""
         for i, param in enumerate(self.parameters):
             self.shadow[i] = (1.0 - self.beta) * param.clone().detach() + self.beta * self.shadow[i]
         self.step += 1
 
     def apply(self):
-        """ Replace the parameters with their averaged counterpart. """
+        """Replace the parameters with their averaged counterpart."""
         self.backup = [param.clone().detach() for param in self.parameters]
         for param, shadow in zip(self.parameters, self.shadow):
             # The initial 0.0 average values introduce bias that is corrected, learn more:
@@ -128,7 +128,7 @@ class ExponentialMovingParameterAverage:
                 param.copy_(shadow / (1 - self.beta ** (self.step)))
 
     def restore(self):
-        """ Restore the parameter values after `self.apply`. """
+        """Restore the parameter values after `self.apply`."""
         for param, backup in zip(self.parameters, self.backup):
             with torch.no_grad():
                 param.copy_(backup)

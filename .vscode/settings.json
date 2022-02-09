@@ -20,16 +20,17 @@
     "*.pyc": true,
     "**/__pycache__/**": true,
     "data/**/*.wav": true,
-    "**/*.pt": true
   },
   "files.insertFinalNewline": true,
   "files.trimTrailingWhitespace": true,
   "search.exclude": {
     "**/.git": true,
+    "**/build": true,
+    "**/coverage": true,
     "**/node_modules": true,
-    "**/bower_components": true,
-    "build/**": true,
-    "cover/**": true
+    "**/venv": true,
+    "**/.mypy_cache": true,
+    "**/.pytest_cache": true,
   },
   "python.formatting.provider": "black",
   "python.linting.flake8Enabled": true,

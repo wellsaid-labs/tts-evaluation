@@ -40,12 +40,12 @@ _RandomSampleReturnType = typing.TypeVar("_RandomSampleReturnType")
 def random_sample(
     list_: typing.List[_RandomSampleReturnType], sample_size: int
 ) -> typing.List[_RandomSampleReturnType]:
-    """ Random sample function that doesn't error if `list_` is smaller than `sample_size`. """
+    """Random sample function that doesn't error if `list_` is smaller than `sample_size`."""
     return random.sample(list_, min(len(list_), sample_size))
 
 
 def mean(list_: typing.Iterable[float]) -> float:
-    """ Mean function that does not return an error if `list_` is empty. """
+    """Mean function that does not return an error if `list_` is empty."""
     list_ = list(list_)
     if len(list_) == 0:
         return math.nan
@@ -58,7 +58,7 @@ _ChunksReturnType = typing.TypeVar("_ChunksReturnType")
 def get_chunks(
     list_: typing.List[_ChunksReturnType], n: int
 ) -> typing.Iterator[typing.List[_ChunksReturnType]]:
-    """ Yield successive `n`-sized chunks from `list_`. """
+    """Yield successive `n`-sized chunks from `list_`."""
     for i in range(0, len(list_), n):
         yield list_[i : i + n]
 
@@ -116,7 +116,8 @@ def flatten_2d(
 ) -> typing.List[_FlattenReturnType]:
     """Flatten a 2d list into a 1d list.
 
-    Learn more: https://stackoverflow.com/questions/952914/how-to-make-a-flat-list-out-of-list-of-lists
+    Learn more:
+    https://stackoverflow.com/questions/952914/how-to-make-a-flat-list-out-of-list-of-lists
     """
     return [item for sublist in l for item in sublist]
 
@@ -136,7 +137,7 @@ def flatten(l: _FlattenInputType) -> typing.List[_FlattenReturnType]:
 
 
 def flatten_parameters(model: torch.nn.Module) -> torch.nn.Module:
-    """ Apply `flatten_parameters` to `model`. """
+    """Apply `flatten_parameters` to `model`."""
     lambda_ = lambda m: m.flatten_parameters() if hasattr(m, "flatten_parameters") else None
     return model.apply(lambda_)
 
@@ -152,7 +153,9 @@ _SplitReturnType = typing.TypeVar("_SplitReturnType")
 
 
 def split(
-    list_: typing.List[_SplitReturnType], splits: typing.List[float], value=identity
+    list_: typing.List[_SplitReturnType],
+    splits: typing.List[float],
+    value: typing.Callable[[_SplitReturnType], float] = identity,
 ) -> typing.Iterator[typing.List[_SplitReturnType]]:
     """Split `list_` when the accumulated sum passes a threshold.
 
@@ -162,13 +165,18 @@ def split(
 
     Returns: Slice(s) of the list.
     """
-    totals = list(itertools.accumulate([value(i) for i in list_]))
     index = 0
     for split in splits:
-        lambda_ = lambda x: x <= split + (totals[index - 1] if index > 0 else 0)
-        count = len(list(itertools.takewhile(lambda_, totals[index:])))
-        yield list_[index : index + count]
-        index = index + count
+        if math.isinf(split):
+            yield list_[index:]
+            index = len(list_)
+        elif split == 0:
+            yield []
+        else:
+            totals = itertools.accumulate(value(i) for i in list_[index:])
+            count = sum(1 for _ in itertools.takewhile(lambda x: x <= split, totals))
+            yield list_[index : index + count]
+            index = index + count
     if index < len(list_):
         yield list_[index:]
 
@@ -208,7 +216,7 @@ _LogRuntimeFunction = typing.TypeVar("_LogRuntimeFunction", bound=typing.Callabl
 
 
 def log_runtime(function: _LogRuntimeFunction) -> _LogRuntimeFunction:
-    """ Decorator for measuring the execution time of a function. """
+    """Decorator for measuring the execution time of a function."""
 
     @functools.wraps(function)
     def decorator(*args, **kwargs):
@@ -430,14 +438,14 @@ _MappedIteratorItem = typing.TypeVar("_MappedIteratorItem")
 
 
 class MappedIterator(typing.Mapping[int, _MappedIteratorItem], typing.Generic[_MappedIteratorItem]):
-    """ Wrap an iterator with a mapping. """
+    """Wrap an iterator with a mapping."""
 
     def __init__(self, iterator: typing.Iterable[_MappedIteratorItem]):
         self.iterator = iterator
         self.iter = None
         self.offset = 0
 
-    def __getitem__(self, index) -> _MappedIteratorItem:
+    def __getitem__(self, index: int) -> _MappedIteratorItem:
         assert index >= self.offset, "Items may only be accessed once."
         self.iter = iter(self.iterator) if self.iter is None else self.iter
         for _ in range(index - self.offset):
@@ -585,17 +593,24 @@ _CorrectedRandomChoiceVar = typing.TypeVar("_CorrectedRandomChoiceVar")
 
 
 def corrected_random_choice(
-    distribution: typing.Dict[_CorrectedRandomChoiceVar, float], eps=1
+    distr: typing.Dict[_CorrectedRandomChoiceVar, float],
+    expect: typing.Optional[typing.Dict[_CorrectedRandomChoiceVar, float]] = None,
+    eps: float = 10e-8,
 ) -> _CorrectedRandomChoiceVar:
     """Choose a key in `distribution` that would help even out the distribution.
+
     NOTE: In order to make the `distribution` uniform, we'd need to sample each key
     `max(values) - value` times; therefore, we use that expectation as a `weight`.
     NOTE: `eps` is added to ensure each key has some chance of getting sampled.
     """
-    assert all(v >= 0 for v in distribution.values()), "Must be a valid distribution."
-    keys = list(distribution.keys())
-    max_ = max(distribution.values())
-    return random.choices(keys, [(max_ - v + eps) for v in distribution.values()])[0]
+    vals = list(distr.values())
+    keys = list(distr.keys())
+    assert all(v >= 0 for v in vals), "Must be a valid distribution."
+    expect_ = [1 for _ in keys] if expect is None else [expect[k] for k in keys]
+    ratio = max([b / a for a, b in zip(expect_, vals)])
+    expect_ = [a * ratio for a in expect_]
+    diff = [a - b + eps for a, b in zip(expect_, vals)]
+    return random.choices(keys, diff)[0]
 
 
 def dataclass_as_dict(data):
@@ -605,7 +620,7 @@ def dataclass_as_dict(data):
 
 
 def to_str(object, *attributes: str) -> str:
-    """ Create a string representation of `object` given it's `attributes`. """
+    """Create a string representation of `object` given it's `attributes`."""
     values = ", ".join(f"{a}={getattr(object, a)}" for a in attributes)
     return f"{object.__class__.__name__}({values})"
 
@@ -635,11 +650,11 @@ class Timeline:
         self._intervals = np.ascontiguousarray(self._intervals)
 
     def start(self, index: int) -> np.ndarray:
-        """ Get the start of the interval at `index`. """
+        """Get the start of the interval at `index`."""
         return self._intervals[0, index]
 
     def stop(self, index: int) -> np.ndarray:
-        """ Get the stop of the interval at `index`. """
+        """Get the stop of the interval at `index`."""
         return self._intervals[1, index]
 
     def make_slice(self, interval: typing.Union[int, float, slice]) -> slice:
@@ -675,7 +690,7 @@ class Timeline:
         return range(*self.make_slice(interval).indices(self._intervals.shape[1]))
 
     def __getitem__(self, interval: typing.Union[int, float, slice]) -> np.ndarray:
-        """Get the intervals overlapping `interval`. """
+        """Get the intervals overlapping `interval`."""
         return self._intervals[:, self.make_slice(interval)].T
 
     def intervals(
@@ -722,5 +737,5 @@ _TqdmVar = typing.TypeVar("_TqdmVar")
 
 
 def tqdm_(iterator: typing.Iterable[_TqdmVar], **kwargs) -> typing.Iterable[_TqdmVar]:
-    """ `tqdm` with typing. """
+    """`tqdm` with typing."""
     return tqdm(iterator, **kwargs)

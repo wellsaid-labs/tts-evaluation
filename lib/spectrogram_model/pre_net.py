@@ -5,7 +5,7 @@ from hparams import HParam, configurable
 
 
 class _AlwaysDropout(torch.nn.Dropout):
-    """ Adaptation of `nn.Dropout` to apply dropout during both evaluation and training. """
+    """Adaptation of `nn.Dropout` to apply dropout during both evaluation and training."""
 
     def forward(self, input_: torch.Tensor) -> torch.Tensor:
         return torch.nn.functional.dropout(
@@ -41,6 +41,7 @@ class PreNet(torch.nn.Module):
     def __init__(
         self,
         num_frame_channels: int,
+        speaker_embedding_size: int,
         size: int,
         num_layers: int = HParam(),
         dropout: float = HParam(),
@@ -49,7 +50,7 @@ class PreNet(torch.nn.Module):
         _layers = [
             torch.nn.Sequential(
                 torch.nn.Linear(
-                    in_features=num_frame_channels if i == 0 else size,
+                    in_features=(num_frame_channels if i == 0 else size) + speaker_embedding_size,
                     out_features=size,
                 ),
                 torch.nn.ReLU(inplace=True),
@@ -58,23 +59,28 @@ class PreNet(torch.nn.Module):
             )
             for i in range(num_layers)
         ]
-        self.layers = torch.nn.Sequential(*tuple(_layers))
+        self.layers = torch.nn.ModuleList(_layers)
 
         for module in self.layers.modules():
             if isinstance(module, torch.nn.Linear):
                 gain = torch.nn.init.calculate_gain("relu")
                 torch.nn.init.xavier_uniform_(module.weight, gain=gain)
 
-    def __call__(self, frames: torch.Tensor) -> torch.Tensor:
-        return super().__call__(frames)
+    def __call__(self, frames: torch.Tensor, speaker: torch.Tensor) -> torch.Tensor:
+        return super().__call__(frames, speaker)
 
-    def forward(self, frames: torch.Tensor) -> torch.Tensor:
+    def forward(self, frames: torch.Tensor, speaker: torch.Tensor) -> torch.Tensor:
         """
         Args:
             frames (torch.FloatTensor [num_frames, batch_size, num_frame_channels]): Spectrogram
                 frames.
+            speaker (torch.FloatTensor [batch_size, speaker_embedding_dim])
 
         Returns:
             frames (torch.FloatTensor [num_frames, batch_size, hidden_size])
         """
-        return self.layers(frames)
+        # [batch_size, speaker_embedding_dim] → [num_frames, batch_size, speaker_embedding_dim]
+        speaker = speaker.unsqueeze(0).expand(frames.shape[0], -1, -1)
+        for layer in self.layers:
+            frames = layer(torch.cat([speaker, frames], dim=2))
+        return frames

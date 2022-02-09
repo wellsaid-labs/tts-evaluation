@@ -15,7 +15,7 @@ from lib.utils import LSTM
 def _roll_helper(
     length: int, device: torch.device, dimension: int, num_dimensions: int
 ) -> typing.Tuple[torch.Tensor, int]:
-    """ Helper to ensure `indices` and `dimension` are not recalculated unnecessarily. """
+    """Helper to ensure `indices` and `dimension` are not recalculated unnecessarily."""
     indices = torch.arange(0, length, device=device)
     dimension = num_dimensions + dimension if dimension < 0 else dimension
     # EXAMPLE:
@@ -47,6 +47,9 @@ def _roll(tensor: torch.Tensor, shift: torch.Tensor, dim: int = -1) -> torch.Ten
     indices = indices.detach().expand(*tensor.shape)
     indices = (indices - shift) % tensor.shape[dim]
     return torch.gather(tensor, dim, indices)
+
+
+_RecurrentNeuralNetwork = typing.Union[torch.nn.LSTM, torch.nn.GRU]
 
 
 class _RightMaskedBiRNN(torch.nn.Module):
@@ -128,11 +131,10 @@ class _RightMaskedBiRNN(torch.nn.Module):
             (torch.FloatTensor [seq_len, batch_size, hidden_size * 2]): Output features predicted
                 by the RNN.
         """
-        RecurrentNeuralNetwork = typing.Union[torch.nn.LSTM, torch.nn.GRU]
         output = tokens
         tokens_mask_expanded = tokens_mask.view(tokens_mask.shape[0], tokens_mask.shape[1], 1)
         tokens_mask = tokens_mask.view(tokens_mask.shape[0], tokens_mask.shape[1])
-        Iterable = typing.Iterable[typing.Tuple[RecurrentNeuralNetwork, RecurrentNeuralNetwork]]
+        Iterable = typing.Iterable[typing.Tuple[_RecurrentNeuralNetwork, _RecurrentNeuralNetwork]]
         for forward_rnn, backward_rnn in typing.cast(Iterable, iter(self.rnn_layers)):
             # [seq_len, batch_size, input_size or hidden_size * 2] →
             # [seq_len, batch_size, hidden_size * 2]
@@ -195,17 +197,12 @@ class Encoder(torch.nn.Module):
         # https://datascience.stackexchange.com/questions/23183/why-convolutions-always-use-odd-numbers-as-filter-size
         assert convolution_filter_size % 2 == 1, "`convolution_filter_size` must be odd"
         assert hidden_size % 2 == 0, "`hidden_size` must be divisable by even"
-        assert (
-            speaker_embedding_size < hidden_size
-        ), "The `hidden_size` must be larger than the `speaker_embedding_dim` to accommodate it."
 
-        self.embed_token = torch.nn.Sequential(
-            torch.nn.Embedding(
-                vocab_size,
-                hidden_size - speaker_embedding_size,
-                padding_idx=padding_index,
-            ),
-            torch.nn.LayerNorm(hidden_size - speaker_embedding_size),
+        self.embed_token = torch.nn.Embedding(vocab_size, hidden_size, padding_idx=padding_index)
+        self.embed = torch.nn.Sequential(
+            torch.nn.Linear(hidden_size + speaker_embedding_size, hidden_size),
+            torch.nn.ReLU(),
+            torch.nn.LayerNorm(hidden_size),
         )
         self.conv_layers = torch.nn.ModuleList(
             torch.nn.Sequential(
@@ -253,10 +250,14 @@ class Encoder(torch.nn.Module):
         # [batch_size, speaker_embedding_dim] → [batch_size, num_tokens, speaker_embedding_dim]
         speaker = inputs.speaker.unsqueeze(1).expand(-1, inputs.tokens.shape[1], -1)
         # [batch_size, num_tokens] → [batch_size, num_tokens, hidden_size]
-        # TODO: The speaker embedding decreases the size of the token embedding. This side-effect
-        # is not intuitive. In order to implement this, we recommend that you slice in the
-        # residual connection.
-        tokens = torch.cat([self.embed_token(inputs.tokens), speaker], dim=2)
+        tokens = self.embed_token(inputs.tokens)
+        # [batch_size, num_tokens, hidden_size] (cat)
+        # [batch_size, num_tokens, speaker_embedding_dim] →
+        # [batch_size, num_tokens, hidden_size + speaker_embedding_dim]
+        tokens = torch.cat([tokens, speaker], dim=2)
+        # [batch_size, num_tokens, hidden_size + speaker_embedding_dim] →
+        # [batch_size, num_tokens, hidden_size]
+        tokens = self.embed(tokens)
 
         # Our input is expected to have shape `[batch_size, num_tokens, hidden_size]`.  The
         # convolution layers expect input of shape

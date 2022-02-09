@@ -12,8 +12,9 @@ from matplotlib import pyplot
 import lib
 import run
 from run._config import Cadence, DatasetType, get_dataset_label
-from run.data._loader import Alignment
-from tests._utils import TEST_DATA_PATH, make_passage
+from run.data._loader import Alignment, Speaker
+from tests._utils import TEST_DATA_PATH
+from tests.run._utils import make_passage
 
 TEST_DATA_PATH = TEST_DATA_PATH / "audio"
 TEST_DATA_LJ = TEST_DATA_PATH / "bit(rate(lj_speech,24000),32).wav"
@@ -21,14 +22,14 @@ TEST_DATA_LJ = TEST_DATA_PATH / "bit(rate(lj_speech,24000),32).wav"
 
 @pytest.fixture(autouse=True)
 def run_around_tests():
-    """ Set a basic configuration. """
+    """Set a basic configuration."""
     run._config.configure()
     yield
     hparams.clear_config()
 
 
 def test__maybe_make_experiment_directories(capsys):
-    """ Test `maybe_make_experiment_directories` creates a directory structure. """
+    """Test `maybe_make_experiment_directories` creates a directory structure."""
     with tempfile.TemporaryDirectory() as directory:
         with capsys.disabled():  # NOTE: Disable capsys because it messes with `sys.stdout`
             path = Path(directory)
@@ -54,7 +55,7 @@ def test__maybe_make_experiment_directories(capsys):
 
 
 def test__maybe_make_experiment_directories_from_checkpoint(capsys):
-    """ Test `maybe_make_experiment_directories_from_checkpoint` creates a directory structure. """
+    """Test `maybe_make_experiment_directories_from_checkpoint` creates a directory structure."""
     with tempfile.TemporaryDirectory() as directory:
         with capsys.disabled():  # NOTE: Disable capsys because it messes with `sys.stdout`
             path = Path(directory)
@@ -81,7 +82,7 @@ def test__maybe_make_experiment_directories_from_checkpoint(capsys):
 
 
 def test__get_dataset_stats():
-    """ Test `run.train._utils.get_dataset_stats` measures dataset statistics correctly. """
+    """Test `run.train._utils.get_dataset_stats` measures dataset statistics correctly."""
     _alignment = lambda a, b: Alignment((a, b), (a * 10, b * 10), (a, b))
     _passage = lambda a, b, s: make_passage(Alignment.stow([_alignment(a, b)]), s)
     a = run.data._loader.Speaker("a")
@@ -123,7 +124,9 @@ def test_comet_ml_experiment():
         comet.log_html_audio(
             metadata="random metadata",
             audio={"predicted_audio": torch.rand(100), "gold_audio": torch.rand(100)},
+            speaker=Speaker(""),
         )
+        comet.log_npy("random", Speaker(""), torch.rand(100))
         figure = pyplot.figure()
         pyplot.close(figure)
         comet.log_figures({run._config.Label("figure"): figure})
@@ -134,16 +137,26 @@ def test_comet_ml_experiment():
 
 
 def test_set_context():
-    """Test `run.train._utils.set_context` updates comet, module, and grad context. """
+    """Test `run.train._utils.set_context` updates comet, module, and grad context."""
     comet = run.train._utils.CometMLExperiment(disabled=True)
     rnn = torch.nn.LSTM(10, 20, 2).eval()
+    ema = lib.optimizers.ExponentialMovingParameterAverage(rnn.parameters())
+
     assert not rnn.training
-    with run.train._utils.set_context(run.train._utils.Context.TRAIN, comet, rnn):
+    with run.train._utils.set_context(run.train._utils.Context.TRAIN, comet, rnn, ema=ema):
         assert rnn.training
         assert comet.context == run.train._utils.Context.TRAIN.value
         output, _ = rnn(torch.randn(5, 3, 10))
         assert output.requires_grad
+        assert len(ema.backup) == 0
     assert not rnn.training
+
+    with run.train._utils.set_context(run.train._utils.Context.EVALUATE, comet, rnn, ema=ema):
+        assert not rnn.training
+        assert comet.context == run.train._utils.Context.EVALUATE.value
+        output, _ = rnn(torch.randn(5, 3, 10))
+        assert not output.requires_grad
+        assert len(ema.backup) > 0
 
 
 def test__nested_to_flat_config():

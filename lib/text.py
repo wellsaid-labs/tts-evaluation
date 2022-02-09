@@ -21,6 +21,7 @@ from lib.utils import flatten, flatten_2d
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import en_core_web_md
+    import en_core_web_sm
     import Levenshtein
     import nltk
     import normalise
@@ -28,6 +29,7 @@ if typing.TYPE_CHECKING:  # pragma: no cover
     import spacy.tokens
     from spacy.lang import en as spacy_en
 else:
+    en_core_web_sm = LazyLoader("en_core_web_sm", globals(), "en_core_web_sm")
     en_core_web_md = LazyLoader("en_core_web_md", globals(), "en_core_web_md")
     Levenshtein = LazyLoader("Levenshtein", globals(), "Levenshtein")
     nltk = LazyLoader("nltk", globals(), "nltk")
@@ -38,6 +40,8 @@ else:
 
 logger = logging.getLogger(__name__)
 
+GRAPHEME_TO_PHONEME_RESTRICTED = ("[[", "]]", "<", ">")
+
 
 def _line_grapheme_to_phoneme(
     graphemes: typing.List[str],
@@ -47,7 +51,7 @@ def _line_grapheme_to_phoneme(
     service_separator: str = "_",
     grapheme_batch_separator: str = "<break> [[_::_::_::_::_::_::_::_::_::_::]] <break>",
     phoneme_batch_separator: str = "\n _________\n",
-    restricted: typing.List[str] = ["[[", "]]", "<", ">"],
+    restricted: typing.Tuple[str, ...] = GRAPHEME_TO_PHONEME_RESTRICTED,
 ) -> typing.List[str]:
     """
     TODO: Support `espeak-ng` `service`, if needed.
@@ -61,6 +65,7 @@ def _line_grapheme_to_phoneme(
         service_separator: The separator used by the service between phonemes.
         grapheme_batch_separator: The seperator used deliminate grapheme sequences.
         phoneme_batch_separator: The seperator used deliminate phoneme sequences.
+        restricted: An `AssertionError` will be raised if these substrings are found in `graphemes`.
     """
     template = "Special character '%s' is not allowed."
     condition = all([grapheme_batch_separator not in g for g in graphemes])
@@ -383,7 +388,7 @@ class AmEPDPronunciation(typing.NamedTuple):
     note: typing.Optional[str] = None
 
 
-def _assert_valid_amepd_word(word):
+def _assert_valid_amepd_word(word: str):
     assert all(
         c.isalpha() or c == "'" for c in word
     ), "Words may only be defined with letter(s) or apostrophe(s)."
@@ -626,7 +631,7 @@ _READABLE_CHARACTERS = set(normalize_vo_script(chr(i), strip=False) for i in ran
 
 
 def is_normalized_vo_script(text: str) -> bool:
-    """ Return `True` if `text` has been normalized to a small set of characters. """
+    """Return `True` if `text` has been normalized to a small set of characters."""
     return len(set(text) - _READABLE_CHARACTERS) == 0
 
 
@@ -647,8 +652,15 @@ def is_voiced(text: str) -> bool:
     return ALPHANUMERIC_REGEX.search(text) is not None
 
 
+DIGIT_REGEX = re.compile(r"\d")
+
+
+def has_digit(text: str) -> bool:
+    return bool(DIGIT_REGEX.search(text))
+
+
 def add_space_between_sentences(doc: spacy.tokens.Doc) -> str:
-    """ Add spaces between sentences which are not separated by a space. """
+    """Add spaces between sentences which are not separated by a space."""
     if len(doc) <= 2:
         return str(doc)
     text = doc[0].text_with_ws
@@ -673,19 +685,25 @@ def add_space_between_sentences(doc: spacy.tokens.Doc) -> str:
 
 @functools.lru_cache(maxsize=None)
 def _nltk_download(dependency):
-    """ Run `nltk.download` but only once per process. """
+    """Run `nltk.download` but only once per process."""
     nltk.download(dependency)
 
 
 @functools.lru_cache(maxsize=None)
 def load_en_core_web_md(*args, **kwargs) -> spacy_en.English:
-    """ Load and cache in memory a spaCy `spacy_en.English` object. """
+    """Load and cache in memory a spaCy `spacy_en.English` object."""
     return en_core_web_md.load(*args, **kwargs)
 
 
 @functools.lru_cache(maxsize=None)
+def load_en_core_web_sm(*args, **kwargs) -> spacy_en.English:
+    """Load and cache in memory a spaCy `spacy_en.English` object."""
+    return en_core_web_sm.load(*args, **kwargs)
+
+
+@functools.lru_cache(maxsize=None)
 def load_en_english(*args, **kwargs) -> spacy_en.English:
-    """ Load and cache in memory a spaCy `spacy_en.English` object. """
+    """Load and cache in memory a spaCy `spacy_en.English` object."""
     return spacy_en.English(*args, **kwargs)
 
 
@@ -838,7 +856,7 @@ def format_alignment(
 
 
 def _is_in_window(value: int, window: typing.Tuple[int, int]) -> bool:
-    """ Check if `value` is in the range [`window[0]`, `window[1]`).  """
+    """Check if `value` is in the range [`window[0]`, `window[1]`)."""
     return value >= window[0] and value < window[1]
 
 

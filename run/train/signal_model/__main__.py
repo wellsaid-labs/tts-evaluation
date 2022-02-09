@@ -2,14 +2,15 @@ import logging
 import pathlib
 import typing
 from functools import partial
+from unittest.mock import MagicMock
 
 import torch
 import torch.nn
 import torch.optim
 import torch.utils
 import torch.utils.data
-import typer
 from hparams import HParams, add_config, parse_hparam_args
+from third_party import LazyLoader
 
 import lib
 from run._config import FRAME_HOP, RANDOM_SEED, SIGNAL_MODEL_EXPERIMENTS_PATH, Dataset
@@ -24,8 +25,19 @@ from run.train._utils import (
 )
 from run.train.signal_model import _metrics, _worker
 
+if typing.TYPE_CHECKING:  # pragma: no cover
+    import typer
+else:
+    typer = LazyLoader("typer", globals(), "typer")
+
 logger = logging.getLogger(__name__)
-app = typer.Typer()
+
+try:
+    app = typer.Typer()
+except (ModuleNotFoundError, NameError):
+    app = MagicMock()
+    typer = MagicMock()
+    logger.info("Ignoring optional `typer` dependency.")
 
 
 def _make_configuration(
@@ -33,8 +45,8 @@ def _make_configuration(
 ) -> typing.Dict[typing.Callable, typing.Any]:
     """Make additional configuration for signal model training."""
 
-    train_size = sum([sum([p.aligned_audio_length() for p in d]) for d in train_dataset.values()])
-    dev_size = sum([sum([p.aligned_audio_length() for p in d]) for d in dev_dataset.values()])
+    train_size = sum(sum(p.segmented_audio_length() for p in d) for d in train_dataset.values())
+    dev_size = sum(sum(p.segmented_audio_length() for p in d) for d in dev_dataset.values())
     ratio = train_size / dev_size
     logger.info("The training dataset is approx %fx bigger than the development dataset.", ratio)
     train_batch_size = int((32 if debug else 128) / lib.distributed.get_device_count())
@@ -42,8 +54,9 @@ def _make_configuration(
     dev_slice_size = 32768
     batch_size_ratio = 1 / 2
     dev_batch_size = int(train_batch_size * train_slice_size / dev_slice_size / 2)
-    dev_steps_per_epoch = 1 if debug else 64
-    train_steps_per_epoch = int(round(dev_steps_per_epoch * batch_size_ratio * ratio))
+    oversample = 2
+    dev_steps_per_epoch = 1 if debug else 256
+    train_steps_per_epoch = int(round(dev_steps_per_epoch * batch_size_ratio * ratio * oversample))
     train_steps_per_epoch = 1 if debug else train_steps_per_epoch
 
     # NOTE: The `num_mel_bins` must be proportional to `fft_length`,
@@ -51,23 +64,12 @@ def _make_configuration(
     # https://stackoverflow.com/questions/56929874/what-is-the-warning-empty-filters-detected-in-mel-frequency-basis-about
     signal_to_spectrogram_params = [
         dict(
-            fft_length=2048,
-            frame_hop=256,
-            window=get_window("hann", 1024, 256),
-            num_mel_bins=128,
-        ),
-        dict(
-            fft_length=1024,
-            frame_hop=128,
-            window=get_window("hann", 512, 128),
-            num_mel_bins=64,
-        ),
-        dict(
-            fft_length=512,
-            frame_hop=64,
-            window=get_window("hann", 256, 64),
-            num_mel_bins=32,
-        ),
+            fft_length=length,
+            frame_hop=length // 4,
+            window=get_window("hann", length, length // 4),
+            num_mel_bins=length // 8,
+        )
+        for length in (256, 1024, 4096)
     ]
 
     real_label = True

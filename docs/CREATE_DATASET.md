@@ -78,7 +78,7 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
       --image-project=ubuntu-os-cloud
    ```
 
-   ❓ NOTE: 24-hours of VM usage can cost up to 3$.
+   ❓ NOTE: 24-hours of "n1-standard-2" VM usage can cost up to 3$.
 
 1. From your local machine, `ssh` into your new VM instance, like so...
 
@@ -93,26 +93,61 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
 1. In another terminal window, run `lsyncd` to sync your local files to your virtual machine...
 
    ```zsh
-   VM_NAME=$(python -m run.utils.gcp most-recent --filter $USER)
+   VM_NAME=$(python -m run.utils.gcp most-recent --filter "dataset-processing")
    VM_ZONE=$(python -m run.utils.gcp zone --name $VM_NAME)
    VM_IP=$(python -m run.utils.gcp ip --name $VM_NAME --zone=$VM_ZONE)
    VM_USER=$(python -m run.utils.gcp user --name $VM_NAME --zone=$VM_ZONE)
+   ```
+
+   ```zsh
    sudo python3 -m run.utils.lsyncd $(pwd) /opt/wellsaid-labs/Text-to-Speech \
                                     --public-dns $VM_IP \
                                     --user $VM_USER \
                                     --identity-file ~/.ssh/google_compute_engine
    ```
 
-### Download your data onto the VM
+1. Back on the VM, install dependencies, like so...
+
+   ```bash
+   cd /opt/wellsaid-labs/Text-to-Speech
+   sudo apt-get update
+   . run/utils/apt_install.sh
+   ```
+
+### Screen sessions
+
+Create a virtual environment for processing.
+   ```
+   python3.8 -m venv venv
+   . venv/bin/activate
+   python -m pip install wheel pip --upgrade
+   python -m pip install -r requirements.txt --upgrade
+   ```
+If aligning data for multiple speakers, it can be helpful to process each in their own named screen session
+
+   ```
+   screen -S [name]
+   ```
+Press any key.
+
+   ```
+   . venv/bin/activate
+   ```
+At any time, press `ctrl+a, d` to detach from the screen session. Then `screen -r [name]` to reattach to the session named `[name]`.
+
+### Download Data
 
 1. Set these variables...
 
    ```bash
    NAME=actor_name # Example: hilary_noriega
+   ```
+   ```
    ROOT=/opt/wellsaid-labs/Text-to-Speech/disk/data/$NAME
    PROCESSED=$ROOT/processed
    GCS_URI=gs://wellsaid_labs_datasets/$NAME
    ENCODING=.wav # Example: .wav, .mp3
+   LANGUAGE=English # Example: English, German, Spanish, Portuguese
    ```
 
 1. Download the dataset, like so...
@@ -124,19 +159,6 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
    ```
 
 ### Process data
-
-1. Install these dependencies onto the VM, like so...
-
-   ```bash
-   cd /opt/wellsaid-labs/Text-to-Speech
-   sudo apt-get update
-   . run/utils/apt_install.sh
-
-   python3.8 -m venv venv
-   . venv/bin/activate
-   python -m pip install wheel pip --upgrade
-   python -m pip install -r requirements.txt --upgrade
-   ```
 
 1. (Optional) Ensure the directories have similar numberings...
 
@@ -169,48 +191,55 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
       > README.txt file explaining why this archive exists
 
    ```bash
+   mkdir $PROCESSED
    RECORDINGS=$(ls $ROOT/recordings/*$ENCODING | python -m run.utils.sort)
    SCRIPTS=$(ls $ROOT/scripts/*.csv | python -m run.utils.sort)
    python -m run.data pair $(python -m run.utils.prefix --recording $RECORDINGS) \
-      $(python -m run.utils.prefix --script $SCRIPTS)
+      $(python -m run.utils.prefix --script $SCRIPTS) \
+      2>&1 | tee $PROCESSED/script-recordings-pair.log
    ```
+
+   💡 TIP: Learn more about `2>&1 | tee`, here: https://stackoverflow.com/questions/418896/how-to-redirect-output-to-a-file-and-stdout
 
 1. (Optional) Review dataset audio file format(s) for inconsistencies...
 
    ```bash
-   python -m run.data audio print-format $ROOT/recordings/*$ENCODING
+   python -m run.data audio print-format $ROOT/recordings/*$ENCODING \
+      2>&1 | tee $PROCESSED/audio-format.log
    ```
 
 1. Normalize audio file format...
 
    ```bash
-   mkdir -p $PROCESSED/recordings
-   python -m run.data audio normalize $ROOT/recordings/*$ENCODING $PROCESSED/recordings
+   mkdir $PROCESSED/recordings
+   python -m run.data audio normalize $ROOT/recordings/*$ENCODING $PROCESSED/recordings \
+      2>&1 | tee $PROCESSED/audio-normalize.log
    ```
 
 1. (Optional) Review audio file loudness for inconsistencies...
 
    ```bash
-   python -m run.data audio loudness $PROCESSED/recordings/*$ENCODING
+   python -m run.data audio loudness $PROCESSED/recordings/*$ENCODING \
+      2>&1 | tee $PROCESSED/audio-loudness.log
    ```
 
 1. Normalize audio file format for
    [Google speech-to-text](https://cloud.google.com/speech-to-text/docs/encoding)...
 
    ```bash
-   mkdir -p $PROCESSED/speech_to_text
+   mkdir $PROCESSED/speech_to_text
    python -m run.data audio normalize $ROOT/recordings/*$ENCODING $PROCESSED/speech_to_text \
-                                      --data-type='signed-integer' --bits=16
+                                      --data-type='signed-integer' --bits=16 \
+      2>&1 | tee $PROCESSED/audio-normalize-stt.log
    ```
 
 1. Normalize CSV file text...
 
    ```bash
-   mkdir -p $PROCESSED/scripts
-   python -m run.data csv normalize $ROOT/scripts/*.csv $PROCESSED/scripts
+   mkdir $PROCESSED/scripts
+   python -m run.data csv normalize $ROOT/scripts/*.csv $PROCESSED/scripts $LANGUAGE \
+      2>&1 | tee $PROCESSED/csv-normalize.log
    ```
-
-   💡 TIP: Add the flag `--tab-separated` to process a TSV file.
 
 1. Upload the processed files back to GCS, like so...
 
@@ -237,6 +266,7 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
    python -m run.data.sync_script_with_audio \
       $(python -m run.utils.prefix --voice-over $RECORDINGS) \
       $(python -m run.utils.prefix --script $SCRIPTS) \
+      --language $LANGUAGE \
       --destination $GCS_URI/processed/
    ```
 

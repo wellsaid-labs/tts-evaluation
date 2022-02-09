@@ -36,28 +36,6 @@ caches.
   find disk/data -name '.tts_cache' -type d -exec rm -rf {} \;
   ```
 
-- Delete the cache'd predicted spectrograms, like so:
-
-  ```bash
-  find disk/data -type f -name 'predicted_spectrogram*aligned*npy' -delete
-  ```
-
-- Delete various function disk caches for functions. For example, in the below command
-  we delete the disk cache for `src.audio.get_audio_metadata`:
-
-  ```bash
-  rm disk/other/disk_cache/src.audio.get_audio_metadata
-  ```
-
-## Apply a git patch
-
-The standard command for applying a git patch is fragile. There are additional flags that can
-be added to make the process more robust:
-
-```bash
-git apply git_diff.patch --ignore-space-change --ignore-whitespace --3way
-```
-
 ## Find the largest directories
 
 You may find it useful to sort directories by their size, in order to find the largest

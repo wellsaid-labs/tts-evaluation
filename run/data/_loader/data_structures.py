@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 FloatFloat = typing.Tuple[float, float]
 IntInt = typing.Tuple[int, int]
 Slice = slice  # NOTE: `pylance` is buggy if we use `slice` directly for typing.
+Session = typing.NewType("Session", str)
 
 
 class NonalignmentSpans(typing.NamedTuple):
@@ -176,6 +177,7 @@ class Passage:
 
     Args:
         audio_file: A voice-over of the `script`.
+        session: A label used to group passages recorded together.
         speaker: An identifier of the voice.
         script: The `script` the `speaker` was reading from.
         transcript: The `transcript` of the `audio`.
@@ -193,6 +195,7 @@ class Passage:
     """
 
     audio_file: AudioMetadata
+    session: Session
     speaker: Speaker
     script: str
     transcript: str
@@ -227,8 +230,19 @@ class Passage:
     def next(self):
         return None if self.index == len(self.passages) - 1 else self.passages[self.index + 1]
 
+    @property
+    def audio_start(self) -> float:
+        return self.speech_segments[0].audio_start
+
+    @property
+    def audio_stop(self) -> float:
+        return self.speech_segments[-1].audio_stop
+
     def audio(self):
         return _loader.utils.read_audio(self.audio_file)
+
+    def segmented_audio_length(self) -> float:
+        return self.audio_stop - self.audio_start
 
     def aligned_audio_length(self) -> float:
         return self.last.audio[-1] - self.first.audio[0]
@@ -425,18 +439,22 @@ class Span:
         return self._last_cache
 
     @property
-    def audio_start(self):
+    def audio_start(self) -> float:
         """Start of audio span in `self.audio_file`."""
         return self._first.audio[0] if self.audio_slice_ is None else self.audio_slice_.start
 
     @property
-    def audio_stop(self):
+    def audio_stop(self) -> float:
         """End of audio span in `self.audio_file`."""
         return self._last.audio[-1] if self.audio_slice_ is None else self.audio_slice_.stop
 
     @property
     def speaker(self):
         return self.passage.speaker
+
+    @property
+    def session(self) -> Session:
+        return self.passage.session
 
     @property
     def audio_file(self):
@@ -473,6 +491,7 @@ class Span:
     @property
     def nonalignments_slice(self):
         """Slice of `Alignment`s in `self.passage.nonalignments`."""
+        assert self.passage_alignments is self.passage.alignments
         return slice(self.slice.start, self.slice.stop + 1)
 
     @property
@@ -538,15 +557,19 @@ class Span:
         return (self.__getitem__(i) for i in range(self.slice.stop - self.slice.start))
 
     def check_invariants(self):
-        """ Check datastructure invariants. """
+        """Check datastructure invariants."""
         self.passage.check_invariants()
-        assert self.passage_alignments in (self.passage.nonalignments, self.passage.alignments)
+        assert (
+            self.passage_alignments is self.passage.nonalignments
+            or self.passage_alignments is self.passage.alignments
+        )
         assert self.slice.stop > self.slice.start, "`Span` must have `Alignments`."
         assert self.slice.stop <= len(self.passage_alignments) and self.slice.stop >= 0
         assert self.slice.start < len(self.passage_alignments) and self.slice.start >= 0
         # NOTE: `self.audio_slice_` must partially contain all alignments.
         assert self.audio_slice_ is None or (
-            self.audio_slice_.start <= self._first.audio[1]
+            self.audio_slice_.stop > self.audio_slice_.start
+            and self.audio_slice_.start <= self._first.audio[1]
             and self.audio_slice_.stop >= self._last.audio[0]
         )
         return self
@@ -572,7 +595,7 @@ def _make_nonalignments(passage: Passage) -> Tuple[Alignment]:
 
 
 def _exists(path: Path) -> bool:
-    """ Helper function for `make_passages` that can be easily mocked. """
+    """Helper function for `make_passages` that can be easily mocked."""
     return path.exists() and path.is_file()
 
 
@@ -621,6 +644,9 @@ def _make_speech_segments_helper(
 ) -> typing.Tuple[typing.Tuple[slice, ...], ...]:
     """Make a list of `Span`s that start and end with silence.
 
+    NOTE: Long alignments (more than 1s) can include a pause. Due to this, there may be a pause
+    inside a speech segment.
+
     Args:
         ...
         nss_timeline: Timeline for looking up non-speech segments (NSS) an interval of audio.
@@ -665,7 +691,7 @@ def _maybe_normalize_vo_script(script: str) -> str:
 
 
 def _check_updated_script_helper(label: str, attr: str, original: str, updated: str):
-    """ Helper function for `_check_updated_script`. """
+    """Helper function for `_check_updated_script`."""
     diff = [o for o, u in zip(original, updated) if o != u]
     lib.utils.call_once(logger.error, f"[{label}] `{attr}` was not normalized: {diff}")
     assert len(original) == len(updated), "Alignments and script are out-of-sync."
@@ -778,9 +804,21 @@ def _make_speech_segments(passage: Passage) -> typing.List[Span]:
     return [passage.span(*s) for s in speech_segments]
 
 
+def _default_session(passage: UnprocessedPassage) -> Session:
+    """By default, this assumes that each audio file was recorded, individually.
+
+    TODO: Remove suffix from `Session` name.
+    """
+    return Session(passage.audio_path.name)
+
+
 @lib.utils.log_runtime
 def make_passages(
-    label: str, dataset: UnprocessedDataset, add_tqdm: bool = False, **kwargs
+    label: str,
+    dataset: UnprocessedDataset,
+    add_tqdm: bool = False,
+    get_session: typing.Callable[[UnprocessedPassage], Session] = _default_session,
+    **kwargs,
 ) -> typing.List[Passage]:
     """Process `UnprocessedPassage` and return a list of `Passage`s.
 
@@ -813,6 +851,7 @@ def make_passages(
             continue
         kwargs = {**kwargs, "speaker": item.speaker, "script": item.script}
         kwargs = {**kwargs, "transcript": item.transcript, "other_metadata": item.other_metadata}
+        kwargs = {**kwargs, "session": get_session(item)}
         audio_file = normalized_audio_files[item.audio_path]
         alignments = _normalize_alignments(item, audio_file)
         documents[i].append(Passage(audio_file=audio_file, alignments=alignments, **kwargs))

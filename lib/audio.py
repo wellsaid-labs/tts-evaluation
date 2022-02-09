@@ -39,32 +39,32 @@ logger = logging.getLogger(__name__)
 
 
 def milli_to_sec(milli: float) -> float:
-    """ Covert milliseconds to seconds. """
+    """Covert milliseconds to seconds."""
     return milli / 1000
 
 
 def sec_to_milli(sec: float) -> float:
-    """ Covert seconds to milliseconds. """
+    """Covert seconds to milliseconds."""
     return sec * 1000
 
 
 def milli_to_sample(milli: float, sample_rate: int) -> int:
-    """ Covert milliseconds to samples. """
+    """Covert milliseconds to samples."""
     return int(round(milli_to_sec(milli) * sample_rate))
 
 
 def sample_to_milli(sample: int, sample_rate: int) -> float:
-    """ Covert samples to milliseconds. """
+    """Covert samples to milliseconds."""
     return sec_to_milli(float(sample) / sample_rate)
 
 
 def sample_to_sec(sample: int, sample_rate: int) -> float:
-    """ Covert samples to seconds. """
+    """Covert samples to seconds."""
     return float(sample) / sample_rate
 
 
 def sec_to_sample(sec: float, sample_rate: int) -> int:
-    """ Covert seconds to samples. """
+    """Covert seconds to samples."""
     return int(round(sec * sample_rate))
 
 
@@ -222,9 +222,6 @@ def get_audio_metadata(paths, **kwargs):
 def clip_waveform(waveform: np.ndarray) -> np.ndarray:
     """Clip audio at the maximum and minimum amplitude.
 
-    TODO: In SoX, they implemented `--guard`, which: "Automatically invoke the gain effect to guard
-    against clipping". We could do the same.
-
     NOTE: Clipping will cause distortion to the waveform, learn more:
     https://en.wikipedia.org/wiki/Clipping_(audio)
     """
@@ -251,6 +248,7 @@ def read_audio(
 
     TODO: Should we implement automatic gain control?
     https://en.wikipedia.org/wiki/Automatic_gain_control
+    TODO: Should there be a look up table from numpy dtype to ffmpeg data types?
 
     Args:
         path: Path to load.
@@ -362,7 +360,7 @@ AudioFilter = typing.NewType("AudioFilter", str)
 
 
 def format_ffmpeg_audio_filter(name: str, **kwargs: typing.Union[str, int, float]) -> AudioFilter:
-    """ Format ffmpeg audio filter flag "-af". """
+    """Format ffmpeg audio filter flag "-af"."""
     return typing.cast(AudioFilter, f"{name}=" + ":".join([f"{k}={v}" for k, v in kwargs.items()]))
 
 
@@ -370,7 +368,7 @@ AudioFilters = typing.NewType("AudioFilters", str)
 
 
 def format_ffmpeg_audio_filters(filters: typing.List[AudioFilter]) -> AudioFilters:
-    """ Format ffmpeg audio filter flag "-af". """
+    """Format ffmpeg audio filter flag "-af"."""
     return typing.cast(AudioFilters, ",".join(filters))
 
 
@@ -580,7 +578,7 @@ def k_weighting(
     return _k_weighting(frequencies, sample_rate) + offset
 
 
-def a_weighting(frequencies: np.ndarray) -> np.ndarray:
+def a_weighting(frequencies: np.ndarray, *_) -> np.ndarray:
     """Wrapper around `librosa.core.A_weighting`.
 
     Learn more:
@@ -598,7 +596,7 @@ def a_weighting(frequencies: np.ndarray) -> np.ndarray:
     )
 
 
-def iso226_weighting(frequencies: np.ndarray) -> np.ndarray:
+def iso226_weighting(frequencies: np.ndarray, *_) -> np.ndarray:
     """Get the ISO226 weights for `frequencies`.
 
     Learn more:
@@ -621,7 +619,7 @@ def iso226_weighting(frequencies: np.ndarray) -> np.ndarray:
     )
 
 
-def identity_weighting(frequencies: np.ndarray) -> np.ndarray:
+def identity_weighting(frequencies: np.ndarray, *_) -> np.ndarray:
     """Get identity weighting, it doesn't change the frequency weighting.
 
     Args:
@@ -667,22 +665,22 @@ def amp_to_db(tensor: _TensorOrArrayOrFloat, **kwargs) -> _TensorOrArrayOrFloat:
 
 
 def amp_to_power(tensor: _TensorOrArrayOrFloat) -> _TensorOrArrayOrFloat:
-    """ Convert amplitude (https://en.wikipedia.org/wiki/Amplitude) units to power units. """
+    """Convert amplitude (https://en.wikipedia.org/wiki/Amplitude) units to power units."""
     return tensor ** 2
 
 
 def power_to_amp(tensor: _TensorOrArrayOrFloat) -> _TensorOrArrayOrFloat:
-    """ Convert power units to amplitude units. """
+    """Convert power units to amplitude units."""
     return tensor ** 0.5
 
 
 def db_to_power(tensor: _TensorOrArrayOrFloat) -> _TensorOrArrayOrFloat:
-    """ Convert decibel units to power units. """
+    """Convert decibel units to power units."""
     return typing.cast(_TensorOrArrayOrFloat, 10 ** (tensor / 10.0))
 
 
 def db_to_amp(tensor: _TensorOrArrayOrFloat) -> _TensorOrArrayOrFloat:
-    """ Convert decibel units to amplitude units. """
+    """Convert decibel units to amplitude units."""
     return db_to_power(tensor / 2)
 
 
@@ -725,16 +723,29 @@ def signal_to_framed_rms(
 def framed_rms_to_rms(
     frame_rms: _TensorOrArrayOrFloat, frame_hop: int, signal_length: int
 ) -> _TensorOrArrayOrFloat:
-    """ Convert framed RMS to RMS. """
+    """Convert framed RMS to RMS."""
     rms = amp_to_power(frame_rms) * frame_hop / signal_length
     rms = rms if isinstance(rms, float) else rms.sum()
     return power_to_amp(typing.cast(_TensorOrArrayOrFloat, rms))
+
+
+def get_window_correction_factor(window: torch.Tensor) -> float:
+    """Energy correction factor for `window` distortion.
+
+    Learn more:
+    https://community.sw.siemens.com/s/article/window-correction-factors
+    https://www.mathworks.com/matlabcentral/answers/372516-calculate-windowing-correction-factor
+    """
+    window_correction_factor = torch.ones(*window.shape, device=window.device).pow(2).mean().sqrt()
+    window_correction_factor = window_correction_factor / window.pow(2).mean().sqrt()
+    return float(window_correction_factor)
 
 
 @configurable
 def power_spectrogram_to_framed_rms(
     power_spectrogram: torch.Tensor,
     window: torch.Tensor = HParam(),
+    window_correction_factor: typing.Optional[float] = None,
 ) -> torch.Tensor:
     """Compute the root mean square from a spectrogram.
 
@@ -750,21 +761,20 @@ def power_spectrogram_to_framed_rms(
     Args:
         power_spectrogram (torch.FloatTensor
             [batch_size (optional), num_frames, fft_length // 2 + 1])
-        window (torch.FloatTensor [window_size])
+        ...
 
     Returns:
         (torch.FloatTensor [batch_size (optional), num_frames])
     """
-    device = power_spectrogram.device
     has_batch_dim = power_spectrogram.dim() == 3
     batch_size = power_spectrogram.shape[0] if has_batch_dim else 1
     power_spectrogram = power_spectrogram.view(batch_size, *power_spectrogram.shape[-2:])
 
-    # Learn more:
-    # https://community.sw.siemens.com/s/article/window-correction-factors
-    # https://www.mathworks.com/matlabcentral/answers/372516-calculate-windowing-correction-factor
-    window_correction_factor = torch.ones(*window.shape, device=device).pow(2).mean().sqrt()
-    window_correction_factor = window_correction_factor / window.pow(2).mean().sqrt()
+    window_correction_factor = (
+        get_window_correction_factor(window)
+        if window_correction_factor is None
+        else window_correction_factor
+    )
 
     # TODO: This adjustment might be related to repairing constant-overlap-add, see here:
     # https://ccrma.stanford.edu/~jos/sasp/Overlap_Add_Decomposition.html. It should be better
@@ -783,7 +793,7 @@ def power_spectrogram_to_framed_rms(
 class Spectrograms(typing.NamedTuple):
     """
     Args:
-        db_mel (torch.FloatTensor [batch_size  (optional), num_frames, num_mel_bins]):
+        db_mel (torch.FloatTensor [batch_size (optional), num_frames, num_mel_bins]):
             A spectrogram with the mel scale for frequency and decibel scale for loudness.
         db (torch.FloatTensor [batch_size (optional), num_frames, fft_length // 2 + 1]):
             A spectrogram with a decibel scale for loudness.
@@ -811,6 +821,16 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
     https://community.sw.siemens.com/s/article/sound-quality-metrics-loudness-and-sones
     https://en.wikipedia.org/wiki/Sone
     http://www.physics.mcgill.ca/~guymoore/ph224/notes/lecture12.pdf
+    https://github.com/tuwien-musicir/DeepLearning_Tutorial/blob/master/rp_extract.py#L320
+    https://github.com/tuwien-musicir/DeepLearning_Tutorial/blob/master/rp_extract.py#L363
+    http://hyperphysics.phy-astr.gsu.edu/hbase/Sound/phon.html
+
+    TODO: Use LEAF instead, to learn, a spectrogram representation that works well for TTS:
+    https://github.com/denfed/leaf-audio-pytorch/tree/main/leaf_audio_pytorch
+    The LEAF module could be pretrained by the signal model. The module would be trained to create
+    the input and to discriminate. Since both the output and the input are differentiable, in order
+    to prevent the network from collapsing, we could also have a secondary loss based on a basic
+    spectrogram.
 
     Learn more:
     - Loudness Spectrogram:
@@ -842,7 +862,7 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
         frame_hop: See `hop_length` here:
             https://pytorch.org/docs/stable/torch.html#torch.stft
         sample_rate: The sample rate of the audio.
-        num_mel_bins: See `src.audio._mel_filters`. The mel scale is applied to mimic the the
+        num_mel_bins: See `_mel_filters`. The mel scale is applied to mimic the the
             non-linear human ear perception of sound, by being more discriminative at lower
             frequencies and less discriminative at higher frequencies.
         window: See `window` here:
@@ -866,7 +886,7 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
         num_mel_bins: int = HParam(),
         window: torch.Tensor = HParam(),
         min_decibel: float = HParam(),
-        get_weighting: typing.Callable[[np.ndarray], np.ndarray] = HParam(),
+        get_weighting: typing.Callable[[np.ndarray, int], np.ndarray] = HParam(),
         eps: float = 1e-10,
         **kwargs,
     ):
@@ -879,10 +899,11 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
         self.sample_rate = sample_rate
         self.num_mel_bins = num_mel_bins
         self.eps = eps
+        self.get_weighting = get_weighting
 
         mel_basis = _mel_filters(sample_rate, num_mel_bins, fft_length=self.fft_length, **kwargs)
         frequencies = librosa.fft_frequencies(sr=sample_rate, n_fft=self.fft_length)  # type: ignore
-        weighting = torch.tensor(get_weighting(frequencies)).float().view(-1, 1)
+        weighting = torch.tensor(get_weighting(frequencies, sample_rate)).float().view(-1, 1)
         weighting = db_to_power(weighting)
         self.register_buffer("mel_basis", torch.tensor(mel_basis).float())
         self.register_buffer("weighting", weighting)
@@ -998,19 +1019,19 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
 
 @lru_cache(maxsize=None)
 def get_signal_to_db_mel_spectrogram(*args, **kwargs) -> SignalTodBMelSpectrogram:
-    """ Get cached `SignalTodBMelSpectrogram` module. """
+    """Get cached `SignalTodBMelSpectrogram` module."""
     return SignalTodBMelSpectrogram(*args, **kwargs)
 
 
 @configurable
 def get_pyloudnorm_meter(
     sample_rate: int, filter_class: str = HParam(), **kwargs
-) -> pyloudnorm.Meter:
+) -> "pyloudnorm.Meter":
     return _get_pyloudnorm_meter(sample_rate=sample_rate, filter_class=filter_class, **kwargs)
 
 
 @lru_cache(maxsize=None)
-def _get_pyloudnorm_meter(sample_rate: int, filter_class: str, **kwargs) -> pyloudnorm.Meter:
+def _get_pyloudnorm_meter(sample_rate: int, filter_class: str, **kwargs) -> "pyloudnorm.Meter":
     """Get cached `pyloudnorm.Meter` module.
 
     NOTE: `pyloudnorm.Meter` is expensive to import, so we try to avoid it.

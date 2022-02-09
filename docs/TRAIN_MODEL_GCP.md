@@ -21,13 +21,25 @@ Setup your local development environment by following [these instructions](LOCAL
 
    ```zsh
    TRAIN_SCRIPT_PATH='path/to/train' # EXAMPLE: run/train/spectrogram_model
-   ZONE='your-vm-zone' # EXAMPLE: us-central1-a
+   ZONE='your-vm-zone' # EXAMPLE: us-east1-c
    NAME=$USER"-your-instance-name" # EXAMPLE: michaelp-baseline
    GCP_USER='your-gcp-user-name' # Example: michaelp
    ```
 
    💡 TIP: Don't place all your preemptible instances in the same zone, just in case one zone
    runs out of capacity.
+   
+   If starting from scratch, use a standard ubuntu image:
+   ```
+   IMAGE_PROJECT='ubuntu-os-cloud'
+   IMAGE_FAMILY='ubuntu-1804-lts'
+   ```
+   If starting from your own image, set the image project and family appropriately:
+   ```
+   IMAGE_PROJECT='voice-research-255602'
+   IMAGE_FAMILY='your-image-family-name'    # Example: $IMAGE_FAMILY used to image your machine
+   ```
+   
 
 1. Create an instance for training...
 
@@ -35,13 +47,13 @@ Setup your local development environment by following [these instructions](LOCAL
    python -m run.utils.gcp make-instance \
       --name=$NAME \
       --zone=$ZONE \
-      --machine-type='custom-32-98304' \
+      --machine-type='n1-standard-32' \
       --gpu-type='nvidia-tesla-t4' \
       --gpu-count=4 \
       --disk-size=512 \
       --disk-type='pd-balanced' \
-      --image-project='ubuntu-os-cloud' \
-      --image-family='ubuntu-1804-lts' \
+      --image-project=$IMAGE_PROJECT \
+      --image-family=$IMAGE_FAMILY \
       --metadata="startup-script-user=$GCP_USER" \
       --metadata="train-script-path=$TRAIN_SCRIPT_PATH" \
       --metadata-from-file="startup-script=run/utils/gcp/resume_training_on_start_up.sh"
@@ -51,12 +63,14 @@ Setup your local development environment by following [these instructions](LOCAL
    ❓ LEARN MORE: See our machine type benchmarks [here](./TRAIN_MODEL_GCP_BENCHMARKS.md).
 
    💡 TIP: The output of the startup script will be saved on the VM here:
-   `/var/log/syslog`
+   `/var/log/syslog`. The relevant logs will start after
+    "Starting Google Compute Engine Startup Scripts..." is logged.
 
 1. SSH into the instance...
 
    ```zsh
-   VM_NAME=$(python -m run.utils.gcp most-recent --filter $NAME)
+   VM_NAME=$(python -m run.utils.gcp most-recent --name $NAME)
+   echo "VM_NAME=$VM_NAME"
    gcloud compute ssh --zone=$ZONE $VM_NAME
    ```
 
@@ -77,9 +91,13 @@ Setup your local development environment by following [these instructions](LOCAL
 
    ```bash
    VM_NAME=$(python -m run.utils.gcp most-recent --filter $USER)
+   echo "VM_NAME=$VM_NAME"
    VM_ZONE=$(python -m run.utils.gcp zone --name $VM_NAME)
    VM_IP=$(python -m run.utils.gcp ip --name $VM_NAME --zone=$VM_ZONE)
    VM_USER=$(python -m run.utils.gcp user --name $VM_NAME --zone=$VM_ZONE)
+   ```
+
+   ```bash
    sudo python3 -m run.utils.lsyncd $(pwd) /opt/wellsaid-labs/Text-to-Speech \
                                     --public-dns $VM_IP \
                                     --user $VM_USER \
@@ -102,8 +120,9 @@ Setup your local development environment by following [these instructions](LOCAL
 
    . run/utils/gcp/install_drivers.sh
    . run/utils/apt_install.sh
-
-   # NOTE: You will always want to be in an active `venv` whenever you want to work with python.
+   ```
+   **NOTE:** You will always want to be in an active `venv` whenever you want to work with python.
+   ```
    python3.8 -m venv venv
    . venv/bin/activate
 
@@ -117,13 +136,15 @@ Setup your local development environment by following [these instructions](LOCAL
    ```
 
    💡 TIP: After setting up your VM, you may want to
-   [create an Google Machine Image](https://cloud.google.com/compute/docs/machine-images/create-machine-images)
+   [create a Google Machine Image](https://cloud.google.com/compute/docs/machine-images/create-machine-images)
    so you don't need to setup your VM from scratch again.
 
 1. Start a `screen` session with a new virtual environment...
 
    ```bash
    screen
+   ```
+   ```bash
    . venv/bin/activate
    ```
 
@@ -134,11 +155,23 @@ Setup your local development environment by following [these instructions](LOCAL
    EXPERIMENT_NAME='Your experiment name'
    ```
 
-1. Start training... For example, run this command to train a spectrogram model:
+1. Start training... 
+   
+   For example, run this command to train a spectrogram model:
 
    ```bash
    pkill -9 python; sleep 5s; nvidia-smi; \
    PYTHONPATH=. python $TRAIN_SCRIPT_PATH start $COMET_PROJECT "$EXPERIMENT_NAME";
+   ```
+   ---
+   Or select a `SPECTROGRAM_CHECKPOINT`...
+   ```
+   SPECTROGRAM_CHECKPOINT="/opt/wellsaid-labs/Text-to-Speech/path/to/spectrogram/checkpoint"
+   ```
+   ...and run this command to train a signal model:
+   ```bash
+   pkill -9 python; sleep 5s; nvidia-smi; \
+   PYTHONPATH=. python $TRAIN_SCRIPT_PATH start $SPECTROGRAM_CHECKPOINT $COMET_PROJECT "$EXPERIMENT_NAME";
    ```
 
    ❓ LEARN MORE: PyTorch leaves zombie processes that must be killed, check out:
@@ -154,18 +187,43 @@ Setup your local development environment by following [these instructions](LOCAL
 
 ## Post Training Clean Up
 
+### On the instance
+
+1. (Optional) Upload the checkpoints to Google Cloud Storage...
+
+   ```bash
+   NAME='' # EXAMPLE: super_hi_fi__custom_voice
+   gsutil -m cp -r -n disk/experiments/ gs://wsl_experiments/$NAME
+   ```
+
 ### From your local repository
 
 1. Setup your environment variables again...
 
-   ```bash
+   ```zsh
    ZONE='your-vm-zone' # EXAMPLE: us-central1-a
    NAME=$USER"-your-instance-name" # EXAMPLE: michaelp-baseline
    ```
 
-1. Delete your instance...
+1. (Optional) Download checkpoints to your local drive...
 
    ```bash
+   VM_NAME=$(python -m run.utils.gcp most-recent --name $NAME)
+   VM_ZONE=$(python -m run.utils.gcp zone --name $VM_NAME)
+
+   DIR_NAME='' # EXAMPLE: spectrogram_model
+   CHECKPOINT='' # EXAMPLE: '**/**/checkpoints/step_630927.pt'
+
+   DEST="disk/experiments/$DIR_NAME/$VM_NAME/"
+   mkdir -p $DEST
+   gcloud compute scp \
+      $VM_NAME:/opt/wellsaid-labs/Text-to-Speech/disk/experiments/$DIR_NAME/$CHECKPOINT \
+      $DEST --zone=$VM_ZONE
+   ```
+
+1. Delete your instance...
+
+   ```zsh
    python -m run.utils.gcp delete-instance --name=$NAME --zone=$ZONE
    ```
 
@@ -174,13 +232,18 @@ Setup your local development environment by following [these instructions](LOCAL
    💡 TIP: The instance can be imaged and deleted. For example:
 
    ```zsh
-   VM_NAME=$(python -m run.utils.gcp most-recent --filter $NAME)
+   IMAGE_FAMILY=$NAME # EXAMPLE: michaelp-baseline
+   IMAGE_NAME="$IMAGE_FAMILY-v1" # EXAMPLE: michaelp-baseline-v1
+   VM_NAME=$(python -m run.utils.gcp most-recent --name $NAME)
+   VM_ZONE=$(python -m run.utils.gcp zone --name $VM_NAME)
    gcloud compute ssh --zone=$ZONE $VM_NAME \
       --command="rm /opt/wellsaid-labs/AUTO_START_FROM_CHECKPOINT"
    python -m run.utils.gcp image-and-delete \
-      --image-family=$NAME \
-      --image-name="$NAME-v1" \
+      --image-family=$IMAGE_FAMILY \
+      --image-name=$IMAGE_NAME \
       --name=$NAME \
       --vm-name=$VM_NAME \
-      --zone=$(python -m run.utils.gcp zone --name $VM_NAME)
+      --zone=$VM_ZONE
    ```
+   
+   When you're ready to begin signal model training, start from the top of these instructions and use your `$IMAGE_FAMILY` envrionment variable to build your new instance!

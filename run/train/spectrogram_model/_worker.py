@@ -1,9 +1,12 @@
+import collections
 import contextlib
+import copy
 import dataclasses
 import logging
 import math
 import pathlib
 import random
+import types
 import typing
 from functools import partial
 from itertools import chain
@@ -40,12 +43,17 @@ from run.train._utils import (
     set_context,
     set_epoch,
     set_run_seed,
+    set_train_mode,
 )
 from run.train.spectrogram_model._data import Batch, DataProcessor, InputEncoder
-from run.train.spectrogram_model._metrics import Metrics, get_average_db_rms_level
+from run.train.spectrogram_model._metrics import (
+    Metrics,
+    get_alignment_norm,
+    get_average_db_rms_level,
+)
 
 logger = logging.getLogger(__name__)
-torch.optim.Adam.__init__ = configurable_(torch.optim.Adam.__init__)
+torch.optim.AdamW.__init__ = configurable_(torch.optim.AdamW.__init__)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -54,34 +62,67 @@ class Checkpoint(_utils.Checkpoint):
 
     input_encoder: InputEncoder
     model: lib.spectrogram_model.SpectrogramModel
-    optimizer: torch.optim.Adam
+    optimizer: torch.optim.AdamW
     clipper: lib.optimizers.AdaptiveGradientNormClipper
+    ema: lib.optimizers.ExponentialMovingParameterAverage
     scheduler: torch.optim.lr_scheduler.LambdaLR
+
+    def check_invariants(self):
+        """Check datastructure invariants."""
+        assert self.scheduler._step_count == self.step + 1
+        assert self.scheduler.last_epoch == self.step
+        assert self.scheduler.optimizer == self.optimizer
+        assert self.ema.step == self.step + 1
+        ptrs = set(p.data_ptr() for p in self.model.parameters() if p.requires_grad)
+        assert len(self.optimizer.param_groups) == 2
+        assert set(p.data_ptr() for g in self.optimizer.param_groups for p in g["params"]) == ptrs
+        assert set(self.scheduler.get_last_lr()) == set(
+            g["lr"] for g in self.optimizer.param_groups
+        )
+        assert set(p.data_ptr() for p in self.clipper.parameters) == ptrs
+        assert set(p.data_ptr() for p in self.ema.parameters) == ptrs
+        assert self.model.vocab_size == self.input_encoder.phoneme_encoder.vocab_size
+        assert self.model.num_speakers == self.input_encoder.speaker_encoder.vocab_size
+        assert self.model.num_sessions == self.input_encoder.session_encoder.vocab_size
+        assert self.ema.backup == []  # NOTE: Ensure EMA hasn't been applied.
+        assert self.model.training  # NOTE: Ensure `model` is in training mode
+        # NOTE: Ensure there are no gradients.
+        assert all([p.grad is None for p in self.model.parameters()])
+
+    def __post_init__(self):
+        self.check_invariants()
+
+    def export(self) -> typing.Tuple[InputEncoder, lib.spectrogram_model.SpectrogramModel]:
+        """Export inference ready `InputEncoder` and `SpectrogramModel` without needing additional
+        context managers."""
+        self.check_invariants()
+        self.model.grad_enabled = None  # NOTE: For backwards compatibility
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(set_train_mode(self.model, False, self.ema))
+            model = copy.deepcopy(self.model)
+            model.set_grad_enabled(False)
+        self.check_invariants()
+        return self.input_encoder, model
 
 
 @dataclasses.dataclass(frozen=True)
 class _State:
     input_encoder: InputEncoder
     model: torch.nn.parallel.DistributedDataParallel
-    optimizer: torch.optim.Adam
+    optimizer: torch.optim.AdamW
     clipper: lib.optimizers.AdaptiveGradientNormClipper
+    ema: lib.optimizers.ExponentialMovingParameterAverage
     scheduler: torch.optim.lr_scheduler.LambdaLR
     comet: CometMLExperiment
     device: torch.device
     step: torch.Tensor = torch.tensor(0, dtype=torch.long)
 
     def __post_init__(self):
-        """ Check datastructure invariants. """
-        assert self.scheduler._step_count == self.step.item() + 1
-        assert self.scheduler.last_epoch == self.step.item()
-        assert self.scheduler.optimizer == self.optimizer
+        """Check datastructure invariants."""
         ptrs = set(p.data_ptr() for p in self.model.parameters() if p.requires_grad)
         assert set(p.data_ptr() for p in self.model.module.parameters() if p.requires_grad) == ptrs
-        assert len(self.optimizer.param_groups) == 1
-        assert set(p.data_ptr() for p in self.optimizer.param_groups[0]["params"]) == ptrs
-        assert set(p.data_ptr() for p in self.clipper.parameters) == ptrs
-        assert self.model.module.vocab_size == self.input_encoder.phoneme_encoder.vocab_size
-        assert self.model.module.num_speakers == self.input_encoder.speaker_encoder.vocab_size
+        assert self.model.training
+        self.to_checkpoint().check_invariants()
 
     @staticmethod
     def _get_input_encoder(
@@ -93,11 +134,12 @@ class _State:
 
         TODO: For some reason, Comet doesn't log: "phoneme_vocab".
         """
-        passages = chain(*tuple(chain(train_dataset.values(), dev_dataset.values())))
+        passages = list(chain(*tuple(chain(train_dataset.values(), dev_dataset.values()))))
         input_encoder = InputEncoder(
             [p.script for p in passages],
             DATASET_PHONETIC_CHARACTERS,
             list(train_dataset.keys()) + list(dev_dataset.keys()),
+            [(p.speaker, p.session) for p in passages],
         )
 
         label = partial(get_dataset_label, cadence=Cadence.STATIC, type_=DatasetType.TRAIN)
@@ -108,8 +150,16 @@ class _State:
             label("phoneme_vocab"): sorted(input_encoder.phoneme_encoder.vocab),
             label("num_speakers"): input_encoder.speaker_encoder.vocab_size,
             label("speakers"): sorted([s.label for s in input_encoder.speaker_encoder.vocab]),
+            label("num_sessions"): input_encoder.session_encoder.vocab_size,
         }
         comet.log_parameters(stats)
+
+        sessions = collections.defaultdict(set)
+        for passage in passages:
+            sessions[passage.speaker].add(passage.session)
+        for speaker, sessions in sessions.items():
+            comet.log_parameter(label("num_sessions", speaker=speaker), len(sessions))
+            comet.log_parameter(label("sessions", speaker=speaker), sessions)
 
         label = partial(label, type_=DatasetType.DEV)
         stats = {
@@ -128,8 +178,9 @@ class _State:
     ) -> lib.spectrogram_model.SpectrogramModel:
         """Initialize a model onto `device`."""
         model = lib.spectrogram_model.SpectrogramModel(
-            input_encoder.phoneme_encoder.vocab_size,
-            input_encoder.speaker_encoder.vocab_size,
+            vocab_size=input_encoder.phoneme_encoder.vocab_size,
+            num_speakers=input_encoder.speaker_encoder.vocab_size,
+            num_sessions=input_encoder.session_encoder.vocab_size,
         ).to(device, non_blocking=True)
         comet.set_model_graph(str(model))
         label = get_model_label("num_parameters", Cadence.STATIC)
@@ -140,14 +191,40 @@ class _State:
         return model
 
     @staticmethod
+    def _make_optimizer_groups(
+        model: torch.nn.Module,
+        exclude_from_decay: typing.Callable[[str, torch.nn.Parameter, torch.nn.Module], bool],
+    ) -> typing.List[typing.Dict[str, typing.Any]]:
+        """Create optimizer groups with optimizer options per group.
+
+        Args:
+            ...
+            exclude_from_decay: Given the paramter name, object, and parent module this returns
+                if the parameter should have weight decay.
+        """
+        param_to_module = {p: m for m in model.modules() for p in m.parameters(recurse=False)}
+        named_params = [(n, p) for n, p in model.named_parameters() if p.requires_grad]
+        exclude: typing.Callable[[str, torch.nn.Parameter], bool]
+        exclude = lambda n, p: exclude_from_decay(n, p, param_to_module[p])
+        no_decay_names, no_decay_params = tuple(zip(*[p for p in named_params if exclude(*p)]))
+        decay_names, decay_params = tuple(zip(*[p for p in named_params if not exclude(*p)]))
+        logger.info("Parameters excluded from weight decay: %s", no_decay_names)
+        logger.info("Parameters with weight decay: %s", decay_names)
+        return [{"params": no_decay_params, "weight_decay": 0.0}, {"params": decay_params}]
+
+    @staticmethod
     @configurable
     def _get_optimizers(
         model: torch.nn.Module,
-        optimizer: typing.Type[torch.optim.Adam] = HParam(),
+        optimizer: typing.Type[torch.optim.AdamW] = HParam(),
         lr_multiplier_schedule: typing.Callable[[int], float] = HParam(),
+        exclude_from_decay: typing.Callable[
+            [str, torch.nn.Parameter, torch.nn.Module], bool
+        ] = HParam(),
     ) -> typing.Tuple[
-        torch.optim.Adam,
+        torch.optim.AdamW,
         lib.optimizers.AdaptiveGradientNormClipper,
+        lib.optimizers.ExponentialMovingParameterAverage,
         torch.optim.lr_scheduler.LambdaLR,
     ]:
         """Initialize model optimizers.
@@ -157,19 +234,21 @@ class _State:
         https://github.com/pytorch/pytorch/issues/2830
         """
         params = list(filter(lambda p: p.requires_grad, model.parameters()))
-        optimizer_ = optimizer(params)
+        optimizer_ = optimizer(_State._make_optimizer_groups(model, exclude_from_decay))
         clipper = lib.optimizers.AdaptiveGradientNormClipper(params)
         scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer_, lr_multiplier_schedule)
-        return optimizer_, clipper, scheduler
+        ema = lib.optimizers.ExponentialMovingParameterAverage(params)
+        return optimizer_, clipper, ema, scheduler
 
     def to_checkpoint(self):
-        """ Create a checkpoint to save the spectrogram training state. """
+        """Create a checkpoint to save the spectrogram training state."""
         return Checkpoint(
             comet_experiment_key=self.comet.get_key(),
             input_encoder=self.input_encoder,
             model=typing.cast(lib.spectrogram_model.SpectrogramModel, self.model.module),
             optimizer=self.optimizer,
             clipper=self.clipper,
+            ema=self.ema,
             scheduler=self.scheduler,
             step=int(self.step.item()),
         )
@@ -193,6 +272,7 @@ class _State:
             torch.nn.parallel.DistributedDataParallel(checkpoint.model, [device], device),
             checkpoint.optimizer,
             checkpoint.clipper,
+            checkpoint.ema,
             checkpoint.scheduler,
             comet,
             device,
@@ -207,7 +287,7 @@ class _State:
         comet: CometMLExperiment,
         device: torch.device,
     ):
-        """ Create spectrogram training state from the `train_dataset`. """
+        """Create spectrogram training state from the `train_dataset`."""
         input_encoder = cls._get_input_encoder(train_dataset, dev_dataset, comet)
         model = cls._get_model(device, comet, input_encoder)
         # NOTE: Even if `_get_model` is initialized differently in each process, the parameters
@@ -231,13 +311,16 @@ def _get_data_loaders(
     dev_batch_size: int = HParam(),
     train_steps_per_epoch: int = HParam(),
     dev_steps_per_epoch: int = HParam(),
+    is_train_balanced: bool = HParam(),
+    is_dev_balanced: bool = HParam(),
     num_workers: int = HParam(),
     prefetch_factor: int = HParam(),
 ) -> typing.Tuple[DataLoader[Batch], DataLoader[Batch]]:
-    """ Initialize training and development data loaders.  """
+    """Initialize training and development data loaders."""
     input_encoder, step = state.input_encoder, int(state.step.item())
-    train = DataProcessor(train_dataset, train_batch_size, input_encoder=input_encoder, step=step)
-    dev = DataProcessor(dev_dataset, dev_batch_size, input_encoder=input_encoder, step=step)
+    kwargs = dict(input_encoder=input_encoder, step=step)
+    train = DataProcessor(train_dataset, train_batch_size, **kwargs, balanced=is_train_balanced)
+    dev = DataProcessor(dev_dataset, dev_batch_size, **kwargs, balanced=is_dev_balanced)
     kwargs = dict(
         num_workers=num_workers,
         device=state.device,
@@ -265,7 +348,11 @@ class _HandleBatchArgs(typing.NamedTuple):
 
 
 def _visualize_source_vs_target(args: _HandleBatchArgs, preds: lib.spectrogram_model.Forward):
-    """Visualize predictions as compared to the original `batch`."""
+    """Visualize predictions as compared to the original `batch`.
+
+    TODO: Add `pick` so that we can find examples which perform poorly in training, and hence are
+    probably bad examples. Also, this should log the audio, for analysis.
+    """
     if not is_master():
         return
 
@@ -313,6 +400,7 @@ def _run_step(
     https://github.com/horovod/horovod/issues/665
     https://discuss.pytorch.org/t/how-to-overlap-h2d-and-training/93635/5
     https://github.com/pytorch/pytorch/issues/23729#issuecomment-518616242
+    TODO: Log spectrogram loss per speaker, in order to monitor overfitting.
 
     Args:
         ...
@@ -323,12 +411,16 @@ def _run_step(
             to normalize the loss magnitude.
     """
     args.timer.record_event(args.timer.MODEL_FORWARD)
-    preds = args.state.model(
-        tokens=args.batch.phonemes,
+    params = lib.spectrogram_model.Params(
+        tokens=args.batch.encoded_phonemes.tensor,
         speaker=args.batch.encoded_speaker.tensor,
-        target_frames=args.batch.spectrogram.tensor,
+        session=args.batch.encoded_session.tensor,
         num_tokens=args.batch.encoded_phonemes.lengths,
         tokens_mask=args.batch.encoded_phonemes_mask.tensor,
+    )
+    preds = args.state.model(
+        params=params,
+        target_frames=args.batch.spectrogram.tensor,
         target_mask=args.batch.spectrogram_mask.tensor,
         mode=lib.spectrogram_model.Mode.FORWARD,
     )
@@ -347,7 +439,6 @@ def _run_step(
     stop_token_loss *= args.batch.spectrogram_mask.tensor
 
     if args.state.model.training:
-        args.state.model.zero_grad(set_to_none=True)
 
         # NOTE: We sum over the `num_frames` dimension to ensure that we don't bias based on
         # `num_frames`. For example, a larger `num_frames` means that the denominator is larger;
@@ -364,21 +455,24 @@ def _run_step(
         stop_token_loss_ = (stop_token_loss_ - stop_token_min_loss).abs() + stop_token_min_loss
 
         args.timer.record_event(args.timer.MODEL_BACKWARD)
+        params = [p for g in args.state.optimizer.param_groups for p in g["params"]]
+        assert all([p.grad is None for p in params])
         (spectrogram_loss_ + stop_token_loss_).backward()
 
         args.timer.record_event(args.timer.MODEL_STEP)
         # NOTE: `optimizer` will not error if there are no gradients so we check beforehand.
-        params = args.state.optimizer.param_groups[0]["params"]
         assert all([p.grad is not None for p in params]), "`None` gradients found."
         # NOTE: Measure the "grad_norm" before `clipper.clip()`.
         norm_inf = get_parameter_norm(params, math.inf) if is_master() else torch.tensor(math.nan)
         assert not is_master() or torch.isfinite(norm_inf), f"Gradient was too large {norm_inf}."
         norm = args.state.clipper.clip()
         args.state.optimizer.step()
+        args.state.ema.update()
         args.state.scheduler.step()
         args.timer.record_event(args.timer.LOG_METRICS)
         args.state.step.add_(1)
         args.state.comet.set_step(typing.cast(int, args.state.step.item()))
+        args.state.model.zero_grad(set_to_none=True)
 
         norm_inf_ = float(norm_inf.item())
         args.metrics.log_optim_metrics(
@@ -408,7 +502,42 @@ def _run_step(
     args.metrics.update(values)
 
 
-def _visualize_inferred(args: _HandleBatchArgs, preds: lib.spectrogram_model.Infer):
+def _min_alignment_norm(
+    args: _HandleBatchArgs, preds: lib.spectrogram_model.Infer, spectrogram_mask: torch.Tensor
+) -> int:
+    """Get the index of the prediction that has the smallest alignment norm."""
+    tokens_mask = args.batch.encoded_phonemes_mask.tensor
+    return int(torch.argmin(get_alignment_norm(preds.alignments, tokens_mask, spectrogram_mask)))
+
+
+def _max_num_frames_diff(args: _HandleBatchArgs, preds: lib.spectrogram_model.Infer, *_) -> int:
+    """Get the index of the prediction that most deviates from the original spectrogram length."""
+    return int(torch.argmax((args.batch.spectrogram.lengths - preds.lengths).abs()))
+
+
+def _random_sequence(args: _HandleBatchArgs, *_) -> int:
+    """Get a random batch index."""
+    return random.randint(0, len(args.batch) - 1)
+
+
+class _Pick(typing.Protocol):
+    """Get a batch index given the arguments and predictions."""
+
+    def __call__(
+        self,
+        args: _HandleBatchArgs,
+        preds: lib.spectrogram_model.Infer,
+        spectrogram_mask: torch.Tensor,
+    ) -> int:
+        ...
+
+
+def _visualize_inferred(
+    args: _HandleBatchArgs,
+    preds: lib.spectrogram_model.Infer,
+    spectrogram_mask: torch.Tensor,
+    pick: _Pick = _random_sequence,
+):
     """Run in inference mode and visualize results.
 
     TODO: Visualize any related text annotations.
@@ -416,7 +545,8 @@ def _visualize_inferred(args: _HandleBatchArgs, preds: lib.spectrogram_model.Inf
     if not is_master():
         return
 
-    item = random.randint(0, len(args.batch) - 1)
+    pick_label = typing.cast(types.MethodType, pick).__name__
+    item = pick(args, preds, spectrogram_mask)
     num_frames = int(args.batch.spectrogram.lengths[0, item].item())
     num_frames_predicted = int(preds.lengths[0, item].item())
     text_length = int(args.batch.encoded_phonemes.lengths[0, item].item())
@@ -427,47 +557,63 @@ def _visualize_inferred(args: _HandleBatchArgs, preds: lib.spectrogram_model.Inf
     predicted_alignments = preds.alignments[:num_frames_predicted, item, :text_length]
     predicted_stop_token = preds.stop_tokens[:num_frames_predicted, item]
 
-    model = partial(get_model_label, cadence=args.cadence)
-    dataset = partial(get_dataset_label, cadence=args.cadence, type_=args.dataset_type)
-    figures = {
-        dataset("gold_spectrogram"): lib.visualize.plot_mel_spectrogram(gold_spectrogram),
-        model("predicted_spectrogram"): lib.visualize.plot_mel_spectrogram(predicted_spectrogram),
-        model("alignment"): lib.visualize.plot_alignments(predicted_alignments),
-        model("stop_token"): lib.visualize.plot_logits(predicted_stop_token),
-    }
-    args.state.comet.log_figures(figures)
+    model = lambda n: get_model_label(f"{n}/{pick_label}", cadence=args.cadence)
+    dataset = lambda n: get_dataset_label(
+        f"{n}/{pick_label}", cadence=args.cadence, type_=args.dataset_type
+    )
+    figures = (
+        (dataset("gold_spectrogram"), lib.visualize.plot_mel_spectrogram, gold_spectrogram),
+        (model("predicted_spectrogram"), lib.visualize.plot_mel_spectrogram, predicted_spectrogram),
+        (model("alignment"), lib.visualize.plot_alignments, predicted_alignments),
+        (model("stop_token"), lib.visualize.plot_logits, predicted_stop_token),
+    )
+    assets = args.state.comet.log_figures({l: v(n) for l, v, n in figures})
     audio = {
         "predicted_griffin_lim_audio": lib.audio.griffin_lim(predicted_spectrogram.cpu().numpy()),
         "gold_griffin_lim_audio": lib.audio.griffin_lim(gold_spectrogram.cpu().numpy()),
         "gold_audio": args.batch.audio[item].cpu().numpy(),
     }
+    log_npy = args.state.comet.log_npy
+    npy_urls = {f"{l} Array": log_npy(l, args.batch.spans[item].speaker, a) for l, _, a in figures}
+    link = lambda h: "Failed to upload." if h is None else f'<a href="{h}">{h}</a>'
     args.state.comet.log_html_audio(
         audio=audio,
         context=args.state.comet.context,
         text=args.batch.spans[item].script,
         speaker=args.batch.spans[item].speaker,
+        session=args.batch.spans[item].session,
         predicted_loudness=get_average_db_rms_level(predicted_spectrogram.unsqueeze(1)).item(),
         gold_loudness=get_average_db_rms_level(gold_spectrogram.unsqueeze(1)).item(),
+        pick_function=pick_label,
+        **{f"{k} Figure": link(v) for k, v in assets.items()},
+        **{k: link(v) for k, v in npy_urls.items()},
     )
 
 
 def _run_inference(args: _HandleBatchArgs):
-    """Run the model in inference mode, and measure it's results."""
+    """Run the model in inference mode, and measure it's results.
+
+    TODO: Over multiple steps, track the example with the smallest `_min_alignment_norm` or largest
+    `_max_num_frames_diff`, and visualize it.
+    """
     args.timer.record_event(args.timer.MODEL_FORWARD)
-    preds = args.state.model.module(
-        args.batch.encoded_phonemes.tensor,
-        args.batch.encoded_speaker.tensor,
-        args.batch.encoded_phonemes.lengths,
-        mode=lib.spectrogram_model.Mode.INFER,
+    params = lib.spectrogram_model.Params(
+        tokens=args.batch.encoded_phonemes.tensor,
+        speaker=args.batch.encoded_speaker.tensor,
+        session=args.batch.encoded_session.tensor,
+        num_tokens=args.batch.encoded_phonemes.lengths,
+        tokens_mask=args.batch.encoded_phonemes_mask.tensor,
     )
+    preds = args.state.model.module(params, mode=lib.spectrogram_model.Mode.INFER)
     preds = typing.cast(lib.spectrogram_model.Infer, preds)
+    mask = lengths_to_mask(preds.lengths, device=preds.lengths.device).transpose(0, 1)
 
     if args.visualize:
         args.timer.record_event(args.timer.VISUALIZE_PREDICTIONS)
-        _visualize_inferred(args, preds)
+        for pick in [_random_sequence, _max_num_frames_diff, _min_alignment_norm]:
+            _visualize_inferred(args, preds, mask, pick)
 
     args.timer.record_event(args.timer.MEASURE_METRICS)
-    mask = lengths_to_mask(preds.lengths, device=preds.lengths.device).transpose(0, 1)
     values: _utils.MetricsValues = {
         **args.metrics.get_dataset_values(args.batch, preds.reached_max),
         **args.metrics.get_alignment_values(
@@ -495,7 +641,7 @@ def _run_steps(
     """Run the `handle_batch` in a loop over `data_loader` batches."""
     make_args = partial(_HandleBatchArgs, state, data_loader, context, dataset_type)
     with contextlib.ExitStack() as stack:
-        stack.enter_context(set_context(context, state.comet, state.model))
+        stack.enter_context(set_context(context, state.comet, state.model, ema=state.ema))
         stack.enter_context(set_epoch(state.comet, step=state.step.item(), **kwargs))
 
         metrics = Metrics(state.comet, state.input_encoder.speaker_encoder.vocab)
@@ -516,6 +662,21 @@ def _run_steps(
             timer = Timer().record_event(Timer.LOAD_DATA)
 
         metrics.log(is_verbose=True, type_=dataset_type, cadence=Cadence.MULTI_STEP)
+
+
+def exclude_from_decay(param_name: str, param: torch.nn.Parameter, module: torch.nn.Module) -> bool:
+    """
+    NOTE: Learn more about removing regularization from bias terms or `LayerNorm`:
+    https://stats.stackexchange.com/questions/153605/no-regularisation-term-for-bias-unit-in-neural-network/153650
+    https://github.com/huggingface/transformers/issues/4360
+    https://discuss.pytorch.org/t/weight-decay-in-the-optimizers-is-a-bad-idea-especially-with-batchnorm/16994
+
+    Args:
+        param_name: The parameter name as returned by `torch.nn.Module.named_parameters`.
+        param: The parameter name as returned by `torch.nn.Module.parameters`.
+        module: The parent module for this parameter.
+    """
+    return ".bias" in param_name or type(module).__name__ in (torch.nn.LayerNorm,)
 
 
 def run_worker(
@@ -542,6 +703,7 @@ def run_worker(
         (Context.EVALUATE, DatasetType.DEV, dev_loader, _run_step),
         (Context.EVALUATE_INFERENCE, DatasetType.DEV, dev_loader, _run_inference),
     ]
+    save_checkpoint(state.to_checkpoint(), checkpoints_directory, f"step_{state.step.item()}")
     while True:
         steps_per_epoch = train_loader.num_steps_per_epoch
         [_run_steps(state, *args, steps_per_epoch=steps_per_epoch) for args in contexts]

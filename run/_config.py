@@ -4,7 +4,6 @@ import enum
 import logging
 import math
 import pprint
-import re
 import typing
 
 import torch
@@ -41,7 +40,7 @@ del DATASETS[_loader.ELIZABETH_KLETT]  # NOTE: Elizabeth has unannotated charact
 # TODO: Remove this once `grapheme_to_phoneme` is deprecated.
 # fmt: off
 DATASET_PHONETIC_CHARACTERS = [
-    '\n', ' ', '!', '"', "'", '(', ')', '*', ',', '-', '.', '/', ':', ';', '?', '[', ']', 'aɪ',
+    '\n', ' ', '!', '"', "'", '(', ')', '*', ',', '-', '.', '/', ':', ';', '?', '[', ']', '=', 'aɪ',
     'aɪə', 'aɪɚ', 'aɪʊ', 'aɪʊɹ', 'aʊ', 'b', 'd', 'dʒ', 'eɪ', 'f', 'h', 'i', 'iə', 'iː', 'j',
     'k', 'l', 'm', 'n', 'nʲ', 'n̩', 'oʊ', 'oː', 'oːɹ', 'p', 'r', 's', 't', 'tʃ', 'uː', 'v', 'w',
     'x', 'z', 'æ', 'æː', 'ð', 'ø', 'ŋ', 'ɐ', 'ɐː', 'ɑː', 'ɑːɹ', 'ɑ̃', 'ɔ', 'ɔɪ', 'ɔː', 'ɔːɹ',
@@ -54,8 +53,11 @@ TTS_DISK_CACHE_NAME = ".tts_cache"  # NOTE: Hidden directory stored in other dir
 DISK_PATH = lib.environment.ROOT_PATH / "disk"
 DATA_PATH = DISK_PATH / "data"
 EXPERIMENTS_PATH = DISK_PATH / "experiments"
+CHECKPOINTS_PATH = DISK_PATH / "checkpoints"
 TEMP_PATH = DISK_PATH / "temp"
 SAMPLES_PATH = DISK_PATH / "samples"
+# NOTE: For production, store an inference version of signal and spectrogram model.
+TTS_PACKAGE_PATH = DISK_PATH / "tts_package.pt"
 SIGNAL_MODEL_EXPERIMENTS_PATH = EXPERIMENTS_PATH / "signal_model"
 SPECTROGRAM_MODEL_EXPERIMENTS_PATH = EXPERIMENTS_PATH / "spectrogram_model"
 
@@ -84,8 +86,8 @@ NUM_FRAME_CHANNELS = 128
 # https://www.dsprelated.com/freebooks/sasp/Classic_Spectrograms.html
 # https://github.com/pytorch/audio/issues/384#issuecomment-597020705
 # https://pytorch.org/audio/compliance.kaldi.html
-FRAME_SIZE = 2048  # NOTE: Frame size in samples.
-FFT_LENGTH = 2048
+FRAME_SIZE = 4096  # NOTE: Frame size in samples.
+FFT_LENGTH = 4096
 assert FRAME_SIZE % 4 == 0
 FRAME_HOP = FRAME_SIZE // 4
 
@@ -135,7 +137,7 @@ def get_dataset_label(
     speaker: typing.Optional[Speaker] = None,
     **kwargs,
 ) -> Label:
-    """ Label something related to a dataset. """
+    """Label something related to a dataset."""
     kwargs = dict(cadence=cadence.value, type=type_.value, name=name, **kwargs)
     if speaker is None:
         return _label("{cadence}/dataset/{type}/{name}", **kwargs)
@@ -145,7 +147,7 @@ def get_dataset_label(
 def get_model_label(
     name: str, cadence: Cadence, speaker: typing.Optional[Speaker] = None, **kwargs
 ) -> Label:
-    """ Label something related to the model. """
+    """Label something related to the model."""
     kwargs = dict(cadence=cadence.value, name=name, **kwargs)
     if speaker is None:
         return _label("{cadence}/model/{name}", **kwargs)
@@ -153,19 +155,19 @@ def get_model_label(
 
 
 def get_config_label(name: str, cadence: Cadence = Cadence.STATIC, **kwargs) -> Label:
-    """ Label something related to a configuration. """
+    """Label something related to a configuration."""
     return _label("{cadence}/config/{name}", cadence=cadence.value, name=name, **kwargs)
 
 
 def get_environment_label(name: str, cadence: Cadence = Cadence.STATIC, **kwargs) -> Label:
-    """ Label something related to a environment. """
+    """Label something related to a environment."""
     return _label("{cadence}/environment/{name}", cadence=cadence.value, name=name, **kwargs)
 
 
 def get_timer_label(
     name: str, device: Device = Device.CPU, cadence: Cadence = Cadence.STATIC, **kwargs
 ) -> Label:
-    """ Label something related to a performance. """
+    """Label something related to a performance."""
     template = "{cadence}/timer/{device}/{name}"
     return _label(template, cadence=cadence.value, device=device.value, name=name, **kwargs)
 
@@ -197,7 +199,7 @@ torch.nn.LayerNorm.__init__ = configurable_(torch.nn.LayerNorm.__init__)
 
 
 def _configure_audio_processing():
-    """ Configure modules that process audio. """
+    """Configure modules that process audio."""
     # NOTE: The SoX and FFmpeg encodings are the same.
     # NOTE: The signal model output is 32-bit.
     suffix = ".wav"
@@ -211,13 +213,21 @@ def _configure_audio_processing():
         precision="25-bit",
     )
     non_speech_segment_frame_length = 50
+    max_frames_per_token = 0.18 / (FRAME_HOP / format_.sample_rate)
+    # NOTE: Today pauses longer than one second are not used for emphasis or meaning; however,
+    # Otis does tend to use long pauses for emphasis; however, he rarely pauses for longer than
+    # one second.
+    too_long_pause_length = 1.0
 
     # NOTE: A "hann window" is standard for calculating an FFT, it's even mentioned as a "popular
     # window" on Wikipedia (https://en.wikipedia.org/wiki/Window_function).
     try:
         window = run._utils.get_window("hann", FRAME_SIZE, FRAME_HOP)
         config = {
-            lib.audio.power_spectrogram_to_framed_rms: HParams(window=window),
+            lib.audio.power_spectrogram_to_framed_rms: HParams(
+                window=window,
+                window_correction_factor=lib.audio.get_window_correction_factor(window),
+            ),
             lib.audio.SignalTodBMelSpectrogram.__init__: HParams(window=window),
             lib.audio.griffin_lim: HParams(window=window.numpy()),
         }
@@ -289,11 +299,20 @@ def _configure_audio_processing():
         lib.audio.get_pyloudnorm_meter: HParams(filter_class="DeMan"),
         lib.spectrogram_model.SpectrogramModel.__init__: HParams(
             # NOTE: This is based on one of the slowest legitimate alignments in
-            # `dataset_dashboard`. With a sample size of 8192, we found that 0.18 frames per token
+            # `dataset_dashboard`. With a sample size of 8192, we found that 0.18 seconds per token
             # included everything but 3 alignments. The last three alignments were 0.19 "or",
             # 0.21 "or", and 0.24 "EEOC". The slowest alignment was the acronym "EEOC" with the
             # last letter taking 0.5 seconds.
-            max_frames_per_token=(0.18 / (FRAME_HOP / format_.sample_rate)),
+            max_frames_per_token=max_frames_per_token,
+        ),
+        run.train.spectrogram_model._metrics.get_num_repeated: HParams(
+            threshold=max_frames_per_token
+        ),
+        run.train.spectrogram_model._metrics.get_num_pause_frames: HParams(
+            frame_hop=FRAME_HOP,
+            sample_rate=format_.sample_rate,
+            min_length=too_long_pause_length,
+            max_loudness=-50,
         ),
         lib.signal_model.SignalModel.__init__: HParams(
             ratios=[2] * int(math.log2(FRAME_HOP)),
@@ -324,6 +343,7 @@ def _configure_audio_processing():
             bits=bits,
             **{f.name: getattr(format_, f.name) for f in dataclasses.fields(format_)},
         ),
+        run.data._loader.utils.SpanGenerator.__init__: HParams(max_pause=too_long_pause_length),
         # NOTE: A 0.400 `block_size` is standard for ITU-R BS.1770.
         run.train.spectrogram_model._data._get_loudness: HParams(block_size=0.400, precision=0),
         run.train.spectrogram_model._data._random_loudness_annotations: HParams(max_annotations=10),
@@ -341,12 +361,14 @@ def _configure_audio_processing():
             length=10,
             standard_deviation=2,
         ),
+        run._tts.text_to_speech_ffmpeg_generator: HParams(sample_rate=format_.sample_rate),
+        run._tts.encode_tts_inputs: HParams(seperator=PHONEME_SEPARATOR),
     }
     add_config(config)
 
 
 def _configure_models():
-    """ Configure spectrogram and signal model. """
+    """Configure spectrogram and signal model."""
     # SOURCE (Tacotron 2):
     # Attention probabilities are computed after projecting inputs and location
     # features to 128-dimensional hidden representations.
@@ -379,7 +401,7 @@ def _configure_models():
             # The output of the final convolutional layer is passed into a single
             # bi-directional [19] LSTM [20] layer containing 512 units (256) in each
             # direction) to generate the encoded features.
-            lstm_layers=1,
+            lstm_layers=2,
             out_size=encoder_output_size,
         ),
         lib.spectrogram_model.attention.Attention.__init__: HParams(
@@ -389,7 +411,7 @@ def _configure_models():
             # Attention probabilities are computed after projecting inputs and location
             # features to 128-dimensional hidden representations.
             hidden_size=128,
-            convolution_filter_size=31,
+            convolution_filter_size=9,
             # NOTE: The alignment between text and speech is monotonic; therefore, the attention
             # progression should reflect that. The `window_length` ensures the progression is
             # limited.
@@ -397,6 +419,7 @@ def _configure_models():
             # number of characters the model is attending too at a time. That metric can be used
             # to set the `window_length`.
             window_length=9,
+            avg_frames_per_token=1.4555,
         ),
         lib.spectrogram_model.decoder.Decoder.__init__: HParams(
             encoder_output_size=encoder_output_size,
@@ -425,10 +448,15 @@ def _configure_models():
             speaker_embedding_size=128,
         ),
         lib.signal_model.SignalModel.__init__: HParams(
-            input_size=NUM_FRAME_CHANNELS, hidden_size=32, max_channel_size=512
+            speaker_embedding_size=128,
+            input_size=NUM_FRAME_CHANNELS,
+            hidden_size=32,
+            max_channel_size=512,
         ),
         # NOTE: We found this hidden size to be effective on Comet in April 2020.
-        lib.signal_model.SpectrogramDiscriminator.__init__: HParams(hidden_size=512),
+        lib.signal_model.SpectrogramDiscriminator.__init__: HParams(
+            speaker_embedding_size=128, hidden_size=512
+        ),
     }
     add_config(config)
 
@@ -488,6 +516,10 @@ def _include_passage(passage: Passage) -> bool:
         logger.warning("%s has zero alignments.", repr_)
         return False
 
+    if len(passage.speech_segments) == 0:
+        logger.warning("%s has zero speech segments.", repr_)
+        return False
+
     span = passage[:]
     if span.audio_length == 0.0:
         logger.warning("%s has no aligned audio.", repr_)
@@ -502,6 +534,7 @@ def _include_passage(passage: Passage) -> bool:
     if not any(c.islower() for c in passage.script):
         return False
 
+    # TODO: Filter out Mary Ann from the dataset instead of filtering the related books.
     # NOTE: Filter out Midnight Passenger because it has an inconsistent acoustic setup compared to
     # other samples from the same speaker.
     # NOTE: Filter out the North & South book because it uses English in a way that's not consistent
@@ -514,18 +547,29 @@ def _include_passage(passage: Passage) -> bool:
     return True
 
 
-DIGIT_REGEX = re.compile(r"\d")
-
-
 def _include_span(span: Span):
-    """Return `True` iff `span` should be included in the dataset."""
+    """Return `True` iff `span` should be included in the dataset.
+
+    TODO: The dataset metrics show that 2% of Heather's dataset still has pauses longer than 1s.
+    Can we filter them out in accordance to `too_long_pause_length`?
+    TODO: How can we filter out all non-standard words that haven't been normalized, yet? We could
+    normalize the script before hand, removing all non-standard words. Afterwards, we can verify
+    with Google STT that it matches the voice over.
+    TODO: The character "." is ambigious. It is sometimes prounced "dot" and sometimes it's silent.
+    There may be some inconsistency between eSpeak and the voice over with regards to ".".
+    """
     if "<" in span.script or ">" in span.script:
+        return False
+
+    # NOTE: Filter out any passage(s) with a slash because it's ambigious. It's not obvious if
+    # it should be silent or verbalized.
+    if "/" in span.script or "\\" in span.script:
         return False
 
     # NOTE: Filter out any passage(s) with digits because the pronunciation is fundamentally
     # ambigious, and it's much easier to handle this case with text normalization.
     # NOTE: See performance statistics here: https://stackoverflow.com/a/31861306/4804936
-    if DIGIT_REGEX.search(span.script):
+    if lib.text.has_digit(span.script):
         return False
 
     # NOTE: `Span`s which end with a short, or fast `Span`, tend to be error prone.
@@ -539,27 +583,29 @@ def _include_span(span: Span):
     return True
 
 
+DEV_SPEAKERS = run.data._loader.WSL_DATASETS.copy()
+# NOTE: The `MARI_MONGE__PROMO` dataset is too short for evaluation, at 15 minutes long.
+del DEV_SPEAKERS[run.data._loader.MARI_MONGE__PROMO]
+# NOTE: The `ALICIA_HARRIS`, `JACK_RUTKOWSKI`, and `SAM_SCHOLL` datasets are duplicate datasets.
+# There is an improved version of their datasets already in `dev_speakers`.
+del DEV_SPEAKERS[run.data._loader.ALICIA_HARRIS]
+del DEV_SPEAKERS[run.data._loader.JACK_RUTKOWSKI]
+del DEV_SPEAKERS[run.data._loader.SAM_SCHOLL]
+# NOTE: The `BETH_CAMERON__CUSTOM` dataset isn't included in the studio.
+del DEV_SPEAKERS[run.data._loader.BETH_CAMERON__CUSTOM]
+DEV_SPEAKERS = set(DEV_SPEAKERS.keys())
+
+
 def _configure_data_processing():
-    """ Configure modules that process data, other than audio. """
-    dev_speakers = [
-        run.data._loader.ADRIENNE_WALKER_HELLER,
-        run.data._loader.ALICIA_HARRIS__MANUAL_POST,
-        run.data._loader.BETH_CAMERON,
-        run.data._loader.ELISE_RANDALL,
-        run.data._loader.FRANK_BONACQUISTI,
-        run.data._loader.GEORGE_DRAKE_JR,
-        run.data._loader.HANUMAN_WELCH,
-        run.data._loader.HEATHER_DOE,
-        run.data._loader.HILARY_NORIEGA,
-        run.data._loader.JACK_RUTKOWSKI__MANUAL_POST,
-        run.data._loader.JOHN_HUNERLACH__NARRATION,
-        run.data._loader.JOHN_HUNERLACH__RADIO,
-        run.data._loader.MARK_ATHERLAY,
-        run.data._loader.MEGAN_SINCLAIR,
-        run.data._loader.SAM_SCHOLL__MANUAL_POST,
-        run.data._loader.STEVEN_WAHLBERG,
-        run.data._loader.SUSAN_MURPHY,
-    ]
+    """Configure modules that process data, other than audio.
+
+    TODO: Remove `BETH_CAMERON__CUSTOM` from the `WSL_DATASETS` groups because it has it's own
+    custom script.
+    """
+    groups = [set(_loader.WSL_DATASETS.keys())]
+    # NOTE: For other datasets like M-AILABS and LJ, this assumes that there is no duplication
+    # between different speakers.
+    groups += [{s} for s in _loader.DATASETS.keys() if s not in _loader.WSL_DATASETS]
     config = {
         lib.text.grapheme_to_phoneme: HParams(separator=PHONEME_SEPARATOR),
         run._utils.get_dataset: HParams(
@@ -569,25 +615,20 @@ def _configure_data_processing():
             handle_passage=lib.utils.identity,
         ),
         run._utils.split_dataset: HParams(
-            groups=[set(_loader.WSL_DATASETS)],
-            dev_speakers=set(dev_speakers),
-            approx_dev_length=30 * 60,
-            min_similarity=0.9,
+            groups=groups, dev_speakers=DEV_SPEAKERS, approx_dev_len=30 * 60, min_sim=0.9
         ),
-        run._utils.SpanGenerator.__init__: HParams(
-            max_seconds=15,
-            include_span=_include_span,
-        ),
+        run._utils.SpanGenerator.__init__: HParams(max_seconds=15, include_span=_include_span),
     }
     add_config(config)
 
 
 def configure():
-    """ Configure modules required for `run`. """
+    """Configure modules required for `run`."""
     for directory in [
         DISK_PATH,
         DATA_PATH,
         EXPERIMENTS_PATH,
+        CHECKPOINTS_PATH,
         TEMP_PATH,
         SAMPLES_PATH,
         SIGNAL_MODEL_EXPERIMENTS_PATH,

@@ -16,28 +16,36 @@ from run.data.sync_script_with_audio import (
 
 
 def test__remove_punctuation():
-    """ Test `_remove_punctuation` removes punctuation and fixes spacing. """
+    """Test `_remove_punctuation` removes punctuation and fixes spacing."""
     assert _remove_punctuation("123 abc !.?") == "123 abc"
     assert _remove_punctuation("Hello. You've") == "Hello You ve"
     assert _remove_punctuation("Hello. \n\fYou've") == "Hello You ve"
 
 
 def test_is_sound_alike():
-    """ Test `is_sound_alike` if determines if two phrase sound-alike. """
+    """Test `is_sound_alike` if determines if two phrase sound-alike."""
     assert not is_sound_alike("Hello", "Hi")
     assert is_sound_alike("financingA", "financing a")
     assert is_sound_alike("twentieth", "20th")
     assert is_sound_alike("screen introduction", "screen--Introduction,")
     assert is_sound_alike("Hello-you've", "Hello. You've")
+    assert is_sound_alike("'is...'", "is")
+    assert is_sound_alike("Pre-game", "pregame")
+    assert is_sound_alike("Dreamfields.", "dream Fields")
+    assert is_sound_alike(" — ", "")
+
+    # NOTE: These cases are not supported, yet,
+    assert not is_sound_alike("fifteen", "15")
+    assert not is_sound_alike("forty", "40")
 
 
 def test_format_ratio():
-    """ Test `format_ratio` formats a ratio. """
+    """Test `format_ratio` formats a ratio."""
     assert format_ratio(1, 100) == "1.0% [1 of 100]"
 
 
 def test__get_speech_context():
-    """ Test `_get_speech_context` creates a speech context with limited length phrases. """
+    """Test `_get_speech_context` creates a speech context with limited length phrases."""
     assert set(_get_speech_context("a b c d e f g h i j", 5, 0.0).phrases) == set(  # type: ignore
         ["a b c", "d e f", "g h i", "j"]
     )
@@ -60,7 +68,7 @@ def test__get_speech_context__continuous():
 
 
 def _get_script_tokens(scripts: typing.List[str]) -> typing.List[ScriptToken]:
-    """ Create a list of `ScriptToken`s for testing. """
+    """Create a list of `ScriptToken`s for testing."""
     tokens = [
         [ScriptToken(i, m.group(0), (m.start(), m.end())) for m in re.finditer(r"\S+", script)]
         for i, script in enumerate(scripts)
@@ -69,7 +77,7 @@ def _get_script_tokens(scripts: typing.List[str]) -> typing.List[ScriptToken]:
 
 
 def _get_stt_tokens(stt_results: typing.List[str]) -> typing.List[SttToken]:
-    """ Create a list of `SttToken`s for testing. """
+    """Create a list of `SttToken`s for testing."""
     tokens = [
         [
             SttToken(m.group(0), (float("nan"), float("nan")), (m.start(), m.end()))
@@ -251,7 +259,7 @@ def test_format_differences__unalignment_between_scripts():
 
 
 def test__fix_alignments():
-    """ Test `_fix_alignments` can alignment multiple tokens to multiple tokens. """
+    """Test `_fix_alignments` can alignment multiple tokens to multiple tokens."""
     scripts = ["a b c d e"]
     stt_results = ["a b c d e"]
     alignments = [(0, 0), (4, 4)]
@@ -266,7 +274,7 @@ def test__fix_alignments():
 
 
 def test__fix_alignments__edges():
-    """ Test `_fix_alignments` can alignment multiple tokens to multiple tokens on the edges. """
+    """Test `_fix_alignments` can alignment multiple tokens to multiple tokens on the edges."""
     scripts = ["a b c d e"]
     stt_results = ["a b c d e"]
     alignments = [(2, 2)]
@@ -309,7 +317,7 @@ def test__fix_alignments__script_edges():
 
 
 def test__fix_alignments__between_scripts():
-    """ Test that `_fix_alignments` doesn't align tokens between two scripts. """
+    """Test that `_fix_alignments` doesn't align tokens between two scripts."""
     scripts = ["a b c", "d e"]
     stt_results = ["a b c", "d e"]
     alignments = [(0, 0), (1, 1), (4, 4)]

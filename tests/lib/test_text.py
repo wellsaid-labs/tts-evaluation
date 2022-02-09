@@ -10,7 +10,7 @@ from lib.text import _line_grapheme_to_phoneme, _multiline_grapheme_to_phoneme, 
 
 
 def test__line_grapheme_to_phoneme():
-    """ Test `_line_grapheme_to_phoneme` can handle some basic cases. """
+    """Test `_line_grapheme_to_phoneme` can handle some basic cases."""
     in_ = [
         "  Hello World  ",
         "Hello World  ",
@@ -29,7 +29,7 @@ def test__line_grapheme_to_phoneme():
 
 
 def test__multiline_grapheme_to_phoneme():
-    """ Test `_multiline_grapheme_to_phoneme` against basic cases. """
+    """Test `_multiline_grapheme_to_phoneme` against basic cases."""
     in_ = [
         "and Trot fed it a handful of fresh blue clover and smoothed and petted it until the lamb "
         "was eager to follow her wherever she might go.",
@@ -137,14 +137,14 @@ _ _ɹ_ˌ_oʊ_m_ə_n_ _f_ˈ_oːɹ_ _ɪ_l_ˌ_uː_m_ᵻ_n_ˈ_eɪ_ʃ_ə_n""",
 
 
 def test__multiline_grapheme_to_phoneme__special_bash_character():
-    """ Test `_multiline_grapheme_to_phoneme` handles double quotes, a bash special character. """
+    """Test `_multiline_grapheme_to_phoneme` handles double quotes, a bash special character."""
     in_ = ['"It is commonly argued that the notion of']
     out = ["ɪ_t_ _ɪ_z_ _k_ˈ_ɑː_m_ə_n_l_i_ _ˈ_ɑːɹ_ɡ_j_uː_d_ _ð_æ_t_ð_ə_ _n_ˈ_oʊ_ʃ_ə_n_ _ʌ_v"]
     assert _multiline_grapheme_to_phoneme(in_, separator="_") == out
 
 
 def test__multiline_grapheme_to_phoneme__stripping():
-    """ Test `_multiline_grapheme_to_phoneme` respects white spaces on the edges. """
+    """Test `_multiline_grapheme_to_phoneme` respects white spaces on the edges."""
     in_ = [
         "  Hello World  ",
         "Hello World  ",
@@ -163,21 +163,21 @@ def test__multiline_grapheme_to_phoneme__stripping():
 
 
 def test__multiline_grapheme_to_phoneme__service_separator():
-    """ Test `_multiline_grapheme_to_phoneme` works when `separator == service_separator`. """
+    """Test `_multiline_grapheme_to_phoneme` works when `separator == service_separator`."""
     assert _multiline_grapheme_to_phoneme(["Hello World"], separator="_") == [
         "h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d"
     ]
 
 
 def test__multiline_grapheme_to_phoneme__unique_separator():
-    """ Test `_multiline_grapheme_to_phoneme` errors if `separator` is not unique. """
+    """Test `_multiline_grapheme_to_phoneme` errors if `separator` is not unique."""
     with pytest.raises(AssertionError):
         _multiline_grapheme_to_phoneme(["Hello World"], separator="ə")
 
 
 @mock.patch("lib.text.logger.warning")
 def test__multiline_grapheme_to_phoneme__language_switching(mock_warning):
-    """ Test `_multiline_grapheme_to_phoneme` logs a warning if the language is switched. """
+    """Test `_multiline_grapheme_to_phoneme` logs a warning if the language is switched."""
     assert _multiline_grapheme_to_phoneme(["mon dieu"], separator="|") == ["m|ˈ|ɑː|n| |d|j|ˈ|ø"]
     assert mock_warning.called == 1
 
@@ -202,7 +202,7 @@ def test__multiline_grapheme_to_phoneme__long_number():
 
 
 def test_grapheme_to_phoneme():
-    """ Test `grapheme_to_phoneme` against basic cases. """
+    """Test `grapheme_to_phoneme` against basic cases."""
     in_ = """of 5 stages:
 (i) preparation,
 (ii) incubation,
@@ -223,19 +223,19 @@ _(_ɹ_ˌ_oʊ_m_ə_n_ _f_ˈ_oːɹ_)_ _ɪ_l_ˌ_uː_m_ᵻ_n_ˈ_eɪ_ʃ_ə_n"""
 
 
 def test_grapheme_to_phoneme__empty():
-    """ Test `grapheme_to_phoneme` against an empty list. """
+    """Test `grapheme_to_phoneme` against an empty list."""
     assert grapheme_to_phoneme([]) == []
 
 
 def test_grapheme_to_phoneme__doc_input():
-    """ Test `grapheme_to_phoneme` with a spaCy input. """
+    """Test `grapheme_to_phoneme` with a spaCy input."""
     nlp = lib.text.load_en_core_web_md(disable=("parser", "ner"))
     assert grapheme_to_phoneme(nlp("Hello world"), separator="_") == "h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d"
     assert grapheme_to_phoneme([nlp("How are you?")], separator="_") == ["h_ˈ_aʊ_ _ɑːɹ_ _j_uː_?"]
 
 
 def test_grapheme_to_phoneme__white_space():
-    """ Test `grapheme_to_phoneme` preserves white spaces, SOMETIMES. """
+    """Test `grapheme_to_phoneme` preserves white spaces, SOMETIMES."""
     out = " _ _h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d_ _ "
     assert grapheme_to_phoneme("  Hello World  ", separator="_") == out
 
@@ -258,13 +258,13 @@ def test_grapheme_to_phoneme__white_space():
 
 
 def test_grapheme_to_phoneme__unique_separator():
-    """ Test `grapheme_to_phoneme` errors if `separator` is not unique. """
+    """Test `grapheme_to_phoneme` errors if `separator` is not unique."""
     with pytest.raises(AssertionError):
         grapheme_to_phoneme("Hello World!", separator="!")
 
 
 def test_grapheme_to_phoneme__spacy_failure_cases():
-    """ Test `grapheme_to_phoneme` with text where spaCy fails. """
+    """Test `grapheme_to_phoneme` with text where spaCy fails."""
     in_ = [
         ".Sameer M Babu is a professor who wrote an article about classroom "
         "climate and social intelligence.",
@@ -428,7 +428,7 @@ def test_get_initialism_pronunciation():
 
 
 def test_get_pronunciation__non_standard_words():
-    """ Test `lib.text.get_pronunciation` errors given non-standard words."""
+    """Test `lib.text.get_pronunciation` errors given non-standard words."""
     with pytest.raises(AssertionError):
         lib.text.get_pronunciation("I B M")
     with pytest.raises(AssertionError):
@@ -481,7 +481,7 @@ def test_get_pronunciations():
 
 
 def test_get_pronunciations__part_of_speech():
-    """ Test `lib.text.get_pronunciations` with ambigious part of speech cases. """
+    """Test `lib.text.get_pronunciations` with ambigious part of speech cases."""
     nlp = lib.text.load_en_core_web_md()
     get_pronunciations = lambda s: lib.text.get_pronunciations(nlp(s))
     assert get_pronunciations("It was time to present the present.") == (
@@ -511,13 +511,13 @@ def test_get_pronunciations__part_of_speech():
 
 
 def test_natural_keys():
-    """ Test `lib.text.natural_keys` sorts naturally. """
+    """Test `lib.text.natural_keys` sorts naturally."""
     list_ = ["name 0", "name 1", "name 10", "name 11"]
     assert sorted(list_, key=lib.text.natural_keys) == list_
 
 
 def test_strip():
-    """ Test `lib.text.strip` handles various white space scenarios. """
+    """Test `lib.text.strip` handles various white space scenarios."""
     assert lib.text.strip("  Hello World  ") == ("Hello World", "  ", "  ")
     assert lib.text.strip("Hello World  ") == ("Hello World", "", "  ")
     assert lib.text.strip("  Hello World") == ("Hello World", "  ", "")
@@ -530,7 +530,7 @@ def test_strip():
 
 
 def test_normalize_vo_script():
-    """ Test `lib.text.normalize_vo_script` handles all characters from 0 - 128. """
+    """Test `lib.text.normalize_vo_script` handles all characters from 0 - 128."""
     # fmt: off
     assert list(lib.text.normalize_vo_script(chr(i), strip=False) for i in range(0, 128)) == [
         "", "", "", "", "", "", "", "", "", "  ", "\n", "", "\n", "\n", "", "", "", "", "", "", "",
@@ -545,7 +545,7 @@ def test_normalize_vo_script():
 
 
 def test_is_normalized_vo_script():
-    """ Test `lib.text.is_normalized_vo_script` handles all characters from 0 - 128. """
+    """Test `lib.text.is_normalized_vo_script` handles all characters from 0 - 128."""
     assert all(
         lib.text.is_normalized_vo_script(lib.text.normalize_vo_script(chr(i), strip=False))
         for i in range(0, 128)
@@ -553,7 +553,7 @@ def test_is_normalized_vo_script():
 
 
 def test_is_normalized_vo_script__unnormalized():
-    """ Test `lib.text.is_normalized_vo_script` fails for unnormalized characters. """
+    """Test `lib.text.is_normalized_vo_script` fails for unnormalized characters."""
     # fmt: off
     assert [(chr(i), lib.text.is_normalized_vo_script(chr(i))) for i in range(0, 128)] == [
         ("\x00", False), ("\x01", False), ("\x02", False), ("\x03", False), ("\x04", False),
@@ -582,7 +582,7 @@ def test_is_normalized_vo_script__unnormalized():
 
 
 def test_is_voiced():
-    """ Test `lib.text.is_voiced` handles all characters and an empty string. """
+    """Test `lib.text.is_voiced` handles all characters and an empty string."""
     assert lib.text.is_voiced("123")
     assert lib.text.is_voiced("abc")
     assert lib.text.is_voiced("ABC")
@@ -592,8 +592,17 @@ def test_is_voiced():
     assert not lib.text.is_voiced("")
 
 
+def test_has_digit():
+    """Test `lib.text.has_digit` handles basic cases."""
+    assert lib.text.has_digit("123")
+    assert lib.text.has_digit("123abc")
+    assert lib.text.has_digit("1")
+    assert not lib.text.has_digit("abc")
+    assert not lib.text.has_digit("")
+
+
 def test_add_space_between_sentences():
-    """ Test `lib.text.add_space_between_sentences` adds a space between sentences. """
+    """Test `lib.text.add_space_between_sentences` adds a space between sentences."""
     nlp = lib.text.load_en_core_web_md(disable=("tagger", "ner"))
     script = (
         "Business was involved in slavery, colonialism, and the cold war.The term "
@@ -756,7 +765,7 @@ def _align_and_format(tokens, other, **kwargs):
 
 
 def test_align_tokens__empty():
-    """ Test `lib.text.align_tokens` aligns empty text correctly. """
+    """Test `lib.text.align_tokens` aligns empty text correctly."""
     assert lib.text.align_tokens("", "")[0] == 0
     assert lib.text.align_tokens("a", "")[0] == 1
     assert lib.text.align_tokens("", "a")[0] == 1
@@ -766,7 +775,7 @@ def test_align_tokens__empty():
 
 
 def test_align_tokens__one_letter():
-    """ Test `lib.text.align_tokens` aligns one letter correctly. """
+    """Test `lib.text.align_tokens` aligns one letter correctly."""
     # Should just add "a" to the beginning.
     assert lib.text.align_tokens("abc", "bc", window_length=1)[0] == 1
     assert lib.text.align_tokens("abc", "bc", allow_substitution=lambda a, b: False)[0] == 1
@@ -785,19 +794,19 @@ def test_align_tokens__one_letter():
 
 
 def test_align_tokens__deletion():
-    """ Test `lib.text.align_tokens` deletion. """
+    """Test `lib.text.align_tokens` deletion."""
     # Should delete 4 letters FOOT at the beginning.
     assert lib.text.align_tokens("football", "foot")[0] == 4
 
 
 def test_align_tokens__substitution():
-    """ Test `lib.text.align_tokens` substitution. """
+    """Test `lib.text.align_tokens` substitution."""
     # Needs to substitute the first 5 chars: INTEN by EXECU
     assert lib.text.align_tokens("intention", "execution")[0] == 5
 
 
 def test_align_tokens__multi_operation_alignments():
-    """ Test `lib.text.align_tokens` substitution, insertion, and deletion. """
+    """Test `lib.text.align_tokens` substitution, insertion, and deletion."""
     # Needs to substitute M by K, T by M and add an A to the end
     assert lib.text.align_tokens("mart", "karma")[0] == 3
 
@@ -809,7 +818,7 @@ def test_align_tokens__multi_operation_alignments():
 
 
 def test_align_tokens__window_lengths():
-    """ Test `lib.text.align_tokens` handles various window lengths. """
+    """Test `lib.text.align_tokens` handles various window lengths."""
     assert lib.text.align_tokens("ball", "football")[0] == 4
     assert lib.text.align_tokens("ball", "football", window_length=1)[0] == 7
     assert _align_and_format("ball", "football", window_length=1) == (
@@ -829,14 +838,14 @@ def test_align_tokens__window_lengths():
 
 
 def test_align_tokens__word_subtitution():
-    """ Test `lib.text.align_tokens` substitutes words. """
+    """Test `lib.text.align_tokens` substitutes words."""
     assert lib.text.align_tokens(["Hey", "There"], ["Hey", "There"])[0] == 0
     assert lib.text.align_tokens(["Hey", "There"], ["Hi", "There"])[0] == 2
     assert lib.text.align_tokens(["Hey", "There"], ["Hi", "The"])[0] == 4
 
 
 def test_align_tokens__word_deletion():
-    """ Test `lib.text.align_tokens` deletes words. """
+    """Test `lib.text.align_tokens` deletes words."""
     assert lib.text.align_tokens(["Hey", "There", "You"], ["Hey", ",", "There"])[0] == 4
     assert _align_and_format(["Hey", "There", "You"], ["Hey", ",", "There"]) == (
         "Hey   There",

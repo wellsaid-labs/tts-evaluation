@@ -25,6 +25,8 @@ import lib
 logger = logging.getLogger(__name__)
 app = typer.Typer(context_settings=dict(max_content_width=math.inf))
 credentials, project = google.auth.default()
+# NOTE: The documentation for `compute` is difficult to find, so here is a link:
+# https://googleapis.github.io/google-api-python-client/docs/dyn/compute_v1.html
 compute = googleapiclient.discovery.build("compute", "v1", credentials=credentials)
 
 
@@ -37,7 +39,7 @@ class _OperationStatus(str, Enum):
 def _wait_for_operation(
     operation: str, poll_interval: int = 1, is_global: bool = True, **kwargs
 ) -> typing.Dict:
-    """ Wait for an operation to finish, and return the finished operation. """
+    """Wait for an operation to finish, and return the finished operation."""
     while True:
         client = compute.globalOperations() if is_global else compute.zoneOperations()
         result = client.get(project=project, operation=operation, **kwargs).execute()
@@ -58,14 +60,24 @@ def make_instance(
     disk_size: int = typer.Option(...),
     disk_type: str = typer.Option(...),
     image_project: str = typer.Option(project),
-    image_family: str = typer.Option(...),
+    image_family: typing.Optional[str] = typer.Option(None),
+    image: typing.Optional[str] = typer.Option(None),
     metadata: typing.List[str] = typer.Option([]),
     metadata_from_file: typing.List[str] = typer.Option([]),
+    health_check: str = typer.Option("check-ssh"),
 ):
-    """ Create a managed and preemptible instance named NAME in ZONE. """
+    """Create a managed and preemptible instance named NAME in ZONE."""
     lib.environment.set_basic_logging_config()
 
-    image_ = compute.images().getFromFamily(project=image_project, family=image_family).execute()
+    images = compute.images()
+    if image_family is not None and image is None:
+        image_ = images.getFromFamily(project=image_project, family=image_family).execute()
+    elif image_family is None and image is not None:
+        image_ = images.get(project=image_project, image=image).execute()
+    else:
+        # TODO: The error message should reflect that `image` and `image_family` are not `None`.
+        typer.echo("Unable to find image.")
+        raise typer.Exit(code=1)
     logger.info("Found image: %s", image_["selfLink"])
 
     # NOTE: There is some predefined and special metadata, like startup-script:
@@ -121,6 +133,23 @@ def make_instance(
     template_op = _wait_for_operation(template_op["name"])
     logger.info("Created instance template: %s", template_op["targetLink"])
 
+    try:
+        body = {
+            "checkIntervalSec": 10,
+            "healthyThreshold": 2,
+            "logConfig": {"enable": False},
+            "name": health_check,
+            "tcpHealthCheck": {"port": 22, "proxyHeader": "NONE", "request": "", "response": ""},
+            "timeoutSec": 5,
+            "type": "TCP",
+            "unhealthyThreshold": 3,
+        }
+        health_check_op = compute.healthChecks().insert(project=project, body=body).execute()
+        health_check_op = _wait_for_operation(health_check_op["name"])
+        logger.info("Created health check: %s", health_check_op["targetLink"])
+    except googleapiclient.errors.HttpError as error:
+        logger.warning(error._get_reason())
+
     body = {
         "name": name,
         "baseInstanceName": name,
@@ -129,6 +158,12 @@ def make_instance(
         "statefulPolicy": {
             "preservedState": {"disks": {name: {"autoDelete": "ON_PERMANENT_INSTANCE_DELETION"}}}
         },
+        "autoHealingPolicies": [
+            {
+                "initialDelaySec": 300.0,
+                "healthCheck": f"projects/{project}/global/healthChecks/{health_check}",
+            }
+        ],
     }
     client = compute.instanceGroupManagers()
     manager_op = client.insert(project=project, zone=zone, body=body).execute()
@@ -142,7 +177,7 @@ def watch_instance(
     zone: str = typer.Option(...),
     poll_interval: int = typer.Option(5),
 ):
-    """ Print the status of instance named NAME in ZONE. """
+    """Print the status of instance named NAME in ZONE."""
     lib.environment.set_basic_logging_config()
     client = compute.instanceGroupManagers()
     while True:
@@ -161,7 +196,7 @@ def watch_instance(
 
 @app.command()
 def delete_instance(name: str = typer.Option(...), zone: str = typer.Option(...)):
-    """ Delete the instance named NAME in ZONE. """
+    """Delete the instance named NAME in ZONE."""
     lib.environment.set_basic_logging_config()
 
     try:
@@ -190,7 +225,10 @@ def delete_instance(name: str = typer.Option(...), zone: str = typer.Option(...)
 
 
 @app.command()
-def most_recent(filter: str = ""):
+def most_recent(
+    filter: str = "",
+    name: typing.Optional[str] = typer.Option(None, help="Filter by the name of a instance group."),
+):
     """Print the name of the most recent instance created containing the string FILTER."""
     # NOTE: This wasn't implemented with Google's Python SDK because:
     # - The client must query all zones, and preferably in parallel.
@@ -200,11 +238,13 @@ def most_recent(filter: str = ""):
     # It's much easier to run the below command...
     command = (
         "gcloud compute instances list --sort-by=creationTimestamp "
-        '--format="value(name,creationTimestamp)"'
+        '--format="value(name,metadata.items.created-by,creationTimestamp)"'
     )
     lines = subprocess.check_output(command, shell=True).decode().strip().split("\n")
-    machines = [l.split()[0].strip() for l in lines]
-    machines = [m for m in machines if filter in m]
+    machines = [[s.strip() for s in l.split()] for l in lines]
+    if name is not None:
+        machines = [s for s in machines if len(s) == 3 and s[1].split("/")[-1] == name]
+    machines = [s[0] for s in machines if filter in s[0]]
     if len(machines) == 0:
         logger.error("No instance found.")
     else:

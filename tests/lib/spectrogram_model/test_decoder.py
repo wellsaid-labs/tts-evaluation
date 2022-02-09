@@ -22,11 +22,15 @@ def _make_decoder(
     encoder_output_size=5,
     stop_net_dropout=0.5,
 ) -> Decoder:
-    """ Make `decoder.Decoder` for testing. """
+    """Make `decoder.Decoder` for testing."""
     config = {
         lib.spectrogram_model.pre_net.PreNet.__init__: HParams(num_layers=1, dropout=0.5),
         lib.spectrogram_model.attention.Attention.__init__: HParams(
-            hidden_size=4, convolution_filter_size=3, dropout=0.1, window_length=5
+            hidden_size=4,
+            convolution_filter_size=3,
+            dropout=0.1,
+            window_length=5,
+            avg_frames_per_token=1.0,
         ),
     }
     hparams.add_config(config)
@@ -41,7 +45,7 @@ def _make_decoder(
 
 
 def test_autoregressive_decoder():
-    """ Test `decoder.Decoder` handles a basic case. """
+    """Test `decoder.Decoder` handles a basic case."""
     batch_size = 5
     num_tokens = 6
     module = _make_decoder()
@@ -52,7 +56,7 @@ def test_autoregressive_decoder():
     frames = torch.empty(0)
     stop_token = torch.empty(0)
     for _ in range(3):
-        frames, stop_token, alignment, hidden_state = module(
+        frames, stop_token, alignment, window_starts, hidden_state = module(
             tokens=tokens,
             tokens_mask=tokens_mask,
             num_tokens=tokens_mask.long().sum(dim=1),
@@ -68,6 +72,9 @@ def test_autoregressive_decoder():
 
         assert alignment.dtype == torch.float
         assert alignment.shape == (1, batch_size, num_tokens)
+
+        assert window_starts.dtype == torch.long
+        assert window_starts.shape == (1, batch_size)
 
         assert isinstance(hidden_state, DecoderHiddenState)
 
@@ -92,7 +99,7 @@ def test_autoregressive_decoder():
 
 
 def test_autoregressive_decoder__target():
-    """ Test `decoder.Decoder` handles `target_frames` inputs. """
+    """Test `decoder.Decoder` handles `target_frames` inputs."""
     batch_size = 5
     num_frames = 3
     num_tokens = 6
@@ -102,7 +109,7 @@ def test_autoregressive_decoder__target():
     target_frames = torch.rand(num_frames, batch_size, module.num_frame_channels)
     speaker = torch.zeros(batch_size, module.speaker_embedding_size)
 
-    frames, stop_token, alignment, hidden_state = module(
+    frames, stop_token, alignment, window_starts, hidden_state = module(
         tokens=tokens,
         tokens_mask=tokens_mask,
         num_tokens=tokens_mask.long().sum(dim=1),
@@ -118,6 +125,9 @@ def test_autoregressive_decoder__target():
 
     assert alignment.dtype == torch.float
     assert alignment.shape == (num_frames, batch_size, num_tokens)
+
+    assert window_starts.dtype == torch.long
+    assert window_starts.shape == (num_frames, batch_size)
 
     assert hidden_state.last_frame.dtype == torch.float
     assert hidden_state.last_frame.shape == (1, batch_size, module.num_frame_channels)
