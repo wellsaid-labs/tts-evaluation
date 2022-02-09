@@ -8,6 +8,7 @@ import logging
 import typing
 from concurrent import futures
 from dataclasses import field
+from enum import Enum
 from functools import partial
 from pathlib import Path
 
@@ -15,6 +16,7 @@ import numpy as np
 from hparams import HParam, configurable
 
 import lib
+import run
 from lib.audio import AudioMetadata, get_audio_metadata
 from lib.utils import Timeline, Tuple, flatten_2d, tqdm_
 from run.data import _loader
@@ -57,15 +59,15 @@ def voiced_nonalignment_spans(
     if spans.passage.is_linked.transcript:
         text[0] += "" if spans.prev is None else spans.prev.script + spans.prev.transcript
         text[-1] += "" if spans.next is None else spans.next.script + spans.next.transcript
-    return spans, [lib.text.is_voiced(t) for t in text]
+    return spans, [run._lang_config.is_voiced(t, span.speaker.language) for t in text]
 
 
 def _is_alignment_voiced(passage: Passage, alignment: Alignment) -> bool:
     """Return `True` if a `passage` voiced at `alignment`."""
     for attr in ("script", "transcript"):
         interval = getattr(alignment, attr)
-        if interval[0] < interval[-1] and lib.text.is_voiced(
-            getattr(passage, attr)[interval[0] : interval[-1]]
+        if interval[0] < interval[-1] and run._lang_config.is_voiced(
+            getattr(passage, attr)[interval[0] : interval[-1]], passage.speaker.language
         ):
             return True
     return False
@@ -134,10 +136,24 @@ class Alignment(typing.NamedTuple):
         return lib.utils.stow(alignments, dtype=alignment_dtype)
 
 
+class Language(Enum):
+    ENGLISH: typing.Final = "English"
+    GERMAN: typing.Final = "German"
+    PORTUGUESE_BR: typing.Final = "Portuguese"
+    SPANISH_CO: typing.Final = "Spanish"
+
+
 class Speaker(typing.NamedTuple):
+    # TODO: Move style, language, post processing attributes to `Passage` because the same speaker
+    # could have multiple styles, languages, and filters applied.
     label: str
+    language: Language
     name: typing.Optional[str] = None
     gender: typing.Optional[str] = None
+
+
+make_en_speaker = lambda label, *args, **kwargs: Speaker(label, Language.ENGLISH, *args, **kwargs)
+make_de_speaker = lambda label, *args, **kwargs: Speaker(label, Language.GERMAN, *args, **kwargs)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -683,10 +699,10 @@ def _make_speech_segments_helper(
     return tuple(speech_segments)
 
 
-def _maybe_normalize_vo_script(script: str) -> str:
+def _maybe_normalize_vo_script(script: str, language: Language) -> str:
     """Normalize a script if it's not normalized."""
-    if not lib.text.is_normalized_vo_script(script):
-        return lib.text.normalize_vo_script(script)
+    if not run._lang_config.is_normalized_vo_script(script, language):
+        return run._lang_config.normalize_vo_script(script, language)
     return script
 
 
@@ -763,8 +779,16 @@ def _normalize_scripts(
 
     TODO: Support `Passage`s with no content. At the moment `Passage` requires some content.
     """
-    scripts = set(s for l in dataset for p in l for s in (p.script, p.transcript))
-    new_scripts = {s: _maybe_normalize_vo_script(s) for s in tqdm_(scripts, disable=no_tqdm)}
+    scripts = set(
+        (script, passage.speaker.language)
+        for document in dataset
+        for passage in document
+        for script in (passage.script, passage.transcript)
+    )
+    new_scripts = {
+        (script, language): _maybe_normalize_vo_script(script, language)
+        for script, language in tqdm_(scripts, disable=no_tqdm)
+    }
     new_dataset: UnprocessedDataset = [[] for _ in range(len(dataset))]
     iterator = tqdm_([(p, n) for d, n in zip(dataset, new_dataset) for p in d], disable=no_tqdm)
     for passage, new_document in iterator:
@@ -772,8 +796,8 @@ def _normalize_scripts(
             message = f"[{label}] Skipping, passage ({passage.audio_path.name}) has no content."
             logger.error(message)
             continue
-        script = new_scripts[passage.script]
-        transcript = new_scripts[passage.transcript]
+        script = new_scripts[(passage.script, passage.speaker.language)]
+        transcript = new_scripts[(passage.transcript, passage.speaker.language)]
         _check_updated_script(label, passage, script, transcript)
         new_document.append(dataclasses.replace(passage, script=script, transcript=transcript))
     return new_dataset

@@ -8,14 +8,14 @@ import typing
 
 import torch
 import torch.nn
-from hparams import HParams, add_config, configurable
+from hparams import HParam, HParams, add_config, configurable
 from third_party import LazyLoader
 
 import lib
 import run
 import run.data._loader.utils
 from run.data import _loader
-from run.data._loader import DATASETS, Passage, Span, Speaker
+from run.data._loader import Language, Passage, Span, Speaker
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import IPython
@@ -29,25 +29,12 @@ logger = logging.getLogger(__name__)
 pprinter = pprint.PrettyPrinter(indent=4)
 
 RANDOM_SEED = 1212212
-PHONEME_SEPARATOR = "|"
-DATASETS = copy.copy(DATASETS)
-del DATASETS[_loader.ELLIOT_MILLER]  # NOTE: Elliot has unannotated character portrayals.
-del DATASETS[_loader.ELIZABETH_KLETT]  # NOTE: Elizabeth has unannotated character portrayals.
+MODEL_LANGUAGE = Language.ENGLISH
 
-# NOTE: It's theoretically impossible to know all the phonemes eSpeak might predict because
-# the predictions vary with context. We cannot practically generate every possible permutation
-# to generate the vocab.
-# TODO: Remove this once `grapheme_to_phoneme` is deprecated.
-# fmt: off
-DATASET_PHONETIC_CHARACTERS = [
-    '\n', ' ', '!', '"', "'", '(', ')', '*', ',', '-', '.', '/', ':', ';', '?', '[', ']', '=', 'aɪ',
-    'aɪə', 'aɪɚ', 'aɪʊ', 'aɪʊɹ', 'aʊ', 'b', 'd', 'dʒ', 'eɪ', 'f', 'h', 'i', 'iə', 'iː', 'j',
-    'k', 'l', 'm', 'n', 'nʲ', 'n̩', 'oʊ', 'oː', 'oːɹ', 'p', 'r', 's', 't', 'tʃ', 'uː', 'v', 'w',
-    'x', 'z', 'æ', 'æː', 'ð', 'ø', 'ŋ', 'ɐ', 'ɐː', 'ɑː', 'ɑːɹ', 'ɑ̃', 'ɔ', 'ɔɪ', 'ɔː', 'ɔːɹ',
-    'ə', 'əl', 'ɚ', 'ɛ', 'ɛɹ', 'ɜː', 'ɡ', 'ɣ', 'ɪ', 'ɪɹ', 'ɫ', 'ɹ', 'ɾ', 'ʃ', 'ʊ', 'ʊɹ', 'ʌ',
-    'ʒ', 'ʔ', 'ˈ', 'ˌ', 'θ', 'ᵻ', 'ɬ'
-]
-# fmt: on
+DATASETS = copy.copy(_loader.DATASETS)
+# NOTE: Elliot and Elizabeth has unannotated character portrayals.
+del DATASETS[_loader.english.ELLIOT_MILLER]
+del DATASETS[_loader.english.ELIZABETH_KLETT]
 
 TTS_DISK_CACHE_NAME = ".tts_cache"  # NOTE: Hidden directory stored in other directories for caching
 DISK_PATH = lib.environment.ROOT_PATH / "disk"
@@ -362,7 +349,6 @@ def _configure_audio_processing():
             standard_deviation=2,
         ),
         run._tts.text_to_speech_ffmpeg_generator: HParams(sample_rate=format_.sample_rate),
-        run._tts.encode_tts_inputs: HParams(seperator=PHONEME_SEPARATOR),
     }
     add_config(config)
 
@@ -506,11 +492,15 @@ def _configure_models():
     add_config(config)
 
 
-def _include_passage(passage: Passage) -> bool:
+@configurable
+def _include_passage(passage: Passage, language: typing.Optional[Language] = HParam()) -> bool:
     """Return `True` iff `passage` should be included in the dataset."""
     repr_ = f"{passage.__class__.__name__}("
     repr_ += f"{passage.audio_file.path.relative_to(DATA_PATH)},"
     repr_ += f" {(passage.script[:50] + '...') if len(passage.script) > 50 else passage.script})"
+
+    if language is None or passage.speaker.language != language:
+        return False
 
     if len(passage.alignments) == 0:
         logger.warning("%s has zero alignments.", repr_)
@@ -539,7 +529,10 @@ def _include_passage(passage: Passage) -> bool:
     # other samples from the same speaker.
     # NOTE: Filter out the North & South book because it uses English in a way that's not consistent
     # with editor usage, for example: "To-morrow, you will-- Come back to-night, John!"
-    books = (_loader.m_ailabs.MIDNIGHT_PASSENGER, _loader.m_ailabs.NORTH_AND_SOUTH)
+    books = (
+        _loader.english.m_ailabs.MIDNIGHT_PASSENGER,
+        _loader.english.m_ailabs.NORTH_AND_SOUTH,
+    )
     metadata = passage.other_metadata
     if metadata is not None and "books" in metadata and (metadata["books"] in books):
         return False
@@ -583,16 +576,16 @@ def _include_span(span: Span):
     return True
 
 
-DEV_SPEAKERS = run.data._loader.WSL_DATASETS.copy()
+DEV_SPEAKERS = _loader.WSL_DATASETS.copy()
 # NOTE: The `MARI_MONGE__PROMO` dataset is too short for evaluation, at 15 minutes long.
-del DEV_SPEAKERS[run.data._loader.MARI_MONGE__PROMO]
+del DEV_SPEAKERS[_loader.english.MARI_MONGE__PROMO]
 # NOTE: The `ALICIA_HARRIS`, `JACK_RUTKOWSKI`, and `SAM_SCHOLL` datasets are duplicate datasets.
 # There is an improved version of their datasets already in `dev_speakers`.
-del DEV_SPEAKERS[run.data._loader.ALICIA_HARRIS]
-del DEV_SPEAKERS[run.data._loader.JACK_RUTKOWSKI]
-del DEV_SPEAKERS[run.data._loader.SAM_SCHOLL]
+del DEV_SPEAKERS[_loader.english.ALICIA_HARRIS]
+del DEV_SPEAKERS[_loader.english.JACK_RUTKOWSKI]
+del DEV_SPEAKERS[_loader.english.SAM_SCHOLL]
 # NOTE: The `BETH_CAMERON__CUSTOM` dataset isn't included in the studio.
-del DEV_SPEAKERS[run.data._loader.BETH_CAMERON__CUSTOM]
+del DEV_SPEAKERS[_loader.english.BETH_CAMERON__CUSTOM]
 DEV_SPEAKERS = set(DEV_SPEAKERS.keys())
 
 
@@ -607,13 +600,13 @@ def _configure_data_processing():
     # between different speakers.
     groups += [{s} for s in _loader.DATASETS.keys() if s not in _loader.WSL_DATASETS]
     config = {
-        lib.text.grapheme_to_phoneme: HParams(separator=PHONEME_SEPARATOR),
         run._utils.get_dataset: HParams(
             datasets=DATASETS,
             path=DATA_PATH,
             include_passage=_include_passage,
             handle_passage=lib.utils.identity,
         ),
+        _include_passage: HParams(language=MODEL_LANGUAGE),
         run._utils.split_dataset: HParams(
             groups=groups, dev_speakers=DEV_SPEAKERS, approx_dev_len=30 * 60, min_sim=0.9
         ),
@@ -639,3 +632,4 @@ def configure():
     _configure_audio_processing()
     _configure_models()
     _configure_data_processing()
+    run._lang_config.configure()

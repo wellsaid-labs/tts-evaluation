@@ -32,7 +32,7 @@ from lib.audio import sec_to_sample
 from lib.distributed import get_rank, get_world_size, is_initialized
 from lib.samplers import BucketBatchSampler
 from lib.utils import Tuple, flatten_2d
-from run.data._loader import Alignment, Session, Span, Speaker
+from run.data._loader import Alignment, Language, Session, Span, Speaker
 from run.train import _utils
 
 if typing.TYPE_CHECKING:  # pragma: no cover
@@ -150,7 +150,7 @@ def _random_speed_annotations(
         # TODO: Instead of using characters per second, we could estimate the number of phonemes
         # with `grapheme_to_phoneme`. This might be slow, so we'd need to do so in a batch.
         # `grapheme_to_phoneme` can only estimate the number of phonemes because we can't
-        # incorperate sufficient context to get the actual phonemes pronounced by the speaker.
+        # incorporate sufficient context to get the actual phonemes pronounced by the speaker.
         second_per_char = (alignment.audio[1] - alignment.audio[0]) / (slice_.stop - slice_.start)
         speed[slice_] = round(second_per_char, precision)
         speed_mask[slice_] = True
@@ -310,14 +310,26 @@ class Batch(_utils.Batch):
     # SequenceBatch[torch.LongTensor [1, batch_size], torch.LongTensor [1, batch_size])
     encoded_session: SequenceBatch
 
-    # SequenceBatch[torch.LongTensor [num_phonemes, batch_size], torch.LongTensor [1, batch_size])
-    encoded_phonemes: SequenceBatch
+    # SequenceBatch[torch.LongTensor [num_tokens, batch_size], torch.LongTensor [1, batch_size])
+    encoded_tokens: SequenceBatch
 
-    # SequenceBatch[torch.LongTensor [num_phonemes, batch_size], torch.LongTensor [1, batch_size])
-    encoded_phonemes_mask: SequenceBatch
+    # SequenceBatch[torch.LongTensor [num_tokens, batch_size], torch.LongTensor [1, batch_size])
+    encoded_tokens_mask: SequenceBatch
 
     def __len__(self):
         return len(self.spans)
+
+
+def _en_span_to_tokens(spans: typing.List[Span]) -> typing.List[str]:
+    """Process English `Span`s of text into a list of tokens."""
+    nlp = lib.text.load_en_core_web_md(disable=("parser", "ner"))
+    en_docs: typing.List[spacy.tokens.Doc] = list(nlp.pipe([s.passage.script for s in spans]))
+    for i in range(len(spans)):
+        script_slice = spans[i].script_slice
+        span = en_docs[i].char_span(script_slice.start, script_slice.stop)  # type: ignore
+        assert span is not None, "Invalid `spacy.tokens.Span` selected."
+        en_docs[i] = span.as_doc()
+    return typing.cast(typing.List[str], lib.text.grapheme_to_phoneme(en_docs))
 
 
 def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
@@ -355,19 +367,13 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
 
     assert len(spans) > 0, "Batch must have at least one item."
 
-    nlp = lib.text.load_en_core_web_md(disable=("parser", "ner"))
-    docs: typing.List[spacy.tokens.Doc] = list(nlp.pipe([s.passage.script for s in spans]))
-    for i in range(len(spans)):
-        script_slice = spans[i].script_slice
-        span = docs[i].char_span(script_slice.start, script_slice.stop)  # type: ignore
-        assert span is not None, "Invalid `spacy.tokens.Span` selected."
-        docs[i] = span.as_doc()
+    en_spans = [(i, s) for i, s in enumerate(spans) if s.speaker.language == Language.ENGLISH]
+    en_tokens = _en_span_to_tokens([s for _, s in en_spans])
 
-    phonemes = typing.cast(typing.List[str], lib.text.grapheme_to_phoneme(docs))
-    decoded = [
-        DecodedInput(s.script, p, s.speaker, (s.speaker, s.session))
-        for s, p in zip(spans, phonemes)
-    ]
+    decoded = [DecodedInput(s.script, s.script, s.speaker, (s.speaker, s.session)) for s in spans]
+    for (i, span), token in zip(en_spans, en_tokens):
+        decoded[i] = DecodedInput(span.script, token, span.speaker, (span.speaker, span.session))
+
     encoded = [input_encoder.encode(d) for d in decoded]
     with futures.ThreadPoolExecutor(max_workers=min(max_workers, len(spans))) as pool:
         signals_ = list(pool.map(lambda s: s.audio(), spans))
@@ -386,8 +392,8 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
         phonemes=[p.split(run._config.PHONEME_SEPARATOR) for p in phonemes],
         encoded_speaker=_stack([s.speaker for s in encoded]),
         encoded_session=_stack([s.session for s in encoded]),
-        encoded_phonemes=_stack([s.phonemes for s in encoded]),
-        encoded_phonemes_mask=_stack([_make_mask(e.phonemes.shape[0]) for e in encoded]),
+        encoded_tokens=_stack([s.tokens for s in encoded]),
+        encoded_tokens_mask=_stack([_make_mask(e.tokens.shape[0]) for e in encoded]),
     )
 
 

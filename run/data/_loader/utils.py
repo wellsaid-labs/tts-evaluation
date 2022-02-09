@@ -500,3 +500,52 @@ def conventional_dataset_loader(
         )
         for _, row in df.iterrows()
     ]
+
+
+def wsl_gcs_dataset_loader(
+    directory: Path,
+    speaker: Speaker,
+    gcs_path: str = "gs://wellsaid_labs_datasets",
+    prefix: str = "",
+    post_suffix="__manual_post",
+    recordings_directory_name: str = "recordings",
+    data_directory: str = "processed",
+    **kwargs,
+) -> typing.List[Passage]:
+    """
+    Load WellSaid Labs dataset from Google Cloud Storage (GCS).
+
+    The file structure is similar to:
+        {bucket}/
+        └── {speaker_label}/
+            └── {data_directory}/
+                ...
+
+        {data_directory}/
+                ├── {alignments_directory_name}/  # Alignments between recordings and scripts
+                │   ├── audio1.json
+                ├── {recordings_directory_name}/  # Voice overs
+                │   ├── audio1.wav                # NOTE: Most audio file formats are accepted.
+                │   └── ...
+                ├── {recordings_directory_name}{post_suffix}/  # Optional post processed voice over
+                │   ├── audio1.wav                # NOTE: Most audio file formats are accepted.
+                │   └── ...
+                └── {scripts_directory_name}/     # Voice over scripts with related metadata
+                    ├── audio1-script.csv
+                    └── ...
+
+    Args:
+        directory: Directory to cache the dataset.
+        speaker: The speaker represented by this dataset.
+        gcs_path: The base GCS path storing the data.
+        prefix: The prefix path after `gcs_path` and before the speaker label.
+        post_processing_suffix: An optional suffix added at the end of the speaker label.
+        recordings_directory_name
+        data_directory
+        **kwargs
+    """
+    suffix = post_suffix if post_suffix in speaker.label else ""
+    label = speaker.label.replace(post_suffix, "")
+    gcs_path = "/".join([s for s in [gcs_path, prefix, label, data_directory] if len(s) > 0])
+    kwargs = dict(recordings_directory_name=recordings_directory_name + suffix, **kwargs)
+    return dataset_loader(directory, label, gcs_path, speaker, **kwargs)

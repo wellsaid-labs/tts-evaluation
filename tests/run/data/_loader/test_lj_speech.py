@@ -7,6 +7,7 @@ from unittest import mock
 import lib
 import run.data._loader
 from run.data._loader import Alignment
+from run.data._loader.english import LINDA_JOHNSON, lj_speech_dataset
 from tests import _utils
 from tests.run.data._loader._utils import maybe_normalize_audio_and_cache_side_effect
 
@@ -32,9 +33,9 @@ verbalize_test_cases = {
     # Test Normalized White Space
     "LJ047-0160": "found it to be four one one Elm Street. End quote.",
     "LJ017-0007": "Henry the eighth a new",  # Test Roman Numbers
-    "LJ016-0257": "d'etre",  # Test Remove Accents
-    "LJ018-0029": "Muller",  # Test Remove Accents
-    "LJ018-0396": "celebre",  # Test Remove Accents
+    "LJ016-0257": "d'être",  # Test Allow Accents
+    "LJ018-0029": "Müller",  # Test Allow Accents
+    "LJ018-0396": "célèbre",  # Test Allow Accents
     "LJ020-0106": "three hours'",  # Test Quotation Normalization
     "LJ020-0002": '"sponge,"',  # Test Quotation Normalization
 }
@@ -62,13 +63,13 @@ def test_lj_speech_dataset(
     with tempfile.TemporaryDirectory() as path:
         directory = pathlib.Path(path)
         shutil.copy(archive, directory / archive.name)
-        data = run.data._loader.lj_speech_dataset(directory=directory)
+        data = lj_speech_dataset(directory=directory)
         assert len(data) == 13100
         assert sum([len(r.script) for r in data]) == 1310332
         assert data[0] == run.data._loader.Passage(
             audio_file=_utils.make_metadata(directory / "LJSpeech-1.1/wavs/LJ001-0001.wav"),
             session=run.data._loader.Session("LJ001"),
-            speaker=run.data._loader.LINDA_JOHNSON,
+            speaker=LINDA_JOHNSON,
             script=(
                 "Printing, in the only sense with which we are at present concerned, differs "
                 "from most if not from all the arts and crafts represented in the Exhibition"
