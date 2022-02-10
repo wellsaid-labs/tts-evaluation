@@ -355,6 +355,7 @@ class LSTMCell(torch.nn.LSTMCell):
 
 
 def is_sortable(obj):
+    """Iff `obj` can be sorted in Python, return `True`."""
     # NOTE: https://stackoverflow.com/questions/19614260/check-if-an-object-is-order-able-in-python
     cls = obj.__class__
     return cls.__lt__ != object.__lt__ or cls.__gt__ != object.__gt__
@@ -425,55 +426,34 @@ class LazyEmbedding(torch.nn.Module):
         idx = torch.tensor(self.vocab[self.unk_token], device=self.weight.device)
         return self.embed(idx).sum().detach().clone().requires_grad_(False)
 
+    def _queue_new_tokens(self, tokens: typing.List[typing.List[typing.Hashable]]):
+        """Queue up tokens for a vocab update."""
+        self._new_tokens.update([t for s in tokens for t in s if t not in self.vocab])
+        if len(self._new_tokens) + len(self.vocab) > self.num_embeddings:
+            raise ValueError("The number of tokens exceeds the allocated number of embeddings.")
+
     def update_tokens(
         self, tokens: typing.List[typing.Hashable], embeddings: typing.Optional[torch.Tensor] = None
     ):
         """Add or update tokens in `self.vocab`.
 
-        TODO: Test, if the updated `embeddings` is zeros?
-
         Args:
             tokens: The tokens to add or update.
             embeddings: The corresponding embeddings for each token.
         """
-        self._new_tokens.update([t for t in tokens if t not in self.vocab])
+        if lib.distributed.is_initialized():
+            raise ValueError("This doesn't support distributed context.")
+
+        self._queue_new_tokens([tokens])
         if len(self._new_tokens) > 0:
             self._update_vocab()
 
-        if embeddings is None:
-            return
+        if embeddings is not None:
+            if embeddings.shape != (len(tokens), self.embed.embedding_dim):
+                raise ValueError("The updated `embeddings` are the wrong shape.")
 
-        if embeddings.shape != (len(tokens), self.embed.embedding_dim):
-            raise ValueError("The updated `embeddings` are the wrong shape.")
-
-        indicies = [self.vocab[t] for t in tokens]
-
-        if not lib.distributed.is_initialized():
             with torch.no_grad():
-                self.weight[indicies] = embeddings
-            return
-
-        device = self.weight.device
-        shape = self.weight.shape
-        world_size = lib.distributed.get_world_size()
-
-        update = torch.zeros(shape, device=device)
-        update[indicies] = embeddings
-
-        outputs = [torch.zeros(shape, device=device) for _ in range(world_size)]
-        torch.distributed.all_gather(outputs, update)
-        all_updates = torch.stack(outputs, dim=0).sum(dim=0)
-
-        outputs = [None for _ in range(world_size)]
-        torch.distributed.all_gather_object(outputs, indicies)
-        outputs = typing.cast(typing.List[typing.List[int]], outputs)
-        all_indicies: typing.List[int] = [i for l in outputs for i in l]
-
-        if not torch.allclose(all_updates[indicies], embeddings):
-            raise ValueError("This recieved a conflicting update from a another device.")
-
-        with torch.no_grad():
-            self.weight[all_indicies] = all_updates
+                self.weight[[self.vocab[t] for t in tokens]] = embeddings
 
     def _update_vocab(self):
         """Update `self.vocab` with `self._new_tokens`."""
@@ -483,12 +463,14 @@ class LazyEmbedding(torch.nn.Module):
             outputs = [None for _ in range(lib.distributed.get_world_size())]
             torch.distributed.all_gather_object(outputs, new_tokens)
             outputs = typing.cast(typing.List[typing.List[typing.Hashable]], outputs)
-            # TODO: Test, if two devices, submit the same token.
             new_tokens = list(set(t for l in outputs for t in l))
-            # NOTE: Ensure that the order `new_tokens` are added in is consistent.
-            new_tokens = (
-                sorted(new_tokens) if all(is_sortable(t) for t in new_tokens) else new_tokens
-            )
+            if len(new_tokens) > 0:
+                is_all_sortable = all(is_sortable(t) for t in new_tokens)
+                type_ = type(new_tokens[0])
+                is_same_type = all(isinstance(t, type_) for t in new_tokens)
+                # NOTE: Ensure that the order `new_tokens` are added in is consistent for external
+                # observers.
+                new_tokens = sorted(new_tokens) if is_all_sortable and is_same_type else new_tokens
 
         for token in new_tokens:
             self.vocab[token] = len(self.vocab)
@@ -496,10 +478,10 @@ class LazyEmbedding(torch.nn.Module):
         self._unk_embedding_hash = self._get_unk_embedding_hash()
         self._new_tokens = set()
 
-    def _has_trained_on_new_tokens(self, eps=1e-5):
+    def _has_trained_on_new_tokens(self):
         # NOTE: Iff the `unk_token` was updated, then the model has trained on a new token it hasn't
         # seen before.
-        return (self._unk_embedding_hash - self._get_unk_embedding_hash()).abs() > eps
+        return not torch.isclose(self._unk_embedding_hash, self._get_unk_embedding_hash())
 
     def _token_to_idx(self, token: typing.Hashable) -> int:
         """Get the index of `token` and return `unk_token` if `token` is not found.
@@ -529,7 +511,7 @@ class LazyEmbedding(torch.nn.Module):
         """
         if self.training:
             self._forward_pass_counter += 1
-            self._new_tokens.update([t for s in tokens for t in s if t not in self.vocab])
+            self._queue_new_tokens(tokens)
             update_proactively = self._forward_pass_counter <= self.proactive_updates
             if (
                 update_proactively
@@ -539,8 +521,7 @@ class LazyEmbedding(torch.nn.Module):
                 self._update_vocab()
 
         indices = [[self._token_to_idx(t, **kwargs) for t in s] for s in tokens]
-        device = self.weight.device
-        sequences = [torch.tensor(s, device=device, dtype=torch.long) for s in indices]
+        sequences = [torch.tensor(s, device=self.weight.device, dtype=torch.long) for s in indices]
         padded = torch.nn.utils.rnn.pad_sequence(sequences, padding_value=self.pad_idx)
         mask = padded != self.pad_idx
         return self.embed(padded), mask
