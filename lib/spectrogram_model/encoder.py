@@ -4,11 +4,10 @@ from functools import lru_cache
 import torch
 import torch.nn
 from hparams import HParam, configurable
-from torchnlp.encoders.text import DEFAULT_PADDING_INDEX
 from torchnlp.nn import LockedDropout
 
 from lib.spectrogram_model.model import Inputs
-from lib.utils import LSTM
+from lib.utils import LSTM, LazyEmbedding
 
 
 @lru_cache(maxsize=8)
@@ -167,7 +166,7 @@ class Encoder(torch.nn.Module):
     TODO: Parameterized `padding_index` with `HParam`.
 
     Args:
-        vocab_size: The size of the vocabulary used to encode `tokens`.
+        max_vocab_size: The maximum size of the vocabulary used to encode `tokens`.
         speaker_embedding_size The size of the speaker embedding.
         out_size: The size of the encoder output.
         hidden_size: The size of the encoders hidden representation. This value must be even.
@@ -175,13 +174,12 @@ class Encoder(torch.nn.Module):
         convolution_filter_size: Size of the convolving kernel. This value must be odd.
         lstm_layers: Number of recurrent LSTM layers.
         dropout: Dropout probability used to regularize the encoders hidden representation.
-        padding_index: Integer used to represent padding.
     """
 
     @configurable
     def __init__(
         self,
-        vocab_size: int,
+        max_vocab_size: int,
         speaker_embedding_size: int,
         out_size: int = HParam(),
         hidden_size: int = HParam(),
@@ -189,7 +187,6 @@ class Encoder(torch.nn.Module):
         convolution_filter_size: int = HParam(),
         lstm_layers: int = HParam(),
         dropout: float = HParam(),
-        padding_index: int = DEFAULT_PADDING_INDEX,
     ):
         super().__init__()
 
@@ -198,7 +195,7 @@ class Encoder(torch.nn.Module):
         assert convolution_filter_size % 2 == 1, "`convolution_filter_size` must be odd"
         assert hidden_size % 2 == 0, "`hidden_size` must be divisable by even"
 
-        self.embed_token = torch.nn.Embedding(vocab_size, hidden_size, padding_idx=padding_index)
+        self.embed_token = LazyEmbedding(max_vocab_size, hidden_size)
         self.embed = torch.nn.Sequential(
             torch.nn.Linear(hidden_size + speaker_embedding_size, hidden_size),
             torch.nn.ReLU(),
@@ -247,10 +244,14 @@ class Encoder(torch.nn.Module):
         Returns:
             output (torch.FloatTensor [num_tokens, batch_size, out_dim]): Batch of sequences.
         """
+        # [batch_size, num_tokens] →
+        # tokens [batch_size, num_tokens, hidden_size]
+        # tokens_mask [batch_size, num_tokens]
+        tokens, tokens_mask = self.embed_token(inputs.tokens, batch_first=True)
+        # [batch_size, num_tokens] → [batch_size]
+        num_tokens = tokens_mask.sum(dim=1)
         # [batch_size, speaker_embedding_dim] → [batch_size, num_tokens, speaker_embedding_dim]
-        speaker = inputs.speaker.unsqueeze(1).expand(-1, inputs.tokens.shape[1], -1)
-        # [batch_size, num_tokens] → [batch_size, num_tokens, hidden_size]
-        tokens = self.embed_token(inputs.tokens)
+        speaker = inputs.speaker.unsqueeze(1).expand(-1, tokens.shape[1], -1)
         # [batch_size, num_tokens, hidden_size] (cat)
         # [batch_size, num_tokens, speaker_embedding_dim] →
         # [batch_size, num_tokens, hidden_size + speaker_embedding_dim]
@@ -266,7 +267,7 @@ class Encoder(torch.nn.Module):
         tokens = tokens.transpose(1, 2)
 
         # [batch_size, num_tokens] → [batch_size, 1, num_tokens]
-        tokens_mask = inputs.tokens_mask.unsqueeze(1)
+        tokens_mask = tokens_mask.unsqueeze(1)
 
         for conv, norm in zip(self.conv_layers, self.norm_layers):
             tokens = tokens.masked_fill(~tokens_mask, 0)
@@ -280,7 +281,7 @@ class Encoder(torch.nn.Module):
         tokens_mask = tokens_mask.permute(2, 0, 1)
 
         tokens = self.lstm_norm(
-            tokens + self.lstm(self.lstm_dropout(tokens), tokens_mask, inputs.num_tokens)
+            tokens + self.lstm(self.lstm_dropout(tokens), tokens_mask, num_tokens)
         )
 
         # [num_tokens, batch_size, hidden_size] →

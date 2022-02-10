@@ -171,7 +171,7 @@ def test__right_masked_bi_rnn__multilayer_mask():
 
 
 def _make_encoder(
-    vocab_size=10,
+    max_vocab_size=10,
     speaker_embedding_size=6,
     out_size=8,
     hidden_size=8,
@@ -179,13 +179,12 @@ def _make_encoder(
     convolution_filter_size=5,
     lstm_layers=2,
     dropout=0.5,
-    padding_index=0,
     batch_size=4,
     num_tokens=5,
 ):
     """Make `encoder.Encoder` and it's inputs for testing."""
     encoder = lib.spectrogram_model.encoder.Encoder(
-        vocab_size=vocab_size,
+        max_vocab_size=max_vocab_size,
         speaker_embedding_size=speaker_embedding_size,
         out_size=out_size,
         hidden_size=hidden_size,
@@ -193,22 +192,19 @@ def _make_encoder(
         convolution_filter_size=convolution_filter_size,
         lstm_layers=lstm_layers,
         dropout=dropout,
-        padding_index=padding_index,
     )
 
     # NOTE: Ensure modules like `LayerNorm` perturbs the input instead of being just an identity.
     [torch.nn.init.normal_(p) for p in encoder.parameters() if p.std() == 0]
 
-    tokens = torch.randint(1, vocab_size, (batch_size, num_tokens))
-    tokens_mask = torch.ones(batch_size, num_tokens, dtype=torch.bool)
+    tokens = torch.randint(1, max_vocab_size, (batch_size, num_tokens)).tolist()
     speaker = torch.randn(batch_size, speaker_embedding_size)
-    input_ = Inputs(tokens, speaker, tokens_mask.sum(dim=1), tokens_mask)
-    return encoder, input_, (num_tokens, batch_size, out_size)
+    return encoder, Inputs(tokens, speaker), (num_tokens, batch_size, out_size)
 
 
 def test_encoder():
     """Test `encoder.Encoder` handles a basic case."""
-    (module, arg, (num_tokens, batch_size, out_size)) = _make_encoder()
+    module, arg, (num_tokens, batch_size, out_size) = _make_encoder()
     output = module(arg)
     assert output.dtype == torch.float
     assert output.shape == (num_tokens, batch_size, out_size)
@@ -228,16 +224,15 @@ def test_encoder_filter_size():
 
 def test_encoder_padding_invariance():
     """Test `encoder.Encoder` is consistent regardless of the padding."""
-    (module, arg, (_, batch_size, _)) = _make_encoder(dropout=0)
+    module, arg, _ = _make_encoder(dropout=0)
     expected = module(arg)
     expected.sum().backward()
     expected_grad = [p.grad for p in module.parameters() if p.grad is not None]
     module.zero_grad()
     for padding_len in range(1, 10):
-        padding = torch.zeros(batch_size, padding_len)
-        padded_tokens = torch.cat([arg.tokens, padding.long()], dim=1)
-        padded_tokens_mask = torch.cat([arg.tokens_mask, padding.bool()], dim=1)
-        result = module(arg._replace(tokens=padded_tokens, tokens_mask=padded_tokens_mask))
+        padding = [module.embed_token.pad_token] * padding_len
+        padded_tokens = [t + padding for t in arg.tokens]
+        result = module(arg._replace(tokens=padded_tokens))
         result.sum().backward()
         result_grad = [p.grad for p in module.parameters() if p.grad is not None]
         module.zero_grad()
