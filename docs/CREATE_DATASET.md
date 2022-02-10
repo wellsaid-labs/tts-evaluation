@@ -219,7 +219,7 @@ At any time, press `ctrl+a, d` to detach from the screen session. Then `screen -
 1. (Optional) Review audio file loudness for inconsistencies...
 
    ```bash
-   python -m run.data audio loudness $PROCESSED/recordings/*$ENCODING \
+   python -m run.data audio loudness $PROCESSED/recordings/*.wav \
       2>&1 | tee $PROCESSED/audio-loudness.log
    ```
 
