@@ -32,7 +32,7 @@ from run._config import (
     get_dataset_label,
     get_model_label,
 )
-from run._lang_config import DATASET_PHONETIC_CHARACTERS, PHONEME_SEPARATOR
+from run._lang_config import ENGLISH_PHONETIC_CHARACTERS, PHONEME_SEPARATOR
 from run.data._loader import Language
 from run.train import _utils
 from run.train._utils import (
@@ -141,7 +141,7 @@ class _State:
         tokens = [p.script for p in passages]
         token_separator = None
         if all([s.language == Language.ENGLISH for s in speakers]):
-            tokens = list(DATASET_PHONETIC_CHARACTERS)
+            tokens = list(ENGLISH_PHONETIC_CHARACTERS)
             token_separator = PHONEME_SEPARATOR
         input_encoder = InputEncoder(
             [p.script for p in passages],

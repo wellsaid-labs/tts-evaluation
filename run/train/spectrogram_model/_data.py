@@ -80,7 +80,7 @@ class InputEncoder(Encoder):
         ...
         tokens: List of token strings that may be encoded.
         ...
-        token_separator: (Optional) If provided, a DelimiterEncoder will be used to encode `tokens`.
+        token_separator: If provided, tokens will be separated by this delimiter.
         **args: Additional arguments passed to `super()`.
         **kwargs: Additional key-word arguments passed to `super()`.
     """
