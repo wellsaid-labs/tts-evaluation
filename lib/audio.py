@@ -450,8 +450,8 @@ def _mel_filters(
     lower_hertz = 0.0 if lower_hertz is None else lower_hertz
     upper_hertz = min(upper_hertz, float(sample_rate) / 2)
     return librosa.filters.mel(
-        sample_rate,
-        fft_length,
+        sr=sample_rate,
+        n_fft=fft_length,
         n_mels=num_mel_bins,
         fmin=lower_hertz,
         fmax=upper_hertz,
