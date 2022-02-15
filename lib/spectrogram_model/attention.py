@@ -8,6 +8,8 @@ import torch.nn
 from hparams import HParam, configurable
 from torchnlp.nn import LockedDropout
 
+from lib.spectrogram_model.containers import AttentionHiddenState, Encoded
+
 logger = logging.getLogger(__name__)
 
 
@@ -70,19 +72,6 @@ def _window(
     return gather, indices
 
 
-class AttentionHiddenState(typing.NamedTuple):
-    """Hidden state from previous time steps, used to predict the next time step.
-
-    Args:
-        cumulative_alignment (torch.FloatTensor
-            [batch_size, num_tokens + 2 * cumulative_alignment_padding])
-        window_start (torch.LongTensor [batch_size])
-    """
-
-    cumulative_alignment: torch.Tensor
-    window_start: torch.Tensor
-
-
 class Attention(torch.nn.Module):
     """Query using the Bahdanau attention mechanism given location features.
 
@@ -134,32 +123,23 @@ class Attention(torch.nn.Module):
 
     def __call__(
         self,
-        tokens: torch.Tensor,
-        tokens_mask: torch.Tensor,
-        num_tokens: torch.Tensor,
+        encoded: Encoded,
         query: torch.Tensor,
         hidden_state: AttentionHiddenState,
         token_skip_warning: float = math.inf,
     ) -> typing.Tuple[torch.Tensor, torch.Tensor, AttentionHiddenState]:
-        return super().__call__(
-            tokens, tokens_mask, num_tokens, query, hidden_state, token_skip_warning
-        )
+        return super().__call__(encoded, query, hidden_state, token_skip_warning)
 
     def forward(
         self,
-        tokens: torch.Tensor,
-        tokens_mask: torch.Tensor,
-        num_tokens: torch.Tensor,
+        encoded: Encoded,
         query: torch.Tensor,
         hidden_state: AttentionHiddenState,
         token_skip_warning: float,
     ) -> typing.Tuple[torch.Tensor, torch.Tensor, AttentionHiddenState]:
         """
         Args:
-            tokens (torch.FloatTensor [num_tokens, batch_size, token_size]): Batch of sequences.
-            tokens_mask (torch.BoolTensor [batch_size, num_tokens]): Sequence mask(s) to deliminate
-                padding in `tokens` with zeros.
-            num_tokens (torch.LongTensor [batch_size]): Number of tokens in each sequence.
+            ...
             query (torch.FloatTensor [1, batch_size, query_hidden_size]): Attention query.
             hidden_state
             token_skip_warning: If the attention skips more than `token_skip_warning`, then
@@ -170,8 +150,8 @@ class Attention(torch.nn.Module):
             alignment (torch.FloatTensor [batch_size, num_tokens]): Attention alignment.
             hidden_state
         """
-        max_num_tokens, batch_size, _ = tokens.shape
-        device = tokens.device
+        max_num_tokens, batch_size, _ = encoded.tokens.shape
+        device = encoded.tokens.device
         cumulative_alignment_padding = self.cumulative_alignment_padding
         window_length = min(self.window_length, max_num_tokens)
 
@@ -179,8 +159,9 @@ class Attention(torch.nn.Module):
 
         part = slice(cumulative_alignment_padding, -cumulative_alignment_padding)
 
+        tokens_mask = encoded.tokens_mask
         tokens_mask, window_indices = _window(tokens_mask, window_start, window_length, 1, False)
-        tokens = _window(tokens, window_start.unsqueeze(1), window_length, 0, False)[0]
+        tokens = _window(encoded.tokens, window_start.unsqueeze(1), window_length, 0, False)[0]
         length = window_length + cumulative_alignment_padding * 2
         cum_alignment_window = _window(cumulative_alignment, window_start, length, 1, False)[0]
 
@@ -228,7 +209,8 @@ class Attention(torch.nn.Module):
         # TODO: `torch.clamp` does not prompt a consistent left-to-right progression. Can this be
         # fixed? For example, we could pad the alignment and encoder output so that `window_start`
         # can progress to the end.
-        window_start = torch.clamp(torch.min(window_start, num_tokens - window_length), min=0)
+        window_start = torch.min(window_start, encoded.num_tokens - window_length)
+        window_start = torch.clamp(window_start, min=0)
         window_start = torch.max(last_window_start, window_start)
         if not math.isinf(token_skip_warning):
             assert token_skip_warning >= 0, "The number of tokens skipped is a positive number."

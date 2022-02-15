@@ -1,16 +1,14 @@
 import torch
 import torch.nn
-import torch.nn.functional
 from hparams import HParam, configurable
+from torch.nn import functional
 
 
 class _AlwaysDropout(torch.nn.Dropout):
     """Adaptation of `nn.Dropout` to apply dropout during both evaluation and training."""
 
     def forward(self, input_: torch.Tensor) -> torch.Tensor:
-        return torch.nn.functional.dropout(
-            input=input_, p=self.p, training=True, inplace=self.inplace
-        )
+        return functional.dropout(input=input_, p=self.p, training=True, inplace=self.inplace)
 
 
 class PreNet(torch.nn.Module):
@@ -28,6 +26,7 @@ class PreNet(torch.nn.Module):
     Args:
         num_frame_channels: Number of channels in each frame (sometimes refered to as
             "Mel-frequency bins" or "FFT bins" or "FFT bands").
+        speaker_embed_size
         size: The size of the hidden representation and output.
         num_layers: Number of fully connected layers of ReLU units.
         dropout: Probability of an element to be zeroed.
@@ -41,7 +40,7 @@ class PreNet(torch.nn.Module):
     def __init__(
         self,
         num_frame_channels: int,
-        speaker_embedding_size: int,
+        speaker_embed_size: int,
         size: int,
         num_layers: int = HParam(),
         dropout: float = HParam(),
@@ -50,7 +49,7 @@ class PreNet(torch.nn.Module):
         _layers = [
             torch.nn.Sequential(
                 torch.nn.Linear(
-                    in_features=(num_frame_channels if i == 0 else size) + speaker_embedding_size,
+                    in_features=(num_frame_channels if i == 0 else size) + speaker_embed_size,
                     out_features=size,
                 ),
                 torch.nn.ReLU(inplace=True),

@@ -361,30 +361,52 @@ def is_sortable(obj):
     return cls.__lt__ != object.__lt__ or cls.__gt__ != object.__gt__
 
 
-class LazyEmbedding(torch.nn.Module):
+Hashable1d2dList = typing.Union[
+    typing.List[typing.Hashable], typing.List[typing.List[typing.Hashable]]
+]
+
+
+class PaddingAndLazyEmbedding(torch.nn.Module):
     """An `Embedding` layer with `max_embeddings` that progressively maps new tokens to embeddings.
 
+    NOTE: This layer is intended to simplify the boilerplate code required to numeralize, pad,
+          and embed a simple sequence. In order to support this end-to-end, this embedding layer
+          only works with inputs in the form of [batch_size] or [batch_size, num_tokens].
+
+    NOTE: There are also performance considerations for a distributed context...
+
+          This will update it's dictionary either proactively or reactively. In a proactive update,
+          the layer is updated before new objects are passed through. In a reactive update, new
+          objects are assigned the "unknown token" until the layer is updated in the next pass
+          through.
+
+          Unfortunately, there is a trade-off between proactive and reactive updates. Proactive
+          updates ensure that the layer doesn't train on "unknown token". A reactive update can be
+          skipped, if it's not needed, so it's faster overall. A reactive update will also
+          incorporate a proactive update in the next pass through, so it's more efficient.
+
+          In a non-distributed context, all the updates are fast and proactive.
+
     Args:
-        max_embeddings: The maximum number of embeddings needed, in addition to the standard
-            unknown and padding embedding.
+        max_embeddings: The maximum number of embeddings needed, in addition to the standard unknown
+            and padding embedding.
         proactive_updates: The number of forward passes this will update proactively (before the
             forward pass) rather than reactively (after the forward pass).
-
-            A reactive update...
-                - Will use a placeholder "Unknown token" for the foward pass.
-                - Is faster than a proactive update because it can be skipped if not needed.
-                - Will be batched with a proactive update in the next forward pass.
-
-            This option is only relevant in a distributed context where updates are expensive. In
-            a non-distributed context, all the updates are trivial and proactive.
-        allow_unk_on_eval: Iff then the "Unknown token" may be used during evaluation, otherwise
+        allow_unk_on_eval: Iff then the "unknown token" may be used during evaluation, otherwise
             this will error if a new token is encountered during evaluation.
         *args: Arguments passed to `torch.nn.Embedding`.
         **kwargs: Keyword arguments passed to `torch.nn.Embedding`.
     """
 
     class _Tokens(enum.Enum):
-        PAD_TOKEN: typing.Final = 0  # NOTE: It's standard to use 0 for padding.
+        """
+        Unique hashtable objects for `pad_token` and `unk_token`, that's unique from any object
+        that could be inputted to `forward`.
+
+        NOTE: It's standard to use 0 for padding.
+        """
+
+        PAD_TOKEN: typing.Final = 0
         UNK_TOKEN: typing.Final = 1
 
     def __init__(
@@ -399,10 +421,8 @@ class LazyEmbedding(torch.nn.Module):
 
         self.allow_unk_on_eval = allow_unk_on_eval
         self.proactive_updates = proactive_updates
-        self._forward_pass_counter = 0
+        self._training_forward_pass_counter = 0
 
-        # NOTE: Create a unique hashable object for `pad_token` and `unk_token`, that's unique
-        # from any object that could be inputted to `forward`.
         self.pad_idx = self._Tokens.PAD_TOKEN.value
         self.unk_idx = self._Tokens.UNK_TOKEN.value
         self.pad_token = self._Tokens.PAD_TOKEN
@@ -426,9 +446,10 @@ class LazyEmbedding(torch.nn.Module):
         idx = torch.tensor(self.vocab[self.unk_token], device=self.weight.device)
         return self.embed(idx).sum().detach().clone().requires_grad_(False)
 
-    def _queue_new_tokens(self, tokens: typing.List[typing.List[typing.Hashable]]):
+    def _queue_new_tokens(self, tokens: Hashable1d2dList):
         """Queue up tokens for a vocab update."""
-        self._new_tokens.update([t for s in tokens for t in s if t not in self.vocab])
+
+        self._new_tokens.update([t for t in flatten(tokens) if t not in self.vocab])
         if len(self._new_tokens) + len(self.vocab) > self.num_embeddings:
             raise ValueError("The number of tokens exceeds the allocated number of embeddings.")
 
@@ -436,6 +457,8 @@ class LazyEmbedding(torch.nn.Module):
         self, tokens: typing.List[typing.Hashable], embeddings: typing.Optional[torch.Tensor] = None
     ):
         """Add or update tokens in `self.vocab`.
+
+        NOTE: This doesn't support a distributed context, yet.
 
         Args:
             tokens: The tokens to add or update.
@@ -479,15 +502,17 @@ class LazyEmbedding(torch.nn.Module):
         self._new_tokens = set()
 
     def _has_trained_on_new_tokens(self):
-        # NOTE: Iff the `unk_token` was updated, then the model has trained on a new token it hasn't
-        # seen before.
+        """
+        NOTE: Iff the `unk_token` was updated, then the model has trained on a new token it hasn't
+        seen before, so we should update the vocabulary, reactively.
+        """
         return not torch.isclose(self._unk_embedding_hash, self._get_unk_embedding_hash())
 
     def _token_to_idx(self, token: typing.Hashable) -> int:
         """Get the index of `token` and return `unk_token` if `token` is not found.
 
         Raises:
-            KeyError: Iff the module is in evaluation mode and "Unknown token" is disabled this
+            KeyError: Iff the module is in evaluation mode and "unknown token" is disabled this
                 will error iff `token` isn't in `self.vocab`.
         """
         if self.training:
@@ -498,21 +523,30 @@ class LazyEmbedding(torch.nn.Module):
 
         return self.vocab.get(token, self.vocab[self.unk_token])
 
+    def __call__(
+        self, tokens: Hashable1d2dList, **kwargs
+    ) -> typing.Tuple[torch.Tensor, torch.Tensor]:
+        return super().__call__(tokens, **kwargs)
+
     def forward(
-        self, tokens: typing.List[typing.List[typing.Hashable]], **kwargs
+        self, tokens: Hashable1d2dList, batch_first: bool = False, **kwargs
     ) -> typing.Tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
-            tokens ([batch_size, num_tokens]): List of sequences with tokens.
+            input [batch_size, num_tokens (optional)]: A 1 or 2-dimensional list of tokens.
+            batch_first: In the return tensor, iff `True` the batch dimension is first, otherwise
+                it's second.
 
         Returns:
-            embedded (torch.FloatTensor [num_tokens, batch_size, embedding_dim])
-            mask (torch.BoolTensor [num_tokens, batch_size])
+            embedded (torch.FloatTensor [batch_size, num_tokens, embedding_dim] or
+                [num_tokens, batch_size, embedding_dim] or [batch_size, embedding_dim])
+            mask (torch.BoolTensor [batch_size, num_tokens] or [num_tokens, batch_size] or
+                [batch_size])
         """
         if self.training:
-            self._forward_pass_counter += 1
+            self._training_forward_pass_counter += 1
             self._queue_new_tokens(tokens)
-            update_proactively = self._forward_pass_counter <= self.proactive_updates
+            update_proactively = self._training_forward_pass_counter <= self.proactive_updates
             if (
                 update_proactively
                 or self._has_trained_on_new_tokens()
@@ -520,9 +554,13 @@ class LazyEmbedding(torch.nn.Module):
             ):
                 self._update_vocab()
 
-        indices = [[self._token_to_idx(t, **kwargs) for t in s] for s in tokens]
+        has_one_dim = not isinstance(tokens[0], list)
+        t2i = functools.partial(self._token_to_idx, **kwargs)
+        indices = [[t2i(t)] if has_one_dim else [t2i(i) for i in t] for t in tokens]
         sequences = [torch.tensor(s, device=self.weight.device, dtype=torch.long) for s in indices]
-        padded = torch.nn.utils.rnn.pad_sequence(sequences, padding_value=self.pad_idx)
+        kwargs = dict(padding_value=self.pad_idx, batch_first=batch_first)
+        padded = torch.nn.utils.rnn.pad_sequence(sequences, **kwargs)
+        padded = padded.squeeze(1 if batch_first else 0) if has_one_dim else padded
         mask = padded != self.pad_idx
         return self.embed(padded), mask
 

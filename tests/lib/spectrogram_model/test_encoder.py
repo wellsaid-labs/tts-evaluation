@@ -171,8 +171,11 @@ def test__right_masked_bi_rnn__multilayer_mask():
 
 
 def _make_encoder(
-    max_vocab_size=10,
-    speaker_embedding_size=6,
+    max_tokens=10,
+    max_speakers=11,
+    max_sessions=12,
+    speaker_embed_size=6,
+    speaker_embed_dropout=0.1,
     out_size=8,
     hidden_size=8,
     num_convolution_layers=2,
@@ -184,8 +187,11 @@ def _make_encoder(
 ):
     """Make `encoder.Encoder` and it's inputs for testing."""
     encoder = lib.spectrogram_model.encoder.Encoder(
-        max_vocab_size=max_vocab_size,
-        speaker_embedding_size=speaker_embedding_size,
+        max_tokens=max_tokens,
+        max_speakers=max_speakers,
+        max_sessions=max_sessions,
+        speaker_embed_size=speaker_embed_size,
+        speaker_embed_dropout=speaker_embed_dropout,
         out_size=out_size,
         hidden_size=hidden_size,
         num_convolution_layers=num_convolution_layers,
@@ -197,18 +203,27 @@ def _make_encoder(
     # NOTE: Ensure modules like `LayerNorm` perturbs the input instead of being just an identity.
     [torch.nn.init.normal_(p) for p in encoder.parameters() if p.std() == 0]
 
-    tokens = torch.randint(1, max_vocab_size, (batch_size, num_tokens)).tolist()
-    speaker = torch.randn(batch_size, speaker_embedding_size)
-    return encoder, Inputs(tokens, speaker), (num_tokens, batch_size, out_size)
+    speakers = torch.randint(1, max_speakers, (batch_size,)).tolist()
+    sessions = torch.randint(1, max_sessions, (batch_size,)).tolist()
+    tokens = torch.randint(1, max_tokens, (batch_size, num_tokens)).tolist()
+    return encoder, Inputs(speakers, sessions, tokens), (num_tokens, batch_size, out_size)
 
 
 def test_encoder():
     """Test `encoder.Encoder` handles a basic case."""
     module, arg, (num_tokens, batch_size, out_size) = _make_encoder()
-    output = module(arg)
-    assert output.dtype == torch.float
-    assert output.shape == (num_tokens, batch_size, out_size)
-    output.sum().backward()
+    encoded = module(arg)
+
+    assert encoded.tokens.dtype == torch.float
+    assert encoded.tokens.shape == (num_tokens, batch_size, out_size)
+
+    assert encoded.tokens_mask.dtype == torch.bool
+    assert encoded.tokens_mask.shape == (batch_size, num_tokens)
+
+    assert encoded.num_tokens.dtype == torch.long
+    assert encoded.num_tokens.shape == (batch_size,)
+
+    encoded.tokens.sum().backward()
 
 
 def test_encoder_filter_size():
@@ -217,24 +232,26 @@ def test_encoder_filter_size():
         module, arg, (num_tokens, batch_size, out_size) = _make_encoder(
             convolution_filter_size=filter_size
         )
-        output = module(arg)
-        assert output.shape == (num_tokens, batch_size, out_size)
-        output.sum().backward()
+        encoded = module(arg)
+        assert encoded.tokens.shape == (num_tokens, batch_size, out_size)
+        assert encoded.tokens_mask.shape == (batch_size, num_tokens)
+        assert encoded.num_tokens.shape == (batch_size,)
+        encoded.tokens.sum().backward()
 
 
 def test_encoder_padding_invariance():
     """Test `encoder.Encoder` is consistent regardless of the padding."""
-    module, arg, _ = _make_encoder(dropout=0)
+    module, arg, _ = _make_encoder(dropout=0, speaker_embed_dropout=0)
     expected = module(arg)
-    expected.sum().backward()
+    expected.tokens.sum().backward()
     expected_grad = [p.grad for p in module.parameters() if p.grad is not None]
     module.zero_grad()
     for padding_len in range(1, 10):
         padding = [module.embed_token.pad_token] * padding_len
         padded_tokens = [t + padding for t in arg.tokens]
         result = module(arg._replace(tokens=padded_tokens))
-        result.sum().backward()
+        result.tokens.sum().backward()
         result_grad = [p.grad for p in module.parameters() if p.grad is not None]
         module.zero_grad()
-        assert_almost_equal(result[:-padding_len], expected, decimal=5)
+        assert_almost_equal(result.tokens[:-padding_len], expected.tokens, decimal=5)
         [assert_almost_equal(r, e) for r, e in zip(result_grad, expected_grad)]

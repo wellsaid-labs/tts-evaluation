@@ -6,8 +6,8 @@ import torch.nn
 from hparams import HParam, configurable
 from torchnlp.nn import LockedDropout
 
-from lib.spectrogram_model.model import Inputs
-from lib.utils import LSTM, LazyEmbedding
+from lib.spectrogram_model.containers import Encoded, Inputs
+from lib.utils import LSTM, PaddingAndLazyEmbedding
 
 
 @lru_cache(maxsize=8)
@@ -163,11 +163,12 @@ class _Conv1dLockedDropout(LockedDropout):
 class Encoder(torch.nn.Module):
     """Encode a discrete sequence as a sequence of differentiable vector(s).
 
-    TODO: Parameterized `padding_index` with `HParam`.
-
     Args:
-        max_vocab_size: The maximum size of the vocabulary used to encode `tokens`.
-        speaker_embedding_size The size of the speaker embedding.
+        max_tokens: The maximum number of tokens the model will be trained on.
+        max_speakers: The maximum number of speakers the model will be trained on.
+        max_sessions: The maximum number of recording sessions the model will be trained on.
+        speaker_embed_size The size of the speaker embedding.
+        speaker_embed_dropout: The speaker embedding dropout probability.
         out_size: The size of the encoder output.
         hidden_size: The size of the encoders hidden representation. This value must be even.
         num_convolution_layers: Number of convolution layers.
@@ -179,8 +180,11 @@ class Encoder(torch.nn.Module):
     @configurable
     def __init__(
         self,
-        max_vocab_size: int,
-        speaker_embedding_size: int,
+        max_tokens: int,
+        max_speakers: int,
+        max_sessions: int,
+        speaker_embed_size: int,
+        speaker_embed_dropout: float = HParam(),
         out_size: int = HParam(),
         hidden_size: int = HParam(),
         num_convolution_layers: int = HParam(),
@@ -193,11 +197,17 @@ class Encoder(torch.nn.Module):
         # LEARN MORE:
         # https://datascience.stackexchange.com/questions/23183/why-convolutions-always-use-odd-numbers-as-filter-size
         assert convolution_filter_size % 2 == 1, "`convolution_filter_size` must be odd"
-        assert hidden_size % 2 == 0, "`hidden_size` must be divisable by even"
+        assert hidden_size % 2 == 0, "`hidden_size` must be even"
+        assert speaker_embed_size % 2 == 0, "`speaker_embed_size` must be even."
 
-        self.embed_token = LazyEmbedding(max_vocab_size, hidden_size)
+        self.embed_speaker = PaddingAndLazyEmbedding(max_speakers, speaker_embed_size // 2)
+        self.embed_session = PaddingAndLazyEmbedding(max_sessions, speaker_embed_size // 2)
+        self.speaker_embed_dropout = torch.nn.Dropout(speaker_embed_dropout)
+
+        # TODO: How many sessions do we have? Do we need 10k embeddings?
+        self.embed_token = PaddingAndLazyEmbedding(max_tokens, hidden_size)
         self.embed = torch.nn.Sequential(
-            torch.nn.Linear(hidden_size + speaker_embedding_size, hidden_size),
+            torch.nn.Linear(hidden_size + speaker_embed_size, hidden_size),
             torch.nn.ReLU(),
             torch.nn.LayerNorm(hidden_size),
         )
@@ -236,14 +246,15 @@ class Encoder(torch.nn.Module):
                 gain = torch.nn.init.calculate_gain("relu")
                 torch.nn.init.xavier_uniform_(module.weight, gain=gain)
 
-    def __call__(self, inputs: Inputs) -> torch.Tensor:
+    def __call__(self, inputs: Inputs) -> Encoded:
         return super().__call__(inputs)
 
-    def forward(self, inputs: Inputs) -> torch.Tensor:
-        """
-        Returns:
-            output (torch.FloatTensor [num_tokens, batch_size, out_dim]): Batch of sequences.
-        """
+    def forward(self, inputs: Inputs) -> Encoded:
+        # [batch_size] → [batch_size, speaker_embed_size // 2]
+        speaker, _ = self.embed_speaker(inputs.speaker, batch_first=True)
+        # [batch_size] → [batch_size, speaker_embed_size // 2]
+        session, _ = self.embed_session(inputs.session, batch_first=True)
+        speaker = self.speaker_embed_dropout(torch.cat([speaker, session], dim=1))
         # [batch_size, num_tokens] →
         # tokens [batch_size, num_tokens, hidden_size]
         # tokens_mask [batch_size, num_tokens]
@@ -251,11 +262,11 @@ class Encoder(torch.nn.Module):
         # [batch_size, num_tokens] → [batch_size]
         num_tokens = tokens_mask.sum(dim=1)
         # [batch_size, speaker_embedding_dim] → [batch_size, num_tokens, speaker_embedding_dim]
-        speaker = inputs.speaker.unsqueeze(1).expand(-1, tokens.shape[1], -1)
+        speaker_expanded = speaker.unsqueeze(1).expand(-1, tokens.shape[1], -1)
         # [batch_size, num_tokens, hidden_size] (cat)
         # [batch_size, num_tokens, speaker_embedding_dim] →
         # [batch_size, num_tokens, hidden_size + speaker_embedding_dim]
-        tokens = torch.cat([tokens, speaker], dim=2)
+        tokens = torch.cat([tokens, speaker_expanded], dim=2)
         # [batch_size, num_tokens, hidden_size + speaker_embedding_dim] →
         # [batch_size, num_tokens, hidden_size]
         tokens = self.embed(tokens)
@@ -279,11 +290,14 @@ class Encoder(torch.nn.Module):
         # to permute the tensor first.
         tokens = tokens.permute(2, 0, 1)
         tokens_mask = tokens_mask.permute(2, 0, 1)
-
         tokens = self.lstm_norm(
             tokens + self.lstm(self.lstm_dropout(tokens), tokens_mask, num_tokens)
         )
 
         # [num_tokens, batch_size, hidden_size] →
         # [num_tokens, batch_size, out_dim]
-        return self.project_out(tokens).masked_fill(~tokens_mask, 0)
+        tokens = self.project_out(tokens).masked_fill(~tokens_mask, 0)
+        # [num_tokens, batch_size, 1] → [batch_size, num_tokens]
+        tokens_mask = tokens_mask.squeeze(2).transpose(0, 1)
+
+        return Encoded(tokens, tokens_mask, num_tokens, speaker)
