@@ -83,7 +83,12 @@ class SpectrogramModel(torch.nn.Module):
         self.max_tokens = max_tokens  # TODO: Update any references to these variables.
         self.max_speakers = max_speakers
         self.max_sessions = max_sessions
-        self.encoder = encoder.Encoder(max_tokens, max_speakers, max_sessions, speaker_embed_size)
+        self.encoder = encoder.Encoder(
+            max_tokens=max_tokens,
+            max_speakers=max_speakers,
+            max_sessions=max_sessions,
+            speaker_embed_size=speaker_embed_size,
+        )
         self.decoder = decoder.Decoder(num_frame_channels, speaker_embed_size)
         self.output_scalar: torch.Tensor
         self.register_buffer("output_scalar", torch.tensor(output_scalar).float())

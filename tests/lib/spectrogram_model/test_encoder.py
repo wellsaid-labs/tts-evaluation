@@ -6,7 +6,7 @@ import torch.nn
 from torchnlp.random import fork_rng
 
 import lib.spectrogram_model.encoder
-from lib.spectrogram_model.model import Inputs
+from lib.spectrogram_model.containers import Inputs
 from tests import _utils
 
 assert_almost_equal = partial(_utils.assert_almost_equal, decimal=5)
