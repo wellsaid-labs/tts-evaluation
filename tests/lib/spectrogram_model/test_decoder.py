@@ -1,11 +1,13 @@
+import typing
+
 import hparams
 import pytest
 import torch
 from hparams import HParams
 
 import lib
-from lib.spectrogram_model.attention import AttentionHiddenState
-from lib.spectrogram_model.decoder import Decoder, DecoderHiddenState
+from lib.spectrogram_model.containers import AttentionHiddenState, DecoderHiddenState, Encoded
+from lib.spectrogram_model.decoder import Decoder
 
 
 @pytest.fixture(autouse=True)
@@ -16,7 +18,7 @@ def run_around_tests():
 
 def _make_decoder(
     num_frame_channels=16,
-    speaker_embedding_size=8,
+    speaker_embed_size=8,
     pre_net_size=3,
     lstm_hidden_size=4,
     encoder_output_size=5,
@@ -36,7 +38,7 @@ def _make_decoder(
     hparams.add_config(config)
     return Decoder(
         num_frame_channels=num_frame_channels,
-        speaker_embedding_size=speaker_embedding_size,
+        speaker_embed_size=speaker_embed_size,
         pre_net_size=pre_net_size,
         lstm_hidden_size=lstm_hidden_size,
         encoder_output_size=encoder_output_size,
@@ -44,102 +46,86 @@ def _make_decoder(
     )
 
 
-def test_autoregressive_decoder():
-    """Test `decoder.Decoder` handles a basic case."""
-    batch_size = 5
-    num_tokens = 6
-    module = _make_decoder()
+def _make_encoded(
+    module: Decoder, batch_size: int = 5, num_tokens: int = 6
+) -> typing.Tuple[Encoded, typing.Tuple[int, int]]:
+    """Make `Encoded` for testing."""
     tokens = torch.rand(num_tokens, batch_size, module.encoder_output_size)
     tokens_mask = torch.ones(batch_size, num_tokens, dtype=torch.bool)
-    speaker = torch.zeros(batch_size, module.speaker_embedding_size)
+    speaker = torch.zeros(batch_size, module.speaker_embed_size)
+    encoded = Encoded(tokens, tokens_mask, tokens_mask.sum(dim=1), speaker)
+    return encoded, (batch_size, num_tokens)
+
+
+def test_autoregressive_decoder():
+    """Test `decoder.Decoder` handles a basic case."""
+    module = _make_decoder()
+    encoded, (batch_size, num_tokens) = _make_encoded(module)
     hidden_state = None
-    frames = torch.empty(0)
-    stop_token = torch.empty(0)
+    decoded = None
     for _ in range(3):
-        frames, stop_token, alignment, window_starts, hidden_state = module(
-            tokens=tokens,
-            tokens_mask=tokens_mask,
-            num_tokens=tokens_mask.long().sum(dim=1),
-            speaker=speaker,
-            hidden_state=hidden_state,
-        )
+        decoded = module(encoded, hidden_state=hidden_state)
 
-        assert frames.dtype == torch.float
-        assert frames.shape == (1, batch_size, module.num_frame_channels)
+        assert decoded.frames.dtype == torch.float
+        assert decoded.frames.shape == (1, batch_size, module.num_frame_channels)
 
-        assert stop_token.dtype == torch.float
-        assert stop_token.shape == (1, batch_size)
+        assert decoded.stop_tokens.dtype == torch.float
+        assert decoded.stop_tokens.shape == (1, batch_size)
 
-        assert alignment.dtype == torch.float
-        assert alignment.shape == (1, batch_size, num_tokens)
+        assert decoded.alignments.dtype == torch.float
+        assert decoded.alignments.shape == (1, batch_size, num_tokens)
 
-        assert window_starts.dtype == torch.long
-        assert window_starts.shape == (1, batch_size)
+        assert decoded.window_starts.dtype == torch.long
+        assert decoded.window_starts.shape == (1, batch_size)
 
-        assert isinstance(hidden_state, DecoderHiddenState)
+        assert isinstance(decoded.hidden_state, DecoderHiddenState)
 
-        assert hidden_state.last_frame.dtype == torch.float
-        assert hidden_state.last_frame.shape == (
-            1,
-            batch_size,
-            module.num_frame_channels,
-        )
+        assert decoded.hidden_state.last_frame.dtype == torch.float
+        expected = (1, batch_size, module.num_frame_channels)
+        assert decoded.hidden_state.last_frame.shape == expected
 
-        assert hidden_state.last_attention_context.dtype == torch.float
-        assert hidden_state.last_attention_context.shape == (
-            batch_size,
-            module.encoder_output_size,
-        )
+        assert decoded.hidden_state.last_attention_context.dtype == torch.float
+        expected = (batch_size, module.encoder_output_size)
+        assert decoded.hidden_state.last_attention_context.shape == expected
 
-        assert isinstance(hidden_state.attention_hidden_state, AttentionHiddenState)
-        assert isinstance(hidden_state.lstm_one_hidden_state, tuple)
-        assert isinstance(hidden_state.lstm_two_hidden_state, tuple)
+        assert isinstance(decoded.hidden_state.attention_hidden_state, AttentionHiddenState)
+        assert isinstance(decoded.hidden_state.lstm_one_hidden_state, tuple)
+        assert isinstance(decoded.hidden_state.lstm_two_hidden_state, tuple)
 
-    (frames.sum() + stop_token.sum()).backward()
+    assert decoded is not None
+    (decoded.frames.sum() + decoded.stop_tokens.sum()).backward()
 
 
 def test_autoregressive_decoder__target():
     """Test `decoder.Decoder` handles `target_frames` inputs."""
-    batch_size = 5
     num_frames = 3
-    num_tokens = 6
     module = _make_decoder()
-    tokens = torch.rand(num_tokens, batch_size, module.encoder_output_size)
-    tokens_mask = torch.ones(batch_size, num_tokens, dtype=torch.bool)
+    encoded, (batch_size, num_tokens) = _make_encoded(module)
     target_frames = torch.rand(num_frames, batch_size, module.num_frame_channels)
-    speaker = torch.zeros(batch_size, module.speaker_embedding_size)
 
-    frames, stop_token, alignment, window_starts, hidden_state = module(
-        tokens=tokens,
-        tokens_mask=tokens_mask,
-        num_tokens=tokens_mask.long().sum(dim=1),
-        speaker=speaker,
-        target_frames=target_frames,
-    )
+    decoded = module(encoded, target_frames=target_frames)
 
-    assert frames.dtype == torch.float
-    assert frames.shape == (num_frames, batch_size, module.num_frame_channels)
+    assert decoded.frames.dtype == torch.float
+    assert decoded.frames.shape == (num_frames, batch_size, module.num_frame_channels)
 
-    assert stop_token.dtype == torch.float
-    assert stop_token.shape == (num_frames, batch_size)
+    assert decoded.stop_tokens.dtype == torch.float
+    assert decoded.stop_tokens.shape == (num_frames, batch_size)
 
-    assert alignment.dtype == torch.float
-    assert alignment.shape == (num_frames, batch_size, num_tokens)
+    assert decoded.alignments.dtype == torch.float
+    assert decoded.alignments.shape == (num_frames, batch_size, num_tokens)
 
-    assert window_starts.dtype == torch.long
-    assert window_starts.shape == (num_frames, batch_size)
+    assert decoded.window_starts.dtype == torch.long
+    assert decoded.window_starts.shape == (num_frames, batch_size)
 
-    assert hidden_state.last_frame.dtype == torch.float
-    assert hidden_state.last_frame.shape == (1, batch_size, module.num_frame_channels)
+    assert decoded.hidden_state.last_frame.dtype == torch.float
+    assert decoded.hidden_state.last_frame.shape == (1, batch_size, module.num_frame_channels)
 
-    assert hidden_state.last_attention_context.dtype == torch.float
-    assert hidden_state.last_attention_context.shape == (
-        batch_size,
-        module.encoder_output_size,
-    )
+    assert decoded.hidden_state.last_attention_context.dtype == torch.float
+    expected = (batch_size, module.encoder_output_size)
+    assert decoded.hidden_state.last_attention_context.shape == expected
 
-    assert isinstance(hidden_state.attention_hidden_state, AttentionHiddenState)
-    assert isinstance(hidden_state.lstm_one_hidden_state, tuple)
-    assert isinstance(hidden_state.lstm_two_hidden_state, tuple)
+    assert isinstance(decoded.hidden_state.attention_hidden_state, AttentionHiddenState)
+    assert isinstance(decoded.hidden_state.lstm_one_hidden_state, tuple)
+    assert isinstance(decoded.hidden_state.lstm_two_hidden_state, tuple)
 
-    (frames.sum() + stop_token.sum()).backward()
+    (decoded.frames.sum() + decoded.stop_tokens.sum()).backward()
