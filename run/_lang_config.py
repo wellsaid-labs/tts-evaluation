@@ -80,6 +80,7 @@ _make_config = partial(
     enable_automatic_punctuation=True,
     enable_word_time_offsets=True,
 )
+# TODO: Re-consider base language and dialect differentiation.
 STT_CONFIGS = {
     Language.ENGLISH: _make_config(language_code="en-US", model="video"),
     Language.GERMAN: _make_config(language_code="de-DE"),

@@ -14,7 +14,7 @@ from run.data._loader.german.m_ailabs import (
     m_ailabs_de_de_ramona_deininger_speech_dataset,
     m_ailabs_de_de_rebecca_braunert_plunkett_speech_dataset,
 )
-from run.data._loader.german.wsl import WSL_DATASETS
+from run.data._loader.german.wsl import MITEL_GERMAN__CUSTOM_VOICE, WSL_DATASETS
 from run.data._loader.utils import DataLoader
 
 DATASETS = typing.cast(typing.Dict[Speaker, DataLoader], WSL_DATASETS)
@@ -38,5 +38,6 @@ __all__ = [
     "m_ailabs_de_de_rebecca_braunert_plunkett_speech_dataset",
     "m_ailabs_de_de_karlsson_speech_dataset",
     "DATASETS",
+    "MITEL_GERMAN__CUSTOM_VOICE",
     "WSL_DATASETS",
 ]
