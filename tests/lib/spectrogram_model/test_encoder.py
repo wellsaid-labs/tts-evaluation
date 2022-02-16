@@ -172,10 +172,9 @@ def test__right_masked_bi_rnn__multilayer_mask():
 
 def _make_encoder(
     max_tokens=10,
-    max_speakers=11,
-    max_sessions=12,
-    speaker_embed_size=6,
-    speaker_embed_dropout=0.1,
+    max_seq_meta_values=(11, 12),
+    seq_meta_embed_size=6,
+    seq_meta_embed_dropout=0.1,
     out_size=8,
     hidden_size=8,
     num_convolution_layers=2,
@@ -188,10 +187,9 @@ def _make_encoder(
     """Make `encoder.Encoder` and it's inputs for testing."""
     encoder = lib.spectrogram_model.encoder.Encoder(
         max_tokens=max_tokens,
-        max_speakers=max_speakers,
-        max_sessions=max_sessions,
-        speaker_embed_size=speaker_embed_size,
-        speaker_embed_dropout=speaker_embed_dropout,
+        max_seq_meta_values=max_seq_meta_values,
+        seq_meta_embed_size=seq_meta_embed_size,
+        seq_meta_embed_dropout=seq_meta_embed_dropout,
         out_size=out_size,
         hidden_size=hidden_size,
         num_convolution_layers=num_convolution_layers,
@@ -203,10 +201,11 @@ def _make_encoder(
     # NOTE: Ensure modules like `LayerNorm` perturbs the input instead of being just an identity.
     [torch.nn.init.normal_(p) for p in encoder.parameters() if p.std() == 0]
 
-    speakers = torch.randint(1, max_speakers, (batch_size,)).tolist()
-    sessions = torch.randint(1, max_sessions, (batch_size,)).tolist()
+    speakers = torch.randint(1, max_seq_meta_values[0], (batch_size,)).tolist()
+    sessions = torch.randint(1, max_seq_meta_values[1], (batch_size,)).tolist()
     tokens = torch.randint(1, max_tokens, (batch_size, num_tokens)).tolist()
-    return encoder, Inputs(speakers, sessions, tokens), (num_tokens, batch_size, out_size)
+    metadata = list(zip(speakers, sessions))
+    return encoder, Inputs(tokens, metadata), (num_tokens, batch_size, out_size)
 
 
 def test_encoder():
@@ -241,7 +240,7 @@ def test_encoder_filter_size():
 
 def test_encoder_padding_invariance():
     """Test `encoder.Encoder` is consistent regardless of the padding."""
-    module, arg, _ = _make_encoder(dropout=0, speaker_embed_dropout=0)
+    module, arg, _ = _make_encoder(dropout=0, seq_meta_embed_dropout=0)
     expected = module(arg)
     expected.tokens.sum().backward()
     expected_grad = [p.grad for p in module.parameters() if p.grad is not None]

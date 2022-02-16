@@ -165,10 +165,9 @@ class Encoder(torch.nn.Module):
 
     Args:
         max_tokens: The maximum number of tokens the model will be trained on.
-        max_speakers: The maximum number of speakers the model will be trained on.
-        max_sessions: The maximum number of recording sessions the model will be trained on.
-        speaker_embed_size The size of the speaker embedding.
-        speaker_embed_dropout: The speaker embedding dropout probability.
+        max_seq_meta_values: The maximum number of metadata values the model will be trained on.
+        seq_meta_embed_size: The size of the sequence metadata embedding.
+        seq_meta_embed_dropout: The sequence metadata embedding dropout probability.
         out_size: The size of the encoder output.
         hidden_size: The size of the encoders hidden representation. This value must be even.
         num_convolution_layers: Number of convolution layers.
@@ -181,10 +180,9 @@ class Encoder(torch.nn.Module):
     def __init__(
         self,
         max_tokens: int,
-        max_speakers: int,
-        max_sessions: int,
-        speaker_embed_size: int,
-        speaker_embed_dropout: float = HParam(),
+        max_seq_meta_values: typing.Tuple[int, ...],
+        seq_meta_embed_size: int,
+        seq_meta_embed_dropout: float = HParam(),
         out_size: int = HParam(),
         hidden_size: int = HParam(),
         num_convolution_layers: int = HParam(),
@@ -198,16 +196,19 @@ class Encoder(torch.nn.Module):
         # https://datascience.stackexchange.com/questions/23183/why-convolutions-always-use-odd-numbers-as-filter-size
         assert convolution_filter_size % 2 == 1, "`convolution_filter_size` must be odd"
         assert hidden_size % 2 == 0, "`hidden_size` must be even"
-        assert speaker_embed_size % 2 == 0, "`speaker_embed_size` must be even."
+        message = "`seq_meta_embed_size` must be divisable by the number of metadata attributes."
+        assert seq_meta_embed_size % len(max_seq_meta_values) == 0, message
 
-        self.embed_speaker = PaddingAndLazyEmbedding(max_speakers, speaker_embed_size // 2)
-        self.embed_session = PaddingAndLazyEmbedding(max_sessions, speaker_embed_size // 2)
-        self.speaker_embed_dropout = torch.nn.Dropout(speaker_embed_dropout)
+        self.embed_metadata = torch.nn.ModuleList(
+            PaddingAndLazyEmbedding(n, seq_meta_embed_size // len(max_seq_meta_values))
+            for n in max_seq_meta_values
+        )
+        self.seq_meta_embed_dropout = torch.nn.Dropout(seq_meta_embed_dropout)
 
         # TODO: How many sessions do we have? Do we need 10k embeddings?
         self.embed_token = PaddingAndLazyEmbedding(max_tokens, hidden_size)
         self.embed = torch.nn.Sequential(
-            torch.nn.Linear(hidden_size + speaker_embed_size, hidden_size),
+            torch.nn.Linear(hidden_size + seq_meta_embed_size, hidden_size),
             torch.nn.ReLU(),
             torch.nn.LayerNorm(hidden_size),
         )
@@ -225,7 +226,7 @@ class Encoder(torch.nn.Module):
             for _ in range(num_convolution_layers)
         )
         self.norm_layers = torch.nn.ModuleList(
-            _LayerNorm(hidden_size) for i in range(num_convolution_layers)
+            _LayerNorm(hidden_size) for _ in range(num_convolution_layers)
         )
         self.lstm = _RightMaskedBiRNN(
             rnn_class=LSTM,
@@ -250,24 +251,26 @@ class Encoder(torch.nn.Module):
         return super().__call__(inputs)
 
     def forward(self, inputs: Inputs) -> Encoded:
-        # [batch_size] → [batch_size, speaker_embed_size // 2]
-        speaker, _ = self.embed_speaker(inputs.speaker, batch_first=True)
-        # [batch_size] → [batch_size, speaker_embed_size // 2]
-        session, _ = self.embed_session(inputs.session, batch_first=True)
-        speaker = self.speaker_embed_dropout(torch.cat([speaker, session], dim=1))
+        # [batch_size] → [batch_size, seq_meta_embed_size]
+        seq_metadata = [
+            embed([metadata[i] for metadata in inputs.seq_metadata], batch_first=True)[0]
+            for i, embed in enumerate(self.embed_metadata)
+        ]
+        seq_metadata = torch.cat(seq_metadata, dim=1)
+        seq_metadata = self.seq_meta_embed_dropout(seq_metadata)
         # [batch_size, num_tokens] →
         # tokens [batch_size, num_tokens, hidden_size]
         # tokens_mask [batch_size, num_tokens]
         tokens, tokens_mask = self.embed_token(inputs.tokens, batch_first=True)
         # [batch_size, num_tokens] → [batch_size]
         num_tokens = tokens_mask.sum(dim=1)
-        # [batch_size, speaker_embedding_dim] → [batch_size, num_tokens, speaker_embedding_dim]
-        speaker_expanded = speaker.unsqueeze(1).expand(-1, tokens.shape[1], -1)
+        # [batch_size, seq_meta_embed_size] → [batch_size, num_tokens, seq_meta_embed_size]
+        seq_metadata_expanded = seq_metadata.unsqueeze(1).expand(-1, tokens.shape[1], -1)
         # [batch_size, num_tokens, hidden_size] (cat)
-        # [batch_size, num_tokens, speaker_embedding_dim] →
-        # [batch_size, num_tokens, hidden_size + speaker_embedding_dim]
-        tokens = torch.cat([tokens, speaker_expanded], dim=2)
-        # [batch_size, num_tokens, hidden_size + speaker_embedding_dim] →
+        # [batch_size, num_tokens, seq_meta_embed_size] →
+        # [batch_size, num_tokens, hidden_size + seq_meta_embed_size]
+        tokens = torch.cat([tokens, seq_metadata_expanded], dim=2)
+        # [batch_size, num_tokens, hidden_size + seq_meta_embed_size] →
         # [batch_size, num_tokens, hidden_size]
         tokens = self.embed(tokens)
 
@@ -300,4 +303,4 @@ class Encoder(torch.nn.Module):
         # [num_tokens, batch_size, 1] → [batch_size, num_tokens]
         tokens_mask = tokens_mask.squeeze(2).transpose(0, 1)
 
-        return Encoded(tokens, tokens_mask, num_tokens, speaker)
+        return Encoded(tokens, tokens_mask, num_tokens, seq_metadata)

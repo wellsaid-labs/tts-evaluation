@@ -50,10 +50,8 @@ class SpectrogramModel(torch.nn.Module):
 
     Args:
         max_tokens: The maximum number of tokens the model will be trained on.
-        max_speakers: The maximum number of speakers the model will be trained on.
-        max_sessions: The maximum number of recording sessions the model will be trained on.
-        speaker_embed_size: Size of the speaker embedding dimensions. The speaker embedding
-            is composed of a speaker identifier and a recording session identifier.
+        max_seq_meta_values: The maximum number of metadata values the model will be trained on.
+        seq_meta_embed_size: The size of the sequence metadata embedding.
         num_frame_channels: Number of channels in each frame (sometimes refered to as
             "Mel-frequency bins" or "FFT bins" or "FFT bands").
         max_frames_per_token: The maximum sequential predictions to make before stopping.
@@ -67,9 +65,8 @@ class SpectrogramModel(torch.nn.Module):
     def __init__(
         self,
         max_tokens: int,
-        max_speakers: int,
-        max_sessions: int,
-        speaker_embed_size: int = HParam(),
+        max_seq_meta_values: typing.Tuple[int, ...],
+        seq_meta_embed_size: int = HParam(),
         num_frame_channels: int = HParam(),
         max_frames_per_token: float = HParam(),
         output_scalar: float = HParam(),
@@ -81,15 +78,12 @@ class SpectrogramModel(torch.nn.Module):
         self.num_frame_channels = num_frame_channels
         self.stop_threshold = stop_threshold
         self.max_tokens = max_tokens  # TODO: Update any references to these variables.
-        self.max_speakers = max_speakers
-        self.max_sessions = max_sessions
         self.encoder = encoder.Encoder(
             max_tokens=max_tokens,
-            max_speakers=max_speakers,
-            max_sessions=max_sessions,
-            speaker_embed_size=speaker_embed_size,
+            max_seq_meta_values=max_seq_meta_values,
+            seq_meta_embed_size=seq_meta_embed_size,
         )
-        self.decoder = decoder.Decoder(num_frame_channels, speaker_embed_size)
+        self.decoder = decoder.Decoder(num_frame_channels, seq_meta_embed_size)
         self.output_scalar: torch.Tensor
         self.register_buffer("output_scalar", torch.tensor(output_scalar).float())
         self.stop_token_eps: torch.Tensor
@@ -258,7 +252,7 @@ class SpectrogramModel(torch.nn.Module):
             )
 
     def _infer(self, *args, **kwargs) -> Infer:
-        """Generates a spectrogram given `tokens`, `speaker`, etc."""
+        """Generate the entire output at once."""
         kwargs.update({"split_size": float("inf")})
         items = list(self._generate(*args, **kwargs))
         assert len(items) == 1, "Invariant Violation: Double check `split_size` logic."

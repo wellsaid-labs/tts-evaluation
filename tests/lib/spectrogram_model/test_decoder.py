@@ -18,7 +18,7 @@ def run_around_tests():
 
 def _make_decoder(
     num_frame_channels=16,
-    speaker_embed_size=8,
+    seq_meta_embed_size=8,
     pre_net_size=3,
     lstm_hidden_size=4,
     encoder_output_size=5,
@@ -38,7 +38,7 @@ def _make_decoder(
     hparams.add_config(config)
     return Decoder(
         num_frame_channels=num_frame_channels,
-        speaker_embed_size=speaker_embed_size,
+        seq_meta_embed_size=seq_meta_embed_size,
         pre_net_size=pre_net_size,
         lstm_hidden_size=lstm_hidden_size,
         encoder_output_size=encoder_output_size,
@@ -52,8 +52,8 @@ def _make_encoded(
     """Make `Encoded` for testing."""
     tokens = torch.rand(num_tokens, batch_size, module.encoder_output_size)
     tokens_mask = torch.ones(batch_size, num_tokens, dtype=torch.bool)
-    speaker = torch.zeros(batch_size, module.speaker_embed_size)
-    encoded = Encoded(tokens, tokens_mask, tokens_mask.sum(dim=1), speaker)
+    seq_metadata = torch.zeros(batch_size, module.seq_meta_embed_size)
+    encoded = Encoded(tokens, tokens_mask, tokens_mask.sum(dim=1), seq_metadata)
     return encoded, (batch_size, num_tokens)
 
 

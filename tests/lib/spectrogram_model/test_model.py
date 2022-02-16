@@ -27,8 +27,7 @@ assert_almost_equal = lambda *a, **k: _utils.assert_almost_equal(*a, **k, decima
 
 class _Config(typing.NamedTuple):
     max_tokens: int = 17
-    max_speakers: int = 3
-    max_sessions: int = 5
+    max_seq_meta_values: typing.Tuple[int, int] = (3, 5)
     num_frame_channels: int = 6
     batch_size: int = 5
     max_frames: int = 5
@@ -48,7 +47,7 @@ def run_around_tests():
 
 def _make_spectrogram_model(
     config: _Config,
-    speaker_embed_size: int = 8,
+    seq_meta_embed_size: int = 8,
     output_scalar: float = 1.2,
     stop_threshold: float = 0.5,
     dropout: float = 0.5,
@@ -58,7 +57,7 @@ def _make_spectrogram_model(
     """Make `spectrogram_model.SpectrogramModel` for testing."""
     hparams_config = {
         lib.spectrogram_model.encoder.Encoder.__init__: HParams(
-            speaker_embed_dropout=dropout,
+            seq_meta_embed_dropout=dropout,
             out_size=16,
             hidden_size=16,
             num_convolution_layers=2,
@@ -84,9 +83,8 @@ def _make_spectrogram_model(
     hparams.add_config(hparams_config)
     model = SpectrogramModel(
         max_tokens=config.max_tokens,
-        max_speakers=config.max_speakers,
-        max_sessions=config.max_sessions,
-        speaker_embed_size=speaker_embed_size,
+        max_seq_meta_values=config.max_seq_meta_values,
+        seq_meta_embed_size=seq_meta_embed_size,
         num_frame_channels=config.num_frame_channels,
         max_frames_per_token=config.max_frames_per_token,
         output_scalar=output_scalar,
@@ -111,8 +109,8 @@ def _make_inputs(
     # TODO: Remove and update `test_spectrogram_model__version` values.
     tokens_size = (config.max_num_tokens, config.batch_size)
     tokens = torch.randint(1, config.max_tokens, tokens_size).transpose(0, 1).tolist()
-    speakers = torch.randint(0, config.max_speakers, (config.batch_size,)).tolist()
-    sessions = torch.randint(0, config.max_sessions, (config.batch_size,)).tolist()
+    speakers = torch.randint(0, config.max_seq_meta_values[0], (config.batch_size,)).tolist()
+    sessions = torch.randint(0, config.max_seq_meta_values[1], (config.batch_size,)).tolist()
 
     num_tokens = torch.randint(1, config.max_num_tokens, (config.batch_size,), dtype=long_)
     # NOTE: Ensure at least one sequence is `max_num_tokens`.
@@ -120,7 +118,7 @@ def _make_inputs(
     for i in range(config.batch_size):
         tokens[i] = tokens[i][: num_tokens[i]]
 
-    inputs = Inputs(speakers, sessions, tokens)
+    inputs = Inputs(tokens, list(zip(speakers, sessions)))
 
     target_frames = torch.randn(config.max_frames, config.batch_size, config.num_frame_channels)
     target_lengths = torch.randint(1, config.max_frames, (config.batch_size,), dtype=long_)
@@ -372,8 +370,9 @@ def test_spectrogram_model__infer_train():
 def _set_embedding_vocab(model: SpectrogramModel, config: _Config):
     """Update `model` vocab so it can be run in inference mode."""
     model.encoder.embed_token.update_tokens(list(range(config.max_tokens)))
-    model.encoder.embed_speaker.update_tokens(list(range(config.max_speakers)))
-    model.encoder.embed_session.update_tokens(list(range(config.max_sessions)))
+    for i, max_values in enumerate(config.max_seq_meta_values):
+        embedding = typing.cast(lib.utils.PaddingAndLazyEmbedding, model.encoder.embed_metadata[i])
+        embedding.update_tokens(list(range(max_values)))
 
 
 def test_spectrogram_model__infer_generate():
@@ -426,8 +425,7 @@ def test_spectrogram_model__infer_batch_padding_invariance():
         with fork_rng(seed=123):
             inputs_ = inputs._replace(
                 tokens=[t[:num_tokens_] for t in inputs.tokens][i : i + 1],
-                speaker=inputs.speaker[i : i + 1],
-                session=inputs.session[i : i + 1],
+                metadata=inputs.metadata[i : i + 1],
             )
             preds = model(inputs_, mode=Mode.INFER)
 
@@ -463,8 +461,7 @@ def test_spectrogram_model__train_batch_padding_invariance():
     length = typing.cast(int, target_lengths[i].item())
     inputs = batch_inputs._replace(
         tokens=[t[:num_tokens] for t in batch_inputs.tokens][i : i + 1],
-        speaker=batch_inputs.speaker[i : i + 1],
-        session=batch_inputs.session[i : i + 1],
+        metadata=batch_inputs.metadata[i : i + 1],
     )
 
     with fork_rng(seed=123):
@@ -482,8 +479,8 @@ def test_spectrogram_model__train_batch_padding_invariance():
 
 
 _expected_parameters = {
-    "encoder.embed_speaker.weight": torch.tensor(-3.281343),
-    "encoder.embed_session.weight": torch.tensor(0.318184),
+    "encoder.embed_metadata.0.weight": torch.tensor(-3.281343),
+    "encoder.embed_metadata.1.weight": torch.tensor(0.318184),
     "encoder.embed_token.weight": torch.tensor(-4.785396),
     "encoder.embed.0.weight": torch.tensor(0.664301),
     "encoder.embed.0.bias": torch.tensor(-0.198331),
@@ -547,8 +544,8 @@ _expected_parameters = {
 }
 
 _expected_grads = {
-    "encoder.embed_speaker.weight": torch.tensor(-7.907637),
-    "encoder.embed_session.weight": torch.tensor(-11.760118),
+    "encoder.embed_metadata.0.weight": torch.tensor(-7.907637),
+    "encoder.embed_metadata.1.weight": torch.tensor(-11.760118),
     "encoder.embed_token.weight": torch.tensor(-3.497558),
     "encoder.embed.0.weight": torch.tensor(-14.660476),
     "encoder.embed.0.bias": torch.tensor(1.748332),
@@ -649,8 +646,7 @@ def _side_effect(config: _Config, num_embeddings: int, *args, padding_idx=None, 
 
     TODO: Remove and update `test_spectrogram_model__version` values.
     """
-    assert config.max_tokens != config.max_sessions
-    assert config.max_tokens != config.max_speakers
+    assert all(config.max_tokens != n for n in config.max_seq_meta_values)
     default_tokens = len(lib.utils.PaddingAndLazyEmbedding._Tokens)
     padding_idx = padding_idx if num_embeddings == (config.max_tokens + default_tokens) else None
     return Embedding(num_embeddings - default_tokens, *args, padding_idx=padding_idx, **kwargs)
@@ -668,10 +664,10 @@ def _make_backward_compatible_model(config: _Config, stop_threshold=0.5):
 
     model.encoder.embed_token.vocab.update({i: i for i in range(config.max_tokens)})
     model.encoder.embed_token.num_embeddings = len(model.encoder.embed_token.vocab)
-    model.encoder.embed_speaker.vocab.update({i: i for i in range(config.max_speakers)})
-    model.encoder.embed_speaker.num_embeddings = len(model.encoder.embed_speaker.vocab)
-    model.encoder.embed_session.vocab.update({i: i for i in range(config.max_sessions)})
-    model.encoder.embed_session.num_embeddings = len(model.encoder.embed_session.vocab)
+    for embed, max_values in zip(model.encoder.embed_metadata, config.max_seq_meta_values):
+        embed = typing.cast(lib.utils.PaddingAndLazyEmbedding, embed)
+        embed.vocab.update({i: i for i in range(max_values)})
+        embed.num_embeddings = len(embed.vocab)
 
     return model
 

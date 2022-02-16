@@ -6,14 +6,11 @@ import torch
 class Inputs(typing.NamedTuple):
     """The model inputs."""
 
-    # Batch of speakers
-    speaker: typing.List[typing.Hashable]
-
-    # Batch of recording sessions per speaker
-    session: typing.List[typing.Hashable]
-
     # Batch of sequences of tokens
     tokens: typing.List[typing.List[typing.Hashable]]
+
+    # Metadata associated with each sequence
+    seq_metadata: typing.List[typing.Tuple[typing.Hashable, ...]]
 
 
 class Infer(typing.NamedTuple):
@@ -71,9 +68,9 @@ class Encoded(typing.NamedTuple):
     # torch.LongTensor [num_tokens]
     num_tokens: torch.Tensor
 
-    # Speaker encodings
-    # torch.FloatTensor [batch_size, speaker_embed_size]
-    speaker: torch.Tensor
+    # Sequence metadata encoded
+    # torch.FloatTensor [batch_size, seq_meta_embed_size]
+    seq_metadata: torch.Tensor
 
 
 class AttentionHiddenState(typing.NamedTuple):
