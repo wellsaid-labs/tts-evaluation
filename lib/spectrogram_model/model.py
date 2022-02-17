@@ -7,6 +7,7 @@ import typing
 import torch
 import torch.nn
 from hparams import HParam, configurable
+from torchnlp.utils import lengths_to_mask
 from tqdm import tqdm
 
 from lib.spectrogram_model import decoder, encoder
@@ -180,11 +181,14 @@ class SpectrogramModel(torch.nn.Module):
 
             if len(frames) > split_size or not keep_going():
                 yield Infer(
-                    torch.stack(frames, dim=0),
-                    torch.stack(stop_tokens, dim=0),
-                    torch.stack(alignments, dim=0),
-                    lengths.unsqueeze(0),
-                    reached_max.unsqueeze(0),
+                    frames=torch.stack(frames, dim=0),
+                    stop_tokens=torch.stack(stop_tokens, dim=0),
+                    alignments=torch.stack(alignments, dim=0),
+                    num_frames=lengths,
+                    frames_mask=lengths_to_mask(lengths, device=device),
+                    num_tokens=encoded.num_tokens,
+                    tokens_mask=encoded.tokens_mask,
+                    reached_max=reached_max,
                 )
                 frames, stop_tokens, alignments = [], [], []
 
@@ -218,13 +222,22 @@ class SpectrogramModel(torch.nn.Module):
         """
         if target_mask is None:
             target_mask = torch.ones(*target_frames.shape[:1], device=target_frames.device)
+        assert target_mask.shape[:1] == target_frames.shape[:1], "Shapes must align."
         target_frames = target_frames / self.output_scalar
         encoded = self.encoder(inputs)
         out = self.decoder(encoded, target_frames)
         frames = out.frames.masked_fill(~target_mask.unsqueeze(2), 0) * self.output_scalar
         num_tokens = encoded.num_tokens.unsqueeze(0)
         stop_tokens = self._mask_stop_token(out.stop_tokens, num_tokens, out.window_starts)
-        return Forward(frames, stop_tokens, out.alignments)
+        return Forward(
+            frames=frames,
+            stop_tokens=stop_tokens,
+            alignments=out.alignments,
+            num_frames=target_mask.sum(dim=0),
+            frames_mask=target_mask.transpose(0, 1),
+            num_tokens=encoded.num_tokens,
+            tokens_mask=encoded.tokens_mask,
+        )
 
     def _generate(
         self,

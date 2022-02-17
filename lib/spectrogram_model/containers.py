@@ -28,12 +28,24 @@ class Infer(typing.NamedTuple):
     # torch.FloatTensor [num_frames, batch_size, num_tokens]
     alignments: torch.Tensor
 
+    # The number of frames in each sequence.
+    # torch.LongTensor [batch_size]
+    num_frames: torch.Tensor
+
     # The sequence length.
-    # torch.LongTensor [1, batch_size]
-    lengths: torch.Tensor
+    # torch.BoolTensor [batch_size, num_frames]
+    frames_mask: torch.Tensor
+
+    # The number of tokens in each sequence.
+    # torch.LongTensor [num_tokens]
+    num_tokens: torch.Tensor
+
+    # The sequence length.
+    # torch.BoolTensor [batch_size, num_tokens]
+    tokens_mask: torch.Tensor
 
     # If `True` the sequence has reached `self.max_frames_per_token`.
-    # torch.BoolTensor [1, batch_size]
+    # torch.BoolTensor [batch_size]
     reached_max: torch.Tensor
 
 
@@ -52,6 +64,22 @@ class Forward(typing.NamedTuple):
     # torch.FloatTensor [num_frames, batch_size, num_tokens]
     alignments: torch.Tensor
 
+    # The sequence length.
+    # torch.LongTensor [batch_size]
+    num_frames: torch.Tensor
+
+    # Sequence mask(s) to deliminate `frames` padding with `False`.
+    # torch.BoolTensor [batch_size, num_frames]
+    frames_mask: torch.Tensor
+
+    # The sequence length.
+    # torch.LongTensor [num_tokens]
+    num_tokens: torch.Tensor
+
+    # Sequence mask(s) to deliminate token padding with `False`.
+    # torch.BoolTensor [batch_size, num_tokens]
+    tokens_mask: torch.Tensor
+
 
 class Encoded(typing.NamedTuple):
     """The model input encoded."""
@@ -65,7 +93,7 @@ class Encoded(typing.NamedTuple):
     tokens_mask: torch.Tensor
 
     # Number of tokens in each sequence.
-    # torch.LongTensor [num_tokens]
+    # torch.LongTensor [batch_size]
     num_tokens: torch.Tensor
 
     # Sequence metadata encoded

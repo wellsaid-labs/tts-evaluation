@@ -239,24 +239,30 @@ def test_spectrogram_model():
         model = _make_spectrogram_model(config)
         _mock_model(model)
 
-        frames, stop_tokens, alignments, lengths, reached_max = model(
-            inputs, mode=Mode.INFER, use_tqdm=True
-        )
+        preds = model(inputs, mode=Mode.INFER, use_tqdm=True)
+        max_frames = preds.num_frames.max()
 
-        assert frames.dtype == torch.float
-        assert frames.shape == (lengths.max(), config.batch_size, model.num_frame_channels)
-        assert stop_tokens.dtype == torch.float
-        assert stop_tokens.shape == (lengths.max(), config.batch_size)
-        assert alignments.dtype == torch.float
-        assert alignments.shape == (lengths.max(), config.batch_size, config.max_num_tokens)
-        assert lengths.shape == (1, config.batch_size)
-        for i, length in enumerate(lengths[0].tolist()):
-            assert length > 0
-            assert length <= config.max_frames
-            thresholded = torch.sigmoid(stop_tokens[length - 1, i]) >= model.stop_threshold
-            assert thresholded or reached_max[:, i]
-        assert reached_max.dtype == torch.bool
-        assert reached_max.sum().item() >= 0
+        assert preds.frames.dtype == torch.float
+        assert preds.frames.shape == (max_frames, config.batch_size, model.num_frame_channels)
+        assert preds.stop_tokens.dtype == torch.float
+        assert preds.stop_tokens.shape == (max_frames, config.batch_size)
+        assert preds.alignments.dtype == torch.float
+        assert preds.alignments.shape == (max_frames, config.batch_size, config.max_num_tokens)
+        assert preds.num_frames.shape == (config.batch_size,)
+        for i, num_frames in enumerate(preds.num_frames.tolist()):
+            assert num_frames > 0
+            assert num_frames <= config.max_frames
+            probability = torch.sigmoid(preds.stop_tokens[num_frames - 1, i])
+            thresholded = probability >= model.stop_threshold
+            assert thresholded or preds.reached_max[i]
+        assert preds.frames_mask.dtype == torch.bool
+        assert preds.frames_mask.shape == (config.batch_size, max_frames)
+        assert preds.num_tokens.dtype == torch.long
+        assert preds.num_tokens.shape == (config.batch_size,)
+        assert preds.tokens_mask.dtype == torch.bool
+        assert preds.tokens_mask.shape == (config.batch_size, config.max_num_tokens)
+        assert preds.reached_max.dtype == torch.bool
+        assert preds.reached_max.sum().item() >= 0
 
 
 def test_spectrogram_model__train():
@@ -274,6 +280,14 @@ def test_spectrogram_model__train():
     assert preds.stop_tokens.shape == (config.max_frames, config.batch_size)
     assert preds.alignments.dtype == torch.float
     assert preds.alignments.shape == (config.max_frames, config.batch_size, config.max_num_tokens)
+    assert preds.num_frames.dtype == torch.long
+    assert preds.num_frames.shape == (config.batch_size,)
+    assert preds.frames_mask.dtype == torch.bool
+    assert preds.frames_mask.shape == (config.batch_size, config.max_frames)
+    assert preds.num_tokens.dtype == torch.long
+    assert preds.num_tokens.shape == (config.batch_size,)
+    assert preds.tokens_mask.dtype == torch.bool
+    assert preds.tokens_mask.shape == (config.batch_size, config.max_num_tokens)
     (preds.frames.sum() + preds.stop_tokens.sum()).backward()
 
 
@@ -297,7 +311,14 @@ def test_spectrogram_model__reached_max_all():
     assert preds.stop_tokens.shape == (config.max_frames, config.batch_size)
     assert preds.alignments.dtype == torch.float
     assert preds.alignments.shape == (config.max_frames, config.batch_size, config.max_num_tokens)
-    assert preds.lengths.shape == (1, config.batch_size)
+    assert preds.num_frames.dtype == torch.long
+    assert preds.num_frames.shape == (config.batch_size,)
+    assert preds.frames_mask.dtype == torch.bool
+    assert preds.frames_mask.shape == (config.batch_size, config.max_frames)
+    assert preds.num_tokens.dtype == torch.long
+    assert preds.num_tokens.shape == (config.batch_size,)
+    assert preds.tokens_mask.dtype == torch.bool
+    assert preds.tokens_mask.shape == (config.batch_size, config.max_num_tokens)
     assert preds.reached_max.dtype == torch.bool
     assert preds.reached_max.sum().item() == config.batch_size
 
@@ -338,10 +359,10 @@ def test_spectrogram_model__stop():
         stopped_index = _get_index_first_nonzero(threshold)
         stopped_index[stopped_index == -1] = max_lengths[stopped_index == -1] - 1
         expected_length = torch.min(stopped_index + 1, max_lengths)
-        assert_almost_equal(preds.lengths.squeeze(0), expected_length)
+        assert_almost_equal(preds.num_frames, expected_length)
 
         for i in range(config.batch_size):
-            assert preds.frames[typing.cast(int, preds.lengths[:, i].item()) :, i].sum() == 0
+            assert preds.frames[typing.cast(int, preds.num_frames[i].item()) :, i].sum() == 0
 
 
 def test_spectrogram_model__infer_train():
@@ -355,12 +376,8 @@ def test_spectrogram_model__infer_train():
         preds = model(inputs, mode=Mode.INFER)
 
     with fork_rng(seed=123):
-        aligned_preds = model(
-            inputs,
-            target_frames=preds.frames,
-            target_mask=lengths_to_mask(preds.lengths).transpose(0, 1),
-            mode=Mode.FORWARD,
-        )
+        target_mask = preds.frames_mask.transpose(0, 1)
+        aligned_preds = model(inputs, preds.frames, target_mask, mode=Mode.FORWARD)
 
     assert_almost_equal(preds.frames, aligned_preds.frames)
     assert_almost_equal(preds.stop_tokens, aligned_preds.stop_tokens)
@@ -394,8 +411,11 @@ def test_spectrogram_model__infer_generate():
         assert_almost_equal(preds.frames, torch.cat(generated[0]))
         assert_almost_equal(preds.stop_tokens, torch.cat(generated[1]))
         assert_almost_equal(preds.alignments, torch.cat(generated[2]))
-        assert_almost_equal(preds.lengths, generated[3][-1])
-        assert_almost_equal(preds.reached_max, generated[4][-1])
+        assert_almost_equal(preds.num_frames, generated[3][-1])
+        assert_almost_equal(preds.frames_mask, generated[4][-1])
+        assert_almost_equal(preds.num_tokens, generated[5][-1])
+        assert_almost_equal(preds.tokens_mask, generated[6][-1])
+        assert_almost_equal(preds.reached_max, generated[7][-1])
 
 
 # NOTE: The random generator for dropout varies based on the tensor size; therefore, it's
@@ -425,17 +445,17 @@ def test_spectrogram_model__infer_batch_padding_invariance():
         with fork_rng(seed=123):
             inputs_ = inputs._replace(
                 tokens=[t[:num_tokens_] for t in inputs.tokens][i : i + 1],
-                metadata=inputs.metadata[i : i + 1],
+                seq_metadata=inputs.seq_metadata[i : i + 1],
             )
             preds = model(inputs_, mode=Mode.INFER)
 
-        length = typing.cast(int, batch_preds.lengths[0, i].item())
-        assert_almost_equal(preds.reached_max, batch_preds.reached_max[:, i : i + 1])
+        length = typing.cast(int, batch_preds.num_frames[i].item())
+        assert_almost_equal(preds.reached_max, batch_preds.reached_max[i : i + 1])
         assert_almost_equal(preds.frames, batch_preds.frames[:length, i : i + 1])
         assert_almost_equal(preds.stop_tokens, batch_preds.stop_tokens[:length, i : i + 1])
         batch_preds_alignments = batch_preds.alignments[:length, i : i + 1, :num_tokens_]
         assert_almost_equal(preds.alignments, batch_preds_alignments)
-        assert_almost_equal(preds.lengths, batch_preds.lengths[:, i : i + 1])
+        assert_almost_equal(preds.num_frames, batch_preds.num_frames[i : i + 1])
 
 
 def test_spectrogram_model__train_batch_padding_invariance():
@@ -461,11 +481,11 @@ def test_spectrogram_model__train_batch_padding_invariance():
     length = typing.cast(int, target_lengths[i].item())
     inputs = batch_inputs._replace(
         tokens=[t[:num_tokens] for t in batch_inputs.tokens][i : i + 1],
-        metadata=batch_inputs.metadata[i : i + 1],
+        seq_metadata=batch_inputs.seq_metadata[i : i + 1],
     )
 
     with fork_rng(seed=123):
-        target_mask = lengths_to_mask(length).transpose(0, 1)
+        target_mask = target_mask[:length, i : i + 1]
         target_frames = target_frames[:length, i : i + 1]
         preds = model(inputs, target_frames=target_frames, target_mask=target_mask)
         (preds.frames.sum() + preds.stop_tokens.sum()).backward()
@@ -698,24 +718,24 @@ def test_spectrogram_model__version():
         assert_almost_equal(torch.sigmoid(preds.stop_tokens.transpose(0, 1)), _expected_stop_tokens)
         print("Alignments", preds.alignments.sum(dim=0))
         assert_almost_equal(preds.alignments.sum(dim=0), _expected_alignments)
-        print("Lengths", preds.lengths.squeeze(0))
-        assert_almost_equal(preds.lengths.squeeze(0), torch.tensor([6, 1, 2, 4, 8]))
-        print("Reached Max", preds.reached_max.squeeze(0))
+        print("Num Frames", preds.num_frames)
+        assert_almost_equal(preds.num_frames, torch.tensor([6, 1, 2, 4, 8]))
+        print("Reached Max", preds.reached_max)
         expected = torch.tensor([True, False, True, True, True])
-        assert_almost_equal(preds.reached_max.squeeze(0), expected)
+        assert_almost_equal(preds.reached_max, expected)
 
     with fork_rng(seed=123):
         target_frames = preds.frames
-        target_mask = lengths_to_mask(preds.lengths).transpose(0, 1)
-        preds = model(inputs, target_frames, target_mask=target_mask)
+        targets_mask = preds.frames_mask.transpose(0, 1)
+        preds = model(inputs, target_frames, targets_mask)
 
         spectrogram_loss = mse_loss(preds.frames, target_frames, reduction="none")
-        spectrogram_loss *= target_mask.unsqueeze(2)
+        spectrogram_loss *= targets_mask.unsqueeze(2)
         target = torch.zeros(preds.frames.shape[0], config.batch_size)
         stop_token_loss = binary_cross_entropy_with_logits(
             preds.stop_tokens, target, reduction="none"
         )
-        stop_token_loss *= target_mask
+        stop_token_loss *= targets_mask
         (spectrogram_loss.sum() + stop_token_loss.sum()).backward()
 
         print("Spectrogram Loss", spectrogram_loss.sum())
