@@ -99,6 +99,8 @@ def get_config_parameters() -> typing.Dict[run._config.Label, typing.Any]:
 class Context(enum.Enum):
     """Constants and labels for contextualizing the use-case."""
 
+    # NOTE: This includes the entirety of the running script.
+    SCRIPT: typing.Final = "script"
     TRAIN: typing.Final = "train"
     EVALUATE: typing.Final = "evaluate"
     EVALUATE_INFERENCE: typing.Final = "evaluate_inference"
@@ -260,7 +262,7 @@ class CometMLExperiment:
             self.log_metric(label, steps_per_second)
 
         # NOTE: Logs an average `steps_per_second` since the training started.
-        with self.context_manager(None):
+        with self.context_manager(Context.SCRIPT):
             label = get_timer_label("steps_per_second", cadence=Cadence.RUN)
             num_seconds = time.time() - self._first_epoch_time
             steps_per_second = (self.curr_step - self._first_epoch_step) / num_seconds
@@ -709,7 +711,7 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
     ):
         self._set_r_limit()
         self.device = device
-        self.stream = torch.cuda.Stream() if torch.cuda.is_available() else None
+        self.stream = torch.cuda.streams.Stream() if torch.cuda.is_available() else None
         self.loader = torch.utils.data.dataloader.DataLoader(
             dataset,
             pin_memory=True,
@@ -861,11 +863,9 @@ MetricsSelect = typing.Callable[[MetricsStoreValues], MetricsStoreValues]
 
 
 class Metrics(lib.distributed.DictStore):
+    """Metrics collated accross different processes."""
 
-    (
-        DATA_QUEUE_SIZE,
-        *_,
-    ) = tuple([str(i) for i in range(100)])
+    DATA_QUEUE_SIZE, *_ = tuple([str(i) for i in range(100)])
 
     MIN_DATA_LOADER_QUEUE_SIZE = partial(get_dataset_label, "min_data_loader_queue_size")
 
@@ -942,7 +942,7 @@ class Metrics(lib.distributed.DictStore):
 class _TimerEvent(typing.NamedTuple):
     name: str
     cpu: float
-    cuda: typing.Optional[torch.cuda.Event]
+    cuda: typing.Optional[torch.cuda.streams.Event]
 
 
 class Timer:
@@ -966,7 +966,7 @@ class Timer:
     def record_event(self, name: str):
         event = None
         if torch.cuda.is_available():
-            event = torch.cuda.Event(enable_timing=True)
+            event = torch.cuda.streams.Event(enable_timing=True)
             event.record()
         self.events.append(_TimerEvent(name, time.perf_counter(), event))
         return self
@@ -978,6 +978,8 @@ class Timer:
             name = f"{self.prefix}{prev.name}"
             times[get_timer_label(name, **kwargs)] += next.cpu - prev.cpu
             if torch.cuda.is_available():
+                assert prev.cuda is not None
+                assert next.cuda is not None
                 prev.cuda.synchronize()
                 next.cuda.synchronize()
                 label = get_timer_label(name, device=Device.CUDA, **kwargs)
