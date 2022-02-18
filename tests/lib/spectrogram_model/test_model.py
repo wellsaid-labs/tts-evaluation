@@ -18,7 +18,12 @@ from torchnlp.utils import lengths_to_mask
 import lib
 from lib.spectrogram_model import Inputs, Mode, SpectrogramModel
 from lib.spectrogram_model.attention import Attention
-from lib.spectrogram_model.containers import AttentionHiddenState, DecoderHiddenState, Encoded
+from lib.spectrogram_model.containers import (
+    AttentionHiddenState,
+    DecoderHiddenState,
+    Encoded,
+    Preds,
+)
 from lib.spectrogram_model.decoder import Decoder
 from tests import _utils
 
@@ -231,70 +236,64 @@ def _mock_model(model: SpectrogramModel) -> typing.Callable[[int], None]:
     return set_stop_token_rand_offset
 
 
+def _check_preds(config: _Config, model: SpectrogramModel, num_tokens: torch.Tensor, preds: Preds):
+    """Check invariants for `preds`."""
+    max_frames = config.max_frames if model.training else preds.num_frames.max()
+    assert max_frames <= config.max_frames
+    assert preds.frames.dtype == torch.float
+    assert preds.frames.shape == (max_frames, config.batch_size, model.num_frame_channels)
+    assert preds.stop_tokens.dtype == torch.float
+    assert preds.stop_tokens.shape == (max_frames, config.batch_size)
+    assert preds.alignments.dtype == torch.float
+    assert preds.alignments.shape == (max_frames, config.batch_size, config.max_num_tokens)
+    assert preds.num_frames.dtype == torch.long
+    assert preds.num_frames.shape == (config.batch_size,)
+    for i, num_frames in enumerate(preds.num_frames.tolist()):
+        assert num_frames > 0
+        assert num_frames <= max_frames
+        probability = torch.sigmoid(preds.stop_tokens[num_frames - 1, i])
+        thresholded = probability >= model.stop_threshold
+        if model.training:
+            assert num_frames < config.max_frames_per_token * num_tokens[i] or preds.reached_max[i]
+        else:
+            assert thresholded or preds.reached_max[i]
+    assert preds.frames_mask.dtype == torch.bool
+    assert preds.frames_mask.shape == (config.batch_size, max_frames)
+    assert preds.num_tokens.dtype == torch.long
+    assert preds.num_tokens.shape == (config.batch_size,)
+    assert preds.tokens_mask.dtype == torch.bool
+    assert preds.tokens_mask.shape == (config.batch_size, config.max_num_tokens)
+    assert preds.reached_max.dtype == torch.bool
+    assert preds.reached_max.shape == (config.batch_size,)
+
+
 def test_spectrogram_model():
     """Test `spectrogram_model.SpectrogramModel` handles a basic case."""
     with fork_rng(123):
         config = _Config(batch_size=1)
-        inputs, *_ = _make_inputs(config)
-        model = _make_spectrogram_model(config)
+        inputs, num_tokens, *_ = _make_inputs(config)
+        model = _make_spectrogram_model(config).eval()
         _mock_model(model)
-
+        _set_embedding_vocab(model, config)
         preds = model(inputs, mode=Mode.INFER, use_tqdm=True)
-        max_frames = preds.num_frames.max()
-
-        assert preds.frames.dtype == torch.float
-        assert preds.frames.shape == (max_frames, config.batch_size, model.num_frame_channels)
-        assert preds.stop_tokens.dtype == torch.float
-        assert preds.stop_tokens.shape == (max_frames, config.batch_size)
-        assert preds.alignments.dtype == torch.float
-        assert preds.alignments.shape == (max_frames, config.batch_size, config.max_num_tokens)
-        assert preds.num_frames.shape == (config.batch_size,)
-        for i, num_frames in enumerate(preds.num_frames.tolist()):
-            assert num_frames > 0
-            assert num_frames <= config.max_frames
-            probability = torch.sigmoid(preds.stop_tokens[num_frames - 1, i])
-            thresholded = probability >= model.stop_threshold
-            assert thresholded or preds.reached_max[i]
-        assert preds.frames_mask.dtype == torch.bool
-        assert preds.frames_mask.shape == (config.batch_size, max_frames)
-        assert preds.num_tokens.dtype == torch.long
-        assert preds.num_tokens.shape == (config.batch_size,)
-        assert preds.tokens_mask.dtype == torch.bool
-        assert preds.tokens_mask.shape == (config.batch_size, config.max_num_tokens)
-        assert preds.reached_max.dtype == torch.bool
-        assert preds.reached_max.sum().item() >= 0
+        _check_preds(config, model, num_tokens, preds)
 
 
 def test_spectrogram_model__train():
     """Test `spectrogram_model.SpectrogramModel` handles a basic training case."""
     config = _Config()
-    inputs, _, target_frames, target_mask, _ = _make_inputs(config)
+    inputs, num_tokens, target_frames, target_mask, _ = _make_inputs(config)
     model = _make_spectrogram_model(config)
     _mock_model(model)
-
     preds = model(inputs, target_frames, target_mask=target_mask)
-
-    assert preds.frames.dtype == torch.float
-    assert preds.frames.shape == (config.max_frames, config.batch_size, config.num_frame_channels)
-    assert preds.stop_tokens.dtype == torch.float
-    assert preds.stop_tokens.shape == (config.max_frames, config.batch_size)
-    assert preds.alignments.dtype == torch.float
-    assert preds.alignments.shape == (config.max_frames, config.batch_size, config.max_num_tokens)
-    assert preds.num_frames.dtype == torch.long
-    assert preds.num_frames.shape == (config.batch_size,)
-    assert preds.frames_mask.dtype == torch.bool
-    assert preds.frames_mask.shape == (config.batch_size, config.max_frames)
-    assert preds.num_tokens.dtype == torch.long
-    assert preds.num_tokens.shape == (config.batch_size,)
-    assert preds.tokens_mask.dtype == torch.bool
-    assert preds.tokens_mask.shape == (config.batch_size, config.max_num_tokens)
+    _check_preds(config, model, num_tokens, preds)
     (preds.frames.sum() + preds.stop_tokens.sum()).backward()
 
 
 def test_spectrogram_model__reached_max_all():
     """Test `spectrogram_model.SpectrogramModel` handles `reached_max`."""
     config = _Config(batch_size=32)
-    inputs, *_ = _make_inputs(config)
+    inputs, num_tokens, *_ = _make_inputs(config)
     model = _make_spectrogram_model(config, dropout=0)
 
     # NOTE: Make sure that stop-token is not predicted; therefore, reaching `max_frames_per_token`.
@@ -304,22 +303,7 @@ def test_spectrogram_model__reached_max_all():
     torch.nn.init.constant_(bias, -math.inf)
 
     preds = model(inputs, mode=Mode.INFER)
-
-    assert preds.frames.dtype == torch.float
-    assert preds.frames.shape == (config.max_frames, config.batch_size, config.num_frame_channels)
-    assert preds.stop_tokens.dtype == torch.float
-    assert preds.stop_tokens.shape == (config.max_frames, config.batch_size)
-    assert preds.alignments.dtype == torch.float
-    assert preds.alignments.shape == (config.max_frames, config.batch_size, config.max_num_tokens)
-    assert preds.num_frames.dtype == torch.long
-    assert preds.num_frames.shape == (config.batch_size,)
-    assert preds.frames_mask.dtype == torch.bool
-    assert preds.frames_mask.shape == (config.batch_size, config.max_frames)
-    assert preds.num_tokens.dtype == torch.long
-    assert preds.num_tokens.shape == (config.batch_size,)
-    assert preds.tokens_mask.dtype == torch.bool
-    assert preds.tokens_mask.shape == (config.batch_size, config.max_num_tokens)
-    assert preds.reached_max.dtype == torch.bool
+    _check_preds(config, model, num_tokens, preds)
     assert preds.reached_max.sum().item() == config.batch_size
 
 

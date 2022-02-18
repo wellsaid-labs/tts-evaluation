@@ -11,7 +11,7 @@ from torchnlp.utils import lengths_to_mask
 from tqdm import tqdm
 
 from lib.spectrogram_model import decoder, encoder
-from lib.spectrogram_model.containers import Encoded, Forward, Infer, Inputs
+from lib.spectrogram_model.containers import Encoded, Inputs, Preds
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,7 @@ class Mode(enum.Enum):
     INFER: typing.Final = enum.auto()
 
 
-Generator = typing.Iterator[Infer]
+Generator = typing.Iterator[Preds]
 
 
 class SpectrogramModel(torch.nn.Module):
@@ -131,6 +131,18 @@ class SpectrogramModel(torch.nn.Module):
         is_stop = (torch.sigmoid(stop_token) >= self.stop_threshold) | reached_max
         return is_stop, stop_token
 
+    def _get_max_frames(self, num_tokens: torch.Tensor) -> torch.Tensor:
+        """Get the maximum frames allowed for each token sequence.
+
+        Args:
+            num_tokens (torch.LongTensor [batch_size])
+
+        Returns:
+            torch.LongTensor [batch_size]
+        """
+        max_lengths = (num_tokens.float() * self.max_frames_per_token).long()
+        return torch.clamp(max_lengths, min=1)
+
     def _infer_generator(
         self, encoded: Encoded, split_size: float, use_tqdm: bool, **kwargs
     ) -> Generator:
@@ -154,8 +166,7 @@ class SpectrogramModel(torch.nn.Module):
         frames, stop_tokens, alignments = [], [], []
         lengths = torch.zeros(batch_size, dtype=torch.long, device=device)
         stopped = torch.zeros(batch_size, dtype=torch.bool, device=device)
-        max_lengths = (num_tokens.float() * self.max_frames_per_token).long()
-        max_lengths = torch.clamp(max_lengths, min=1)
+        max_lengths = self._get_max_frames(num_tokens)
         max_tokens = num_tokens.max().cpu().item() if use_tqdm else None
         progress_bar = tqdm(leave=True, unit="char(s)", total=max_tokens) if use_tqdm else None
         keep_going = lambda: (
@@ -180,7 +191,7 @@ class SpectrogramModel(torch.nn.Module):
             alignments.append(alignment.squeeze(0))
 
             if len(frames) > split_size or not keep_going():
-                yield Infer(
+                yield Preds(
                     frames=torch.stack(frames, dim=0),
                     stop_tokens=torch.stack(stop_tokens, dim=0),
                     alignments=torch.stack(alignments, dim=0),
@@ -209,7 +220,7 @@ class SpectrogramModel(torch.nn.Module):
         inputs: Inputs,
         target_frames: torch.Tensor,
         target_mask: typing.Optional[torch.Tensor] = None,
-    ) -> Forward:
+    ) -> Preds:
         """Propagate the model forward for training.
 
         TODO: Explore speeding up training with `JIT`.
@@ -229,7 +240,8 @@ class SpectrogramModel(torch.nn.Module):
         frames = out.frames.masked_fill(~target_mask.unsqueeze(2), 0) * self.output_scalar
         num_tokens = encoded.num_tokens.unsqueeze(0)
         stop_tokens = self._mask_stop_token(out.stop_tokens, num_tokens, out.window_starts)
-        return Forward(
+        num_frames = target_mask.sum(dim=0)
+        return Preds(
             frames=frames,
             stop_tokens=stop_tokens,
             alignments=out.alignments,
@@ -237,6 +249,7 @@ class SpectrogramModel(torch.nn.Module):
             frames_mask=target_mask.transpose(0, 1),
             num_tokens=encoded.num_tokens,
             tokens_mask=encoded.tokens_mask,
+            reached_max=num_frames >= self._get_max_frames(encoded.num_tokens),
         )
 
     def _generate(
@@ -264,7 +277,7 @@ class SpectrogramModel(torch.nn.Module):
                 token_skip_warning=token_skip_warning,
             )
 
-    def _infer(self, *args, **kwargs) -> Infer:
+    def _infer(self, *args, **kwargs) -> Preds:
         """Generate the entire output at once."""
         kwargs.update({"split_size": float("inf")})
         items = list(self._generate(*args, **kwargs))
@@ -290,7 +303,7 @@ class SpectrogramModel(torch.nn.Module):
         target_frames: torch.Tensor,
         target_mask: typing.Optional[torch.Tensor] = None,
         mode: typing.Literal[Mode.FORWARD] = Mode.FORWARD,
-    ) -> Forward:
+    ) -> Preds:
         ...  # pragma: no cover
 
     @typing.overload
@@ -300,7 +313,7 @@ class SpectrogramModel(torch.nn.Module):
         use_tqdm: bool = False,
         token_skip_warning: float = math.inf,
         mode: typing.Literal[Mode.INFER] = Mode.INFER,
-    ) -> Infer:
+    ) -> Preds:
         ...  # pragma: no cover
 
     @typing.overload

@@ -13,8 +13,8 @@ class Inputs(typing.NamedTuple):
     seq_metadata: typing.List[typing.Tuple[typing.Hashable, ...]]
 
 
-class Infer(typing.NamedTuple):
-    """The model inference returns."""
+class Preds(typing.NamedTuple):
+    """The model predictions."""
 
     # Spectrogram frames.
     # torch.FloatTensor [num_frames, batch_size, num_frame_channels]
@@ -32,7 +32,7 @@ class Infer(typing.NamedTuple):
     # torch.LongTensor [batch_size]
     num_frames: torch.Tensor
 
-    # The sequence length.
+    # Sequence mask(s) to deliminate `frames` padding with `False`.
     # torch.BoolTensor [batch_size, num_frames]
     frames_mask: torch.Tensor
 
@@ -40,45 +40,13 @@ class Infer(typing.NamedTuple):
     # torch.LongTensor [num_tokens]
     num_tokens: torch.Tensor
 
-    # The sequence length.
+    # Sequence mask(s) to deliminate token padding with `False`.
     # torch.BoolTensor [batch_size, num_tokens]
     tokens_mask: torch.Tensor
 
     # If `True` the sequence has reached `self.max_frames_per_token`.
     # torch.BoolTensor [batch_size]
     reached_max: torch.Tensor
-
-
-class Forward(typing.NamedTuple):
-    """The model forward pass returns."""
-
-    # Spectrogram frames.
-    # torch.FloatTensor [num_frames, batch_size, num_frame_channels]
-    frames: torch.Tensor
-
-    # Stopping probability for each frame.
-    # torch.FloatTensor [num_frames, batch_size]
-    stop_tokens: torch.Tensor
-
-    # Attention alignment between `frames` and `tokens`.
-    # torch.FloatTensor [num_frames, batch_size, num_tokens]
-    alignments: torch.Tensor
-
-    # The sequence length.
-    # torch.LongTensor [batch_size]
-    num_frames: torch.Tensor
-
-    # Sequence mask(s) to deliminate `frames` padding with `False`.
-    # torch.BoolTensor [batch_size, num_frames]
-    frames_mask: torch.Tensor
-
-    # The sequence length.
-    # torch.LongTensor [num_tokens]
-    num_tokens: torch.Tensor
-
-    # Sequence mask(s) to deliminate token padding with `False`.
-    # torch.BoolTensor [batch_size, num_tokens]
-    tokens_mask: torch.Tensor
 
 
 class Encoded(typing.NamedTuple):
