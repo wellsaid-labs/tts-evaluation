@@ -1,4 +1,3 @@
-import collections
 import contextlib
 import copy
 import dataclasses
@@ -19,7 +18,7 @@ import torch.utils.data
 from hparams import HParam, configurable
 from third_party import get_parameter_norm
 from torch.nn.functional import binary_cross_entropy_with_logits, mse_loss
-from torchnlp.utils import get_total_parameters, lengths_to_mask
+from torchnlp.utils import get_total_parameters
 
 import lib
 from lib.distributed import is_master
@@ -279,7 +278,7 @@ class _HandleBatchArgs(typing.NamedTuple):
     cadence: Cadence = Cadence.STEP
 
 
-def _visualize_source_vs_target(args: _HandleBatchArgs, preds: lib.spectrogram_model.Forward):
+def _visualize_source_vs_target(args: _HandleBatchArgs, preds: lib.spectrogram_model.Preds):
     """Visualize predictions as compared to the original `batch`.
 
     TODO: Add `pick` so that we can find examples which perform poorly in training, and hence are
@@ -289,8 +288,8 @@ def _visualize_source_vs_target(args: _HandleBatchArgs, preds: lib.spectrogram_m
         return
 
     item = random.randint(0, len(args.batch) - 1)
-    spectrogram_length = int(args.batch.spectrogram.lengths[0, item].item())
-    text_length = int(args.batch.encoded_tokens.lengths[0, item].item())
+    spectrogram_length = int(args.batch.spectrogram.lengths[item].item())
+    text_length = int(preds.num_tokens[item].item())
 
     # predicted_spectrogram, gold_spectrogram [num_frames, frame_channels]
     predicted_spectrogram = preds.frames[:spectrogram_length, item]
@@ -352,7 +351,7 @@ def _run_step(
         target_mask=args.batch.spectrogram_mask.tensor,
         mode=lib.spectrogram_model.Mode.FORWARD,
     )
-    preds = typing.cast(lib.spectrogram_model.Forward, preds)
+    preds = typing.cast(lib.spectrogram_model.Preds, preds)
 
     # SOURCE: Tacotron 2
     # We minimize the summed mean squared error (MSE) from before and after the post-net to aid
@@ -412,17 +411,13 @@ def _run_step(
         _visualize_source_vs_target(args, preds)
 
     args.timer.record_event(args.timer.MEASURE_METRICS)
-    stop_threshold = typing.cast(float, args.state.model.module.stop_threshold)
-    spectrogram_mask = args.batch.spectrogram_mask.tensor
-    spectrogram_lengths = args.batch.spectrogram.lengths
+    model = typing.cast(SpectrogramModel, args.state.model.module)
     values: _utils.MetricsValues = {
-        **args.metrics.get_dataset_values(args.batch),
-        **args.metrics.get_alignment_values(
-            args.batch, preds.alignments, spectrogram_lengths, spectrogram_mask
-        ),
-        **args.metrics.get_loudness_values(args.batch, preds.frames, spectrogram_mask),
+        **args.metrics.get_dataset_values(args.batch, model, preds),
+        **args.metrics.get_alignment_values(args.batch, model, preds),
+        **args.metrics.get_loudness_values(args.batch, model, preds),
         **args.metrics.get_data_loader_values(args.data_loader),
-        **args.metrics.get_stop_token_values(args.batch, preds.stop_tokens, stop_threshold),
+        **args.metrics.get_stop_token_values(args.batch, model, preds),
         args.metrics.SPECTROGRAM_LOSS_SUM: float(spectrogram_loss.sum().item()),
         args.metrics.STOP_TOKEN_LOSS_SUM: float(stop_token_loss.sum().item()),
     }
@@ -430,17 +425,14 @@ def _run_step(
     args.metrics.update(values)
 
 
-def _min_alignment_norm(
-    args: _HandleBatchArgs, preds: lib.spectrogram_model.Infer, spectrogram_mask: torch.Tensor
-) -> int:
+def _min_alignment_norm(_: _HandleBatchArgs, preds: lib.spectrogram_model.Preds) -> int:
     """Get the index of the prediction that has the smallest alignment norm."""
-    tokens_mask = args.batch.encoded_tokens_mask.tensor
-    return int(torch.argmin(get_alignment_norm(preds.alignments, tokens_mask, spectrogram_mask)))
+    return int(torch.argmin(get_alignment_norm(preds)))
 
 
-def _max_num_frames_diff(args: _HandleBatchArgs, preds: lib.spectrogram_model.Infer, *_) -> int:
+def _max_num_frames_diff(args: _HandleBatchArgs, preds: lib.spectrogram_model.Preds) -> int:
     """Get the index of the prediction that most deviates from the original spectrogram length."""
-    return int(torch.argmax((args.batch.spectrogram.lengths - preds.lengths).abs()))
+    return int(torch.argmax((args.batch.spectrogram.lengths - preds.num_frames).abs()))
 
 
 def _random_sequence(args: _HandleBatchArgs, *_) -> int:
@@ -451,20 +443,12 @@ def _random_sequence(args: _HandleBatchArgs, *_) -> int:
 class _Pick(typing.Protocol):
     """Get a batch index given the arguments and predictions."""
 
-    def __call__(
-        self,
-        args: _HandleBatchArgs,
-        preds: lib.spectrogram_model.Infer,
-        spectrogram_mask: torch.Tensor,
-    ) -> int:
+    def __call__(self, args: _HandleBatchArgs, preds: lib.spectrogram_model.Preds) -> int:
         ...
 
 
 def _visualize_inferred(
-    args: _HandleBatchArgs,
-    preds: lib.spectrogram_model.Infer,
-    spectrogram_mask: torch.Tensor,
-    pick: _Pick = _random_sequence,
+    args: _HandleBatchArgs, preds: lib.spectrogram_model.Preds, pick: _Pick = _random_sequence
 ):
     """Run in inference mode and visualize results.
 
@@ -474,10 +458,10 @@ def _visualize_inferred(
         return
 
     pick_label = typing.cast(types.MethodType, pick).__name__
-    item = pick(args, preds, spectrogram_mask)
+    item = pick(args, preds)
     num_frames = int(args.batch.spectrogram.lengths[0, item].item())
-    num_frames_predicted = int(preds.lengths[0, item].item())
-    text_length = int(args.batch.encoded_tokens.lengths[0, item].item())
+    num_frames_predicted = int(preds.num_frames[item].item())
+    text_length = int(preds.num_tokens[item].item())
     # gold_spectrogram [num_frames, frame_channels]
     gold_spectrogram = args.batch.spectrogram.tensor[:num_frames, item]
     # spectrogram [num_frames, frame_channels]
@@ -530,19 +514,18 @@ def _run_inference(args: _HandleBatchArgs):
     inputs = Inputs(tokens=args.batch.tokens, speaker=speakers, session=sessions)
     model = typing.cast(SpectrogramModel, args.state.model.module)
     preds = model(inputs, mode=lib.spectrogram_model.Mode.INFER)
+    preds = typing.cast(lib.spectrogram_model.Preds, preds)
 
     if args.visualize:
         args.timer.record_event(args.timer.VISUALIZE_PREDICTIONS)
         for pick in [_random_sequence, _max_num_frames_diff, _min_alignment_norm]:
-            _visualize_inferred(args, preds, mask, pick)
+            _visualize_inferred(args, preds, pick)
 
     args.timer.record_event(args.timer.MEASURE_METRICS)
     values: _utils.MetricsValues = {
-        **args.metrics.get_dataset_values(args.batch, preds.reached_max),
-        **args.metrics.get_alignment_values(
-            args.batch, preds.alignments, preds.lengths, mask, preds.reached_max
-        ),
-        **args.metrics.get_loudness_values(args.batch, preds.frames, mask, preds.reached_max),
+        **args.metrics.get_dataset_values(args.batch, model, preds),
+        **args.metrics.get_alignment_values(args.batch, model, preds),
+        **args.metrics.get_loudness_values(args.batch, model, preds),
         **args.metrics.get_data_loader_values(args.data_loader),
     }
     args.timer.record_event(args.timer.GATHER_METRICS)

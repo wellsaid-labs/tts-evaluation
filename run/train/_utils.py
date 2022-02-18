@@ -50,6 +50,7 @@ from run._config import (
     get_model_label,
     get_timer_label,
 )
+from run.data._loader import Speaker
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import comet_ml
@@ -855,11 +856,12 @@ def run_workers(
     return lib.distributed.spawn(_run_workers_helper, args=args)  # type: ignore
 
 
-MetricsValues = typing.Dict[str, float]
+MetricsValues = typing.Dict[typing.Any, float]
 MetricsStoreValues = typing.List[typing.Tuple[float]]
 MetricsReduceOp = typing.Callable[[typing.List[float]], float]
-# Select a subset of `MetricsStoreValues`.
+# NOTE: `MetricsSelect` selects a subset of `MetricsStoreValues`.
 MetricsSelect = typing.Callable[[MetricsStoreValues], MetricsStoreValues]
+MetricsKey = typing.Tuple[str, typing.Optional[typing.Union[Speaker, int]]]
 
 
 class Metrics(lib.distributed.DictStore):
@@ -875,7 +877,7 @@ class Metrics(lib.distributed.DictStore):
     LR = partial(get_model_label, "lr")
 
     def __init__(self, comet: CometMLExperiment, **kwargs):
-        self.data: typing.Dict[str, MetricsStoreValues]
+        self.data: typing.Dict[MetricsKey, MetricsStoreValues]
         super().__init__(**kwargs)
         self.comet = comet
 
@@ -898,21 +900,20 @@ class Metrics(lib.distributed.DictStore):
             return {self.DATA_QUEUE_SIZE: iterator._data_queue.qsize()}
         return {}
 
-    def _reduce(self, key: str, select: MetricsSelect, op: MetricsReduceOp = sum) -> float:
+    def _reduce(self, key: MetricsKey, select: MetricsSelect, op: MetricsReduceOp = sum) -> float:
         """Reduce `self.data[key]` measurements to a float."""
-        data = typing.cast(typing.Dict[str, MetricsStoreValues], self.data)
-        flat = flatten_2d(select(data[key] if key in data else []))
+        flat = flatten_2d(select(self.data[key] if key in self.data else []))
         assert all(not math.isnan(val) for val in flat), f"Encountered NaN value for metric {key}."
         return math.nan if len(flat) == 0 else op(flat)
 
     def _div(
-        self, num: typing.Union[str, float], denom: typing.Union[str, float], **kwargs
+        self, num: typing.Union[MetricsKey, float], denom: typing.Union[MetricsKey, float], **kwargs
     ) -> float:
         """Reduce and divide `self.data[num] / self.data[denom]`."""
-        reduced_denom = self._reduce(denom, **kwargs) if isinstance(denom, str) else denom
+        reduced_denom = denom if isinstance(denom, float) else self._reduce(denom, **kwargs)
         if reduced_denom == 0:
             return math.nan
-        reduced_num = self._reduce(num, **kwargs) if isinstance(num, str) else num
+        reduced_num = num if isinstance(num, float) else self._reduce(num, **kwargs)
         return reduced_num / reduced_denom
 
     def log_optim_metrics(
