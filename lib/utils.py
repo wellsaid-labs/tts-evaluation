@@ -448,7 +448,6 @@ class PaddingAndLazyEmbedding(torch.nn.Module):
 
     def _queue_new_tokens(self, tokens: Hashable1d2dList):
         """Queue up tokens for a vocab update."""
-
         self._new_tokens.update([t for t in flatten(tokens) if t not in self.vocab])
         if len(self._new_tokens) + len(self.vocab) > self.num_embeddings:
             raise ValueError("The number of tokens exceeds the allocated number of embeddings.")
