@@ -367,6 +367,13 @@ def _configure_models():
 
     # NOTE: Configure the model sizes.
     config = {
+        run.train.spectrogram_model._model.SpectrogramModel: HParams(
+            # NOTE: These values can be increased as needed, they preemtively allocate model
+            # parameters.
+            max_tokens=1000,
+            max_speakers=100,
+            max_sessions=10000,
+        ),
         lib.spectrogram_model.encoder.Encoder.__init__: HParams(
             # SOURCE (Tacotron 2):
             # Input characters are represented using a learned 512-dimensional character embedding
@@ -431,7 +438,7 @@ def _configure_models():
             # The paper mentions their proposed model uses a 256 dimension embedding.
             # NOTE: See https://github.com/wellsaid-labs/Text-to-Speech/pull/258 to learn more about
             # this parameter.
-            speaker_embedding_size=128,
+            seq_meta_embed_size=128,
         ),
         lib.signal_model.SignalModel.__init__: HParams(
             speaker_embedding_size=128,
@@ -452,11 +459,12 @@ def _configure_models():
         # In order to introduce output variation at inference time, dropout with probability 0.5 is
         # applied only to layers in the pre-net of the autoregressive decoder.
         lib.spectrogram_model.pre_net.PreNet.__init__: HParams(dropout=0.5),
-        # NOTE: This dropout approach proved effective in Comet in March 2020.
-        lib.spectrogram_model.SpectrogramModel.__init__: HParams(speaker_embed_dropout=0.1),
         lib.spectrogram_model.attention.Attention.__init__: HParams(dropout=0.1),
         lib.spectrogram_model.decoder.Decoder.__init__: HParams(stop_net_dropout=0.5),
-        lib.spectrogram_model.encoder.Encoder.__init__: HParams(dropout=0.1),
+        # NOTE: This dropout approach proved effective in Comet in March 2020.
+        lib.spectrogram_model.encoder.Encoder.__init__: HParams(
+            dropout=0.1, seq_meta_embed_dropout=0.1
+        ),
     }
     add_config(config)
 
