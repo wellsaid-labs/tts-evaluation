@@ -18,8 +18,9 @@ import run
 from lib.audio import power_to_db
 from lib.distributed import is_master
 from run._config import GetLabel, get_dataset_label, get_model_label
+from run.data._loader import Speaker
 from run.train import _utils
-from run.train._utils import CometMLExperiment, MetricsValues, Timer
+from run.train._utils import MetricsKey, MetricsValues, Timer
 from run.train.spectrogram_model._data import Batch
 
 
@@ -391,16 +392,6 @@ class Metrics(_utils.Metrics):
 
     TEXT_LENGTH_BUCKET_SIZE = 25
 
-    def __init__(
-        self,
-        comet: CometMLExperiment,
-        speakers: typing.List[run.data._loader.Speaker],
-        **kwargs,
-    ):
-        super().__init__(comet, **kwargs)
-        self.comet = comet
-        self.speakers = speakers
-
     def get_dataset_values(
         self, batch: Batch, reached_max: typing.Optional[torch.Tensor] = None
     ) -> MetricsValues:
@@ -410,32 +401,29 @@ class Metrics(_utils.Metrics):
         TODO: Measure the difference between punctuation in the phonetic vs grapheme phrases.
         Apart from unique cases, they should have the same punctuation.
         """
-        values: typing.Dict[str, float] = collections.defaultdict(float)
-
-        for span, num_frames, num_tokens, has_reached_max in zip(
+        values: typing.Dict[MetricsKey, float] = collections.defaultdict(float)
+        for span, num_frames, tokens, has_reached_max in zip(
             batch.spans,
             self._to_list(batch.spectrogram.lengths),
-            self._to_list(batch.encoded_tokens.lengths),
+            batch.tokens,
             itertools.repeat(False) if reached_max is None else self._to_list(reached_max),
         ):
             # NOTE: Create a key for `self.NUM_SPANS` so a value exists, even if zero.
-            values[self.NUM_SPANS] += float(not has_reached_max)
-            values[f"{self.NUM_SPANS}/{span.speaker.label}"] += float(not has_reached_max)
+            values[(self.NUM_SPANS, None)] += float(not has_reached_max)
+            values[(self.NUM_SPANS, span.speaker)] += float(not has_reached_max)
 
             if not has_reached_max:
                 index = int(len(span.script) // self.TEXT_LENGTH_BUCKET_SIZE)
-                values[f"{self.NUM_SPANS_PER_TEXT_LENGTH}/{index}"] += 1
-                values[self.NUM_FRAMES_MAX] = max(num_frames, values[self.NUM_FRAMES_MAX])
-
-                assert span.speaker in self.speakers
-                for suffix in ["", f"/{span.speaker.label}"]:
-                    format_ = lambda s: f"{s}{suffix}"
-                    values[format_(self.NUM_FRAMES)] += num_frames
-                    values[format_(self.NUM_SECONDS)] += span.audio_length
-                    values[format_(self.NUM_TOKENS)] += num_tokens
-                    label = format_(self.MAX_FRAMES_PER_TOKEN)
-                    ratio = num_frames / num_tokens
-                    values[label] = max(ratio, values[label]) if label in values else ratio
+                values[(self.NUM_SPANS_PER_TEXT_LENGTH, index)] += 1
+                max_frames = values[(self.NUM_FRAMES_MAX, None)]
+                values[(self.NUM_FRAMES_MAX, None)] = max(num_frames, max_frames)
+                speaker: typing.Optional[Speaker]
+                for speaker in [None, span.speaker]:
+                    values[(self.NUM_FRAMES, speaker)] += num_frames
+                    values[(self.NUM_SECONDS, speaker)] += span.audio_length
+                    values[(self.NUM_TOKENS, speaker)] += len(tokens)
+                    label = (self.MAX_FRAMES_PER_TOKEN, speaker)
+                    values[label] = max(num_frames / len(tokens), values[label])
 
         return dict(values)
 
@@ -456,7 +444,7 @@ class Metrics(_utils.Metrics):
             reached_max (torch.BoolTensor [batch_size]): Remove predictions that diverged
                 (reached max) as to not skew other metrics.
         """
-        values: typing.Dict[str, float] = collections.defaultdict(float)
+        values: typing.Dict[MetricsKey, float] = collections.defaultdict(float)
         tokens_mask = batch.encoded_tokens_mask.tensor
         for span, skipped, jumps, std, norm, small_max, repeated, length, has_reached_max in zip(
             batch.spans,
@@ -469,20 +457,18 @@ class Metrics(_utils.Metrics):
             self._to_list(spectrogram_lengths),
             itertools.repeat(False) if reached_max is None else self._to_list(reached_max),
         ):
-            assert span.speaker in self.speakers
-            values[self.NUM_REACHED_MAX] += has_reached_max
-            values[f"{self.NUM_REACHED_MAX}/{span.speaker.label}"] += has_reached_max
+            values[(self.NUM_REACHED_MAX, None)] += has_reached_max
+            values[(self.NUM_REACHED_MAX, span.speaker)] += has_reached_max
 
             if not has_reached_max:
-                for suffix in ["", f"/{span.speaker.label}"]:
-                    format_ = lambda s: f"{s}{suffix}"
-                    values[format_(self.ALIGNMENT_NORM_SUM)] += norm
-                    values[format_(self.ALIGNMENT_NUM_SMALL_MAX)] += small_max
-                    values[format_(self.ALIGNMENT_NUM_REPEATED)] += repeated
-                    values[format_(self.ALIGNMENT_NUM_SKIPS)] += skipped
-                    values[format_(self.ALIGNMENT_NUM_JUMPS)] += jumps
-                    values[format_(self.ALIGNMENT_STD_SUM)] += std
-                    values[format_(self.NUM_FRAMES_PREDICTED)] += length
+                for speaker in [None, span.speaker]:
+                    values[(self.ALIGNMENT_NORM_SUM, speaker)] += norm
+                    values[(self.ALIGNMENT_NUM_SMALL_MAX, speaker)] += small_max
+                    values[(self.ALIGNMENT_NUM_REPEATED, speaker)] += repeated
+                    values[(self.ALIGNMENT_NUM_SKIPS, speaker)] += skipped
+                    values[(self.ALIGNMENT_NUM_JUMPS, speaker)] += jumps
+                    values[(self.ALIGNMENT_STD_SUM, speaker)] += std
+                    values[(self.NUM_FRAMES_PREDICTED, speaker)] += length
 
         return dict(values)
 
@@ -501,7 +487,7 @@ class Metrics(_utils.Metrics):
             spectrogram_mask (torch.FloatTensor [num_frames, batch_size])
             **kwargs: Additional key word arguments passed to `get_power_rms_level_sum`.
         """
-        values: typing.Dict[str, float] = collections.defaultdict(float)
+        values: typing.Dict[MetricsKey, float] = collections.defaultdict(float)
         loudness = get_power_rms_level_sum(batch.spectrogram.tensor, batch.spectrogram_mask.tensor)
         for span, loudness, pred_loudness, num_pause, num_pause_pred, has_reached_max in zip(
             batch.spans,
@@ -512,13 +498,11 @@ class Metrics(_utils.Metrics):
             itertools.repeat(False) if reached_max is None else self._to_list(reached_max),
         ):
             if not has_reached_max:
-                assert span.speaker in self.speakers
-                for suffix in ["", f"/{span.speaker.label}"]:
-                    format_ = lambda s: f"{s}{suffix}"
-                    values[format_(self.RMS_SUM_PREDICTED)] += pred_loudness
-                    values[format_(self.RMS_SUM)] += loudness
-                    values[format_(self.NUM_PAUSE_FRAMES)] += num_pause
-                    values[format_(self.NUM_PAUSE_FRAMES_PREDICTED)] += num_pause_pred
+                for speaker in [None, span.speaker]:
+                    values[(self.RMS_SUM_PREDICTED, speaker)] += pred_loudness
+                    values[(self.RMS_SUM, speaker)] += loudness
+                    values[(self.NUM_PAUSE_FRAMES, speaker)] += num_pause
+                    values[(self.NUM_PAUSE_FRAMES_PREDICTED, speaker)] += num_pause_pred
 
         return dict(values)
 
@@ -541,13 +525,14 @@ class Metrics(_utils.Metrics):
         Args:
             is_verbose: If `True`, iterate over more permutations.
         """
-        for speaker in itertools.chain([None], self.speakers if is_verbose else []):
-            suffix = "" if speaker is None else f"/{speaker.label}"
-            format_ = lambda s: f"{s}{suffix}" if isinstance(s, str) else s
+        speakers = [spk for _, spk in self.data.keys() if isinstance(spk, Speaker)]
+        for speaker in itertools.chain([None], speakers if is_verbose else []):
             reduce_: typing.Callable[[str], float]
-            reduce_ = lambda a, **k: self._reduce(format_(a), select=select, **k)
+            reduce_ = lambda a, **k: self._reduce((a, speaker), select=select, **k)
+            process: typing.Callable[[typing.Union[float, str]], typing.Union[float, MetricsKey]]
+            process = lambda a: a if isinstance(a, float) else (a, speaker)
             div: typing.Callable[[typing.Union[float, str], typing.Union[float, str]], float]
-            div = lambda n, d, **k: self._div(format_(n), format_(d), select=select, **k)
+            div = lambda n, d, **k: self._div(process(n), process(d), select=select, **k)
             yield speaker, reduce_, div
 
     @configurable
@@ -586,12 +571,12 @@ class Metrics(_utils.Metrics):
         """
         reduce = partial(self._reduce, select=select)
         metrics = {
-            self.MAX_NUM_FRAMES: reduce(self.NUM_FRAMES_MAX, op=max),
-            self.MIN_DATA_LOADER_QUEUE_SIZE: reduce(self.DATA_QUEUE_SIZE, op=min),
+            self.MAX_NUM_FRAMES: reduce((self.NUM_FRAMES_MAX, None), op=max),
+            self.MIN_DATA_LOADER_QUEUE_SIZE: reduce((self.DATA_QUEUE_SIZE, None), op=min),
         }
 
-        total_frames = reduce(self.NUM_FRAMES)
-        total_seconds = reduce(self.NUM_SECONDS)
+        total_frames = reduce((self.NUM_FRAMES, None))
+        total_seconds = reduce((self.NUM_SECONDS, None))
         for speaker, _reduce, _div in self._iter_permutations(select, is_verbose):
             update = {
                 self.AVERAGE_NUM_FRAMES: _div(self.NUM_FRAMES, self.NUM_SPANS),
@@ -604,16 +589,16 @@ class Metrics(_utils.Metrics):
             metrics.update({partial(k, speaker=speaker): v for k, v in update.items()})
 
         if is_verbose:
-            total_spans = reduce(self.NUM_SPANS)
-            for key in self.data.keys():
-                if f"{self.NUM_SPANS_PER_TEXT_LENGTH}/" not in key:
+            total_spans = reduce((self.NUM_SPANS, None))
+            for label, bucket in self.data.keys():
+                if self.NUM_SPANS_PER_TEXT_LENGTH is not label:
                     continue
 
-                bucket = int(key.split("/")[-1])
+                assert isinstance(bucket, int), "Invariant error"
                 lower = bucket * self.TEXT_LENGTH_BUCKET_SIZE
                 upper = (bucket + 1) * self.TEXT_LENGTH_BUCKET_SIZE
                 get_label = partial(self.FREQUENCY_TEXT_LENGTH, lower=lower, upper=upper)
-                metrics[get_label] = reduce(key) / total_spans
+                metrics[get_label] = reduce((label, bucket)) / total_spans
 
         return metrics
 

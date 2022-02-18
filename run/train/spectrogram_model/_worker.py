@@ -9,7 +9,6 @@ import random
 import types
 import typing
 from functools import partial
-from itertools import chain
 
 import torch
 import torch.distributed
@@ -32,8 +31,6 @@ from run._config import (
     get_dataset_label,
     get_model_label,
 )
-from run._lang_config import DATASET_PHONETIC_CHARACTERS, PHONEME_SEPARATOR
-from run.data._loader import Language
 from run.train import _utils
 from run.train._utils import (
     CometMLExperiment,
@@ -46,12 +43,13 @@ from run.train._utils import (
     set_run_seed,
     set_train_mode,
 )
-from run.train.spectrogram_model._data import Batch, DataProcessor, InputEncoder
+from run.train.spectrogram_model._data import Batch, DataProcessor
 from run.train.spectrogram_model._metrics import (
     Metrics,
     get_alignment_norm,
     get_average_db_rms_level,
 )
+from run.train.spectrogram_model._model import Inputs, SpectrogramModel
 
 logger = logging.getLogger(__name__)
 torch.optim.AdamW.__init__ = configurable_(torch.optim.AdamW.__init__)
@@ -592,7 +590,7 @@ def _run_steps(
         stack.enter_context(set_context(context, state.comet, state.model, ema=state.ema))
         stack.enter_context(set_epoch(state.comet, step=int(state.step.item()), **kwargs))
 
-        metrics = Metrics(state.comet, state.input_encoder.speaker_encoder.vocab)
+        metrics = Metrics(state.comet)
         timer = Timer().record_event(Timer.LOAD_DATA)
         iterator = enumerate(iter(data_loader))
         while True:
