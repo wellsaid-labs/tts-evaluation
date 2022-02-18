@@ -5,8 +5,8 @@ from __future__ import annotations
 import collections
 import gzip
 import itertools
-import json
 import logging
+import pickle
 import typing
 
 import torch
@@ -72,13 +72,6 @@ def spawn(*args, nprocs=None, **kwargs):
     return torch.multiprocessing.spawn(*args, nprocs=nprocs, **kwargs)  # type: ignore
 
 
-DictStoreValue = typing.Union[
-    str, int, float, bool, None, typing.List["DictStoreValue"], typing.Dict[str, "DictStoreValue"]
-]
-DictStoreData = typing.Dict[str, DictStoreValue]
-DictStoreDataCollection = typing.Dict[str, typing.List[typing.Tuple[DictStoreValue]]]
-
-
 class DictStore:
     """DictStore gathers `dict`s from workers on master.
 
@@ -89,32 +82,30 @@ class DictStore:
     of these issues:
     https://github.com/pytorch/pytorch/issues/53872
     https://github.com/pytorch/pytorch/issues/53840
+    Also, `TCPStore` only accepts integers.
 
     Args:
         data: On the master process, this is a merged collection of data from the worker processes.
     """
 
     def __init__(self):
-        self.data: DictStoreDataCollection = {}
+        self.data: typing.Dict = {}
         self._operation = -1
 
     @staticmethod
-    def _decode(encoded: str) -> DictStoreData:
-        """
-        NOTE: Learn about JSONs compact encoding, here: https://docs.python.org/3/library/json.html
-        """
-        return json.loads(gzip.decompress(bytes.fromhex(encoded)).decode())
+    def _decode(encoded: str) -> typing.Dict:
+        return pickle.loads(gzip.decompress(bytes.fromhex(encoded)))
 
     @staticmethod
-    def _encode(values: DictStoreData) -> str:
-        return gzip.compress(json.dumps(values, separators=(",", ":")).encode()).hex()
+    def _encode(values: typing.Dict) -> str:
+        return gzip.compress(pickle.dumps(values)).hex()
 
-    def _gather(self, data: DictStoreData) -> typing.List[DictStoreData]:
+    def _gather(self, data: typing.Dict) -> typing.List[typing.Dict]:
         outputs = [None for _ in range(get_world_size())]
         torch.distributed.all_gather_object(outputs, self._encode(data))
         return [self._decode(typing.cast(str, o)) for o in outputs]
 
-    def _update(self, data: typing.List[DictStoreData]):
+    def _update(self, data: typing.List):
         """Shallow update `self.data` with `data`."""
         update = collections.defaultdict(list)
         for dict_ in data:
@@ -126,7 +117,7 @@ class DictStore:
                 self.data[key] = [tuple() for _ in range(self._operation)]
             self.data[key].append(group)
 
-    def update(self, data: DictStoreData):
+    def update(self, data: typing.Dict):
         """Shallow update the master process `self.data` with `data`."""
         self._operation += 1
         merged = self._gather(data)

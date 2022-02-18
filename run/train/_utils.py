@@ -880,7 +880,7 @@ class Metrics(lib.distributed.DictStore):
         self.comet = comet
 
     def update(self, data: MetricsValues):
-        return super().update(typing.cast(lib.distributed.DictStoreData, data))
+        return super().update(data)
 
     @staticmethod
     def _to_list(tensor: torch.Tensor) -> typing.List[float]:
