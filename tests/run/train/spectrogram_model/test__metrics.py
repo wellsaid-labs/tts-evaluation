@@ -6,7 +6,7 @@ import torch
 
 import lib
 import run
-from run.train.spectrogram_model import _data, _metrics
+from run.train.spectrogram_model import _data, _metrics, _model
 from tests._utils import TEST_DATA_PATH, assert_almost_equal
 
 
@@ -18,6 +18,28 @@ def run_around_tests():
     hparams.clear_config()
 
 
+def _make_preds(
+    alignments: torch.Tensor, tokens_mask: torch.Tensor, frames_mask: torch.Tensor
+) -> _model.Preds:
+    """Make `Preds` for computing metrics.
+
+    Args:
+        alignments (torch.FloatTensor [num_frames, batch_size, num_tokens])
+        tokens_mask (torch.BoolTensor [batch_size, num_tokens])
+        frames_mask (torch.BoolTensor [batch_size, num_frames])
+    """
+    return _model.Preds(
+        frames=torch.tensor(0),
+        stop_tokens=torch.tensor(0),
+        alignments=alignments,
+        num_frames=frames_mask.sum(dim=1),
+        frames_mask=frames_mask,
+        num_tokens=tokens_mask.sum(dim=1),
+        tokens_mask=tokens_mask,
+        reached_max=torch.tensor(0),
+    )
+
+
 def test_get_num_skipped():
     """Test `_metrics.get_num_skipped` counts skipped tokens correctly."""
     alignments_ = [
@@ -27,32 +49,32 @@ def test_get_num_skipped():
         [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
     ]
     alignments = torch.tensor(alignments_).transpose(0, 1).float()
-    spectrogram_mask_ = [
+    frames_mask_ = [
         [1, 1, 1],
         [1, 1, 1],
         [1, 1, 1],
         [1, 1, 0],  # Test that a masked frame is ignored
     ]
-    spectrogram_mask = torch.tensor(spectrogram_mask_).transpose(0, 1).bool()
-    token_mask_ = [
+    frames_mask = torch.tensor(frames_mask_).bool()
+    tokens_mask_ = [
         [1, 1, 1],
         [1, 1, 1],
         [1, 1, 0],  # Test that a masked token cannot be skipped
         [1, 1, 1],
     ]
-    token_mask = torch.tensor(token_mask_).transpose(0, 1).bool()
-    num_skips = _metrics.get_num_skipped(alignments, token_mask, spectrogram_mask)
+    tokens_mask = torch.tensor(tokens_mask_).bool()
+    num_skips = _metrics.get_num_skipped(_make_preds(alignments, tokens_mask, frames_mask))
     assert num_skips.tolist() == [0.0, 1.0, 0.0, 1.0]
 
 
 def test_get_num_skipped__zero_elements():
     """Test `_metrics.get_num_skipped` handles zero elements correctly."""
-    args = (
+    preds = _make_preds(
         torch.empty(1024, 0, 1024),
-        torch.empty(1024, 0, dtype=torch.bool),
-        torch.empty(1024, 0, dtype=torch.bool),
+        torch.empty(0, 1024, dtype=torch.bool),
+        torch.empty(0, 1024, dtype=torch.bool),
     )
-    assert _metrics.get_num_skipped(*args).shape == (0,)
+    assert _metrics.get_num_skipped(preds).shape == (0,)
 
 
 def test_get_num_jumps():
@@ -65,34 +87,34 @@ def test_get_num_jumps():
         [[1, 0, 0], [1, 0, 0], [0, 0, 1]],  # Test masked frame with no jumps
     ]
     alignments = torch.tensor(alignments_).transpose(0, 1).float()
-    spectrogram_mask_ = [
+    frames_mask_ = [
         [1, 1, 1],
         [1, 1, 1],
         [1, 1, 1],
         [1, 1, 1],
         [1, 1, 0],  # Test that a masked frame is ignored
     ]
-    spectrogram_mask = torch.tensor(spectrogram_mask_).transpose(0, 1).bool()
-    token_mask_ = [
+    frames_mask = torch.tensor(frames_mask_).bool()
+    tokens_mask_ = [
         [1, 1, 1],
         [1, 1, 1],
         [1, 1, 1],
         [1, 1, 0],  # Test that a masked token cannot be selected
         [1, 1, 1],
     ]
-    token_mask = torch.tensor(token_mask_).transpose(0, 1).bool()
-    num_skips = _metrics.get_num_jumps(alignments, token_mask, spectrogram_mask)
+    tokens_mask = torch.tensor(tokens_mask_).bool()
+    num_skips = _metrics.get_num_jumps(_make_preds(alignments, tokens_mask, frames_mask))
     assert num_skips.tolist() == [0.0, 1.0, 3.0, 0.0, 0.0]
 
 
 def test_get_num_jumps__zero_elements():
     """Test `_metrics.get_num_jumps` handles zero elements correctly."""
-    args = (
+    preds = _make_preds(
         torch.empty(1024, 0, 1024),
-        torch.empty(1024, 0, dtype=torch.bool),
-        torch.empty(1024, 0, dtype=torch.bool),
+        torch.empty(0, 1024, dtype=torch.bool),
+        torch.empty(0, 1024, dtype=torch.bool),
     )
-    assert _metrics.get_num_jumps(*args).shape == (0,)
+    assert _metrics.get_num_jumps(preds).shape == (0,)
 
 
 def test_get_num_small_max():
@@ -104,21 +126,21 @@ def test_get_num_small_max():
         [[1, 0, 0], [0, 0.9, 0.1], [0, 0.1, 0.9]],  # Test masked last frame
     ]
     alignments = torch.tensor(alignments_).transpose(0, 1).float()
-    spectrogram_mask_ = [
+    frames_mask_ = [
         [1, 1, 1],
         [1, 1, 1],
         [1, 1, 1],
         [1, 1, 0],  # Test that a masked frame is ignored
     ]
-    spectrogram_mask = torch.tensor(spectrogram_mask_).transpose(0, 1).bool()
-    token_mask_ = [
+    frames_mask = torch.tensor(frames_mask_).bool()
+    tokens_mask_ = [
         [1, 1, 1],
         [1, 1, 1],
         [1, 1, 0],  # Test that a masked token cannot be selected
         [1, 1, 1],
     ]
-    token_mask = torch.tensor(token_mask_).transpose(0, 1).bool()
-    num_skips = _metrics.get_num_small_max(alignments, token_mask, spectrogram_mask, 0.95)
+    tokens_mask = torch.tensor(tokens_mask_).bool()
+    num_skips = _metrics.get_num_small_max(_make_preds(alignments, tokens_mask, frames_mask), 0.95)
     assert num_skips.tolist() == [0.0, 2.0, 1.0, 1.0]
 
 
@@ -131,21 +153,21 @@ def test_get_num_repeated():
         [[1, 0, 0], [0, 1, 0], [0, 1, 0]],  # Test masked last frame (no repeats)
     ]
     alignments = torch.tensor(alignments_).transpose(0, 1).float()
-    spectrogram_mask_ = [
+    frames_mask_ = [
         [1, 1, 1],
         [1, 1, 1],
         [1, 1, 1],
         [1, 1, 0],  # Test that a masked frame is ignored
     ]
-    spectrogram_mask = torch.tensor(spectrogram_mask_).transpose(0, 1).bool()
-    token_mask_ = [
+    frames_mask = torch.tensor(frames_mask_).bool()
+    tokens_mask_ = [
         [1, 1, 1],
         [1, 1, 1],
         [1, 1, 0],  # Test that a masked token cannot be selected
         [1, 1, 1],
     ]
-    token_mask = torch.tensor(token_mask_).transpose(0, 1).bool()
-    num_skips = _metrics.get_num_repeated(alignments, token_mask, spectrogram_mask, 1.0)
+    tokens_mask = torch.tensor(tokens_mask_).bool()
+    num_skips = _metrics.get_num_repeated(_make_preds(alignments, tokens_mask, frames_mask), 1.0)
     assert num_skips.tolist() == [0.0, 1.0, 0.0, 0.0]
 
 
