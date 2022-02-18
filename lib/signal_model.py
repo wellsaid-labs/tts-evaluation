@@ -592,7 +592,6 @@ class SpectrogramDiscriminator(torch.nn.Module):
 
         [weight_norm(m) for m in self.modules() if isinstance(m, torch.nn.Conv1d)]
 
-
     def reset_parameters(self):
         for module in self.modules():
             if isinstance(module, torch.nn.Conv1d):
