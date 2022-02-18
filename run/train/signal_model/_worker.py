@@ -245,7 +245,7 @@ class _State:
     def load_spectrogram_model(
         comet: CometMLExperiment, spectrogram_model_checkpoint_path: pathlib.Path
     ) -> typing.Tuple[
-        spectrogram_model._worker.InputEncoder, lib.spectrogram_model.SpectrogramModel
+        spectrogram_model._data.InputEncoder, spectrogram_model._model.SpectrogramModel
     ]:
         checkpoint = lib.environment.load(spectrogram_model_checkpoint_path)
         comet.log_other(

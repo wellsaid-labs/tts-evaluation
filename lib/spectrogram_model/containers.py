@@ -2,6 +2,10 @@ import typing
 
 import torch
 
+# TODO: Remove
+Infer = None
+Params = None
+
 
 class Inputs(typing.NamedTuple):
     """The model inputs."""

@@ -41,6 +41,11 @@ else:
 
 logger = logging.getLogger(__name__)
 
+# TODO: Remove
+InputEncoder = None
+DecodedInput = None
+EncodedInput = None
+
 
 def _random_nonoverlapping_alignments(
     alignments: Tuple[Alignment], max_alignments: int
