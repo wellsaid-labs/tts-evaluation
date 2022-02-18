@@ -12,6 +12,7 @@ from tqdm import tqdm
 
 from lib.spectrogram_model import decoder, encoder
 from lib.spectrogram_model.containers import Encoded, Inputs, Preds
+from lib.utils import PaddingAndLazyEmbedding
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +79,7 @@ class SpectrogramModel(torch.nn.Module):
         self.max_frames_per_token = max_frames_per_token
         self.num_frame_channels = num_frame_channels
         self.stop_threshold = stop_threshold
-        self.max_tokens = max_tokens  # TODO: Update any references to these variables.
+        self.max_tokens = max_tokens
         self.encoder = encoder.Encoder(
             max_tokens=max_tokens,
             max_seq_meta_values=max_seq_meta_values,
@@ -90,6 +91,13 @@ class SpectrogramModel(torch.nn.Module):
         self.stop_token_eps: torch.Tensor
         self.register_buffer("stop_token_eps", torch.logit(torch.tensor(stop_token_eps)))
         self.grad_enabled = None
+
+    def allow_unk_on_eval(self, val: bool):
+        """If `True` then the "unknown token" may be used during evaluation, otherwise this will
+        error if a new token is encountered during evaluation."""
+        for mod in self.modules():
+            if isinstance(mod, PaddingAndLazyEmbedding):
+                mod.allow_unk_on_eval = val
 
     def _mask_stop_token(
         self, stop_token: torch.Tensor, num_tokens: torch.Tensor, window_start: torch.Tensor

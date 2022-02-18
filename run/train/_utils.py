@@ -856,12 +856,12 @@ def run_workers(
     return lib.distributed.spawn(_run_workers_helper, args=args)  # type: ignore
 
 
-MetricsValues = typing.Dict[typing.Any, float]
 MetricsStoreValues = typing.List[typing.Tuple[float]]
 MetricsReduceOp = typing.Callable[[typing.List[float]], float]
 # NOTE: `MetricsSelect` selects a subset of `MetricsStoreValues`.
 MetricsSelect = typing.Callable[[MetricsStoreValues], MetricsStoreValues]
 MetricsKey = typing.Tuple[str, typing.Optional[typing.Union[Speaker, int]]]
+MetricsValues = typing.Dict[MetricsKey, float]
 
 
 class Metrics(lib.distributed.DictStore):

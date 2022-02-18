@@ -87,8 +87,7 @@ class Checkpoint(_utils.Checkpoint):
         self.check_invariants()
 
     def export(self) -> SpectrogramModel:
-        """Export inference ready `InputEncoder` and `SpectrogramModel` without needing additional
-        context managers."""
+        """Export inference ready `SpectrogramModel` without needing additional context managers."""
         self.check_invariants()
         self.model.grad_enabled = None  # NOTE: For backwards compatibility
         model = None
@@ -96,6 +95,7 @@ class Checkpoint(_utils.Checkpoint):
             stack.enter_context(set_train_mode(self.model, False, self.ema))
             model = copy.deepcopy(self.model)
             model.set_grad_enabled(False)
+            model.allow_unk_on_eval(False)
         self.check_invariants()
         assert model is not None
         return model
@@ -123,7 +123,7 @@ class _State:
         self.to_checkpoint().check_invariants()
 
     @staticmethod
-    def _get_model(device: torch.device, comet: CometMLExperiment) -> SpectrogramModel:
+    def _get_model(comet: CometMLExperiment, device: torch.device) -> SpectrogramModel:
         """Initialize a model onto `device`."""
         model = SpectrogramModel().to(device, non_blocking=True)
         comet.set_model_graph(str(model))
@@ -221,7 +221,7 @@ class _State:
     @classmethod
     def from_scratch(cls, comet: CometMLExperiment, device: torch.device):
         """Create new spectrogram training state."""
-        model = cls._get_model(device, comet)
+        model = cls._get_model(comet, device)
         # NOTE: Even if `_get_model` is initialized differently in each process, the parameters
         # will be synchronized. Learn more:
         # https://discuss.pytorch.org/t/proper-distributeddataparallel-usage/74564/2

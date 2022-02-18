@@ -367,7 +367,7 @@ def _configure_models():
 
     # NOTE: Configure the model sizes.
     config = {
-        run.train.spectrogram_model._model.SpectrogramModel: HParams(
+        run.train.spectrogram_model._model.SpectrogramModel.__init__: HParams(
             # NOTE: These values can be increased as needed, they preemtively allocate model
             # parameters.
             max_tokens=1000,

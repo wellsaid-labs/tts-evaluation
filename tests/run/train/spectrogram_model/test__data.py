@@ -12,8 +12,7 @@ from torchnlp.encoders.text import SequenceBatch
 
 import lib
 import run
-from run.data._loader import Alignment, Session
-from run.data._loader.english import MARK_ATHERLAY, MARY_ANN
+from run.data._loader import Alignment
 from run.train.spectrogram_model import _data
 from tests._utils import assert_almost_equal, assert_uniform_distribution
 
@@ -24,32 +23,6 @@ def run_around_tests():
     run._config.configure()
     yield
     hparams.clear_config()
-
-
-def test_input_encoder():
-    """Test `_data.InputEncoder` handles a basic case."""
-    graphemes = ["aBc", "deF"]
-    phonemes = ["ˈ|eɪ|b|ˌ|iː|s|ˈ|iː|", "d|ˈ|ɛ|f"]
-    phoneme_separator = "|"
-    speakers = [MARK_ATHERLAY, MARY_ANN]
-    sessions = [(MARK_ATHERLAY, Session("mark")), (MARY_ANN, Session("mary"))]
-    encoder = _data.InputEncoder(graphemes, phonemes, speakers, sessions, phoneme_separator)
-    input_ = _data.DecodedInput("a", "ˈ|eɪ", MARK_ATHERLAY, sessions[0])
-    assert encoder._get_case("A") == encoder._CASE_LABELS[0]
-    assert encoder._get_case("a") == encoder._CASE_LABELS[1]
-    assert encoder._get_case("1") == encoder._CASE_LABELS[2]
-    encoded = encoder.encode(input_)
-
-    assert torch.equal(encoded.graphemes, torch.tensor([5]))
-    assert torch.equal(encoded.letter_cases, torch.tensor([1]))
-    assert torch.equal(encoded.tokens, torch.tensor([5, 6]))
-    assert torch.equal(encoded.speaker, torch.tensor([0]))
-    assert torch.equal(encoded.session, torch.tensor([0]))
-    assert encoder.decode(encoded) == input_
-
-    input_ = _data.DecodedInput("B", "|b|ˌ|iː", MARK_ATHERLAY, sessions[0])
-    encoded = encoder.encode(input_)
-    assert encoder.decode(encoded) == input_
 
 
 def test__random_nonoverlapping_alignments():

@@ -414,7 +414,7 @@ class PaddingAndLazyEmbedding(torch.nn.Module):
         max_embeddings: int,
         *args,
         proactive_updates: int = 100,
-        allow_unk_on_eval: bool = False,
+        allow_unk_on_eval: bool = True,
         **kwargs,
     ):
         super().__init__()
@@ -519,6 +519,9 @@ class PaddingAndLazyEmbedding(torch.nn.Module):
 
         if not self.training and not self.allow_unk_on_eval and token not in self.vocab:
             raise KeyError(f"Token not found: {token}")
+
+        if token not in self.vocab and not self.training:
+            logger.info("Replaced '%s' token with unknown token.", token)
 
         return self.vocab.get(token, self.vocab[self.unk_token])
 

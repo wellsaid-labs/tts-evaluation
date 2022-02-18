@@ -236,17 +236,12 @@ def get_alignment_std(preds: Preds) -> torch.Tensor:
     """This metric measures the standard deviation of an alignment. As the alignment is more
     focused, this metrics goes to zero.
 
-    Args:
-        alignments (torch.FloatTensor [num_frames, batch_size, num_tokens])
-        token_mask (torch.BoolTensor [num_tokens, batch_size])
-        spectrogram_mask (torch.BoolTensor [num_frames, batch_size])
-
     Returns:
         torch.FloatTensor [batch_size]
     """
-    alignments = preds.alignments.masked_fill(~preds.tokens_mask.transpose(0, 1).unsqueeze(0), 0)
+    alignments = preds.alignments.masked_fill(~preds.tokens_mask.unsqueeze(0), 0)
     alignments = lib.utils.get_weighted_std(alignments, dim=2)
-    alignments = alignments.masked_fill(~preds.frames_mask, 0)
+    alignments = alignments.masked_fill(~preds.frames_mask.transpose(0, 1), 0)
     return alignments.sum(dim=0)
 
 
@@ -353,7 +348,7 @@ class Metrics(_utils.Metrics):
         TODO: Measure the difference between punctuation in the phonetic vs grapheme phrases.
         Apart from unique cases, they should have the same punctuation.
         """
-        values: typing.Dict[MetricsKey, float] = collections.defaultdict(float)
+        values: MetricsValues = collections.defaultdict(float)
         for span, num_frames, tokens, has_reached_max in zip(
             batch.spans,
             self._to_list(batch.spectrogram.lengths),
@@ -383,7 +378,7 @@ class Metrics(_utils.Metrics):
     def get_alignment_values(
         self, batch: Batch, model: SpectrogramModel, preds: Preds
     ) -> MetricsValues:
-        values: typing.Dict[MetricsKey, float] = collections.defaultdict(float)
+        values: MetricsValues = collections.defaultdict(float)
         for span, skipped, jumps, std, norm, small_max, repeated, length, has_reached_max in zip(
             batch.spans,
             self._to_list(get_num_skipped(preds)),
@@ -413,7 +408,7 @@ class Metrics(_utils.Metrics):
     def get_loudness_values(
         self, batch: Batch, model: SpectrogramModel, preds: Preds
     ) -> MetricsValues:
-        values: typing.Dict[MetricsKey, float] = collections.defaultdict(float)
+        values: MetricsValues = collections.defaultdict(float)
         loudness = get_power_rms_level_sum(batch.spectrogram.tensor, batch.spectrogram_mask.tensor)
         for span, loudness, pred_loudness, num_pause, num_pause_pred, has_reached_max in zip(
             batch.spans,
@@ -437,7 +432,7 @@ class Metrics(_utils.Metrics):
     ) -> MetricsValues:
         bool_ = lambda t: (t > model.stop_threshold).masked_select(batch.spectrogram_mask.tensor)
         is_correct = bool_(batch.stop_token.tensor) == bool_(torch.sigmoid(preds.stop_tokens))
-        return {self.NUM_CORRECT_STOP_TOKEN: float(is_correct.sum().item())}
+        return {(self.NUM_CORRECT_STOP_TOKEN, None): float(is_correct.sum().item())}
 
     def _iter_permutations(self, select: _utils.MetricsSelect, is_verbose: bool = True):
         """Iterate over permutations of metric names and return convenience operations.

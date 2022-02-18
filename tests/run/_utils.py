@@ -72,23 +72,17 @@ def make_small_dataset() -> run._config.Dataset:
 
 
 def make_spec_worker_state(
-    train_data: run._config.Dataset,
-    dev_data: run._config.Dataset,
-    comet: train._utils.CometMLExperiment,
-    device: torch.device,
+    comet: train._utils.CometMLExperiment, device: torch.device
 ) -> train.spectrogram_model._worker._State:
     """Create a spectrogram model worker state for testing."""
     with mock.patch("torch.nn.parallel.DistributedDataParallel") as module:
         module.side_effect = mock_distributed_data_parallel
-        make_spec_model_state = train.spectrogram_model._worker._State.from_dataset
-        return make_spec_model_state(train_data, dev_data, comet, device)
+        make_spec_model_state = train.spectrogram_model._worker._State.from_scratch
+        return make_spec_model_state(comet, device)
 
 
 def make_spec_and_sig_worker_state(
-    train_data: run._config.Dataset,
-    dev_data: run._config.Dataset,
-    comet: train._utils.CometMLExperiment,
-    device: torch.device,
+    comet: train._utils.CometMLExperiment, device: torch.device
 ) -> typing.Tuple[
     train.spectrogram_model._worker._State,
     train.signal_model._worker._State,
@@ -100,7 +94,7 @@ def make_spec_and_sig_worker_state(
     """
     temp_dir = tempfile.TemporaryDirectory()
     temp_dir_path = pathlib.Path(temp_dir.name)
-    spec_state = make_spec_worker_state(train_data, dev_data, comet, device)
+    spec_state = make_spec_worker_state(comet, device)
     checkpoint_path = save_checkpoint(spec_state.to_checkpoint(), temp_dir_path, "ckpt")
     with mock.patch("run.train.signal_model._worker.DistributedDataParallel") as module:
         module.side_effect = mock_distributed_data_parallel
@@ -119,5 +113,5 @@ def make_mock_tts_package() -> typing.Tuple[run._config.Dataset, TTSPackage]:
     dataset = make_small_dataset()
     add_config(train.spectrogram_model.__main__._make_configuration(dataset, dataset, False))
     add_config(train.signal_model.__main__._make_configuration(dataset, dataset, False))
-    spec_state, sig_state, _ = make_spec_and_sig_worker_state(dataset, dataset, comet, device)
+    spec_state, sig_state, _ = make_spec_and_sig_worker_state(comet, device)
     return dataset, package_tts(spec_state.to_checkpoint(), sig_state.to_checkpoint())

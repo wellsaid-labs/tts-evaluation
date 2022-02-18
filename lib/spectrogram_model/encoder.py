@@ -205,7 +205,6 @@ class Encoder(torch.nn.Module):
         )
         self.seq_meta_embed_dropout = torch.nn.Dropout(seq_meta_embed_dropout)
 
-        # TODO: How many sessions do we have? Do we need 10k embeddings?
         self.embed_token = PaddingAndLazyEmbedding(max_tokens, hidden_size)
         self.embed = torch.nn.Sequential(
             torch.nn.Linear(hidden_size + seq_meta_embed_size, hidden_size),
