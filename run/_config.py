@@ -370,6 +370,7 @@ def _configure_models():
         run.train.spectrogram_model._model.SpectrogramModel.__init__: HParams(
             # NOTE: These values can be increased as needed, they preemtively allocate model
             # parameters.
+            # TODO: After "grapheme to phoneme" is deprecated consider setting these automatically.
             max_tokens=1000,
             max_speakers=100,
             max_sessions=10000,
