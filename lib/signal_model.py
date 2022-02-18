@@ -14,7 +14,7 @@ from hparams import HParam, configurable
 from torch.nn import functional
 from torch.nn.utils.weight_norm import WeightNorm, remove_weight_norm, weight_norm
 
-import lib
+from lib.utils import log_runtime, pad_tensor, trim_tensors
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,7 @@ class _InterpolateAndConcat(torch.nn.Module):
         concat = functional.interpolate(concat, scale_factor=self.scale_factor)
         assert concat.shape[1] == self.size
         assert concat.shape[2] >= tensor.shape[2], "Scale factor is too small."
-        return torch.cat(list(lib.utils.trim_tensors(tensor, concat)), dim=1)
+        return torch.cat(list(trim_tensors(tensor, concat)), dim=1)
 
 
 class _InterpolateAndMask(torch.nn.Module):
@@ -75,7 +75,7 @@ class _InterpolateAndMask(torch.nn.Module):
         """
         mask = functional.interpolate(mask.float(), scale_factor=self.scale_factor).bool()
         assert mask.shape[2] >= tensor.shape[2], "Scale factor is too small."
-        tensor, mask = lib.utils.trim_tensors(tensor, mask)
+        tensor, mask = trim_tensors(tensor, mask)
         return tensor.masked_fill(~mask, 0.0)
 
 
@@ -250,11 +250,9 @@ class _Block(torch.nn.Module):
         """
         shape = input_.shape
         input_ = torch.add(
-            *lib.utils.trim_tensors(self.shortcut(input_), self.block(input_, mask, conditioning))
+            *trim_tensors(self.shortcut(input_), self.block(input_, mask, conditioning))
         )
-        input_ = torch.add(
-            *lib.utils.trim_tensors(input_, self.other_block(input_, mask, conditioning))
-        )
+        input_ = torch.add(*trim_tensors(input_, self.other_block(input_, mask, conditioning)))
         assert (shape[2] * self.upscale_factor - input_.shape[2]) % 2 == 0
         return input_
 
@@ -401,7 +399,7 @@ class SignalModel(torch.nn.Module):
             if isinstance(module, torch.nn.Conv1d):
                 yield module
 
-    @lib.utils.log_runtime
+    @log_runtime
     def reset_parameters(self):
         for module in self.modules():
             if isinstance(module, torch.nn.Conv1d):
@@ -442,8 +440,8 @@ class SignalModel(torch.nn.Module):
 
         if pad_input:
             padding = (self.padding, self.padding)
-            spectrogram = lib.utils.pad_tensor(spectrogram, padding, dim=1)
-            spectrogram_mask = lib.utils.pad_tensor(spectrogram_mask, padding, dim=1)
+            spectrogram = pad_tensor(spectrogram, padding, dim=1)
+            spectrogram_mask = pad_tensor(spectrogram_mask, padding, dim=1)
 
         return spectrogram, spectrogram_mask
 
@@ -685,9 +683,9 @@ def generate_waveform(
 
         padding_tuple = (0 if last_item else padding, padding if is_stop else 0)
         frames = ([last_item[0][:, -padding * 2 :]] if last_item else []) + [i[0] for i in items]
-        frames_ = lib.utils.pad_tensor(torch.cat(frames, dim=1), pad=padding_tuple, dim=1)
+        frames_ = pad_tensor(torch.cat(frames, dim=1), pad=padding_tuple, dim=1)
         mask = ([last_item[1][:, -padding * 2 :]] if last_item else []) + [i[1] for i in items]
-        mask_ = lib.utils.pad_tensor(torch.cat(mask, dim=1), pad=padding_tuple, dim=1)
+        mask_ = pad_tensor(torch.cat(mask, dim=1), pad=padding_tuple, dim=1)
 
         waveform = model(frames_, speaker, session, mask_, pad_input=False)
         yield waveform if has_batch_dim else waveform.squeeze(0)
