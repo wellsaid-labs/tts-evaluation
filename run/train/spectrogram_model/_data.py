@@ -16,13 +16,7 @@ import torch.utils
 import torch.utils.data
 from hparams import HParam, configurable
 from third_party import LazyLoader
-from torchnlp.encoders import Encoder, LabelEncoder
-from torchnlp.encoders.text import (
-    CharacterEncoder,
-    DelimiterEncoder,
-    SequenceBatch,
-    stack_and_pad_tensors,
-)
+from torchnlp.encoders.text import SequenceBatch, stack_and_pad_tensors
 from torchnlp.samplers import DeterministicSampler, DistributedBatchSampler
 from torchnlp.utils import lengths_to_mask
 
@@ -32,7 +26,7 @@ from lib.audio import sec_to_sample
 from lib.distributed import get_rank, get_world_size, is_initialized
 from lib.samplers import BucketBatchSampler
 from lib.utils import Tuple, flatten_2d
-from run.data._loader import Alignment, Language, Session, Span, Speaker
+from run.data._loader import Alignment, Language, Span
 from run.train import _utils
 
 if typing.TYPE_CHECKING:  # pragma: no cover
@@ -290,6 +284,8 @@ class Batch(_utils.Batch):
 
     spans: typing.List[Span]
 
+    tokens: typing.List[typing.List[str]]
+
     audio: typing.List[torch.Tensor]
 
     # SequenceBatch[torch.FloatTensor [num_frames, batch_size, frame_channels],
@@ -303,24 +299,11 @@ class Batch(_utils.Batch):
     # SequenceBatch[torch.FloatTensor [num_frames, batch_size], torch.LongTensor [1, batch_size])
     stop_token: SequenceBatch
 
-    # TODO: How come this is a `SequenceBatch`? It's not a sequence.
-    # SequenceBatch[torch.LongTensor [1, batch_size], torch.LongTensor [1, batch_size])
-    encoded_speaker: SequenceBatch
-
-    # SequenceBatch[torch.LongTensor [1, batch_size], torch.LongTensor [1, batch_size])
-    encoded_session: SequenceBatch
-
-    # SequenceBatch[torch.LongTensor [num_tokens, batch_size], torch.LongTensor [1, batch_size])
-    encoded_tokens: SequenceBatch
-
-    # SequenceBatch[torch.LongTensor [num_tokens, batch_size], torch.LongTensor [1, batch_size])
-    encoded_tokens_mask: SequenceBatch
-
     def __len__(self):
         return len(self.spans)
 
 
-def _en_span_to_tokens(spans: typing.List[Span]) -> typing.List[str]:
+def _en_span_to_tokens(spans: typing.List[Span]) -> typing.List[typing.List[str]]:
     """Process English `Span`s of text into a list of tokens."""
     nlp = lib.text.load_en_core_web_md(disable=("parser", "ner"))
     en_docs: typing.List[spacy.tokens.Doc] = list(nlp.pipe([s.passage.script for s in spans]))
@@ -329,7 +312,8 @@ def _en_span_to_tokens(spans: typing.List[Span]) -> typing.List[str]:
         span = en_docs[i].char_span(script_slice.start, script_slice.stop)  # type: ignore
         assert span is not None, "Invalid `spacy.tokens.Span` selected."
         en_docs[i] = span.as_doc()
-    return typing.cast(typing.List[str], lib.text.grapheme_to_phoneme(en_docs))
+    phonemes = typing.cast(typing.List[str], lib.text.grapheme_to_phoneme(en_docs))
+    return [p.split(run._lang_config.PHONEME_SEPARATOR) for p in phonemes]
 
 
 def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
@@ -351,8 +335,8 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
     - 13% on `_random_loudness_annotations`
     - 13% on `grapheme_to_phoneme`
     - 6% for `_pad_and_trim_signal`
-    - 5% for `input_encoder.encode`
-    - 4% on `stack_and_pad_tensors`
+    - 5% for `input_encoder.encode` (Removed in Feburary 2022)
+    - 4% on `stack_and_pad_tensors` (Removed in Feburary 2022)
 
     TODO: For `spectrogram_model` training, this function is critical for performance and
     reducing the number of CPUs needed for training. Here are some opportunities for
@@ -362,19 +346,15 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
     - Using `multiprocessing` for `grapheme_to_phoneme`.
     - Using the precomputed spectrogram for `_pad_and_trim_signal`.
     """
-    _stack = functools.partial(stack_and_pad_tensors, dim=1)
-    _make_mask = functools.partial(torch.ones, dtype=torch.bool)
-
     assert len(spans) > 0, "Batch must have at least one item."
 
     en_spans = [(i, s) for i, s in enumerate(spans) if s.speaker.language == Language.ENGLISH]
     en_tokens = _en_span_to_tokens([s for _, s in en_spans])
 
-    decoded = [DecodedInput(s.script, s.script, s.speaker, (s.speaker, s.session)) for s in spans]
-    for (i, span), token in zip(en_spans, en_tokens):
-        decoded[i] = DecodedInput(span.script, token, span.speaker, (span.speaker, span.session))
+    tokens = [list(s.script) for s in spans]
+    for i, token in enumerate(en_tokens):
+        tokens[i] = token
 
-    encoded = [input_encoder.encode(d) for d in decoded]
     with futures.ThreadPoolExecutor(max_workers=min(max_workers, len(spans))) as pool:
         signals_ = list(pool.map(lambda s: s.audio(), spans))
         signals_ = typing.cast(typing.List[numpy.ndarray], signals_)
@@ -385,27 +365,16 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
         # NOTE: Prune unused attributes from `Passage`, in order to reduce batch size, which in
         # turn makes it easier to send to other processes, for example.
         spans=[dataclasses.replace(s, passage=dataclasses.replace(s.passage)) for s in spans],
+        tokens=tokens,
         audio=signals,
         spectrogram=spectrogram,
         spectrogram_mask=spectrogram_mask,
         stop_token=_make_stop_token(spectrogram),
-        phonemes=[p.split(run._config.PHONEME_SEPARATOR) for p in phonemes],
-        encoded_speaker=_stack([s.speaker for s in encoded]),
-        encoded_session=_stack([s.session for s in encoded]),
-        encoded_tokens=_stack([s.tokens for s in encoded]),
-        encoded_tokens_mask=_stack([_make_mask(e.tokens.shape[0]) for e in encoded]),
     )
 
 
 class DataProcessor(typing.Mapping[int, Batch]):
-    def __init__(
-        self,
-        dataset: run._config.Dataset,
-        batch_size: int,
-        input_encoder: InputEncoder,
-        step: int = 0,
-        **kwargs,
-    ):
+    def __init__(self, dataset: run._config.Dataset, batch_size: int, step: int = 0, **kwargs):
         """Given an index, generate the appropriate batch indefinitely.
 
         NOTE: Our training procedure is similar to BERT, the examples are randomly sampled
@@ -431,7 +400,6 @@ class DataProcessor(typing.Mapping[int, Batch]):
             iter_ = DistributedBatchSampler(iter_, num_replicas=get_world_size(), rank=get_rank())
         iter_ = typing.cast(typing.Iterator[typing.List[Span]], iter_)
         self.index_to_spans = lib.utils.MappedIterator(iter_)
-        self.input_encoder = input_encoder
 
     @staticmethod
     def _data_iterator_sort_key(span: Span):
@@ -444,4 +412,4 @@ class DataProcessor(typing.Mapping[int, Batch]):
         return sys.maxsize
 
     def __getitem__(self, index) -> Batch:
-        return make_batch(self.index_to_spans[index], self.input_encoder)
+        return make_batch(self.index_to_spans[index])

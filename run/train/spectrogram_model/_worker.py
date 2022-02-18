@@ -61,8 +61,7 @@ torch.optim.AdamW.__init__ = configurable_(torch.optim.AdamW.__init__)
 class Checkpoint(_utils.Checkpoint):
     """Checkpoint used to checkpoint spectrogram model training."""
 
-    input_encoder: InputEncoder
-    model: lib.spectrogram_model.SpectrogramModel
+    model: SpectrogramModel
     optimizer: torch.optim.AdamW
     clipper: lib.optimizers.AdaptiveGradientNormClipper
     ema: lib.optimizers.ExponentialMovingParameterAverage
@@ -82,9 +81,6 @@ class Checkpoint(_utils.Checkpoint):
         )
         assert set(p.data_ptr() for p in self.clipper.parameters) == ptrs
         assert set(p.data_ptr() for p in self.ema.parameters) == ptrs
-        assert self.model.vocab_size == self.input_encoder.token_encoder.vocab_size
-        assert self.model.num_speakers == self.input_encoder.speaker_encoder.vocab_size
-        assert self.model.num_sessions == self.input_encoder.session_encoder.vocab_size
         assert self.ema.backup == []  # NOTE: Ensure EMA hasn't been applied.
         assert self.model.training  # NOTE: Ensure `model` is in training mode
         # NOTE: Ensure there are no gradients.
@@ -93,7 +89,7 @@ class Checkpoint(_utils.Checkpoint):
     def __post_init__(self):
         self.check_invariants()
 
-    def export(self) -> typing.Tuple[InputEncoder, lib.spectrogram_model.SpectrogramModel]:
+    def export(self) -> SpectrogramModel:
         """Export inference ready `InputEncoder` and `SpectrogramModel` without needing additional
         context managers."""
         self.check_invariants()
@@ -113,7 +109,6 @@ ExcludeFromDecay = typing.Callable[[str, torch.nn.parameter.Parameter, torch.nn.
 
 @dataclasses.dataclass(frozen=True)
 class _State:
-    input_encoder: InputEncoder
     model: torch.nn.parallel.DistributedDataParallel
     optimizer: torch.optim.AdamW
     clipper: lib.optimizers.AdaptiveGradientNormClipper
@@ -131,71 +126,9 @@ class _State:
         self.to_checkpoint().check_invariants()
 
     @staticmethod
-    def _get_input_encoder(
-        train_dataset: Dataset,
-        dev_dataset: Dataset,
-        comet: CometMLExperiment,
-    ) -> InputEncoder:
-        """Initialize an input encoder to encode model input.
-
-        TODO: Remove special rules for `English` in v10 after eSpeak and `InputEncoder` are
-        deprecated.
-        """
-        passages = list(chain(*tuple(chain(train_dataset.values(), dev_dataset.values()))))
-        speakers = list(train_dataset.keys()) + list(dev_dataset.keys())
-        tokens = [p.script for p in passages]
-        token_separator = None
-        if all([s.language == Language.ENGLISH for s in speakers]):
-            tokens = list(DATASET_PHONETIC_CHARACTERS)
-            token_separator = PHONEME_SEPARATOR
-        input_encoder = InputEncoder(
-            [p.script for p in passages],
-            tokens,
-            list(train_dataset.keys()) + list(dev_dataset.keys()),
-            [(p.speaker, p.session) for p in passages],
-            token_separator,
-        )
-
-        label = partial(get_dataset_label, cadence=Cadence.STATIC, type_=DatasetType.TRAIN)
-        stats = {
-            label("grapheme_vocab_size"): input_encoder.grapheme_encoder.vocab_size,
-            label("grapheme_vocab"): sorted(input_encoder.grapheme_encoder.vocab),
-            label("token_vocab_size"): input_encoder.token_encoder.vocab_size,
-            label("token_vocab"): sorted(input_encoder.token_encoder.vocab),
-            label("num_speakers"): input_encoder.speaker_encoder.vocab_size,
-            label("speakers"): sorted([s.label for s in input_encoder.speaker_encoder.vocab]),
-            label("num_sessions"): input_encoder.session_encoder.vocab_size,
-        }
-        comet.log_parameters(stats)
-
-        sessions = collections.defaultdict(set)
-        for passage in passages:
-            sessions[passage.speaker].add(passage.session)
-        for speaker, sessions in sessions.items():
-            comet.log_parameter(label("num_sessions", speaker=speaker), len(sessions))
-            comet.log_parameter(label("sessions", speaker=speaker), sessions)
-
-        label = partial(label, type_=DatasetType.DEV)
-        stats = {
-            label("num_speakers"): len(list(dev_dataset.keys())),
-            label("speakers"): sorted([s.label for s in dev_dataset.keys()]),
-        }
-        comet.log_parameters(stats)
-
-        return input_encoder
-
-    @staticmethod
-    def _get_model(
-        device: torch.device,
-        comet: CometMLExperiment,
-        input_encoder: InputEncoder,
-    ) -> lib.spectrogram_model.SpectrogramModel:
+    def _get_model(device: torch.device, comet: CometMLExperiment) -> SpectrogramModel:
         """Initialize a model onto `device`."""
-        model = lib.spectrogram_model.SpectrogramModel(
-            vocab_size=input_encoder.token_encoder.vocab_size,
-            num_speakers=input_encoder.speaker_encoder.vocab_size,
-            num_sessions=input_encoder.session_encoder.vocab_size,
-        ).to(device, non_blocking=True)
+        model = SpectrogramModel().to(device, non_blocking=True)
         comet.set_model_graph(str(model))
         label = get_model_label("num_parameters", Cadence.STATIC)
         comet.log_parameter(label, get_total_parameters(model))
@@ -255,8 +188,7 @@ class _State:
         """Create a checkpoint to save the spectrogram training state."""
         return Checkpoint(
             comet_experiment_key=self.comet.get_key(),
-            input_encoder=self.input_encoder,
-            model=typing.cast(lib.spectrogram_model.SpectrogramModel, self.model.module),
+            model=typing.cast(SpectrogramModel, self.model.module),
             optimizer=self.optimizer,
             clipper=self.clipper,
             ema=self.ema,
@@ -279,7 +211,6 @@ class _State:
         https://discuss.pytorch.org/t/proper-distributeddataparallel-usage/74564
         """
         return cls(
-            checkpoint.input_encoder,
             torch.nn.parallel.DistributedDataParallel(checkpoint.model, [device], device),
             checkpoint.optimizer,
             checkpoint.clipper,
@@ -291,21 +222,14 @@ class _State:
         )
 
     @classmethod
-    def from_dataset(
-        cls,
-        train_dataset: Dataset,
-        dev_dataset: Dataset,
-        comet: CometMLExperiment,
-        device: torch.device,
-    ):
-        """Create spectrogram training state from the `train_dataset`."""
-        input_encoder = cls._get_input_encoder(train_dataset, dev_dataset, comet)
-        model = cls._get_model(device, comet, input_encoder)
+    def from_scratch(cls, comet: CometMLExperiment, device: torch.device):
+        """Create new spectrogram training state."""
+        model = cls._get_model(device, comet)
         # NOTE: Even if `_get_model` is initialized differently in each process, the parameters
         # will be synchronized. Learn more:
         # https://discuss.pytorch.org/t/proper-distributeddataparallel-usage/74564/2
         model = torch.nn.parallel.DistributedDataParallel(model, [device], device)
-        return cls(input_encoder, model, *cls._get_optimizers(model), comet, device)
+        return cls(model, *cls._get_optimizers(model), comet, device)
 
 
 def _worker_init_fn():
@@ -328,11 +252,10 @@ def _get_data_loaders(
     prefetch_factor: int = HParam(),
 ) -> typing.Tuple[DataLoader[Batch], DataLoader[Batch]]:
     """Initialize training and development data loaders."""
-    input_encoder, step = state.input_encoder, int(state.step.item())
-    kwargs = dict(input_encoder=input_encoder, step=step)
-    train = DataProcessor(train_dataset, train_batch_size, **kwargs, balanced=is_train_balanced)
-    dev = DataProcessor(dev_dataset, dev_batch_size, **kwargs, balanced=is_dev_balanced)
-    kwargs = dict(
+    step = int(state.step.item())
+    train = DataProcessor(train_dataset, train_batch_size, step, balanced=is_train_balanced)
+    dev = DataProcessor(dev_dataset, dev_batch_size, step, balanced=is_dev_balanced)
+    kwargs: typing.Dict[str, typing.Any] = dict(
         num_workers=num_workers,
         device=state.device,
         prefetch_factor=prefetch_factor,
@@ -640,6 +563,29 @@ def _run_inference(args: _HandleBatchArgs):
 _HandleBatch = typing.Callable[[_HandleBatchArgs], None]
 
 
+def _log_vocab(state: _State, dataset_type: DatasetType):
+    """Log the model vocabulary to Comet."""
+    label = partial(get_dataset_label, cadence=Cadence.RUN, type_=dataset_type)
+    model = typing.cast(SpectrogramModel, state.model.module)
+    parameters = {
+        label("token_vocab_size"): len(model.token_vocab),
+        label("token_vocab"): sorted(model.token_vocab),
+        label("speaker_vocab_size"): len(model.speaker_vocab),
+        label("speaker_vocab"): sorted([s.label for s in model.speaker_vocab]),
+        label("session_vocab_size"): len(model.session_vocab),
+        label("session_vocab"): sorted([(spk.label, sesh) for spk, sesh in model.session_vocab]),
+    }
+    state.comet.log_parameters(parameters)
+
+    for speaker in model.speaker_vocab:
+        sessions = [(spk.label, sesh) for spk, sesh in model.session_vocab if spk == speaker]
+        parameters = {
+            label("num_sessions", speaker=speaker): len(sessions),
+            label("sessions", speaker=speaker): sorted(sessions),
+        }
+        state.comet.log_parameters(parameters)
+
+
 @lib.utils.log_runtime
 def _run_steps(
     state: _State,
@@ -673,6 +619,7 @@ def _run_steps(
             timer = Timer().record_event(Timer.LOAD_DATA)
 
         metrics.log(is_verbose=True, type_=dataset_type, cadence=Cadence.MULTI_STEP)
+        _log_vocab(state, dataset_type)
 
 
 def exclude_from_decay(
@@ -706,7 +653,7 @@ def run_worker(
     `num_spans_per_text_length`, or `max_num_frames` can be computed accross epochs?
     """
     state = (
-        _State.from_dataset(train_dataset, dev_dataset, comet, device)
+        _State.from_scratch(comet, device)
         if checkpoint is None
         else _State.from_checkpoint(checkpoint, comet, device)
     )
