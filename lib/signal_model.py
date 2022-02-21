@@ -14,7 +14,7 @@ from hparams import HParam, configurable
 from torch.nn import functional
 from torch.nn.utils.weight_norm import WeightNorm, remove_weight_norm, weight_norm
 
-from lib.utils import log_runtime, pad_tensor, trim_tensors
+from lib.utils import PaddingAndLazyEmbedding, log_runtime, pad_tensor, trim_tensors
 
 logger = logging.getLogger(__name__)
 
@@ -273,14 +273,68 @@ def _has_weight_norm(module: torch.nn.Module, name: str = "weight") -> bool:
     return False
 
 
+class _Encoder(torch.nn.Module):
+    """Encode signal model inputs.
+
+    Args:
+        max_seq_meta_values: The maximum number of metadata values the model will be trained on.
+        frame_size: The size of each spectrogram frame.
+        seq_meta_embed_size: The size of the sequence metadata embedding.
+    """
+
+    def __init__(
+        self, max_seq_meta_values: typing.Tuple[int, ...], seq_meta_embed_size: int, frame_size: int
+    ):
+        super().__init__()
+
+        message = "`seq_meta_embed_size` must be divisable by the number of metadata attributes."
+        assert seq_meta_embed_size % len(max_seq_meta_values) == 0, message
+        self.embed_metadata = torch.nn.ModuleList(
+            PaddingAndLazyEmbedding(n, seq_meta_embed_size // len(max_seq_meta_values))
+            for n in max_seq_meta_values
+        )
+        self.out_size = seq_meta_embed_size + frame_size
+
+    def __call__(
+        self,
+        spectrogram: torch.Tensor,
+        seq_metadata: typing.List[typing.Tuple[typing.Hashable, ...]],
+    ) -> torch.Tensor:
+        return super().__call__(spectrogram, seq_metadata)
+
+    def forward(
+        self,
+        spectrogram: torch.Tensor,
+        seq_metadata: typing.List[typing.Tuple[typing.Hashable, ...]],
+    ):
+        """
+        Args:
+            spectrogram (torch.FloatTensor [batch_size, num_frames, frame_size])
+            seq_metadata: Metadata associated with each sequence
+
+        Returns: torch.FloatTensor [batch_size, num_frames, out_size]
+        """
+        # [batch_size] → [batch_size, seq_meta_embed_size]
+        seq_metadata_ = [
+            embed([metadata[i] for metadata in seq_metadata], batch_first=True)[0]
+            for i, embed in enumerate(self.embed_metadata)
+        ]
+        seq_metadata_ = torch.cat(seq_metadata_, dim=1)
+        # [batch_size, seq_meta_embed_size] → [batch_size, num_frames, seq_meta_embed_size]
+        seq_metadata_ = seq_metadata_.unsqueeze(1).expand(-1, spectrogram.shape[1], -1)
+        # [batch_size, num_frames, seq_meta_embed_size] (cat)
+        # [batch_size, num_frames, frame_size] →
+        # [batch_size, num_frames, frame_size + seq_meta_embed_size]
+        return torch.cat([spectrogram, seq_metadata_], dim=2)
+
+
 class SignalModel(torch.nn.Module):
     """Predicts a signal given a spectrogram.
 
-    TODO: Refactor `speaker_embedding_size` into two parameters for simplicity.
-
     Args:
-        ...
-        input_size: The input tensor channel dimension size.
+        max_seq_meta_values: The maximum number of metadata values the model will be trained on.
+        seq_meta_embed_size
+        frame_size
         hidden_size: The channal dimension size of the final convolution(s). The rest of the modules
             are a multiple of `hidden_size` as determined by `get_layer_size`.
         ratios: List of up scale factors for each `SignalModel` layer. The output is
@@ -292,10 +346,9 @@ class SignalModel(torch.nn.Module):
     @configurable
     def __init__(
         self,
-        num_speakers: int,
-        num_sessions: int,
-        speaker_embedding_size: int = HParam(),
-        input_size: int = HParam(),
+        max_seq_meta_values: typing.Tuple[int, ...],
+        seq_meta_embed_size: int = HParam(),
+        frame_size: int = HParam(),
         hidden_size: int = HParam(),
         ratios: typing.List[int] = HParam(),
         max_channel_size: int = HParam(),
@@ -308,17 +361,12 @@ class SignalModel(torch.nn.Module):
         self.mu = mu
         self.upscale_factor = int(np.prod(ratios))
         self.grad_enabled = None
-        self.num_speakers = num_speakers
-        self.num_sessions = num_sessions
 
-        assert speaker_embedding_size % 2 == 0, "Parameter must be even."
-        self.embed_speaker = torch.nn.Embedding(num_speakers, speaker_embedding_size // 2)
-        self.embed_session = torch.nn.Embedding(num_sessions, speaker_embedding_size // 2)
-
+        self.encoder = _Encoder(max_seq_meta_values, seq_meta_embed_size, frame_size)
         self.pre_net = _Sequential(
             _InterpolateAndMask(1),
             torch.nn.Conv1d(
-                input_size + speaker_embedding_size,
+                self.encoder.out_size,
                 self.get_layer_size(0),
                 kernel_size=3,
                 padding=0,
@@ -364,7 +412,6 @@ class SignalModel(torch.nn.Module):
         # https://github.com/pytorch/pytorch/issues/35191
         [weight_norm(module) for module in self._get_weight_norm_modules()]
 
-
     def del_weight_norm_temp_tensor_(self):
         """Delete the temporary "weight" tensor created every forward pass by `weight_norm`.
 
@@ -399,6 +446,13 @@ class SignalModel(torch.nn.Module):
             if isinstance(module, torch.nn.Conv1d):
                 yield module
 
+    def allow_unk_on_eval(self, val: bool):
+        """If `True` then the "unknown token" may be used during evaluation, otherwise this will
+        error if a new token is encountered during evaluation."""
+        for mod in self.modules():
+            if isinstance(mod, PaddingAndLazyEmbedding):
+                mod.allow_unk_on_eval = val
+
     @log_runtime
     def reset_parameters(self):
         for module in self.modules():
@@ -422,21 +476,17 @@ class SignalModel(torch.nn.Module):
     ) -> typing.Tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
-            spectrogram (torch.FloatTensor [batch_size (optional), num_frames, frame_channels])
-            spectrogram_mask (torch.BoolTensor [batch_size (optional), num_frames] or None)
+            spectrogram (torch.FloatTensor [batch_size, num_frames, frame_channels])
+            spectrogram_mask (torch.BoolTensor [batch_size, num_frames] or None)
             pad_input: If `True` padding is applied to the input.
 
         Returns:
             spectrogram (torch.FloatTensor [batch_size, num_frames, frame_channels])
             spectrogram_mask (torch.BoolTensor [batch_size, num_frames])
         """
-        # [batch_size, num_frames, frame_channels]
-        spectrogram = spectrogram.view(-1, spectrogram.shape[-2], spectrogram.shape[-1])
-
         device = spectrogram.device
         if spectrogram_mask is None:
             spectrogram_mask = torch.ones(*spectrogram.shape[:2], device=device, dtype=torch.bool)
-        spectrogram_mask = spectrogram_mask.view(*spectrogram.shape[:2])
 
         if pad_input:
             padding = (self.padding, self.padding)
@@ -451,12 +501,11 @@ class SignalModel(torch.nn.Module):
     def __call__(
         self,
         spectrogram: torch.Tensor,
-        speaker: torch.Tensor,
-        session: torch.Tensor,
+        seq_metadata: typing.List[typing.Tuple[typing.Hashable, ...]],
         spectrogram_mask: typing.Optional[torch.Tensor] = None,
         pad_input: bool = True,
     ) -> torch.Tensor:
-        return super().__call__(spectrogram, speaker, session, spectrogram_mask, pad_input)
+        return super().__call__(spectrogram, seq_metadata, spectrogram_mask, pad_input)
 
     def forward(self, *args, **kwargs) -> torch.Tensor:
         grad_enabled = self.grad_enabled
@@ -466,17 +515,15 @@ class SignalModel(torch.nn.Module):
     def _forward(
         self,
         spectrogram: torch.Tensor,
-        speaker: torch.Tensor,
-        session: torch.Tensor,
+        seq_metadata: typing.List[typing.Tuple[typing.Hashable, ...]],
         spectrogram_mask: typing.Optional[torch.Tensor] = None,
         pad_input: bool = True,
     ) -> torch.Tensor:
         """
         Args:
-            spectrogram (torch.FloatTensor [batch_size (optional), num_frames, frame_channels])
-            speaker (torch.LongTensor [batch_size (optional)])
-            session (torch.LongTensor [batch_size (optional)])
-            spectrogram_mask (torch.BoolTensor [batch_size (optional), num_frames] or None):
+            spectrogram (torch.FloatTensor [batch_size, num_frames, frame_channels])
+            seq_metadata: Metadata associated with each sequence
+            spectrogram_mask (torch.BoolTensor [batch_size, num_frames] or None):
                 The mask elements on either boundary of the spectrogram so that the corresponding
                 output is not affected.
             pad_input: If `True` padding is applied to the input.
@@ -493,36 +540,24 @@ class SignalModel(torch.nn.Module):
         batch_size, num_frames, _ = spectrogram.shape
         num_frames = num_frames - self.padding * 2
 
-        # [batch_size] → [batch_size, speaker_embedding_size // 2]
-        speaker = self.embed_speaker(speaker.view(batch_size))
-        # [batch_size] → [batch_size, speaker_embedding_size // 2]
-        session = self.embed_session(session.view(batch_size))
-        # [batch_size, speaker_embedding_size // 2] (cat)
-        # [batch_size, speaker_embedding_size // 2] → [batch_size, speaker_embedding_size]
-        session = torch.cat([speaker, session], dim=1)
-        # [batch_size, speaker_embedding_size] → [batch_size, num_frames, speaker_embedding_size]
-        session = session.unsqueeze(1).expand(-1, spectrogram.shape[1], -1)
-        # [batch_size, num_frames, speaker_embedding_size] (cat)
-        # [batch_size, num_frames, frame_channels] →
-        # [batch_size, num_frames, frame_channels + speaker_embedding_size]
-        spectrogram = torch.cat([spectrogram, session], dim=2)
+        # [batch_size, num_frames, frame_channels] → [batch_size, num_frames, encoder.out_size]
+        encoded = self.encoder(spectrogram, seq_metadata)
 
-        # [batch_size, num_frames, frame_channels + speaker_embedding_size] →
-        # [batch_size, frame_channels + speaker_embedding_size, num_frames]
-        spectrogram = spectrogram.transpose(1, 2)
+        # [batch_size, num_frames, encoder.out_size] → [batch_size, encoder.out_size, num_frames]
+        encoded = encoded.transpose(1, 2)
 
         # [batch_size, num_frames] → [batch_size, 1, num_frames]
         spectrogram_mask = spectrogram_mask.unsqueeze(1)
 
-        # [batch_size, frame_channels + speaker_embedding_size, num_frames] →
+        # [batch_size, encoder.out_size, num_frames] →
         # [batch_size, self.get_layer_size(0), num_frames]
-        spectrogram = self.pre_net(spectrogram, spectrogram_mask)
+        encoded = self.pre_net(encoded, spectrogram_mask)
 
-        conditioning = self.condition(spectrogram)  # [batch_size, *, num_frames]
+        conditioning = self.condition(encoded)  # [batch_size, *, num_frames]
 
         # [batch_size, self.get_layer_size(0), num_frames] →
         # [batch_size, 2, signal_length + excess_padding]
-        signal = self.network(spectrogram, spectrogram_mask, conditioning)
+        signal = self.network(encoded, spectrogram_mask, conditioning)
 
         # [batch_size, 2, signal_length + excess_padding] →
         # [batch_size, signal_length + excess_padding]
@@ -548,8 +583,6 @@ class SignalModel(torch.nn.Module):
 class SpectrogramDiscriminator(torch.nn.Module):
     """Discriminates between predicted and real spectrograms.
 
-    TODO: Refactor `speaker_embedding_size` into two parameters for simplicity.
-
     Args:
         fft_length
         num_mel_bins
@@ -562,21 +595,16 @@ class SpectrogramDiscriminator(torch.nn.Module):
         self,
         fft_length: int,
         num_mel_bins: int,
-        num_speakers: int,
-        num_sessions: int,
-        speaker_embedding_size: int = HParam(),
+        max_seq_meta_values: typing.Tuple[int, ...],
+        seq_meta_embed_size: int = HParam(),
         hidden_size: int = HParam(),
     ):
         super().__init__()
         self.fft_length = fft_length
-        input_size = fft_length + num_mel_bins + 2 + speaker_embedding_size
-        self.num_speakers = num_speakers
-        self.num_sessions = num_sessions
-        assert speaker_embedding_size % 2 == 0, "Parameter must be even."
-        self.embed_speaker = torch.nn.Embedding(num_speakers, speaker_embedding_size // 2)
-        self.embed_session = torch.nn.Embedding(num_sessions, speaker_embedding_size // 2)
+        frame_size = fft_length + num_mel_bins + 2
+        self.encoder = _Encoder(max_seq_meta_values, seq_meta_embed_size, frame_size)
         self.layers = _Sequential(
-            torch.nn.Conv1d(input_size, hidden_size, kernel_size=3, padding=1),
+            torch.nn.Conv1d(self.encoder.out_size, hidden_size, kernel_size=3, padding=1),
             _LayerNorm(hidden_size),
             torch.nn.Conv1d(hidden_size, hidden_size, kernel_size=3, padding=1),
             torch.nn.GELU(),
@@ -602,51 +630,38 @@ class SpectrogramDiscriminator(torch.nn.Module):
         spectrogram: torch.Tensor,
         db_spectrogram: torch.Tensor,
         db_mel_spectrogram: torch.Tensor,
-        speaker: torch.Tensor,
-        session: torch.Tensor,
+        seq_metadata: typing.List[typing.Tuple[typing.Hashable, ...]],
     ) -> torch.Tensor:
-        return super().__call__(spectrogram, db_spectrogram, db_mel_spectrogram, speaker, session)
+        return super().__call__(spectrogram, db_spectrogram, db_mel_spectrogram, seq_metadata)
 
     def forward(
         self,
         spectrogram: torch.Tensor,
         db_spectrogram: torch.Tensor,
         db_mel_spectrogram: torch.Tensor,
-        speaker: torch.Tensor,
-        session: torch.Tensor,
+        seq_metadata: typing.List[typing.Tuple[typing.Hashable, ...]],
     ) -> torch.Tensor:
         """
         Args:
             spectrogram (torch.FloatTensor [batch_size, num_frames, fft_length // 2 + 1])
             db_spectrogram (torch.FloatTensor [batch_size, num_frames, fft_length // 2 + 1])
             db_mel_spectrogram (torch.FloatTensor [batch_size, num_frames, num_mel_bins])
-            speaker (torch.LongTensor [batch_size])
-            session (torch.LongTensor [batch_size])
+            ...
 
         Returns:
             (torch.FloatTensor [batch_size]): A score that discriminates between predicted and
                 real spectrogram.
         """
-        # [batch_size] → [batch_size, speaker_embedding_size // 2]
-        speaker = self.embed_speaker(speaker.view(spectrogram.shape[0]))
-        # [batch_size] → [batch_size, speaker_embedding_size // 2]
-        session = self.embed_session(session.view(spectrogram.shape[0]))
-        # [batch_size, speaker_embedding_size // 2] (cat)
-        # [batch_size, speaker_embedding_size // 2] → [batch_size, speaker_embedding_size]
-        session = torch.cat([speaker, session], dim=1)
-        # [batch_size, speaker_embedding_size] → [batch_size, num_frames, speaker_embedding_size]
-        session = session.unsqueeze(1).expand(-1, spectrogram.shape[1], -1)
-
-        features = torch.cat([session, spectrogram, db_spectrogram, db_mel_spectrogram], dim=2)
-        features = features.transpose(-1, -2)
-        return self.layers(features).squeeze(1).mean(dim=-1)
+        spectrogram = torch.cat([spectrogram, db_spectrogram, db_mel_spectrogram], dim=2)
+        encoded = self.encoder(spectrogram, seq_metadata)
+        encoded = encoded.transpose(-1, -2)
+        return self.layers(encoded).squeeze(1).mean(dim=-1)
 
 
 def generate_waveform(
     model: SignalModel,
     spectrogram: typing.Iterator[torch.Tensor],
-    speaker: torch.Tensor,
-    session: torch.Tensor,
+    seq_metadata: typing.List[typing.Tuple[typing.Hashable, ...]],
     spectrogram_mask: typing.Optional[typing.Iterator[torch.Tensor]] = None,
 ) -> typing.Iterator[torch.Tensor]:
     """
@@ -660,7 +675,7 @@ def generate_waveform(
         ...
 
     Returns:
-        signal (torch.FloatTensor [batch_size (optional), signal_length])
+        signal (torch.FloatTensor [batch_size, signal_length])
     """
     padding = model.padding
     last_item: typing.Optional[typing.Tuple[torch.Tensor, torch.Tensor]] = None
@@ -672,7 +687,7 @@ def generate_waveform(
         items: typing.List[typing.Tuple[torch.Tensor, torch.Tensor]] = []
         while sum([i[0].shape[1] for i in items]) < padding * 2 and not is_stop:
             try:
-                # [batch_size (optional), num_frames, frame_channels]
+                # [batch_size, num_frames, frame_channels]
                 item_frames = next(spectrogram)
                 has_batch_dim = len(item_frames.shape) == 3
                 item_mask = None if spectrogram_mask is None else next(spectrogram_mask)
@@ -687,7 +702,7 @@ def generate_waveform(
         mask = ([last_item[1][:, -padding * 2 :]] if last_item else []) + [i[1] for i in items]
         mask_ = pad_tensor(torch.cat(mask, dim=1), pad=padding_tuple, dim=1)
 
-        waveform = model(frames_, speaker, session, mask_, pad_input=False)
+        waveform = model(frames_, seq_metadata, mask_, pad_input=False)
         yield waveform if has_batch_dim else waveform.squeeze(0)
 
         last_item = (frames_, mask_)

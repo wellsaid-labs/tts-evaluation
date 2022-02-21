@@ -1,14 +1,17 @@
 import itertools
 import math
 import typing
+from unittest import mock
 
 import torch
 import torch.nn
+from torch.nn import Embedding
+from torch.nn.utils.weight_norm import remove_weight_norm, weight_norm
 from torchnlp.random import fork_rng
 from torchnlp.utils import lengths_to_mask
 
 import lib
-from lib.signal_model import generate_waveform
+from lib.signal_model import SignalModel, generate_waveform
 from tests import _utils
 
 assert_almost_equal = lambda *a, **k: _utils.assert_almost_equal(*a, **k, decimal=4)
@@ -69,143 +72,125 @@ def test__block():
 def test__has_weight_norm():
     """Test `lib.signal_model._has_weight_norm` detects `torch.nn.utils.weight_norm`."""
     module = torch.nn.Linear(20, 40)
-    torch.nn.utils.weight_norm(module, name="weight")
+    weight_norm(module, name="weight")
     assert lib.signal_model._has_weight_norm(module)
-    torch.nn.utils.remove_weight_norm(module, name="weight")
+    remove_weight_norm(module, name="weight")
     assert not lib.signal_model._has_weight_norm(module)
 
 
-def _make_small_signal_model(
-    num_speakers: int = 8,
-    num_sessions: int = 10,
-    batch_size: int = 4,
-    num_frames: int = 8,
-    num_frame_channels: int = 6,
-    hidden_size: int = 2,
-    ratios: typing.List[int] = [2],
-    max_channel_size: int = 8,
-    speaker_embedding_size: int = 8,
-    mu: int = 255,
-    squeeze_batch_dim: bool = False,
-) -> typing.Tuple[
-    lib.signal_model.SignalModel,
-    typing.Tuple[torch.Tensor, torch.Tensor, torch.Tensor],
-    typing.Tuple[int, int, int],
-]:
-    """Make `lib.signal_model.SignalModel` and it's inputs for testing."""
-    model = lib.signal_model.SignalModel(
-        num_speakers,
-        num_sessions,
-        speaker_embedding_size=speaker_embedding_size,
-        input_size=num_frame_channels,
-        hidden_size=hidden_size,
-        max_channel_size=max_channel_size,
-        ratios=ratios,
-        mu=mu,
+class _Config(typing.NamedTuple):
+    max_seq_meta_values: typing.Tuple[int, int] = (8, 10)
+    batch_size: int = 4
+    num_frames: int = 8
+    frame_size: int = 6
+    hidden_size: int = 2
+    ratios: typing.List[int] = [2]
+    max_channel_size: int = 8
+    seq_meta_embed_size: int = 8
+    mu: int = 255
+    padding: int = 0
+
+
+_ModelInputs = typing.Tuple[torch.Tensor, typing.List[typing.Tuple[int, int]], torch.Tensor]
+
+
+def _make_small_signal_model(config: _Config) -> typing.Tuple[SignalModel, _ModelInputs]:
+    """Make `SignalModel` and it's inputs for testing."""
+    model = SignalModel(
+        max_seq_meta_values=config.max_seq_meta_values,
+        seq_meta_embed_size=config.seq_meta_embed_size,
+        frame_size=config.frame_size,
+        hidden_size=config.hidden_size,
+        ratios=config.ratios,
+        max_channel_size=config.max_channel_size,
+        mu=config.mu,
     )
-    speaker = torch.randint(0, num_speakers, (batch_size,))
-    session = torch.randint(0, num_sessions, (batch_size,))
-    spectrogram = torch.randn([batch_size, num_frames, num_frame_channels])
-    if squeeze_batch_dim:
-        spectrogram, speaker, session = (t.squeeze(0) for t in (spectrogram, speaker, session))
+    speaker = torch.randint(0, config.max_seq_meta_values[0], (config.batch_size,)).tolist()
+    session = torch.randint(0, config.max_seq_meta_values[1], (config.batch_size,)).tolist()
+    seq_metadata = list(zip(speaker, session))
+    num_frames = config.num_frames + config.padding * 2
+    spectrogram = torch.randn([config.batch_size, num_frames, config.frame_size])
+    mask = [
+        torch.zeros([config.batch_size, config.padding]),
+        torch.ones([config.batch_size, config.num_frames]),
+        torch.zeros([config.batch_size, config.padding]),
+    ]
+    mask = torch.cat(mask, 1).bool()
 
     # NOTE: Ensure modules like `LayerNorm` perturbs the input instead of being just an identity.
     for _, parameter in model.named_parameters():
         if parameter.std() == 0:
             torch.nn.init.normal_(parameter)
-    return model, (spectrogram, speaker, session), (batch_size, num_frames, num_frame_channels)
+
+    return model, (spectrogram, seq_metadata, mask)
 
 
 def test_signal_model():
-    """Test `lib.signal_model.SignalModel` output is the right shape, in range and
-    differentiable."""
-    model, inputs, (batch_size, num_frames, _) = _make_small_signal_model()
+    """Test `SignalModel` output is the right shape, in range and differentiable."""
+    config = _Config()
+    model, inputs = _make_small_signal_model(config)
     out = model(*inputs)
-    assert out.shape == (batch_size, model.upscale_factor * num_frames)
+    assert out.shape == (config.batch_size, model.upscale_factor * config.num_frames)
     assert out.max() <= 1.0
     assert out.min() >= -1.0
     out.sum().backward()
 
 
-def test_signal_model__no_batch__odd():
-    """Test `lib.signal_model.SignalModel` can handle an input without a batch dimension, and
-    an odd number of frames."""
-    model, inputs, (_, num_frames, _) = _make_small_signal_model(
-        num_frames=9, batch_size=1, squeeze_batch_dim=True
-    )
+def test_signal_model__odd():
+    """Test `SignalModel` can handle an input with an odd number of frames."""
+    config = _Config(num_frames=9, batch_size=1)
+    model, inputs = _make_small_signal_model(config)
     out = model(*inputs)
-    assert out.shape == (model.upscale_factor * num_frames,)
+    assert out.shape == (config.batch_size, model.upscale_factor * config.num_frames)
     assert out.max() <= 1.0
     assert out.min() >= -1.0
     out.sum().backward()
 
 
 def test_signal_model__batch_invariance():
-    """Test `lib.signal_model.SignalModel` output doesn't vary with batch size."""
-    model, inputs, _ = _make_small_signal_model()
-    first = typing.cast(
-        typing.Tuple[torch.Tensor, torch.Tensor, torch.Tensor], tuple(i[0] for i in inputs)
-    )
-    assert_almost_equal(model(*inputs)[0], model(*first))
+    """Test `SignalModel` output doesn't vary with batch size."""
+    model, inputs = _make_small_signal_model(_Config())
+    first = tuple(i[0:1] for i in inputs)
+    first = typing.cast(typing.Tuple[torch.Tensor, typing.List[typing.Tuple[int, int]]], first)
+    assert_almost_equal(model(*inputs)[0:1], model(*first))
 
 
 def test_signal_model__padding_invariance():
-    """Test `lib.signal_model.SignalModel` output doesn't vary with masked padding, and the
-    output is masked."""
-    (
-        model,
-        (_, speaker, session),
-        (batch_size, num_frames, num_frame_channels),
-    ) = _make_small_signal_model()
-    padding = 3
-    spectrogram = torch.randn([batch_size, num_frames + padding * 2, num_frame_channels])
-    mask = torch.cat(
-        [
-            torch.zeros([batch_size, padding]),
-            torch.ones([batch_size, num_frames]),
-            torch.zeros([batch_size, padding]),
-        ],
-        1,
-    ).bool()
-    padded_out = model(spectrogram, speaker, session, mask)
-    out = model(spectrogram[:, padding:-padding], speaker, session)
+    """Test `SignalModel` output doesn't vary with masked padding, and the output is masked."""
+    config = _Config(padding=3)
+    model, inputs = _make_small_signal_model(config)
+
+    padded_out = model(*inputs)
+    out = model(inputs[0][:, config.padding : -config.padding], inputs[1])
+    padding_len = model.upscale_factor * config.padding
+
     # NOTE: Ensure the output is masked.
-    assert padded_out[:, : padding * model.upscale_factor].abs().sum().item() == 0.0
-    assert padded_out[:, -padding * model.upscale_factor :].abs().sum().item() == 0.0
+    assert padded_out[:, :padding_len].abs().sum().item() == 0.0
+    assert padded_out[:, -padding_len:].abs().sum().item() == 0.0
+
     # NOTE: Ensure the output isn't affected by padding.
-    assert_almost_equal(
-        padded_out[:, padding * model.upscale_factor : -padding * model.upscale_factor],
-        out,
-    )
+    assert_almost_equal(padded_out[:, padding_len:-padding_len], out)
 
 
 def test_signal_model__shape():
-    """Test `lib.signal_model.SignalModel` output is the correct shape given different
-    scale factors and input sizes. Particularly, this tests the `padding` and `excess_padding`
-    implementations."""
-    frame_channels = 4
-    num_speakers = 10
-    num_sessions = 12
-    for i, j, input_size in itertools.product(range(1, 4), range(1, 3), range(1, 4)):
-        model = lib.signal_model.SignalModel(
-            num_speakers=num_speakers,
-            num_sessions=num_sessions,
-            speaker_embedding_size=16,
-            input_size=frame_channels,
-            hidden_size=2,
-            max_channel_size=4,
+    """Test `SignalModel` output is the correct shape given different scale factors and input sizes.
+    Particularly, this tests the `padding` and `excess_padding` implementations."""
+    for i, j, num_frames in itertools.product(range(1, 4), range(1, 3), range(1, 4)):
+        config = _Config(
+            max_seq_meta_values=(10, 12),
+            frame_size=4,
             ratios=[i] * j,
-            mu=255,
+            max_channel_size=4,
+            seq_meta_embed_size=16,
+            num_frames=num_frames,
         )
-        spectrogram = torch.randn([input_size, frame_channels])
-        speaker = torch.randint(0, num_speakers, (1,))
-        session = torch.randint(0, num_sessions, (1,))
-        assert model(spectrogram, speaker, session).shape == (model.upscale_factor * input_size,)
+        model, inputs = _make_small_signal_model(config)
+        assert model(*inputs).shape == (config.batch_size, model.upscale_factor * config.num_frames)
 
 
 def test_train():
-    """Test `lib.signal_model.SignalModel.train` executes."""
-    model, *_ = _make_small_signal_model()
+    """Test `SignalModel.train` executes."""
+    model, *_ = _make_small_signal_model(_Config())
     model.train()
     model.train()
     model.eval()
@@ -219,87 +204,60 @@ def test_spectrogram_discriminator():
     num_frames = 16
     fft_length = 1024
     num_mel_bins = 128
-    num_speakers = 12
-    num_sessions = 10
+    max_seq_meta_values = (12, 10)
     discriminator = lib.signal_model.SpectrogramDiscriminator(
-        fft_length, num_mel_bins, num_speakers, num_sessions, 12, 16
+        fft_length, num_mel_bins, max_seq_meta_values, 12, 16
     )
     spectrogram = torch.randn(batch_size, num_frames, fft_length // 2 + 1)
     db_spectrogram = torch.randn(batch_size, num_frames, fft_length // 2 + 1)
     db_mel_spectrogram = torch.randn(batch_size, num_frames, num_mel_bins)
-    speaker = torch.randint(0, num_speakers, (batch_size,))
-    session = torch.randint(0, num_sessions, (batch_size,))
-    output = discriminator(spectrogram, db_spectrogram, db_mel_spectrogram, speaker, session)
+    speaker = torch.randint(0, max_seq_meta_values[0], (batch_size,)).tolist()
+    session = torch.randint(0, max_seq_meta_values[1], (batch_size,)).tolist()
+    seq_metadata = list(zip(speaker, session))
+    output = discriminator(spectrogram, db_spectrogram, db_mel_spectrogram, seq_metadata)
     assert output.shape == (batch_size,)
     output.sum().backward()
 
 
 def test_generate_waveform():
-    """Test `lib.signal_model.generate_waveform` is consistent with `lib.signal_model.SignalModel`
+    """Test `lib.signal_model.generate_waveform` is consistent with `SignalModel`
     given different spectrogram generators.
     """
-    model, (spectrogram, *inputs), (batch_size, num_frames, _) = _make_small_signal_model(
-        num_frames=53, batch_size=2
-    )
-    output = model(spectrogram, *inputs)
-    assert output.shape == (batch_size, model.upscale_factor * num_frames)
+    config = _Config(num_frames=53, batch_size=2)
+    model, inputs = _make_small_signal_model(config)
+    output = model(*inputs)
+    assert output.shape == (config.batch_size, model.upscale_factor * config.num_frames)
     for i in itertools.chain([1, 26, 27, 53]):
-        generated = torch.cat(
-            list(generate_waveform(model, spectrogram.split(i, dim=1), *inputs)), dim=1
-        )
-        assert generated.shape == (batch_size, model.upscale_factor * num_frames)
+        generator = generate_waveform(model, inputs[0].split(i, dim=1), inputs[1])
+        generated = torch.cat(list(generator), dim=1)
+        assert generated.shape == (config.batch_size, model.upscale_factor * config.num_frames)
         assert_almost_equal(output, generated)
-
-
-def test_generate_waveform__no_batch_dim():
-    """Test `lib.signal_model.generate_waveform` is consistent with `lib.signal_model.SignalModel`
-    given no batch dimension.
-    """
-    split_size = 26
-    model, (spectrogram, *inputs), (_, num_frames, _) = _make_small_signal_model(
-        num_frames=37, batch_size=1, squeeze_batch_dim=True
-    )
-    output = model(spectrogram, *inputs)
-    assert output.shape == (model.upscale_factor * num_frames,)
-    splits = spectrogram.split(split_size)
-    generated = torch.cat(list(generate_waveform(model, splits, *inputs)))
-    assert generated.shape == (model.upscale_factor * num_frames,)
-    assert_almost_equal(output, generated)
 
 
 def test_generate_waveform__padding_invariance():
     """Test `lib.signal_model.generate_waveform` output doesn't vary with masked padding, and the
     output is masked."""
-    padding = 7
     split_size = 26
-    model, (_, *inputs), (batch_size, num_frames, num_frame_channels) = _make_small_signal_model(
-        num_frames=27, batch_size=2
-    )
-    spectrogram = torch.randn([batch_size, num_frames + padding * 2, num_frame_channels])
-    mask = [
-        torch.zeros([batch_size, padding]),
-        torch.ones([batch_size, num_frames]),
-        torch.zeros([batch_size, padding]),
-    ]
-    mask = torch.cat(mask, 1).bool()
-    immediate = model(spectrogram[:, padding:-padding], *inputs)
-    generator = generate_waveform(
-        model, spectrogram.split(split_size, dim=1), *inputs, mask.split(split_size, dim=1)
-    )
+    config = _Config(num_frames=27, batch_size=2, padding=7)
+    model, (spectrogram, seq_metadata, mask) = _make_small_signal_model(config)
+
+    immediate = model(spectrogram[:, config.padding : -config.padding], seq_metadata)
+    splits = spectrogram.split(split_size, dim=1)
+    generator = generate_waveform(model, splits, seq_metadata, mask.split(split_size, dim=1))
     generated = torch.cat(list(generator), dim=1)
+    padding_len = model.upscale_factor * config.padding
+
     # NOTE: Ensure the output is masked.
-    assert generated[:, : padding * model.upscale_factor].abs().sum().item() == 0.0
-    assert generated[:, -padding * model.upscale_factor :].abs().sum().item() == 0.0
+    assert generated[:, :padding_len].abs().sum().item() == 0.0
+    assert generated[:, -padding_len:].abs().sum().item() == 0.0
+
     # NOTE: Ensure the output isn't affected by padding.
-    assert_almost_equal(
-        generated[:, padding * model.upscale_factor : -padding * model.upscale_factor],
-        immediate,
-    )
+    assert_almost_equal(generated[:, padding_len:-padding_len], immediate)
 
 
 _expected_parameters = {
-    "embed_speaker.weight": torch.tensor(-0.574029),
-    "embed_session.weight": torch.tensor(0.777365),
+    "encoder.embed_metadata.0.weight": torch.tensor(-0.574029),
+    "encoder.embed_metadata.1.weight": torch.tensor(0.777365),
     "pre_net.1.bias": torch.tensor(0.389551),
     "pre_net.1.weight_g": torch.tensor(2.000000),
     "pre_net.1.weight_v": torch.tensor(1.008913),
@@ -380,8 +338,8 @@ _expected_parameters = {
 }
 
 _expected_grads = {
-    "embed_speaker.weight": torch.tensor(-0.005022),
-    "embed_session.weight": torch.tensor(0.121203),
+    "encoder.embed_metadata.0.weight": torch.tensor(-0.005022),
+    "encoder.embed_metadata.1.weight": torch.tensor(0.121203),
     "pre_net.1.bias": torch.tensor(-0.000001),
     "pre_net.1.weight_g": torch.tensor(-0.167925),
     "pre_net.1.weight_v": torch.tensor(0.089933),
@@ -482,27 +440,50 @@ _expected_signal = [
 _expected_signal = torch.tensor(_expected_signal)
 
 
+def _side_effect(num_embeddings: int, *args, padding_idx=None, **kwargs):
+    """Side-effect used in `_make_backward_compatible_model` for creating the `Embedding`.
+
+    TODO: Remove and update `test_signal_model__version` values.
+    """
+    default_tokens = len(lib.utils.PaddingAndLazyEmbedding._Tokens)
+    return Embedding(num_embeddings - default_tokens, *args, padding_idx=None, **kwargs)
+
+
+def _make_backward_compatible_model(config: _Config):
+    """Set `Embedding` in a backward compatible way so `test_signal_model__version` passes.
+
+    TODO: Remove and update `test_signal_model__version` values.
+    """
+    with mock.patch("lib.utils.torch.nn.Embedding") as module:
+        module.side_effect = _side_effect
+        model, *other = _make_small_signal_model(config)
+
+    for embed, max_values in zip(model.encoder.embed_metadata, config.max_seq_meta_values):
+        embed = typing.cast(lib.utils.PaddingAndLazyEmbedding, embed)
+        embed.vocab.update({i: i for i in range(max_values)})
+        embed.num_embeddings = len(embed.vocab)
+
+    return (model, *other)
+
+
 def test_signal_model__version():
-    """Test `lib.signal_model.SignalModel` has not changed since it was last tested."""
+    """Test `SignalModel` has not changed since it was last tested."""
     torch.set_printoptions(precision=6, linewidth=100)
 
     with fork_rng(123):
-        (
-            model,
-            (_, *inputs),
-            (batch_size, num_frames, num_frame_channels),
-        ) = _make_small_signal_model(batch_size=16)
-        padded_num_frames = num_frames + model.padding * 2
-        spectrogram = torch.randn(batch_size, padded_num_frames, num_frame_channels)
-        spectrogram_length = torch.randint(model.padding + 1, padded_num_frames, (batch_size,))
-        spectrogram_length[-1] = padded_num_frames
-        spectrogram_mask = lengths_to_mask(spectrogram_length)
+        config = _Config(batch_size=16)
+        model, (_, seq_metadata, _) = _make_backward_compatible_model(config)
+        padded_num_frames = config.num_frames + model.padding * 2
+        spectrogram = torch.randn(config.batch_size, padded_num_frames, config.frame_size)
+        spectrogram_len = torch.randint(model.padding + 1, padded_num_frames, (config.batch_size,))
+        spectrogram_len[-1] = padded_num_frames
+        spectrogram_mask = lengths_to_mask(spectrogram_len)
 
         val = torch.randn(1)
         print("Rand", val)
         assert_almost_equal(val, torch.tensor(-0.27735))
 
-        signal = model(spectrogram, *inputs, spectrogram_mask, pad_input=False)
+        signal = model(spectrogram, seq_metadata, spectrogram_mask, pad_input=False)
 
         _utils.print_params("_expected_parameters", model.named_parameters())
         for name, parameter in model.named_parameters():
