@@ -9,6 +9,18 @@ TODO:
 
 Usage:
     $ PYTHONPATH=. streamlit run run/evaluate/grid_search.py --runner.magicEnabled=false
+
+Use gcloud port-forwarding to interact via your local browser:
+VM_NAME="name-of-remote-machine"
+ZONE="zone-of-remote-machine"
+PROJECT_ID=voice-research-255602
+LOCAL_PORT=2222
+REMOTE_PORT=8501
+
+gcloud compute ssh $VM_NAME \
+    --project $PROJECT_ID \
+    --zone $ZONE \
+    -- -NL $LOCAL_PORT:localhost:$REMOTE_PORT
 """
 import functools
 import itertools
@@ -39,8 +51,7 @@ st.set_page_config(layout="wide")
 
 def path_label(path: pathlib.Path) -> str:
     """Get a short label for `path`."""
-    suffix = "/" if path.is_dir() else ""
-    return str(path.relative_to(ROOT_PATH)) + suffix
+    return str(path.relative_to(ROOT_PATH)) + "/" if path.is_dir() else str(path.name)
 
 
 def st_select_paths(label: str, dir: pathlib.Path, suffix: str) -> typing.List[pathlib.Path]:
@@ -126,7 +137,6 @@ def main():
             "Signal Model": path_label(sig_path),
             "Speaker": speaker.label,
             "Session": session,
-            "Script": f"'{script[:25]}...'",
         }
         rows.append(row)
         paths.append(audio_web_path)
