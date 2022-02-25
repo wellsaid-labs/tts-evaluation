@@ -349,6 +349,9 @@ class Metrics(_utils.Metrics):
 
     TEXT_LENGTH_BUCKET_SIZE = 25
 
+    # TODO: `update`, `_make_values`, `get_data_loader_values`, `__init__` are boiler plate
+    # based off `MetricsKey`, can we abstract these better?
+
     def __init__(self, *args, **kwargs):
         self.data: typing.Dict[MetricsKey, _utils.MetricsStoreValues]
         super().__init__(*args, **kwargs)

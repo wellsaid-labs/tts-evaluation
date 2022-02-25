@@ -8,7 +8,7 @@ from run._config import Cadence, DatasetType
 from run.data._loader.english import JUDY_BIEBER
 from run.train._utils import Context, Timer, set_context
 from run.train.spectrogram_model.__main__ import _make_configuration
-from run.train.spectrogram_model._metrics import Metrics
+from run.train.spectrogram_model._metrics import Metrics, MetricsKey
 from run.train.spectrogram_model._model import SpectrogramModel
 from run.train.spectrogram_model._worker import (
     _get_data_loaders,
@@ -45,7 +45,7 @@ def test_integration():
         assert state.step.item() == 1
 
         is_not_diff = lambda b, v: len(set(b) - set(v.keys())) == 0
-        assert is_not_diff(lib.utils.flatten_2d(batch.tokens), model.token_vocab)
+        assert is_not_diff(lib.utils.flatten_2d(batch.inputs.tokens), model.token_vocab)
         assert is_not_diff((s.speaker for s in batch.spans), model.speaker_vocab)
         assert is_not_diff(((s.speaker, s.session) for s in batch.spans), model.session_vocab)
 
@@ -56,27 +56,27 @@ def test_integration():
         ]
         # fmt: on
         for key in keys:
-            assert len(metrics.data[(key, None)]) == 1
-            assert len(metrics.data[(key, batch.spans[0].speaker)]) == 1
-        assert all(metrics.data[(metrics.NUM_CORRECT_STOP_TOKEN, None)]) == 1
+            assert len(metrics.data[MetricsKey(key)]) == 1
+            assert len(metrics.data[MetricsKey(key, batch.spans[0].speaker)]) == 1
+        assert all(metrics.data[MetricsKey(metrics.NUM_CORRECT_STOP_TOKEN)]) == 1
 
         num_frames = [(batch.spectrogram.lengths[0].item(),)]
-        num_tokens = [(len(batch.tokens[0]),)]
+        num_tokens = [(len(batch.inputs.tokens[0]),)]
         num_seconds = [(batch.spans[0].audio_length,)]
         bucket = len(batch.spans[0].script) // metrics.TEXT_LENGTH_BUCKET_SIZE
         values = {
-            (metrics.NUM_FRAMES_MAX, None): num_frames,
-            (metrics.NUM_FRAMES_PREDICTED, None): num_frames,
-            (metrics.NUM_FRAMES_PREDICTED, JUDY_BIEBER): num_frames,
-            (metrics.NUM_FRAMES, None): num_frames,
-            (metrics.NUM_FRAMES, JUDY_BIEBER): num_frames,
-            (metrics.NUM_SECONDS, None): num_seconds,
-            (metrics.NUM_SECONDS, JUDY_BIEBER): num_seconds,
-            (metrics.NUM_SPANS_PER_TEXT_LENGTH, bucket): [(batch_size,)],
-            (metrics.NUM_SPANS, None): [(len(batch),)],
-            (metrics.NUM_SPANS, JUDY_BIEBER): [(len(batch),)],
-            (metrics.NUM_TOKENS, None): num_tokens,
-            (metrics.NUM_TOKENS, JUDY_BIEBER): num_tokens,
+            MetricsKey(metrics.NUM_FRAMES_MAX): num_frames,
+            MetricsKey(metrics.NUM_FRAMES_PREDICTED): num_frames,
+            MetricsKey(metrics.NUM_FRAMES_PREDICTED, JUDY_BIEBER): num_frames,
+            MetricsKey(metrics.NUM_FRAMES): num_frames,
+            MetricsKey(metrics.NUM_FRAMES, JUDY_BIEBER): num_frames,
+            MetricsKey(metrics.NUM_SECONDS): num_seconds,
+            MetricsKey(metrics.NUM_SECONDS, JUDY_BIEBER): num_seconds,
+            MetricsKey(metrics.NUM_SPANS_PER_TEXT_LENGTH, None, bucket): [(batch_size,)],
+            MetricsKey(metrics.NUM_SPANS): [(len(batch),)],
+            MetricsKey(metrics.NUM_SPANS, JUDY_BIEBER): [(len(batch),)],
+            MetricsKey(metrics.NUM_TOKENS): num_tokens,
+            MetricsKey(metrics.NUM_TOKENS, JUDY_BIEBER): num_tokens,
         }
         for key, value in values.items():
             assert metrics.data[key] == value
@@ -93,8 +93,8 @@ def test_integration():
         _run_inference(_HandleBatchArgs(*args))
         assert state.step.item() == 1
         total = (
-            metrics.data[(metrics.NUM_REACHED_MAX, None)][0][0]
-            + metrics.data[(metrics.NUM_SPANS, None)][0][0]
+            metrics.data[MetricsKey(metrics.NUM_REACHED_MAX)][0][0]
+            + metrics.data[MetricsKey(metrics.NUM_SPANS)][0][0]
         )
         assert total == 1
 
