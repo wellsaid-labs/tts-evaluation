@@ -4,6 +4,7 @@ import itertools
 import math
 import typing
 from functools import partial
+from operator import add
 
 import torch
 import torch.distributed
@@ -96,7 +97,7 @@ class Metrics(_utils.Metrics):
             speaker: typing.Optional[Speaker] = None,
             fft_length: typing.Optional[int] = None,
             v: float = 0,
-            op=sum,
+            op: typing.Callable[[float, float], float] = add,
         ):
             key = MetricsKey(label, speaker, fft_length)
             value = v if key not in values and op in (min, max) else values[key]

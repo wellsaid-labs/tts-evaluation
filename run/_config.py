@@ -374,15 +374,19 @@ def _configure_models():
     # probability exceeds a threshold of 0.5.
     stop_threshold = 0.5
 
+    # NOTE: These values can be increased as needed, they preemtively allocate model
+    # parameters.
+    # TODO: After "grapheme to phoneme" is deprecated consider setting these automatically.
+    max_tokens = 1000
+    max_speakers = 100
+    max_sessions = 10000
+
     # NOTE: Configure the model sizes.
     config = {
         run.train.spectrogram_model._model.SpectrogramModel.__init__: HParams(
-            # NOTE: These values can be increased as needed, they preemtively allocate model
-            # parameters.
-            # TODO: After "grapheme to phoneme" is deprecated consider setting these automatically.
-            max_tokens=1000,
-            max_speakers=100,
-            max_sessions=10000,
+            max_tokens=max_tokens,
+            max_speakers=max_speakers,
+            max_sessions=max_sessions,
         ),
         lib.spectrogram_model.encoder.Encoder.__init__: HParams(
             # SOURCE (Tacotron 2):
@@ -450,15 +454,24 @@ def _configure_models():
             # this parameter.
             seq_meta_embed_size=128,
         ),
+        run.train.signal_model._model.SpectrogramDiscriminator.__init__: HParams(
+            max_speakers=max_speakers,
+            max_sessions=max_sessions,
+        ),
+        run.train.signal_model._model.SignalModel.__init__: HParams(
+            max_speakers=max_speakers,
+            max_sessions=max_sessions,
+        ),
         lib.signal_model.SignalModel.__init__: HParams(
-            speaker_embedding_size=128,
-            input_size=NUM_FRAME_CHANNELS,
+            seq_meta_embed_size=128,
+            frame_size=NUM_FRAME_CHANNELS,
             hidden_size=32,
             max_channel_size=512,
         ),
         # NOTE: We found this hidden size to be effective on Comet in April 2020.
         lib.signal_model.SpectrogramDiscriminator.__init__: HParams(
-            speaker_embedding_size=128, hidden_size=512
+            seq_meta_embed_size=128,
+            hidden_size=512,
         ),
     }
     add_config(config)

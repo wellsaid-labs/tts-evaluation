@@ -239,6 +239,10 @@ class PublicSpeakerValueError(ValueError):
     pass
 
 
+# TODO: Remove
+encode_tts_inputs = None
+
+
 def process_tts_inputs(
     nlp: English, package: TTSPackage, script: str, speaker: Speaker, session: Session
 ) -> Inputs:

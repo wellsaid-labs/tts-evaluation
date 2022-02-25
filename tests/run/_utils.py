@@ -99,6 +99,7 @@ def make_spec_and_sig_worker_state(
     with mock.patch("run.train.signal_model._worker.DistributedDataParallel") as module:
         module.side_effect = mock_distributed_data_parallel
         sig_state = train.signal_model._worker._State.make(checkpoint_path, comet, device)
+    sig_state.spectrogram_model_.allow_unk_on_eval(True)
     return spec_state, sig_state, temp_dir
 
 

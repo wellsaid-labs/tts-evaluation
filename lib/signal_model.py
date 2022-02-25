@@ -484,6 +484,9 @@ class SignalModel(torch.nn.Module):
             spectrogram (torch.FloatTensor [batch_size, num_frames, frame_channels])
             spectrogram_mask (torch.BoolTensor [batch_size, num_frames])
         """
+        assert spectrogram.dim() == 3
+        assert spectrogram_mask is None or spectrogram_mask.dim() == 2
+
         device = spectrogram.device
         if spectrogram_mask is None:
             spectrogram_mask = torch.ones(*spectrogram.shape[:2], device=device, dtype=torch.bool)
@@ -682,19 +685,19 @@ def generate_waveform(
     spectrogram_mask = spectrogram_mask if spectrogram_mask is None else iter(spectrogram_mask)
     spectrogram = iter(spectrogram)
     is_stop = False
-    has_batch_dim = None
+    is_first = False
     while not is_stop:
         items: typing.List[typing.Tuple[torch.Tensor, torch.Tensor]] = []
         while sum([i[0].shape[1] for i in items]) < padding * 2 and not is_stop:
             try:
-                # [batch_size, num_frames, frame_channels]
-                item_frames = next(spectrogram)
-                has_batch_dim = len(item_frames.shape) == 3
+                item_frames = next(spectrogram)  # [batch_size, num_frames, frame_channels]
+                assert item_frames.dim() == 3
+                is_first = True
                 item_mask = None if spectrogram_mask is None else next(spectrogram_mask)
                 items.append(model._normalize_input(item_frames, item_mask, False))
             except StopIteration:
                 is_stop = True
-        assert has_batch_dim is not None, "Spectrogram iterator must not be empty."
+        assert is_first, "Spectrogram iterator must not be empty."
 
         padding_tuple = (0 if last_item else padding, padding if is_stop else 0)
         frames = ([last_item[0][:, -padding * 2 :]] if last_item else []) + [i[0] for i in items]
@@ -702,7 +705,5 @@ def generate_waveform(
         mask = ([last_item[1][:, -padding * 2 :]] if last_item else []) + [i[1] for i in items]
         mask_ = pad_tensor(torch.cat(mask, dim=1), pad=padding_tuple, dim=1)
 
-        waveform = model(frames_, seq_metadata, mask_, pad_input=False)
-        yield waveform if has_batch_dim else waveform.squeeze(0)
-
+        yield model(frames_, seq_metadata, mask_, pad_input=False)
         last_item = (frames_, mask_)

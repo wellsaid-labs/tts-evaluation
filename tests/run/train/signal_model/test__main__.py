@@ -25,8 +25,7 @@ def test_integration():
     train_dataset, dev_dataset, comet, device = setup_experiment()
     add_config(spectrogram_model.__main__._make_configuration(train_dataset, dev_dataset, True))
     add_config(_make_configuration(train_dataset, dev_dataset, True))
-    _, state, __ = make_spec_and_sig_worker_state(train_dataset, dev_dataset, comet, device)
-    speakers = state.spectrogram_model_input_encoder.speaker_encoder.vocab
+    _, state, __ = make_spec_and_sig_worker_state(comet, device)
 
     batch_size = 1
     train_loader, dev_loader = _get_data_loaders(
@@ -36,7 +35,7 @@ def test_integration():
     # Test `_run_step` with `Metrics` and `_State`
     with set_context(Context.TRAIN, comet, *state.models, ema=state.ema):
         timer = Timer()
-        metrics = Metrics(comet, speakers)
+        metrics = Metrics(comet)
         batch = next(iter(train_loader))
         assert state.step.item() == 0
 

@@ -39,7 +39,7 @@ class SpectrogramDiscriminator(signal_model.SpectrogramDiscriminator):
     """This is a wrapper over `SpectrogramDiscriminator` that normalizes the input."""
 
     @configurable
-    def __init__(self, max_speakers: int = HParam(), max_sessions: int = HParam(), *args, **kwargs):
+    def __init__(self, *args, max_speakers: int = HParam(), max_sessions: int = HParam(), **kwargs):
         super().__init__(*args, max_seq_meta_values=(max_speakers, max_sessions), **kwargs)
 
     @property
