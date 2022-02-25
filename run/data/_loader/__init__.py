@@ -1,4 +1,4 @@
-from run.data._loader import data_structures, english, german, m_ailabs, utils
+from run.data._loader import data_structures, english, german, m_ailabs, portuguese, spanish, utils
 from run.data._loader.data_structures import (
     Alignment,
     Language,
@@ -11,6 +11,8 @@ from run.data._loader.data_structures import (
     has_a_mistranscription,
     make_de_speaker,
     make_en_speaker,
+    make_es_speaker,
+    make_pt_speaker,
     voiced_nonalignment_spans,
 )
 from run.data._loader.utils import (
@@ -26,8 +28,13 @@ from run.data._loader.utils import (
     read_audio,
 )
 
-DATASETS = {**german.DATASETS, **english.DATASETS}
-WSL_DATASETS = {**german.WSL_DATASETS, **english.WSL_DATASETS}
+DATASETS = {**portuguese.DATASETS, **spanish.DATASETS, **german.DATASETS, **english.DATASETS}
+WSL_DATASETS = {
+    **portuguese.WSL_DATASETS,
+    **spanish.WSL_DATASETS,
+    **german.WSL_DATASETS,
+    **english.WSL_DATASETS,
+}
 
 
 __all__ = [
@@ -35,6 +42,7 @@ __all__ = [
     "english",
     "german",
     "m_ailabs",
+    "spanish",
     "utils",
     "Alignment",
     "Language",
@@ -45,6 +53,8 @@ __all__ = [
     "Speaker",
     "make_de_speaker",
     "make_en_speaker",
+    "make_es_speaker",
+    "make_pt_speaker",
     "alignment_dtype",
     "has_a_mistranscription",
     "voiced_nonalignment_spans",

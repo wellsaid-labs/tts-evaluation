@@ -400,8 +400,6 @@ def _run_experiment(
     # NOTE: Load, preprocess, and cache dataset values.
     _datasets = {k: v for k, v in list(run._config.DATASETS.items())[:1]}
     dataset = run._utils.get_dataset(**({"datasets": _datasets} if debug else {}))
-    _omitted = _datasets.keys() - dataset.keys()
-    logger.warning("Omitted %d Speakers: %s", len(_omitted), _omitted)
     train_dataset, dev_dataset = run._utils.split_dataset(dataset)
     comet.log_parameters(_get_dataset_stats(train_dataset, dev_dataset))
 

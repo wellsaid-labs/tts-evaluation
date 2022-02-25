@@ -60,7 +60,11 @@ def get_dataset(
             items = list(pool.starmap(load, datasets.items()))
     else:
         items = [load(s, d, add_tqdm=True) for s, d in datasets.items()]
-    return {k: v for k, v in items if v}
+
+    prepared_dataset = {k: v for k, v in items if len(v) > 0}
+    _omitted = datasets.keys() - prepared_dataset.keys()
+    logger.warning("Omitted %d Speakers: %s", len(_omitted), _omitted)
+    return prepared_dataset
 
 
 @functools.lru_cache(maxsize=None)

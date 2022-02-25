@@ -17,7 +17,7 @@ from run.data._loader import Language
 PHONEME_SEPARATOR = "|"
 GRAPHEME_TO_PHONEME_RESTRICTED = list(lib.text.GRAPHEME_TO_PHONEME_RESTRICTED) + [PHONEME_SEPARATOR]
 # fmt: off
-DATASET_PHONETIC_CHARACTERS = (
+ENGLISH_PHONETIC_CHARACTERS = (
     '\n', ' ', '!', '"', "'", '(', ')', '*', ',', '-', '.', '/', ':', ';', '?', '[', ']', '=', 'aɪ',
     'aɪə', 'aɪɚ', 'aɪʊ', 'aɪʊɹ', 'aʊ', 'b', 'd', 'dʒ', 'eɪ', 'f', 'h', 'i', 'iə', 'iː', 'j',
     'k', 'l', 'm', 'n', 'nʲ', 'n̩', 'oʊ', 'oː', 'oːɹ', 'p', 'r', 's', 't', 'tʃ', 'uː', 'v', 'w',
@@ -80,6 +80,7 @@ _make_config = partial(
     enable_automatic_punctuation=True,
     enable_word_time_offsets=True,
 )
+# TODO: Re-consider base language and dialect differentiation.
 STT_CONFIGS = {
     Language.ENGLISH: _make_config(language_code="en-US", model="video"),
     Language.GERMAN: _make_config(language_code="de-DE"),

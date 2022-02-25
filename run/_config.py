@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 pprinter = pprint.PrettyPrinter(indent=4)
 
 RANDOM_SEED = 1212212
-MODEL_LANGUAGE = Language.ENGLISH
+LANGUAGE = Language.ENGLISH
 
 DATASETS = copy.copy(_loader.DATASETS)
 # NOTE: Elliot and Elizabeth has unannotated character portrayals.
@@ -624,7 +624,7 @@ def _configure_data_processing():
             include_passage=_include_passage,
             handle_passage=lib.utils.identity,
         ),
-        _include_passage: HParams(language=MODEL_LANGUAGE),
+        _include_passage: HParams(language=LANGUAGE),
         run._utils.split_dataset: HParams(
             groups=groups, dev_speakers=DEV_SPEAKERS, approx_dev_len=30 * 60, min_sim=0.9
         ),

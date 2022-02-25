@@ -1,10 +1,10 @@
 from functools import partial
 
-from run.data._loader.data_structures import make_de_speaker
+from run.data._loader.data_structures import make_es_speaker
 from run.data._loader.utils import Speaker, wsl_gcs_dataset_loader
 
-MITEL_GERMAN__CUSTOM_VOICE = make_de_speaker(
-    "mitel__custom_voice__de_de", "Mitel (German Custom Voice)"
+FIVE_NINE__CUSTOM_VOICE__ES_CO = make_es_speaker(
+    "five_nine__custom_voice__es_co", "Five9 (Spanish Custom Voice)"
 )
 
 

@@ -154,6 +154,12 @@ class Speaker(typing.NamedTuple):
 
 make_en_speaker = lambda label, *args, **kwargs: Speaker(label, Language.ENGLISH, *args, **kwargs)
 make_de_speaker = lambda label, *args, **kwargs: Speaker(label, Language.GERMAN, *args, **kwargs)
+make_es_speaker = lambda label, *args, **kwargs: Speaker(
+    label, Language.SPANISH_CO, *args, **kwargs
+)
+make_pt_speaker = lambda label, *args, **kwargs: Speaker(
+    label, Language.PORTUGUESE_BR, *args, **kwargs
+)
 
 
 @dataclasses.dataclass(frozen=True)
