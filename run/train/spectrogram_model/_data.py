@@ -28,6 +28,7 @@ from lib.samplers import BucketBatchSampler
 from lib.utils import Tuple, flatten_2d
 from run.data._loader import Alignment, Language, Span
 from run.train import _utils
+from run.train.spectrogram_model._model import Inputs
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import librosa
@@ -289,8 +290,6 @@ class Batch(_utils.Batch):
 
     spans: typing.List[Span]
 
-    tokens: typing.List[typing.List[str]]
-
     audio: typing.List[torch.Tensor]
 
     # SequenceBatch[torch.FloatTensor [num_frames, batch_size, frame_channels],
@@ -303,6 +302,9 @@ class Batch(_utils.Batch):
 
     # SequenceBatch[torch.FloatTensor [num_frames, batch_size], torch.LongTensor [1, batch_size])
     stop_token: SequenceBatch
+
+    # The model inputs
+    inputs: Inputs
 
     def __len__(self):
         return len(self.spans)
@@ -359,6 +361,8 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
     tokens = [list(s.script) for s in spans]
     for i, token in enumerate(en_tokens):
         tokens[i] = token
+    speakers = [s.speaker for s in spans]
+    sessions = [(s.speaker, s.session) for s in spans]
 
     with futures.ThreadPoolExecutor(max_workers=min(max_workers, len(spans))) as pool:
         signals_ = list(pool.map(lambda s: s.audio(), spans))
@@ -370,11 +374,11 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
         # NOTE: Prune unused attributes from `Passage`, in order to reduce batch size, which in
         # turn makes it easier to send to other processes, for example.
         spans=[dataclasses.replace(s, passage=dataclasses.replace(s.passage)) for s in spans],
-        tokens=tokens,
         audio=signals,
         spectrogram=spectrogram,
         spectrogram_mask=spectrogram_mask,
         stop_token=_make_stop_token(spectrogram),
+        inputs=Inputs(tokens=tokens, speaker=speakers, session=sessions),
     )
 
 

@@ -342,11 +342,8 @@ def _run_step(
             to normalize the loss magnitude.
     """
     args.timer.record_event(args.timer.MODEL_FORWARD)
-    speakers = [s.speaker for s in args.batch.spans]
-    sessions = [(s.speaker, s.session) for s in args.batch.spans]
-    inputs = Inputs(tokens=args.batch.tokens, speaker=speakers, session=sessions)
     preds = args.state.model(
-        inputs=inputs,
+        inputs=args.batch.inputs,
         target_frames=args.batch.spectrogram.tensor,
         target_mask=args.batch.spectrogram_mask.tensor,
         mode=lib.spectrogram_model.Mode.FORWARD,
@@ -509,11 +506,8 @@ def _run_inference(args: _HandleBatchArgs):
     `_max_num_frames_diff`, and visualize it.
     """
     args.timer.record_event(args.timer.MODEL_FORWARD)
-    speakers = [s.speaker for s in args.batch.spans]
-    sessions = [(s.speaker, s.session) for s in args.batch.spans]
-    inputs = Inputs(tokens=args.batch.tokens, speaker=speakers, session=sessions)
     model = typing.cast(SpectrogramModel, args.state.model.module)
-    preds = model(inputs, mode=lib.spectrogram_model.Mode.INFER)
+    preds = model(args.batch.inputs, mode=lib.spectrogram_model.Mode.INFER)
     preds = typing.cast(lib.spectrogram_model.Preds, preds)
 
     if args.visualize:

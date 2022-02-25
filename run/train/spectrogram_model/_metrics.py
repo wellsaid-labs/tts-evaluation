@@ -352,7 +352,7 @@ class Metrics(_utils.Metrics):
         for span, num_frames, tokens, has_reached_max in zip(
             batch.spans,
             self._to_list(batch.spectrogram.lengths),
-            batch.tokens,
+            batch.inputs.tokens,
             self._to_list(preds.reached_max),
         ):
             # NOTE: Create a key for `self.NUM_SPANS` so a value exists, even if zero.

@@ -80,10 +80,7 @@ class SpectrogramModel(spectrogram_model.SpectrogramModel):
     ) -> Generator:
         ...  # pragma: no cover
 
-    def __call__(self, *args, mode: Mode = Mode.FORWARD, **kwargs):
-        return super().__call__(*args, mode=mode, **kwargs)
-
-    def forward(self, inputs: Inputs, *args, mode: Mode = Mode.FORWARD, **kwargs):
+    def __call__(self, inputs: Inputs, *args, mode: Mode = Mode.FORWARD, **kwargs):
         seq_metadata = list(zip(inputs.speaker, inputs.session))
         inputs_ = spectrogram_model.Inputs(tokens=inputs.tokens, seq_metadata=seq_metadata)
-        return super().forward(inputs_, *args, mode=mode, **kwargs)
+        return super().__call__(inputs_, *args, mode=mode, **kwargs)
