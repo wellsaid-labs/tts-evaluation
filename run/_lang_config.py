@@ -1,15 +1,21 @@
+import logging
 import re
 import typing
 from functools import lru_cache, partial
 
-from google.cloud.speech_v1p1beta1 import RecognitionConfig
 from hparams import HParams, add_config
 
 import lib
-import run
 from lib.text import _line_grapheme_to_phoneme, get_spoken_chars
 from lib.utils import identity
 from run.data._loader import Language
+
+logger = logging.getLogger(__name__)
+
+try:
+    from google.cloud.speech_v1p1beta1 import RecognitionConfig
+except ImportError:
+    logger.info("Ignoring optional `google` import.")
 
 # NOTE: eSpeak doesn't have a dictionary of all the phonetic characters, so this is a dictionary
 # of the phonetic characters we found in the English dataset.
@@ -74,7 +80,7 @@ def is_voiced(text: str, language: Language) -> bool:
 
 
 _make_config = partial(
-    RecognitionConfig,
+    RecognitionConfig,  # type:ignore
     model="command_and_search",
     use_enhanced=True,
     enable_automatic_punctuation=True,
