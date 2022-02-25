@@ -436,9 +436,11 @@ def text_to_speech_ffmpeg_generator(
     thread = threading.Thread(target=_enqueue, args=(pipe.stdout, queue), daemon=True)
 
     def close():
+        assert pipe.stdin is not None
         pipe.stdin.close()
         pipe.wait()
         thread.join()
+        assert pipe.stdout is not None
         pipe.stdout.close()
 
     try:
@@ -448,6 +450,7 @@ def text_to_speech_ffmpeg_generator(
         for waveform in generate_waveform(
             package.signal_model, generator, input.speaker, input.session
         ):
+            assert pipe.stdin is not None
             pipe.stdin.write(waveform.cpu().numpy().tobytes())
             yield from _dequeue(queue)
         close()
