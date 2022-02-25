@@ -5,7 +5,7 @@ import threading
 from torchnlp.random import fork_rng
 
 import lib
-from run._tts import encode_tts_inputs, text_to_speech_ffmpeg_generator
+from run._tts import process_tts_inputs, text_to_speech_ffmpeg_generator
 from tests.run._utils import make_mock_tts_package
 
 logger = logging.getLogger(__name__)
@@ -19,8 +19,8 @@ def _make_args():
     script, speaker, session = passage.script, passage.speaker, passage.session
     # NOTE: The script needs to be long enough to pass the below tests.
     script = " ".join([script] * 3)
-    encoded = encode_tts_inputs(nlp, package.input_encoder, script, speaker, session)
-    return package, encoded
+    inputs = process_tts_inputs(nlp, package, script, speaker, session)
+    return package, inputs
 
 
 def test_text_to_speech_ffmpeg_generator():
