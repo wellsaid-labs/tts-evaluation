@@ -141,6 +141,15 @@ def get_model_label(
     return _label("{cadence}/model/{speaker}/{name}", speaker=speaker.label, **kwargs)
 
 
+def get_signal_model_label(
+    name: str, *args, fft_length: typing.Optional[int] = None, **kwargs
+) -> Label:
+    """Label something related to the signal model that allows `fft_length` to be specified."""
+    fft_length_ = "multi" if fft_length is None else fft_length
+    name = f"{fft_length_}_fft_length/{name}"
+    return get_model_label(name, *args, **kwargs)
+
+
 def get_config_label(name: str, cadence: Cadence = Cadence.STATIC, **kwargs) -> Label:
     """Label something related to a configuration."""
     return _label("{cadence}/config/{name}", cadence=cadence.value, name=name, **kwargs)

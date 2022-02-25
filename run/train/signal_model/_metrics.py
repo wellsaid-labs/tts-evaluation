@@ -11,13 +11,12 @@ from hparams import HParam, configurable
 import lib
 import run
 from lib.distributed import is_master
-from run._config import GetLabel, get_dataset_label, get_model_label
+from run._config import GetLabel, get_dataset_label, get_signal_model_label
 from run.train import _utils
 from run.train._utils import CometMLExperiment, MetricsValues, Timer
 from run.train.signal_model._data import Batch
 
 _GetMetrics = typing.Dict[GetLabel, float]
-_prefix = "{fft_length}_fft_length/"
 
 
 class Metrics(_utils.Metrics):
@@ -62,14 +61,14 @@ class Metrics(_utils.Metrics):
     FREQUENCY_NUM_SAMPLES = partial(get_dataset_label, "frequency/num_samples")
     FREQUENCY_NUM_SECONDS = partial(get_dataset_label, "frequency/num_seconds")
 
-    DISCRIM_FAKE_ACCURACY = partial(get_model_label, f"{_prefix}discriminator_fake_accuracy")
-    DISCRIM_REAL_ACCURACY = partial(get_model_label, f"{_prefix}discriminator_real_accuracy")
-    DISCRIM_FAKE_LOSS = partial(get_model_label, f"{_prefix}discriminator_fake_loss")
-    DISCRIM_REAL_LOSS = partial(get_model_label, f"{_prefix}discriminator_real_loss")
-    GENERATOR_LOSS = partial(get_model_label, f"{_prefix}generator_loss")
-    GENERATOR_ACCURACY = partial(get_model_label, f"{_prefix}generator_accuracy")
-    L1_LOSS = partial(get_model_label, f"{_prefix}l1_loss")
-    MSE_LOSS = partial(get_model_label, f"{_prefix}mse_loss")
+    DISCRIM_FAKE_ACCURACY = partial(get_signal_model_label, "discriminator_fake_accuracy")
+    DISCRIM_REAL_ACCURACY = partial(get_signal_model_label, "discriminator_real_accuracy")
+    DISCRIM_FAKE_LOSS = partial(get_signal_model_label, "discriminator_fake_loss")
+    DISCRIM_REAL_LOSS = partial(get_signal_model_label, "discriminator_real_loss")
+    GENERATOR_LOSS = partial(get_signal_model_label, "generator_loss")
+    GENERATOR_ACCURACY = partial(get_signal_model_label, "generator_accuracy")
+    L1_LOSS = partial(get_signal_model_label, "l1_loss")
+    MSE_LOSS = partial(get_signal_model_label, "mse_loss")
 
     @configurable
     def __init__(
@@ -227,7 +226,7 @@ class Metrics(_utils.Metrics):
                 self.GENERATOR_LOSS: div(self.GENERATOR_LOSS_SUM, num_slices),
                 self.GENERATOR_ACCURACY: div(self.GENERATOR_NUM_CORRECT, num_slices),
             }
-            kwargs = dict(speaker=speaker, fft_length="multi" if fft_length is None else fft_length)
+            kwargs = dict(speaker=speaker, fft_length=fft_length)
             metrics.update({partial(k, **kwargs): v for k, v in update.items()})
         return metrics
 
@@ -246,7 +245,7 @@ class Metrics(_utils.Metrics):
                 self.L1_LOSS: div(self.L1_LOSS_SUM, num_slices),
                 self.MSE_LOSS: div(self.MSE_LOSS_SUM, num_slices),
             }
-            kwargs = dict(speaker=speaker, fft_length="multi" if fft_length is None else fft_length)
+            kwargs = dict(speaker=speaker, fft_length=fft_length)
             metrics.update({partial(k, **kwargs): v for k, v in update.items()})
         return metrics
 
