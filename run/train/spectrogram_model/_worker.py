@@ -45,10 +45,12 @@ from run.train._utils import (
 from run.train.spectrogram_model._data import Batch, DataProcessor
 from run.train.spectrogram_model._metrics import (
     Metrics,
+    MetricsKey,
+    MetricsValues,
     get_alignment_norm,
     get_average_db_rms_level,
 )
-from run.train.spectrogram_model._model import Inputs, SpectrogramModel
+from run.train.spectrogram_model._model import SpectrogramModel
 
 logger = logging.getLogger(__name__)
 torch.optim.AdamW.__init__ = configurable_(torch.optim.AdamW.__init__)
@@ -409,14 +411,14 @@ def _run_step(
 
     args.timer.record_event(args.timer.MEASURE_METRICS)
     model = typing.cast(SpectrogramModel, args.state.model.module)
-    values: _utils.MetricsValues = {
+    values: MetricsValues = {
         **args.metrics.get_dataset_values(args.batch, model, preds),
         **args.metrics.get_alignment_values(args.batch, model, preds),
         **args.metrics.get_loudness_values(args.batch, model, preds),
         **args.metrics.get_data_loader_values(args.data_loader),
         **args.metrics.get_stop_token_values(args.batch, model, preds),
-        args.metrics.SPECTROGRAM_LOSS_SUM: float(spectrogram_loss.sum().item()),
-        args.metrics.STOP_TOKEN_LOSS_SUM: float(stop_token_loss.sum().item()),
+        MetricsKey(args.metrics.SPECTROGRAM_LOSS_SUM): float(spectrogram_loss.sum().item()),
+        MetricsKey(args.metrics.STOP_TOKEN_LOSS_SUM): float(stop_token_loss.sum().item()),
     }
     args.timer.record_event(args.timer.GATHER_METRICS)
     args.metrics.update(values)
@@ -516,7 +518,7 @@ def _run_inference(args: _HandleBatchArgs):
             _visualize_inferred(args, preds, pick)
 
     args.timer.record_event(args.timer.MEASURE_METRICS)
-    values: _utils.MetricsValues = {
+    values: MetricsValues = {
         **args.metrics.get_dataset_values(args.batch, model, preds),
         **args.metrics.get_alignment_values(args.batch, model, preds),
         **args.metrics.get_loudness_values(args.batch, model, preds),

@@ -856,11 +856,17 @@ def run_workers(
     return lib.distributed.spawn(_run_workers_helper, args=args)  # type: ignore
 
 
+@dataclasses.dataclass(frozen=True)
+class MetricsKey:
+    """Key used to identify metrics."""
+
+    label: str
+
+
 MetricsStoreValues = typing.List[typing.Tuple[float]]
 MetricsReduceOp = typing.Callable[[typing.List[float]], float]
 # NOTE: `MetricsSelect` selects a subset of `MetricsStoreValues`.
 MetricsSelect = typing.Callable[[MetricsStoreValues], MetricsStoreValues]
-MetricsKey = typing.Tuple[str, typing.Optional[typing.Union[Speaker, int]]]
 MetricsValues = typing.Dict[MetricsKey, float]
 
 
@@ -897,7 +903,7 @@ class Metrics(lib.distributed.DictStore):
         is_multiprocessing = isinstance(data_loader.iter, _MultiProcessingDataLoaderIter)
         if is_multiprocessing and platform.system() != "Darwin":
             iterator = typing.cast(_MultiProcessingDataLoaderIter, data_loader.iter)
-            return {self.DATA_QUEUE_SIZE: iterator._data_queue.qsize()}
+            return {MetricsKey(self.DATA_QUEUE_SIZE): iterator._data_queue.qsize()}
         return {}
 
     def _reduce(self, key: MetricsKey, select: MetricsSelect, op: MetricsReduceOp = sum) -> float:

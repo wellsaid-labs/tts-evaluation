@@ -517,7 +517,7 @@ def _run_step(args: _HandleBatchArgs):
         )
 
     args.timer.record_event(args.timer.MEASURE_METRICS)
-    values: _utils.MetricsValues = {}
+    values: MetricsValues = {}
     for func in get_values:
         for key, value in func().items():
             values[key] = values[key] + value if key in values else value
@@ -636,7 +636,7 @@ def _run_steps(
         stack.enter_context(set_context(context, state.comet, *state.models, ema=state.ema))
         stack.enter_context(set_epoch(state.comet, step=int(state.step.item()), **kwargs))
 
-        metrics = Metrics(state.comet, state.spectrogram_model_input_encoder.speaker_encoder.vocab)
+        metrics = Metrics(state.comet)
         timer = Timer().record_event(Timer.LOAD_DATA)
         iterator = iter(data_loader)
         while True:

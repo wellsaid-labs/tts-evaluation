@@ -1,6 +1,6 @@
 import collections
 import collections.abc
-import itertools
+import dataclasses
 import math
 import typing
 from functools import partial
@@ -20,7 +20,7 @@ from lib.spectrogram_model import Preds
 from run._config import GetLabel, get_dataset_label, get_model_label
 from run.data._loader import Speaker
 from run.train import _utils
-from run.train._utils import MetricsKey, MetricsValues, Timer
+from run.train._utils import Timer
 from run.train.spectrogram_model._data import Batch
 from run.train.spectrogram_model._model import SpectrogramModel
 
@@ -248,6 +248,15 @@ def get_alignment_std(preds: Preds) -> torch.Tensor:
 _GetMetrics = typing.Dict[GetLabel, float]
 
 
+@dataclasses.dataclass(frozen=True)
+class MetricsKey(_utils.MetricsKey):
+    speaker: typing.Optional[Speaker] = None
+    text_length_bucket: typing.Optional[int] = None
+
+
+MetricsValues = typing.Dict[MetricsKey, float]
+
+
 class Metrics(_utils.Metrics):
     """
     Vars:
@@ -339,6 +348,34 @@ class Metrics(_utils.Metrics):
 
     TEXT_LENGTH_BUCKET_SIZE = 25
 
+    def __init__(self, *args, **kwargs):
+        self.data: typing.Dict[MetricsKey, _utils.MetricsStoreValues]
+        super().__init__(*args, **kwargs)
+
+    def update(self, data: MetricsValues):
+        return super().update(typing.cast(_utils.MetricsValues, data))
+
+    @staticmethod
+    def _make_values():
+        values: MetricsValues = collections.defaultdict(float)
+
+        def _reduce(
+            label: str,
+            speaker: typing.Optional[Speaker] = None,
+            text_length_bucket: typing.Optional[int] = None,
+            v: float = 0,
+            op=sum,
+        ):
+            key = MetricsKey(label, speaker, text_length_bucket)
+            value = v if key not in values and op in (min, max) else values[key]
+            values[key] = op(value, v)
+
+        return values, _reduce
+
+    def get_data_loader_values(self, *args) -> MetricsValues:
+        items = super().get_data_loader_values(*args).items()
+        return {MetricsKey(**lib.utils.dataclass_as_dict(k)): v for k, v in items}
+
     def get_dataset_values(
         self, batch: Batch, model: SpectrogramModel, preds: Preds
     ) -> MetricsValues:
@@ -348,7 +385,8 @@ class Metrics(_utils.Metrics):
         TODO: Measure the difference between punctuation in the phonetic vs grapheme phrases.
         Apart from unique cases, they should have the same punctuation.
         """
-        values: MetricsValues = collections.defaultdict(float)
+        values, _reduce = self._make_values()
+
         for span, num_frames, tokens, has_reached_max in zip(
             batch.spans,
             self._to_list(batch.spectrogram.lengths),
@@ -356,29 +394,29 @@ class Metrics(_utils.Metrics):
             self._to_list(preds.reached_max),
         ):
             # NOTE: Create a key for `self.NUM_SPANS` so a value exists, even if zero.
-            values[(self.NUM_SPANS, None)] += float(not has_reached_max)
-            values[(self.NUM_SPANS, span.speaker)] += float(not has_reached_max)
+            _reduce(self.NUM_SPANS, v=float(not has_reached_max))
+            _reduce(self.NUM_SPANS, span.speaker, v=float(not has_reached_max))
 
             # NOTE: Remove predictions that diverged (reached max) as to not skew other metrics.
             if model.training or not has_reached_max:
                 index = int(len(span.script) // self.TEXT_LENGTH_BUCKET_SIZE)
-                values[(self.NUM_SPANS_PER_TEXT_LENGTH, index)] += 1
-                max_frames = values[(self.NUM_FRAMES_MAX, None)]
-                values[(self.NUM_FRAMES_MAX, None)] = max(num_frames, max_frames)
+                _reduce(self.NUM_SPANS_PER_TEXT_LENGTH, text_length_bucket=index, v=1)
+                _reduce(self.NUM_FRAMES_MAX, v=num_frames, op=max)
+
                 speaker: typing.Optional[Speaker]
                 for speaker in [None, span.speaker]:
-                    values[(self.NUM_FRAMES, speaker)] += num_frames
-                    values[(self.NUM_SECONDS, speaker)] += span.audio_length
-                    values[(self.NUM_TOKENS, speaker)] += len(tokens)
-                    label = (self.MAX_FRAMES_PER_TOKEN, speaker)
-                    values[label] = max(num_frames / len(tokens), values[label])
+                    _reduce(self.NUM_FRAMES, speaker, v=num_frames)
+                    _reduce(self.NUM_SECONDS, speaker, v=span.audio_length)
+                    _reduce(self.NUM_TOKENS, speaker, v=len(tokens))
+                    _reduce(self.MAX_FRAMES_PER_TOKEN, speaker, v=num_frames / len(tokens), op=max)
 
         return dict(values)
 
     def get_alignment_values(
         self, batch: Batch, model: SpectrogramModel, preds: Preds
     ) -> MetricsValues:
-        values: MetricsValues = collections.defaultdict(float)
+        values, _reduce = self._make_values()
+
         for span, skipped, jumps, std, norm, small_max, repeated, length, has_reached_max in zip(
             batch.spans,
             self._to_list(get_num_skipped(preds)),
@@ -390,25 +428,27 @@ class Metrics(_utils.Metrics):
             self._to_list(preds.num_frames),
             self._to_list(preds.reached_max),
         ):
-            values[(self.NUM_REACHED_MAX, None)] += has_reached_max
-            values[(self.NUM_REACHED_MAX, span.speaker)] += has_reached_max
+            _reduce(self.NUM_REACHED_MAX, v=has_reached_max)
+            _reduce(self.NUM_REACHED_MAX, span.speaker, v=has_reached_max)
 
             if model.training or not has_reached_max:
+                speaker: typing.Optional[Speaker]
                 for speaker in [None, span.speaker]:
-                    values[(self.ALIGNMENT_NORM_SUM, speaker)] += norm
-                    values[(self.ALIGNMENT_NUM_SMALL_MAX, speaker)] += small_max
-                    values[(self.ALIGNMENT_NUM_REPEATED, speaker)] += repeated
-                    values[(self.ALIGNMENT_NUM_SKIPS, speaker)] += skipped
-                    values[(self.ALIGNMENT_NUM_JUMPS, speaker)] += jumps
-                    values[(self.ALIGNMENT_STD_SUM, speaker)] += std
-                    values[(self.NUM_FRAMES_PREDICTED, speaker)] += length
+                    _reduce(self.ALIGNMENT_NORM_SUM, speaker, v=norm)
+                    _reduce(self.ALIGNMENT_NUM_SMALL_MAX, speaker, v=small_max)
+                    _reduce(self.ALIGNMENT_NUM_REPEATED, speaker, v=repeated)
+                    _reduce(self.ALIGNMENT_NUM_SKIPS, speaker, v=skipped)
+                    _reduce(self.ALIGNMENT_NUM_JUMPS, speaker, v=jumps)
+                    _reduce(self.ALIGNMENT_STD_SUM, speaker, v=std)
+                    _reduce(self.NUM_FRAMES_PREDICTED, speaker, v=length)
 
         return dict(values)
 
     def get_loudness_values(
         self, batch: Batch, model: SpectrogramModel, preds: Preds
     ) -> MetricsValues:
-        values: MetricsValues = collections.defaultdict(float)
+        values, _reduce = self._make_values()
+
         loudness = get_power_rms_level_sum(batch.spectrogram.tensor, batch.spectrogram_mask.tensor)
         for span, loudness, pred_loudness, num_pause, num_pause_pred, has_reached_max in zip(
             batch.spans,
@@ -420,10 +460,10 @@ class Metrics(_utils.Metrics):
         ):
             if model.training or not has_reached_max:
                 for speaker in [None, span.speaker]:
-                    values[(self.RMS_SUM_PREDICTED, speaker)] += pred_loudness
-                    values[(self.RMS_SUM, speaker)] += loudness
-                    values[(self.NUM_PAUSE_FRAMES, speaker)] += num_pause
-                    values[(self.NUM_PAUSE_FRAMES_PREDICTED, speaker)] += num_pause_pred
+                    _reduce(self.RMS_SUM_PREDICTED, speaker, v=pred_loudness)
+                    _reduce(self.RMS_SUM, speaker, v=loudness)
+                    _reduce(self.NUM_PAUSE_FRAMES, speaker, v=num_pause)
+                    _reduce(self.NUM_PAUSE_FRAMES_PREDICTED, speaker, v=num_pause_pred)
 
         return dict(values)
 
@@ -432,7 +472,7 @@ class Metrics(_utils.Metrics):
     ) -> MetricsValues:
         bool_ = lambda t: (t > model.stop_threshold).masked_select(batch.spectrogram_mask.tensor)
         is_correct = bool_(batch.stop_token.tensor) == bool_(torch.sigmoid(preds.stop_tokens))
-        return {(self.NUM_CORRECT_STOP_TOKEN, None): float(is_correct.sum().item())}
+        return {MetricsKey(self.NUM_CORRECT_STOP_TOKEN): float(is_correct.sum().item())}
 
     def _iter_permutations(self, select: _utils.MetricsSelect, is_verbose: bool = True):
         """Iterate over permutations of metric names and return convenience operations.
@@ -440,12 +480,12 @@ class Metrics(_utils.Metrics):
         Args:
             is_verbose: If `True`, iterate over more permutations.
         """
-        speakers = [spk for _, spk in self.data.keys() if isinstance(spk, Speaker)]
-        for speaker in itertools.chain([None], speakers if is_verbose else []):
+        speakers = set(key.speaker for key in self.data.keys())
+        for speaker in speakers if is_verbose else [None]:
             reduce_: typing.Callable[[str], float]
-            reduce_ = lambda a, **k: self._reduce((a, speaker), select=select, **k)
+            reduce_ = lambda a, **k: self._reduce(MetricsKey(a, speaker), select=select, **k)
             process: typing.Callable[[typing.Union[float, str]], typing.Union[float, MetricsKey]]
-            process = lambda a: a if isinstance(a, float) else (a, speaker)
+            process = lambda a: a if isinstance(a, float) else MetricsKey(a, speaker)
             div: typing.Callable[[typing.Union[float, str], typing.Union[float, str]], float]
             div = lambda n, d, **k: self._div(process(n), process(d), select=select, **k)
             yield speaker, reduce_, div
@@ -484,14 +524,14 @@ class Metrics(_utils.Metrics):
         `_pad_and_trim_signal`. "elizabeth_klett", "mary_ann" and "judy_bieber" tend to need
         significantly more trimming than other speakers.
         """
-        reduce = partial(self._reduce, select=select)
+        reduce = lambda *a, **k: self._reduce(MetricsKey(*a), select=select, **k)
         metrics = {
-            self.MAX_NUM_FRAMES: reduce((self.NUM_FRAMES_MAX, None), op=max),
-            self.MIN_DATA_LOADER_QUEUE_SIZE: reduce((self.DATA_QUEUE_SIZE, None), op=min),
+            self.MAX_NUM_FRAMES: reduce(self.NUM_FRAMES_MAX, op=max),
+            self.MIN_DATA_LOADER_QUEUE_SIZE: reduce(self.DATA_QUEUE_SIZE, op=min),
         }
 
-        total_frames = reduce((self.NUM_FRAMES, None))
-        total_seconds = reduce((self.NUM_SECONDS, None))
+        total_frames = reduce(self.NUM_FRAMES)
+        total_seconds = reduce(self.NUM_SECONDS)
         for speaker, _reduce, _div in self._iter_permutations(select, is_verbose):
             update = {
                 self.AVERAGE_NUM_FRAMES: _div(self.NUM_FRAMES, self.NUM_SPANS),
@@ -504,16 +544,16 @@ class Metrics(_utils.Metrics):
             metrics.update({partial(k, speaker=speaker): v for k, v in update.items()})
 
         if is_verbose:
-            total_spans = reduce((self.NUM_SPANS, None))
-            for label, bucket in self.data.keys():
-                if self.NUM_SPANS_PER_TEXT_LENGTH is not label:
+            total_spans = reduce(self.NUM_SPANS)
+            for key in self.data.keys():
+                if self.NUM_SPANS_PER_TEXT_LENGTH is not key.label:
                     continue
 
-                assert isinstance(bucket, int), "Invariant error"
-                lower = bucket * self.TEXT_LENGTH_BUCKET_SIZE
-                upper = (bucket + 1) * self.TEXT_LENGTH_BUCKET_SIZE
+                assert isinstance(key.text_length_bucket, int), "Invariant error"
+                lower = key.text_length_bucket * self.TEXT_LENGTH_BUCKET_SIZE
+                upper = (key.text_length_bucket + 1) * self.TEXT_LENGTH_BUCKET_SIZE
                 get_label = partial(self.FREQUENCY_TEXT_LENGTH, lower=lower, upper=upper)
-                metrics[get_label] = reduce((label, bucket)) / total_spans
+                metrics[get_label] = reduce(key) / total_spans
 
         return metrics
 
