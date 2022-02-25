@@ -331,11 +331,19 @@ def batch_text_to_speech(
     """Run TTS end-to-end quickly with a verbose output."""
     nlp = load_en_core_web_md(disable=("parser", "ner"))
     inputs = [(normalize_vo_script(sc, sp.language), sp, se) for sc, sp, se in inputs]
-    docs: typing.List[spacy.tokens.Doc] = list(nlp.pipe([i[0] for i in inputs]))
-    tokens = typing.cast(typing.List[str], grapheme_to_phoneme(docs))
-    decoded = [DecodedInput(sc, p, sp, (sp, se)) for (sc, sp, se), p in zip(inputs, tokens)]
+
+    en_inputs = [(i, t) for i, t in enumerate(inputs) if t[1].language == Language.ENGLISH]
+    en_tokens = []
+    if len(en_inputs) > 0:
+        docs: typing.List[spacy.tokens.Doc] = list(nlp.pipe([i[1][0] for i in en_inputs]))
+        en_tokens = typing.cast(typing.List[str], grapheme_to_phoneme(docs))
+    decoded = [DecodedInput(sc, sc, sp, (sp, se)) for sc, sp, se in inputs]
+    for (i, (script, speaker, session)), tokens in zip(en_inputs, en_tokens):
+        decoded[i] = DecodedInput(script, tokens, speaker, (speaker, session))
+
     encoded = [(i, package.input_encoder.encode(d)) for i, d in enumerate(decoded)]
     encoded = sorted(encoded, key=lambda i: i[1].tokens.numel())
+
     results: typing.Dict[int, TTSInputOutput] = {}
     for batch in tqdm_(list(get_chunks(encoded, batch_size))):
         tokens = stack_and_pad_tensors([e.tokens for _, e in batch], dim=1)

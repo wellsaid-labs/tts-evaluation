@@ -61,7 +61,6 @@ from run._tts import (
     text_to_speech_ffmpeg_generator,
 )
 from run.data._loader import Session, Speaker, english
-from run.data._loader.data_structures import make_en_speaker
 from run.train.spectrogram_model._data import EncodedInput, InputEncoder
 
 if "NUM_CPU_THREADS" in os.environ:
