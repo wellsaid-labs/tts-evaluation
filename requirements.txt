@@ -19,7 +19,7 @@ ftfy
 nltk
 
 # Audio Library
-librosa
+librosa==0.8.1
 pyloudnorm
 
 # Visualization Library
