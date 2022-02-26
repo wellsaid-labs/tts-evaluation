@@ -5,7 +5,7 @@ import threading
 from torchnlp.random import fork_rng
 
 import lib
-from run._tts import process_tts_inputs, text_to_speech_ffmpeg_generator
+from run._tts import make_tts_inputs, process_tts_inputs, text_to_speech_ffmpeg_generator
 from tests.run._utils import make_mock_tts_package
 
 logger = logging.getLogger(__name__)
@@ -19,7 +19,13 @@ def _make_args():
     script, speaker, session = passage.script, passage.speaker, passage.session
     # NOTE: The script needs to be long enough to pass the below tests.
     script = " ".join([script] * 3)
-    inputs = process_tts_inputs(nlp, package, script, speaker, session)
+    tokens, speaker, session = process_tts_inputs(nlp, script, speaker, session)
+    package.spectrogram_model.update_speaker_vocab([speaker])
+    package.spectrogram_model.update_session_vocab([(speaker, session)])
+    package.spectrogram_model.update_token_vocab(tokens)
+    package.signal_model.update_speaker_vocab([speaker])
+    package.signal_model.update_session_vocab([(speaker, session)])
+    inputs = make_tts_inputs(package, tokens, speaker, session)
     return package, inputs
 
 
@@ -31,7 +37,7 @@ def test_text_to_speech_ffmpeg_generator():
     with fork_rng(seed=123):
         package, encoded = _make_args()
         generator = text_to_speech_ffmpeg_generator(package, encoded)
-        assert len(b"".join([s for s in generator])) == 23565
+        assert len(b"".join([s for s in generator])) == 353805
 
 
 def test_text_to_speech_ffmpeg_generator__thread_leak():

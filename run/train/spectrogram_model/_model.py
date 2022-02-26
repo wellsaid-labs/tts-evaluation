@@ -6,7 +6,9 @@ from hparams import HParam, configurable
 
 from lib import spectrogram_model
 from lib.spectrogram_model import Generator, Mode, Preds
-from run.data._loader import Session, Speaker
+from lib.utils import PaddingAndLazyEmbedding
+from run.data._loader import Speaker
+from run.train._utils import SpeakerSession
 
 
 class Inputs(typing.NamedTuple):
@@ -16,7 +18,7 @@ class Inputs(typing.NamedTuple):
     speaker: typing.List[Speaker]
 
     # Batch of recording sessions per speaker
-    session: typing.List[typing.Tuple[Speaker, Session]]
+    session: typing.List[SpeakerSession]
 
     # Batch of sequences of tokens
     tokens: typing.List[typing.List[str]]
@@ -35,19 +37,38 @@ class SpectrogramModel(spectrogram_model.SpectrogramModel):
         **kwargs,
     ):
         super().__init__(max_tokens, (max_speakers, max_sessions), *args, **kwargs)
+        self.token_embed = self.encoder.embed_token
+        self.speaker_embed = typing.cast(PaddingAndLazyEmbedding, self.encoder.embed_metadata[0])
+        self.session_embed = typing.cast(PaddingAndLazyEmbedding, self.encoder.embed_metadata[1])
 
     @property
     def token_vocab(self) -> typing.Dict[str, int]:
-        return typing.cast(typing.Dict[str, int], self.encoder.embed_token.vocab)
+        return typing.cast(typing.Dict[str, int], self.token_embed.vocab)
 
     @property
     def speaker_vocab(self) -> typing.Dict[Speaker, int]:
-        return typing.cast(typing.Dict[Speaker, int], self.encoder.embed_metadata[0].vocab)
+        return typing.cast(typing.Dict[Speaker, int], self.speaker_embed.vocab)
 
     @property
-    def session_vocab(self) -> typing.Dict[typing.Tuple[Speaker, Session], int]:
-        vocab = self.encoder.embed_metadata[1].vocab
-        return typing.cast(typing.Dict[typing.Tuple[Speaker, Session], int], vocab)
+    def session_vocab(self) -> typing.Dict[SpeakerSession, int]:
+        return typing.cast(typing.Dict[SpeakerSession, int], self.session_embed.vocab)
+
+    def update_token_vocab(
+        self, tokens: typing.List[str], embeddings: typing.Optional[torch.Tensor] = None
+    ):
+        self.token_embed.update_tokens(tokens, embeddings)
+
+    def update_speaker_vocab(
+        self, speakers: typing.List[Speaker], embeddings: typing.Optional[torch.Tensor] = None
+    ):
+        return self.speaker_embed.update_tokens(speakers, embeddings)
+
+    def update_session_vocab(
+        self,
+        sessions: typing.List[SpeakerSession],
+        embeddings: typing.Optional[torch.Tensor] = None,
+    ):
+        return self.session_embed.update_tokens(sessions, embeddings)
 
     @typing.overload
     def __call__(

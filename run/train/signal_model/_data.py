@@ -144,7 +144,7 @@ class Batch(_utils.Batch):
     speaker: typing.List[Speaker]
 
     # torch.LongTensor [batch_size]
-    session: typing.List[typing.Tuple[Speaker, Session]]
+    session: typing.List[_utils.SpeakerSession]
 
     def __len__(self):
         return len(self.indicies)

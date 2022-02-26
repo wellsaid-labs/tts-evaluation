@@ -244,11 +244,9 @@ encode_tts_inputs = None
 
 
 def process_tts_inputs(
-    nlp: English, package: TTSPackage, script: str, speaker: Speaker, session: Session
-) -> Inputs:
-    """Process TTS `script`, `speaker` and `session` for use with the model(s) with friendly errors
-    for common issues.
-    """
+    nlp: English, script: str, speaker: Speaker, session: Session
+) -> typing.Tuple[typing.List[str], Speaker, Session]:
+    """Process TTS `script`, `speaker` and `session` for use with the model(s)."""
     normalized = normalize_vo_script(script, speaker.language)
     if len(normalized) == 0:
         raise PublicTextValueError("Text cannot be empty.")
@@ -265,16 +263,23 @@ def process_tts_inputs(
     if len(tokens) == 0:
         raise PublicTextValueError(f'Invalid text: "{script}"')
 
+    return tokens, speaker, session
+
+
+def make_tts_inputs(
+    package: TTSPackage, tokens: typing.List[str], speaker: Speaker, session: Session
+) -> Inputs:
+    """Create TTS `Inputs` and check compatibility."""
     excluded = [t for t in tokens if t not in package.spectrogram_model.token_vocab]
     if len(excluded) > 0:
-        difference = ", ".join([repr(c)[1:-1] for c in sorted(excluded)])
+        difference = ", ".join([repr(c)[1:-1] for c in sorted(set(excluded))])
         raise PublicTextValueError("Text cannot contain these characters: %s" % difference)
 
     if (
-        speaker not in package.signal_model.speaker_vocab
-        or speaker not in package.spectrogram_model.speaker_vocab
-        or session not in package.signal_model.session_vocab
-        or session not in package.spectrogram_model.session_vocab
+        speaker not in package.spectrogram_model.speaker_vocab
+        or speaker not in package.signal_model.speaker_vocab
+        or (speaker, session) not in package.spectrogram_model.session_vocab
+        or (speaker, session) not in package.signal_model.session_vocab
     ):
         # NOTE: We do not expose speaker information in the `ValueError` because this error
         # is passed on to the public via the API.
@@ -292,7 +297,8 @@ def text_to_speech(
 ) -> numpy.ndarray:
     """Run TTS end-to-end with friendly errors."""
     nlp = load_en_core_web_md(disable=("parser", "ner"))
-    inputs = process_tts_inputs(nlp, package, script, speaker, session)
+    tokens, speaker, session = process_tts_inputs(nlp, script, speaker, session)
+    inputs = make_tts_inputs(package, tokens, speaker, session)
     preds = typing.cast(Preds, package.spectrogram_model(inputs=inputs, mode=Mode.INFER))
     splits = preds.frames.split(split_size)
     generator = generate_waveform(package.signal_model, splits, inputs.speaker, inputs.session)

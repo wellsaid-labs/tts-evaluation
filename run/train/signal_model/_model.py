@@ -4,7 +4,9 @@ import torch
 from hparams import HParam, configurable
 
 from lib import signal_model
-from run.data._loader import Session, Speaker
+from lib.utils import PaddingAndLazyEmbedding
+from run.data._loader import Speaker
+from run.train._utils import SpeakerSession
 
 
 class SignalModel(signal_model.SignalModel):
@@ -13,21 +15,34 @@ class SignalModel(signal_model.SignalModel):
     @configurable
     def __init__(self, max_speakers: int = HParam(), max_sessions: int = HParam(), *args, **kwargs):
         super().__init__((max_speakers, max_sessions), *args, **kwargs)
+        self.speaker_embed = typing.cast(PaddingAndLazyEmbedding, self.encoder.embed_metadata[0])
+        self.session_embed = typing.cast(PaddingAndLazyEmbedding, self.encoder.embed_metadata[1])
 
     @property
     def speaker_vocab(self) -> typing.Dict[Speaker, int]:
-        return typing.cast(typing.Dict[Speaker, int], self.encoder.embed_metadata[0].vocab)
+        return typing.cast(typing.Dict[Speaker, int], self.speaker_embed.vocab)
 
     @property
-    def session_vocab(self) -> typing.Dict[typing.Tuple[Speaker, Session], int]:
-        vocab = self.encoder.embed_metadata[1].vocab
-        return typing.cast(typing.Dict[typing.Tuple[Speaker, Session], int], vocab)
+    def session_vocab(self) -> typing.Dict[SpeakerSession, int]:
+        return typing.cast(typing.Dict[SpeakerSession, int], self.session_embed.vocab)
+
+    def update_speaker_vocab(
+        self, speakers: typing.List[Speaker], embeddings: typing.Optional[torch.Tensor] = None
+    ):
+        return self.speaker_embed.update_tokens(speakers, embeddings)
+
+    def update_session_vocab(
+        self,
+        sessions: typing.List[SpeakerSession],
+        embeddings: typing.Optional[torch.Tensor] = None,
+    ):
+        return self.session_embed.update_tokens(sessions, embeddings)
 
     def __call__(
         self,
         spectrogram: torch.Tensor,
         speaker: typing.List[Speaker],
-        session: typing.List[typing.Tuple[Speaker, Session]],
+        session: typing.List[SpeakerSession],
         spectrogram_mask: typing.Optional[torch.Tensor] = None,
         pad_input: bool = True,
     ) -> torch.Tensor:
@@ -41,15 +56,16 @@ class SpectrogramDiscriminator(signal_model.SpectrogramDiscriminator):
     @configurable
     def __init__(self, *args, max_speakers: int = HParam(), max_sessions: int = HParam(), **kwargs):
         super().__init__(*args, max_seq_meta_values=(max_speakers, max_sessions), **kwargs)
+        self.speaker_embed = typing.cast(PaddingAndLazyEmbedding, self.encoder.embed_metadata[0])
+        self.session_embed = typing.cast(PaddingAndLazyEmbedding, self.encoder.embed_metadata[1])
 
     @property
     def speaker_vocab(self) -> typing.Dict[Speaker, int]:
-        return typing.cast(typing.Dict[Speaker, int], self.encoder.embed_metadata[0].vocab)
+        return typing.cast(typing.Dict[Speaker, int], self.speaker_embed.vocab)
 
     @property
-    def session_vocab(self) -> typing.Dict[typing.Tuple[Speaker, Session], int]:
-        vocab = self.encoder.embed_metadata[1].vocab
-        return typing.cast(typing.Dict[typing.Tuple[Speaker, Session], int], vocab)
+    def session_vocab(self) -> typing.Dict[SpeakerSession, int]:
+        return typing.cast(typing.Dict[SpeakerSession, int], self.session_embed.vocab)
 
     def __call__(
         self,
@@ -57,7 +73,7 @@ class SpectrogramDiscriminator(signal_model.SpectrogramDiscriminator):
         db_spectrogram: torch.Tensor,
         db_mel_spectrogram: torch.Tensor,
         speaker: typing.List[Speaker],
-        session: typing.List[typing.Tuple[Speaker, Session]],
+        session: typing.List[SpeakerSession],
     ) -> torch.Tensor:
         seq_metadata = list(zip(speaker, session))
         return super().__call__(spectrogram, db_spectrogram, db_mel_spectrogram, seq_metadata)
@@ -67,7 +83,7 @@ def generate_waveform(
     model: SignalModel,
     spectrogram: typing.Iterator[torch.Tensor],
     speaker: typing.List[Speaker],
-    session: typing.List[typing.Tuple[Speaker, Session]],
+    session: typing.List[SpeakerSession],
     spectrogram_mask: typing.Optional[typing.Iterator[torch.Tensor]] = None,
 ) -> typing.Iterator[torch.Tensor]:
     seq_metadata = list(zip(speaker, session))

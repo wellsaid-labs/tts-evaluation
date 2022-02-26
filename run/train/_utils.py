@@ -50,7 +50,7 @@ from run._config import (
     get_model_label,
     get_timer_label,
 )
-from run.data._loader import Speaker
+from run.data._loader import Session, Speaker
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import comet_ml
@@ -990,3 +990,6 @@ class Timer:
                 label = get_timer_label(name, device=Device.CUDA, **kwargs)
                 times[label] += prev.cuda.elapsed_time(next.cuda) / 1000
         return dict(times)
+
+
+SpeakerSession = typing.Tuple[Speaker, Session]
