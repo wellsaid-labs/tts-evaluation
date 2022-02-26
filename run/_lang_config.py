@@ -4,11 +4,17 @@ import typing
 from functools import lru_cache, partial
 
 from hparams import HParams, add_config
+from third_party import LazyLoader
 
 import lib
 from lib.text import _line_grapheme_to_phoneme, get_spoken_chars
 from lib.utils import identity
 from run.data._loader import Language
+
+if typing.TYPE_CHECKING:  # pragma: no cover
+    import google.cloud.speech_v1p1beta1 as google_speech
+else:
+    google_speech = LazyLoader("google_speech", globals(), "google.cloud.speech_v1p1beta1")
 
 logger = logging.getLogger(__name__)
 
@@ -75,10 +81,8 @@ def is_voiced(text: str, language: Language) -> bool:
 
 
 try:
-    from google.cloud.speech_v1p1beta1 import RecognitionConfig
-
     _make_config = partial(
-        RecognitionConfig,
+        google_speech.RecognitionConfig,
         model="command_and_search",
         use_enhanced=True,
         enable_automatic_punctuation=True,
