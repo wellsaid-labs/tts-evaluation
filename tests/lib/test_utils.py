@@ -342,8 +342,8 @@ def test_padding_and_lazy_embedding__1d():
     model = lib.utils.PaddingAndLazyEmbedding(100, 16)
     initial_vocab = model.vocab.copy()
     embedded, mask = model(["a"])
-    assert torch.equal(embedded, model.embed(torch.LongTensor([[2]])))
-    assert torch.equal(mask, torch.BoolTensor([[True]]))
+    assert torch.equal(embedded, model.embed(torch.tensor([2])))
+    assert torch.equal(mask, torch.tensor([True]))
     assert model.vocab == {**initial_vocab, "a": 2}
     assert len(model._new_tokens) == 0
 
@@ -353,8 +353,8 @@ def test_padding_and_lazy_embedding__2d():
     model = lib.utils.PaddingAndLazyEmbedding(100, 16)
     initial_vocab = model.vocab.copy()
     embedded, mask = model([["a"]])
-    assert torch.equal(embedded, model.embed(torch.LongTensor([[2]])))
-    assert torch.equal(mask, torch.BoolTensor([[True]]))
+    assert torch.equal(embedded, model.embed(torch.tensor([[2]])))
+    assert torch.equal(mask, torch.tensor([[True]]))
     assert model.vocab == {**initial_vocab, "a": 2}
     assert len(model._new_tokens) == 0
 
@@ -365,8 +365,8 @@ def test_padding_and_lazy_embedding__no_proactive_updates():
     model = lib.utils.PaddingAndLazyEmbedding(100, 16, proactive_updates=0)
     initial_vocab = model.vocab.copy()
     embedded, mask = model([["a"]])
-    assert torch.equal(embedded, model.embed(torch.LongTensor([[2]])))
-    assert torch.equal(mask, torch.BoolTensor([[True]]))
+    assert torch.equal(embedded, model.embed(torch.tensor([[2]])))
+    assert torch.equal(mask, torch.tensor([[True]]))
     assert model.vocab == {**initial_vocab, "a": 2}
 
 
@@ -376,12 +376,12 @@ def test_padding_and_lazy_embedding__padding():
     initial_vocab = model.vocab.copy()
 
     embedded, mask = model([["a"]])
-    assert torch.equal(embedded, model.embed(torch.LongTensor([[2]])))
-    assert torch.equal(mask, torch.BoolTensor([[True]]))
+    assert torch.equal(embedded, model.embed(torch.tensor([[2]])))
+    assert torch.equal(mask, torch.tensor([[True]]))
 
     embedded, mask = model([["a"], ["a", "b"]])
-    assert torch.equal(embedded, model.embed(torch.LongTensor([[2, 2], [model.pad_idx, 3]])))
-    assert torch.equal(mask, torch.BoolTensor([[True, True], [False, True]]))
+    assert torch.equal(embedded, model.embed(torch.tensor([[2, 2], [model.pad_idx, 3]])))
+    assert torch.equal(mask, torch.tensor([[True, True], [False, True]]))
 
     assert model.vocab == {**initial_vocab, "a": 2, "b": 3}
 
@@ -389,7 +389,7 @@ def test_padding_and_lazy_embedding__padding():
 def test_padding_and_lazy_embedding__allow_unk_on_eval():
     """Test `PaddingAndLazyEmbedding` handles unknown tokens during evaluation and doesn't update
     vocab."""
-    model = lib.utils.PaddingAndLazyEmbedding(100, 16)
+    model = lib.utils.PaddingAndLazyEmbedding(100, 16, allow_unk_on_eval=False)
     initial_vocab = model.vocab.copy()
 
     model.eval()
@@ -398,8 +398,8 @@ def test_padding_and_lazy_embedding__allow_unk_on_eval():
     model.allow_unk_on_eval = True
 
     embedded, mask = model([["a"]])
-    assert torch.equal(embedded, model.embed(torch.LongTensor([[model.unk_idx]])))
-    assert torch.equal(mask, torch.BoolTensor([[True]]))
+    assert torch.equal(embedded, model.embed(torch.tensor([[model.unk_idx]])))
+    assert torch.equal(mask, torch.tensor([[True]]))
     assert model.vocab == initial_vocab
     assert len(model._new_tokens) == 0
 
