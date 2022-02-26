@@ -1,15 +1,16 @@
+import logging
 import re
 import typing
 from functools import lru_cache, partial
 
-from google.cloud.speech_v1p1beta1 import RecognitionConfig
 from hparams import HParams, add_config
 
 import lib
-import run
 from lib.text import _line_grapheme_to_phoneme, get_spoken_chars
 from lib.utils import identity
 from run.data._loader import Language
+
+logger = logging.getLogger(__name__)
 
 # NOTE: eSpeak doesn't have a dictionary of all the phonetic characters, so this is a dictionary
 # of the phonetic characters we found in the English dataset.
@@ -73,21 +74,25 @@ def is_voiced(text: str, language: Language) -> bool:
     return lib.text.is_voiced(text, _NON_ASCII_CHARS[language])
 
 
-_make_config = partial(
-    RecognitionConfig,
-    model="command_and_search",
-    use_enhanced=True,
-    enable_automatic_punctuation=True,
-    enable_word_time_offsets=True,
-)
-# TODO: Re-consider base language and dialect differentiation.
-STT_CONFIGS = {
-    Language.ENGLISH: _make_config(language_code="en-US", model="video"),
-    Language.GERMAN: _make_config(language_code="de-DE"),
-    Language.PORTUGUESE_BR: _make_config(language_code="pt-BR"),
-    Language.SPANISH_CO: _make_config(language_code="es-CO"),
-}
-LanguageCode = typing.Literal["en-US", "de-DE", "pt-BR", "es-CO"]
+try:
+    from google.cloud.speech_v1p1beta1 import RecognitionConfig
+
+    _make_config = partial(
+        RecognitionConfig,
+        model="command_and_search",
+        use_enhanced=True,
+        enable_automatic_punctuation=True,
+        enable_word_time_offsets=True,
+    )
+    STT_CONFIGS = {
+        Language.ENGLISH: _make_config(language_code="en-US", model="video"),
+        Language.GERMAN: _make_config(language_code="de-DE"),
+        Language.PORTUGUESE_BR: _make_config(language_code="pt-BR"),
+        Language.SPANISH_CO: _make_config(language_code="es-CO"),
+    }
+    LanguageCode = typing.Literal["en-US", "de-DE", "pt-BR", "es-CO"]
+except ImportError:
+    logger.info("Ignoring optional `google` import.")
 
 
 @lru_cache(maxsize=2 ** 20)
