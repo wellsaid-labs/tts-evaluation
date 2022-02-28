@@ -856,7 +856,6 @@ def run_workers(
 
 @dataclasses.dataclass(frozen=True)
 class MetricsKey:
-    """Key used to identify metrics."""
 
     label: str
 
