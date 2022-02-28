@@ -70,7 +70,7 @@ class Encoded(typing.NamedTuple):
 
 
 class AttentionHiddenState(typing.NamedTuple):
-    """Hidden state from previous time steps, used to predict the next time step."""
+    """Attention hidden state from previous time steps, used to predict the next time step."""
 
     # torch.FloatTensor [batch_size, num_tokens + 2 * cumulative_alignment_padding]
     cumulative_alignment: torch.Tensor
