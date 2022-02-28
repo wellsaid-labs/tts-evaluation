@@ -50,7 +50,7 @@ class Preds(typing.NamedTuple):
 
 
 class Encoded(typing.NamedTuple):
-    """The model input encoded."""
+    """The model inputs encoded."""
 
     # Batch of sequences
     # torch.FloatTensor [num_tokens, batch_size, out_dim]
