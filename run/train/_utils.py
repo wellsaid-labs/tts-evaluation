@@ -991,4 +991,6 @@ class Timer:
         return dict(times)
 
 
+# NOTE: Unique `Session` object namespaced by `Speaker`.
+# TODO: Should the `Session` object natively incorporate the `Speaker`? Can two different speakers share a `Session`?
 SpeakerSession = typing.Tuple[Speaker, Session]
