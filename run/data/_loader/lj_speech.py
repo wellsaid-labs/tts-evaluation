@@ -30,7 +30,7 @@ LINDA_JOHNSON = make_en_speaker("linda_johnson")
 
 def _get_session(passage: UnprocessedPassage) -> Session:
     """For the LJ speech dataset, we define each chapter as an individual recording session."""
-    return Session(str(passage.audio_path.stem.rsplit("-", 1)[0]))
+    return Session((passage.speaker, str(passage.audio_path.stem.rsplit("-", 1)[0])))
 
 
 def lj_speech_dataset(

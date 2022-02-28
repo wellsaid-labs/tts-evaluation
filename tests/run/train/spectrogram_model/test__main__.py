@@ -47,7 +47,7 @@ def test_integration():
         is_not_diff = lambda b, v: len(set(b) - set(v.keys())) == 0
         assert is_not_diff(lib.utils.flatten_2d(batch.inputs.tokens), model.token_vocab)
         assert is_not_diff((s.speaker for s in batch.spans), model.speaker_vocab)
-        assert is_not_diff(((s.speaker, s.session) for s in batch.spans), model.session_vocab)
+        assert is_not_diff((s.session for s in batch.spans), model.session_vocab)
 
         # fmt: off
         keys = [

@@ -26,7 +26,6 @@ logger = logging.getLogger(__name__)
 FloatFloat = typing.Tuple[float, float]
 IntInt = typing.Tuple[int, int]
 Slice = slice  # NOTE: `pylance` is buggy if we use `slice` directly for typing.
-Session = typing.NewType("Session", str)
 
 
 class NonalignmentSpans(typing.NamedTuple):
@@ -160,6 +159,8 @@ make_es_speaker = lambda label, *args, **kwargs: Speaker(
 make_pt_speaker = lambda label, *args, **kwargs: Speaker(
     label, Language.PORTUGUESE_BR, *args, **kwargs
 )
+
+Session = typing.NewType("Session", typing.Tuple[Speaker, str])
 
 
 @dataclasses.dataclass(frozen=True)
@@ -836,10 +837,8 @@ def _make_speech_segments(passage: Passage) -> typing.List[Span]:
 
 def _default_session(passage: UnprocessedPassage) -> Session:
     """By default, this assumes that each audio file was recorded, individually.
-
-    TODO: Remove suffix from `Session` name.
     """
-    return Session(passage.audio_path.name)
+    return Session((passage.speaker, passage.audio_path.stem))
 
 
 @lib.utils.log_runtime

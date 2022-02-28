@@ -42,7 +42,9 @@ def test_m_ailabs_speech_dataset(
         path = path / "dorothy_and_wizard_oz/wavs/dorothy_and_wizard_oz_01_f000001.wav"
         assert data[0] == run.data._loader.Passage(
             audio_file=_utils.make_metadata(path),
-            session=run.data._loader.Session("dorothy_and_wizard_oz/wavs/dorothy_and_wizard_oz_01"),
+            session=run.data._loader.Session(
+                (JUDY_BIEBER, "dorothy_and_wizard_oz/wavs/dorothy_and_wizard_oz_01")
+            ),
             speaker=JUDY_BIEBER,
             script="To My Readers.",
             transcript="To My Readers.",

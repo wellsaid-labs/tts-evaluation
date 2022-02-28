@@ -5,8 +5,7 @@ from hparams import HParam, configurable
 
 from lib import signal_model
 from lib.utils import PaddingAndLazyEmbedding
-from run.data._loader import Speaker
-from run.train._utils import SpeakerSession
+from run.data._loader import Session, Speaker
 
 
 class SignalModel(signal_model.SignalModel):
@@ -23,8 +22,8 @@ class SignalModel(signal_model.SignalModel):
         return typing.cast(typing.Dict[Speaker, int], self.speaker_embed.vocab)
 
     @property
-    def session_vocab(self) -> typing.Dict[SpeakerSession, int]:
-        return typing.cast(typing.Dict[SpeakerSession, int], self.session_embed.vocab)
+    def session_vocab(self) -> typing.Dict[Session, int]:
+        return typing.cast(typing.Dict[Session, int], self.session_embed.vocab)
 
     def update_speaker_vocab(
         self, speakers: typing.List[Speaker], embeddings: typing.Optional[torch.Tensor] = None
@@ -33,7 +32,7 @@ class SignalModel(signal_model.SignalModel):
 
     def update_session_vocab(
         self,
-        sessions: typing.List[SpeakerSession],
+        sessions: typing.List[Session],
         embeddings: typing.Optional[torch.Tensor] = None,
     ):
         return self.session_embed.update_tokens(sessions, embeddings)
@@ -42,10 +41,12 @@ class SignalModel(signal_model.SignalModel):
         self,
         spectrogram: torch.Tensor,
         speaker: typing.List[Speaker],
-        session: typing.List[SpeakerSession],
+        session: typing.List[Session],
         spectrogram_mask: typing.Optional[torch.Tensor] = None,
         pad_input: bool = True,
     ) -> torch.Tensor:
+        # TODO: Since `Session` contains `Speaker`, do we need to pass both? Or can we simply pass
+        # just `Session`?
         seq_metadata = list(zip(speaker, session))
         return super().__call__(spectrogram, seq_metadata, spectrogram_mask, pad_input)
 
@@ -64,8 +65,8 @@ class SpectrogramDiscriminator(signal_model.SpectrogramDiscriminator):
         return typing.cast(typing.Dict[Speaker, int], self.speaker_embed.vocab)
 
     @property
-    def session_vocab(self) -> typing.Dict[SpeakerSession, int]:
-        return typing.cast(typing.Dict[SpeakerSession, int], self.session_embed.vocab)
+    def session_vocab(self) -> typing.Dict[Session, int]:
+        return typing.cast(typing.Dict[Session, int], self.session_embed.vocab)
 
     def __call__(
         self,
@@ -73,7 +74,7 @@ class SpectrogramDiscriminator(signal_model.SpectrogramDiscriminator):
         db_spectrogram: torch.Tensor,
         db_mel_spectrogram: torch.Tensor,
         speaker: typing.List[Speaker],
-        session: typing.List[SpeakerSession],
+        session: typing.List[Session],
     ) -> torch.Tensor:
         seq_metadata = list(zip(speaker, session))
         return super().__call__(spectrogram, db_spectrogram, db_mel_spectrogram, seq_metadata)
@@ -83,7 +84,7 @@ def generate_waveform(
     model: SignalModel,
     spectrogram: typing.Iterator[torch.Tensor],
     speaker: typing.List[Speaker],
-    session: typing.List[SpeakerSession],
+    session: typing.List[Session],
     spectrogram_mask: typing.Optional[typing.Iterator[torch.Tensor]] = None,
 ) -> typing.Iterator[torch.Tensor]:
     seq_metadata = list(zip(speaker, session))

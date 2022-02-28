@@ -362,7 +362,7 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
     for i, token in enumerate(en_tokens):
         tokens[i] = token
     speakers = [s.speaker for s in spans]
-    sessions = [(s.speaker, s.session) for s in spans]
+    sessions = [s.session for s in spans]
 
     with futures.ThreadPoolExecutor(max_workers=min(max_workers, len(spans))) as pool:
         signals_ = list(pool.map(lambda s: s.audio(), spans))

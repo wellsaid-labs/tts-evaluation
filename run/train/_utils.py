@@ -50,7 +50,6 @@ from run._config import (
     get_model_label,
     get_timer_label,
 )
-from run.data._loader import Session, Speaker
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import comet_ml
@@ -997,7 +996,3 @@ class Timer:
                 times[label] += prev.cuda.elapsed_time(next.cuda) / 1000
         return dict(times)
 
-
-# NOTE: Unique `Session` object namespaced by `Speaker`.
-# TODO: Should the `Session` object natively incorporate the `Speaker`? Can two different speakers share a `Session`?
-SpeakerSession = typing.Tuple[Speaker, Session]

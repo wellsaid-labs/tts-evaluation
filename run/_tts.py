@@ -278,14 +278,14 @@ def make_tts_inputs(
     if (
         speaker not in package.spectrogram_model.speaker_vocab
         or speaker not in package.signal_model.speaker_vocab
-        or (speaker, session) not in package.spectrogram_model.session_vocab
-        or (speaker, session) not in package.signal_model.session_vocab
+        or session not in package.spectrogram_model.session_vocab
+        or session not in package.signal_model.session_vocab
     ):
         # NOTE: We do not expose speaker information in the `ValueError` because this error
         # is passed on to the public via the API.
         raise PublicSpeakerValueError("Speaker is not available.")
 
-    return Inputs(speaker=[speaker], session=[(speaker, session)], tokens=[tokens])
+    return Inputs(speaker=[speaker], session=[session], tokens=[tokens])
 
 
 def text_to_speech(

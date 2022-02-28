@@ -60,7 +60,7 @@ def _get_session(passage: UnprocessedPassage) -> Session:
     session."""
     chapter = passage.audio_path.stem.rsplit("_", 1)[0]
     label = f"{passage.audio_path.parent.parent.name}/{passage.audio_path.parent.name}/{chapter}"
-    return Session(label)
+    return Session((passage.speaker, label))
 
 
 def m_ailabs_speech_dataset(

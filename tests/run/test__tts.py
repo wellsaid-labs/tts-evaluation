@@ -21,10 +21,10 @@ def _make_args():
     script = " ".join([script] * 3)
     tokens, speaker, session = process_tts_inputs(nlp, script, speaker, session)
     package.spectrogram_model.update_speaker_vocab([speaker])
-    package.spectrogram_model.update_session_vocab([(speaker, session)])
+    package.spectrogram_model.update_session_vocab([session])
     package.spectrogram_model.update_token_vocab(tokens)
     package.signal_model.update_speaker_vocab([speaker])
-    package.signal_model.update_session_vocab([(speaker, session)])
+    package.signal_model.update_session_vocab([session])
     inputs = make_tts_inputs(package, tokens, speaker, session)
     return package, inputs
 

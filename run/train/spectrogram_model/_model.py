@@ -7,8 +7,7 @@ from hparams import HParam, configurable
 from lib import spectrogram_model
 from lib.spectrogram_model import Generator, Mode, Preds
 from lib.utils import PaddingAndLazyEmbedding
-from run.data._loader import Speaker
-from run.train._utils import SpeakerSession
+from run.data._loader import Session, Speaker
 
 
 class Inputs(typing.NamedTuple):
@@ -18,7 +17,7 @@ class Inputs(typing.NamedTuple):
     speaker: typing.List[Speaker]
 
     # Batch of recording sessions per speaker
-    session: typing.List[SpeakerSession]
+    session: typing.List[Session]
 
     # Batch of sequences of tokens
     tokens: typing.List[typing.List[str]]
@@ -50,8 +49,8 @@ class SpectrogramModel(spectrogram_model.SpectrogramModel):
         return typing.cast(typing.Dict[Speaker, int], self.speaker_embed.vocab)
 
     @property
-    def session_vocab(self) -> typing.Dict[SpeakerSession, int]:
-        return typing.cast(typing.Dict[SpeakerSession, int], self.session_embed.vocab)
+    def session_vocab(self) -> typing.Dict[Session, int]:
+        return typing.cast(typing.Dict[Session, int], self.session_embed.vocab)
 
     def update_token_vocab(
         self, tokens: typing.List[str], embeddings: typing.Optional[torch.Tensor] = None
@@ -65,7 +64,7 @@ class SpectrogramModel(spectrogram_model.SpectrogramModel):
 
     def update_session_vocab(
         self,
-        sessions: typing.List[SpeakerSession],
+        sessions: typing.List[Session],
         embeddings: typing.Optional[torch.Tensor] = None,
     ):
         return self.session_embed.update_tokens(sessions, embeddings)
