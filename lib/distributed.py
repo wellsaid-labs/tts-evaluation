@@ -89,7 +89,7 @@ class DictStore:
     """
 
     def __init__(self):
-        self.data: typing.Dict = {}
+        self.data: typing.Dict[typing.Any, typing.List[typing.Tuple]] = {}
         self._operation = -1
 
     @staticmethod
