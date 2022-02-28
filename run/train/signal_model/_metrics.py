@@ -217,6 +217,12 @@ class Metrics(_utils.Metrics):
 
         Args:
             is_verbose: If `True`, iterate over more permutations.
+
+        Returns:
+            kwargs: Key-word arguments for formatting a metrics label.
+            num_slices: The total number of slices trained on.
+            reduce_: Wrapper around `self._reduce` with an update signature.
+            div: Wrapper around `self._div` with an update signature.
         """
         speakers = set(key.speaker for key in self.data.keys()) if is_verbose else [None]
         fft_lengths = set(key.fft_length for key in self.data.keys())
