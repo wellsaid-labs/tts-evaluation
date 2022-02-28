@@ -14,7 +14,7 @@ class Inputs(typing.NamedTuple):
 
 
 class Preds(typing.NamedTuple):
-    """The model predictions."""
+    """The model predictions and related metadata."""
 
     # Spectrogram frames.
     # torch.FloatTensor [num_frames, batch_size, num_frame_channels]
