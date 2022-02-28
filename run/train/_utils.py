@@ -860,14 +860,15 @@ class MetricsKey:
     label: str
 
 
+MetricsKeyTypeVar = typing.TypeVar("MetricsKeyTypeVar", bound=MetricsKey)
 MetricsStoreValues = typing.List[typing.Tuple[float]]
 MetricsReduceOp = typing.Callable[[typing.List[float]], float]
 # NOTE: `MetricsSelect` selects a subset of `MetricsStoreValues`.
 MetricsSelect = typing.Callable[[MetricsStoreValues], MetricsStoreValues]
-MetricsValues = typing.Dict[MetricsKey, float]
+MetricsValues = typing.Dict[MetricsKeyTypeVar, float]
 
 
-class Metrics(lib.distributed.DictStore):
+class Metrics(lib.distributed.DictStore, typing.Generic[MetricsKeyTypeVar]):
     """Metrics collated accross different processes."""
 
     DATA_QUEUE_SIZE, *_ = tuple([str(i) for i in range(100)])
@@ -880,7 +881,7 @@ class Metrics(lib.distributed.DictStore):
     LR = partial(get_model_label, "lr")
 
     def __init__(self, comet: CometMLExperiment, **kwargs):
-        self.data: typing.Dict[MetricsKey, MetricsStoreValues]
+        self.data: typing.Dict[MetricsKeyTypeVar, MetricsStoreValues]
         super().__init__(**kwargs)
         self.comet = comet
 
@@ -900,17 +901,23 @@ class Metrics(lib.distributed.DictStore):
         is_multiprocessing = isinstance(data_loader.iter, _MultiProcessingDataLoaderIter)
         if is_multiprocessing and platform.system() != "Darwin":
             iterator = typing.cast(_MultiProcessingDataLoaderIter, data_loader.iter)
-            return {MetricsKey(self.DATA_QUEUE_SIZE): iterator._data_queue.qsize()}
+            make_key = typing.get_args(self.__class__.__orig_bases__[0])[0]
+            return {make_key(self.DATA_QUEUE_SIZE): iterator._data_queue.qsize()}
         return {}
 
-    def _reduce(self, key: MetricsKey, select: MetricsSelect, op: MetricsReduceOp = sum) -> float:
+    def _reduce(
+        self, key: MetricsKeyTypeVar, select: MetricsSelect, op: MetricsReduceOp = sum
+    ) -> float:
         """Reduce `self.data[key]` measurements to a float."""
         flat = flatten_2d(select(self.data[key] if key in self.data else []))
         assert all(not math.isnan(val) for val in flat), f"Encountered NaN value for metric {key}."
         return math.nan if len(flat) == 0 else op(flat)
 
     def _div(
-        self, num: typing.Union[MetricsKey, float], denom: typing.Union[MetricsKey, float], **kwargs
+        self,
+        num: typing.Union[MetricsKeyTypeVar, float],
+        denom: typing.Union[MetricsKeyTypeVar, float],
+        **kwargs,
     ) -> float:
         """Reduce and divide `self.data[num] / self.data[denom]`."""
         reduced_denom = denom if isinstance(denom, float) else self._reduce(denom, **kwargs)

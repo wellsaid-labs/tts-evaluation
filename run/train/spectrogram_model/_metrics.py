@@ -258,7 +258,7 @@ class MetricsKey(_utils.MetricsKey):
 MetricsValues = typing.Dict[MetricsKey, float]
 
 
-class Metrics(_utils.Metrics):
+class Metrics(_utils.Metrics[MetricsKey]):
     """
     Vars:
         ...
@@ -349,16 +349,6 @@ class Metrics(_utils.Metrics):
 
     TEXT_LENGTH_BUCKET_SIZE = 25
 
-    # TODO: `update`, `_make_values`, `get_data_loader_values`, `__init__` are boiler plate
-    # based off `MetricsKey`, can we abstract these better?
-
-    def __init__(self, *args, **kwargs):
-        self.data: typing.Dict[MetricsKey, _utils.MetricsStoreValues]
-        super().__init__(*args, **kwargs)
-
-    def update(self, data: MetricsValues):
-        return super().update(typing.cast(_utils.MetricsValues, data))
-
     @staticmethod
     def _make_values():
         values: MetricsValues = collections.defaultdict(float)
@@ -375,10 +365,6 @@ class Metrics(_utils.Metrics):
             values[key] = op(value, v)
 
         return values, _reduce
-
-    def get_data_loader_values(self, *args) -> MetricsValues:
-        items = super().get_data_loader_values(*args).items()
-        return {MetricsKey(**lib.utils.dataclass_as_dict(k)): v for k, v in items}
 
     def get_dataset_values(
         self, batch: Batch, model: SpectrogramModel, preds: Preds

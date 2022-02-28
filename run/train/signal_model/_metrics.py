@@ -30,7 +30,7 @@ class MetricsKey(_utils.MetricsKey):
 MetricsValues = typing.Dict[MetricsKey, float]
 
 
-class Metrics(_utils.Metrics):
+class Metrics(_utils.Metrics[MetricsKey]):
     """
     Vars:
         ...
@@ -81,13 +81,6 @@ class Metrics(_utils.Metrics):
     L1_LOSS = partial(get_signal_model_label, "l1_loss")
     MSE_LOSS = partial(get_signal_model_label, "mse_loss")
 
-    def __init__(self, *args, **kwargs):
-        self.data: typing.Dict[MetricsKey, _utils.MetricsStoreValues]
-        super().__init__(*args, **kwargs)
-
-    def update(self, data: MetricsValues):
-        return super().update(typing.cast(_utils.MetricsValues, data))
-
     @staticmethod
     def _make_values():
         values: MetricsValues = collections.defaultdict(float)
@@ -104,10 +97,6 @@ class Metrics(_utils.Metrics):
             values[key] = op(value, v)
 
         return values, _reduce
-
-    def get_data_loader_values(self, *args) -> MetricsValues:
-        items = super().get_data_loader_values(*args).items()
-        return {MetricsKey(**lib.utils.dataclass_as_dict(k)): v for k, v in items}
 
     def get_dataset_values(self, batch: Batch) -> MetricsValues:
         values, _reduce = self._make_values()
