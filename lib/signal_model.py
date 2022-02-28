@@ -274,7 +274,7 @@ def _has_weight_norm(module: torch.nn.Module, name: str = "weight") -> bool:
 
 
 class _Encoder(torch.nn.Module):
-    """Encode signal model inputs.
+    """Encode inputs including the spectrogram and it's metadata. 
 
     Args:
         max_seq_meta_values: The maximum number of metadata values the model will be trained on.
