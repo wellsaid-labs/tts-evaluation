@@ -80,7 +80,7 @@ class AttentionHiddenState(typing.NamedTuple):
 
 
 class DecoderHiddenState(typing.NamedTuple):
-    """Hidden state from previous time steps, used to predict the next time step."""
+    """Decoder hidden state from previous time steps, used to predict the next time step."""
 
     # `Attention` last output.
     # torch.FloatTensor [batch_size, encoder_output_size]
