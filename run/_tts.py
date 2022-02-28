@@ -239,10 +239,6 @@ class PublicSpeakerValueError(ValueError):
     pass
 
 
-# TODO: Remove
-encode_tts_inputs = None
-
-
 def process_tts_inputs(
     nlp: English, script: str, speaker: Speaker, session: Session
 ) -> typing.Tuple[typing.List[str], Speaker, Session]:
