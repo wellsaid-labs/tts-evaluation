@@ -105,7 +105,7 @@ class DictStore:
         torch.distributed.all_gather_object(outputs, self._encode(data))
         return [self._decode(typing.cast(str, o)) for o in outputs]
 
-    def _update(self, data: typing.List):
+    def _update(self, data: typing.List[typing.Dict]):
         """Shallow update `self.data` with `data`."""
         update = collections.defaultdict(list)
         for dict_ in data:
