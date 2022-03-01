@@ -613,7 +613,7 @@ def _normalize_whitespace(text: str) -> str:
     """Normalize whitespace variations into standard characters. Formfeed `f` and carriage return `r`
     should be replace with new line `\n` and tab `\t` should be replaced with two spaces `  `."""
     text = text.replace("\f", "\n")
-    text = text.replace("\r", "\n")
+    text = text.replace("\r", "")
     text = text.replace("\t", "  ")
     return text
 
