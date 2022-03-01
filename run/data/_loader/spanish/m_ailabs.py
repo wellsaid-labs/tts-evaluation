@@ -54,7 +54,7 @@ def m_ailabs_es_es_speech_dataset(
     """Download, extract, and process the M-AILABS `es_ES` dataset.
 
     The dataset is is 15GB compressed. The file to be downloaded is called ``es_ES.tgz``. It
-    contains ???? hours of audio. When extracted, it creates a list of 9 books.
+    contains 83 hours of audio. When extracted, it creates a list of 9 books.
     """
     return m_ailabs_speech_dataset(
         directory, extracted_name, url, books, language, check_files, **kwargs
