@@ -60,10 +60,10 @@ _NON_ASCII_CHARS: typing.Dict[Language, frozenset] = {
 }
 # fmt: on
 _NON_ASCII_MARKS: typing.Dict[Language, frozenset] = {
-    Language.ENGLISH: frozenset([]),
-    Language.GERMAN: frozenset(["«", "»", "‹", "›"]),
-    Language.PORTUGUESE_BR: frozenset(["«", "»", "‹", "›"]),
-    Language.SPANISH_CO: frozenset(["¿", "¡", "«", "»", "‹", "›"]),
+    Language.ENGLISH: frozenset(),
+    Language.GERMAN: frozenset(),
+    Language.PORTUGUESE_BR: frozenset(),
+    Language.SPANISH_CO: frozenset(["¿", "¡"]),
 }
 _NON_ASCII_ALL = {l: _NON_ASCII_CHARS[l].union(_NON_ASCII_MARKS[l]) for l in Language}
 
@@ -130,6 +130,7 @@ def _remove_letter_casing(a: str) -> str:
 
 
 @lru_cache(maxsize=2 ** 20)
+@configurable
 def is_sound_alike(a: str, b: str, language: Language) -> bool:
     """Return `True` if `str` `a` and `str` `b` sound a-like.
 
