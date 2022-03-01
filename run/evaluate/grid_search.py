@@ -11,6 +11,7 @@ Usage:
     $ PYTHONPATH=. streamlit run run/evaluate/grid_search.py --runner.magicEnabled=false
 
 Use gcloud port-forwarding to interact via your local browser:
+```
 VM_NAME="name-of-remote-machine"
 ZONE="zone-of-remote-machine"
 PROJECT_ID=voice-research-255602
@@ -21,6 +22,7 @@ gcloud compute ssh $VM_NAME \
     --project $PROJECT_ID \
     --zone $ZONE \
     -- -NL $LOCAL_PORT:localhost:$REMOTE_PORT
+```
 """
 import functools
 import itertools
@@ -35,6 +37,7 @@ from streamlit_datatable import st_datatable
 import lib
 import run
 from lib.environment import PT_EXTENSION, ROOT_PATH, load
+from lib.text import natural_keys
 from run import train
 from run._config import SIGNAL_MODEL_EXPERIMENTS_PATH, SPECTROGRAM_MODEL_EXPERIMENTS_PATH
 from run._streamlit import (
@@ -57,7 +60,9 @@ def path_label(path: pathlib.Path) -> str:
 def st_select_paths(label: str, dir: pathlib.Path, suffix: str) -> typing.List[pathlib.Path]:
     """Display a path selector for the directory `dir`."""
     options = sorted(
-        [p for p in dir.glob("**/*") if p.suffix == suffix or p.is_dir()] + [dir], reverse=True
+        [p for p in dir.glob("**/*") if p.suffix == suffix or p.is_dir()] + [dir],
+        key=lambda x: natural_keys(str(x)),
+        reverse=True,
     )
     paths = st.multiselect(label, options=options, format_func=path_label)
     paths = cast(typing.List[pathlib.Path], paths)
@@ -139,6 +144,7 @@ def main():
             "Signal Model": path_label(sig_path),
             "Speaker": speaker.label,
             "Session": session,
+            "Script": f"'{script[:25]}...'",
         }
         rows.append(row)
         paths.append(audio_web_path)
