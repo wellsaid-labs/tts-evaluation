@@ -80,6 +80,8 @@ def is_voiced(text: str, language: Language) -> bool:
     return lib.text.is_voiced(text, _NON_ASCII_CHARS[language])
 
 
+SST_CONFIGS = []
+
 try:
     _make_config = partial(
         google_speech.RecognitionConfig,
@@ -130,7 +132,6 @@ def _remove_letter_casing(a: str) -> str:
 
 
 @lru_cache(maxsize=2 ** 20)
-@configurable
 def is_sound_alike(a: str, b: str, language: Language) -> bool:
     """Return `True` if `str` `a` and `str` `b` sound a-like.
 
