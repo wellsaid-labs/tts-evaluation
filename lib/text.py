@@ -7,6 +7,7 @@ import re
 import string
 import subprocess
 import typing
+import unicodedata
 from collections import defaultdict
 from typing import get_args
 
@@ -608,37 +609,84 @@ def strip(text: str) -> typing.Tuple[str, str, str]:
     return text, left, right
 
 
-def normalize_vo_script(text: str, strip: bool = True) -> str:
+def _normalize_whitespace(text: str) -> str:
+    """Normalize whitespace variations into standard characters. Formfeed `f` and carriage return `r`
+    should be replace with new line `\n` and tab `\t` should be replaced with two spaces `  `."""
+    text = text.replace("\f", "\n")
+    text = text.replace("\t", "  ")
+    return text
+
+
+def _normalize_guillemets(text: str) -> str:
+    """Guillemets [https://en.wikipedia.org/wiki/Guillemet] should be normalized to standard
+    quotaton marks because they carry the same meaning in speech. Some keyboards rely on Guillemets
+    in place of ", but for most internet usage in particular, it's common for these to be replaced
+    with standard ". Some info here: https://coerll.utexas.edu/gg/gr/mis_01.html
+
+    Note: `ftfy` will not fix these, and `unidecode` will convert them incorrectly to <<,>>. This
+    function will ensure correct normalization after `ftfy` runs and before `unidecode` runs."""
+    text = text.replace("«", '"')
+    text = text.replace("»", '"')
+    text = text.replace("‹", "'")
+    text = text.replace("›", "'")
+    return text
+
+
+# Normalize all text to the same unicode form, NFC. Normal form C (NFC) first applies a canonical
+# decomposition, then composes pre-combined characters again. More info:
+# https://docs.python.org/3/howto/unicode.html#comparing-strings
+# https://docs.python.org/3/library/unicodedata.html#unicodedata.normalize
+# https://stackoverflow.com/questions/7931204/what-is-normalized-utf-8-all-about
+_UNICODE_NORMAL_FORM = "NFC"
+
+
+def normalize_vo_script(text: str, non_ascii: frozenset, strip: bool = True) -> str:
     """Normalize a voice-over script such that only readable characters remain.
+
+    TODO: Use `unidecode.unidecode` in "strict" mode so that data isn't lost.
+    TODO: Clarify that some characters like `«` will be normalized regardless of being in the `non_ascii` set.
+    NOTE: `non_ascii` needs to be explicitly set so that text isn't processed incorrecly accidently.
 
     References:
     - Generic package for text cleaning: https://github.com/jfilter/clean-text
     - ASCII characters: https://www.ascii-code.com/
     - `Unidecode` vs `unicodedata`:
       https://stackoverflow.com/questions/517923/what-is-the-best-way-to-remove-accents-normalize-in-a-python-unicode-string
+
+    Args:
+        ...
+        non_ascii: Allowed Non-ASCII characters.
+        strip: If `True`, strip white spaces at the ends of `text`.
+
+    Returns: Normalized string.
     """
     text = str(text)
     text = ftfy.fix_text(text)
-    text = text.replace("\f", "\n")
-    text = text.replace("\t", "  ")
-    text = str(unidecode.unidecode(text))
+    text = _normalize_whitespace(text)
+    text = _normalize_guillemets(text)
+    text = "".join([c if c in non_ascii else str(unidecode.unidecode(c)) for c in text])
     if strip:
         text = text.strip()
     return text
 
 
-_READABLE_CHARACTERS = set(normalize_vo_script(chr(i), strip=False) for i in range(0, 128))
+_NORMALIZED_ASCII_CHARS = set(
+    normalize_vo_script(chr(i), frozenset(), strip=False) for i in range(0, 128)
+)
 
 
-def is_normalized_vo_script(text: str) -> bool:
+def is_normalized_vo_script(text: str, non_ascii: frozenset) -> bool:
     """Return `True` if `text` has been normalized to a small set of characters."""
-    return len(set(text) - _READABLE_CHARACTERS) == 0
+    return (
+        unicodedata.is_normalized(_UNICODE_NORMAL_FORM, text)
+        and len(set(text) - _NORMALIZED_ASCII_CHARS - non_ascii) == 0
+    )
 
 
 ALPHANUMERIC_REGEX = re.compile(r"[a-zA-Z0-9@#$%&+=*]")
 
 
-def is_voiced(text: str) -> bool:
+def is_voiced(text: str, non_ascii: frozenset) -> bool:
     """Return `True` if any of the text is spoken.
 
     NOTE: This isn't perfect. For example, this function assumes a "-" isn't voiced; however, it
@@ -648,8 +696,8 @@ def is_voiced(text: str) -> bool:
     text = text.strip()
     if len(text) == 0:
         return False
-    assert is_normalized_vo_script(text), "Text must be normalized."
-    return ALPHANUMERIC_REGEX.search(text) is not None
+    assert is_normalized_vo_script(text, non_ascii), "Text must be normalized."
+    return ALPHANUMERIC_REGEX.search(text) is not None or any(c in non_ascii for c in text)
 
 
 DIGIT_REGEX = re.compile(r"\d")
@@ -657,6 +705,31 @@ DIGIT_REGEX = re.compile(r"\d")
 
 def has_digit(text: str) -> bool:
     return bool(DIGIT_REGEX.search(text))
+
+
+SPACES_REGEX = re.compile(r"\s+")
+
+
+@functools.lru_cache(maxsize=2 ** 20)
+def get_spoken_chars(text: str, punc_regex: re.Pattern) -> str:
+    """Remove all unspoken characters from string including spaces, marks, casing, etc.
+
+    Example:
+        >>> get_spoken_chars('123 abc !.?')
+        '123abc'
+        >>> get_spoken_chars('Hello. You\'ve')
+        'helloyouve'
+
+    Args:
+        ...
+        punc_regex: Regex for selecting all marks in `text`.
+
+    Returns: String without unspoken characters.
+    """
+    text = text.lower()
+    text = punc_regex.sub(" ", text)
+    text = text.strip()
+    return SPACES_REGEX.sub("", text)
 
 
 def add_space_between_sentences(doc: spacy.tokens.Doc) -> str:

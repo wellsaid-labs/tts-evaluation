@@ -7,8 +7,15 @@ import typing
 from third_party import LazyLoader
 from torchnlp.download import download_file_maybe_extract
 
-import lib
-from run.data._loader.data_structures import Passage, Session, Speaker, UnprocessedPassage
+import run
+from run.data._loader.data_structures import (
+    Language,
+    Passage,
+    Session,
+    Speaker,
+    UnprocessedPassage,
+    make_en_speaker,
+)
 from run.data._loader.utils import conventional_dataset_loader, make_passages
 
 if typing.TYPE_CHECKING:  # pragma: no cover
@@ -18,7 +25,7 @@ else:
 
 
 logger = logging.getLogger(__name__)
-LINDA_JOHNSON = Speaker("linda_johnson")
+LINDA_JOHNSON = make_en_speaker("linda_johnson")
 
 
 def _get_session(passage: UnprocessedPassage) -> Session:
@@ -118,7 +125,7 @@ def _process_text(passage: UnprocessedPassage, verbalize: bool) -> UnprocessedPa
         script = _verbalize_roman_number(script)
 
     # NOTE: Messes up pound sign (£); therefore, this is after `_verbalize_currency`
-    script = lib.text.normalize_vo_script(script)
+    script = run._lang_config.normalize_vo_script(script, Language.ENGLISH)
     return dataclasses.replace(passage, script=script, transcript=script)
 
 

@@ -41,7 +41,6 @@ image. For reference, see the resource requests in
 [tts.jsonnet](/ops/run/tts.jsonnet).
 
 ```bash
-# TODO: Remove API_KEY authentication
 docker run --rm -p 8000:8000 \
   gcr.io/${PROJECT_ID}/speech-api-worker:${IMAGE_TAG}
 ```

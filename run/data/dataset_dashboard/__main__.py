@@ -42,6 +42,7 @@ import lib
 import run
 from lib.utils import flatten_2d, mazel_tov, round_, seconds_to_str
 from run._config import Dataset
+from run._lang_config import is_voiced
 from run._streamlit import audio_to_html, clear_session_cache, get_dataset, map_, st_data_frame
 from run.data._loader import DATASETS, Passage, Span, has_a_mistranscription
 from run.data.dataset_dashboard import _utils as utils
@@ -317,10 +318,11 @@ def _analyze_nonalignments(passages: typing.List[Passage], max_rows: int, run_al
     with utils.st_expander("Survey of Unvoiced Nonalignment Mistranscriptions") as label:
         if not st.checkbox("Analyze", key=label, value=run_all):
             raise GeneratorExit()
-        is_voiced = [
-            any(lib.text.is_voiced(t) for t in (s.script, s.transcript)) for s in nonalignments
+        _is_voiced = [
+            any(is_voiced(t, s.speaker.language) for t in (s.script, s.transcript))
+            for s in nonalignments
         ]
-        iterator = list(zip(is_voiced, nonalignments))
+        iterator = list(zip(_is_voiced, nonalignments))
         data = list(set((s.script.strip(), s.transcript.strip()) for i, s in iterator if not i))
         st.write("These mistranscriptions are not considered 'voiced':")
         st.table(pd.DataFrame(data[:max_rows], columns=["script", "transcript"]))

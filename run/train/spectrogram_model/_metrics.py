@@ -415,7 +415,7 @@ class Metrics(_utils.Metrics):
         for span, num_frames, num_tokens, has_reached_max in zip(
             batch.spans,
             self._to_list(batch.spectrogram.lengths),
-            self._to_list(batch.encoded_phonemes.lengths),
+            self._to_list(batch.encoded_tokens.lengths),
             itertools.repeat(False) if reached_max is None else self._to_list(reached_max),
         ):
             # NOTE: Create a key for `self.NUM_SPANS` so a value exists, even if zero.
@@ -457,7 +457,7 @@ class Metrics(_utils.Metrics):
                 (reached max) as to not skew other metrics.
         """
         values: typing.Dict[str, float] = collections.defaultdict(float)
-        tokens_mask = batch.encoded_phonemes_mask.tensor
+        tokens_mask = batch.encoded_tokens_mask.tensor
         for span, skipped, jumps, std, norm, small_max, repeated, length, has_reached_max in zip(
             batch.spans,
             self._to_list(get_num_skipped(alignments, tokens_mask, spectrogram_mask)),

@@ -18,6 +18,7 @@ import sys
 import tempfile
 import time
 import typing
+import unicodedata
 
 import hparams
 import numpy as np
@@ -271,7 +272,9 @@ def text(
         pandas.DataFrame({column: [text]}).to_csv(dest_path, index=False)
 
 
-def _csv_normalize(text: str, nlp: spacy_en.English) -> str:
+def _csv_normalize(
+    text: str, nlp: typing.Optional[spacy_en.English], language: _loader.Language
+) -> str:
     """Helper for the `csv_normalize` command.
 
     TODO: Consider adding:
@@ -283,14 +286,16 @@ def _csv_normalize(text: str, nlp: spacy_en.English) -> str:
     - Visualize any text changes for quality assurance
     - Visualize any strange words that may need to be normalized
     """
-    text = lib.text.normalize_vo_script(text)
+    text = run._lang_config.normalize_vo_script(text, language)
     text = text.replace("®", "")
     text = text.replace("™", "")
     # NOTE: Remove HTML tags
     text = re.sub("<.*?>", "", text)
+
     # NOTE: Fix for a missing space between end and beginning of a sentence. For example:
     #   the cold war.The term 'business ethics'
-    text = lib.text.add_space_between_sentences(nlp(text))
+    text = lib.text.add_space_between_sentences(nlp(text)) if nlp else text
+
     return text
 
 
@@ -315,9 +320,8 @@ def _read_csv(
     separator = ","
     if text.count("\t") > len(text.split("\n")) // 2:
         tab_count = text.count("\t")
-        message = (
-            f"There are a lot of tabs ({tab_count}) so this ({path}) will be parsed as a TSV file."
-        )
+        message = f"There are a lot of tabs ({tab_count}) so this "
+        message += f"({path}) will be parsed as a TSV file."
         logger.warning(message)
         separator = "\t"
 
@@ -331,9 +335,8 @@ def _read_csv(
             logger.warning(message)
             data_frame = read_csv(path, header=None, names=[required_column], **read_csv_kwgs)
     if required_column not in data_frame.columns:
-        message = (
-            f"[{path.name}] The required '{required_column}' column couldn't be found or inferred."
-        )
+        message = f"[{path.name}] The required '{required_column}' "
+        message += "column couldn't be found or inferred."
         logger.error(message)
         raise typer.Exit(code=1)
 
@@ -348,16 +351,29 @@ def _read_csv(
     return data_frame[all_columns]
 
 
+def _normalized_levenshtein_distance(token1: str, token2: str) -> int:
+    """In order to trust the Levenshtein.distance algorithm with characters that might have
+    diacritics, we must first ensure both tokens being compared are being represented by the same
+    Unicode form. More info: https://docs.python.org/3/library/unicodedata.html"""
+    token1_norm = unicodedata.normalize(lib.text._UNICODE_NORMAL_FORM, token1)
+    token2_norm = unicodedata.normalize(lib.text._UNICODE_NORMAL_FORM, token2)
+    return Levenshtein.distance(token1_norm, token2_norm)  # type: ignore
+
+
 @csv_app.command("normalize")
 def csv_normalize(
     paths: typing.List[pathlib.Path] = typer.Argument(..., exists=True, dir_okay=False),
     dest: pathlib.Path = typer.Argument(..., exists=True, file_okay=False),
+    language: _loader.Language = typer.Argument(...),
     required_column: str = typer.Option("Content"),
     optional_columns: typing.List[str] = typer.Option(["Source", "Title"]),
     encoding: str = typer.Option("utf-8"),
 ):
     """Normalize csv file(s) in PATHS and save to directory DEST."""
-    nlp = lib.text.load_en_core_web_md(disable=("tagger", "ner"))
+    # TODO: It may be worthwhile to process text with SpaCy in non-English languages.
+    is_en = language is _loader.Language.ENGLISH
+    nlp = lib.text.load_en_core_web_md(disable=("tagger", "ner")) if is_en else None
+
     results = []
     for path in tqdm.tqdm(paths):
         dest_path = dest / path.name
@@ -367,11 +383,12 @@ def csv_normalize(
 
         text = path.read_text(encoding=encoding)
         data_frame = _read_csv(path, required_column, optional_columns, encoding)
-        data_frame = data_frame.applymap(functools.partial(_csv_normalize, nlp=nlp))
+        partial_ = functools.partial(_csv_normalize, nlp=nlp, language=language)
+        data_frame = data_frame.applymap(partial_)
         data_frame.to_csv(dest_path, index=False)
 
         # TODO: Count the number of alphanumeric edits instead of punctuation mark edits.
-        num_edits = Levenshtein.distance(text, dest_path.read_text())  # type: ignore
+        num_edits = _normalized_levenshtein_distance(text, dest_path.read_text(encoding=encoding))
         results.append(((num_edits / len(text)) * 100, num_edits, len(text), path.name))
 
     headers = ["% Edited", "# Edits", "# Characters", "File Name"]

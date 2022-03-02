@@ -1,3 +1,4 @@
+import re
 import string
 import typing
 from typing import get_args
@@ -6,7 +7,13 @@ from unittest import mock
 import pytest
 
 import lib
-from lib.text import _line_grapheme_to_phoneme, _multiline_grapheme_to_phoneme, grapheme_to_phoneme
+from lib.text import (
+    _line_grapheme_to_phoneme,
+    _multiline_grapheme_to_phoneme,
+    grapheme_to_phoneme,
+    is_normalized_vo_script,
+    normalize_vo_script,
+)
 
 
 def test__line_grapheme_to_phoneme():
@@ -532,7 +539,7 @@ def test_strip():
 def test_normalize_vo_script():
     """Test `lib.text.normalize_vo_script` handles all characters from 0 - 128."""
     # fmt: off
-    assert list(lib.text.normalize_vo_script(chr(i), strip=False) for i in range(0, 128)) == [
+    assert list(normalize_vo_script(chr(i), frozenset(), strip=False) for i in range(0, 128)) == [
         "", "", "", "", "", "", "", "", "", "  ", "\n", "", "\n", "\n", "", "", "", "", "", "", "",
         "", "", "", "", "", "", "", "", "", "", "", " ", "!", '"', "#", "$", "%", "&", "'", "(",
         ")", "*", "+", ",", "-", ".", "/", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", ":",
@@ -543,19 +550,60 @@ def test_normalize_vo_script():
     ]
     # fmt: on
 
+    # Cover whitespace normalization, common whitespace issues
+    assert normalize_vo_script("\r\n", frozenset(), strip=False) == "\n"
+    assert normalize_vo_script("\f", frozenset(), strip=False) == "\n"
+    assert normalize_vo_script("\thello\t", frozenset(), strip=False) == "  hello  "
+
+    # Cover guillemet and quotation normalization
+    assert all(
+        [
+            p == '"Wir gehen am Dienstag."'
+            for p in [
+                normalize_vo_script("»Wir gehen am Dienstag.«", frozenset(), strip=False),
+                normalize_vo_script("„Wir gehen am Dienstag.”", frozenset(), strip=False),
+            ]
+        ]
+    )
+    assert (
+        normalize_vo_script("‹Wir gehen am Dienstag.›", frozenset(), strip=False)
+        == "'Wir gehen am Dienstag.'"
+    )
+
+
+# fmt: off
+NON_ASCII_CHAR = frozenset([
+    'Á', 'Ñ', '¡', 'Í', 'á', 'û', 'Ç', 'É', 'Ô', 'ß', 'ó', 'è', 'ú', 'Ì', 'Ù', 'Ó', 'ô', 'ù', 'ã',
+    'Ú', 'õ', 'ï', 'â', 'Ï', 'ò', 'À', 'é', 'à', 'ö', 'ü', 'ì', 'Ü', 'ç', 'Û', 'È', 'ë', 'ä', 'Ä',
+    'Ö', 'Â', 'Ò', 'Î', 'Õ', 'Ê', 'î', '¿', 'Ë', 'ñ', 'ê', 'Ã', 'í'
+])
+# fmt: on
+
+
+def test_normalize_vo_script__non_ascii():
+    """Test `lib.text.normalize_vo_script` allows through select non-ascii characters."""
+    for char in NON_ASCII_CHAR:
+        assert lib.text.normalize_vo_script(char, non_ascii=NON_ASCII_CHAR) == char
+
 
 def test_is_normalized_vo_script():
     """Test `lib.text.is_normalized_vo_script` handles all characters from 0 - 128."""
     assert all(
-        lib.text.is_normalized_vo_script(lib.text.normalize_vo_script(chr(i), strip=False))
+        is_normalized_vo_script(normalize_vo_script(chr(i), frozenset(), strip=False), frozenset())
         for i in range(0, 128)
     )
+
+
+def test_is_normalized_vo_script__non_ascii():
+    """Test `lib.text.is_normalized_vo_script` handles non-ascii characters."""
+    for char in NON_ASCII_CHAR:
+        assert lib.text.is_normalized_vo_script(char, non_ascii=NON_ASCII_CHAR)
 
 
 def test_is_normalized_vo_script__unnormalized():
     """Test `lib.text.is_normalized_vo_script` fails for unnormalized characters."""
     # fmt: off
-    assert [(chr(i), lib.text.is_normalized_vo_script(chr(i))) for i in range(0, 128)] == [
+    assert [(chr(i), is_normalized_vo_script(chr(i), frozenset())) for i in range(0, 128)] == [
         ("\x00", False), ("\x01", False), ("\x02", False), ("\x03", False), ("\x04", False),
         ("\x05", False), ("\x06", False), ("\x07", False), ("\x08", False), ("\t", False),
         ("\n", True), ("\x0b", False), ("\x0c", False), ("\r", False), ("\x0e", False),
@@ -583,13 +631,19 @@ def test_is_normalized_vo_script__unnormalized():
 
 def test_is_voiced():
     """Test `lib.text.is_voiced` handles all characters and an empty string."""
-    assert lib.text.is_voiced("123")
-    assert lib.text.is_voiced("abc")
-    assert lib.text.is_voiced("ABC")
+    assert lib.text.is_voiced("123", frozenset())
+    assert lib.text.is_voiced("abc", frozenset())
+    assert lib.text.is_voiced("ABC", frozenset())
     for char in "@#$%&+=*".split():
-        assert lib.text.is_voiced(char)
-    assert not lib.text.is_voiced("!^()_{[}]:;\"'<>?/~`|\\")
-    assert not lib.text.is_voiced("")
+        assert lib.text.is_voiced(char, frozenset())
+    assert not lib.text.is_voiced("!^()_{[}]:;\"'<>?/~`|\\", frozenset())
+    assert not lib.text.is_voiced("", frozenset())
+
+
+def test_is_voiced__non_ascii():
+    """Test `lib.text.is_voiced` handles non-ascii characters."""
+    for char in NON_ASCII_CHAR:
+        assert lib.text.is_voiced(char, non_ascii=NON_ASCII_CHAR)
 
 
 def test_has_digit():
@@ -599,6 +653,14 @@ def test_has_digit():
     assert lib.text.has_digit("1")
     assert not lib.text.has_digit("abc")
     assert not lib.text.has_digit("")
+
+
+def test_get_spoken_chars():
+    """Test `get_spoken_chars` removes marks, spaces and casing."""
+    pattern = re.compile(r"[^\w\s]")
+    assert lib.text.get_spoken_chars("123 abc !.?", pattern) == "123abc"
+    assert lib.text.get_spoken_chars("Hello. You've", pattern) == "helloyouve"
+    assert lib.text.get_spoken_chars("Hello. \n\fYou've", pattern) == "helloyouve"
 
 
 def test_add_space_between_sentences():

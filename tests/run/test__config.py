@@ -8,6 +8,7 @@ from run._config import (
     get_dataset_label,
     get_model_label,
 )
+from run.data._loader.english import SAM_SCHOLL
 
 
 def test__label():
@@ -21,7 +22,7 @@ def test_get_dataset_label():
     expected = Label("static/dataset/train/test")
     assert get_dataset_label("test", Cadence.STATIC, DatasetType.TRAIN) == expected
     expected = Label("static/dataset/dev/sam_scholl/test")
-    result = get_dataset_label("test", Cadence.STATIC, DatasetType.DEV, run.data._loader.SAM_SCHOLL)
+    result = get_dataset_label("test", Cadence.STATIC, DatasetType.DEV, SAM_SCHOLL)
     assert result == expected
 
 
@@ -30,7 +31,7 @@ def test_get_model_label():
     expected = Label("static/model/test")
     assert get_model_label("test", Cadence.STATIC) == expected
     expected = Label("static/model/sam_scholl/test")
-    assert get_model_label("test", Cadence.STATIC, run.data._loader.SAM_SCHOLL) == expected
+    assert get_model_label("test", Cadence.STATIC, SAM_SCHOLL) == expected
 
 
 def test_get_config_label():

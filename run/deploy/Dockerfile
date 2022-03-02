@@ -47,7 +47,7 @@ RUN apt-get update --fix-missing \
   tqdm \
   spacy==2.2.4 \
   https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-2.2.5/en_core_web_sm-2.2.5.tar.gz#egg=en_core_web_sm \
-  git+https://github.com/PetrochukM/HParams.git \
+  git+https://github.com/PetrochukM/HParams.git@354150b4f62b96c82f9965738d7bc7b6d5a2a6e0 \
   git+https://github.com/PetrochukM/PyTorch-NLP.git \
   && mkdir disk/other \
   && venv/bin/pip uninstall -y pip \

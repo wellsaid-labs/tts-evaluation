@@ -197,11 +197,11 @@ class DataProcessor(torch.utils.data.IterableDataset):
         """Sample slices from a batch of predicted spectrograms."""
         batch = self._make_spectrogram_model_batch(spans)
         params = lib.spectrogram_model.Params(
-            tokens=batch.encoded_phonemes.tensor,
+            tokens=batch.encoded_tokens.tensor,
             speaker=batch.encoded_speaker.tensor,
             session=batch.encoded_session.tensor,
-            num_tokens=batch.encoded_phonemes.lengths,
-            tokens_mask=batch.encoded_phonemes_mask.tensor,
+            num_tokens=batch.encoded_tokens.lengths,
+            tokens_mask=batch.encoded_tokens_mask.tensor,
         )
         preds = self.spectrogram_model(
             params=params,

@@ -170,7 +170,7 @@ def main():
 
     with st.spinner("Processing inputs..."):
         inputs = encode_tts_inputs(nlp, tts.input_encoder, script, speaker, session)
-        st.info(f"{inputs.phonemes.shape[0]:,} token(s) were inputted.")
+        st.info(f"{inputs.tokens.shape[0]:,} token(s) were inputted.")
 
     if "service" in state and state["service"].is_alive():
         logger.info("Shutting down streaming service...")

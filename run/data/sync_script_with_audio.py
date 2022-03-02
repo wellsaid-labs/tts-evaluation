@@ -12,6 +12,14 @@ Usage Example:
       --voice-over "$PREFIX/recordings/script_1.wav" \
       --script "$PREFIX/scripts/script_1_-_hilary.csv" \
       --destination "$PREFIX/"
+
+Usage Example (German):
+    PREFIX=gs://wellsaid_labs_datasets/experiment__german__unser_weld
+    python -m run.data.sync_script_with_audio \
+      --voice-over "$PREFIX/processed/speech_to_text/*.wav" \
+      --script "$PREFIX/processed/scripts/*.csv" \
+      --destination "$PREFIX/processed_local/" \
+      --language German
 """
 import dataclasses
 import json
@@ -32,7 +40,6 @@ from google.cloud import storage
 from google.cloud.speech_v1p1beta1 import (
     LongRunningRecognizeResponse,
     RecognitionAudio,
-    RecognitionConfig,
     SpeechContext,
 )
 from google.protobuf.json_format import MessageToDict
@@ -42,8 +49,10 @@ from tqdm import tqdm
 import lib
 import run
 from lib.environment import AnsiCodes
-from lib.utils import get_chunks
+from lib.utils import flatten_2d, get_chunks
+from run import _lang_config
 from run._utils import blob_to_gcs_uri, gcs_uri_to_blob
+from run.data._loader import Language
 
 lib.environment.set_basic_logging_config()
 logger = logging.getLogger(__name__)
@@ -75,14 +84,6 @@ class SttToken(typing.NamedTuple):
     slice: typing.Tuple[int, int]
 
 
-STT_CONFIG = RecognitionConfig(
-    language_code="en-US",
-    model="video",
-    use_enhanced=True,
-    enable_automatic_punctuation=True,
-    enable_word_time_offsets=True,
-)
-
 # TODO: Use `pydantic` for loading speech-to-text results into a data structure, learn more:
 # https://pydantic-docs.helpmanual.io/. It'll also validate the data during runtime.
 
@@ -101,7 +102,7 @@ class _SttAlternative(typing.TypedDict):
 
 class _SttAlternatives(typing.TypedDict):
     alternatives: typing.List[_SttAlternative]
-    languageCode: typing.Literal["en-us"]
+    languageCode: _lang_config.LanguageCode
 
 
 class SttResult(typing.TypedDict):
@@ -140,13 +141,13 @@ class Stats:
     def log(self):
         total_unaligned_tokens = self.total_tokens - self.total_aligned_tokens
         words_unaligned = format_ratio(total_unaligned_tokens, self.total_tokens)
-        logger.info("Total word(s) unaligned: %s", words_unaligned)
+        logger.info(f"Total word(s) unaligned: {words_unaligned}")
 
         sound_alike = [tuple(p) for p in self.sound_alike]
         sound_alike = [(distance(*p), *p) for p in sound_alike]
         headers = ["Edit Distance", "", ""]
         sound_alike_ = tabulate.tabulate(sorted(sound_alike, reverse=True)[:50], headers=headers)
-        logger.info("Most different sound-a-like word(s):\n%s", sound_alike_)
+        logger.info(f"Most different sound-a-like word(s):\n{sound_alike_}")
 
         _quote = f'{AnsiCodes.DARK_GRAY}"{AnsiCodes.RESET_ALL}'
         quote = lambda s: f"{_quote}{s}{_quote}"
@@ -164,11 +165,8 @@ class Stats:
 
 STATS = Stats()
 CONTROL_CHARACTERS_REGEX = re.compile(r"[\x00-\x08\x0b\x0c\x0d\x0e-\x1f]")
-MULTIPLE_WHITE_SPACES_REGEX = re.compile(r"\s\s+")
-PUNCTUATION_REGEX = re.compile(r"[^\w\s]")
 
-
-normalize_vo_script = lru_cache(maxsize=2 ** 20)(lib.text.normalize_vo_script)
+normalize_vo_script = lru_cache(maxsize=2 ** 20)(_lang_config.normalize_vo_script)
 
 
 def format_ratio(a: float, b: float) -> str:
@@ -178,55 +176,6 @@ def format_ratio(a: float, b: float) -> str:
         '1.000000% [1 of 100]'
     """
     return f"{(float(a) / b) * 100}% [{a} of {b}]"
-
-
-@lru_cache(maxsize=2 ** 20)
-def _remove_punctuation(string: str) -> str:
-    """Remove all punctuation from a string.
-
-    Example:
-        >>> remove_punctuation('123 abc !.?')
-        '123 abc'
-        >>> remove_punctuation('Hello. You\'ve')
-        'Hello You ve'
-    """
-    return MULTIPLE_WHITE_SPACES_REGEX.sub(" ", PUNCTUATION_REGEX.sub(" ", string).strip())
-
-
-@lru_cache(maxsize=2 ** 20)
-def _grapheme_to_phoneme(grapheme: str):
-    """NOTE: Use private `_line_grapheme_to_phoneme` for performance..."""
-    return lib.text._line_grapheme_to_phoneme([grapheme], separator="|")[0]
-
-
-@lru_cache(maxsize=2 ** 20)
-def is_sound_alike(a: str, b: str) -> bool:
-    """Return `True` if `str` `a` and `str` `b` sound a-like.
-
-    NOTE: If two words have same sounds are spoken in the same order, then they sound-a-like.
-
-    Example:
-        >>> is_sound_alike("Hello-you've", "Hello. You've")
-        True
-        >>> is_sound_alike('screen introduction', 'screen--Introduction,')
-        True
-        >>> is_sound_alike('twentieth', '20th')
-        True
-        >>> is_sound_alike('financingA', 'financing a')
-        True
-    """
-    a = normalize_vo_script(a)
-    b = normalize_vo_script(b)
-    return_ = (
-        a.lower() == b.lower()
-        or _remove_punctuation(a.lower()).replace(" ", "")
-        == _remove_punctuation(b.lower()).replace(" ", "")
-        or _grapheme_to_phoneme(a) == _grapheme_to_phoneme(b)
-    )
-    if return_:
-        STATS.sound_alike.add(frozenset([a, b]))
-        return True
-    return False
 
 
 def _minus(text: str):
@@ -323,6 +272,7 @@ def _fix_alignments(
     alignments: typing.List[typing.Tuple[int, int]],
     tokens: typing.List[ScriptToken],
     stt_tokens: typing.List[SttToken],
+    language: Language,
 ) -> typing.Tuple[
     typing.List[ScriptToken], typing.List[SttToken], typing.List[typing.Tuple[int, int]]
 ]:
@@ -349,8 +299,8 @@ def _fix_alignments(
             (stt_tokens[last[1] + 1].slice[0], stt_tokens[next_[1] - 1].slice[-1]),
         )
 
-        if is_sound_alike(token.text, stt_token.text):
-            logger.info('Fixing alignment between: "%s" and "%s"', token.text, stt_token.text)
+        if _lang_config.is_sound_alike(token.text, stt_token.text, language):
+            logger.info(f'Fixing alignment between: "{token.text}" and "{stt_token.text}"')
             for j in reversed(range(last[0] + 1, next_[0])):
                 del tokens[j]
                 alignments = [(a - 1, b) if a > j else (a, b) for a, b in alignments]
@@ -408,6 +358,7 @@ def _flatten_stt_result(stt_result: SttResult) -> typing.Tuple[str, typing.List[
 def align_stt_with_script(
     scripts: typing.List[str],
     stt_result: SttResult,
+    language: Language,
     get_window_size: typing.Callable[[int, int], int] = _default_get_window_size,
 ) -> Alignments:
     """Align an STT result(s) with the related script(s). Uses white-space tokenization.
@@ -428,19 +379,20 @@ def align_stt_with_script(
         [ScriptToken(i, m.group(0), (m.start(), m.end())) for m in re.finditer(r"\S+", script)]
         for i, script in enumerate(scripts)
     ]
-    script_tokens: typing.List[ScriptToken] = lib.utils.flatten_2d(script_tokens_)
+    script_tokens: typing.List[ScriptToken] = flatten_2d(script_tokens_)
     transcript, stt_tokens = _flatten_stt_result(stt_result)
 
     # Align `script_tokens` and `stt_tokens`.
     args = (
-        [normalize_vo_script(t.text.lower()) for t in script_tokens],
-        [normalize_vo_script(t.text.lower()) for t in stt_tokens],
+        [normalize_vo_script(t.text.lower(), language) for t in script_tokens],
+        [normalize_vo_script(t.text.lower(), language) for t in stt_tokens],
         get_window_size(len(script_tokens), len(stt_tokens)),
     )
+    is_sound_alike = partial(_lang_config.is_sound_alike, language=language)
     alignments = lib.text.align_tokens(*args, allow_substitution=is_sound_alike)[1]
     # TODO: Should `_fix_alignments` align between scripts? Is that data valuable?
     script_tokens, stt_tokens, alignments = _fix_alignments(
-        scripts, alignments, script_tokens, stt_tokens
+        scripts, alignments, script_tokens, stt_tokens, language
     )
 
     # Log statistics
@@ -469,7 +421,10 @@ def align_stt_with_script(
 
 
 def _get_speech_context(
-    script: str, max_phrase_length: int = 100, max_overlap: float = 0.25
+    script: str,
+    language: Language,
+    max_phrase_length: int = 100,
+    max_overlap: float = 0.25,
 ) -> SpeechContext:
     """Given the voice-over script generate `SpeechContext` to help Speech-to-Text recognize
     specific words or phrases more frequently.
@@ -494,7 +449,8 @@ def _get_speech_context(
         ['a b c', 'c d e', 'e f g', 'g h i', 'i j']
 
     """
-    spans = [(m.start(), m.end()) for m in re.finditer(r"\S+", normalize_vo_script(script))]
+    iter_ = re.finditer(r"\S+", normalize_vo_script(script, language))
+    spans = [(m.start(), m.end()) for m in iter_]
     phrases = []
     start, next_start = 0, 0
     for prev, next in zip(spans, spans[1:]):
@@ -513,7 +469,7 @@ def _run_stt(
     scripts: typing.List[str],
     dest_blobs: typing.List[storage.Blob],
     poll_interval: float,
-    stt_config: RecognitionConfig,
+    language: Language,
     add_speech_context: bool = False,
 ):
     """Helper function for `run_stt`.
@@ -527,15 +483,19 @@ def _run_stt(
     " one hundred dollars ", "$100"
     " one hundred percent ", "100%"
     """
+    stt_config = _lang_config.STT_CONFIGS[language]
     operations = []
     for audio_blob, script, dest_blob in zip(audio_blobs, scripts, dest_blobs):
         config = deepcopy(stt_config)
         if add_speech_context:
-            config.speech_contexts.append(_get_speech_context("\n".join(script)))  # type: ignore
+            speech_context = _get_speech_context("\n".join(script), language)
+            config.speech_contexts.append(speech_context)  # type: ignore
         audio = RecognitionAudio(uri=blob_to_gcs_uri(audio_blob))
         operations.append(speech.SpeechClient().long_running_recognize(config=config, audio=audio))
-        message = 'STT operation %s "%s" started.'
-        logger.info(message, operations[-1].operation.name, blob_to_gcs_uri(dest_blob))
+        logger.info(f"STT running in {stt_config.language_code}, {stt_config.model} model...")
+        message = f"STT operation {operations[-1].operation.name}"
+        message += f'"{blob_to_gcs_uri(dest_blob)}" started.'
+        logger.info(message)
 
     progress = [0] * len(operations)
     progress_bar = tqdm(total=100)
@@ -554,8 +514,9 @@ def _run_stt(
                 # time. Google Storage has a strange implementation of creation date, and it'd be
                 # useful to add our own creation date timestamp, that doesn't get overwritten.
                 dest_blobs[i].upload_from_string(json.dumps(json_), content_type="application/json")
-                message = 'STT operation %s "%s" finished.'
-                logger.info(message, operation.operation.name, blob_to_gcs_uri(dest_blobs[i]))
+                message = f"STT operation {operation.operation.name} "
+                message += f'"{blob_to_gcs_uri(dest_blobs[i])}" finished.'
+                logger.info(message)
                 operations[i] = None
                 progress[i] = 100
             elif metadata is not None and metadata.progress_percent is not None:
@@ -568,8 +529,8 @@ def run_stt(
     audio_blobs: typing.List[storage.Blob],
     scripts: typing.List[str],
     dest_blobs: typing.List[storage.Blob],
+    language: Language,
     poll_interval: float = 1 / 10,
-    stt_config: RecognitionConfig = STT_CONFIG,
     max_connections: int = 256,
 ):
     """Run speech-to-text on `audio_blobs` and save them at `dest_blobs`.
@@ -608,9 +569,9 @@ def run_stt(
     assert len(audio_blobs) == len(dest_blobs)
     chunk = partial(get_chunks, n=max_connections)
     batches = list(zip(chunk(audio_blobs), chunk(scripts), chunk(dest_blobs)))
-    logger.info("Running %d STT operation(s) in %d batch(es).", len(audio_blobs), len(batches))
+    logger.info(f"Running {len(audio_blobs)} STT operation(s) in {len(batches)} batch(es).")
     for args in batches:
-        _run_stt(*args, poll_interval, stt_config)
+        _run_stt(*args, poll_interval, language)
 
 
 def _sync_and_upload(
@@ -621,6 +582,7 @@ def _sync_and_upload(
     alignment_blobs: typing.List[storage.Blob],
     text_column: str,
     recorder: lib.environment.RecordStandardStreams,
+    language: Language,
 ):
     """Sync `script_blobs` with `audio_blobs` and upload to `alignment_blobs`."""
     assert len(audio_blobs) == len(script_blobs), "Expected the same number of blobs."
@@ -635,9 +597,11 @@ def _sync_and_upload(
         for s in scripts_
     ]
     message = "Some or all script(s) are missing or incorrecly formatted."
-    assert all(isinstance(t, str) for t in lib.utils.flatten_2d(scripts)), message
+    assert all(isinstance(t, str) for t in flatten_2d(scripts)), message
     message = "Script(s) cannot contain funky characters."
-    assert all(lib.text.is_normalized_vo_script(t) for t in lib.utils.flatten_2d(scripts)), message
+    assert all(
+        _lang_config.is_normalized_vo_script(t, language) for t in flatten_2d(scripts)
+    ), message
 
     logger.info("Maybe running speech-to-text and caching results...")
     filtered = list(filter(lambda i: not i[-1].exists(), zip(audio_blobs, scripts, stt_blobs)))
@@ -646,14 +610,14 @@ def _sync_and_upload(
             typing.Tuple[typing.List[storage.Blob], typing.List[str], typing.List[storage.Blob]],
             zip(*filtered),
         )
-        run_stt(*args)
+        run_stt(*args, language)
     stt_results: typing.List[SttResult]
     stt_results = [json.loads(b.download_as_bytes()) for b in stt_blobs]
 
     for script, stt_result, alignment_blob in zip(scripts, stt_results, alignment_blobs):
-        message = 'Running alignment "%s" and uploading results...'
-        logger.info(message, blob_to_gcs_uri(alignment_blob))
-        alignment = align_stt_with_script(script, stt_result)
+        message = f'Running alignment "{blob_to_gcs_uri(alignment_blob)}" and uploading results...'
+        logger.info(message)
+        alignment = align_stt_with_script(script, stt_result, language)
         alignment_blob.upload_from_string(json.dumps(alignment), content_type="application/json")
 
     STATS.log()
@@ -662,8 +626,13 @@ def _sync_and_upload(
     for dest_gcs_uri in set(blob_to_gcs_uri(b) for b in dest_blobs):
         dest_blob = gcs_uri_to_blob(dest_gcs_uri)
         blob = dest_blob.bucket.blob(dest_blob.name + recorder.log_path.name)
-        logger.info("Uploading logs to `%s`...", blob)
-        blob.upload_from_string(recorder.log_path.read_text())
+        logger.info(f"Uploading logs to `{blob}`...")
+        # Formerly uploaded from string, but `recorder.log_path.read_text()` fails to read unencoded
+        # log file with unicode characters. [See TODO in `recorder` instantiation]
+        blob.upload_from_filename(recorder.log_path.absolute())
+
+
+# TODO: Allow for dialects to be selected as well, instead of just `language`.
 
 
 def main(
@@ -686,6 +655,9 @@ def main(
     alignments_folder: str = typer.Option(
         "alignments/", help="Upload alignment results to this folder in --destinations."
     ),
+    language: Language = typer.Option(
+        Language.ENGLISH, help="Specify the language of the dataset being synced."
+    ),
 ):
     """Align --scripts with --voice-overs and upload alignments to --destinations."""
     if len(voice_over) > len(destination):
@@ -696,6 +668,8 @@ def main(
     assert len(voice_over) == len(script), message % (len(voice_over), len(script))
 
     # NOTE: Save a log of the execution for future reference
+    # TODO: Force encoding to be utf-8 on the system, example:
+    # https://stackoverflow.com/questions/1473577/writing-unicode-strings-via-sys-stdout-in-python
     recorder = lib.environment.RecordStandardStreams()
 
     dest_blobs = [gcs_uri_to_blob(d) for d in destination]
@@ -710,9 +684,8 @@ def main(
     stt_blobs = [b.bucket.blob(b.name + stt_folder + n) for b, n in iterator]
     alignment_blobs = [b.bucket.blob(b.name + alignments_folder + n) for b, n in iterator]
 
-    _sync_and_upload(
-        audio_blobs, script_blobs, dest_blobs, stt_blobs, alignment_blobs, text_column, recorder
-    )
+    blobs = (audio_blobs, script_blobs, dest_blobs, stt_blobs, alignment_blobs)
+    _sync_and_upload(*blobs, text_column, recorder, language)
 
 
 if __name__ == "__main__":  # pragma: no cover
