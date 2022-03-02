@@ -81,6 +81,7 @@ OTIS_JIRY__STORY = make_en_speaker("otis_jiry__promo", "Otis Jiry (Story-Telling
 #################
 # CUSTOM VOICES #
 #################
+UNEEQ__ASB_CUSTOM_VOICE = make_en_speaker("uneeq__asb_custom_voice", "UneeQ - ASB (Custom Voice)")
 ENERGY_INDUSTRY_ACADEMY__CUSTOM_VOICE = make_en_speaker(
     "energy_industry_academy__custom_voice", "Energy Industry Academy (Custom Voice)"
 )
