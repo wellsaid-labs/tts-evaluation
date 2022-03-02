@@ -76,7 +76,7 @@ def main():
         for i, generated in enumerate(batch_text_to_speech(tts, inputs)):
             clip_num = i % num_clips + 1
             sesh = inputs[i][-1]
-            sesh = sesh[:-4] if sesh.endswith(".wav") else sesh
+            sesh = sesh[:-4] if (sesh.endswith(".wav") or sesh.endswith(".mp3")) else sesh
             if clip_num == 1:
                 st.markdown(f"##### Session: **{sesh}**")
             st.markdown(f"###### Clip: **{clip_num}**")
