@@ -81,4 +81,19 @@ guide to obtain a certificate and then configure our routes to use https.
 
    ```bash
    kubectl get certificates.cert-manager.io -n kong
+   kubectl describe certificates.cert-manager.io/tts-wellsaidlabs-com -n kong
    ```
+
+## Troubleshooting
+
+### Certificate fails to auto-renew
+
+_Assuming the environment is already setup and certificate has previously been
+issued_
+
+```bash
+# Confirm the certificate is in a valid (although expired) state: Type=Ready, Status=True
+kubectl describe certificates.cert-manager.io/tts-wellsaidlabs-com -n kong
+# Restart the cert-manager
+kubectl rollout restart deployment/cert-manager -n cert-manager
+```
