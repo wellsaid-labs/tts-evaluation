@@ -200,6 +200,17 @@ class Checkpoints(enum.Enum):
     V9_2021_11_04_STUDYSYNC_CUSTOM_VOICE: typing.Final = "v9_2021_11_04_studysync_custom_voice"
 
     """
+    These checkpoints include the Five9 custom voice.
+    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/372
+    Spectrogram Model Experiment (Step: 830,467):
+    https://www.comet.ml/wellsaid-labs/v9-custom-voices/d38734aa992a414db482f36fb5e8a961
+    Signal Model Experiment (Step: 1,114,691):
+    https://www.comet.ml/wellsaid-labs/v9-custom-voices/86c687102eba456da504a11093ee7366
+    """
+
+    V9_2021_11_09_FIVENINE_CUSTOM_VOICE: typing.Final = "v9_2021_11_09_fivenine_custom_voice"
+
+    """
 
     These checkpoints include the 2021 Q4 Marketplace Expansion voices:
     Steve B., Paul B., Eric S., Marcus G., Chase J., Jude D., Charlie Z., Bella B., Tilda C.
