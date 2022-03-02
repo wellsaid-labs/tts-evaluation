@@ -80,7 +80,7 @@ def is_voiced(text: str, language: Language) -> bool:
     return lib.text.is_voiced(text, _NON_ASCII_CHARS[language])
 
 
-SST_CONFIGS = []
+SST_CONFIGS = None
 
 try:
     _make_config = partial(

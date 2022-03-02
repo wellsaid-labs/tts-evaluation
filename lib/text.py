@@ -613,7 +613,6 @@ def _normalize_whitespace(text: str) -> str:
     """Normalize whitespace variations into standard characters. Formfeed `f` and carriage return `r`
     should be replace with new line `\n` and tab `\t` should be replaced with two spaces `  `."""
     text = text.replace("\f", "\n")
-    text = text.replace("\r", "")
     text = text.replace("\t", "  ")
     return text
 
@@ -645,6 +644,7 @@ def normalize_vo_script(text: str, non_ascii: frozenset, strip: bool = True) -> 
     """Normalize a voice-over script such that only readable characters remain.
 
     TODO: Use `unidecode.unidecode` in "strict" mode so that data isn't lost.
+    TODO: Clarify that some characters like `«` will be normalized regardless of being in the `non_ascii` set.
     NOTE: `non_ascii` needs to be explicitly set so that text isn't processed incorrecly accidently.
 
     References:
@@ -677,7 +677,6 @@ _NORMALIZED_ASCII_CHARS = set(
 
 def is_normalized_vo_script(text: str, non_ascii: frozenset) -> bool:
     """Return `True` if `text` has been normalized to a small set of characters."""
-
     return (
         unicodedata.is_normalized(_UNICODE_NORMAL_FORM, text)
         and len(set(text) - _NORMALIZED_ASCII_CHARS - non_ascii) == 0
