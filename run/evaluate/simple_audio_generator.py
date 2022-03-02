@@ -80,7 +80,7 @@ def main():
             if clip_num == 1:
                 st.markdown(f"##### Session: **{sesh}**")
             st.markdown(f"###### Clip: **{clip_num}**")
-            name = f"speaker={speaker_name},session={sesh},clip={clip_num}.wav"
+            name = f"spk={speaker_name},sesh={sesh},clp={clip_num}.wav"
             audio_web_path = audio_to_web_path(generated.sig_model, name)
             st_html(f'<audio controls src="{web_path_to_url(audio_web_path)}"></audio>')
             paths.append(audio_web_path)
