@@ -188,6 +188,17 @@ class Checkpoints(enum.Enum):
 
     V9_2021_10_06_UNEEQ_X_ASB_CUSTOM_VOICE: typing.Final = "v9_2021_10_06_uneeq_x_asb_custom_voice"
 
+        """
+    These checkpoints include the StudySync custom voice.
+    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/***
+    Spectrogram Model Experiment (Step: 681, 340):
+    https://www.comet.ml/wellsaid-labs/v9-custom-voices/db8d706b02e14d47be79d9966c57b959
+    Signal Model Experiment (Step: 1,191,300):
+    https://www.comet.ml/wellsaid-labs/v9-custom-voices/fbb56cfd643e416699047c7383eee9cf
+    """
+
+    V9_2021_11_04_STUDYSYNC_CUSTOM_VOICE: typing.Final = "v9_2021_11_04_studysync_custom_voice"
+
     """
 
     These checkpoints include the 2021 Q4 Marketplace Expansion voices:
