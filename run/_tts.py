@@ -177,7 +177,7 @@ class Checkpoints(enum.Enum):
 
     """
     These checkpoints include the UneeQ X ASB [updated] custom voice.
-    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/362
+    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/386
     Spectrogram Model Experiment (Step: 163,722):
     https://www.comet.ml/wellsaid-labs/v9-custom-voices/c9b857ba7d2f4cce9545bec429bd52be
     Signal Model Experiment (Step: 944,550):
@@ -188,7 +188,7 @@ class Checkpoints(enum.Enum):
 
     """
     These checkpoints include the StudySync custom voice.
-    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/***
+    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/386
     Spectrogram Model Experiment (Step: 681, 340):
     https://www.comet.ml/wellsaid-labs/v9-custom-voices/db8d706b02e14d47be79d9966c57b959
     Signal Model Experiment (Step: 1,191,300):
@@ -199,7 +199,7 @@ class Checkpoints(enum.Enum):
 
     """
     These checkpoints include the Five9 custom voice.
-    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/372
+    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/386
     Spectrogram Model Experiment (Step: 830,467):
     https://www.comet.ml/wellsaid-labs/v9-custom-voices/d38734aa992a414db482f36fb5e8a961
     Signal Model Experiment (Step: 1,114,691):
@@ -210,7 +210,7 @@ class Checkpoints(enum.Enum):
 
     """
     These checkpoints include the StudySync custom voice (version 2).
-    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/***
+    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/386
     Spectrogram Model Experiment (Step: 681, 340):
     https://www.comet.ml/wellsaid-labs/v9-custom-voices/db8d706b02e14d47be79d9966c57b959
     Signal Model Experiment (Step: 748,220):
@@ -221,7 +221,7 @@ class Checkpoints(enum.Enum):
 
     """
     These checkpoints include the UneeQ X ASB (V3) final custom voice.
-    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/***
+    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/386
     Spectrogram Model Experiment (Step: 861,875):
     https://www.comet.ml/wellsaid-labs/uneeq-asb-experiments/360480297ec9416dbefec838c508c139
     Signal Model Experiment (Step: 796,250):
@@ -232,7 +232,7 @@ class Checkpoints(enum.Enum):
 
     """
     These checkpoints include the 2021 Q4 Marketplace Expansion voices:
-    Steve B., Paul B., Eric S., Marcus G., Chase J., Jude D., Charlie Z., Bella B., Tilda C.
+    Steve B, Paul B, Eric S, Marcus G, Chase J, Jude D, Charlie Z, Bella B, Tilda C
 
     Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/374
     Spectrogram Model Experiment (Step: 703,927):
@@ -245,15 +245,19 @@ class Checkpoints(enum.Enum):
 
     """
     These checkpoints include the 2022 Q1 Marketplace Expansion voices:
-    [TBD]]
-    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/***
+    Conversational: Patrick K, Kai M, Nicole L, Ava M, Vanessa N, Wade C, Sofia H
+    Narration:      Jodi P, Gia V, Antony A, Raine B, Owen C, Genevieve M, Jarvis H, Theo K, James B
+    Promo:          Zach E
+
+    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/386
     Spectrogram Model Experiment (Step: 736,392):
-    https://www.comet.ml/wellsaid-labs/v9-marketplace-voices/***
+    https://www.comet.ml/wellsaid-labs/v9-marketplace-voices/d17cdb86c9314b678468d20921e5f4f2
     Signal Model Experiment (Step: 746,452):
-    https://www.comet.ml/wellsaid-labs/v9-marketplace-voices/***
+    https://www.comet.ml/wellsaid-labs/v9-marketplace-voices/4d87bd1990c648baa9ba9d9340ca41dc
     """
 
     V9_2022_Q1_MARKETPLACE_EXPANSION: typing.Final = "v9_2022_q1_marketplace_expansion"
+
 
 _GCS_PATH = "gs://wellsaid_labs_checkpoints/"
 CHECKPOINTS_LOADERS = {
