@@ -81,7 +81,13 @@ OTIS_JIRY__STORY = make_en_speaker("otis_jiry__promo", "Otis Jiry (Story-Telling
 #################
 # CUSTOM VOICES #
 #################
-UNEEQ__ASB_CUSTOM_VOICE = make_en_speaker("uneeq__asb_custom_voice", "UneeQ - ASB (Custom Voice)")
+UNEEQ__ASB_CUSTOM_VOICE = make_en_speaker(
+    "uneeq__asb_custom_voice", "UneeQ - ASB (Custom Voice V2)"
+)
+# UneeQ Custom Voice, built via combining V1 and V2 datasets, normalized to 21 LUFS
+UNEEQ__ASB_CUSTOM_VOICE_COMBINED = make_en_speaker(
+    "uneeq__asb__combined_data_21_lufs", "UneeQ - ASB (Custom Voice V3)"
+)
 ENERGY_INDUSTRY_ACADEMY__CUSTOM_VOICE = make_en_speaker(
     "energy_industry_academy__custom_voice", "Energy Industry Academy (Custom Voice)"
 )

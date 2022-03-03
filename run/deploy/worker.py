@@ -139,7 +139,7 @@ _SPEAKER_ID_TO_SPEAKER: typing.Dict[int, typing.Tuple[Speaker, str]] = {
     13268907: (english.JOSIE__CUSTOM, ""),
     95313811: (english.JOSIE__CUSTOM__MANUAL_POST, ""),
     50794582: (english.UNEEQ__ASB_CUSTOM_VOICE, Session("script-20-enthusiastic.wav")),
-    50794583: (english.UNEEQ__ASB_CUSTOM_VOICE, Session("script-28-enthusiastic.wav")),
+    50794583: (english.UNEEQ__ASB_CUSTOM_VOICE_COMBINED, Session("script-28-enthusiastic.wav")),
     78252076: (english.VERITONE__CUSTOM_VOICE, Session("")),
     70695443: (english.SUPER_HI_FI__CUSTOM_VOICE, Session("promo_script_5_superhifi.wav")),
     64197676: (english.US_PHARMACOPEIA__CUSTOM_VOICE, Session("enthusiastic_script-22.wav")),

@@ -220,6 +220,17 @@ class Checkpoints(enum.Enum):
     V9_2021_12_01_STUDYSYNC_CUSTOM_VOICE: typing.Final = "v9_2021_12_01_studysync_custom_voice"
 
     """
+    These checkpoints include the UneeQ X ASB (V3) final custom voice.
+    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/***
+    Spectrogram Model Experiment (Step: 861,875):
+    https://www.comet.ml/wellsaid-labs/uneeq-asb-experiments/360480297ec9416dbefec838c508c139
+    Signal Model Experiment (Step: 796,250):
+    https://www.comet.ml/wellsaid-labs/uneeq-asb-experiments/cf02f0011fcb44438be5a363721a991e
+    """
+
+    V9_2021_12_16_UNEEQ_X_ASB_CUSTOM_VOICE: typing.Final = "v9_2021_12_16_uneeq_x_asb_custom_voice"
+
+    """
     These checkpoints include the 2021 Q4 Marketplace Expansion voices:
     Steve B., Paul B., Eric S., Marcus G., Chase J., Jude D., Charlie Z., Bella B., Tilda C.
 
