@@ -154,7 +154,7 @@ _SPEAKER_ID_TO_SPEAKER: typing.Dict[int, typing.Tuple[Speaker, str]] = {
     61137774: (english.ENERGY_INDUSTRY_ACADEMY__CUSTOM_VOICE, "sample_script_2.wav"),
     30610881: (english.VIACOM__CUSTOM_VOICE, Session("kelsey_speech_synthesis_section1.wav")),
     50481197: (english.HOUR_ONE_NBC__BB_CUSTOM_VOICE, Session("hour_one_nbc_dataset_5.wav")),
-    77552139: (english.STUDY_SYNC__CUSTOM_VOICE, Session("fernandes_audio_3.wav")),
+    77552139: (english.STUDY_SYNC__CUSTOM_VOICE, Session("fernandes_audio_5.wav")),
     25502195: (english.FIVE_NINE__CUSTOM_VOICE, Session("wsl_five9_audio_3.wav")),
 }
 SPEAKER_ID_TO_SPEAKER = {

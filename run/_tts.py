@@ -136,7 +136,6 @@ class Checkpoints(enum.Enum):
     V9_2021_8_03_CUSTOM_VOICES: typing.Final = "v9_2021_8_03_custom_voices"
 
     """
-
     These checkpoints include the Viacom custom voice.
 
     Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/357
@@ -163,7 +162,6 @@ class Checkpoints(enum.Enum):
     V9_2021_8_05_VIACOM_CUSTOM_VOICE: typing.Final = "v9_2021_8_05_viacom_custom_voice"
 
     """
-
     These checkpoints include the Hour One X NBC custom voice.
 
     Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/358
@@ -188,7 +186,7 @@ class Checkpoints(enum.Enum):
 
     V9_2021_10_06_UNEEQ_X_ASB_CUSTOM_VOICE: typing.Final = "v9_2021_10_06_uneeq_x_asb_custom_voice"
 
-        """
+    """
     These checkpoints include the StudySync custom voice.
     Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/***
     Spectrogram Model Experiment (Step: 681, 340):
@@ -211,7 +209,17 @@ class Checkpoints(enum.Enum):
     V9_2021_11_09_FIVENINE_CUSTOM_VOICE: typing.Final = "v9_2021_11_09_fivenine_custom_voice"
 
     """
+    These checkpoints include the StudySync custom voice (version 2).
+    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/***
+    Spectrogram Model Experiment (Step: 681, 340):
+    https://www.comet.ml/wellsaid-labs/v9-custom-voices/db8d706b02e14d47be79d9966c57b959
+    Signal Model Experiment (Step: 748,220):
+    https://www.comet.ml/wellsaid-labs/v9-custom-voices/7e5aef579ce54539aff1668bfb4a9022
+    """
 
+    V9_2021_12_01_STUDYSYNC_CUSTOM_VOICE: typing.Final = "v9_2021_12_01_studysync_custom_voice"
+
+    """
     These checkpoints include the 2021 Q4 Marketplace Expansion voices:
     Steve B., Paul B., Eric S., Marcus G., Chase J., Jude D., Charlie Z., Bella B., Tilda C.
 
