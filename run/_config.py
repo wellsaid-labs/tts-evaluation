@@ -35,6 +35,10 @@ DATASETS = copy.copy(_loader.DATASETS)
 # NOTE: Elliot and Elizabeth has unannotated character portrayals.
 del DATASETS[_loader.english.ELLIOT_MILLER]
 del DATASETS[_loader.english.ELIZABETH_KLETT]
+# NOTE: The following custom datasets are poor quality and should be excluded.
+del DATASETS[_loader.english.HOUR_ONE_NBC__BB_CUSTOM_VOICE]
+del DATASETS[_loader.english.VIACOM__CUSTOM_VOICE]
+del DATASETS[_loader.english.UNEEQ__ASB_CUSTOM_VOICE]
 
 TTS_DISK_CACHE_NAME = ".tts_cache"  # NOTE: Hidden directory stored in other directories for caching
 DISK_PATH = lib.environment.ROOT_PATH / "disk"
