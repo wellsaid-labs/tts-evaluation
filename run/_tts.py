@@ -243,6 +243,17 @@ class Checkpoints(enum.Enum):
 
     V9_2021_Q4_MARKETPLACE_EXPANSION: typing.Final = "v9_2021_q4_marketplace_expansion"
 
+    """
+    These checkpoints include the 2022 Q1 Marketplace Expansion voices:
+    [TBD]]
+    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/***
+    Spectrogram Model Experiment (Step: 736,392):
+    https://www.comet.ml/wellsaid-labs/v9-marketplace-voices/***
+    Signal Model Experiment (Step: 746,452):
+    https://www.comet.ml/wellsaid-labs/v9-marketplace-voices/***
+    """
+
+    V9_2022_Q1_MARKETPLACE_EXPANSION: typing.Final = "v9_2022_q1_marketplace_expansion"
 
 _GCS_PATH = "gs://wellsaid_labs_checkpoints/"
 CHECKPOINTS_LOADERS = {
