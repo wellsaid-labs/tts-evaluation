@@ -26,7 +26,7 @@ from lib.audio import sec_to_sample
 from lib.distributed import get_rank, get_world_size, is_initialized
 from lib.samplers import BucketBatchSampler
 from lib.utils import Tuple, flatten_2d
-from run.data._loader import Alignment, Language, Span
+from run.data._loader import Alignment, Span
 from run.train import _utils
 from run.train.spectrogram_model._model import Inputs
 
@@ -310,19 +310,6 @@ class Batch(_utils.Batch):
         return len(self.spans)
 
 
-def _en_span_to_tokens(spans: typing.List[Span]) -> typing.List[typing.List[str]]:
-    """Process English `Span`s of text into a list of tokens."""
-    nlp = lib.text.load_en_core_web_md(disable=("parser", "ner"))
-    en_docs: typing.List[spacy.tokens.Doc] = list(nlp.pipe([s.passage.script for s in spans]))
-    for i in range(len(spans)):
-        script_slice = spans[i].script_slice
-        span = en_docs[i].char_span(script_slice.start, script_slice.stop)  # type: ignore
-        assert span is not None, "Invalid `spacy.tokens.Span` selected."
-        en_docs[i] = span.as_doc()
-    phonemes = typing.cast(typing.List[str], lib.text.grapheme_to_phoneme(en_docs))
-    return [p.split(run._lang_config.PHONEME_SEPARATOR) for p in phonemes]
-
-
 def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
     """
     NOTE: spaCy splits some (not all) words on apostrophes while AmEPD does not; therefore,
@@ -355,12 +342,7 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
     """
     assert len(spans) > 0, "Batch must have at least one item."
 
-    en_spans = [(i, s) for i, s in enumerate(spans) if s.speaker.language == Language.ENGLISH]
-    en_tokens = _en_span_to_tokens([s for _, s in en_spans])
-
     tokens = [list(s.script) for s in spans]
-    for i, token in enumerate(en_tokens):
-        tokens[i] = token
     speakers = [s.speaker for s in spans]
     sessions = [s.session for s in spans]
 

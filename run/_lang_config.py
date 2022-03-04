@@ -3,29 +3,14 @@ import re
 import typing
 from functools import lru_cache, partial
 
-from hparams import HParams, add_config
-
 import lib
-from lib.text import _line_grapheme_to_phoneme, get_spoken_chars
+from lib.text import get_spoken_chars, grapheme_to_phoneme
 from lib.utils import identity
 from run.data._loader import Language
 
 logger = logging.getLogger(__name__)
 
-# NOTE: eSpeak doesn't have a dictionary of all the phonetic characters, so this is a dictionary
-# of the phonetic characters we found in the English dataset.
-# TODO: Remove this once `grapheme_to_phoneme` is deprecated
-PHONEME_SEPARATOR = "|"
-GRAPHEME_TO_PHONEME_RESTRICTED = list(lib.text.GRAPHEME_TO_PHONEME_RESTRICTED) + [PHONEME_SEPARATOR]
 # fmt: off
-ENGLISH_PHONETIC_CHARACTERS = (
-    '\n', ' ', '!', '"', "'", '(', ')', '*', ',', '-', '.', '/', ':', ';', '?', '[', ']', '=', 'aɪ',
-    'aɪə', 'aɪɚ', 'aɪʊ', 'aɪʊɹ', 'aʊ', 'b', 'd', 'dʒ', 'eɪ', 'f', 'h', 'i', 'iə', 'iː', 'j',
-    'k', 'l', 'm', 'n', 'nʲ', 'n̩', 'oʊ', 'oː', 'oːɹ', 'p', 'r', 's', 't', 'tʃ', 'uː', 'v', 'w',
-    'x', 'z', 'æ', 'æː', 'ð', 'ø', 'ŋ', 'ɐ', 'ɐː', 'ɑː', 'ɑːɹ', 'ɑ̃', 'ɔ', 'ɔɪ', 'ɔː', 'ɔːɹ',
-    'ə', 'əl', 'ɚ', 'ɛ', 'ɛɹ', 'ɜː', 'ɡ', 'ɣ', 'ɪ', 'ɪɹ', 'ɫ', 'ɹ', 'ɾ', 'ʃ', 'ʊ', 'ʊɹ', 'ʌ',
-    'ʒ', 'ʔ', 'ˈ', 'ˌ', 'θ', 'ᵻ', 'ɬ'
-)
 
 _NON_ASCII_CHARS: typing.Dict[Language, frozenset] = {
     # Resources:
@@ -101,7 +86,7 @@ def _grapheme_to_phoneme(grapheme: str) -> str:
 
     NOTE: Use private `_line_grapheme_to_phoneme` for performance...
     """
-    return _line_grapheme_to_phoneme([grapheme], separator="|")[0]
+    return grapheme_to_phoneme([grapheme], separator="|")[0]
 
 
 _PUNCT_REGEXES = {l: re.compile(r"[^\w\s" + "".join(_NON_ASCII_CHARS[l]) + r"]") for l in Language}
@@ -151,7 +136,4 @@ def is_sound_alike(a: str, b: str, language: Language) -> bool:
 
 def configure():
     """Configure modules involved in processing text."""
-    config = {
-        lib.text.grapheme_to_phoneme: HParams(separator=PHONEME_SEPARATOR),
-    }
-    add_config(config)
+    pass

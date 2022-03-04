@@ -275,7 +275,7 @@ def get_dev_dataset() -> run._config.Dataset:
 @session_cache(maxsize=None)
 def fast_grapheme_to_phoneme(text: str):
     """Fast grapheme to phoneme, cached."""
-    return lib.text._line_grapheme_to_phoneme([text], separator="|")[0]
+    return lib.text.grapheme_to_phoneme([text], separator="|")[0]
 
 
 def make_signal_chart(

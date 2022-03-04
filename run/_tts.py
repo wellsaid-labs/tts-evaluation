@@ -20,12 +20,12 @@ from spacy.lang.en import English
 from third_party import LazyLoader
 
 from lib.environment import PT_EXTENSION, load
-from lib.text import grapheme_to_phoneme, load_en_core_web_md
+from lib.text import load_en_core_web_md
 from lib.utils import get_chunks, tqdm_
 from run import train
 from run._config import CHECKPOINTS_PATH
-from run._lang_config import GRAPHEME_TO_PHONEME_RESTRICTED, PHONEME_SEPARATOR, normalize_vo_script
-from run.data._loader import Language, Session, Span, Speaker
+from run._lang_config import normalize_vo_script
+from run.data._loader import Session, Span, Speaker
 from run.train.signal_model._model import SignalModel, generate_waveform
 from run.train.spectrogram_model._model import Inputs, Mode, Preds, SpectrogramModel
 
@@ -251,14 +251,7 @@ def process_tts_inputs(
     if len(normalized) == 0:
         raise PublicTextValueError("Text cannot be empty.")
 
-    if speaker.language == Language.ENGLISH:
-        for substring in GRAPHEME_TO_PHONEME_RESTRICTED:
-            if substring in normalized:
-                raise PublicTextValueError(f"Text cannot contain these characters: {substring}")
-        tokens = typing.cast(str, grapheme_to_phoneme(nlp(normalized)))
-        tokens = tokens.split(PHONEME_SEPARATOR)
-    else:
-        tokens = list(normalized)
+    tokens = list(normalized)
 
     if len(tokens) == 0:
         raise PublicTextValueError(f'Invalid text: "{script}"')
@@ -330,26 +323,15 @@ def batch_text_to_speech(
     batch_size: int = 8,
 ) -> typing.List[TTSInputOutput]:
     """Run TTS end-to-end quickly with a verbose output."""
-    nlp = load_en_core_web_md(disable=("parser", "ner"))
     inputs = [(normalize_vo_script(sc, sp.language), sp, se) for sc, sp, se in inputs]
-
-    en_inputs = [(i, t) for i, t in enumerate(inputs) if t[1].language == Language.ENGLISH]
-    en_tokens = []
-    if len(en_inputs) > 0:
-        docs: typing.List[spacy.tokens.Doc] = list(nlp.pipe([i[1][0] for i in en_inputs]))
-        en_tokens = typing.cast(typing.List[str], grapheme_to_phoneme(docs))
-        en_tokens = [t.split(PHONEME_SEPARATOR) for t in en_tokens]
-
     inputs_ = [(i, (list(t), sp, sh)) for i, (t, sp, sh) in enumerate(inputs)]
-    for (i, (_, speaker, session)), en_tokens_ in zip(en_inputs, en_tokens):
-        inputs_[i] = (i, (en_tokens_, speaker, session))
     inputs_ = sorted(inputs_, key=lambda i: len(i[1][0]))
 
     results: typing.Dict[int, TTSInputOutput] = {}
     for batch in tqdm_(list(get_chunks(inputs_, batch_size))):
         model_inputs = Inputs(
             speaker=[i[1][1] for i in batch],
-            session=[(i[1][1], i[1][2]) for i in batch],
+            session=[i[1][2] for i in batch],
             tokens=[i[1][0] for i in batch],
         )
         preds = typing.cast(Preds, package.spectrogram_model(inputs=model_inputs, mode=Mode.INFER))
