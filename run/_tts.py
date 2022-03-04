@@ -16,11 +16,9 @@ from subprocess import PIPE
 import numpy
 import torch
 from hparams import HParam, configurable
-from spacy.lang.en import English
 from third_party import LazyLoader
 
 from lib.environment import PT_EXTENSION, load
-from lib.text import load_en_core_web_md
 from lib.utils import get_chunks, tqdm_
 from run import train
 from run._config import CHECKPOINTS_PATH
@@ -244,7 +242,7 @@ encode_tts_inputs = None
 
 
 def process_tts_inputs(
-    nlp: English, script: str, speaker: Speaker, session: Session
+    script: str, speaker: Speaker, session: Session
 ) -> typing.Tuple[typing.List[str], Speaker, Session]:
     """Process TTS `script`, `speaker` and `session` for use with the model(s)."""
     normalized = normalize_vo_script(script, speaker.language)
@@ -289,8 +287,7 @@ def text_to_speech(
     split_size: int = 32,
 ) -> numpy.ndarray:
     """Run TTS end-to-end with friendly errors."""
-    nlp = load_en_core_web_md(disable=("parser", "ner"))
-    tokens, speaker, session = process_tts_inputs(nlp, script, speaker, session)
+    tokens, speaker, session = process_tts_inputs(script, speaker, session)
     inputs = make_tts_inputs(package, tokens, speaker, session)
     preds = typing.cast(Preds, package.spectrogram_model(inputs=inputs, mode=Mode.INFER))
     splits = preds.frames.split(split_size)
@@ -326,7 +323,6 @@ def batch_text_to_speech(
     inputs = [(normalize_vo_script(sc, sp.language), sp, se) for sc, sp, se in inputs]
     inputs_ = [(i, (list(t), sp, sh)) for i, (t, sp, sh) in enumerate(inputs)]
     inputs_ = sorted(inputs_, key=lambda i: len(i[1][0]))
-
     results: typing.Dict[int, TTSInputOutput] = {}
     for batch in tqdm_(list(get_chunks(inputs_, batch_size))):
         model_inputs = Inputs(
