@@ -7,11 +7,11 @@ from unittest import mock
 import pytest
 
 import lib
-from lib.text import _line_grapheme_to_phoneme, is_normalized_vo_script, normalize_vo_script
+from lib.text import grapheme_to_phoneme, is_normalized_vo_script, normalize_vo_script
 
 
-def test__line_grapheme_to_phoneme():
-    """Test `_line_grapheme_to_phoneme` can handle some basic cases."""
+def test_grapheme_to_phoneme():
+    """Test `grapheme_to_phoneme` can handle some basic cases."""
     in_ = [
         "  Hello World  ",
         "Hello World  ",
@@ -26,36 +26,50 @@ def test__line_grapheme_to_phoneme():
         " _\n_ _h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d_ _\n_ ",
         " _\n\n_ _h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d_ _\n\n_ ",
     ]
-    assert _line_grapheme_to_phoneme(in_, separator="_") == out
+    assert grapheme_to_phoneme(in_, separator="_") == out
 
 
-def test__line_grapheme_to_phoneme__service_separator():
-    """Test `_line_grapheme_to_phoneme` works when `separator == service_separator`."""
-    assert _line_grapheme_to_phoneme(["Hello World"], separator="_") == ["h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d"]
+def test_grapheme_to_phoneme__white_space():
+    """Test `grapheme_to_phoneme` preserves white spaces, SOMETIMES."""
+    # NOTE: Test a number of string literals, see: https://docs.python.org/2.0/ref/strings.html
+    # TODO: Which of these punctuation marks need to be preserved?
+    in_ = " \n test \t test \r test \v test \f test \a test \b "
+    out = " _\n_ _t_ˈ_ɛ_s_t_ _t_ˈ_ɛ_s_t_ _t_ˈ_ɛ_s_t_ _t_ˈ_ɛ_s_t_ _t_ˈ_ɛ_s_t_ _t_ˈ_ɛ_s_t_ "
+    assert grapheme_to_phoneme([in_], separator="_") == [out]
+
+    # TODO: Multiple white-spaces are not preserved.
+    in_ = "résumé résumé  résumé   résumé"
+    out = "ɹ|ˈ|ɛ|z|uː|m|ˌ|eɪ| |ɹ|ˈ|ɛ|z|uː|m|ˌ|eɪ| |ɹ|ˈ|ɛ|z|uː|m|ˌ|eɪ| |ɹ|ˈ|ɛ|z|uː|m|ˌ|eɪ"
+    assert grapheme_to_phoneme([in_], separator="|") == [out]
 
 
-def test__line_grapheme_to_phoneme__unique_separator():
-    """Test `_line_grapheme_to_phoneme` errors if `separator` is not unique."""
+def test_grapheme_to_phoneme__service_separator():
+    """Test `grapheme_to_phoneme` works when `separator == service_separator`."""
+    assert grapheme_to_phoneme(["Hello World"], separator="_") == ["h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d"]
+
+
+def test_grapheme_to_phoneme__unique_separator():
+    """Test `grapheme_to_phoneme` errors if `separator` is not unique."""
     with pytest.raises(AssertionError):
-        _line_grapheme_to_phoneme(["Hello World"], separator="ə")
+        grapheme_to_phoneme(["Hello World"], separator="ə")
 
 
 @mock.patch("lib.text.logger.warning")
-def test__line_grapheme_to_phoneme__language_switching(mock_warning):
-    """Test `_line_grapheme_to_phoneme` logs a warning if the language is switched."""
-    assert _line_grapheme_to_phoneme(["mon dieu"], separator="|") == ["m|ˈ|ɑː|n| |d|j|ˈ|ø"]
+def test_grapheme_to_phoneme__language_switching(mock_warning):
+    """Test `grapheme_to_phoneme` logs a warning if the language is switched."""
+    assert grapheme_to_phoneme(["mon dieu"], separator="|") == ["m|ˈ|ɑː|n| |d|j|ˈ|ø"]
     assert mock_warning.called == 1
 
 
-def test__line_grapheme_to_phoneme__special_bash_character():
-    """Test `_line_grapheme_to_phoneme` handles double quotes, a bash special character."""
+def test_grapheme_to_phoneme__special_bash_character():
+    """Test `grapheme_to_phoneme` handles double quotes, a bash special character."""
     in_ = ['"It is commonly argued that the notion of']
     out = ["ɪ_t_ _ɪ_z_ _k_ˈ_ɑː_m_ə_n_l_i_ _ˈ_ɑːɹ_ɡ_j_uː_d_ _ð_æ_t_ð_ə_ _n_ˈ_oʊ_ʃ_ə_n_ _ʌ_v"]
-    assert _line_grapheme_to_phoneme(in_, separator="_") == out
+    assert grapheme_to_phoneme(in_, separator="_") == out
 
 
-def test__line_grapheme_to_phoneme__long_number():
-    """Test `_line_grapheme_to_phoneme` is UNABLE to handle long numbers.
+def test_grapheme_to_phoneme__long_number():
+    """Test `grapheme_to_phoneme` is UNABLE to handle long numbers.
 
     NOTE: eSpeak stops before outputing "7169399375105820974944592". Feel free to test this, like
     so: `espeak --ipa=3 -q -ven-us 3.141592653589793238462643383279502884197`.
@@ -63,7 +77,7 @@ def test__line_grapheme_to_phoneme__long_number():
     Learn more here: https://github.com/wellsaid-labs/Text-to-Speech/issues/299
     """
     in_ = "3.141592653589793238462643383279502884197169399375105820974944592"
-    assert _line_grapheme_to_phoneme([in_], separator="|") == [
+    assert grapheme_to_phoneme([in_], separator="|") == [
         "θ|ɹ|ˈ|iː| |p|ɔɪ|n|t| |w|ˈ|ʌ|n| |f|ˈ|oːɹ| |w|ˈ|ʌ|n| |f|ˈ|aɪ|v| |n|ˈ|aɪ|n| |t|ˈ|uː| "
         "|s|ˈ|ɪ|k|s| |f|ˈ|aɪ|v| |θ|ɹ|ˈ|iː| |f|ˈ|aɪ|v| |ˈ|eɪ|t| |n|ˈ|aɪ|n| |s|ˈ|ɛ|v|ə|n| "
         "|n|ˈ|aɪ|n| |θ|ɹ|ˈ|iː| |t|ˈ|uː| |θ|ɹ|ˈ|iː| |ˈ|eɪ|t| |f|ˈ|oːɹ| |s|ˈ|ɪ|k|s| |t|ˈ|uː| "
@@ -73,27 +87,13 @@ def test__line_grapheme_to_phoneme__long_number():
     ]
 
 
-def test__line_grapheme_to_phoneme__empty():
-    """Test `_line_grapheme_to_phoneme` against an empty list."""
-    assert _line_grapheme_to_phoneme([]) == []
+def test_grapheme_to_phoneme__empty():
+    """Test `grapheme_to_phoneme` against an empty list."""
+    assert grapheme_to_phoneme([]) == []
 
 
-def test__line_grapheme_to_phoneme__white_space():
-    """Test `_line_grapheme_to_phoneme` preserves white spaces, SOMETIMES."""
-    # NOTE: Test a number of string literals, see: https://docs.python.org/2.0/ref/strings.html
-    # TODO: Which of these punctuation marks need to be preserved?
-    in_ = " \n test \t test \r test \v test \f test \a test \b "
-    out = " _\n_ _t_ˈ_ɛ_s_t_ _t_ˈ_ɛ_s_t_ _t_ˈ_ɛ_s_t_ _t_ˈ_ɛ_s_t_ _t_ˈ_ɛ_s_t_ _t_ˈ_ɛ_s_t_ "
-    assert _line_grapheme_to_phoneme([in_], separator="_") == [out]
-
-    # TODO: Multiple white-spaces are not preserved.
-    in_ = "résumé résumé  résumé   résumé"
-    out = "ɹ|ˈ|ɛ|z|uː|m|ˌ|eɪ| |ɹ|ˈ|ɛ|z|uː|m|ˌ|eɪ| |ɹ|ˈ|ɛ|z|uː|m|ˌ|eɪ| |ɹ|ˈ|ɛ|z|uː|m|ˌ|eɪ"
-    assert _line_grapheme_to_phoneme([in_], separator="|") == [out]
-
-
-def test__line_grapheme_to_phoneme__regressions():
-    """Test `_line_grapheme_to_phoneme` against many real world examples."""
+def test_grapheme_to_phoneme__regressions():
+    """Test `grapheme_to_phoneme` against many real world examples."""
     inputs = [
         "and Trot fed it a handful of fresh blue clover and smoothed and petted it until the lamb "
         "was eager to follow her wherever she might go.",
@@ -198,7 +198,7 @@ _ _ɹ_ˌ_oʊ_m_ə_n_ _f_ˈ_oːɹ_ _ɪ_l_ˌ_uː_m_ᵻ_n_ˈ_eɪ_ʃ_ə_n""",
         "_p_l_ˈ_eɪ_n_ _h_ˈ_aʊ_s_\n_\n_ð_ə_ _m_ˈ_æ_n",
     ]
     for in_, out in zip(inputs, outputs):
-        for i, o in zip(_line_grapheme_to_phoneme(in_.split("\n"), separator="_"), out.split("\n")):
+        for i, o in zip(grapheme_to_phoneme(in_.split("\n"), separator="_"), out.split("\n")):
             assert i.strip("_") == o.strip("_")
 
 

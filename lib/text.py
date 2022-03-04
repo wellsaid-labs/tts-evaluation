@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 GRAPHEME_TO_PHONEME_RESTRICTED = ("[[", "]]", "<", ">")
 
 
-def _line_grapheme_to_phoneme(
+def grapheme_to_phoneme(
     graphemes: typing.List[str],
     service: typing.Literal["espeak"] = "espeak",
     flags: typing.List[str] = ["--ipa=3", "-q", "-ven-us", "--stdin", "-m"],
