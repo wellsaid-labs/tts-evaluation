@@ -290,7 +290,7 @@ def _visualize_source_vs_target(args: _HandleBatchArgs, preds: lib.spectrogram_m
         return
 
     item = random.randint(0, len(args.batch) - 1)
-    spectrogram_length = int(args.batch.spectrogram.lengths[item].item())
+    spectrogram_length = int(args.batch.spectrogram.lengths[0, item].item())
     text_length = int(preds.num_tokens[item].item())
 
     # predicted_spectrogram, gold_spectrogram [num_frames, frame_channels]
