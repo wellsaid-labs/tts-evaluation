@@ -223,9 +223,8 @@ class Encoder(torch.nn.Module):
             )
             for _ in range(num_conv_layers)
         )
-        self.norm_layers = ModuleList(
-            _LayerNorm(hidden_size) for _ in range(num_conv_layers)
-        )
+        self.norm_layers = ModuleList(_LayerNorm(hidden_size) for _ in range(num_conv_layers))
+        self.norm_layers = ModuleList(_LayerNorm(hidden_size) for _ in range(num_conv_layers))
         self.lstm = _RightMaskedBiRNN(
             rnn_class=LSTM,
             input_size=hidden_size,

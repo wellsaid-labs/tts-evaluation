@@ -17,12 +17,9 @@ from run.data import _loader
 from run.data._loader import Language, Passage, Span, Speaker
 
 if typing.TYPE_CHECKING:  # pragma: no cover
-    import IPython
-    import IPython.display
     import librosa
 else:
     librosa = LazyLoader("librosa", globals(), "librosa")
-    IPython = LazyLoader("IPython", globals(), "IPython")
 
 logger = logging.getLogger(__name__)
 
@@ -182,10 +179,6 @@ try:
 except ImportError:
     logger.info("Ignoring optional `librosa` configurations.")
 
-try:
-    IPython.display.Audio.__init__ = configurable_(IPython.display.Audio.__init__)
-except ImportError:
-    logger.info("Ignoring optional `IPython` configurations.")
 
 torch.nn.modules.batchnorm._BatchNorm.__init__ = configurable_(
     torch.nn.modules.batchnorm._BatchNorm.__init__
@@ -241,11 +234,6 @@ def _configure_audio_processing():
         add_config(config)
     except ImportError:
         logger.info("Ignoring optional `librosa` configurations.")
-
-    try:
-        add_config({IPython.display.Audio.__init__: HParams(rate=format_.sample_rate)})
-    except ImportError:
-        logger.info("Ignoring optional `IPython` configurations.")
 
     config = {
         lib.visualize.plot_waveform: HParams(sample_rate=format_.sample_rate),

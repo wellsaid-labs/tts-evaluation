@@ -107,6 +107,7 @@ class Checkpoint(_utils.Checkpoint):
 ExcludeFromDecay = typing.Callable[[str, torch.nn.parameter.Parameter, torch.nn.Module], bool]
 
 
+
 @dataclasses.dataclass(frozen=True)
 class _State:
     model: torch.nn.parallel.DistributedDataParallel
