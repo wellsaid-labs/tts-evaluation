@@ -872,7 +872,7 @@ def run_workers(
 MetricsValues = typing.Dict[str, float]
 MetricsStoreValues = typing.List[typing.Tuple[float]]
 MetricsReduceOp = typing.Callable[[typing.List[float]], float]
-# Select a subset of `MetricsStoreValues`.
+# NOTE: `MetricsSelect` selects a subset of `MetricsStoreValues`.
 MetricsSelect = typing.Callable[[MetricsStoreValues], MetricsStoreValues]
 
 
