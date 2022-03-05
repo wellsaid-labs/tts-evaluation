@@ -405,7 +405,7 @@ def _configure_models():
             # which are passed through a stack of 3 convolutional layers each containing
             # 512 filters with shape 5 × 1, i.e., where each filter spans 5 characters
             num_conv_layers=3,
-            convolution_filter_size=5,
+            conv_filter_size=5,
             # SOURCE (Tacotron 2)
             # The output of the final convolutional layer is passed into a single
             # bi-directional [19] LSTM [20] layer containing 512 units (256) in each
@@ -420,7 +420,7 @@ def _configure_models():
             # Attention probabilities are computed after projecting inputs and location
             # features to 128-dimensional hidden representations.
             hidden_size=128,
-            convolution_filter_size=9,
+            conv_filter_size=9,
             # NOTE: The alignment between text and speech is monotonic; therefore, the attention
             # progression should reflect that. The `window_length` ensures the progression is
             # limited.

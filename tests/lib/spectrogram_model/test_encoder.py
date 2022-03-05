@@ -181,7 +181,7 @@ def _make_encoder(
     out_size=8,
     hidden_size=8,
     num_conv_layers=2,
-    convolution_filter_size=5,
+    conv_filter_size=5,
     lstm_layers=2,
     dropout=0.5,
     batch_size=4,
@@ -200,7 +200,7 @@ def _make_encoder(
         out_size=out_size,
         hidden_size=hidden_size,
         num_conv_layers=num_conv_layers,
-        convolution_filter_size=convolution_filter_size,
+        conv_filter_size=conv_filter_size,
         lstm_layers=lstm_layers,
         dropout=dropout,
     )
@@ -246,7 +246,7 @@ def test_encoder__filter_size():
     """Test `encoder.Encoder` handles different filter sizes."""
     for filter_size in [1, 3, 5]:
         module, arg, (num_tokens, batch_size, out_size) = _make_encoder(
-            convolution_filter_size=filter_size
+            conv_filter_size=filter_size
         )
         encoded = module(arg)
         assert encoded.tokens.shape == (num_tokens, batch_size, out_size)

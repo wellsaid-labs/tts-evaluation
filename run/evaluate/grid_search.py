@@ -9,6 +9,20 @@ TODO:
 
 Usage:
     $ PYTHONPATH=. streamlit run run/evaluate/grid_search.py --runner.magicEnabled=false
+
+Use gcloud port-forwarding to interact via your local browser:
+```
+VM_NAME="name-of-remote-machine"
+ZONE="zone-of-remote-machine"
+PROJECT_ID=voice-research-255602
+LOCAL_PORT=2222
+REMOTE_PORT=8501
+
+gcloud compute ssh $VM_NAME \
+    --project $PROJECT_ID \
+    --zone $ZONE \
+    -- -NL $LOCAL_PORT:localhost:$REMOTE_PORT
+```
 """
 import functools
 import itertools
@@ -22,37 +36,39 @@ from streamlit_datatable import st_datatable
 
 import lib
 import run
-from lib.environment import PT_EXTENSION, load
+from lib.environment import PT_EXTENSION, ROOT_PATH, load
+from lib.text import natural_keys
 from run import train
 from run._config import SIGNAL_MODEL_EXPERIMENTS_PATH, SPECTROGRAM_MODEL_EXPERIMENTS_PATH
-from run._streamlit import audio_to_web_path, paths_to_html_download_link, st_html, web_path_to_url
+from run._streamlit import (
+    DEFAULT_SCRIPT,
+    audio_to_web_path,
+    paths_to_html_download_link,
+    st_html,
+    web_path_to_url,
+)
 from run._tts import TTSPackage, text_to_speech
 
 st.set_page_config(layout="wide")
 
 
-DEFAULT_SCRIPT = (
-    "Your creative life will evolve in ways that you can’t possibly imagine. Trust"
-    " your gut. Don’t overthink it. And allow yourself a little room to play."
-)
-
-
 def path_label(path: pathlib.Path) -> str:
     """Get a short label for `path`."""
-    return f"{path.parent.name}/{path.name}"
+    return str(path.relative_to(ROOT_PATH)) + "/" if path.is_dir() else str(path.name)
 
 
 def st_select_paths(label: str, dir: pathlib.Path, suffix: str) -> typing.List[pathlib.Path]:
     """Display a path selector for the directory `dir`."""
-    options = [p for p in dir.iterdir() if p.suffix == suffix or p.is_dir()]
-    format_: typing.Callable[[pathlib.Path], str] = lambda p: f"{p.name}/" if p.is_dir() else p.name
-    path = st.selectbox(label, options=options, format_func=format_)
-    if path.is_file():
-        assert path.suffix == suffix
-        paths = [path]
-    else:
-        paths = list(path.glob(f"**/*{suffix}"))
-    st.info(f"Selected {label}:\n" + "".join(["\n - " + path_label(p) for p in paths]))
+    options = sorted(
+        [p for p in dir.glob("**/*") if p.suffix == suffix or p.is_dir()] + [dir],
+        key=lambda x: natural_keys(str(x)),
+        reverse=True,
+    )
+    paths = st.multiselect(label, options=options, format_func=path_label)
+    paths = cast(typing.List[pathlib.Path], paths)
+    paths = [f for p in paths for f in ([p] if p.is_file() else list(p.glob(f"**/*{suffix}")))]
+    if len(paths) > 0:
+        st.info(f"Selected {label}:\n" + "".join(["\n - " + path_label(p) for p in paths]))
     return paths
 
 
@@ -80,17 +96,22 @@ def main():
     get_paths = functools.partial(st_select_paths, suffix=PT_EXTENSION)
     sig_paths = get_paths("Signal Checkpoints(s)", SIGNAL_MODEL_EXPERIMENTS_PATH)
     spec_paths = get_paths("Spectrogram Checkpoints(s)", SPECTROGRAM_MODEL_EXPERIMENTS_PATH)
-    speakers = list(run._config.DATASETS.keys())
+
+    form = st.form("data_form")
+    speakers = sorted(list(run._config.DATASETS.keys()))
     is_all = st.sidebar.checkbox("Select all speakers by default")
     format_: typing.Callable[[run.data._loader.Speaker], str] = lambda s: s.label
     default = speakers if is_all else speakers[:1]
-    speakers = st.multiselect("Speaker(s)", options=speakers, format_func=format_, default=default)
-    max_sessions = st.number_input("Maximum Recording Sessions", min_value=1, value=1, step=1)
-    scripts = st.text_area("Script(s)", value=DEFAULT_SCRIPT)
+    label = "Speaker(s)"
+    speakers = form.multiselect(label, options=speakers, format_func=format_, default=default)
+    speakers = cast(typing.List[run.data._loader.Speaker], speakers)
+    max_sessions = form.number_input("Maximum Recording Sessions", min_value=1, value=1, step=1)
+    max_sessions = cast(int, max_sessions)
+    scripts = form.text_area("Script(s)", value=DEFAULT_SCRIPT)
     scripts = [s.strip() for s in scripts.split("\n") if len(s.strip()) > 0]
-
-    if not st.button("Generate"):
-        st.stop()
+    file_name = form.text_input(label="Zipfile Name", value="audio(s)")
+    if not form.form_submit_button(label="Generate"):
+        return
 
     with st.spinner("Loading checkpoints..."):
         spec_ckpts = [cast(train.spectrogram_model._worker.Checkpoint, load(p)) for p in spec_paths]
@@ -104,9 +125,13 @@ def main():
     sessions: typing.List[typing.Tuple[run.data._loader.Speaker, run.data._loader.Session]]
     sessions = list(set(s for c in spec_ckpts for s in c.input_encoder.session_encoder.vocab))
     sessions_sample = get_sample_sessions(speakers, sessions, max_sessions)
-    iter_ = list(itertools.product(spec_export, sig_export, sessions_sample, scripts))
-    for i, (spec_items, (sig_model, sig_path), (speaker, session), script) in enumerate(iter_):
-        (input_encoder, spec_model), spec_path = spec_items
+    iter_ = list(itertools.product(sessions_sample, spec_export, sig_export, scripts))
+    for i, (
+        (speaker, session),
+        ((input_encoder, spec_model), spec_path),
+        (sig_model, sig_path),
+        script,
+    ) in enumerate(iter_):
         package = TTSPackage(input_encoder, spec_model, sig_model)
         audio = text_to_speech(package, script, speaker, session)
         sesh = str(session).replace("/", "__")
@@ -129,8 +154,8 @@ def main():
 
     with st.spinner("Making Zipfile..."):
         st.text("")
-        app_name = __file__.rstrip(".py")
-        st_html(paths_to_html_download_link(f"{app_name}_audios.zip", "Download Audio(s)", paths))
+        label = "📁 Download Audio(s) (zip)"
+        st_html(paths_to_html_download_link(f"{file_name}.zip", label, paths))
 
 
 if __name__ == "__main__":

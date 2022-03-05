@@ -18,6 +18,7 @@ import sys
 import tempfile
 import time
 import typing
+import unicodedata
 
 import hparams
 import numpy as np
@@ -350,6 +351,15 @@ def _read_csv(
     return data_frame[all_columns]
 
 
+def _normalized_levenshtein_distance(token1: str, token2: str) -> int:
+    """In order to trust the Levenshtein.distance algorithm with characters that might have
+    diacritics, we must first ensure both tokens being compared are being represented by the same
+    Unicode form. More info: https://docs.python.org/3/library/unicodedata.html"""
+    token1_norm = unicodedata.normalize(lib.text._UNICODE_NORMAL_FORM, token1)
+    token2_norm = unicodedata.normalize(lib.text._UNICODE_NORMAL_FORM, token2)
+    return Levenshtein.distance(token1_norm, token2_norm)  # type: ignore
+
+
 @csv_app.command("normalize")
 def csv_normalize(
     paths: typing.List[pathlib.Path] = typer.Argument(..., exists=True, dir_okay=False),
@@ -378,7 +388,7 @@ def csv_normalize(
         data_frame.to_csv(dest_path, index=False)
 
         # TODO: Count the number of alphanumeric edits instead of punctuation mark edits.
-        num_edits = Levenshtein.distance(text, dest_path.read_text())  # type: ignore
+        num_edits = _normalized_levenshtein_distance(text, dest_path.read_text(encoding=encoding))
         results.append(((num_edits / len(text)) * 100, num_edits, len(text), path.name))
 
     headers = ["% Edited", "# Edits", "# Characters", "File Name"]

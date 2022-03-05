@@ -173,7 +173,7 @@ class Encoder(torch.nn.Module):
         out_size: The size of the encoder output.
         hidden_size: The size of the encoders hidden representation. This value must be even.
         num_conv_layers: Number of convolution layers.
-        convolution_filter_size: Size of the convolving kernel. This value must be odd.
+        conv_filter_size: Size of the convolving kernel. This value must be odd.
         lstm_layers: Number of recurrent LSTM layers.
         dropout: Dropout probability used to regularize the encoders hidden representation.
     """
@@ -191,7 +191,7 @@ class Encoder(torch.nn.Module):
         out_size: int = HParam(),
         hidden_size: int = HParam(),
         num_conv_layers: int = HParam(),
-        convolution_filter_size: int = HParam(),
+        conv_filter_size: int = HParam(),
         lstm_layers: int = HParam(),
         dropout: float = HParam(),
     ):
@@ -199,7 +199,7 @@ class Encoder(torch.nn.Module):
 
         # LEARN MORE:
         # https://datascience.stackexchange.com/questions/23183/why-convolutions-always-use-odd-numbers-as-filter-size
-        assert convolution_filter_size % 2 == 1, "`convolution_filter_size` must be odd"
+        assert conv_filter_size % 2 == 1, "`conv_filter_size` must be odd"
         assert hidden_size % 2 == 0, "`hidden_size` must be even"
 
         self.max_token_embed_size = max_token_embed_size
@@ -222,8 +222,8 @@ class Encoder(torch.nn.Module):
                 torch.nn.Conv1d(
                     in_channels=hidden_size,
                     out_channels=hidden_size,
-                    kernel_size=convolution_filter_size,
-                    padding=int((convolution_filter_size - 1) / 2),
+                    kernel_size=conv_filter_size,
+                    padding=int((conv_filter_size - 1) / 2),
                 ),
                 torch.nn.ReLU(),
             )

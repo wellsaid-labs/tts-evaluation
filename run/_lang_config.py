@@ -8,6 +8,11 @@ from lib.text import get_spoken_chars, grapheme_to_phoneme
 from lib.utils import identity
 from run.data._loader import Language
 
+if typing.TYPE_CHECKING:  # pragma: no cover
+    import google.cloud.speech_v1p1beta1 as google_speech
+else:
+    google_speech = LazyLoader("google_speech", globals(), "google.cloud.speech_v1p1beta1")
+
 logger = logging.getLogger(__name__)
 
 # fmt: off
@@ -39,10 +44,10 @@ _NON_ASCII_CHARS: typing.Dict[Language, frozenset] = {
 }
 # fmt: on
 _NON_ASCII_MARKS: typing.Dict[Language, frozenset] = {
-    Language.ENGLISH: frozenset([]),
-    Language.GERMAN: frozenset(["«", "»", "‹", "›"]),
-    Language.PORTUGUESE_BR: frozenset(["«", "»", "‹", "›"]),
-    Language.SPANISH_CO: frozenset(["¿", "¡", "«", "»", "‹", "›"]),
+    Language.ENGLISH: frozenset(),
+    Language.GERMAN: frozenset(),
+    Language.PORTUGUESE_BR: frozenset(),
+    Language.SPANISH_CO: frozenset(["¿", "¡"]),
 }
 _NON_ASCII_ALL = {l: _NON_ASCII_CHARS[l].union(_NON_ASCII_MARKS[l]) for l in Language}
 
@@ -59,11 +64,11 @@ def is_voiced(text: str, language: Language) -> bool:
     return lib.text.is_voiced(text, _NON_ASCII_CHARS[language])
 
 
-try:
-    from google.cloud.speech_v1p1beta1 import RecognitionConfig
+SST_CONFIGS = None
 
+try:
     _make_config = partial(
-        RecognitionConfig,
+        google_speech.RecognitionConfig,
         model="command_and_search",
         use_enhanced=True,
         enable_automatic_punctuation=True,

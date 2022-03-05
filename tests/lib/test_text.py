@@ -430,12 +430,32 @@ def test_normalize_vo_script():
     ]
     # fmt: on
 
+    # Cover whitespace normalization, common whitespace issues
+    assert normalize_vo_script("\r\n", frozenset(), strip=False) == "\n"
+    assert normalize_vo_script("\f", frozenset(), strip=False) == "\n"
+    assert normalize_vo_script("\thello\t", frozenset(), strip=False) == "  hello  "
+
+    # Cover guillemet and quotation normalization
+    assert all(
+        [
+            p == '"Wir gehen am Dienstag."'
+            for p in [
+                normalize_vo_script("»Wir gehen am Dienstag.«", frozenset(), strip=False),
+                normalize_vo_script("„Wir gehen am Dienstag.”", frozenset(), strip=False),
+            ]
+        ]
+    )
+    assert (
+        normalize_vo_script("‹Wir gehen am Dienstag.›", frozenset(), strip=False)
+        == "'Wir gehen am Dienstag.'"
+    )
+
 
 # fmt: off
 NON_ASCII_CHAR = frozenset([
-    '»', 'Á', 'Ñ', '«', '¡', 'Í', 'á', 'û', 'Ç', 'É', '‹', 'Ô', 'ß', 'ó', 'è', 'ú', 'Ì', 'Ù', 'Ó',
-    'ô', 'ù', 'ã', '›', 'Ú', 'õ', 'ï', 'â', 'Ï', 'ò', 'À', 'é', 'à', 'ö', 'ü', 'ì', 'Ü', 'ç', 'Û',
-    'È', 'ë', 'ä', 'Ä', 'Ö', 'Â', 'Ò', 'Î', 'Õ', 'Ê', 'î', '¿', 'Ë', 'ñ', 'ê', 'Ã', 'í'
+    'Á', 'Ñ', '¡', 'Í', 'á', 'û', 'Ç', 'É', 'Ô', 'ß', 'ó', 'è', 'ú', 'Ì', 'Ù', 'Ó', 'ô', 'ù', 'ã',
+    'Ú', 'õ', 'ï', 'â', 'Ï', 'ò', 'À', 'é', 'à', 'ö', 'ü', 'ì', 'Ü', 'ç', 'Û', 'È', 'ë', 'ä', 'Ä',
+    'Ö', 'Â', 'Ò', 'Î', 'Õ', 'Ê', 'î', '¿', 'Ë', 'ñ', 'ê', 'Ã', 'í'
 ])
 # fmt: on
 
