@@ -15,6 +15,7 @@ import math
 import os
 import pathlib
 import platform
+import pprint
 import resource
 import sys
 import time
@@ -64,6 +65,7 @@ else:
 
 lib.environment.enable_fault_handler()
 logger = logging.getLogger(__name__)
+pprinter = pprint.PrettyPrinter(indent=2)
 
 
 def _nested_to_flat_config_helper(
@@ -325,15 +327,23 @@ class CometMLExperiment:
                 items.append(f'<audio controls preload="none" src="{url}"></audio>')
         self.log_html("<section>{}</section>".format("\n".join(items)))
 
+    def _handle_param(self, key: run._config.Label, value: typing.Any) -> str:
+        """Format and log complex objects in standard out."""
+        if isinstance(value, (list, tuple, dict)):
+            logger.info(f"Comet parameter `{key}` is:\n{pprinter.pformat(value)}")
+            value = "<<<Printed in standard out.>>>"
+
+        return repr(value)
+
     def log_parameter(self, key: run._config.Label, value: typing.Any):
-        self._experiment.log_parameter(key, repr(value))
+        self._experiment.log_parameter(key, self._handle_param(key, value))
 
     def log_parameters(self, dict_: typing.Dict[run._config.Label, typing.Any]):
         """
         NOTE: Comet doesn't support `typing.Any` so we need to convert to a string representation.
         For example, Comet will silently fail and not log parameters with `numpy` or `torch` values.
         """
-        self._experiment.log_parameters({k: repr(v) for k, v in dict_.items()})
+        self._experiment.log_parameters({k: self._handle_param(k, v) for k, v in dict_.items()})
 
     def log_other(self, key: run._config.Label, value: typing.Union[str, int, float]):
         self._experiment.log_other(key, value)
