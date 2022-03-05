@@ -326,7 +326,7 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
     - 27% for `_signals_to_spectrograms`
     - 25% on `nlp.pipe`
     - 13% on `_random_loudness_annotations`
-    - 13% on `grapheme_to_phoneme`
+    - 13% on `grapheme_to_phoneme` (Removed in March 2022)
     - 6% for `_pad_and_trim_signal`
     - 5% for `input_encoder.encode` (Removed in Feburary 2022)
     - 4% on `stack_and_pad_tensors` (Removed in Feburary 2022)
@@ -341,7 +341,11 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
     """
     assert len(spans) > 0, "Batch must have at least one item."
 
-    tokens = [list(s.script) for s in spans]
+    nlp = lib.text.load_en_core_web_md(disable=("parser", "ner"))
+    docs: typing.List[spacy.tokens.Doc] = list(nlp.pipe([s.passage.script for s in spans]))
+    spans = [d.char_span(s.script_slice.start, s.script_slice.stop) for s, d in zip(spans, docs)]
+    assert all(s is not None for s in spans), "Invalid `spacy.tokens.Span` selected."
+
     speakers = [s.speaker for s in spans]
     sessions = [s.session for s in spans]
 
@@ -359,7 +363,7 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
         spectrogram=spectrogram,
         spectrogram_mask=spectrogram_mask,
         stop_token=_make_stop_token(spectrogram),
-        inputs=Inputs(tokens=tokens, speaker=speakers, session=sessions),
+        inputs=Inputs(spans=spans, speaker=speakers, session=sessions),
     )
 
 
