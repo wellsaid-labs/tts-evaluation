@@ -3,7 +3,6 @@ from unittest import mock
 
 from hparams import add_config
 
-import lib
 from run._config import Cadence, DatasetType
 from run.data._loader.english import JUDY_BIEBER
 from run.train._utils import Context, Timer, set_context
@@ -45,7 +44,8 @@ def test_integration():
         assert state.step.item() == 1
 
         is_not_diff = lambda b, v: len(set(b) - set(v.keys())) == 0
-        assert is_not_diff(lib.utils.flatten_2d(batch.inputs.tokens), model.token_vocab)
+        characters = [c for s in batch.inputs.spans for c in str(s).lower()]
+        assert is_not_diff(characters, model.token_vocab)
         assert is_not_diff((s.speaker for s in batch.spans), model.speaker_vocab)
         assert is_not_diff((s.session for s in batch.spans), model.session_vocab)
 
@@ -61,7 +61,7 @@ def test_integration():
         assert all(metrics.data[MetricsKey(metrics.NUM_CORRECT_STOP_TOKEN)]) == 1
 
         num_frames = [(batch.spectrogram.lengths[0].item(),)]
-        num_tokens = [(len(batch.inputs.tokens[0]),)]
+        num_tokens = [(len(str(batch.inputs.spans[0])),)]
         num_seconds = [(batch.spans[0].audio_length,)]
         bucket = len(batch.spans[0].script) // metrics.TEXT_LENGTH_BUCKET_SIZE
         values = {

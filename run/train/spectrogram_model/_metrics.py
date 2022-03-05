@@ -377,10 +377,10 @@ class Metrics(_utils.Metrics[MetricsKey]):
         """
         values, _reduce = self._make_values()
 
-        for span, num_frames, tokens, has_reached_max in zip(
+        for span, num_frames, spacy_span, has_reached_max in zip(
             batch.spans,
             self._to_list(batch.spectrogram.lengths),
-            batch.inputs.tokens,
+            batch.inputs.spans,
             self._to_list(preds.reached_max),
         ):
             # NOTE: Create a key for `self.NUM_SPANS` so a value exists, even if zero.
@@ -394,11 +394,12 @@ class Metrics(_utils.Metrics[MetricsKey]):
                 _reduce(self.NUM_FRAMES_MAX, v=num_frames, op=max)
 
                 speaker: typing.Optional[Speaker]
+                len_tokens = len(str(spacy_span))
                 for speaker in [None, span.speaker]:
                     _reduce(self.NUM_FRAMES, speaker, v=num_frames)
                     _reduce(self.NUM_SECONDS, speaker, v=span.audio_length)
-                    _reduce(self.NUM_TOKENS, speaker, v=len(tokens))
-                    _reduce(self.MAX_FRAMES_PER_TOKEN, speaker, v=num_frames / len(tokens), op=max)
+                    _reduce(self.NUM_TOKENS, speaker, v=len_tokens)
+                    _reduce(self.MAX_FRAMES_PER_TOKEN, speaker, v=num_frames / len_tokens, op=max)
 
         return dict(values)
 
@@ -482,7 +483,7 @@ class Metrics(_utils.Metrics[MetricsKey]):
 
     @configurable
     def _get_model_metrics(
-        self, select: _utils.MetricsSelect, is_verbose: bool, num_frame_channels=HParam()
+        self, select: _utils.MetricsSelect, is_verbose: bool, num_frame_channels: int = HParam()
     ) -> _GetMetrics:
         metrics = {}
         for speaker, reduce, div in self._iter_permutations(select, is_verbose):

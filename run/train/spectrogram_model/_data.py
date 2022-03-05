@@ -343,8 +343,8 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
 
     nlp = lib.text.load_en_core_web_md(disable=("parser", "ner"))
     docs: typing.List[spacy.tokens.Doc] = list(nlp.pipe([s.passage.script for s in spans]))
-    spans = [d.char_span(s.script_slice.start, s.script_slice.stop) for s, d in zip(spans, docs)]
-    assert all(s is not None for s in spans), "Invalid `spacy.tokens.Span` selected."
+    spans_ = [d.char_span(s.script_slice.start, s.script_slice.stop) for s, d in zip(spans, docs)]
+    assert all(s is not None for s in spans_), "Invalid `spacy.tokens.Span` selected."
 
     speakers = [s.speaker for s in spans]
     sessions = [s.session for s in spans]
@@ -363,7 +363,7 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
         spectrogram=spectrogram,
         spectrogram_mask=spectrogram_mask,
         stop_token=_make_stop_token(spectrogram),
-        inputs=Inputs(spans=spans, speaker=speakers, session=sessions),
+        inputs=Inputs(spans=spans_, speaker=speakers, session=sessions),
     )
 
 
