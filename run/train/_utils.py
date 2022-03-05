@@ -330,7 +330,8 @@ class CometMLExperiment:
     def _handle_param(self, key: run._config.Label, value: typing.Any, max_len: int = 50) -> str:
         """Format and log complex objects in standard out."""
         if isinstance(value, (list, tuple, dict, set)) and len(repr(value)) > max_len:
-            logger.info(f"Comet parameter `{key}` is:\n{pprinter.pformat(value)}")
+            message = f"Comet parameter `{key}` is:\n{pprinter.pformat(value)}"
+            lib.utils.call_once(logger.info, message)
             return "<<<Printed in standard out.>>>"
         return repr(value)
 
