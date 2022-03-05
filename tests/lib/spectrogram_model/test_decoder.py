@@ -29,7 +29,7 @@ def _make_decoder(
         lib.spectrogram_model.pre_net.PreNet.__init__: HParams(num_layers=1, dropout=0.5),
         lib.spectrogram_model.attention.Attention.__init__: HParams(
             hidden_size=4,
-            convolution_filter_size=3,
+            conv_filter_size=3,
             dropout=0.1,
             window_length=5,
             avg_frames_per_token=1.0,

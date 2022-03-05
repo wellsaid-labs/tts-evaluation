@@ -151,14 +151,10 @@ class Speaker(typing.NamedTuple):
     gender: typing.Optional[str] = None
 
 
-make_en_speaker = lambda label, *args, **kwargs: Speaker(label, Language.ENGLISH, *args, **kwargs)
-make_de_speaker = lambda label, *args, **kwargs: Speaker(label, Language.GERMAN, *args, **kwargs)
-make_es_speaker = lambda label, *args, **kwargs: Speaker(
-    label, Language.SPANISH_CO, *args, **kwargs
-)
-make_pt_speaker = lambda label, *args, **kwargs: Speaker(
-    label, Language.PORTUGUESE_BR, *args, **kwargs
-)
+make_en_speaker = lambda label, *a, **kw: Speaker(label, Language.ENGLISH, *a, **kw)
+make_de_speaker = lambda label, *a, **kw: Speaker(label, Language.GERMAN, *a, **kw)
+make_es_speaker = lambda label, *a, **kw: Speaker(label, Language.SPANISH_CO, *a, **kw)
+make_pt_speaker = lambda label, *a, **kw: Speaker(label, Language.PORTUGUESE_BR, *a, **kw)
 
 Session = typing.NewType("Session", typing.Tuple[Speaker, str])
 
@@ -836,8 +832,7 @@ def _make_speech_segments(passage: Passage) -> typing.List[Span]:
 
 
 def _default_session(passage: UnprocessedPassage) -> Session:
-    """By default, this assumes that each audio file was recorded, individually.
-    """
+    """By default, this assumes that each audio file was recorded, individually."""
     return Session((passage.speaker, passage.audio_path.stem))
 
 

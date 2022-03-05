@@ -30,6 +30,7 @@ import torch.distributed
 import torch.nn
 import torch.optim
 import torch.utils.data
+import torch.utils.data._utils.worker
 from hparams import HParam, HParams, configurable, get_config
 from third_party import LazyLoader
 from torch.utils.data.dataloader import _BaseDataLoaderIter, _MultiProcessingDataLoaderIter
@@ -567,7 +568,7 @@ def set_epoch(comet: CometMLExperiment, step: int, steps_per_epoch: int):
 
 
 @configurable
-def set_run_seed(seed=HParam()):
+def set_run_seed(seed: int = HParam()):
     lib.environment.set_seed(seed)
 
 
@@ -662,6 +663,7 @@ def _worker_init_fn(
     """
     hparams.hparams._configuration = config
     info = torch.utils.data.get_worker_info()
+    assert isinstance(info, torch.utils.data._utils.worker.WorkerInfo)
     lib.environment.set_basic_logging_config()
     set_num_threads(num_threads)
     logger.info("Worker %d/%d started for rank %d.", info.id + 1, info.num_workers, rank)
@@ -864,7 +866,6 @@ MetricsStoreValues = typing.List[typing.Tuple[float]]
 MetricsReduceOp = typing.Callable[[typing.List[float]], float]
 # NOTE: `MetricsSelect` selects a subset of `MetricsStoreValues`.
 MetricsSelect = typing.Callable[[MetricsStoreValues], MetricsStoreValues]
-MetricsValues = typing.Dict[MetricsKeyTypeVar, float]
 
 
 class Metrics(lib.distributed.DictStore, typing.Generic[MetricsKeyTypeVar]):
@@ -884,7 +885,7 @@ class Metrics(lib.distributed.DictStore, typing.Generic[MetricsKeyTypeVar]):
         super().__init__(**kwargs)
         self.comet = comet
 
-    def update(self, data: MetricsValues):
+    def update(self, data: typing.Dict[MetricsKeyTypeVar, float]):
         return super().update(data)
 
     @staticmethod
@@ -892,7 +893,9 @@ class Metrics(lib.distributed.DictStore, typing.Generic[MetricsKeyTypeVar]):
         assert len(tensor.squeeze().shape) <= 1, "Tensor must be 1-dimensional."
         return tensor.view(-1).tolist()
 
-    def get_data_loader_values(self, data_loader: DataLoader) -> MetricsValues:
+    def get_data_loader_values(
+        self, data_loader: DataLoader
+    ) -> typing.Dict[MetricsKeyTypeVar, float]:
         """
         NOTE: `qsize` is not implemented on MacOS, learn more:
         https://docs.python.org/3/library/multiprocessing.html#multiprocessing.Queue.qsize
@@ -995,4 +998,3 @@ class Timer:
                 label = get_timer_label(name, device=Device.CUDA, **kwargs)
                 times[label] += prev.cuda.elapsed_time(next.cuda) / 1000
         return dict(times)
-

@@ -66,7 +66,7 @@ class Decoder(torch.nn.Module):
             torch.nn.Linear(lstm_hidden_size, 1),
         )
 
-    def _make_hidden_state(self, encoded) -> DecoderHiddenState:
+    def _make_hidden_state(self, encoded: Encoded) -> DecoderHiddenState:
         """Make an initial hidden state, if one is not provided."""
         max_num_tokens, batch_size, _ = encoded.tokens.shape
         device = encoded.tokens.device

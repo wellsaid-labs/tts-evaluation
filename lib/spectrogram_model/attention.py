@@ -86,7 +86,7 @@ class Attention(torch.nn.Module):
     Args:
         query_hidden_size: The hidden size of the query input.
         hidden_size: The hidden size of the hidden attention features.
-        convolution_filter_size: Size of the convolving kernel applied to the cumulative alignment.
+        conv_filter_size: Size of the convolving kernel applied to the cumulative alignment.
         dropout: The dropout probability.
         window_length: The size of the attention window applied during inference.
     """
@@ -96,7 +96,7 @@ class Attention(torch.nn.Module):
         self,
         query_hidden_size: int,
         hidden_size: int = HParam(),
-        convolution_filter_size: int = HParam(),
+        conv_filter_size: int = HParam(),
         dropout: float = HParam(),
         window_length: int = HParam(),
         avg_frames_per_token: float = HParam(),
@@ -104,15 +104,15 @@ class Attention(torch.nn.Module):
         super().__init__()
         # Learn more:
         # https://datascience.stackexchange.com/questions/23183/why-convolutions-always-use-odd-numbers-as-filter-size
-        assert convolution_filter_size % 2 == 1, "`convolution_filter_size` must be odd"
+        assert conv_filter_size % 2 == 1, "`conv_filter_size` must be odd"
         self.dropout = dropout
         self.hidden_size = hidden_size
         self.window_length = window_length
-        self.cumulative_alignment_padding = int((convolution_filter_size - 1) / 2)
+        self.cumulative_alignment_padding = int((conv_filter_size - 1) / 2)
         self.alignment_conv = torch.nn.Conv1d(
             in_channels=1,
             out_channels=hidden_size,
-            kernel_size=convolution_filter_size,
+            kernel_size=conv_filter_size,
             padding=0,
         )
         self.project_query = torch.nn.Linear(query_hidden_size, hidden_size)
