@@ -349,7 +349,7 @@ def batch_text_to_speech(
     for batch in tqdm_(list(get_chunks(inputs_, batch_size))):
         model_inputs = Inputs(
             speaker=[i[1][1] for i in batch],
-            session=[(i[1][1], i[1][2]) for i in batch],
+            session=[i[1][2] for i in batch],
             tokens=[i[1][0] for i in batch],
         )
         preds = typing.cast(Preds, package.spectrogram_model(inputs=model_inputs, mode=Mode.INFER))
