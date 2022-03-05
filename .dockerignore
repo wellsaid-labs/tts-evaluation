@@ -76,8 +76,6 @@ gcs_credentials.json
 # Python package `venv` directory
 /venv/
 
-# Jupyter notebooks can be large
-notebooks/**
 
 # `git` files can be large
 .git/**
