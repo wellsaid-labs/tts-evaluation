@@ -16,7 +16,6 @@ from subprocess import PIPE
 import numpy
 import torch
 from hparams import HParam, configurable
-from third_party import LazyLoader
 
 from lib.environment import PT_EXTENSION, load
 from lib.utils import get_chunks, tqdm_
@@ -26,11 +25,6 @@ from run._lang_config import normalize_vo_script
 from run.data._loader import Session, Span, Speaker
 from run.train.signal_model._model import SignalModel, generate_waveform
 from run.train.spectrogram_model._model import Inputs, Mode, Preds, SpectrogramModel
-
-if typing.TYPE_CHECKING:  # pragma: no cover
-    import spacy.tokens
-else:
-    spacy = LazyLoader("spacy", globals(), "spacy")
 
 logger = logging.getLogger(__name__)
 

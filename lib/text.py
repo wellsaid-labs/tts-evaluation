@@ -10,7 +10,10 @@ from collections import defaultdict
 from typing import get_args
 
 import ftfy
+import spacy
+import spacy.tokens
 import unidecode
+from spacy.lang import en as spacy_en
 from third_party import LazyLoader
 from tqdm import tqdm
 
@@ -23,17 +26,12 @@ if typing.TYPE_CHECKING:  # pragma: no cover
     import Levenshtein
     import nltk
     import normalise
-    import spacy
-    import spacy.tokens
-    from spacy.lang import en as spacy_en
 else:
     en_core_web_sm = LazyLoader("en_core_web_sm", globals(), "en_core_web_sm")
     en_core_web_md = LazyLoader("en_core_web_md", globals(), "en_core_web_md")
     Levenshtein = LazyLoader("Levenshtein", globals(), "Levenshtein")
     nltk = LazyLoader("nltk", globals(), "nltk")
     normalise = LazyLoader("normalise", globals(), "normalise")
-    spacy = LazyLoader("spacy", globals(), "spacy")
-    spacy_en = LazyLoader("spacy_en", globals(), "spacy.lang.en")
 
 
 logger = logging.getLogger(__name__)

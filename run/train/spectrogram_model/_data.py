@@ -7,6 +7,7 @@ import typing
 from concurrent import futures
 
 import numpy
+import spacy.tokens
 import torch
 import torch.cuda
 import torch.distributed
@@ -32,12 +33,10 @@ from run.train.spectrogram_model._model import Inputs
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import librosa
-    import spacy.tokens
     from scipy import ndimage
 else:
     librosa = LazyLoader("librosa", globals(), "librosa")
     ndimage = LazyLoader("ndimage", globals(), "scipy.ndimage")
-    spacy = LazyLoader("spacy", globals(), "spacy")
 
 
 logger = logging.getLogger(__name__)
