@@ -534,6 +534,9 @@ _HandleBatch = typing.Callable[[_HandleBatchArgs], None]
 
 def _log_vocab(state: _State, dataset_type: DatasetType):
     """Log the model vocabulary to Comet."""
+    if not is_master():
+        return
+
     label = partial(get_dataset_label, cadence=Cadence.RUN, type_=dataset_type)
     model = typing.cast(SpectrogramModel, state.model.module)
     filter_ = lambda v: [t for t in v.keys() if not isinstance(t, PaddingAndLazyEmbedding._Tokens)]
