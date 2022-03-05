@@ -15,6 +15,7 @@ import math
 import os
 import pathlib
 import platform
+import pprint
 import resource
 import sys
 import time
@@ -40,7 +41,7 @@ import lib
 import run
 from lib.distributed import is_master
 from lib.environment import load, load_most_recent_file
-from lib.utils import dataclass_as_dict, flatten_2d, seconds_to_str
+from lib.utils import dataclass_as_dict, disk_cache, flatten_2d, seconds_to_str
 from run._config import (
     Cadence,
     Dataset,
@@ -64,6 +65,7 @@ else:
 
 lib.environment.enable_fault_handler()
 logger = logging.getLogger(__name__)
+pprinter = pprint.PrettyPrinter(indent=2)
 
 
 def _nested_to_flat_config_helper(
@@ -325,15 +327,23 @@ class CometMLExperiment:
                 items.append(f'<audio controls preload="none" src="{url}"></audio>')
         self.log_html("<section>{}</section>".format("\n".join(items)))
 
+    def _handle_param(self, key: run._config.Label, value: typing.Any, max_len: int = 50) -> str:
+        """Format and log complex objects in standard out."""
+        if isinstance(value, (list, tuple, dict, set)) and len(repr(value)) > max_len:
+            message = f"Comet parameter `{key}` is:\n{pprinter.pformat(value)}"
+            lib.utils.call_once(logger.info, message)
+            return "<<<Printed in standard out.>>>"
+        return repr(value)
+
     def log_parameter(self, key: run._config.Label, value: typing.Any):
-        self._experiment.log_parameter(key, repr(value))
+        self._experiment.log_parameter(key, self._handle_param(key, value))
 
     def log_parameters(self, dict_: typing.Dict[run._config.Label, typing.Any]):
         """
         NOTE: Comet doesn't support `typing.Any` so we need to convert to a string representation.
         For example, Comet will silently fail and not log parameters with `numpy` or `torch` values.
         """
-        self._experiment.log_parameters({k: repr(v) for k, v in dict_.items()})
+        self._experiment.log_parameters({k: self._handle_param(k, v) for k, v in dict_.items()})
 
     def log_other(self, key: run._config.Label, value: typing.Union[str, int, float]):
         self._experiment.log_other(key, value)
@@ -391,18 +401,23 @@ def _get_dataset_stats(
     return stats
 
 
+@disk_cache(run._config.DATASET_CACHE_PATH)
+def _get_dataset(debug: bool):
+    """Helper function for `_run_experiment` to get the train and dev datasets."""
+    _datasets = {k: v for k, v in list(run._config.DATASETS.items())[:1]}
+    dataset = run._utils.get_dataset(**({"datasets": _datasets} if debug else {}))
+    return run._utils.split_dataset(dataset)
+
+
 def _run_experiment(
     comet: CometMLExperiment, debug: bool = False
 ) -> typing.Tuple[run._config.Dataset, run._config.Dataset]:
     """Helper function for `start_experiment` and  `resume_experiment`."""
     lib.environment.check_module_versions()
-
-    # NOTE: Load, preprocess, and cache dataset values.
-    _datasets = {k: v for k, v in list(run._config.DATASETS.items())[:1]}
-    dataset = run._utils.get_dataset(**({"datasets": _datasets} if debug else {}))
-    train_dataset, dev_dataset = run._utils.split_dataset(dataset)
+    if debug:
+        _get_dataset.clear_cache()
+    train_dataset, dev_dataset = _get_dataset(debug)
     comet.log_parameters(_get_dataset_stats(train_dataset, dev_dataset))
-
     return train_dataset, dev_dataset
 
 

@@ -22,6 +22,7 @@ from torchnlp.utils import get_total_parameters
 
 import lib
 from lib.distributed import is_master
+from lib.utils import PaddingAndLazyEmbedding, log_runtime
 from run._config import (
     Cadence,
     Dataset,
@@ -104,6 +105,7 @@ class Checkpoint(_utils.Checkpoint):
 
 
 ExcludeFromDecay = typing.Callable[[str, torch.nn.parameter.Parameter, torch.nn.Module], bool]
+
 
 
 @dataclasses.dataclass(frozen=True)
@@ -290,7 +292,7 @@ def _visualize_source_vs_target(args: _HandleBatchArgs, preds: lib.spectrogram_m
         return
 
     item = random.randint(0, len(args.batch) - 1)
-    spectrogram_length = int(args.batch.spectrogram.lengths[item].item())
+    spectrogram_length = int(args.batch.spectrogram.lengths[0, item].item())
     text_length = int(preds.num_tokens[item].item())
 
     # predicted_spectrogram, gold_spectrogram [num_frames, frame_channels]
@@ -533,20 +535,27 @@ _HandleBatch = typing.Callable[[_HandleBatchArgs], None]
 
 def _log_vocab(state: _State, dataset_type: DatasetType):
     """Log the model vocabulary to Comet."""
+    if not is_master():
+        return
+
     label = partial(get_dataset_label, cadence=Cadence.RUN, type_=dataset_type)
     model = typing.cast(SpectrogramModel, state.model.module)
+    filter_ = lambda v: [t for t in v.keys() if not isinstance(t, PaddingAndLazyEmbedding._Tokens)]
+    session_vocab = filter_(model.session_vocab)
+    token_vocab = filter_(model.token_vocab)
+    speaker_vocab = filter_(model.speaker_vocab)
     parameters = {
-        label("token_vocab_size"): len(model.token_vocab),
-        label("token_vocab"): sorted(model.token_vocab),
-        label("speaker_vocab_size"): len(model.speaker_vocab),
-        label("speaker_vocab"): sorted([s.label for s in model.speaker_vocab]),
-        label("session_vocab_size"): len(model.session_vocab),
-        label("session_vocab"): sorted([(spk.label, sesh) for spk, sesh in model.session_vocab]),
+        label("token_vocab_size"): len(token_vocab),
+        label("token_vocab"): sorted(token_vocab),
+        label("speaker_vocab_size"): len(speaker_vocab),
+        label("speaker_vocab"): sorted([s.label for s in speaker_vocab]),
+        label("session_vocab_size"): len(session_vocab),
+        label("session_vocab"): sorted([(spk.label, sesh) for spk, sesh in session_vocab]),
     }
     state.comet.log_parameters(parameters)
 
-    for speaker in model.speaker_vocab:
-        sessions = [(spk.label, sesh) for spk, sesh in model.session_vocab if spk == speaker]
+    for speaker in speaker_vocab:
+        sessions = [sesh for spk, sesh in session_vocab if spk == speaker]
         parameters = {
             label("num_sessions", speaker=speaker): len(sessions),
             label("sessions", speaker=speaker): sorted(sessions),
@@ -554,7 +563,7 @@ def _log_vocab(state: _State, dataset_type: DatasetType):
         state.comet.log_parameters(parameters)
 
 
-@lib.utils.log_runtime
+@log_runtime
 def _run_steps(
     state: _State,
     context: Context,

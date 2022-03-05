@@ -73,7 +73,7 @@ Learn more about where to find the `api_key` and `rest_api_key` configurations o
 ## 5. Google Cloud
 
 This repository relies on GCP, and you'll need to ask team member to get access to our GCP projects,
-"Voice Research" and "Voice Service".
+"Voice Research" and "Voice Service 2".
 
 Afterwards, install [Google Cloud SDK](https://cloud.google.com/sdk/docs/quickstart) with these
 [installation scripts](https://cloud.google.com/sdk/docs/downloads-interactive) and authorize
@@ -89,6 +89,9 @@ gcloud auth login
 # NOTE: Authorize Google client libraries, learn more:
 # https://cloud.google.com/sdk/gcloud/reference/auth/application-default
 gcloud auth application-default login
+
+# NOTE: Most likely, you'll be using the "Voice Research" project.
+gcloud config set project voice-research-255602
 ```
 
 ## Good job! 🎉

@@ -9,6 +9,8 @@ import itertools
 import logging
 import math
 import multiprocessing.pool
+import pathlib
+import pickle
 import random
 import statistics
 import time
@@ -213,7 +215,9 @@ def seconds_to_str(seconds: float) -> str:
         return "%dms" % (milliseconds)
 
 
-_LogRuntimeFunction = typing.TypeVar("_LogRuntimeFunction", bound=typing.Callable[..., typing.Any])
+AnyCallable = typing.Callable[..., typing.Any]
+
+_LogRuntimeFunction = typing.TypeVar("_LogRuntimeFunction", bound=AnyCallable)
 
 
 def log_runtime(function: _LogRuntimeFunction) -> _LogRuntimeFunction:
@@ -228,6 +232,38 @@ def log_runtime(function: _LogRuntimeFunction) -> _LogRuntimeFunction:
         return result
 
     return typing.cast(_LogRuntimeFunction, decorator)
+
+
+_CacheReturnDecoratorFunction = typing.TypeVar("_CacheReturnDecoratorFunction", bound=AnyCallable)
+
+
+def disk_cache(path: pathlib.Path):
+    """Decorator for caching the return value in a file regardless of the arguments."""
+
+    def decorator(function: _CacheReturnDecoratorFunction) -> _CacheReturnDecoratorFunction:
+        @functools.wraps(function)
+        def wrapper(*args, **kwargs):
+            if path.exists():
+                logger.warn(
+                    f"Loading cache for `{function.__qualname__}` from `{path}`. "
+                    f"Please delete `{path}` and rerun if you'd like to not use the "
+                    "cache."
+                )
+                with path.open("rb") as f:
+                    return pickle.load(f)
+
+            result = function(*args, **kwargs)
+            with path.open("wb") as f:
+                logger.info(f"Caching return value for `{function.__qualname__}` to `{path}`.")
+                pickle.dump(result, f)
+
+            return result
+
+        wrapper.clear_cache = lambda: path.unlink()
+
+        return typing.cast(_CacheReturnDecoratorFunction, wrapper)
+
+    return decorator
 
 
 _SortTogetherItem = typing.TypeVar("_SortTogetherItem")
@@ -439,6 +475,7 @@ class PaddingAndLazyEmbedding(torch.nn.Module):
         self.padding_idx = self.embed.padding_idx
 
         self._new_tokens = set()
+        self._unk_tokens = set()
         self.register_buffer("_unk_embedding_hash", torch.tensor(0.0))
 
     def _get_unk_embedding_hash(self) -> torch.Tensor:
@@ -449,6 +486,8 @@ class PaddingAndLazyEmbedding(torch.nn.Module):
     def _queue_new_tokens(self, tokens: Hashable1d2dList):
         """Queue up tokens for a vocab update."""
         self._new_tokens.update([t for t in flatten(tokens) if t not in self.vocab])
+        if len(self._unk_tokens) > 0:
+            self._unk_tokens = set()
         if len(self._new_tokens) + len(self.vocab) > self.num_embeddings:
             raise ValueError("The number of tokens exceeds the allocated number of embeddings.")
 
@@ -520,8 +559,10 @@ class PaddingAndLazyEmbedding(torch.nn.Module):
         if not self.training and not self.allow_unk_on_eval and token not in self.vocab:
             raise KeyError(f"Token not found: {token}")
 
-        if token not in self.vocab and not self.training:
-            logger.info("Replaced '%s' token with unknown token.", token)
+        if token not in self.vocab and not self.training and token not in self._unk_tokens:
+            logger.info("Marking '%s' token as unknown token", token)
+            # NOTE: Track unknown tokens so that they are not logged over and over.
+            self._unk_tokens.add(token)
 
         return self.vocab.get(token, self.vocab[self.unk_token])
 

@@ -156,6 +156,7 @@ make_de_speaker = lambda label, *a, **kw: Speaker(label, Language.GERMAN, *a, **
 make_es_speaker = lambda label, *a, **kw: Speaker(label, Language.SPANISH_CO, *a, **kw)
 make_pt_speaker = lambda label, *a, **kw: Speaker(label, Language.PORTUGUESE_BR, *a, **kw)
 
+# TODO: Implement `__str__` so that we have a more succinct string representation for logging
 Session = typing.NewType("Session", typing.Tuple[Speaker, str])
 
 

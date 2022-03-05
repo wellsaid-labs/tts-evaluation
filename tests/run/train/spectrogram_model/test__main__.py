@@ -12,6 +12,7 @@ from run.train.spectrogram_model._model import SpectrogramModel
 from run.train.spectrogram_model._worker import (
     _get_data_loaders,
     _HandleBatchArgs,
+    _log_vocab,
     _run_inference,
     _run_step,
 )
@@ -27,7 +28,7 @@ def test_integration():
     assert state.model.module == state.model  # Ensure the mock worked
     model = typing.cast(SpectrogramModel, state.model)
 
-    batch_size = 1
+    batch_size = 2
     train_loader, dev_loader = _get_data_loaders(
         state, train_dataset, dev_dataset, batch_size, batch_size, 1, 1, False, True, 0, 2
     )
@@ -60,12 +61,13 @@ def test_integration():
             assert len(metrics.data[MetricsKey(key, batch.spans[0].speaker)]) == 1
         assert all(metrics.data[MetricsKey(metrics.NUM_CORRECT_STOP_TOKEN)]) == 1
 
-        num_frames = [(batch.spectrogram.lengths[0].item(),)]
-        num_tokens = [(len(str(batch.inputs.spans[0])),)]
-        num_seconds = [(batch.spans[0].audio_length,)]
+        max_frames = [(batch.spectrogram.lengths.max().item(),)]
+        num_frames = [(batch.spectrogram.lengths.sum().item(),)]
+        num_tokens = [(sum(len(t) for t in batch.inputs.tokens),)]
+        num_seconds = [(sum(s.audio_length for s in batch.spans),)]
         bucket = len(batch.spans[0].script) // metrics.TEXT_LENGTH_BUCKET_SIZE
         values = {
-            MetricsKey(metrics.NUM_FRAMES_MAX): num_frames,
+            MetricsKey(metrics.NUM_FRAMES_MAX): max_frames,
             MetricsKey(metrics.NUM_FRAMES_PREDICTED): num_frames,
             MetricsKey(metrics.NUM_FRAMES_PREDICTED, JUDY_BIEBER): num_frames,
             MetricsKey(metrics.NUM_FRAMES): num_frames,
@@ -79,10 +81,11 @@ def test_integration():
             MetricsKey(metrics.NUM_TOKENS, JUDY_BIEBER): num_tokens,
         }
         for key, value in values.items():
-            assert metrics.data[key] == value
+            assert metrics.data[key] == value, str(key)
 
         metrics.log(lambda l: l[-1:], type_=DatasetType.TRAIN, cadence=Cadence.STEP)
         metrics.log(is_verbose=True, type_=DatasetType.TRAIN, cadence=Cadence.MULTI_STEP)
+        _log_vocab(state, DatasetType.TRAIN)
 
     # Test `_run_inference` with `Metrics` and `_State`
     with set_context(Context.EVALUATE_INFERENCE, comet, state.model):
@@ -92,11 +95,9 @@ def test_integration():
         args = (state, dev_loader, Context.EVALUATE, DatasetType.DEV, metrics, timer, batch, True)
         _run_inference(_HandleBatchArgs(*args))
         assert state.step.item() == 1
-        total = (
-            metrics.data[MetricsKey(metrics.NUM_REACHED_MAX)][0][0]
-            + metrics.data[MetricsKey(metrics.NUM_SPANS)][0][0]
-        )
-        assert total == 1
+        total = sum(metrics.data[MetricsKey(metrics.NUM_REACHED_MAX)][0])
+        total += sum(metrics.data[MetricsKey(metrics.NUM_SPANS)][0])
+        assert total == batch_size
 
         metrics.log(lambda l: l[-1:], type_=DatasetType.TRAIN, cadence=Cadence.STEP)
         metrics.log(is_verbose=True, type_=DatasetType.TRAIN, cadence=Cadence.MULTI_STEP)

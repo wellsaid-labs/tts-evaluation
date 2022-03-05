@@ -273,7 +273,7 @@ def test_get_num_pause_frames():
     assert get_num_pause_frames(db_mel_spectrogram, None, -80.0, frame_hop / sample_rate) == [0]
     # NOTE: Test `min_length` is too long.
     assert get_num_pause_frames(db_mel_spectrogram, None, -40.0, 1) == [0]
-    mask = torch.zeros(*db_mel_spectrogram.shape[:2])
+    mask = torch.zeros(*db_mel_spectrogram.shape[:2]).transpose(0, 1)
     assert get_num_pause_frames(db_mel_spectrogram, mask, -40.0, frame_hop / sample_rate) == [0]
     batch = torch.cat([db_mel_spectrogram, db_mel_spectrogram], dim=1)
     assert get_num_pause_frames(batch, None, -40.0, frame_hop / sample_rate) == [97, 97]

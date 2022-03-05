@@ -505,7 +505,7 @@ def _run_step(args: _HandleBatchArgs):
         args.state.ema.update()
         args.state.scheduler.step()
         args.state.step.add_(1)
-        args.state.comet.set_step(typing.cast(int, args.state.step.item()))
+        args.state.comet.set_step(int(args.state.step.item()))
         args.state.model.zero_grad(set_to_none=True)
         [discrim.zero_grad(set_to_none=True) for discrim in args.state.discrims]
 

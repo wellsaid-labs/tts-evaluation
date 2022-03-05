@@ -198,7 +198,7 @@ def get_num_pause_frames(
 
     Args:
         db_spectrogram (torch.FloatTensor [num_frames, batch_size, frame_channels])
-        mask (torch.FloatTensor [num_frames, batch_size])
+        mask (torch.FloatTensor [batch_size, num_frames])
         max_loudness: The maximum loudness a pause can be.
         min_length: The minimum length for a pause to be considered a pause.
         ...
@@ -208,7 +208,7 @@ def get_num_pause_frames(
     # [batch_size, num_frames, frame_channels] → [batch_size, num_frames]
     framed_rms_level = lib.audio.power_spectrogram_to_framed_rms(power_spec, **kwargs)
     is_silent = framed_rms_level < lib.audio.db_to_amp(max_loudness)  # [batch_size, num_frames]
-    is_silent = is_silent if mask is None else is_silent * mask.transpose(0, 1)
+    is_silent = is_silent if mask is None else is_silent * mask
     frames_threshold = min_length * sample_rate / frame_hop
     batch_size = is_silent.shape[0]
     num_frames = [0] * batch_size
@@ -440,12 +440,13 @@ class Metrics(_utils.Metrics[MetricsKey]):
     ) -> MetricsValues:
         values, _reduce = self._make_values()
 
-        loudness = get_power_rms_level_sum(batch.spectrogram.tensor, batch.spectrogram_mask.tensor)
+        spectrogram_mask = batch.spectrogram_mask.tensor.transpose(0, 1)
+        loudness = get_power_rms_level_sum(batch.spectrogram.tensor, spectrogram_mask)
         for span, loudness, pred_loudness, num_pause, num_pause_pred, has_reached_max in zip(
             batch.spans,
             self._to_list(loudness),
             self._to_list(get_power_rms_level_sum(preds.frames, preds.frames_mask)),
-            get_num_pause_frames(batch.spectrogram.tensor, batch.spectrogram_mask.tensor),
+            get_num_pause_frames(batch.spectrogram.tensor, spectrogram_mask),
             get_num_pause_frames(preds.frames, preds.frames_mask),
             self._to_list(preds.reached_max),
         ):

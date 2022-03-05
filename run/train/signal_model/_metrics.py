@@ -275,7 +275,6 @@ class Metrics(_utils.Metrics[MetricsKey]):
                 self.FREQUENCY_NUM_SECONDS: _reduce(self.NUM_SAMPLES) / total_seconds,
             }
             metrics.update({partial(k, **kwargs): v for k, v in update.items()})
-
         return metrics
 
     def log(
