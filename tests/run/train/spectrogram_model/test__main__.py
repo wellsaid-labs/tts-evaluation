@@ -13,6 +13,7 @@ from run.train.spectrogram_model._model import SpectrogramModel
 from run.train.spectrogram_model._worker import (
     _get_data_loaders,
     _HandleBatchArgs,
+    _log_vocab,
     _run_inference,
     _run_step,
 )
@@ -84,6 +85,7 @@ def test_integration():
 
         metrics.log(lambda l: l[-1:], type_=DatasetType.TRAIN, cadence=Cadence.STEP)
         metrics.log(is_verbose=True, type_=DatasetType.TRAIN, cadence=Cadence.MULTI_STEP)
+        _log_vocab(state, DatasetType.TRAIN)
 
     # Test `_run_inference` with `Metrics` and `_State`
     with set_context(Context.EVALUATE_INFERENCE, comet, state.model):
