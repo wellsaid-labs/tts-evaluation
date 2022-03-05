@@ -28,18 +28,18 @@ Setup your local development environment by following [these instructions](LOCAL
 
    💡 TIP: Don't place all your preemptible instances in the same zone, just in case one zone
    runs out of capacity.
-   
+
    If starting from scratch, use a standard ubuntu image:
-   ```
+   ```zsh
    IMAGE_PROJECT='ubuntu-os-cloud'
    IMAGE_FAMILY='ubuntu-1804-lts'
    ```
+
    If starting from your own image, set the image project and family appropriately:
-   ```
+   ```zsh
    IMAGE_PROJECT='voice-research-255602'
    IMAGE_FAMILY='your-image-family-name'    # Example: $IMAGE_FAMILY used to image your machine
    ```
-   
 
 1. Create an instance for training...
 
@@ -50,7 +50,7 @@ Setup your local development environment by following [these instructions](LOCAL
       --machine-type='n1-standard-32' \
       --gpu-type='nvidia-tesla-t4' \
       --gpu-count=4 \
-      --disk-size=512 \
+      --disk-size=1024 \
       --disk-type='pd-balanced' \
       --image-project=$IMAGE_PROJECT \
       --image-family=$IMAGE_FAMILY \
@@ -121,8 +121,10 @@ Setup your local development environment by following [these instructions](LOCAL
    . run/utils/gcp/install_drivers.sh
    . run/utils/apt_install.sh
    ```
+
    **NOTE:** You will always want to be in an active `venv` whenever you want to work with python.
-   ```
+
+   ```bash
    python3.8 -m venv venv
    . venv/bin/activate
 
@@ -144,6 +146,7 @@ Setup your local development environment by following [these instructions](LOCAL
    ```bash
    screen
    ```
+
    ```bash
    . venv/bin/activate
    ```
@@ -155,21 +158,19 @@ Setup your local development environment by following [these instructions](LOCAL
    EXPERIMENT_NAME='Your experiment name'
    ```
 
-1. Start training... 
-   
+1. Start training...
+
    For example, run this command to train a spectrogram model:
 
    ```bash
    pkill -9 python; sleep 5s; nvidia-smi; \
    PYTHONPATH=. python $TRAIN_SCRIPT_PATH start $COMET_PROJECT "$EXPERIMENT_NAME";
    ```
-   ---
-   Or select a `SPECTROGRAM_CHECKPOINT`...
-   ```
-   SPECTROGRAM_CHECKPOINT="/opt/wellsaid-labs/Text-to-Speech/path/to/spectrogram/checkpoint"
-   ```
-   ...and run this command to train a signal model:
+
+   Or select a `SPECTROGRAM_CHECKPOINT` and run the following command to train a signal model...
+
    ```bash
+   SPECTROGRAM_CHECKPOINT="/opt/wellsaid-labs/Text-to-Speech/path/to/spectrogram/checkpoint"
    pkill -9 python; sleep 5s; nvidia-smi; \
    PYTHONPATH=. python $TRAIN_SCRIPT_PATH start $SPECTROGRAM_CHECKPOINT $COMET_PROJECT "$EXPERIMENT_NAME";
    ```
@@ -177,9 +178,9 @@ Setup your local development environment by following [these instructions](LOCAL
    ❓ LEARN MORE: PyTorch leaves zombie processes that must be killed, check out:
    https://leimao.github.io/blog/Kill-PyTorch-Distributed-Training-Processes/
 
-1. Detach from your screen session by typing `Ctrl-A` then `D`.
+2. Detach from your screen session by typing `Ctrl-A` then `D`.
 
-1. You can now exit your VM with the `exit` command.
+3. You can now exit your VM with the `exit` command.
 
 ### From your local repository
 
@@ -245,5 +246,5 @@ Setup your local development environment by following [these instructions](LOCAL
       --vm-name=$VM_NAME \
       --zone=$VM_ZONE
    ```
-   
+
    When you're ready to begin signal model training, start from the top of these instructions and use your `$IMAGE_FAMILY` envrionment variable to build your new instance!
