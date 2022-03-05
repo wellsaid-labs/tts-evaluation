@@ -3,7 +3,6 @@ import dataclasses
 import enum
 import logging
 import math
-import pprint
 import typing
 
 import torch
@@ -26,7 +25,6 @@ else:
     IPython = LazyLoader("IPython", globals(), "IPython")
 
 logger = logging.getLogger(__name__)
-pprinter = pprint.PrettyPrinter(indent=4)
 
 RANDOM_SEED = 1212212
 LANGUAGE = Language.ENGLISH
