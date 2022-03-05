@@ -327,12 +327,11 @@ class CometMLExperiment:
                 items.append(f'<audio controls preload="none" src="{url}"></audio>')
         self.log_html("<section>{}</section>".format("\n".join(items)))
 
-    def _handle_param(self, key: run._config.Label, value: typing.Any) -> str:
+    def _handle_param(self, key: run._config.Label, value: typing.Any, max_len: int = 50) -> str:
         """Format and log complex objects in standard out."""
-        if isinstance(value, (list, tuple, dict)):
+        if isinstance(value, (list, tuple, dict, set)) and len(repr(value)) > max_len:
             logger.info(f"Comet parameter `{key}` is:\n{pprinter.pformat(value)}")
-            value = "<<<Printed in standard out.>>>"
-
+            return "<<<Printed in standard out.>>>"
         return repr(value)
 
     def log_parameter(self, key: run._config.Label, value: typing.Any):
