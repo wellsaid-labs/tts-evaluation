@@ -551,7 +551,7 @@ def _log_vocab(state: _State, dataset_type: DatasetType):
     state.comet.log_parameters(parameters)
 
     for speaker in speaker_vocab:
-        sessions = [(spk.label, sesh) for spk, sesh in session_vocab if spk == speaker]
+        sessions = [sesh for spk, sesh in session_vocab if spk == speaker]
         parameters = {
             label("num_sessions", speaker=speaker): len(sessions),
             label("sessions", speaker=speaker): sorted(sessions),
