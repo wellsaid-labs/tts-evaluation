@@ -102,6 +102,7 @@ class Checkpoint(_utils.Checkpoint):
         context managers."""
         self.check_invariants()
         self.model.grad_enabled = None  # NOTE: For backwards compatibility
+        model = None
         with contextlib.ExitStack() as stack:
             stack.enter_context(set_train_mode(self.model, False, self.ema))
             self.model.del_weight_norm_temp_tensor_()
@@ -109,6 +110,7 @@ class Checkpoint(_utils.Checkpoint):
             model.set_grad_enabled(False)
             model.remove_weight_norm_()
         self.check_invariants()
+        assert model is not None
         return model
 
 
@@ -248,10 +250,8 @@ class _State:
         spectrogram_model._worker.InputEncoder, lib.spectrogram_model.SpectrogramModel
     ]:
         checkpoint = lib.environment.load(spectrogram_model_checkpoint_path)
-        comet.log_other(
-            get_config_label("spectrogram_model_experiment_key"),
-            checkpoint.comet_experiment_key,
-        )
+        label = get_config_label("spectrogram_model_experiment_key")
+        comet.log_other(label, checkpoint.comet_experiment_key)
         return checkpoint.export()
 
     @classmethod
@@ -348,6 +348,7 @@ def _get_data_loaders(
 ) -> typing.Tuple[DataLoader[Batch], DataLoader[Batch]]:
     """Initialize training and development data loaders."""
     model = state.model.module if isinstance(state.model, DistributedDataParallel) else state.model
+    step, device = int(state.step.item()), state.device
     padding = typing.cast(int, model.padding)
     processor = partial(
         DataProcessor,
@@ -357,16 +358,12 @@ def _get_data_loaders(
     )
     train = processor(train_dataset, train_slice_size, train_batch_size, train_span_bucket_size)
     dev = processor(dev_dataset, dev_slice_size, dev_batch_size, dev_span_bucket_size)
+    init_fn = partial(_worker_init_fn, step=step, rank=get_rank(), world_size=get_world_size())
     kwargs = dict(
         num_workers=num_workers,
-        device=state.device,
+        device=device,
         prefetch_factor=prefetch_factor,
-        worker_init_fn=partial(
-            _worker_init_fn,
-            step=int(state.step.item()),
-            rank=get_rank(),
-            world_size=get_world_size(),
-        ),
+        worker_init_fn=init_fn,
     )
     return (
         DataLoader(train, num_steps_per_epoch=train_steps_per_epoch, **kwargs),
@@ -431,7 +428,7 @@ def _run_discriminator(
     discriminator_loss = binary_cross_entropy_with_logits(predictions, labels, reduction="none")
     get_discrim_values = partial(
         args.metrics.get_discrim_values,
-        fft_length=discriminator.module.fft_length,
+        fft_length=typing.cast(SpectrogramDiscriminator, discriminator.module).fft_length,
         batch=args.batch,
         real_logits=predictions[:batch_size],
         fake_logits=predictions[batch_size:],
@@ -532,7 +529,7 @@ def _run_step(args: _HandleBatchArgs):
         args.state.ema.update()
         args.state.scheduler.step()
         args.state.step.add_(1)
-        args.state.comet.set_step(typing.cast(int, args.state.step.item()))
+        args.state.comet.set_step(int(args.state.step.item()))
         args.state.model.zero_grad(set_to_none=True)
         [discrim.zero_grad(set_to_none=True) for discrim in args.state.discrims]
 
@@ -661,7 +658,7 @@ def _run_steps(
     make_args = partial(_HandleBatchArgs, state, data_loader, context, dataset_type)
     with contextlib.ExitStack() as stack:
         stack.enter_context(set_context(context, state.comet, *state.models, ema=state.ema))
-        stack.enter_context(set_epoch(state.comet, step=state.step.item(), **kwargs))
+        stack.enter_context(set_epoch(state.comet, step=int(state.step.item()), **kwargs))
 
         metrics = Metrics(state.comet, state.spectrogram_model_input_encoder.speaker_encoder.vocab)
         timer = Timer().record_event(Timer.LOAD_DATA)

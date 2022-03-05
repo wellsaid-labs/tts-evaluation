@@ -98,12 +98,17 @@ class Checkpoint(_utils.Checkpoint):
         context managers."""
         self.check_invariants()
         self.model.grad_enabled = None  # NOTE: For backwards compatibility
+        model = None
         with contextlib.ExitStack() as stack:
             stack.enter_context(set_train_mode(self.model, False, self.ema))
             model = copy.deepcopy(self.model)
             model.set_grad_enabled(False)
         self.check_invariants()
+        assert model is not None
         return self.input_encoder, model
+
+
+ExcludeFromDecay = typing.Callable[[str, torch.nn.parameter.Parameter, torch.nn.Module], bool]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -201,8 +206,7 @@ class _State:
 
     @staticmethod
     def _make_optimizer_groups(
-        model: torch.nn.Module,
-        exclude_from_decay: typing.Callable[[str, torch.nn.Parameter, torch.nn.Module], bool],
+        model: torch.nn.Module, exclude_from_decay: ExcludeFromDecay
     ) -> typing.List[typing.Dict[str, typing.Any]]:
         """Create optimizer groups with optimizer options per group.
 
@@ -213,7 +217,7 @@ class _State:
         """
         param_to_module = {p: m for m in model.modules() for p in m.parameters(recurse=False)}
         named_params = [(n, p) for n, p in model.named_parameters() if p.requires_grad]
-        exclude: typing.Callable[[str, torch.nn.Parameter], bool]
+        exclude: typing.Callable[[str, torch.nn.parameter.Parameter], bool]
         exclude = lambda n, p: exclude_from_decay(n, p, param_to_module[p])
         no_decay_names, no_decay_params = tuple(zip(*[p for p in named_params if exclude(*p)]))
         decay_names, decay_params = tuple(zip(*[p for p in named_params if not exclude(*p)]))
@@ -227,9 +231,7 @@ class _State:
         model: torch.nn.Module,
         optimizer: typing.Type[torch.optim.AdamW] = HParam(),
         lr_multiplier_schedule: typing.Callable[[int], float] = HParam(),
-        exclude_from_decay: typing.Callable[
-            [str, torch.nn.Parameter, torch.nn.Module], bool
-        ] = HParam(),
+        exclude_from_decay: ExcludeFromDecay = HParam(),
     ) -> typing.Tuple[
         torch.optim.AdamW,
         lib.optimizers.AdaptiveGradientNormClipper,
@@ -651,7 +653,7 @@ def _run_steps(
     make_args = partial(_HandleBatchArgs, state, data_loader, context, dataset_type)
     with contextlib.ExitStack() as stack:
         stack.enter_context(set_context(context, state.comet, state.model, ema=state.ema))
-        stack.enter_context(set_epoch(state.comet, step=state.step.item(), **kwargs))
+        stack.enter_context(set_epoch(state.comet, step=int(state.step.item()), **kwargs))
 
         metrics = Metrics(state.comet, state.input_encoder.speaker_encoder.vocab)
         timer = Timer().record_event(Timer.LOAD_DATA)
@@ -673,7 +675,9 @@ def _run_steps(
         metrics.log(is_verbose=True, type_=dataset_type, cadence=Cadence.MULTI_STEP)
 
 
-def exclude_from_decay(param_name: str, param: torch.nn.Parameter, module: torch.nn.Module) -> bool:
+def exclude_from_decay(
+    param_name: str, param: torch.nn.parameter.Parameter, module: torch.nn.Module
+) -> bool:
     """
     NOTE: Learn more about removing regularization from bias terms or `LayerNorm`:
     https://stats.stackexchange.com/questions/153605/no-regularisation-term-for-bias-unit-in-neural-network/153650

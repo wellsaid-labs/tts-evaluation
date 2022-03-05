@@ -89,6 +89,7 @@ class DictStore:
     of these issues:
     https://github.com/pytorch/pytorch/issues/53872
     https://github.com/pytorch/pytorch/issues/53840
+    Also, `TCPStore` only allows for integer values.
 
     Args:
         data: On the master process, this is a merged collection of data from the worker processes.
