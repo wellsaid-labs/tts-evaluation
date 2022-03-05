@@ -45,6 +45,7 @@ SAMPLES_PATH = DISK_PATH / "samples"
 TTS_PACKAGE_PATH = DISK_PATH / "tts_package.pt"
 SIGNAL_MODEL_EXPERIMENTS_PATH = EXPERIMENTS_PATH / "signal_model"
 SPECTROGRAM_MODEL_EXPERIMENTS_PATH = EXPERIMENTS_PATH / "spectrogram_model"
+DATASET_CACHE_PATH = TEMP_PATH / "dataset.pickle"
 
 # TODO: Instead of using global variables, can we use `hparams`, easily?
 
