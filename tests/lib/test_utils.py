@@ -395,13 +395,19 @@ def test_padding_and_lazy_embedding__allow_unk_on_eval():
     model.eval()
     with pytest.raises(KeyError):
         model([["a"]])
+    assert model._unk_tokens == set()
     model.allow_unk_on_eval = True
 
     embedded, mask = model([["a"]])
+    assert model._unk_tokens == {"a"}
     assert torch.equal(embedded, model.embed(torch.tensor([[model.unk_idx]])))
     assert torch.equal(mask, torch.tensor([[True]]))
     assert model.vocab == initial_vocab
     assert len(model._new_tokens) == 0
+
+    model.train()
+    model([[]])
+    assert model._unk_tokens == set()
 
 
 def test_padding_and_lazy_embedding__zero_length():

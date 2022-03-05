@@ -439,6 +439,7 @@ class PaddingAndLazyEmbedding(torch.nn.Module):
         self.padding_idx = self.embed.padding_idx
 
         self._new_tokens = set()
+        self._unk_tokens = set()
         self.register_buffer("_unk_embedding_hash", torch.tensor(0.0))
 
     def _get_unk_embedding_hash(self) -> torch.Tensor:
@@ -449,6 +450,8 @@ class PaddingAndLazyEmbedding(torch.nn.Module):
     def _queue_new_tokens(self, tokens: Hashable1d2dList):
         """Queue up tokens for a vocab update."""
         self._new_tokens.update([t for t in flatten(tokens) if t not in self.vocab])
+        if len(self._unk_tokens) > 0:
+            self._unk_tokens = set()
         if len(self._new_tokens) + len(self.vocab) > self.num_embeddings:
             raise ValueError("The number of tokens exceeds the allocated number of embeddings.")
 
@@ -520,8 +523,10 @@ class PaddingAndLazyEmbedding(torch.nn.Module):
         if not self.training and not self.allow_unk_on_eval and token not in self.vocab:
             raise KeyError(f"Token not found: {token}")
 
-        if token not in self.vocab and not self.training:
-            logger.info("Replaced '%s' token with unknown token.", token)
+        if token not in self.vocab and not self.training and token not in self._unk_tokens:
+            logger.info("Marking '%s' token as unknown token", token)
+            # NOTE: Track unknown tokens so that they are not logged over and over.
+            self._unk_tokens.add(token)
 
         return self.vocab.get(token, self.vocab[self.unk_token])
 
