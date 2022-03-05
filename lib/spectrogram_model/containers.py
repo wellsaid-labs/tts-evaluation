@@ -12,6 +12,15 @@ class Inputs(typing.NamedTuple):
     # Metadata associated with each sequence
     seq_metadata: typing.List[typing.Tuple[typing.Hashable, ...]]
 
+    # Metadata associated with each token in each sequence
+    token_metadata: typing.List[typing.List[typing.Tuple[typing.Hashable, ...]]]
+
+    # Embeddings associated with each token in each sequence
+    token_embeddings: typing.List[torch.Tensor]
+
+    # Slice of tokens in each sequence to be voiced
+    slices: typing.List[slice]
+
 
 class Preds(typing.NamedTuple):
     """The model predictions and related metadata."""
@@ -118,5 +127,5 @@ class Decoded(typing.NamedTuple):
     # torch.LongTensor [num_frames, batch_size]
     window_starts: torch.Tensor
 
-    # The last `Decoder` hidden state. 
+    # The last `Decoder` hidden state.
     hidden_state: DecoderHiddenState

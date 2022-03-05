@@ -173,26 +173,33 @@ def test__right_masked_bi_rnn__multilayer_mask():
 def _make_encoder(
     max_tokens=10,
     max_seq_meta_values=(11, 12),
+    max_token_meta_values=(13,),
+    max_token_embed_size=8,
     seq_meta_embed_size=6,
+    token_meta_embed_size=12,
     seq_meta_embed_dropout=0.1,
     out_size=8,
     hidden_size=8,
-    num_convolution_layers=2,
+    num_conv_layers=2,
     convolution_filter_size=5,
     lstm_layers=2,
     dropout=0.5,
     batch_size=4,
     num_tokens=5,
+    context=3,
 ):
     """Make `encoder.Encoder` and it's inputs for testing."""
     encoder = lib.spectrogram_model.encoder.Encoder(
         max_tokens=max_tokens,
         max_seq_meta_values=max_seq_meta_values,
+        max_token_meta_values=max_token_meta_values,
+        max_token_embed_size=max_token_embed_size,
         seq_meta_embed_size=seq_meta_embed_size,
+        token_meta_embed_size=token_meta_embed_size,
         seq_meta_embed_dropout=seq_meta_embed_dropout,
         out_size=out_size,
         hidden_size=hidden_size,
-        num_convolution_layers=num_convolution_layers,
+        num_conv_layers=num_conv_layers,
         convolution_filter_size=convolution_filter_size,
         lstm_layers=lstm_layers,
         dropout=dropout,
@@ -201,11 +208,21 @@ def _make_encoder(
     # NOTE: Ensure modules like `LayerNorm` perturbs the input instead of being just an identity.
     [torch.nn.init.normal_(p) for p in encoder.parameters() if p.std() == 0]
 
+    num_tokens_pad = num_tokens + context * 2
     speakers = torch.randint(1, max_seq_meta_values[0], (batch_size,)).tolist()
     sessions = torch.randint(1, max_seq_meta_values[1], (batch_size,)).tolist()
-    tokens = torch.randint(1, max_tokens, (batch_size, num_tokens)).tolist()
-    metadata = list(zip(speakers, sessions))
-    return encoder, Inputs(tokens, metadata), (num_tokens, batch_size, out_size)
+    tokens = torch.randint(1, max_tokens, (batch_size, num_tokens_pad)).tolist()
+    token_meta = torch.randint(1, max_tokens, (batch_size, num_tokens_pad)).tolist()
+    token_meta = [[(t,) for t in s] for s in token_meta]
+    token_embeddings = list(torch.randn(batch_size, num_tokens_pad, max_token_embed_size).unbind())
+    inputs = Inputs(
+        tokens=tokens,
+        seq_metadata=list(zip(speakers, sessions)),
+        token_metadata=token_meta,
+        token_embeddings=token_embeddings,
+        slices=[slice(context, -context) for _ in range(batch_size)],
+    )
+    return encoder, inputs, (num_tokens, batch_size, out_size)
 
 
 def test_encoder():
@@ -225,7 +242,7 @@ def test_encoder():
     encoded.tokens.sum().backward()
 
 
-def test_encoder_filter_size():
+def test_encoder__filter_size():
     """Test `encoder.Encoder` handles different filter sizes."""
     for filter_size in [1, 3, 5]:
         module, arg, (num_tokens, batch_size, out_size) = _make_encoder(
@@ -238,7 +255,7 @@ def test_encoder_filter_size():
         encoded.tokens.sum().backward()
 
 
-def test_encoder_padding_invariance():
+def test_encoder__padding_invariance():
     """Test `encoder.Encoder` is consistent regardless of the padding."""
     module, arg, _ = _make_encoder(dropout=0, seq_meta_embed_dropout=0)
     expected = module(arg)
@@ -246,9 +263,16 @@ def test_encoder_padding_invariance():
     expected_grad = [p.grad for p in module.parameters() if p.grad is not None]
     module.zero_grad()
     for padding_len in range(1, 10):
-        padding = [module.embed_token.pad_token] * padding_len
-        padded_tokens = [t + padding for t in arg.tokens]
-        result = module(arg._replace(tokens=padded_tokens))
+        pad_token = [module.embed_token.pad_token] * padding_len
+        pad_meta = [(module.embed_token_metadata[0].pad_token,)] * padding_len
+        inputs = arg._replace(
+            tokens=[t + pad_token for t in arg.tokens],
+            token_metadata=[t + pad_meta for t in arg.token_metadata],
+            token_embeddings=[
+                torch.cat([t, torch.zeros(padding_len, t.shape[1])]) for t in arg.token_embeddings
+            ],
+        )
+        result = module(inputs)
         result.tokens.sum().backward()
         result_grad = [p.grad for p in module.parameters() if p.grad is not None]
         module.zero_grad()

@@ -402,7 +402,7 @@ def _configure_models():
             # SOURCE (Tacotron 2):
             # which are passed through a stack of 3 convolutional layers each containing
             # 512 filters with shape 5 × 1, i.e., where each filter spans 5 characters
-            num_convolution_layers=3,
+            num_conv_layers=3,
             convolution_filter_size=5,
             # SOURCE (Tacotron 2)
             # The output of the final convolutional layer is passed into a single
@@ -453,6 +453,7 @@ def _configure_models():
             # NOTE: See https://github.com/wellsaid-labs/Text-to-Speech/pull/258 to learn more about
             # this parameter.
             seq_meta_embed_size=128,
+            token_meta_embed_size=128,
         ),
         run.train.signal_model._model.SpectrogramDiscriminator.__init__: HParams(
             max_speakers=max_speakers,

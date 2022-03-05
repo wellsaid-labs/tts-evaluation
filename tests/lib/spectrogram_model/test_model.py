@@ -65,7 +65,7 @@ def _make_spectrogram_model(
             seq_meta_embed_dropout=dropout,
             out_size=16,
             hidden_size=16,
-            num_convolution_layers=2,
+            num_conv_layers=2,
             convolution_filter_size=3,
             lstm_layers=1,
             dropout=dropout,
@@ -89,6 +89,9 @@ def _make_spectrogram_model(
     model = SpectrogramModel(
         max_tokens=config.max_tokens,
         max_seq_meta_values=config.max_seq_meta_values,
+        max_token_meta_values=tuple(),
+        max_token_embed_size=0,
+        token_meta_embed_size=0,
         seq_meta_embed_size=seq_meta_embed_size,
         num_frame_channels=config.num_frame_channels,
         max_frames_per_token=config.max_frames_per_token,
@@ -123,7 +126,13 @@ def _make_inputs(
     for i in range(config.batch_size):
         tokens[i] = tokens[i][: num_tokens[i]]
 
-    inputs = Inputs(tokens, list(zip(speakers, sessions)))
+    inputs = Inputs(
+        tokens=tokens,
+        seq_metadata=list(zip(speakers, sessions)),
+        token_metadata=[[tuple() for _ in s] for s in tokens],
+        token_embeddings=[torch.empty(int(n), 0) for n in num_tokens],
+        slices=[slice(0, int(n)) for n in num_tokens],
+    )
 
     target_frames = torch.randn(config.max_frames, config.batch_size, config.num_frame_channels)
     target_lengths = torch.randint(1, config.max_frames, (config.batch_size,), dtype=long_)
@@ -372,7 +381,9 @@ def _set_embedding_vocab(model: SpectrogramModel, config: _Config):
     """Update `model` vocab so it can be run in inference mode."""
     model.encoder.embed_token.update_tokens(list(range(config.max_tokens)))
     for i, max_values in enumerate(config.max_seq_meta_values):
-        embedding = typing.cast(lib.utils.PaddingAndLazyEmbedding, model.encoder.embed_metadata[i])
+        embedding = typing.cast(
+            lib.utils.PaddingAndLazyEmbedding, model.encoder.embed_seq_metadata[i]
+        )
         embedding.update_tokens(list(range(max_values)))
 
 
@@ -430,6 +441,9 @@ def test_spectrogram_model__infer_batch_padding_invariance():
             inputs_ = inputs._replace(
                 tokens=[t[:num_tokens_] for t in inputs.tokens][i : i + 1],
                 seq_metadata=inputs.seq_metadata[i : i + 1],
+                token_metadata=inputs.token_metadata[i : i + 1],
+                token_embeddings=inputs.token_embeddings[i : i + 1],
+                slices=inputs.slices[i : i + 1],
             )
             preds = model(inputs_, mode=Mode.INFER)
 
@@ -453,6 +467,10 @@ def test_spectrogram_model__train_batch_padding_invariance():
     padding = 3
     num_tokens = config.max_num_tokens - padding
     batch_inputs.tokens[i] = batch_inputs.tokens[i][:num_tokens]
+    batch_inputs.token_metadata[i] = batch_inputs.token_metadata[i][:num_tokens]
+    batch_inputs.token_embeddings[i] = batch_inputs.token_embeddings[i][:num_tokens]
+    slice_ = batch_inputs.slices[i]
+    batch_inputs.slices[i] = slice(slice_.start, min(num_tokens, slice_.stop))
     target_lengths[i] = config.max_frames - padding
 
     with fork_rng(seed=123):
@@ -466,6 +484,9 @@ def test_spectrogram_model__train_batch_padding_invariance():
     inputs = batch_inputs._replace(
         tokens=[t[:num_tokens] for t in batch_inputs.tokens][i : i + 1],
         seq_metadata=batch_inputs.seq_metadata[i : i + 1],
+        token_metadata=[t[:num_tokens] for t in batch_inputs.token_metadata[i : i + 1]],
+        token_embeddings=[t[:num_tokens] for t in batch_inputs.token_embeddings[i : i + 1]],
+        slices=[slice(s.start, min(s.stop, num_tokens)) for s in batch_inputs.slices[i : i + 1]],
     )
 
     with fork_rng(seed=123):
@@ -483,8 +504,8 @@ def test_spectrogram_model__train_batch_padding_invariance():
 
 
 _expected_parameters = {
-    "encoder.embed_metadata.0.weight": torch.tensor(-3.281343),
-    "encoder.embed_metadata.1.weight": torch.tensor(0.318184),
+    "encoder.embed_seq_metadata.0.weight": torch.tensor(-3.281343),
+    "encoder.embed_seq_metadata.1.weight": torch.tensor(0.318184),
     "encoder.embed_token.weight": torch.tensor(-4.785396),
     "encoder.embed.0.weight": torch.tensor(0.664301),
     "encoder.embed.0.bias": torch.tensor(-0.198331),
@@ -548,8 +569,8 @@ _expected_parameters = {
 }
 
 _expected_grads = {
-    "encoder.embed_metadata.0.weight": torch.tensor(-7.907637),
-    "encoder.embed_metadata.1.weight": torch.tensor(-11.760118),
+    "encoder.embed_seq_metadata.0.weight": torch.tensor(-7.907637),
+    "encoder.embed_seq_metadata.1.weight": torch.tensor(-11.760118),
     "encoder.embed_token.weight": torch.tensor(-3.497558),
     "encoder.embed.0.weight": torch.tensor(-14.660476),
     "encoder.embed.0.bias": torch.tensor(1.748332),
@@ -668,7 +689,7 @@ def _make_backward_compatible_model(config: _Config, stop_threshold=0.5):
 
     model.encoder.embed_token.vocab.update({i: i for i in range(config.max_tokens)})
     model.encoder.embed_token.num_embeddings = len(model.encoder.embed_token.vocab)
-    for embed, max_values in zip(model.encoder.embed_metadata, config.max_seq_meta_values):
+    for embed, max_values in zip(model.encoder.embed_seq_metadata, config.max_seq_meta_values):
         embed = typing.cast(lib.utils.PaddingAndLazyEmbedding, embed)
         embed.vocab.update({i: i for i in range(max_values)})
         embed.num_embeddings = len(embed.vocab)
