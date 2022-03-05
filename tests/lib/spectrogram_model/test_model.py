@@ -58,8 +58,8 @@ def _make_spectrogram_model(
         lib.spectrogram_model.encoder.Encoder.__init__: HParams(
             out_size=16,
             hidden_size=16,
-            num_convolution_layers=2,
-            convolution_filter_size=3,
+            num_conv_layers=2,
+            conv_filter_size=3,
             lstm_layers=1,
             dropout=dropout,
             padding_index=padding_index,
@@ -73,7 +73,7 @@ def _make_spectrogram_model(
         lib.spectrogram_model.pre_net.PreNet.__init__: HParams(num_layers=1, dropout=dropout),
         lib.spectrogram_model.attention.Attention.__init__: HParams(
             hidden_size=4,
-            convolution_filter_size=3,
+            conv_filter_size=3,
             dropout=dropout,
             window_length=window_length,
             avg_frames_per_token=1.0,

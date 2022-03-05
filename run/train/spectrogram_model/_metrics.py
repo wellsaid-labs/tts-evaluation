@@ -552,7 +552,7 @@ class Metrics(_utils.Metrics):
 
     @configurable
     def _get_model_metrics(
-        self, select: _utils.MetricsSelect, is_verbose: bool, num_frame_channels=HParam()
+        self, select: _utils.MetricsSelect, is_verbose: bool, num_frame_channels: int = HParam()
     ) -> _GetMetrics:
         metrics = {}
         for speaker, reduce, div in self._iter_permutations(select, is_verbose):

@@ -1,4 +1,6 @@
 import math
+import pathlib
+import tempfile
 import typing
 
 import numpy
@@ -177,6 +179,30 @@ def test_log_runtime__type_hints__documentation():
 
     assert typing.get_type_hints(_helper)["arg"] == str
     assert _helper.__doc__ == "Docs"
+
+
+def test_disk_cache():
+    """Test is `lib.utils.disk_cache` caches the return values regardless of the arguments."""
+    temp_dir = tempfile.TemporaryDirectory()
+    temp_dir_path = pathlib.Path(temp_dir.name) / "cache.pickle"
+    assert not temp_dir_path.exists()
+    wrapped = lib.utils.disk_cache(temp_dir_path)(lib.utils.identity)
+    assert wrapped(1) == 1
+    assert temp_dir_path.exists()
+    assert wrapped(3) == 1
+
+
+def test_disk_cache__clear_cache():
+    """Test is `lib.utils.disk_cache` can clea cache."""
+    temp_dir = tempfile.TemporaryDirectory()
+    temp_dir_path = pathlib.Path(temp_dir.name) / "cache.pickle"
+    assert not temp_dir_path.exists()
+    wrapped = lib.utils.disk_cache(temp_dir_path)(lib.utils.identity)
+    assert wrapped(1) == 1
+    assert temp_dir_path.exists()
+    wrapped.clear_cache()
+    assert not temp_dir_path.exists()
+    assert wrapped(3) == 3
 
 
 def test_sort_together():

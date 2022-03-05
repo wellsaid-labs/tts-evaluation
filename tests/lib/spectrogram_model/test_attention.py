@@ -89,7 +89,7 @@ def _make_attention(
     attention_hidden_size=8,
     batch_size=3,
     max_num_tokens=12,
-    convolution_filter_size=5,
+    conv_filter_size=5,
     dropout=0.5,
     window_length=7,
     avg_frames_per_token=1.0,
@@ -102,7 +102,7 @@ def _make_attention(
     module = Attention(
         query_hidden_size=query_hidden_size,
         hidden_size=attention_hidden_size,
-        convolution_filter_size=convolution_filter_size,
+        conv_filter_size=conv_filter_size,
         dropout=dropout,
         window_length=window_length,
         avg_frames_per_token=avg_frames_per_token,

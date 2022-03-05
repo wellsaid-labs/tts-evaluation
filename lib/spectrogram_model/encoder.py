@@ -4,6 +4,7 @@ from functools import lru_cache
 import torch
 import torch.nn
 from hparams import HParam, configurable
+from torch.nn import ModuleList
 from torchnlp.encoders.text import DEFAULT_PADDING_INDEX
 from torchnlp.nn import LockedDropout
 
@@ -78,9 +79,7 @@ class _RightMaskedBiRNN(torch.nn.Module):
         _rnn = lambda i: rnn_class(
             input_size=input_size if i == 0 else hidden_size * 2, hidden_size=hidden_size, bias=bias
         )
-        self.rnn_layers = torch.nn.ModuleList(
-            [torch.nn.ModuleList([_rnn(i), _rnn(i)]) for i in range(num_layers)]
-        )
+        self.rnn_layers = ModuleList([ModuleList([_rnn(i), _rnn(i)]) for i in range(num_layers)])
 
     @staticmethod
     def _backward_pass(
@@ -171,8 +170,8 @@ class Encoder(torch.nn.Module):
         speaker_embedding_size The size of the speaker embedding.
         out_size: The size of the encoder output.
         hidden_size: The size of the encoders hidden representation. This value must be even.
-        num_convolution_layers: Number of convolution layers.
-        convolution_filter_size: Size of the convolving kernel. This value must be odd.
+        num_conv_layers: Number of convolution layers.
+        conv_filter_size: Size of the convolving kernel. This value must be odd.
         lstm_layers: Number of recurrent LSTM layers.
         dropout: Dropout probability used to regularize the encoders hidden representation.
         padding_index: Integer used to represent padding.
@@ -185,8 +184,8 @@ class Encoder(torch.nn.Module):
         speaker_embedding_size: int,
         out_size: int = HParam(),
         hidden_size: int = HParam(),
-        num_convolution_layers: int = HParam(),
-        convolution_filter_size: int = HParam(),
+        num_conv_layers: int = HParam(),
+        conv_filter_size: int = HParam(),
         lstm_layers: int = HParam(),
         dropout: float = HParam(),
         padding_index: int = DEFAULT_PADDING_INDEX,
@@ -195,7 +194,7 @@ class Encoder(torch.nn.Module):
 
         # LEARN MORE:
         # https://datascience.stackexchange.com/questions/23183/why-convolutions-always-use-odd-numbers-as-filter-size
-        assert convolution_filter_size % 2 == 1, "`convolution_filter_size` must be odd"
+        assert conv_filter_size % 2 == 1, "`conv_filter_size` must be odd"
         assert hidden_size % 2 == 0, "`hidden_size` must be divisable by even"
 
         self.embed_token = torch.nn.Embedding(vocab_size, hidden_size, padding_idx=padding_index)
@@ -204,22 +203,20 @@ class Encoder(torch.nn.Module):
             torch.nn.ReLU(),
             torch.nn.LayerNorm(hidden_size),
         )
-        self.conv_layers = torch.nn.ModuleList(
+        self.conv_layers = ModuleList(
             torch.nn.Sequential(
                 _Conv1dLockedDropout(dropout),
                 torch.nn.Conv1d(
                     in_channels=hidden_size,
                     out_channels=hidden_size,
-                    kernel_size=convolution_filter_size,
-                    padding=int((convolution_filter_size - 1) / 2),
+                    kernel_size=conv_filter_size,
+                    padding=int((conv_filter_size - 1) / 2),
                 ),
                 torch.nn.ReLU(),
             )
-            for _ in range(num_convolution_layers)
+            for _ in range(num_conv_layers)
         )
-        self.norm_layers = torch.nn.ModuleList(
-            _LayerNorm(hidden_size) for i in range(num_convolution_layers)
-        )
+        self.norm_layers = ModuleList(_LayerNorm(hidden_size) for _ in range(num_conv_layers))
         self.lstm = _RightMaskedBiRNN(
             rnn_class=LSTM,
             input_size=hidden_size,

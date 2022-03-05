@@ -2,8 +2,8 @@ import typing
 
 import torch
 import torch.nn
-import torch.nn.functional
 from hparams import HParam, configurable
+from torch.nn import functional
 
 from lib.spectrogram_model.attention import Attention, AttentionHiddenState
 from lib.spectrogram_model.pre_net import PreNet
@@ -133,7 +133,7 @@ class Decoder(torch.nn.Module):
         cumulative_alignment = torch.cat([initial_cumulative_alignment, cumulative_alignment], -1)
         # [batch_size, num_tokens + cumulative_alignment_padding] →
         # [batch_size, num_tokens + 2 * cumulative_alignment_padding]
-        cumulative_alignment = torch.nn.functional.pad(
+        cumulative_alignment = functional.pad(
             cumulative_alignment,
             [0, cumulative_alignment_padding],
             mode="constant",
