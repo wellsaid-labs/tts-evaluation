@@ -13,6 +13,8 @@ from run.data.sync_script_with_audio import (
     format_ratio,
 )
 
+# TODO: Add test for `align_stt_with_script`
+
 
 def test_format_ratio():
     """Test `format_ratio` formats a ratio."""

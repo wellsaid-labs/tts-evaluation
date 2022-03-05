@@ -46,6 +46,12 @@ STREAMLIT_STATIC_PRIVATE_PATH = STREAMLIT_STATIC_PATH / "_wsl_tts"
 STREAMLIT_STATIC_TEMP_PATH = STREAMLIT_STATIC_PRIVATE_PATH / "temp"
 STREAMLIT_STATIC_SYMLINK_PATH = STREAMLIT_STATIC_PRIVATE_PATH / "symlink"
 
+# NOTE: This is a default script that can be used with Streamlit apps, if need be.
+DEFAULT_SCRIPT = (
+    "Your creative life will evolve in ways that you can’t possibly imagine. Trust"
+    " your gut. Don’t overthink it. And allow yourself a little room to play."
+)
+
 
 def is_streamlit_running() -> bool:
     """Check if `streamlit` server has been initialized."""

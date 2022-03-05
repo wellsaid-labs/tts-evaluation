@@ -7,6 +7,7 @@ import re
 import string
 import subprocess
 import typing
+import unicodedata
 from collections import defaultdict
 from typing import get_args
 
@@ -608,10 +609,42 @@ def strip(text: str) -> typing.Tuple[str, str, str]:
     return text, left, right
 
 
+def _normalize_whitespace(text: str) -> str:
+    """Normalize whitespace variations into standard characters. Formfeed `f` and carriage return `r`
+    should be replace with new line `\n` and tab `\t` should be replaced with two spaces `  `."""
+    text = text.replace("\f", "\n")
+    text = text.replace("\t", "  ")
+    return text
+
+
+def _normalize_guillemets(text: str) -> str:
+    """Guillemets [https://en.wikipedia.org/wiki/Guillemet] should be normalized to standard
+    quotaton marks because they carry the same meaning in speech. Some keyboards rely on Guillemets
+    in place of ", but for most internet usage in particular, it's common for these to be replaced
+    with standard ". Some info here: https://coerll.utexas.edu/gg/gr/mis_01.html
+
+    Note: `ftfy` will not fix these, and `unidecode` will convert them incorrectly to <<,>>. This
+    function will ensure correct normalization after `ftfy` runs and before `unidecode` runs."""
+    text = text.replace("«", '"')
+    text = text.replace("»", '"')
+    text = text.replace("‹", "'")
+    text = text.replace("›", "'")
+    return text
+
+
+# Normalize all text to the same unicode form, NFC. Normal form C (NFC) first applies a canonical
+# decomposition, then composes pre-combined characters again. More info:
+# https://docs.python.org/3/howto/unicode.html#comparing-strings
+# https://docs.python.org/3/library/unicodedata.html#unicodedata.normalize
+# https://stackoverflow.com/questions/7931204/what-is-normalized-utf-8-all-about
+_UNICODE_NORMAL_FORM = "NFC"
+
+
 def normalize_vo_script(text: str, non_ascii: frozenset, strip: bool = True) -> str:
     """Normalize a voice-over script such that only readable characters remain.
 
     TODO: Use `unidecode.unidecode` in "strict" mode so that data isn't lost.
+    TODO: Clarify that some characters like `«` will be normalized regardless of being in the `non_ascii` set.
     NOTE: `non_ascii` needs to be explicitly set so that text isn't processed incorrecly accidently.
 
     References:
@@ -629,8 +662,8 @@ def normalize_vo_script(text: str, non_ascii: frozenset, strip: bool = True) -> 
     """
     text = str(text)
     text = ftfy.fix_text(text)
-    text = text.replace("\f", "\n")
-    text = text.replace("\t", "  ")
+    text = _normalize_whitespace(text)
+    text = _normalize_guillemets(text)
     text = "".join([c if c in non_ascii else str(unidecode.unidecode(c)) for c in text])
     if strip:
         text = text.strip()
@@ -644,7 +677,10 @@ _NORMALIZED_ASCII_CHARS = set(
 
 def is_normalized_vo_script(text: str, non_ascii: frozenset) -> bool:
     """Return `True` if `text` has been normalized to a small set of characters."""
-    return len(set(text) - _NORMALIZED_ASCII_CHARS - non_ascii) == 0
+    return (
+        unicodedata.is_normalized(_UNICODE_NORMAL_FORM, text)
+        and len(set(text) - _NORMALIZED_ASCII_CHARS - non_ascii) == 0
+    )
 
 
 ALPHANUMERIC_REGEX = re.compile(r"[a-zA-Z0-9@#$%&+=*]")

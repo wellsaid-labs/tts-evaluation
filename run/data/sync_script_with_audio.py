@@ -388,7 +388,8 @@ def align_stt_with_script(
         [normalize_vo_script(t.text.lower(), language) for t in stt_tokens],
         get_window_size(len(script_tokens), len(stt_tokens)),
     )
-    alignments = lib.text.align_tokens(*args, allow_substitution=_lang_config.is_sound_alike)[1]
+    is_sound_alike = partial(_lang_config.is_sound_alike, language=language)
+    alignments = lib.text.align_tokens(*args, allow_substitution=is_sound_alike)[1]
     # TODO: Should `_fix_alignments` align between scripts? Is that data valuable?
     script_tokens, stt_tokens, alignments = _fix_alignments(
         scripts, alignments, script_tokens, stt_tokens, language
@@ -626,7 +627,9 @@ def _sync_and_upload(
         dest_blob = gcs_uri_to_blob(dest_gcs_uri)
         blob = dest_blob.bucket.blob(dest_blob.name + recorder.log_path.name)
         logger.info(f"Uploading logs to `{blob}`...")
-        blob.upload_from_string(recorder.log_path.read_text())
+        # Formerly uploaded from string, but `recorder.log_path.read_text()` fails to read unencoded
+        # log file with unicode characters. [See TODO in `recorder` instantiation]
+        blob.upload_from_filename(recorder.log_path.absolute())
 
 
 # TODO: Allow for dialects to be selected as well, instead of just `language`.
@@ -665,6 +668,8 @@ def main(
     assert len(voice_over) == len(script), message % (len(voice_over), len(script))
 
     # NOTE: Save a log of the execution for future reference
+    # TODO: Force encoding to be utf-8 on the system, example:
+    # https://stackoverflow.com/questions/1473577/writing-unicode-strings-via-sys-stdout-in-python
     recorder = lib.environment.RecordStandardStreams()
 
     dest_blobs = [gcs_uri_to_blob(d) for d in destination]

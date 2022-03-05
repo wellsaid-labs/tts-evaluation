@@ -6,11 +6,19 @@ import typing
 from pathlib import Path
 from unittest import mock
 
+import Levenshtein
 import pandas
 import pytest
 import typer
 
-from run.data.__main__ import _normalize_file_name, _read_csv, logger, numberings, rename
+from run.data.__main__ import (
+    _normalize_file_name,
+    _normalized_levenshtein_distance,
+    _read_csv,
+    logger,
+    numberings,
+    rename,
+)
 
 
 def _rename_side_effect(path: Path, _expected=Path):
@@ -203,3 +211,20 @@ def test__read_csv__only_optional_columns():
     df.to_csv(path, index=False)
     with pytest.raises(typer.Exit):
         _read_csv(path, required_column="Content", optional_columns=["Title"], encoding="utf-8")
+
+
+def test__normalized_levenshtein_distance():
+    """Test `_normalized_levenshtein_distance` for strings with and without diacritics."""
+    text1 = "this is a test"
+    text2 = "this is a test"
+    text3 = "this is á test"
+    text4 = (
+        "hinzufügen"  # NOTE: These strings appear identical, but are in different unicode forms
+    )
+    text5 = "hinzufügen"  # NOTE: These strings appear identical, but are in different unicode forms
+
+    assert _normalized_levenshtein_distance(text1, text2) == 0
+    assert _normalized_levenshtein_distance(text1, text3) == 1
+    assert _normalized_levenshtein_distance(text4, text5) == 0
+    assert Levenshtein.distance(text4, text5) == 2  # type:ignore
+    assert text4 != text5
