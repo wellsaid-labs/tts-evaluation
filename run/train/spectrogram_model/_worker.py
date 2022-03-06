@@ -23,6 +23,7 @@ import lib
 from lib.distributed import is_master
 from lib.utils import PaddingAndLazyEmbedding, log_runtime
 from run._config import Cadence, DatasetType, get_dataset_label, get_model_label
+from run._models.spectrogram_model import Mode, Preds, SpectrogramModel
 from run._utils import Dataset
 from run.train import _utils
 from run.train._utils import (
@@ -44,7 +45,6 @@ from run.train.spectrogram_model._metrics import (
     get_alignment_norm,
     get_average_db_rms_level,
 )
-from run.train.spectrogram_model._model import SpectrogramModel
 
 logger = logging.getLogger(__name__)
 
@@ -271,7 +271,7 @@ class _HandleBatchArgs(typing.NamedTuple):
     cadence: Cadence = Cadence.STEP
 
 
-def _visualize_source_vs_target(args: _HandleBatchArgs, preds: lib.spectrogram_model.Preds):
+def _visualize_source_vs_target(args: _HandleBatchArgs, preds: Preds):
     """Visualize predictions as compared to the original `batch`.
 
     TODO: Add `pick` so that we can find examples which perform poorly in training, and hence are
@@ -338,9 +338,9 @@ def _run_step(
         inputs=args.batch.inputs,
         target_frames=args.batch.spectrogram.tensor,
         target_mask=args.batch.spectrogram_mask.tensor,
-        mode=lib.spectrogram_model.Mode.FORWARD,
+        mode=Mode.FORWARD,
     )
-    preds = typing.cast(lib.spectrogram_model.Preds, preds)
+    preds = typing.cast(Preds, preds)
 
     # SOURCE: Tacotron 2
     # We minimize the summed mean squared error (MSE) from before and after the post-net to aid
@@ -414,12 +414,12 @@ def _run_step(
     args.metrics.update(values)
 
 
-def _min_alignment_norm(_: _HandleBatchArgs, preds: lib.spectrogram_model.Preds) -> int:
+def _min_alignment_norm(_: _HandleBatchArgs, preds: Preds) -> int:
     """Get the index of the prediction that has the smallest alignment norm."""
     return int(torch.argmin(get_alignment_norm(preds)))
 
 
-def _max_num_frames_diff(args: _HandleBatchArgs, preds: lib.spectrogram_model.Preds) -> int:
+def _max_num_frames_diff(args: _HandleBatchArgs, preds: Preds) -> int:
     """Get the index of the prediction that most deviates from the original spectrogram length."""
     return int(torch.argmax((args.batch.spectrogram.lengths - preds.num_frames).abs()))
 
@@ -432,13 +432,11 @@ def _random_sequence(args: _HandleBatchArgs, *_) -> int:
 class _Pick(typing.Protocol):
     """Get a batch index given the arguments and predictions."""
 
-    def __call__(self, args: _HandleBatchArgs, preds: lib.spectrogram_model.Preds) -> int:
+    def __call__(self, args: _HandleBatchArgs, preds: Preds) -> int:
         ...
 
 
-def _visualize_inferred(
-    args: _HandleBatchArgs, preds: lib.spectrogram_model.Preds, pick: _Pick = _random_sequence
-):
+def _visualize_inferred(args: _HandleBatchArgs, preds: Preds, pick: _Pick = _random_sequence):
     """Run in inference mode and visualize results.
 
     TODO: Visualize any related text annotations.
@@ -499,8 +497,8 @@ def _run_inference(args: _HandleBatchArgs):
     """
     args.timer.record_event(args.timer.MODEL_FORWARD)
     model = typing.cast(SpectrogramModel, args.state.model.module)
-    preds = model(args.batch.inputs, mode=lib.spectrogram_model.Mode.INFER)
-    preds = typing.cast(lib.spectrogram_model.Preds, preds)
+    preds = model(args.batch.inputs, mode=Mode.INFER)
+    preds = typing.cast(Preds, preds)
 
     if args.visualize:
         args.timer.record_event(args.timer.VISUALIZE_PREDICTIONS)

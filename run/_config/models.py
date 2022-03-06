@@ -32,12 +32,12 @@ def configure():
 
     # NOTE: Configure the model sizes.
     config = {
-        run.train.spectrogram_model._model.SpectrogramModel.__init__: HParams(
+        run._models.spectrogram_model.wrapper.SpectrogramModel.__init__: HParams(
             max_tokens=max_tokens,
             max_speakers=max_speakers,
             max_sessions=max_sessions,
         ),
-        lib.spectrogram_model.encoder.Encoder.__init__: HParams(
+        run._models.spectrogram_model.encoder.Encoder.__init__: HParams(
             # SOURCE (Tacotron 2):
             # Input characters are represented using a learned 512-dimensional character embedding
             # ...
@@ -60,7 +60,7 @@ def configure():
             lstm_layers=2,
             out_size=encoder_output_size,
         ),
-        lib.spectrogram_model.attention.Attention.__init__: HParams(
+        run._models.spectrogram_model.attention.Attention.__init__: HParams(
             # SOURCE (Tacotron 2):
             # Location features are computed using 32 1-D convolution filters of length 31.
             # SOURCE (Tacotron 2):
@@ -77,7 +77,7 @@ def configure():
             window_length=9,
             avg_frames_per_token=1.4555,
         ),
-        lib.spectrogram_model.decoder.Decoder.__init__: HParams(
+        run._models.spectrogram_model.decoder.Decoder.__init__: HParams(
             encoder_output_size=encoder_output_size,
             # SOURCE (Tacotron 2):
             # The prediction from the previous time step is first passed through a small
@@ -88,13 +88,13 @@ def configure():
             # passed through a stack of 2 uni-directional LSTM layers with 1024 units.
             lstm_hidden_size=1024,
         ),
-        lib.spectrogram_model.pre_net.PreNet.__init__: HParams(
+        run._models.spectrogram_model.pre_net.PreNet.__init__: HParams(
             # SOURCE (Tacotron 2):
             # The prediction from the previous time step is first passed through a small
             # pre-net containing 2 fully connected layers of 256 hidden ReLU units.
             num_layers=2
         ),
-        lib.spectrogram_model.SpectrogramModel.__init__: HParams(
+        run._models.spectrogram_model.model.SpectrogramModel.__init__: HParams(
             num_frame_channels=NUM_FRAME_CHANNELS,
             # SOURCE (Transfer Learning from Speaker Verification to Multispeaker Text-To-Speech
             #         Synthesis):
@@ -103,22 +103,22 @@ def configure():
             # this parameter.
             seq_meta_embed_size=128,
         ),
-        run.train.signal_model._model.SpectrogramDiscriminator.__init__: HParams(
+        run._models.signal_model.wrapper.SpectrogramDiscriminator.__init__: HParams(
             max_speakers=max_speakers,
             max_sessions=max_sessions,
         ),
-        run.train.signal_model._model.SignalModel.__init__: HParams(
+        run._models.signal_model.wrapper.SignalModel.__init__: HParams(
             max_speakers=max_speakers,
             max_sessions=max_sessions,
         ),
-        lib.signal_model.SignalModel.__init__: HParams(
+        run._models.signal_model.model.SignalModel.__init__: HParams(
             seq_meta_embed_size=128,
             frame_size=NUM_FRAME_CHANNELS,
             hidden_size=32,
             max_channel_size=512,
         ),
         # NOTE: We found this hidden size to be effective on Comet in April 2020.
-        lib.signal_model.SpectrogramDiscriminator.__init__: HParams(
+        run._models.signal_model.SpectrogramDiscriminator.__init__: HParams(
             seq_meta_embed_size=128,
             hidden_size=512,
         ),
@@ -130,11 +130,11 @@ def configure():
         # SOURCE (Tacotron 2):
         # In order to introduce output variation at inference time, dropout with probability 0.5 is
         # applied only to layers in the pre-net of the autoregressive decoder.
-        lib.spectrogram_model.pre_net.PreNet.__init__: HParams(dropout=0.5),
-        lib.spectrogram_model.attention.Attention.__init__: HParams(dropout=0.1),
-        lib.spectrogram_model.decoder.Decoder.__init__: HParams(stop_net_dropout=0.5),
+        run._models.spectrogram_model.pre_net.PreNet.__init__: HParams(dropout=0.5),
+        run._models.spectrogram_model.attention.Attention.__init__: HParams(dropout=0.1),
+        run._models.spectrogram_model.decoder.Decoder.__init__: HParams(stop_net_dropout=0.5),
         # NOTE: This dropout approach proved effective in Comet in March 2020.
-        lib.spectrogram_model.encoder.Encoder.__init__: HParams(
+        run._models.spectrogram_model.encoder.Encoder.__init__: HParams(
             dropout=0.1, seq_meta_embed_dropout=0.1
         ),
     }
@@ -145,13 +145,13 @@ def configure():
         lib.optimizers.AdaptiveGradientNormClipper.__init__: HParams(window_size=128, norm_type=2),
         # NOTE: The `beta` parameter is not sensitive.
         lib.optimizers.ExponentialMovingParameterAverage.__init__: HParams(beta=0.9999),
-        lib.signal_model.SignalModel.__init__: HParams(
+        run._models.signal_model.model.SignalModel.__init__: HParams(
             # SOURCE https://en.wikipedia.org/wiki/%CE%9C-law_algorithm:
             # For a given input x, the equation for μ-law encoding is where μ = 255 in the North
             # American and Japanese standards.
             mu=255,
         ),
-        lib.spectrogram_model.SpectrogramModel.__init__: HParams(
+        run._models.spectrogram_model.model.SpectrogramModel.__init__: HParams(
             # NOTE: The spectrogram values range from -50 to 50. Thie scalar rescales the
             # spectrogram to a more reasonable range for deep learning.
             output_scalar=10.0,

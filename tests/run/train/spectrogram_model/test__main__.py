@@ -9,7 +9,7 @@ from run.data._loader.english import JUDY_BIEBER
 from run.train._utils import Context, Timer, set_context
 from run.train.spectrogram_model.__main__ import _make_configuration
 from run.train.spectrogram_model._metrics import Metrics, MetricsKey
-from run.train.spectrogram_model._model import SpectrogramModel
+from run._models.spectrogram_model import SpectrogramModel
 from run.train.spectrogram_model._worker import (
     _get_data_loaders,
     _HandleBatchArgs,

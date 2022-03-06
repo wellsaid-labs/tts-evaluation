@@ -28,9 +28,9 @@ from run._config import (
     PHONEME_SEPARATOR,
     normalize_vo_script,
 )
+from run._models.signal_model import SignalModel, generate_waveform
+from run._models.spectrogram_model import Inputs, Mode, Preds, SpectrogramModel
 from run.data._loader import Language, Session, Span, Speaker
-from run.train.signal_model._model import SignalModel, generate_waveform
-from run.train.spectrogram_model._model import Inputs, Mode, Preds, SpectrogramModel
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import spacy.tokens

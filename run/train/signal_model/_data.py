@@ -15,6 +15,7 @@ import run._config
 import run._utils
 import run.train
 from lib.samplers import BucketBatchSampler
+from run._models.spectrogram_model import SpectrogramModel
 from run.data._loader import Session, Speaker
 from run.train import _utils
 from run.train import spectrogram_model as spectrogram_model_module
@@ -158,7 +159,7 @@ class DataProcessor(torch.utils.data.IterableDataset):
         batch_size: int,
         span_bucket_size: int,
         slice_padding: int,
-        spectrogram_model: spectrogram_model_module._model.SpectrogramModel,
+        spectrogram_model: SpectrogramModel,
     ):
         """
         TODO: Consider unbalanced sampling from the training dataset, similar to, the spectrogram
@@ -195,7 +196,7 @@ class DataProcessor(torch.utils.data.IterableDataset):
             inputs=batch.inputs,
             target_frames=batch.spectrogram.tensor,
             target_mask=batch.spectrogram_mask.tensor,
-            mode=lib.spectrogram_model.Mode.FORWARD,
+            mode=run._models.spectrogram_model.Mode.FORWARD,
         )
         num_frames = batch.spectrogram.lengths.sum().item()
         weights = batch.spectrogram.lengths.view(-1).float()

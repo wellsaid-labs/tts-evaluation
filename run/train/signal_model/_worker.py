@@ -20,6 +20,7 @@ from torch.nn.parallel import DistributedDataParallel
 from torchnlp.utils import get_total_parameters
 
 import lib
+import run
 from lib.audio import SignalTodBMelSpectrogram, Spectrograms
 from lib.distributed import get_rank, get_world_size, is_master
 from lib.visualize import plot_mel_spectrogram, plot_spectrogram
@@ -31,8 +32,8 @@ from run._config import (
     get_dataset_label,
     get_model_label,
 )
-from run._utils import Dataset
-from run.train import _utils, spectrogram_model
+from run._models import spectrogram_model
+from run._models.signal_model import SignalModel, SpectrogramDiscriminator, generate_waveform
 from run.train._utils import (
     CometMLExperiment,
     Context,
@@ -45,13 +46,12 @@ from run.train._utils import (
 )
 from run.train.signal_model._data import Batch, DataProcessor
 from run.train.signal_model._metrics import Metrics, MetricsValues
-from run.train.signal_model._model import SignalModel, SpectrogramDiscriminator, generate_waveform
 
 logger = logging.getLogger(__name__)
 
 
 @dataclasses.dataclass(frozen=True)
-class Checkpoint(_utils.Checkpoint):
+class Checkpoint(run.train._utils.Checkpoint):
     """Checkpoint used to checkpoint signal model training."""
 
     model: SignalModel
@@ -122,7 +122,7 @@ class _State:
     discrims: typing.List[DistributedDataParallel]
     discrim_optimizers: typing.List[torch.optim.Adam]
     # NOTE: An additional underscore was added because Pylance had issues with the former naming.
-    spectrogram_model_: spectrogram_model._model.SpectrogramModel
+    spectrogram_model_: spectrogram_model.SpectrogramModel
     spectrogram_model_checkpoint_path: pathlib.Path
     comet: CometMLExperiment
     device: torch.device
@@ -225,7 +225,7 @@ class _State:
     @staticmethod
     def load_spectrogram_model(
         comet: CometMLExperiment, spectrogram_model_checkpoint_path: pathlib.Path
-    ) -> spectrogram_model._model.SpectrogramModel:
+    ) -> spectrogram_model.SpectrogramModel:
         checkpoint = lib.environment.load(spectrogram_model_checkpoint_path)
         label = get_config_label("spectrogram_model_experiment_key")
         comet.log_other(label, checkpoint.comet_experiment_key)
@@ -306,8 +306,8 @@ def _worker_init_fn(
 
 def _get_data_loaders(
     state: _State,
-    train_dataset: Dataset,
-    dev_dataset: Dataset,
+    train_dataset: run._utils.Dataset,
+    dev_dataset: run._utils.Dataset,
     train_batch_size: int,
     dev_batch_size: int,
     train_slice_size: int,
@@ -575,14 +575,14 @@ def _visualize_inferred_end_to_end(
 
     batch = typing.cast(Batch, next(iter(data_loader)))
     item = random.randint(0, len(batch.batch) - 1)
-    inputs = spectrogram_model._model.Inputs(
+    inputs = spectrogram_model.Inputs(
         tokens=batch.batch.inputs.tokens[item : item + 1],
         speaker=batch.batch.inputs.speaker[item : item + 1],
         session=batch.batch.inputs.session[item : item + 1],
     )
     # NOTE: The `spectrogram_model` runs on CPU to conserve GPU memory.
-    preds = state.spectrogram_model_(inputs=inputs, mode=lib.spectrogram_model.Mode.INFER)
-    preds = typing.cast(spectrogram_model._model.Preds, preds)
+    preds = state.spectrogram_model_(inputs=inputs, mode=run._models.spectrogram_model.Mode.INFER)
+    preds = typing.cast(spectrogram_model.Preds, preds)
     splits = preds.frames.transpose(0, 1).to(state.device).split(split_size)
     signal_model = typing.cast(SignalModel, state.model.module)
     predicted = list(generate_waveform(signal_model, splits, inputs.speaker, inputs.session))
@@ -655,8 +655,8 @@ def run_worker(
     checkpoint: typing.Optional[Checkpoint],
     checkpoints_directory: pathlib.Path,
     spectrogram_model_checkpoint: typing.Optional[pathlib.Path],
-    train_dataset: Dataset,
-    dev_dataset: Dataset,
+    train_dataset: run._utils.Dataset,
+    dev_dataset: run._utils.Dataset,
 ) -> typing.NoReturn:
     """Train and evaluate the signal model in a loop.
 

@@ -22,7 +22,7 @@ from run.data._loader import Speaker
 from run.train import _utils
 from run.train._utils import Timer
 from run.train.spectrogram_model._data import Batch
-from run.train.spectrogram_model._model import SpectrogramModel
+from run._models.spectrogram_model import SpectrogramModel
 
 
 def get_num_skipped(preds: Preds) -> torch.Tensor:

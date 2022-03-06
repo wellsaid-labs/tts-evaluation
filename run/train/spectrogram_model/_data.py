@@ -27,7 +27,7 @@ from lib.samplers import BucketBatchSampler
 from lib.utils import Tuple, flatten_2d
 from run.data._loader import Alignment, Language, Span
 from run.train import _utils
-from run.train.spectrogram_model._model import Inputs
+from run._models.spectrogram_model import Inputs
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import librosa

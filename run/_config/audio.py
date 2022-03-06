@@ -142,7 +142,7 @@ def configure():
         ),
         # NOTE: The `DeMan` loudness implementation of ITU-R BS.1770 is sample rate independent.
         lib.audio.get_pyloudnorm_meter: HParams(filter_class="DeMan"),
-        lib.spectrogram_model.SpectrogramModel.__init__: HParams(
+        run._models.spectrogram_model.model.SpectrogramModel.__init__: HParams(
             # NOTE: This is based on one of the slowest legitimate alignments in
             # `dataset_dashboard`. With a sample size of 8192, we found that 0.18 seconds per token
             # included everything but 3 alignments. The last three alignments were 0.19 "or",
@@ -159,7 +159,7 @@ def configure():
             min_length=too_long_pause_length,
             max_loudness=-50,
         ),
-        lib.signal_model.SignalModel.__init__: HParams(
+        run._models.signal_model.model.SignalModel.__init__: HParams(
             ratios=[2] * int(math.log2(FRAME_HOP)),
         ),
         run.data._loader.utils.normalize_audio_suffix: HParams(suffix=suffix),
