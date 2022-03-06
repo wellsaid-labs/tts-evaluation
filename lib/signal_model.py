@@ -645,7 +645,7 @@ class SpectrogramDiscriminator(torch.nn.Module):
 
 def generate_waveform(
     model: SignalModel,
-    spectrogram: typing.Iterator[torch.Tensor],
+    spectrogram: typing.Iterable[torch.Tensor],
     speaker: torch.Tensor,
     session: torch.Tensor,
     spectrogram_mask: typing.Optional[typing.Iterator[torch.Tensor]] = None,

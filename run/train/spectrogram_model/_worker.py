@@ -323,10 +323,10 @@ def _get_data_loaders(
 ) -> typing.Tuple[DataLoader[Batch], DataLoader[Batch]]:
     """Initialize training and development data loaders."""
     input_encoder, step = state.input_encoder, int(state.step.item())
-    kwargs = dict(input_encoder=input_encoder, step=step)
+    kwargs: typing.Dict[str, typing.Any] = dict(input_encoder=input_encoder, step=step)
     train = DataProcessor(train_dataset, train_batch_size, **kwargs, balanced=is_train_balanced)
     dev = DataProcessor(dev_dataset, dev_batch_size, **kwargs, balanced=is_dev_balanced)
-    kwargs = dict(
+    kwargs: typing.Dict[str, typing.Any] = dict(
         num_workers=num_workers,
         device=state.device,
         prefetch_factor=prefetch_factor,

@@ -13,6 +13,7 @@ import torch
 import torch.nn
 import torch.optim
 import torch.utils.data
+import torch.utils.data._utils.worker
 from hparams import HParam, configurable
 from third_party import get_parameter_norm
 from torch.nn.functional import binary_cross_entropy_with_logits, l1_loss, mse_loss
@@ -323,6 +324,7 @@ def _worker_init_fn(
 ):
     # NOTE: Each worker needs a different random seed to generate unique data.
     info = torch.utils.data.get_worker_info()
+    assert isinstance(info, torch.utils.data._utils.worker.WorkerInfo)
     seed = RANDOM_SEED
     seed += world_size * info.num_workers * step
     seed += rank * info.num_workers
@@ -359,7 +361,7 @@ def _get_data_loaders(
     train = processor(train_dataset, train_slice_size, train_batch_size, train_span_bucket_size)
     dev = processor(dev_dataset, dev_slice_size, dev_batch_size, dev_span_bucket_size)
     init_fn = partial(_worker_init_fn, step=step, rank=get_rank(), world_size=get_world_size())
-    kwargs = dict(
+    kwargs: typing.Dict[str, typing.Any] = dict(
         num_workers=num_workers,
         device=device,
         prefetch_factor=prefetch_factor,
@@ -578,7 +580,8 @@ def _visualize_inferred(
     speaker = batch.batch.encoded_speaker.tensor[:, item].to(state.device)
     session = batch.batch.encoded_session.tensor[:, item].to(state.device)
     splits = spectrogram.split(split_size)
-    predicted = generate_waveform(state.model.module, splits, speaker, session)
+    model = typing.cast(SignalModel, state.model.module)
+    predicted = generate_waveform(model, splits, speaker, session)
     predicted = list(predicted)
     predicted = typing.cast(torch.Tensor, torch.cat(predicted, dim=-1))
     target = batch.batch.audio[item]
@@ -615,7 +618,8 @@ def _visualize_inferred_end_to_end(
     splits = preds.frames.to(state.device).split(split_size)
     speaker = batch.batch.encoded_speaker.tensor[:, item].to(state.device)
     session = batch.batch.encoded_session.tensor[:, item].to(state.device)
-    predicted = list(generate_waveform(state.model.module, splits, speaker, session))
+    model = typing.cast(SignalModel, state.model.module)
+    predicted = list(generate_waveform(model, splits, speaker, session))
     predicted = typing.cast(torch.Tensor, torch.cat(predicted, dim=-1))
     target = batch.batch.audio[item]
     model_label_ = partial(get_model_label, cadence=Cadence.STEP)
