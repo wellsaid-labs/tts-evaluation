@@ -43,6 +43,8 @@ def configure():
             max_tokens=max_tokens,
             max_speakers=max_speakers,
             max_sessions=max_sessions,
+            max_token_embed_size=500,
+            num_context_words=10,
         ),
         lib.spectrogram_model.encoder.Encoder.__init__: HParams(
             # SOURCE (Tacotron 2):
@@ -109,6 +111,7 @@ def configure():
             # NOTE: See https://github.com/wellsaid-labs/Text-to-Speech/pull/258 to learn more about
             # this parameter.
             seq_meta_embed_size=128,
+            token_meta_embed_size=128,
         ),
         run.train.signal_model._model.SpectrogramDiscriminator.__init__: HParams(
             max_speakers=max_speakers,
