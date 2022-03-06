@@ -6,8 +6,12 @@ import torch
 from hparams import HParams
 
 import lib
-from lib.spectrogram_model.containers import AttentionHiddenState, DecoderHiddenState, Encoded
-from lib.spectrogram_model.decoder import Decoder
+from run._models.spectrogram_model.containers import (
+    AttentionHiddenState,
+    DecoderHiddenState,
+    Encoded,
+)
+from run._models.spectrogram_model.decoder import Decoder
 
 
 @pytest.fixture(autouse=True)

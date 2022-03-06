@@ -2,12 +2,12 @@ import typing
 
 import torch
 
-from lib import signal_model
 from lib.utils import PaddingAndLazyEmbedding
+from run._models.signal_model.model import SignalModel, SpectrogramDiscriminator, generate_waveform
 from run.data._loader import Session, Speaker
 
 
-class SignalModel(signal_model.SignalModel):
+class SignalModelWrapper(SignalModel):
     """This is a wrapper over `SignalModel` that normalizes the input."""
 
     def __init__(self, max_speakers: int, max_sessions: int, *args, **kwargs):
@@ -49,7 +49,7 @@ class SignalModel(signal_model.SignalModel):
         return super().__call__(spectrogram, seq_metadata, spectrogram_mask, pad_input)
 
 
-class SpectrogramDiscriminator(signal_model.SpectrogramDiscriminator):
+class SpectrogramDiscriminatorWrapper(SpectrogramDiscriminator):
     """This is a wrapper over `SpectrogramDiscriminator` that normalizes the input."""
 
     def __init__(self, *args, max_speakers: int, max_sessions: int, **kwargs):
@@ -77,12 +77,12 @@ class SpectrogramDiscriminator(signal_model.SpectrogramDiscriminator):
         return super().__call__(spectrogram, db_spectrogram, db_mel_spectrogram, seq_metadata)
 
 
-def generate_waveform(
-    model: SignalModel,
+def generate_waveform_wrapper(
+    model: SignalModelWrapper,
     spectrogram: typing.Iterable[torch.Tensor],
     speaker: typing.List[Speaker],
     session: typing.List[Session],
     spectrogram_mask: typing.Optional[typing.Iterable[torch.Tensor]] = None,
 ) -> typing.Iterator[torch.Tensor]:
     seq_metadata = list(zip(speaker, session))
-    return signal_model.generate_waveform(model, spectrogram, seq_metadata, spectrogram_mask)
+    return generate_waveform(model, spectrogram, seq_metadata, spectrogram_mask)

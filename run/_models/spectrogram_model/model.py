@@ -10,7 +10,7 @@ from torchnlp.utils import lengths_to_mask
 from tqdm import tqdm
 
 from lib.spectrogram_model import decoder, encoder
-from lib.spectrogram_model.containers import Encoded, Inputs, Preds
+from run._models.spectrogram_model.containers import Encoded, Inputs, Preds
 from lib.utils import PaddingAndLazyEmbedding
 
 logger = logging.getLogger(__name__)

@@ -7,7 +7,7 @@ import torch
 import torch.nn
 from torchnlp.nn import LockedDropout
 
-from lib.spectrogram_model.containers import AttentionHiddenState, Encoded
+from run._models.spectrogram_model.containers import AttentionHiddenState, Encoded
 
 logger = logging.getLogger(__name__)
 

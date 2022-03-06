@@ -17,14 +17,14 @@ from torchnlp.utils import lengths_to_mask
 
 import lib
 from lib.spectrogram_model import Inputs, Mode, SpectrogramModel
-from lib.spectrogram_model.attention import Attention
-from lib.spectrogram_model.containers import (
+from run._models.spectrogram_model.attention import Attention
+from run._models.spectrogram_model.containers import (
     AttentionHiddenState,
     DecoderHiddenState,
     Encoded,
     Preds,
 )
-from lib.spectrogram_model.decoder import Decoder
+from run._models.spectrogram_model.decoder import Decoder
 from tests import _utils
 
 assert_almost_equal = lambda *a, **k: _utils.assert_almost_equal(*a, **k, decimal=5)

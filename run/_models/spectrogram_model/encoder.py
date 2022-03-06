@@ -6,7 +6,7 @@ import torch.nn
 from torch.nn import ModuleList
 from torchnlp.nn import LockedDropout
 
-from lib.spectrogram_model.containers import Encoded, Inputs
+from run._models.spectrogram_model.containers import Encoded, Inputs
 from lib.utils import LSTM, PaddingAndLazyEmbedding
 
 

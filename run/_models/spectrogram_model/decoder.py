@@ -4,14 +4,14 @@ import torch
 import torch.nn
 from torch.nn import functional
 
-from lib.spectrogram_model.attention import Attention
-from lib.spectrogram_model.containers import (
+from run._models.spectrogram_model.attention import Attention
+from run._models.spectrogram_model.containers import (
     AttentionHiddenState,
     Decoded,
     DecoderHiddenState,
     Encoded,
 )
-from lib.spectrogram_model.pre_net import PreNet
+from run._models.spectrogram_model.pre_net import PreNet
 from lib.utils import LSTM, LSTMCell
 
 

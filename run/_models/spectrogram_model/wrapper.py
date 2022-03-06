@@ -3,13 +3,13 @@ import typing
 
 import torch
 
-from lib import spectrogram_model
-from lib.spectrogram_model import Generator, Mode, Preds
 from lib.utils import PaddingAndLazyEmbedding
+from run._models.spectrogram_model.containers import Inputs, Preds
+from run._models.spectrogram_model.model import Generator, Mode, SpectrogramModel
 from run.data._loader import Session, Speaker
 
 
-class Inputs(typing.NamedTuple):
+class InputsWrapper(typing.NamedTuple):
     """The model inputs."""
 
     # Batch of speakers
@@ -22,7 +22,7 @@ class Inputs(typing.NamedTuple):
     tokens: typing.List[typing.List[str]]
 
 
-class SpectrogramModel(spectrogram_model.SpectrogramModel):
+class SpectrogramModelWrapper(SpectrogramModel):
     """This is a wrapper over `SpectrogramModel` that normalizes the input."""
 
     def __init__(
@@ -70,7 +70,7 @@ class SpectrogramModel(spectrogram_model.SpectrogramModel):
     @typing.overload
     def __call__(
         self,
-        inputs: Inputs,
+        inputs: InputsWrapper,
         target_frames: torch.Tensor,
         target_mask: typing.Optional[torch.Tensor] = None,
         mode: typing.Literal[Mode.FORWARD] = Mode.FORWARD,
@@ -80,7 +80,7 @@ class SpectrogramModel(spectrogram_model.SpectrogramModel):
     @typing.overload
     def __call__(
         self,
-        inputs: Inputs,
+        inputs: InputsWrapper,
         use_tqdm: bool = False,
         token_skip_warning: float = math.inf,
         mode: typing.Literal[Mode.INFER] = Mode.INFER,
@@ -90,7 +90,7 @@ class SpectrogramModel(spectrogram_model.SpectrogramModel):
     @typing.overload
     def __call__(
         self,
-        inputs: Inputs,
+        inputs: InputsWrapper,
         split_size: float = 32,
         use_tqdm: bool = False,
         token_skip_warning: float = math.inf,
@@ -98,7 +98,7 @@ class SpectrogramModel(spectrogram_model.SpectrogramModel):
     ) -> Generator:
         ...  # pragma: no cover
 
-    def __call__(self, inputs: Inputs, *args, mode: Mode = Mode.FORWARD, **kwargs):
+    def __call__(self, inputs: InputsWrapper, *args, mode: Mode = Mode.FORWARD, **kwargs):
         seq_metadata = list(zip(inputs.speaker, inputs.session))
-        inputs_ = spectrogram_model.Inputs(tokens=inputs.tokens, seq_metadata=seq_metadata)
+        inputs_ = Inputs(tokens=inputs.tokens, seq_metadata=seq_metadata)
         return super().__call__(inputs_, *args, mode=mode, **kwargs)
