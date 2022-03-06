@@ -181,9 +181,9 @@ Setup your local development environment by following [these instructions](LOCAL
    ❓ LEARN MORE: PyTorch leaves zombie processes that must be killed, check out:
    https://leimao.github.io/blog/Kill-PyTorch-Distributed-Training-Processes/
 
-2. Detach from your screen session by typing `Ctrl-A` then `D`.
+1. Detach from your screen session by typing `Ctrl-A` then `D`.
 
-3. You can now exit your VM with the `exit` command.
+1. You can now exit your VM with the `exit` command.
 
 ### From your local repository
 
@@ -250,4 +250,5 @@ Setup your local development environment by following [these instructions](LOCAL
       --zone=$VM_ZONE
    ```
 
-   When you're ready to begin signal model training, start from the top of these instructions and use your `$IMAGE_FAMILY` envrionment variable to build your new instance!
+   When you're ready to begin signal model training, start from the top of these instructions and
+   use your `$IMAGE_FAMILY` envrionment variable to build your new instance!
