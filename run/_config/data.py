@@ -3,7 +3,7 @@ import logging
 import pathlib
 import typing
 
-from hparams import HParams, add_config
+import config
 
 import lib
 import run
@@ -124,15 +124,15 @@ def configure():
     # NOTE: For other datasets like M-AILABS and LJ, this assumes that there is no duplication
     # between different speakers.
     groups += [{s} for s in _loader.DATASETS.keys() if s not in _loader.WSL_DATASETS]
-    config = {
-        run._utils.get_dataset: HParams(
+    config_ = {
+        run._utils.get_dataset: config.Args(
             datasets=DATASETS,
             include_psge=_include_passage,
             handle_psge=lib.utils.identity,
         ),
-        run._utils.split_dataset: HParams(
+        run._utils.split_dataset: config.Args(
             groups=groups, dev_speakers=DEV_SPEAKERS, approx_dev_len=30 * 60, min_sim=0.9
         ),
-        run._utils.SpanGenerator.__init__: HParams(max_seconds=15, include_span=_include_span),
+        run._utils.SpanGenerator.__init__: config.Args(max_seconds=15, include_span=_include_span),
     }
-    add_config(config)
+    config.add(config_)

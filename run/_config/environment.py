@@ -1,4 +1,4 @@
-from hparams import HParams, add_config
+import config
 
 import lib
 import run
@@ -33,8 +33,8 @@ def configure():
     ]:
         directory.mkdir(exist_ok=True)
 
-    config = {
-        run._utils.get_dataset: HParams(path=DATA_PATH),
-        run.data._loader.utils._cache_path: HParams(cache_dir=TTS_DISK_CACHE_NAME),
+    config_ = {
+        run._utils.get_dataset: config.Args(path=DATA_PATH),
+        run.data._loader.utils._cache_path: config.Args(cache_dir=TTS_DISK_CACHE_NAME),
     }
-    add_config(config)
+    config.add(config_)

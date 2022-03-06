@@ -1,8 +1,8 @@
 import logging
 
+import config
 import torch
 import torch.nn
-from hparams import HParams, add_config
 
 import lib
 import run
@@ -31,13 +31,13 @@ def configure():
     max_sessions = 10000
 
     # NOTE: Configure the model sizes.
-    config = {
-        run._models.spectrogram_model.wrapper.SpectrogramModel.__init__: HParams(
+    config_ = {
+        run._models.spectrogram_model.wrapper.SpectrogramModel.__init__: config.Args(
             max_tokens=max_tokens,
             max_speakers=max_speakers,
             max_sessions=max_sessions,
         ),
-        run._models.spectrogram_model.encoder.Encoder.__init__: HParams(
+        run._models.spectrogram_model.encoder.Encoder.__init__: config.Args(
             # SOURCE (Tacotron 2):
             # Input characters are represented using a learned 512-dimensional character embedding
             # ...
@@ -60,7 +60,7 @@ def configure():
             lstm_layers=2,
             out_size=encoder_output_size,
         ),
-        run._models.spectrogram_model.attention.Attention.__init__: HParams(
+        run._models.spectrogram_model.attention.Attention.__init__: config.Args(
             # SOURCE (Tacotron 2):
             # Location features are computed using 32 1-D convolution filters of length 31.
             # SOURCE (Tacotron 2):
@@ -77,7 +77,7 @@ def configure():
             window_length=9,
             avg_frames_per_token=1.4555,
         ),
-        run._models.spectrogram_model.decoder.Decoder.__init__: HParams(
+        run._models.spectrogram_model.decoder.Decoder.__init__: config.Args(
             encoder_output_size=encoder_output_size,
             # SOURCE (Tacotron 2):
             # The prediction from the previous time step is first passed through a small
@@ -88,13 +88,13 @@ def configure():
             # passed through a stack of 2 uni-directional LSTM layers with 1024 units.
             lstm_hidden_size=1024,
         ),
-        run._models.spectrogram_model.pre_net.PreNet.__init__: HParams(
+        run._models.spectrogram_model.pre_net.PreNet.__init__: config.Args(
             # SOURCE (Tacotron 2):
             # The prediction from the previous time step is first passed through a small
             # pre-net containing 2 fully connected layers of 256 hidden ReLU units.
             num_layers=2
         ),
-        run._models.spectrogram_model.model.SpectrogramModel.__init__: HParams(
+        run._models.spectrogram_model.model.SpectrogramModel.__init__: config.Args(
             num_frame_channels=NUM_FRAME_CHANNELS,
             # SOURCE (Transfer Learning from Speaker Verification to Multispeaker Text-To-Speech
             #         Synthesis):
@@ -103,70 +103,72 @@ def configure():
             # this parameter.
             seq_meta_embed_size=128,
         ),
-        run._models.signal_model.wrapper.SpectrogramDiscriminator.__init__: HParams(
+        run._models.signal_model.wrapper.SpectrogramDiscriminator.__init__: config.Args(
             max_speakers=max_speakers,
             max_sessions=max_sessions,
         ),
-        run._models.signal_model.wrapper.SignalModel.__init__: HParams(
+        run._models.signal_model.wrapper.SignalModel.__init__: config.Args(
             max_speakers=max_speakers,
             max_sessions=max_sessions,
         ),
-        run._models.signal_model.model.SignalModel.__init__: HParams(
+        run._models.signal_model.model.SignalModel.__init__: config.Args(
             seq_meta_embed_size=128,
             frame_size=NUM_FRAME_CHANNELS,
             hidden_size=32,
             max_channel_size=512,
         ),
         # NOTE: We found this hidden size to be effective on Comet in April 2020.
-        run._models.signal_model.SpectrogramDiscriminator.__init__: HParams(
+        run._models.signal_model.SpectrogramDiscriminator.__init__: config.Args(
             seq_meta_embed_size=128,
             hidden_size=512,
         ),
     }
-    add_config(config)
+    config.add(config_)
 
     # NOTE: Configure the model regularization.
-    config = {
+    config_ = {
         # SOURCE (Tacotron 2):
         # In order to introduce output variation at inference time, dropout with probability 0.5 is
         # applied only to layers in the pre-net of the autoregressive decoder.
-        run._models.spectrogram_model.pre_net.PreNet.__init__: HParams(dropout=0.5),
-        run._models.spectrogram_model.attention.Attention.__init__: HParams(dropout=0.1),
-        run._models.spectrogram_model.decoder.Decoder.__init__: HParams(stop_net_dropout=0.5),
+        run._models.spectrogram_model.pre_net.PreNet.__init__: config.Args(dropout=0.5),
+        run._models.spectrogram_model.attention.Attention.__init__: config.Args(dropout=0.1),
+        run._models.spectrogram_model.decoder.Decoder.__init__: config.Args(stop_net_dropout=0.5),
         # NOTE: This dropout approach proved effective in Comet in March 2020.
-        run._models.spectrogram_model.encoder.Encoder.__init__: HParams(
+        run._models.spectrogram_model.encoder.Encoder.__init__: config.Args(
             dropout=0.1, seq_meta_embed_dropout=0.1
         ),
     }
-    add_config(config)
+    config.add(config_)
 
-    config = {
+    config_ = {
         # NOTE: Window size smoothing parameter is not sensitive.
-        lib.optimizers.AdaptiveGradientNormClipper.__init__: HParams(window_size=128, norm_type=2),
+        lib.optimizers.AdaptiveGradientNormClipper.__init__: config.Args(
+            window_size=128, norm_type=2
+        ),
         # NOTE: The `beta` parameter is not sensitive.
-        lib.optimizers.ExponentialMovingParameterAverage.__init__: HParams(beta=0.9999),
-        run._models.signal_model.model.SignalModel.__init__: HParams(
+        lib.optimizers.ExponentialMovingParameterAverage.__init__: config.Args(beta=0.9999),
+        run._models.signal_model.model.SignalModel.__init__: config.Args(
             # SOURCE https://en.wikipedia.org/wiki/%CE%9C-law_algorithm:
             # For a given input x, the equation for μ-law encoding is where μ = 255 in the North
             # American and Japanese standards.
             mu=255,
         ),
-        run._models.spectrogram_model.model.SpectrogramModel.__init__: HParams(
+        run._models.spectrogram_model.model.SpectrogramModel.__init__: config.Args(
             # NOTE: The spectrogram values range from -50 to 50. Thie scalar rescales the
             # spectrogram to a more reasonable range for deep learning.
             output_scalar=10.0,
             stop_threshold=stop_threshold,
         ),
     }
-    add_config(config)
+    config.add(config_)
 
     # NOTE: PyTorch and Tensorflow parameterize `BatchNorm` differently, learn more:
     # https://stackoverflow.com/questions/48345857/batchnorm-momentum-convention-pytorch?utm_medium=organic&utm_source=google_rich_qa&utm_campaign=google_rich_qa
-    config = {
+    config_ = {
         # NOTE: `momentum=0.01` to match Tensorflow defaults.
-        torch.nn.modules.batchnorm._BatchNorm.__init__: HParams(momentum=0.01),
+        torch.nn.modules.batchnorm._BatchNorm.__init__: config.Args(momentum=0.01),
         # NOTE: BERT uses `eps=1e-12` for `LayerNorm`, see here:
         # https://github.com/huggingface/transformers/blob/master/src/transformers/configuration_bert.py
-        torch.nn.LayerNorm.__init__: HParams(eps=1e-12),
+        torch.nn.LayerNorm.__init__: config.Args(eps=1e-12),
     }
-    add_config(config)
+    config.add(config_)

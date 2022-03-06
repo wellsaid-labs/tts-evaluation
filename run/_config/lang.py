@@ -3,7 +3,7 @@ import re
 import typing
 from functools import lru_cache, partial
 
-from hparams import HParams, add_config
+import config
 from third_party import LazyLoader
 
 import lib
@@ -154,8 +154,8 @@ def is_sound_alike(a: str, b: str, language: Language) -> bool:
 
 def configure():
     """Configure modules involved in processing text."""
-    config = {
-        lib.text.grapheme_to_phoneme: HParams(separator=PHONEME_SEPARATOR),
-        run._config.data._include_passage: HParams(language=LANGUAGE),
+    config_ = {
+        lib.text.grapheme_to_phoneme: config.Args(separator=PHONEME_SEPARATOR),
+        run._config.data._include_passage: config.Args(language=LANGUAGE),
     }
-    add_config(config)
+    config.add(config_)
