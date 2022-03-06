@@ -12,7 +12,6 @@ from collections import defaultdict
 from typing import get_args
 
 import ftfy
-import hparams
 import unidecode
 from third_party import LazyLoader
 from tqdm import tqdm

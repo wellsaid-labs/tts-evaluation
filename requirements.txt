@@ -43,7 +43,7 @@ isort
 # Utils
 tqdm # Progress bar
 python-Levenshtein # Sequence alignment
-git+https://github.com/PetrochukM/HParams.git # Organize hyperparameters
+pythonic-config # Organize hyperparameters
 pandas
 retry
 typer
