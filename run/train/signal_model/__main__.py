@@ -13,8 +13,8 @@ from hparams import HParams, add_config, parse_hparam_args
 from third_party import LazyLoader
 
 import lib
-from run._config import FRAME_HOP, RANDOM_SEED, SIGNAL_MODEL_EXPERIMENTS_PATH, Dataset
-from run._utils import get_window
+from run._config import FRAME_HOP, RANDOM_SEED, SIGNAL_MODEL_EXPERIMENTS_PATH
+from run._utils import Dataset, get_window
 from run.train._utils import (
     CometMLExperiment,
     get_config_parameters,

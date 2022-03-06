@@ -156,21 +156,6 @@ def _random_speed_annotations(
     return speed, speed_mask
 
 
-def _get_char_to_word(doc: spacy.tokens.Doc) -> typing.List[int]:
-    """Get a mapping from characters to words in `doc`."""
-    char_to_word = [-1] * len(doc.text)
-    for token in doc:
-        char_to_word[token.idx : token.idx + len(token.text)] = [token.i] * len(token.text)
-    return char_to_word
-
-
-def _get_word_vectors(char_to_word: typing.List[int], doc: spacy.tokens.Doc) -> torch.Tensor:
-    """Get word vectors mapped onto a character length vector."""
-    zeros = torch.zeros(doc.vector.size)
-    word_vectors_ = numpy.stack([zeros if w < 0 else doc[w].vector for w in char_to_word])
-    return torch.from_numpy(word_vectors_)
-
-
 def _pad_and_trim_signal(signal: numpy.ndarray) -> torch.Tensor:
     """Pad signal length and trim any extra silence.
 
@@ -368,7 +353,7 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
 
 
 class DataProcessor(typing.Mapping[int, Batch]):
-    def __init__(self, dataset: run._config.Dataset, batch_size: int, step: int = 0, **kwargs):
+    def __init__(self, dataset: run._utils.Dataset, batch_size: int, step: int = 0, **kwargs):
         """Given an index, generate the appropriate batch indefinitely.
 
         NOTE: Our training procedure is similar to BERT, the examples are randomly sampled

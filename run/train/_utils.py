@@ -44,7 +44,6 @@ from lib.environment import load, load_most_recent_file
 from lib.utils import dataclass_as_dict, disk_cache, flatten_2d, seconds_to_str
 from run._config import (
     Cadence,
-    Dataset,
     DatasetType,
     Device,
     Label,
@@ -52,6 +51,7 @@ from run._config import (
     get_model_label,
     get_timer_label,
 )
+from run._utils import Dataset
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import comet_ml
@@ -242,7 +242,7 @@ class CometMLExperiment:
 
     @contextlib.contextmanager
     def context_manager(self, context: Context):
-        with self._experiment.context_manager(str(context)):
+        with self._experiment.context_manager(str(context.value)):
             yield self
 
     def log_current_epoch(self, epoch: int):
@@ -411,7 +411,7 @@ def _get_dataset(debug: bool):
 
 def _run_experiment(
     comet: CometMLExperiment, debug: bool = False
-) -> typing.Tuple[run._config.Dataset, run._config.Dataset]:
+) -> typing.Tuple[Dataset, Dataset]:
     """Helper function for `start_experiment` and  `resume_experiment`."""
     lib.environment.check_module_versions()
     if debug:
@@ -505,7 +505,7 @@ def start_experiment(
     tags: typing.List[str] = [],
     min_disk_space: float = 0.2,
     **kwargs,
-) -> typing.Tuple[pathlib.Path, run._config.Dataset, run._config.Dataset, CometMLExperiment]:
+) -> typing.Tuple[pathlib.Path, Dataset, Dataset, CometMLExperiment]:
     """Start a training run in a comet `project` named `name` with `tags`. The training run
     results are saved in `directory`."""
     lib.environment.assert_enough_disk_space(min_disk_space)
@@ -522,9 +522,7 @@ def start_experiment(
 
 def resume_experiment(
     directory: pathlib.Path, checkpoint: typing.Optional[pathlib.Path], **kwargs
-) -> typing.Tuple[
-    pathlib.Path, run._config.Dataset, run._config.Dataset, CometMLExperiment, pathlib.Path
-]:
+) -> typing.Tuple[pathlib.Path, Dataset, Dataset, CometMLExperiment, pathlib.Path]:
     """Resume training from `checkpoint`. If `checkpoint` is not given, the most recent checkpoint
     file is loaded from `directory`."""
     lib.environment.set_basic_logging_config()
@@ -562,7 +560,7 @@ def set_context(
     ema: typing.Optional[lib.optimizers.ExponentialMovingParameterAverage] = None,
 ):
     with contextlib.ExitStack() as stack:
-        stack.enter_context(comet.context_manager(context.value))
+        stack.enter_context(comet.context_manager(context))
         logger.info("Setting context to '%s'.", context.value)
         is_training = context == Context.TRAIN
         for model in models:

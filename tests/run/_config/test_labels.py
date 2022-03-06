@@ -1,13 +1,12 @@
-import run
 from run._config import (
     Cadence,
     DatasetType,
     Label,
-    _label,
     get_config_label,
     get_dataset_label,
     get_model_label,
 )
+from run._config.labels import _label
 from run.data._loader.english import SAM_SCHOLL
 
 
@@ -38,23 +37,3 @@ def test_get_config_label():
     """Test `run._config.get_config_label` formats a label appropriately."""
     expected = Label("static/config/test")
     assert get_config_label("test", Cadence.STATIC) == expected
-
-
-def test_configure_audio_processing():
-    """Test `run._config._configure_audio_processing` finds and configures modules."""
-    run._config._configure_audio_processing()
-
-
-def test_configure_models():
-    """Test `run._config._configure_models` finds and configures modules."""
-    run._config._configure_models()
-
-
-def test_configure_data_processing():
-    """Test `run._config._configure_data_processing` finds and configures modules."""
-    run._config._configure_data_processing()
-
-
-def test_configure():
-    """Test `run._config.configure` finds and configures modules."""
-    run._config.configure()

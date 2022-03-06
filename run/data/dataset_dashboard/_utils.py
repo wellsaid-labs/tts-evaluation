@@ -16,7 +16,6 @@ from torchnlp.random import fork_rng
 import lib
 from lib.audio import amp_to_db, signal_to_rms
 from lib.utils import clamp, flatten_2d, seconds_to_str
-from run._config import Dataset
 from run._streamlit import (
     dataset_passages,
     fast_grapheme_to_phoneme,
@@ -25,6 +24,7 @@ from run._streamlit import (
     read_wave_audio,
     span_audio,
 )
+from run._utils import Dataset
 from run.data._loader import Passage, Span, voiced_nonalignment_spans
 
 logger = logging.getLogger(__name__)

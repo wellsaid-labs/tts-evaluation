@@ -304,7 +304,7 @@ def _silero_vad(passage: Passage, audio: np.ndarray, sample_rate: int = 16000):
         st.altair_chart((signal_chart + interval_chart).interactive(), use_container_width=True)
 
 
-def _get_hard_passages(dataset: run._config.Dataset, threshold: float = 20) -> typing.Set[Passage]:
+def _get_hard_passages(dataset: run._utils.Dataset, threshold: float = 20) -> typing.Set[Passage]:
     """Get hards passages for Google STT. So far, we have defined hard passages as ones that have
     long segments without pausing based on `alignments`."""
     passages = set()

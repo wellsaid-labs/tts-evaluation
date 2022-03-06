@@ -82,10 +82,10 @@ class SpectrogramDiscriminator(signal_model.SpectrogramDiscriminator):
 
 def generate_waveform(
     model: SignalModel,
-    spectrogram: typing.Iterator[torch.Tensor],
+    spectrogram: typing.Iterable[torch.Tensor],
     speaker: typing.List[Speaker],
     session: typing.List[Session],
-    spectrogram_mask: typing.Optional[typing.Iterator[torch.Tensor]] = None,
+    spectrogram_mask: typing.Optional[typing.Iterable[torch.Tensor]] = None,
 ) -> typing.Iterator[torch.Tensor]:
     seq_metadata = list(zip(speaker, session))
     return signal_model.generate_waveform(model, spectrogram, seq_metadata, spectrogram_mask)

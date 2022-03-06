@@ -3,7 +3,11 @@ import re
 import typing
 from functools import lru_cache, partial
 
+from hparams import HParams, add_config
+from third_party import LazyLoader
+
 import lib
+import run._config.data
 from lib.text import get_spoken_chars, grapheme_to_phoneme
 from lib.utils import identity
 from run.data._loader import Language
@@ -14,6 +18,9 @@ else:
     google_speech = LazyLoader("google_speech", globals(), "google.cloud.speech_v1p1beta1")
 
 logger = logging.getLogger(__name__)
+
+
+LANGUAGE = Language.ENGLISH
 
 # fmt: off
 
@@ -141,4 +148,7 @@ def is_sound_alike(a: str, b: str, language: Language) -> bool:
 
 def configure():
     """Configure modules involved in processing text."""
-    pass
+    config = {
+        run._config.data._include_passage: HParams(language=LANGUAGE),
+    }
+    add_config(config)

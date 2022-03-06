@@ -23,14 +23,8 @@ from torchnlp.utils import get_total_parameters
 import lib
 from lib.distributed import is_master
 from lib.utils import PaddingAndLazyEmbedding, log_runtime
-from run._config import (
-    Cadence,
-    Dataset,
-    DatasetType,
-    configurable_,
-    get_dataset_label,
-    get_model_label,
-)
+from run._config import Cadence, DatasetType, get_dataset_label, get_model_label
+from run._utils import Dataset, configurable_
 from run.train import _utils
 from run.train._utils import (
     CometMLExperiment,
@@ -105,7 +99,6 @@ class Checkpoint(_utils.Checkpoint):
 
 
 ExcludeFromDecay = typing.Callable[[str, torch.nn.parameter.Parameter, torch.nn.Module], bool]
-
 
 
 @dataclasses.dataclass(frozen=True)

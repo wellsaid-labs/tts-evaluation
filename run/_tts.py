@@ -20,8 +20,7 @@ from hparams import HParam, configurable
 from lib.environment import PT_EXTENSION, load
 from lib.utils import get_chunks, tqdm_
 from run import train
-from run._config import CHECKPOINTS_PATH
-from run._lang_config import normalize_vo_script
+from run._config import CHECKPOINTS_PATH, normalize_vo_script
 from run.data._loader import Session, Span, Speaker
 from run.train.signal_model._model import SignalModel, generate_waveform
 from run.train.spectrogram_model._model import Inputs, Mode, Preds, SpectrogramModel

@@ -18,7 +18,6 @@ from tqdm import tqdm
 
 import lib
 from lib.utils import split
-from run._config import Dataset
 from run.data import _loader
 
 if typing.TYPE_CHECKING:  # pragma: no cover
@@ -35,13 +34,15 @@ else:
 
 logger = logging.getLogger(__name__)
 
+Dataset = typing.Dict[_loader.Speaker, typing.List[_loader.Passage]]
+
 
 @configurable
 def get_dataset(
     datasets: typing.Dict[_loader.Speaker, _loader.DataLoader] = HParam(),
     path: pathlib.Path = HParam(),
-    include_passage: typing.Callable[[_loader.Passage], bool] = HParam(),
-    handle_passage: typing.Callable[[_loader.Passage], _loader.Passage] = HParam(),
+    include_psge: typing.Callable[[_loader.Passage, pathlib.Path], bool] = HParam(),
+    handle_psge: typing.Callable[[_loader.Passage], _loader.Passage] = HParam(),
     max_workers: int = 0,
 ) -> Dataset:
     """Define a TTS dataset.
@@ -54,7 +55,7 @@ def get_dataset(
         ...
     """
     logger.info("Loading dataset...")
-    load = lambda s, d, **k: (s, [handle_passage(p) for p in d(path, **k) if include_passage(p)])
+    load = lambda s, d, **k: (s, [handle_psge(p) for p in d(path, **k) if include_psge(p, path)])
     if max_workers > 0:
         with multiprocessing.pool.ThreadPool(processes=min(max_workers, len(datasets))) as pool:
             items = list(pool.starmap(load, datasets.items()))
@@ -319,3 +320,13 @@ def gcs_uri_to_blob(gcs_uri: str) -> "storage.Blob":
 def blob_to_gcs_uri(blob: "storage.Blob") -> str:
     """Get GCS URI (e.g. "gs://cloud-samples-tests/speech/brooklyn.flac") from `blob`."""
     return "gs://" + blob.bucket.name + "/" + blob.name
+
+
+def configurable_(func: typing.Callable):
+    """`configurable` has issues if it's run twice, on the same function.
+
+    TODO: Remove this, once, this issue is resolved: https://github.com/PetrochukM/HParams/issues/8
+    """
+    if not hasattr(func, "_configurable"):
+        return configurable(func)
+    return func
