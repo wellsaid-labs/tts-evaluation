@@ -320,7 +320,7 @@ def _en_span_to_tokens(spans: typing.List[Span]) -> typing.List[typing.List[str]
         assert span is not None, "Invalid `spacy.tokens.Span` selected."
         en_docs[i] = span.as_doc()
     phonemes = typing.cast(typing.List[str], lib.text.grapheme_to_phoneme(en_docs))
-    return [p.split(run._lang_config.PHONEME_SEPARATOR) for p in phonemes]
+    return [p.split(run._config.PHONEME_SEPARATOR) for p in phonemes]
 
 
 def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
