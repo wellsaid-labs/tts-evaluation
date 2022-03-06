@@ -1,6 +1,5 @@
 import torch
 import torch.nn
-from hparams import HParam, configurable
 from torch.nn import functional
 
 
@@ -36,14 +35,13 @@ class PreNet(torch.nn.Module):
           https://arxiv.org/pdf/1712.05884.pdf
     """
 
-    @configurable
     def __init__(
         self,
         num_frame_channels: int,
         seq_meta_embed_size: int,
         size: int,
-        num_layers: int = HParam(),
-        dropout: float = HParam(),
+        num_layers: int,
+        dropout: float,
     ):
         super().__init__()
         _layers = [

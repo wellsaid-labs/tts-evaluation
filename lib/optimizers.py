@@ -11,7 +11,6 @@ from types import TracebackType
 
 import torch
 import torch.nn
-from hparams import HParam, configurable
 
 logger = logging.getLogger(__name__)
 
@@ -40,12 +39,11 @@ class AdaptiveGradientNormClipper:
         norm_type: The "p" in p-norm. This includes `inf` for infinity norm.
     """
 
-    @configurable
     def __init__(
         self,
         parameters: typing.Iterable[torch.Tensor],
-        window_size: int = HParam(),
-        norm_type: float = HParam(),
+        window_size: int,
+        norm_type: float,
     ):
         super().__init__()
         self.max_norm = math.inf
@@ -103,8 +101,7 @@ class ExponentialMovingParameterAverage:
         beta: Beta used to weight the exponential mean.
     """
 
-    @configurable
-    def __init__(self, parameters: typing.Iterable[torch.Tensor], beta: float = HParam()):
+    def __init__(self, parameters: typing.Iterable[torch.Tensor], beta: float):
         # NOTE: `self.parameters` is a reference, and it shouldn't be broken.
         self.parameters = list(parameters)
         self.beta = beta

@@ -12,7 +12,6 @@ import torch.nn
 import torch.optim
 import torch.utils
 import torch.utils.data
-from hparams import HParam, configurable
 
 import lib
 from lib.audio import power_to_db
@@ -72,8 +71,7 @@ def get_num_jumps(preds: Preds) -> torch.Tensor:
     return num_jumps.sum(dim=0)
 
 
-@configurable
-def get_num_small_max(preds: Preds, threshold: float = HParam()) -> torch.Tensor:
+def get_num_small_max(preds: Preds, threshold: float) -> torch.Tensor:
     """Given `alignments` from frames to tokens, this computes the number of alignments where no
     token gets no more than `threshold` focus.
 
@@ -95,8 +93,7 @@ def get_num_small_max(preds: Preds, threshold: float = HParam()) -> torch.Tensor
     return values.sum(dim=0)
 
 
-@configurable
-def get_num_repeated(preds: Preds, threshold: float = HParam()) -> torch.Tensor:
+def get_num_repeated(preds: Preds, threshold: float) -> torch.Tensor:
     """Given `alignments` from frames to tokens, this gets the number of tokens that get more
     focus than `threshold`.
 
@@ -184,14 +181,13 @@ def get_average_db_rms_level(
     return power_to_db(cumulative_power_rms_level / num_elements)
 
 
-@configurable
 def get_num_pause_frames(
     db_spectrogram: torch.Tensor,
     mask: typing.Optional[torch.Tensor],
-    max_loudness: float = HParam(),
-    min_length: float = HParam(),
-    frame_hop: int = HParam(),
-    sample_rate: int = HParam(),
+    max_loudness: float,
+    min_length: float,
+    frame_hop: int,
+    sample_rate: int,
     **kwargs,
 ) -> typing.List[int]:
     """Count the number of frames inside a pause.
@@ -481,9 +477,8 @@ class Metrics(_utils.Metrics[MetricsKey]):
             div = lambda n, d, **k: self._div(process(n), process(d), select=select, **k)
             yield speaker, reduce_, div
 
-    @configurable
     def _get_model_metrics(
-        self, select: _utils.MetricsSelect, is_verbose: bool, num_frame_channels: int = HParam()
+        self, select: _utils.MetricsSelect, is_verbose: bool, num_frame_channels: int
     ) -> _GetMetrics:
         metrics = {}
         for speaker, reduce, div in self._iter_permutations(select, is_verbose):

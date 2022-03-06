@@ -32,7 +32,7 @@ import torch.nn
 import torch.optim
 import torch.utils.data
 import torch.utils.data._utils.worker
-from hparams import HParam, HParams, configurable, get_config
+from hparams import HParams, get_config
 from third_party import LazyLoader
 from torch.utils.data.dataloader import _BaseDataLoaderIter, _MultiProcessingDataLoaderIter
 from torchnlp.encoders.text import SequenceBatch
@@ -580,8 +580,7 @@ def set_epoch(comet: CometMLExperiment, step: int, steps_per_epoch: int):
     comet.log_epoch_end(epoch)
 
 
-@configurable
-def set_run_seed(seed: int = HParam()):
+def set_run_seed(seed: int):
     lib.environment.set_seed(seed)
 
 

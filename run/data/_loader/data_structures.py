@@ -13,7 +13,6 @@ from functools import partial
 from pathlib import Path
 
 import numpy as np
-from hparams import HParam, configurable
 
 import lib
 import run
@@ -653,14 +652,13 @@ def _filter_non_speech_segments(
         yield slice_
 
 
-@configurable
 def _make_speech_segments_helper(
     alignments: typing.List[FloatFloat],
     prev_alignment: FloatFloat,
     next_alignment: FloatFloat,
     max_length: float,
     nss_timeline: Timeline,
-    pad: float = HParam(),
+    pad: float,
 ) -> typing.Tuple[typing.Tuple[slice, ...], ...]:
     """Make a list of `Span`s that start and end with silence.
 

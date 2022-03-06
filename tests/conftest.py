@@ -32,12 +32,12 @@ def run_before_test():
         warnings.filterwarnings(
             "ignore",
             module=r".*hparams.*",
-            message=r".*@configurable: No config for.*",
+            message=r".*: No config for.*",
         )
         warnings.filterwarnings(
             "ignore",
             module=r".*hparams.*",
-            message=r".*@configurable: Overwriting configured argument.*",
+            message=r".*: Overwriting configured argument.*",
         )
         with torch.autograd.detect_anomaly():
             yield

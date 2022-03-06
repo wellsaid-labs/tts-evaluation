@@ -7,15 +7,8 @@ from hparams import HParams, add_config
 import lib
 import run
 from run._config.audio import NUM_FRAME_CHANNELS
-from run._utils import configurable_
 
 logger = logging.getLogger(__name__)
-
-
-torch.nn.modules.batchnorm._BatchNorm.__init__ = configurable_(
-    torch.nn.modules.batchnorm._BatchNorm.__init__
-)
-torch.nn.LayerNorm.__init__ = configurable_(torch.nn.LayerNorm.__init__)
 
 
 def configure():

@@ -8,7 +8,6 @@ from third_party import LazyLoader
 
 import lib
 import run
-from run._utils import configurable_
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import librosa
@@ -47,12 +46,6 @@ FRAME_SIZE = 4096  # NOTE: Frame size in samples.
 FFT_LENGTH = 4096
 assert FRAME_SIZE % 4 == 0
 FRAME_HOP = FRAME_SIZE // 4
-
-
-try:
-    librosa.effects.trim = configurable_(librosa.effects.trim)
-except ImportError:
-    logger.info("Ignoring optional `librosa` configurations.")
 
 
 def configure():

@@ -6,7 +6,6 @@ import typing
 
 import torch
 import torch.nn
-from hparams import HParam, configurable
 from torchnlp.utils import lengths_to_mask
 from tqdm import tqdm
 
@@ -63,16 +62,15 @@ class SpectrogramModel(torch.nn.Module):
         stop_token_eps: The stop probability assigned to the initial frames.
     """
 
-    @configurable
     def __init__(
         self,
         max_tokens: int,
         max_seq_meta_values: typing.Tuple[int, ...],
-        seq_meta_embed_size: int = HParam(),
-        num_frame_channels: int = HParam(),
-        max_frames_per_token: float = HParam(),
-        output_scalar: float = HParam(),
-        stop_threshold: float = HParam(),
+        seq_meta_embed_size: int,
+        num_frame_channels: int,
+        max_frames_per_token: float,
+        output_scalar: float,
+        stop_threshold: float,
         stop_token_eps: float = 1e-10,
     ):
         super().__init__()

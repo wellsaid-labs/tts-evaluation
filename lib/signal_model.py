@@ -10,7 +10,6 @@ from contextlib import nullcontext
 import numpy as np
 import torch
 import torch.nn
-from hparams import HParam, configurable
 from torch.nn import functional
 from torch.nn.utils.weight_norm import WeightNorm, remove_weight_norm, weight_norm
 
@@ -343,16 +342,15 @@ class SignalModel(torch.nn.Module):
         mu: Mu-law scaling parameter. Learn more: https://en.wikipedia.org/wiki/%CE%9C-law_algorithm
     """
 
-    @configurable
     def __init__(
         self,
         max_seq_meta_values: typing.Tuple[int, ...],
-        seq_meta_embed_size: int = HParam(),
-        frame_size: int = HParam(),
-        hidden_size: int = HParam(),
-        ratios: typing.List[int] = HParam(),
-        max_channel_size: int = HParam(),
-        mu: int = HParam(),
+        seq_meta_embed_size: int,
+        frame_size: int,
+        hidden_size: int,
+        ratios: typing.List[int],
+        max_channel_size: int,
+        mu: int,
     ):
         super().__init__()
         self.ratios = ratios
@@ -593,14 +591,13 @@ class SpectrogramDiscriminator(torch.nn.Module):
         hidden_size: The size of the hidden layers.
     """
 
-    @configurable
     def __init__(
         self,
         fft_length: int,
         num_mel_bins: int,
         max_seq_meta_values: typing.Tuple[int, ...],
-        seq_meta_embed_size: int = HParam(),
-        hidden_size: int = HParam(),
+        seq_meta_embed_size: int,
+        hidden_size: int,
     ):
         super().__init__()
         self.fft_length = fft_length

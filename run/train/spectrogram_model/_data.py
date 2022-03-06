@@ -14,7 +14,6 @@ import torch.nn
 import torch.optim
 import torch.utils
 import torch.utils.data
-from hparams import HParam, configurable
 from third_party import LazyLoader
 from torchnlp.encoders.text import SequenceBatch, stack_and_pad_tensors
 from torchnlp.samplers import DeterministicSampler, DistributedBatchSampler
@@ -86,13 +85,12 @@ def _random_nonoverlapping_alignments(
     return tuple(return_)
 
 
-@configurable
 def _get_loudness(
     audio: numpy.ndarray,
     sample_rate: int,
     alignment: Alignment,
-    block_size: float = HParam(),
-    precision: int = HParam(),
+    block_size: float,
+    precision: int,
     **kwargs,
 ) -> typing.Optional[float]:
     """Get the loudness in LUFS for an `alignment` in `audio`.
@@ -113,9 +111,8 @@ def _get_loudness(
     return None
 
 
-@configurable
 def _random_loudness_annotations(
-    span: Span, signal: numpy.ndarray, max_annotations: int = HParam()
+    span: Span, signal: numpy.ndarray, max_annotations: int
 ) -> typing.Tuple[torch.Tensor, torch.Tensor]:
     """
     Args:
@@ -133,9 +130,8 @@ def _random_loudness_annotations(
     return loudness, loudness_mask
 
 
-@configurable
 def _random_speed_annotations(
-    span: Span, max_annotations: int = HParam(), precision: int = HParam()
+    span: Span, max_annotations: int, precision: int
 ) -> typing.Tuple[torch.Tensor, torch.Tensor]:
     """
     Args:
@@ -238,10 +234,7 @@ def _get_normalized_half_gaussian(length: int, standard_deviation: float) -> tor
     return torch.tensor(kernel).float()
 
 
-@configurable
-def _make_stop_token(
-    spectrogram: SequenceBatch, length: int = HParam(), standard_deviation: float = HParam()
-):
+def _make_stop_token(spectrogram: SequenceBatch, length: int, standard_deviation: float):
     """Create a batch of stop tokens from a spectrogram batch.
 
     NOTE: The exact stop token distribution is uncertain because there are multiple valid

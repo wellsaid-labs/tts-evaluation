@@ -14,7 +14,6 @@ import torch.nn
 import torch.optim
 import torch.utils.data
 import torch.utils.data._utils.worker
-from hparams import HParam, configurable
 from third_party import get_parameter_norm
 from torch.nn.functional import binary_cross_entropy_with_logits, l1_loss, mse_loss
 from torch.nn.parallel import DistributedDataParallel
@@ -32,7 +31,7 @@ from run._config import (
     get_dataset_label,
     get_model_label,
 )
-from run._utils import Dataset, configurable_
+from run._utils import Dataset
 from run.train import _utils, spectrogram_model
 from run.train._utils import (
     CometMLExperiment,
@@ -49,7 +48,6 @@ from run.train.signal_model._metrics import Metrics, MetricsValues
 from run.train.signal_model._model import SignalModel, SpectrogramDiscriminator, generate_waveform
 
 logger = logging.getLogger(__name__)
-torch.optim.Adam.__init__ = configurable_(torch.optim.Adam.__init__)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -154,11 +152,10 @@ class _State:
         return model
 
     @staticmethod
-    @configurable
     def _get_optimizers(
         model: torch.nn.Module,
-        optimizer: typing.Callable[..., torch.optim.Adam] = HParam(),
-        lr_multiplier_schedule: typing.Callable[[int], float] = HParam(),
+        optimizer: typing.Callable[..., torch.optim.Adam],
+        lr_multiplier_schedule: typing.Callable[[int], float],
     ) -> typing.Tuple[
         torch.optim.Adam,
         lib.optimizers.AdaptiveGradientNormClipper,
@@ -174,10 +171,9 @@ class _State:
         return optimizer_, clipper, ema, scheduler
 
     @staticmethod
-    @configurable
     def _get_signal_to_spectrogram_modules(
         device: torch.device,
-        kwargs: typing.List[typing.Dict] = HParam(),
+        kwargs: typing.List[typing.Dict],
     ) -> typing.List[SignalTodBMelSpectrogram]:
         """
         TODO: How can we prevent this warning?
@@ -192,17 +188,15 @@ class _State:
             return [SignalTodBMelSpectrogram(**k).to(device, non_blocking=True) for k in kwargs]
 
     @staticmethod
-    @configurable
     def _get_discrims(
-        device: torch.device, args: typing.List[typing.Tuple[int, int]] = HParam()
+        device: torch.device, args: typing.List[typing.Tuple[int, int]]
     ) -> typing.List[SpectrogramDiscriminator]:
         return [SpectrogramDiscriminator(*a).to(device, non_blocking=True) for a in args]
 
     @staticmethod
-    @configurable
     def _get_discrim_optimizers(
         discrims: typing.List[DistributedDataParallel],
-        optimizer: typing.Callable[..., torch.optim.Adam] = HParam(),
+        optimizer: typing.Callable[..., torch.optim.Adam],
     ):
         is_include = lambda p: p.requires_grad
         return [optimizer(filter(is_include, d.parameters())) for d in discrims]
@@ -310,21 +304,20 @@ def _worker_init_fn(
     lib.environment.set_seed(seed)
 
 
-@configurable
 def _get_data_loaders(
     state: _State,
     train_dataset: Dataset,
     dev_dataset: Dataset,
-    train_batch_size: int = HParam(),
-    dev_batch_size: int = HParam(),
-    train_slice_size: int = HParam(),
-    dev_slice_size: int = HParam(),
-    train_span_bucket_size: int = HParam(),
-    dev_span_bucket_size: int = HParam(),
-    train_steps_per_epoch: int = HParam(),
-    dev_steps_per_epoch: int = HParam(),
-    num_workers: int = HParam(),
-    prefetch_factor: int = HParam(),
+    train_batch_size: int,
+    dev_batch_size: int,
+    train_slice_size: int,
+    dev_slice_size: int,
+    train_span_bucket_size: int,
+    dev_span_bucket_size: int,
+    train_steps_per_epoch: int,
+    dev_steps_per_epoch: int,
+    num_workers: int,
+    prefetch_factor: int,
 ) -> typing.Tuple[DataLoader[Batch], DataLoader[Batch]]:
     """Initialize training and development data loaders."""
     model = state.model.module if isinstance(state.model, DistributedDataParallel) else state.model
@@ -359,14 +352,13 @@ class _HandleBatchArgs(typing.NamedTuple):
     cadence: Cadence = Cadence.STEP
 
 
-@configurable
 def _run_discriminator(
     args: _HandleBatchArgs,
     i: int,
     fake_specs: Spectrograms,
     real_specs: Spectrograms,
-    real_label: bool = HParam(),
-    fake_label: bool = HParam(),
+    real_label: bool,
+    fake_label: bool,
 ) -> typing.Tuple[torch.Tensor, typing.Callable[..., MetricsValues]]:
     """Discriminate between fake and real spectrograms.
 

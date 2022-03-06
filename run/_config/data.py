@@ -3,7 +3,7 @@ import logging
 import pathlib
 import typing
 
-from hparams import HParam, HParams, add_config, configurable
+from hparams import HParams, add_config
 
 import lib
 import run
@@ -31,9 +31,8 @@ del DEV_SPEAKERS[_loader.english.BETH_CAMERON__CUSTOM]
 DEV_SPEAKERS = set(DEV_SPEAKERS.keys())
 
 
-@configurable
 def _include_passage(
-    passage: Passage, root: pathlib.Path, language: typing.Optional[Language] = HParam()
+    passage: Passage, root: pathlib.Path, language: typing.Optional[Language]
 ) -> bool:
     """Return `True` iff `passage` should be included in the dataset."""
     repr_ = f"{passage.__class__.__name__}("

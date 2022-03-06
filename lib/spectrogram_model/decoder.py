@@ -2,7 +2,6 @@ import typing
 
 import torch
 import torch.nn
-from hparams import HParam, configurable
 from torch.nn import functional
 
 from lib.spectrogram_model.attention import Attention
@@ -33,15 +32,14 @@ class Decoder(torch.nn.Module):
         stop_net_dropout: The dropout probability of the stop net.
     """
 
-    @configurable
     def __init__(
         self,
         num_frame_channels: int,
         seq_meta_embed_size: int,
-        pre_net_size: int = HParam(),
-        lstm_hidden_size: int = HParam(),
-        encoder_output_size: int = HParam(),
-        stop_net_dropout: float = HParam(),
+        pre_net_size: int,
+        lstm_hidden_size: int,
+        encoder_output_size: int,
+        stop_net_dropout: float,
     ):
         super().__init__()
 

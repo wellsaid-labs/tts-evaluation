@@ -1,7 +1,6 @@
 import typing
 
 import torch
-from hparams import HParam, configurable
 
 from lib import signal_model
 from lib.utils import PaddingAndLazyEmbedding
@@ -11,8 +10,7 @@ from run.data._loader import Session, Speaker
 class SignalModel(signal_model.SignalModel):
     """This is a wrapper over `SignalModel` that normalizes the input."""
 
-    @configurable
-    def __init__(self, max_speakers: int = HParam(), max_sessions: int = HParam(), *args, **kwargs):
+    def __init__(self, max_speakers: int, max_sessions: int, *args, **kwargs):
         super().__init__((max_speakers, max_sessions), *args, **kwargs)
         self.speaker_embed = typing.cast(PaddingAndLazyEmbedding, self.encoder.embed_metadata[0])
         self.session_embed = typing.cast(PaddingAndLazyEmbedding, self.encoder.embed_metadata[1])
@@ -54,8 +52,7 @@ class SignalModel(signal_model.SignalModel):
 class SpectrogramDiscriminator(signal_model.SpectrogramDiscriminator):
     """This is a wrapper over `SpectrogramDiscriminator` that normalizes the input."""
 
-    @configurable
-    def __init__(self, *args, max_speakers: int = HParam(), max_sessions: int = HParam(), **kwargs):
+    def __init__(self, *args, max_speakers: int, max_sessions: int, **kwargs):
         super().__init__(*args, max_seq_meta_values=(max_speakers, max_sessions), **kwargs)
         self.speaker_embed = typing.cast(PaddingAndLazyEmbedding, self.encoder.embed_metadata[0])
         self.session_embed = typing.cast(PaddingAndLazyEmbedding, self.encoder.embed_metadata[1])

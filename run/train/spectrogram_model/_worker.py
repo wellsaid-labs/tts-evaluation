@@ -15,7 +15,6 @@ import torch.nn
 import torch.optim
 import torch.utils
 import torch.utils.data
-from hparams import HParam, configurable
 from third_party import get_parameter_norm
 from torch.nn.functional import binary_cross_entropy_with_logits, mse_loss
 from torchnlp.utils import get_total_parameters
@@ -24,7 +23,7 @@ import lib
 from lib.distributed import is_master
 from lib.utils import PaddingAndLazyEmbedding, log_runtime
 from run._config import Cadence, DatasetType, get_dataset_label, get_model_label
-from run._utils import Dataset, configurable_
+from run._utils import Dataset
 from run.train import _utils
 from run.train._utils import (
     CometMLExperiment,
@@ -48,7 +47,6 @@ from run.train.spectrogram_model._metrics import (
 from run.train.spectrogram_model._model import SpectrogramModel
 
 logger = logging.getLogger(__name__)
-torch.optim.AdamW.__init__ = configurable_(torch.optim.AdamW.__init__)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -153,12 +151,11 @@ class _State:
         return [{"params": no_decay_params, "weight_decay": 0.0}, {"params": decay_params}]
 
     @staticmethod
-    @configurable
     def _get_optimizers(
         model: torch.nn.Module,
-        optimizer: typing.Type[torch.optim.AdamW] = HParam(),
-        lr_multiplier_schedule: typing.Callable[[int], float] = HParam(),
-        exclude_from_decay: ExcludeFromDecay = HParam(),
+        optimizer: typing.Type[torch.optim.AdamW],
+        lr_multiplier_schedule: typing.Callable[[int], float],
+        exclude_from_decay: ExcludeFromDecay,
     ) -> typing.Tuple[
         torch.optim.AdamW,
         lib.optimizers.AdaptiveGradientNormClipper,
@@ -231,19 +228,18 @@ def _worker_init_fn():
     set_run_seed()
 
 
-@configurable
 def _get_data_loaders(
     state: _State,
     train_dataset: Dataset,
     dev_dataset: Dataset,
-    train_batch_size: int = HParam(),
-    dev_batch_size: int = HParam(),
-    train_steps_per_epoch: int = HParam(),
-    dev_steps_per_epoch: int = HParam(),
-    is_train_balanced: bool = HParam(),
-    is_dev_balanced: bool = HParam(),
-    num_workers: int = HParam(),
-    prefetch_factor: int = HParam(),
+    train_batch_size: int,
+    dev_batch_size: int,
+    train_steps_per_epoch: int,
+    dev_steps_per_epoch: int,
+    is_train_balanced: bool,
+    is_dev_balanced: bool,
+    num_workers: int,
+    prefetch_factor: int,
 ) -> typing.Tuple[DataLoader[Batch], DataLoader[Batch]]:
     """Initialize training and development data loaders."""
     step = int(state.step.item())
@@ -307,12 +303,11 @@ def _visualize_source_vs_target(args: _HandleBatchArgs, preds: lib.spectrogram_m
     args.state.comet.log_figures(figures)
 
 
-@configurable
 def _run_step(
     args: _HandleBatchArgs,
-    spectrogram_loss_scalar: float = HParam(),
-    stop_token_min_loss: float = HParam(),
-    average_spectrogram_length: float = HParam(),
+    spectrogram_loss_scalar: float,
+    stop_token_min_loss: float,
+    average_spectrogram_length: float,
 ):
     """Run the `model` on the next batch from `data_loader`, and maybe update it.
 

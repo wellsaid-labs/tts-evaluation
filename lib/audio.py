@@ -14,7 +14,6 @@ import numpy as np
 import torch
 import torch.nn
 import torch.nn.functional
-from hparams import HParam, configurable
 from third_party import LazyLoader
 from third_party.iso226 import iso226_spl_itpl
 from tqdm import tqdm
@@ -302,11 +301,10 @@ def read_wave_audio(
     return clip_waveform(ndarray)
 
 
-@configurable
 def write_audio(
     path: typing.Union[Path, typing.BinaryIO],
     audio: typing.Union[np.ndarray, torch.Tensor],
-    sample_rate: int = HParam(),
+    sample_rate: int,
     overwrite: bool = False,
 ):
     """Write a `np.float32` array in a Waveform Audio File Format (WAV) format at `path`.
@@ -394,10 +392,7 @@ def apply_audio_filters(source: AudioMetadata, destination: Path, audio_filters:
     subprocess.run([str(c) for c in command], check=True)
 
 
-@configurable
-def pad_remainder(
-    signal: np.ndarray, multiple: int = HParam(), center: bool = True, **kwargs
-) -> np.ndarray:
+def pad_remainder(signal: np.ndarray, multiple: int, center: bool = True, **kwargs) -> np.ndarray:
     """Pad signal such that `signal.shape[0] % multiple == 0`.
 
     Args:
@@ -702,10 +697,7 @@ def signal_to_rms(signal: np.ndarray, axis: int = 0) -> np.ndarray:
     return power_to_amp(signal_to_rms_power(signal, axis=axis))
 
 
-@configurable
-def signal_to_framed_rms(
-    signal: np.ndarray, frame_length: int = HParam(), hop_length: int = HParam()
-) -> np.ndarray:
+def signal_to_framed_rms(signal: np.ndarray, frame_length: int, hop_length: int) -> np.ndarray:
     """Compute the framed root mean square from a signal.
 
     Args:
@@ -741,10 +733,9 @@ def get_window_correction_factor(window: torch.Tensor) -> float:
     return float(window_correction_factor)
 
 
-@configurable
 def power_spectrogram_to_framed_rms(
     power_spectrogram: torch.Tensor,
-    window: torch.Tensor = HParam(),
+    window: torch.Tensor,
     window_correction_factor: typing.Optional[float] = None,
 ) -> torch.Tensor:
     """Compute the root mean square from a spectrogram.
@@ -877,16 +868,15 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
         **kwargs: Additional arguments passed to `_mel_filters`.
     """
 
-    @configurable
     def __init__(
         self,
-        fft_length: int = HParam(),
-        frame_hop: int = HParam(),
-        sample_rate: int = HParam(),
-        num_mel_bins: int = HParam(),
-        window: torch.Tensor = HParam(),
-        min_decibel: float = HParam(),
-        get_weighting: typing.Callable[[np.ndarray, int], np.ndarray] = HParam(),
+        fft_length: int,
+        frame_hop: int,
+        sample_rate: int,
+        num_mel_bins: int,
+        window: torch.Tensor,
+        min_decibel: float,
+        get_weighting: typing.Callable[[np.ndarray, int], np.ndarray],
         eps: float = 1e-10,
         **kwargs,
     ):
@@ -1025,10 +1015,7 @@ def get_signal_to_db_mel_spectrogram(*args, **kwargs) -> SignalTodBMelSpectrogra
     return SignalTodBMelSpectrogram(*args, **kwargs)
 
 
-@configurable
-def get_pyloudnorm_meter(
-    sample_rate: int, filter_class: str = HParam(), **kwargs
-) -> "pyloudnorm.Meter":
+def get_pyloudnorm_meter(sample_rate: int, filter_class: str, **kwargs) -> "pyloudnorm.Meter":
     return _get_pyloudnorm_meter(sample_rate=sample_rate, filter_class=filter_class, **kwargs)
 
 
@@ -1074,15 +1061,14 @@ def _db_mel_spectrogram_to_spectrogram(
 
 
 @lib.utils.log_runtime
-@configurable
 def griffin_lim(
     db_mel_spectrogram: np.ndarray,
-    sample_rate: int = HParam(),
-    fft_length: int = HParam(),
-    frame_hop: int = HParam(),
-    window: np.ndarray = HParam(),
-    power: float = HParam(),
-    iterations: int = HParam(),
+    sample_rate: int,
+    fft_length: int,
+    frame_hop: int,
+    window: np.ndarray,
+    power: float,
+    iterations: int,
     **kwargs,
 ) -> np.ndarray:
     """Transform dB mel spectrogram to waveform with the Griffin-Lim algorithm.

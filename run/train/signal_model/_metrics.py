@@ -8,7 +8,6 @@ from operator import add
 
 import torch
 import torch.distributed
-from hparams import HParam, configurable
 
 import lib
 from lib.distributed import is_master
@@ -115,7 +114,6 @@ class Metrics(_utils.Metrics[MetricsKey]):
 
         return dict(values)
 
-    @configurable
     def get_discrim_values(
         self,
         fft_length: int,
@@ -126,9 +124,9 @@ class Metrics(_utils.Metrics[MetricsKey]):
         discrim_real_losses: torch.Tensor,
         discrim_fake_losses: torch.Tensor,
         generator_losses: torch.Tensor,
-        real_label: bool = HParam(),
-        fake_label: bool = HParam(),
-        threshold: float = HParam(),
+        real_label: bool,
+        fake_label: bool,
+        threshold: float,
     ) -> MetricsValues:
         """
         Args:

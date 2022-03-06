@@ -2,7 +2,6 @@ import math
 import typing
 
 import torch
-from hparams import HParam, configurable
 
 from lib import spectrogram_model
 from lib.spectrogram_model import Generator, Mode, Preds
@@ -26,12 +25,11 @@ class Inputs(typing.NamedTuple):
 class SpectrogramModel(spectrogram_model.SpectrogramModel):
     """This is a wrapper over `SpectrogramModel` that normalizes the input."""
 
-    @configurable
     def __init__(
         self,
-        max_tokens: int = HParam(),
-        max_speakers: int = HParam(),
-        max_sessions: int = HParam(),
+        max_tokens: int,
+        max_speakers: int,
+        max_sessions: int,
         *args,
         **kwargs,
     ):

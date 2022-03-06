@@ -3,7 +3,6 @@ from functools import lru_cache
 
 import torch
 import torch.nn
-from hparams import HParam, configurable
 from torch.nn import ModuleList
 from torchnlp.nn import LockedDropout
 
@@ -175,19 +174,18 @@ class Encoder(torch.nn.Module):
         dropout: Dropout probability used to regularize the encoders hidden representation.
     """
 
-    @configurable
     def __init__(
         self,
         max_tokens: int,
         max_seq_meta_values: typing.Tuple[int, ...],
         seq_meta_embed_size: int,
-        seq_meta_embed_dropout: float = HParam(),
-        out_size: int = HParam(),
-        hidden_size: int = HParam(),
-        num_conv_layers: int = HParam(),
-        conv_filter_size: int = HParam(),
-        lstm_layers: int = HParam(),
-        dropout: float = HParam(),
+        seq_meta_embed_dropout: float,
+        out_size: int,
+        hidden_size: int,
+        num_conv_layers: int,
+        conv_filter_size: int,
+        lstm_layers: int,
+        dropout: float,
     ):
         super().__init__()
 

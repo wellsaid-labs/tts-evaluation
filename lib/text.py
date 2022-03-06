@@ -200,7 +200,6 @@ def _grapheme_to_phoneme_with_punctuation(
     return return_
 
 
-@hparams.configurable
 def grapheme_to_phoneme(graphemes, **kwargs):
     """Convert graphemes into phonemes and preserve punctuation.
 

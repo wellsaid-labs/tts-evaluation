@@ -15,7 +15,6 @@ from subprocess import PIPE
 
 import numpy
 import torch
-from hparams import HParam, configurable
 from spacy.lang.en import English
 from third_party import LazyLoader
 
@@ -399,12 +398,11 @@ def _dequeue(queue: SimpleQueue) -> typing.Generator[bytes, None, None]:
         yield queue.get_nowait()
 
 
-@configurable
 def text_to_speech_ffmpeg_generator(
     package: TTSPackage,
     inputs: Inputs,
     logger_: logging.Logger = logger,
-    sample_rate: int = HParam(),
+    sample_rate: int,
     input_flags: typing.Tuple[str, ...] = ("-f", "f32le", "-acodec", "pcm_f32le", "-ac", "1"),
     output_flags: typing.Tuple[str, ...] = ("-f", "mp3", "-b:a", "192k"),
 ) -> typing.Generator[bytes, None, None]:
