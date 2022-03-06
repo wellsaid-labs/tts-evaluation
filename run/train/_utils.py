@@ -242,7 +242,7 @@ class CometMLExperiment:
 
     @contextlib.contextmanager
     def context_manager(self, context: Context):
-        with self._experiment.context_manager(str(context)):
+        with self._experiment.context_manager(str(context.value)):
             yield self
 
     def log_current_epoch(self, epoch: int):
@@ -562,7 +562,7 @@ def set_context(
     ema: typing.Optional[lib.optimizers.ExponentialMovingParameterAverage] = None,
 ):
     with contextlib.ExitStack() as stack:
-        stack.enter_context(comet.context_manager(context.value))
+        stack.enter_context(comet.context_manager(context))
         logger.info("Setting context to '%s'.", context.value)
         is_training = context == Context.TRAIN
         for model in models:
