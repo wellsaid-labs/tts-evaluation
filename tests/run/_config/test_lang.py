@@ -1,6 +1,6 @@
 import functools
 
-from run._lang_config import is_sound_alike
+from run._config import is_sound_alike
 from run.data._loader import Language
 
 

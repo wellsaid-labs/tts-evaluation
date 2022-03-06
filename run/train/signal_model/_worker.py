@@ -29,12 +29,11 @@ from run._config import (
     RANDOM_SEED,
     Cadence,
     DatasetType,
-    configurable_,
     get_config_label,
     get_dataset_label,
     get_model_label,
 )
-from run._utils import Dataset
+from run._utils import Dataset, configurable_
 from run.train import _utils, spectrogram_model
 from run.train._utils import (
     CometMLExperiment,
