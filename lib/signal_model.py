@@ -648,7 +648,7 @@ def generate_waveform(
     spectrogram: typing.Iterable[torch.Tensor],
     speaker: torch.Tensor,
     session: torch.Tensor,
-    spectrogram_mask: typing.Optional[typing.Iterator[torch.Tensor]] = None,
+    spectrogram_mask: typing.Optional[typing.Iterable[torch.Tensor]] = None,
 ) -> typing.Iterator[torch.Tensor]:
     """
     TODO: Similar to WaveNet, we could incorperate a "Fast WaveNet" approach. This basically means
