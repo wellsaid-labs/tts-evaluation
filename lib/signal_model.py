@@ -663,9 +663,9 @@ class SpectrogramDiscriminator(torch.nn.Module):
 
 def generate_waveform(
     model: SignalModel,
-    spectrogram: typing.Iterator[torch.Tensor],
+    spectrogram: typing.Iterable[torch.Tensor],
     seq_metadata: typing.List[typing.Tuple[typing.Hashable, ...]],
-    spectrogram_mask: typing.Optional[typing.Iterator[torch.Tensor]] = None,
+    spectrogram_mask: typing.Optional[typing.Iterable[torch.Tensor]] = None,
 ) -> typing.Iterator[torch.Tensor]:
     """
     TODO: Similar to WaveNet, we could incorperate a "Fast WaveNet" approach. This basically means

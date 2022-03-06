@@ -383,7 +383,7 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
 
 
 class DataProcessor(typing.Mapping[int, Batch]):
-    def __init__(self, dataset: run._config.Dataset, batch_size: int, step: int = 0, **kwargs):
+    def __init__(self, dataset: run._utils.Dataset, batch_size: int, step: int = 0, **kwargs):
         """Given an index, generate the appropriate batch indefinitely.
 
         NOTE: Our training procedure is similar to BERT, the examples are randomly sampled

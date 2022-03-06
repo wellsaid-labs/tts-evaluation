@@ -59,7 +59,7 @@ def mock_distributed_data_parallel(module, *_, **__):
     return module
 
 
-def make_small_dataset() -> run._config.Dataset:
+def make_small_dataset() -> run._utils.Dataset:
     """Create a small dataset for running tests."""
     directory = _utils.TEST_DATA_PATH / "datasets"
     temp_directory = pathlib.Path(tempfile.TemporaryDirectory().name)
@@ -103,7 +103,7 @@ def make_spec_and_sig_worker_state(
     return spec_state, sig_state, temp_dir
 
 
-def make_mock_tts_package() -> typing.Tuple[run._config.Dataset, TTSPackage]:
+def make_mock_tts_package() -> typing.Tuple[run._utils.Dataset, TTSPackage]:
     """Create the required components needed for running TTS inference end-to-end.
 
     TODO: Consider decreasing the size of the spectrogram and signal model for performance.

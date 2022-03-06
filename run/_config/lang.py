@@ -7,6 +7,7 @@ from hparams import HParams, add_config
 from third_party import LazyLoader
 
 import lib
+import run._config.data
 from lib.text import _line_grapheme_to_phoneme, get_spoken_chars
 from lib.utils import identity
 from run.data._loader import Language
@@ -17,6 +18,9 @@ else:
     google_speech = LazyLoader("google_speech", globals(), "google.cloud.speech_v1p1beta1")
 
 logger = logging.getLogger(__name__)
+
+
+LANGUAGE = Language.ENGLISH
 
 # NOTE: eSpeak doesn't have a dictionary of all the phonetic characters, so this is a dictionary
 # of the phonetic characters we found in the English dataset.
@@ -152,5 +156,6 @@ def configure():
     """Configure modules involved in processing text."""
     config = {
         lib.text.grapheme_to_phoneme: HParams(separator=PHONEME_SEPARATOR),
+        run._config.data._include_passage: HParams(language=LANGUAGE),
     }
     add_config(config)

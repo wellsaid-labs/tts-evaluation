@@ -116,7 +116,7 @@ def test_comet_ml_experiment():
     execute."""
     comet = run.train._utils.CometMLExperiment(disabled=True)
     with comet.context_manager(run.train._utils.Context.TRAIN):
-        assert comet.context == str(run.train._utils.Context.TRAIN)
+        assert comet.context == str(run.train._utils.Context.TRAIN.value)
         comet.set_step(None)
         comet.set_step(0)
         comet.set_step(0)

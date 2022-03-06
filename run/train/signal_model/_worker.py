@@ -13,6 +13,7 @@ import torch
 import torch.nn
 import torch.optim
 import torch.utils.data
+import torch.utils.data._utils.worker
 from hparams import HParam, configurable
 from third_party import get_parameter_norm
 from torch.nn.functional import binary_cross_entropy_with_logits, l1_loss, mse_loss
@@ -26,13 +27,12 @@ from lib.visualize import plot_mel_spectrogram, plot_spectrogram
 from run._config import (
     RANDOM_SEED,
     Cadence,
-    Dataset,
     DatasetType,
-    configurable_,
     get_config_label,
     get_dataset_label,
     get_model_label,
 )
+from run._utils import Dataset, configurable_
 from run.train import _utils, spectrogram_model
 from run.train._utils import (
     CometMLExperiment,
@@ -302,6 +302,7 @@ def _worker_init_fn(
 ):
     # NOTE: Each worker needs a different random seed to generate unique data.
     info = torch.utils.data.get_worker_info()
+    assert isinstance(info, torch.utils.data._utils.worker.WorkerInfo)
     seed = RANDOM_SEED
     seed += world_size * info.num_workers * step
     seed += rank * info.num_workers
@@ -335,7 +336,7 @@ def _get_data_loaders(
     train = processor(train_dataset, train_slice_size, train_batch_size, train_span_bucket_size)
     dev = processor(dev_dataset, dev_slice_size, dev_batch_size, dev_span_bucket_size)
     init_fn = partial(_worker_init_fn, step=step, rank=get_rank(), world_size=get_world_size())
-    kwargs = dict(
+    kwargs: typing.Dict[str, typing.Any] = dict(
         num_workers=num_workers,
         device=device,
         prefetch_factor=prefetch_factor,

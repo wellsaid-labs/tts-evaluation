@@ -50,7 +50,7 @@ import lib
 import run
 from lib.environment import AnsiCodes
 from lib.utils import flatten_2d, get_chunks
-from run import _lang_config
+from run import _config
 from run._utils import blob_to_gcs_uri, gcs_uri_to_blob
 from run.data._loader import Language
 
@@ -102,7 +102,7 @@ class _SttAlternative(typing.TypedDict):
 
 class _SttAlternatives(typing.TypedDict):
     alternatives: typing.List[_SttAlternative]
-    languageCode: _lang_config.LanguageCode
+    languageCode: _config.LanguageCode
 
 
 class SttResult(typing.TypedDict):
@@ -166,7 +166,7 @@ class Stats:
 STATS = Stats()
 CONTROL_CHARACTERS_REGEX = re.compile(r"[\x00-\x08\x0b\x0c\x0d\x0e-\x1f]")
 
-normalize_vo_script = lru_cache(maxsize=2 ** 20)(_lang_config.normalize_vo_script)
+normalize_vo_script = lru_cache(maxsize=2 ** 20)(_config.normalize_vo_script)
 
 
 def format_ratio(a: float, b: float) -> str:
@@ -299,7 +299,7 @@ def _fix_alignments(
             (stt_tokens[last[1] + 1].slice[0], stt_tokens[next_[1] - 1].slice[-1]),
         )
 
-        if _lang_config.is_sound_alike(token.text, stt_token.text, language):
+        if _config.is_sound_alike(token.text, stt_token.text, language):
             logger.info(f'Fixing alignment between: "{token.text}" and "{stt_token.text}"')
             for j in reversed(range(last[0] + 1, next_[0])):
                 del tokens[j]
@@ -388,7 +388,7 @@ def align_stt_with_script(
         [normalize_vo_script(t.text.lower(), language) for t in stt_tokens],
         get_window_size(len(script_tokens), len(stt_tokens)),
     )
-    is_sound_alike = partial(_lang_config.is_sound_alike, language=language)
+    is_sound_alike = partial(_config.is_sound_alike, language=language)
     alignments = lib.text.align_tokens(*args, allow_substitution=is_sound_alike)[1]
     # TODO: Should `_fix_alignments` align between scripts? Is that data valuable?
     script_tokens, stt_tokens, alignments = _fix_alignments(
@@ -483,7 +483,7 @@ def _run_stt(
     " one hundred dollars ", "$100"
     " one hundred percent ", "100%"
     """
-    stt_config = _lang_config.STT_CONFIGS[language]
+    stt_config = _config.STT_CONFIGS[language]
     operations = []
     for audio_blob, script, dest_blob in zip(audio_blobs, scripts, dest_blobs):
         config = deepcopy(stt_config)
@@ -599,9 +599,7 @@ def _sync_and_upload(
     message = "Some or all script(s) are missing or incorrecly formatted."
     assert all(isinstance(t, str) for t in flatten_2d(scripts)), message
     message = "Script(s) cannot contain funky characters."
-    assert all(
-        _lang_config.is_normalized_vo_script(t, language) for t in flatten_2d(scripts)
-    ), message
+    assert all(_config.is_normalized_vo_script(t, language) for t in flatten_2d(scripts)), message
 
     logger.info("Maybe running speech-to-text and caching results...")
     filtered = list(filter(lambda i: not i[-1].exists(), zip(audio_blobs, scripts, stt_blobs)))

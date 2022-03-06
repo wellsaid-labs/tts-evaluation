@@ -4,7 +4,7 @@ import math
 import torch
 
 
-def get_parameter_norm(parameters, norm_type=2) -> torch.Tensor:
+def get_parameter_norm(parameters, norm_type: float = 2) -> torch.Tensor:
     """ Compute the total norm of the parameters.
 
     The norm is computed over all gradients together, as if they were

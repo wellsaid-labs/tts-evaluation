@@ -23,8 +23,12 @@ from lib.environment import PT_EXTENSION, load
 from lib.text import grapheme_to_phoneme, load_en_core_web_md
 from lib.utils import get_chunks, tqdm_
 from run import train
-from run._config import CHECKPOINTS_PATH
-from run._lang_config import GRAPHEME_TO_PHONEME_RESTRICTED, PHONEME_SEPARATOR, normalize_vo_script
+from run._config import (
+    CHECKPOINTS_PATH,
+    GRAPHEME_TO_PHONEME_RESTRICTED,
+    PHONEME_SEPARATOR,
+    normalize_vo_script,
+)
 from run.data._loader import Language, Session, Span, Speaker
 from run.train.signal_model._model import SignalModel, generate_waveform
 from run.train.spectrogram_model._model import Inputs, Mode, Preds, SpectrogramModel
