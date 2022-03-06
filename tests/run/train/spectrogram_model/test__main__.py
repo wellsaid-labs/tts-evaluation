@@ -63,7 +63,7 @@ def test_integration():
 
         max_frames = [(batch.spectrogram.lengths.max().item(),)]
         num_frames = [(batch.spectrogram.lengths.sum().item(),)]
-        num_tokens = [(sum(len(t) for t in batch.inputs.tokens),)]
+        num_tokens = [(sum(len(str(t)) for t in batch.inputs.spans),)]
         num_seconds = [(sum(s.audio_length for s in batch.spans),)]
         bucket = len(batch.spans[0].script) // metrics.TEXT_LENGTH_BUCKET_SIZE
         values = {
