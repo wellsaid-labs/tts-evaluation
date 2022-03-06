@@ -26,7 +26,6 @@ from run._config.labels import (
     get_timer_label,
 )
 from run._config.lang import (
-    ENGLISH_PHONETIC_CHARACTERS,
     GRAPHEME_TO_PHONEME_RESTRICTED,
     PHONEME_SEPARATOR,
     STT_CONFIGS,
@@ -65,7 +64,6 @@ __all__ = [
     "get_model_label",
     "get_signal_model_label",
     "get_timer_label",
-    "ENGLISH_PHONETIC_CHARACTERS",
     "GRAPHEME_TO_PHONEME_RESTRICTED",
     "PHONEME_SEPARATOR",
     "STT_CONFIGS",
