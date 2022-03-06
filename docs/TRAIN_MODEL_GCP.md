@@ -30,12 +30,14 @@ Setup your local development environment by following [these instructions](LOCAL
    runs out of capacity.
 
    If starting from scratch, use a standard ubuntu image:
+
    ```zsh
    IMAGE_PROJECT='ubuntu-os-cloud'
    IMAGE_FAMILY='ubuntu-1804-lts'
    ```
 
    If starting from your own image, set the image project and family appropriately:
+
    ```zsh
    IMAGE_PROJECT='voice-research-255602'
    IMAGE_FAMILY='your-image-family-name'    # Example: $IMAGE_FAMILY used to image your machine
