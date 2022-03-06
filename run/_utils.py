@@ -18,7 +18,6 @@ from tqdm import tqdm
 
 import lib
 from lib.utils import split
-from run._config import Dataset
 from run.data import _loader
 
 if typing.TYPE_CHECKING:  # pragma: no cover
@@ -34,6 +33,8 @@ else:
     StringMatcher = LazyLoader("StringMatcher", globals(), "Levenshtein.StringMatcher")
 
 logger = logging.getLogger(__name__)
+
+Dataset = typing.Dict[_loader.Speaker, typing.List[_loader.Passage]]
 
 
 @configurable

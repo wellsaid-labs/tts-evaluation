@@ -16,8 +16,8 @@ from third_party import LazyLoader, session_state
 
 import lib
 import run
-from run._config import Dataset
 from run._tts import CHECKPOINTS_LOADERS, Checkpoints, package_tts
+from run._utils import Dataset
 from run.data._loader import Passage
 
 if typing.TYPE_CHECKING:  # pragma: no cover
@@ -260,7 +260,7 @@ def passage_audio(passage: run.data._loader.Passage) -> np.ndarray:
 
 
 @session_cache(maxsize=None)
-def get_dataset(speaker_labels: typing.FrozenSet[str]) -> run._config.Dataset:
+def get_dataset(speaker_labels: typing.FrozenSet[str]) -> Dataset:
     """Load dataset subset, and cache."""
     logger.info("Loading dataset...")
     with st.spinner(f"Loading dataset(s): {','.join(list(speaker_labels))}"):
@@ -271,7 +271,7 @@ def get_dataset(speaker_labels: typing.FrozenSet[str]) -> run._config.Dataset:
 
 
 @session_cache(maxsize=None)
-def get_dev_dataset() -> run._config.Dataset:
+def get_dev_dataset() -> Dataset:
     """Load dev dataset, and cache."""
     with st.spinner("Loading dataset..."):
         _, dev_dataset = run._utils.split_dataset(run._utils.get_dataset())

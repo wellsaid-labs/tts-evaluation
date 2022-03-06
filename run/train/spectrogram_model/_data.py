@@ -498,7 +498,7 @@ def make_batch(
 class DataProcessor(typing.Mapping[int, Batch]):
     def __init__(
         self,
-        dataset: run._config.Dataset,
+        dataset: run._utils.Dataset,
         batch_size: int,
         input_encoder: InputEncoder,
         step: int = 0,

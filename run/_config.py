@@ -93,7 +93,6 @@ class Device(enum.Enum):
 
 
 Label = typing.NewType("Label", str)
-Dataset = typing.Dict[Speaker, typing.List[Passage]]
 
 
 class GetLabel(typing.Protocol):
