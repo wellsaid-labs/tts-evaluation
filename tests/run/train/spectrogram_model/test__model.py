@@ -63,11 +63,12 @@ def test__preprocess_inputs__doc():
     nlp = lib.text.load_en_core_web_md()
     doc = nlp("In 1968 the U.S. Army")
     sesh = Session((JUDY_BIEBER, "sesh"))
-    inputs = Inputs(speaker=[sesh[0]], session=[sesh], spans=[doc[:-1]])
+    inputs = Inputs(speaker=[sesh[0]], session=[sesh], spans=[doc[1:-1]])
     pre_span = _preprocess_inputs(inputs, 3)
     pre_doc = _preprocess_inputs(inputs._replace(spans=[inputs.spans[0].as_doc()]), 3)
     assert pre_doc.seq_metadata == pre_span.seq_metadata
-    assert pre_doc.tokens[0] == pre_span.tokens[0][:-5]
-    assert pre_doc.token_metadata[0] == pre_span.token_metadata[0][:-5]
-    assert torch.allclose(pre_doc.token_embeddings[0], pre_span.token_embeddings[0][:-5])
-    assert pre_doc.slices == pre_span.slices
+    assert pre_doc.tokens[0] == pre_span.tokens[0][3:-5]
+    assert pre_doc.token_metadata[0] == pre_span.token_metadata[0][3:-5]
+    assert torch.allclose(pre_doc.token_embeddings[0], pre_span.token_embeddings[0][3:-5])
+    doc_slice, span_slice = pre_doc.slices[0], pre_span.slices[0]
+    assert doc_slice.stop - doc_slice.start == span_slice.stop - span_slice.start

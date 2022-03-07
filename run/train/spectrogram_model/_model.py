@@ -60,7 +60,8 @@ def _preprocess_inputs(inputs: Inputs, num_context_words: int) -> spectrogram_mo
         embeddings = torch.zeros(len(str(contextual)), span.doc.vector.size)
         for word in contextual:
             word_embedding = torch.from_numpy(word.vector).unsqueeze(0).repeat(len(word), 1)
-            embeddings[word.idx : word.idx + len(word)] = word_embedding
+            idx = word.idx - contextual.start_char
+            embeddings[idx : idx + len(word)] = word_embedding
         token_embeddings.append(embeddings)
 
     return spectrogram_model.Inputs(
