@@ -545,7 +545,7 @@ def test_get_spoken_chars():
 
 def test_add_space_between_sentences():
     """Test `lib.text.add_space_between_sentences` adds a space between sentences."""
-    nlp = lib.text.load_en_core_web_md(disable=("tagger", "ner"))
+    nlp = lib.text.load_en_core_web_md()
     script = (
         "Business was involved in slavery, colonialism, and the cold war.The term "
         "'business ethics' came into common use in the United States in the early 1970s."
@@ -567,7 +567,7 @@ def test_add_space_between_sentences():
 def test_add_space_between_sentences__new_lines():
     """Test `lib.text.add_space_between_sentences` adds a space between sentences while handling
     newlines."""
-    nlp = lib.text.load_en_core_web_md(disable=("tagger", "ner"))
+    nlp = lib.text.load_en_core_web_md()
     script = """
     The neuroscience of creativity looks at the operation of the brain during creative behaviour.
     It has been addressed in the article "Creative Innovation: Possible Brain Mechanisms."
@@ -599,7 +599,7 @@ def test_add_space_between_sentences__new_lines():
 
 def test_add_space_between_sentences__one_word():
     """Test `lib.text.add_space_between_sentences` handles one word."""
-    nlp = lib.text.load_en_core_web_md(disable=("tagger", "ner"))
+    nlp = lib.text.load_en_core_web_md()
     assert lib.text.add_space_between_sentences(nlp("Hi")) == "Hi"
     assert lib.text.add_space_between_sentences(nlp("Hi  ")) == "Hi  "
     assert lib.text.add_space_between_sentences(nlp("Hi.  ")) == "Hi.  "
@@ -608,7 +608,7 @@ def test_add_space_between_sentences__one_word():
 def test_add_space_between_sentences__regression():
     """Test `lib.text.add_space_between_sentences` handles these regression tests on Hilary's
     data."""
-    nlp = lib.text.load_en_core_web_md(disable=("tagger", "ner"))
+    nlp = lib.text.load_en_core_web_md()
     fixed = [
         (
             "The business' actions and decisions should be primarily ethical before it happens to "
