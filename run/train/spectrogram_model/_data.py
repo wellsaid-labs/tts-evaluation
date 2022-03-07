@@ -16,6 +16,7 @@ import torch.optim
 import torch.utils
 import torch.utils.data
 from hparams import HParam, configurable
+from spacy.tokens import DocBin
 from third_party import LazyLoader
 from torchnlp.encoders.text import SequenceBatch, stack_and_pad_tensors
 from torchnlp.samplers import DeterministicSampler, DistributedBatchSampler
@@ -287,8 +288,21 @@ class Batch(_utils.Batch):
     # SequenceBatch[torch.FloatTensor [num_frames, batch_size], torch.LongTensor [1, batch_size])
     stop_token: SequenceBatch
 
-    # The model inputs
-    inputs: Inputs
+    doc_bin: bytes
+
+    @functools.cached_property
+    def inputs(self):
+        nlp = lib.text.load_en_core_web_md(disable=("parser", "ner", "tagger"))
+        doc_bin = DocBin().from_bytes(self.doc_bin)
+        docs = list(doc_bin.get_docs(nlp.vocab))
+        iter = zip(self.spans, docs)
+        spans = [d.char_span(s.script_slice.start, s.script_slice.stop) for s, d in iter]
+        assert all(s is not None for s in self.spans), "Invalid `spacy.tokens.Span` selected."
+        return Inputs(
+            speaker=[s.speaker for s in self.spans],
+            session=[s.session for s in self.spans],
+            spans=spans,
+        )
 
     def __len__(self):
         return len(self.spans)
@@ -326,13 +340,10 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
     """
     assert len(spans) > 0, "Batch must have at least one item."
 
-    nlp = lib.text.load_en_core_web_md(disable=("parser", "ner"))
+    nlp = lib.text.load_en_core_web_md(disable=("parser", "ner", "tagger"))
     docs: typing.List[spacy.tokens.Doc] = list(nlp.pipe([s.passage.script for s in spans]))
-    spans_ = [d.char_span(s.script_slice.start, s.script_slice.stop) for s, d in zip(spans, docs)]
-    assert all(s is not None for s in spans_), "Invalid `spacy.tokens.Span` selected."
-
-    speakers = [s.speaker for s in spans]
-    sessions = [s.session for s in spans]
+    doc_bin = DocBin(attrs=tuple())
+    [doc_bin.add(doc) for doc in docs]
 
     with futures.ThreadPoolExecutor(max_workers=min(max_workers, len(spans))) as pool:
         signals_ = list(pool.map(lambda s: s.audio(), spans))
@@ -348,7 +359,7 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
         spectrogram=spectrogram,
         spectrogram_mask=spectrogram_mask,
         stop_token=_make_stop_token(spectrogram),
-        inputs=Inputs(spans=spans_, speaker=speakers, session=sessions),
+        doc_bin=doc_bin.to_bytes(),
     )
 
 
