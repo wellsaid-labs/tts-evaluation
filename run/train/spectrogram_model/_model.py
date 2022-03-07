@@ -23,7 +23,7 @@ class Inputs(typing.NamedTuple):
     session: typing.List[Session]
 
     # Batch of sequences of `Span` which include `Doc` context
-    spans: typing.List[spacy.tokens.span.Span]
+    spans: typing.List[typing.Union[spacy.tokens.span.Span, spacy.tokens.doc.Doc]]
 
 
 class _Casing(enum.Enum):
@@ -46,10 +46,11 @@ def _preprocess_inputs(inputs: Inputs, num_context_words: int) -> spectrogram_mo
     token_metadata: typing.List[typing.List[typing.Tuple[_Casing]]] = []
     slices: typing.List[slice] = []
     tokens: typing.List[typing.List[str]] = []
+    print("inputs.spans")
     for span in inputs.spans:
-        doc = span.doc
-        end = min(span.end + num_context_words, len(doc))
-        contextual = doc[max(span.start - num_context_words, 0) : end]
+        span = span[:] if isinstance(span, spacy.tokens.doc.Doc) else span
+        end = min(span.end + num_context_words, len(span.doc))
+        contextual = span.doc[max(span.start - num_context_words, 0) : end]
         start_char = span.start_char - contextual.start_char
         slices.append(slice(start_char, start_char + len(str(span))))
         token_metadata.append([(_get_case(c),) for c in str(contextual)])
@@ -57,12 +58,14 @@ def _preprocess_inputs(inputs: Inputs, num_context_words: int) -> spectrogram_mo
 
         # NOTE: Tack on word embeddings for each token
         # TODO: Instead of using `zeros`, what if we tried training a vector, instead?
-        embeddings = torch.zeros(len(str(contextual)), doc.vector.size)
+        embeddings = torch.zeros(len(str(contextual)), span.doc.vector.size)
+        print("contextual")
         for word in contextual:
             word_embedding = torch.from_numpy(word.vector).unsqueeze(0).repeat(len(word), 1)
             embeddings[word.idx : word.idx + len(word)] = word_embedding
         token_embeddings.append(embeddings)
 
+    print("spectrogram_model.Inputs")
     return spectrogram_model.Inputs(
         tokens=tokens,
         seq_metadata=list(zip(inputs.speaker, inputs.session)),
