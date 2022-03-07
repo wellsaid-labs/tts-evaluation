@@ -44,7 +44,6 @@ def configure():
             max_speakers=max_speakers,
             max_sessions=max_sessions,
             max_token_embed_size=500,
-            num_context_words=10,
         ),
         lib.spectrogram_model.encoder.Encoder.__init__: HParams(
             # SOURCE (Tacotron 2):

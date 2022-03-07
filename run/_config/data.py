@@ -125,6 +125,7 @@ def configure():
     # NOTE: For other datasets like M-AILABS and LJ, this assumes that there is no duplication
     # between different speakers.
     groups += [{s} for s in _loader.DATASETS.keys() if s not in _loader.WSL_DATASETS]
+    max_context_words = 10
     config = {
         run._utils.get_dataset: HParams(
             datasets=DATASETS,
@@ -134,6 +135,8 @@ def configure():
         run._utils.split_dataset: HParams(
             groups=groups, dev_speakers=DEV_SPEAKERS, approx_dev_len=30 * 60, min_sim=0.9
         ),
-        run._utils.SpanGenerator.__init__: HParams(max_seconds=15, include_span=_include_span),
+        run.train.spectrogram_model._model.SpectrogramModel.__init__: HParams(
+            max_context_words=max_context_words
+        ),
     }
     add_config(config)

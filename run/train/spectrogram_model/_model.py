@@ -40,7 +40,7 @@ def _get_case(c: str) -> _Casing:
     return _Casing.LOWER if c.islower() else _Casing.NO_CASING
 
 
-def _preprocess_inputs(inputs: Inputs, num_context_words: int) -> spectrogram_model.Inputs:
+def _preprocess_inputs(inputs: Inputs, max_context_words: int) -> spectrogram_model.Inputs:
     """Preprocess inputs to inputs by including casing, context, and embeddings."""
     token_embeddings: typing.List[torch.Tensor] = []
     token_metadata: typing.List[typing.List[typing.Tuple[_Casing]]] = []
@@ -49,7 +49,7 @@ def _preprocess_inputs(inputs: Inputs, num_context_words: int) -> spectrogram_mo
     for span in inputs.spans:
         span = span[:] if isinstance(span, spacy.tokens.doc.Doc) else span
         end = min(span.end + num_context_words, len(span.doc))
-        contextual = span.doc[max(span.start - num_context_words, 0) : end]
+        contextual = span.doc[max(span.start - max_context_words, 0) : end]
         start_char = span.start_char - contextual.start_char
         slices.append(slice(start_char, start_char + len(str(span))))
         token_metadata.append([(_get_case(c),) for c in str(contextual)])
@@ -83,7 +83,7 @@ class SpectrogramModel(spectrogram_model.SpectrogramModel):
         max_speakers: int = HParam(),
         max_sessions: int = HParam(),
         max_token_embed_size: int = HParam(),
-        num_context_words: int = HParam(),
+        max_context_words: int = HParam(),
         *args,
         **kwargs,
     ):
@@ -95,7 +95,7 @@ class SpectrogramModel(spectrogram_model.SpectrogramModel):
             max_token_embed_size=max_token_embed_size,
             **kwargs,
         )
-        self.num_context_words = num_context_words
+        self.max_context_words = max_context_words
         self.token_embed = self.encoder.embed_token
         self.speaker_embed = typing.cast(
             PaddingAndLazyEmbedding, self.encoder.embed_seq_metadata[0]
@@ -165,5 +165,5 @@ class SpectrogramModel(spectrogram_model.SpectrogramModel):
         ...  # pragma: no cover
 
     def __call__(self, inputs: Inputs, *args, mode: Mode = Mode.FORWARD, **kwargs):
-        inputs_ = _preprocess_inputs(inputs, self.num_context_words)
+        inputs_ = _preprocess_inputs(inputs, self.max_context_words)
         return super().__call__(inputs_, *args, mode=mode, **kwargs)
