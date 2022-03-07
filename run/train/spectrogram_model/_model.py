@@ -46,7 +46,6 @@ def _preprocess_inputs(inputs: Inputs, num_context_words: int) -> spectrogram_mo
     token_metadata: typing.List[typing.List[typing.Tuple[_Casing]]] = []
     slices: typing.List[slice] = []
     tokens: typing.List[typing.List[str]] = []
-    print("inputs.spans")
     for span in inputs.spans:
         span = span[:] if isinstance(span, spacy.tokens.doc.Doc) else span
         end = min(span.end + num_context_words, len(span.doc))
@@ -59,13 +58,11 @@ def _preprocess_inputs(inputs: Inputs, num_context_words: int) -> spectrogram_mo
         # NOTE: Tack on word embeddings for each token
         # TODO: Instead of using `zeros`, what if we tried training a vector, instead?
         embeddings = torch.zeros(len(str(contextual)), span.doc.vector.size)
-        print("contextual")
         for word in contextual:
             word_embedding = torch.from_numpy(word.vector).unsqueeze(0).repeat(len(word), 1)
             embeddings[word.idx : word.idx + len(word)] = word_embedding
         token_embeddings.append(embeddings)
 
-    print("spectrogram_model.Inputs")
     return spectrogram_model.Inputs(
         tokens=tokens,
         seq_metadata=list(zip(inputs.speaker, inputs.session)),
