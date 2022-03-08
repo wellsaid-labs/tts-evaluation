@@ -92,18 +92,20 @@ def _include_span(span: Span):
     TODO: The character "." is ambigious. It is sometimes prounced "dot" and sometimes it's silent.
     There may be some inconsistency between eSpeak and the voice over with regards to ".".
     """
-    if "<" in span.script or ">" in span.script:
+    script = str(span.spacy_with_context())
+
+    if "<" in script or ">" in script:
         return False
 
     # NOTE: Filter out any passage(s) with a slash because it's ambigious. It's not obvious if
     # it should be silent or verbalized.
-    if "/" in span.script or "\\" in span.script:
+    if "/" in script or "\\" in script:
         return False
 
     # NOTE: Filter out any passage(s) with digits because the pronunciation is fundamentally
     # ambigious, and it's much easier to handle this case with text normalization.
     # NOTE: See performance statistics here: https://stackoverflow.com/a/31861306/4804936
-    if lib.text.has_digit(span.script):
+    if lib.text.has_digit(script):
         return False
 
     # NOTE: `Span`s which end with a short, or fast `Span`, tend to be error prone.
@@ -134,6 +136,7 @@ def configure():
         run._utils.split_dataset: HParams(
             groups=groups, dev_speakers=DEV_SPEAKERS, approx_dev_len=30 * 60, min_sim=0.9
         ),
-        run.data._loader.data_structures.Span.context_span: HParams(max_words=10),
+        run.data._loader.data_structures.Span.spacy_with_context: HParams(max_words=10),
+        run._utils.SpanGenerator.__init__: HParams(max_seconds=15, include_span=_include_span),
     }
     add_config(config)

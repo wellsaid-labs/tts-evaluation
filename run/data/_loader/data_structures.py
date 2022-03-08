@@ -867,6 +867,20 @@ def _default_session(passage: UnprocessedPassage) -> Session:
     return Session((passage.speaker, passage.audio_path.stem))
 
 
+def _add_spacy(passages: typing.List[Passage], label, no_tqdm: bool):
+    """Parse passages with spaCy."""
+    logger.info(f"[{label}] Loading spaCy...")
+    nlp = get_nlp()
+
+    logger.info(f"[{label}] Tokenizing with spaCy...")
+    doc_bin = DocBin(attrs=tuple())
+    for doc in tqdm_(nlp.pipe(s.script for s in passages), total=len(passages), disable=no_tqdm):
+        doc_bin.add(doc)
+    doc_bin_in_bytes = doc_bin.to_bytes()
+    for passage in passages:
+        object.__setattr__(passage, "doc_bin_in_bytes", doc_bin_in_bytes)
+
+
 @lib.utils.log_runtime
 def make_passages(
     label: str,
@@ -933,16 +947,7 @@ def make_passages(
         for span in passage.speech_segments:
             object.__setattr__(span, "passage_alignments", passage.alignments)
 
-    logger.info(f"[{label}] Loading spaCy...")
-    nlp = get_nlp()
-
-    logger.info(f"[{label}] Tokenizing with spaCy...")
-    doc_bin = DocBin(attrs=tuple())
-    for doc in tqdm(nlp.pipe(s.script for s in flat), total=len(flat)):
-        doc_bin.add(doc)
-    doc_bin_in_bytes = doc_bin.to_bytes()
-    for passage in flat:
-        object.__setattr__(passage, "doc_bin_in_bytes", doc_bin_in_bytes)
+    _add_spacy(flat, label, no_tqdm)
 
     logger.info(f"[{label}] Done! {lib.utils.mazel_tov()}")
     return flat

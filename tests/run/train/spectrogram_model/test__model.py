@@ -1,21 +1,31 @@
+import hparams
+import pytest
 import spacy.vocab
 import torch
 
 import lib
-from run.data._loader import Session
-from run.data._loader.english import JUDY_BIEBER
-from run.train.spectrogram_model._model import Inputs, _Casing, _preprocess_inputs
+import run
+from run.train.spectrogram_model._model import Inputs, _Casing, preprocess_inputs, preprocess_spans
+from tests.run._utils import make_passage
 
 
-def test__preprocess_inputs():
-    """Test that `_preprocess_inputs` handles a basic input."""
+@pytest.fixture(autouse=True)
+def run_around_tests():
+    """Set a basic configuration."""
+    run._config.configure()
+    yield
+    hparams.clear_config()
+
+
+def test_preprocess_spans():
+    """Test that `preprocess_spans` handles a basic input."""
     nlp = lib.text.load_en_core_web_md()
-    doc = nlp("In 1968 the U.S. Army")
-    sesh = Session((JUDY_BIEBER, "sesh"))
-    inputs = Inputs(speaker=[sesh[0]], session=[sesh], spans=[doc[:-1]])
-    processed = _preprocess_inputs(inputs, 3)
-    assert processed.tokens == [list("in 1968 the u.s. army")]
-    assert processed.seq_metadata == [(sesh[0], sesh)]
+    script = "In 1968 the U.S. Army"
+    doc = nlp(script)
+    passage = make_passage(script=script)
+    processed = preprocess_spans([passage[:-1]])
+    assert processed.tokens == [list(script.lower())]
+    assert processed.seq_metadata == [(passage.speaker, passage.session)]
     casing = [
         _Casing.UPPER,  # I
         _Casing.LOWER,  # n
@@ -58,14 +68,13 @@ def test__preprocess_inputs():
     assert processed.slices == [slice(0, len(doc.text) - 5)]
 
 
-def test__preprocess_inputs__doc():
-    """Test that `_preprocess_inputs` handles a `Doc`, similarly to a `Span`."""
+def test_preprocess_inputs_and_spans():
+    """Test that `preprocess_spans` and `preprocess_inputs` function similarly."""
     nlp = lib.text.load_en_core_web_md()
-    doc = nlp("In 1968 the U.S. Army")
-    sesh = Session((JUDY_BIEBER, "sesh"))
-    inputs = Inputs(speaker=[sesh[0]], session=[sesh], spans=[doc[1:-1]])
-    pre_span = _preprocess_inputs(inputs, 3)
-    pre_doc = _preprocess_inputs(inputs._replace(spans=[inputs.spans[0].as_doc()]), 3)
+    script = "In 1968 the U.S. Army"
+    passage = make_passage(script=script)
+    pre_span = preprocess_spans([passage[1:-1]])
+    pre_doc = preprocess_inputs(Inputs(session=[passage.session], doc=[nlp(passage[1:-1].script)]))
     assert pre_doc.seq_metadata == pre_span.seq_metadata
     assert pre_doc.tokens[0] == pre_span.tokens[0][3:-5]
     assert pre_doc.token_metadata[0] == pre_span.token_metadata[0][3:-5]

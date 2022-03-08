@@ -7,7 +7,6 @@ import typing
 from concurrent import futures
 
 import numpy
-import spacy.tokens
 import torch
 import torch.cuda
 import torch.distributed
@@ -16,7 +15,6 @@ import torch.optim
 import torch.utils
 import torch.utils.data
 from hparams import HParam, configurable
-from spacy.tokens import DocBin
 from third_party import LazyLoader
 from torchnlp.encoders.text import SequenceBatch, stack_and_pad_tensors
 from torchnlp.samplers import DeterministicSampler, DistributedBatchSampler
@@ -27,10 +25,11 @@ import run
 from lib.audio import sec_to_sample
 from lib.distributed import get_rank, get_world_size, is_initialized
 from lib.samplers import BucketBatchSampler
+from lib.spectrogram_model import Inputs
 from lib.utils import Tuple, flatten_2d
 from run.data._loader import Alignment, Span
 from run.train import _utils
-from run.train.spectrogram_model._model import Inputs
+from run.train.spectrogram_model._model import preprocess_spans
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import librosa
@@ -288,21 +287,13 @@ class Batch(_utils.Batch):
     # SequenceBatch[torch.FloatTensor [num_frames, batch_size], torch.LongTensor [1, batch_size])
     stop_token: SequenceBatch
 
-    doc_bin: bytes
+    inputs: Inputs
 
-    @functools.cached_property
-    def inputs(self):
-        nlp = lib.text.load_en_core_web_md(disable=("parser", "ner", "tagger"))
-        doc_bin = DocBin().from_bytes(self.doc_bin)
-        docs = list(doc_bin.get_docs(nlp.vocab))
-        iter = zip(self.spans, docs)
-        spans = [d.char_span(s.script_slice.start, s.script_slice.stop) for s, d in iter]
-        assert all(s is not None for s in self.spans), "Invalid `spacy.tokens.Span` selected."
-        return Inputs(
-            speaker=[s.speaker for s in self.spans],
-            session=[s.session for s in self.spans],
-            spans=spans,
-        )
+    def apply(self, call: typing.Callable[[torch.Tensor], torch.Tensor]) -> "Batch":
+        batch: Batch = super().apply(call)
+        assert isinstance(batch.inputs.token_embeddings, torch.Tensor)
+        inputs = batch.inputs._replace(token_embeddings=call(batch.inputs.token_embeddings))
+        return dataclasses.replace(batch, inputs=inputs)
 
     def __len__(self):
         return len(self.spans)
@@ -340,11 +331,6 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
     """
     assert len(spans) > 0, "Batch must have at least one item."
 
-    nlp = lib.text.load_en_core_web_md(disable=("parser", "ner", "tagger"))
-    docs: typing.List[spacy.tokens.Doc] = list(nlp.pipe([s.passage.script for s in spans]))
-    doc_bin = DocBin(attrs=tuple())
-    [doc_bin.add(doc) for doc in docs]
-
     with futures.ThreadPoolExecutor(max_workers=min(max_workers, len(spans))) as pool:
         signals_ = list(pool.map(lambda s: s.audio(), spans))
         signals_ = typing.cast(typing.List[numpy.ndarray], signals_)
@@ -359,7 +345,7 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
         spectrogram=spectrogram,
         spectrogram_mask=spectrogram_mask,
         stop_token=_make_stop_token(spectrogram),
-        doc_bin=doc_bin.to_bytes(),
+        inputs=preprocess_spans(spans),
     )
 
 

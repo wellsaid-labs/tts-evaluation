@@ -13,7 +13,7 @@ import run
 from run import train
 from run._tts import TTSPackage, package_tts
 from run.data._loader import Alignment, Passage, Session, Span, Speaker, make_en_speaker
-from run.data._loader.data_structures import _make_nonalignments
+from run.data._loader.data_structures import _add_spacy, _make_nonalignments
 from run.data._loader.english import (
     JUDY_BIEBER,
     LINDA_JOHNSON,
@@ -113,6 +113,8 @@ def make_passage(
     default_speech_segments = [passage[i] for i in range(len(alignments))]
     speech_segments = default_speech_segments if speech_segments is None else speech_segments
     object.__setattr__(passage, "speech_segments", tuple(speech_segments))
+
+    _add_spacy([passage], "", True)
 
     return passage
 

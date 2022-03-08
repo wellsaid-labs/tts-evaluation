@@ -30,6 +30,10 @@ def test__include_span():
     alignments = make_alignments_2d("This", ((0, 0.15),))
     assert not _include_span(make_passage(script="This", alignments=alignments)[:])
 
+    # Exclude script due to context
+    assert _include_span(make_passage(script="This is test")[1:-1])
+    assert not _include_span(make_passage(script="Thi1 is test")[1:-1])
+
     # Exclude due to mistranscription / nonalignments
     alignments = make_alignments_1d(((0, 1), (4, 5)))
     span = make_passage(script="A B C", alignments=alignments)[:]
