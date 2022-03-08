@@ -291,7 +291,7 @@ class Encoder(torch.nn.Module):
 
         token_embed = torch.zeros(*tokens.shape[:2], self.max_token_embed_size, device=device)
         if isinstance(inputs.token_embeddings, list):
-            token_embed_ = pad_sequence(inputs.token_embeddings, batch_first=True)
+            token_embed_: torch.Tensor = pad_sequence(inputs.token_embeddings, batch_first=True)
         else:
             token_embed_ = inputs.token_embeddings
         token_embed[:, :, 0 : token_embed_.shape[2]] = token_embed_
