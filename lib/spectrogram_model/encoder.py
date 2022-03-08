@@ -5,6 +5,7 @@ import torch
 import torch.nn
 from hparams import HParam, configurable
 from torch.nn import ModuleList
+from torch.nn.utils.rnn import pad_sequence
 from torchnlp.nn import LockedDropout
 
 from lib.spectrogram_model.containers import Encoded, Inputs
@@ -288,9 +289,11 @@ class Encoder(torch.nn.Module):
         empty = torch.empty(*tokens.shape[:2], 0, device=device)
         token_metadata = torch.cat(token_metadata, dim=1) if len(token_metadata) > 0 else empty
 
-        # [batch_size, num_tokens, ???]
-        token_embed_ = torch.nn.utils.rnn.pad_sequence(inputs.token_embeddings, batch_first=True)
         token_embed = torch.zeros(*tokens.shape[:2], self.max_token_embed_size, device=device)
+        if isinstance(inputs.token_embeddings, list):
+            token_embed_ = pad_sequence(inputs.token_embeddings, batch_first=True)
+        else:
+            token_embed_ = inputs.token_embeddings
         token_embed[:, :, 0 : token_embed_.shape[2]] = token_embed_
 
         # [batch_size, num_tokens, hidden_size] (cat)

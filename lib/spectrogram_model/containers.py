@@ -16,7 +16,8 @@ class Inputs(typing.NamedTuple):
     token_metadata: typing.List[typing.List[typing.Tuple[typing.Hashable, ...]]]
 
     # Embeddings associated with each token in each sequence
-    token_embeddings: typing.List[torch.Tensor]
+    # torch.FloatTensor [batch_size, num_tokens, *]
+    token_embeddings: typing.Union[torch.Tensor, typing.List[torch.Tensor]]
 
     # Slice of tokens in each sequence to be voiced
     slices: typing.List[slice]
