@@ -84,7 +84,7 @@ def test__maybe_make_experiment_directories_from_checkpoint(capsys):
 def test__get_dataset_stats():
     """Test `run.train._utils.get_dataset_stats` measures dataset statistics correctly."""
     _alignment = lambda a, b: Alignment((a, b), (a * 10, b * 10), (a, b))
-    _passage = lambda a, b, s: make_passage(Alignment.stow([_alignment(a, b)]), s)
+    _passage = lambda a, b, s: make_passage([_alignment(a, b)], s)
     a = make_en_speaker("a")
     b = make_en_speaker("b")
     train = {a: [_passage(0, 2, a), _passage(0, 2, a)], b: [_passage(0, 1, a)]}

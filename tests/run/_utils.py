@@ -9,10 +9,10 @@ from hparams import add_config
 
 import lib
 import run
-from lib.utils import Tuple
 from run import train
 from run._tts import TTSPackage, package_tts
-from run.data._loader import Alignment, Session, Span, make_en_speaker
+from run.data._loader import Alignment, Passage, Session, Span, Speaker, make_en_speaker
+from run.data._loader.data_structures import _make_nonalignments
 from run.data._loader.english import (
     JUDY_BIEBER,
     LINDA_JOHNSON,
@@ -25,24 +25,31 @@ from tests._utils import make_metadata
 
 
 def make_passage(
-    alignments: Tuple[Alignment] = Alignment.stow([]),
-    nonalignments: Tuple[Alignment] = Alignment.stow([]),
-    speaker: run.data._loader.Speaker = make_en_speaker(""),
+    alignments: typing.List[Alignment] = [],
+    nonalignments: typing.Optional[typing.List[Alignment]] = None,
+    speaker: Speaker = make_en_speaker(""),
     audio_file: lib.audio.AudioMetadata = make_metadata(),
     script: typing.Optional[str] = None,
     transcript: typing.Optional[str] = None,
     speech_segments: typing.Optional[typing.Tuple[Span, ...]] = None,
     **kwargs,
-) -> run.data._loader.Passage:
+) -> Passage:
     """Make a `Passage` for testing."""
+    alignments_ = Alignment.stow(alignments)
     max_ = lambda attr: max([getattr(a, attr)[1] for a in alignments])
     make_str: typing.Callable[[str], str]
     make_str = lambda attr: "." * max_(attr) if len(alignments) else ""
     script_ = make_str("script") if script is None else script
     transcript_ = make_str("transcript") if transcript is None else transcript
     sesh = Session((speaker, str(audio_file)))
-    passage = run.data._loader.Passage(audio_file, sesh, script_, transcript_, alignments, **kwargs)
-    object.__setattr__(passage, "nonalignments", nonalignments)
+    passage = Passage(audio_file, sesh, script_, transcript_, alignments_, **kwargs)
+    object.__setattr__(passage, "index", 0)
+    object.__setattr__(passage, "passages", [passage])
+    if nonalignments is None:
+        nonalignments_ = _make_nonalignments(passage)
+    else:
+        nonalignments_ = Alignment.stow(nonalignments)
+    object.__setattr__(passage, "nonalignments", nonalignments_)
     default_speech_segments = tuple(passage[i] for i in range(len(alignments)))
     speech_segments = default_speech_segments if speech_segments is None else speech_segments
     object.__setattr__(passage, "speech_segments", speech_segments)
