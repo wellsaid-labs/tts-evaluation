@@ -31,7 +31,9 @@ def _make_alignment(script=(0, 0), transcript=(0, 0), audio=(0.0, 0.0)):
     return Alignment(script, audio, transcript)
 
 
-def _make_alignments(alignments=typing.Tuple[typing.Tuple[int, int]]) -> lib.utils.Tuple[Alignment]:
+def _make_alignments(
+    alignments: typing.Tuple[typing.Tuple[int, int]]
+) -> lib.utils.Tuple[Alignment]:
     """Make a tuple of `Alignment`(s) for testing."""
     return Alignment.stow([_make_alignment(a, a, a) for a in alignments])
 

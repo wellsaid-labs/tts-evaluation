@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 def _make_args():
     """Create arguments for the below tests."""
     dataset, package = make_mock_tts_package()
-    nlp = lib.text.load_en_core_web_sm(disable=("parser", "ner"))
+    nlp = lib.text.load_en_core_web_sm()
     passage = list(dataset.values())[0][-1]
     script, speaker, session = passage.script, passage.speaker, passage.session
     # NOTE: The script needs to be long enough to pass the below tests.

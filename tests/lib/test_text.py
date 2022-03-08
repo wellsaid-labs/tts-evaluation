@@ -329,7 +329,7 @@ def test_get_pronunciation__non_standard_words():
 def test_get_pronunciations():
     """Test `lib.text.get_pronunciations` against basic cases: non-standard words, initialisms,
     appostrophes, and abbreviations."""
-    nlp = lib.text.load_en_core_web_md()
+    nlp = lib.text.load_en_core_web_sm()
     get_pronunciations = lambda s: lib.text.get_pronunciations(nlp(s))
     assert get_pronunciations("In 1968 the U.S. Army") == (
         ("IH1", "N"),
@@ -369,7 +369,7 @@ def test_get_pronunciations():
 
 def test_get_pronunciations__part_of_speech():
     """Test `lib.text.get_pronunciations` with ambigious part of speech cases."""
-    nlp = lib.text.load_en_core_web_md()
+    nlp = lib.text.load_en_core_web_sm()
     get_pronunciations = lambda s: lib.text.get_pronunciations(nlp(s))
     assert get_pronunciations("It was time to present the present.") == (
         ("IH1", "T"),
@@ -545,7 +545,7 @@ def test_get_spoken_chars():
 
 def test_add_space_between_sentences():
     """Test `lib.text.add_space_between_sentences` adds a space between sentences."""
-    nlp = lib.text.load_en_core_web_md()
+    nlp = lib.text.load_en_core_web_sm()
     script = (
         "Business was involved in slavery, colonialism, and the cold war.The term "
         "'business ethics' came into common use in the United States in the early 1970s."
@@ -567,7 +567,7 @@ def test_add_space_between_sentences():
 def test_add_space_between_sentences__new_lines():
     """Test `lib.text.add_space_between_sentences` adds a space between sentences while handling
     newlines."""
-    nlp = lib.text.load_en_core_web_md()
+    nlp = lib.text.load_en_core_web_sm()
     script = """
     The neuroscience of creativity looks at the operation of the brain during creative behaviour.
     It has been addressed in the article "Creative Innovation: Possible Brain Mechanisms."
@@ -599,7 +599,7 @@ def test_add_space_between_sentences__new_lines():
 
 def test_add_space_between_sentences__one_word():
     """Test `lib.text.add_space_between_sentences` handles one word."""
-    nlp = lib.text.load_en_core_web_md()
+    nlp = lib.text.load_en_core_web_sm()
     assert lib.text.add_space_between_sentences(nlp("Hi")) == "Hi"
     assert lib.text.add_space_between_sentences(nlp("Hi  ")) == "Hi  "
     assert lib.text.add_space_between_sentences(nlp("Hi.  ")) == "Hi.  "
@@ -608,7 +608,7 @@ def test_add_space_between_sentences__one_word():
 def test_add_space_between_sentences__regression():
     """Test `lib.text.add_space_between_sentences` handles these regression tests on Hilary's
     data."""
-    nlp = lib.text.load_en_core_web_md()
+    nlp = lib.text.load_en_core_web_sm()
     fixed = [
         (
             "The business' actions and decisions should be primarily ethical before it happens to "
