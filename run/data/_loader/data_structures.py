@@ -9,11 +9,13 @@ import typing
 from concurrent import futures
 from dataclasses import field
 from enum import Enum
-from functools import partial
+from functools import cached_property, partial
 from pathlib import Path
 
 import numpy as np
+import spacy.tokens.doc
 from hparams import HParam, configurable
+from spacy.tokens import DocBin
 
 import lib
 import run
@@ -26,6 +28,10 @@ logger = logging.getLogger(__name__)
 FloatFloat = typing.Tuple[float, float]
 IntInt = typing.Tuple[int, int]
 Slice = slice  # NOTE: `pylance` is buggy if we use `slice` directly for typing.
+
+
+def get_nlp():
+    return lib.text.load_en_core_web_md(disable=("parser", "ner", "tagger"))
 
 
 class NonalignmentSpans(typing.NamedTuple):
@@ -227,6 +233,7 @@ class Passage:
     last: Alignment = field(init=False, repr=False, compare=False)
     passages: typing.List[Passage] = field(init=False, repr=False, compare=False)
     index: int = field(init=False, repr=False, compare=False)
+    doc_bin_in_bytes: bytes = field(init=False, repr=False, compare=False)
 
     def __post_init__(self):
         if len(self.alignments) > 0:  # NOTE: Cache `first` and `last`, if they exist.
@@ -259,6 +266,14 @@ class Passage:
     @property
     def speaker(self):
         return self.session[0]
+
+    @cached_property
+    def docs(self) -> typing.List[spacy.tokens.doc.Doc]:
+        return list(DocBin().from_bytes(self.doc_bin_in_bytes).get_docs(get_nlp().vocab))
+
+    @cached_property
+    def doc(self) -> spacy.tokens.doc.Doc:
+        return self.docs[self.index]
 
     def audio(self):
         return _loader.utils.read_audio(self.audio_file)
@@ -542,6 +557,19 @@ class Span:
     @property
     def audio_length(self):
         return self.audio_stop - self.audio_start
+
+    @property
+    def spacy(self) -> spacy.tokens.span.Span:
+        span = self.passage.doc.char_span(self.script_slice.start, self.script_slice.stop)
+        assert span is not None, "Invalid `spacy.tokens.Span` selected."
+        return span
+
+    @configurable
+    def spacy_with_context(self, max_words: int = HParam()) -> spacy.tokens.span.Span:
+        """Get a `spacy.tokens.span.Span` with the required context for voicing `self`."""
+        doc = self.passage.doc
+        end = min(self.spacy.end + max_words, len(doc))
+        return doc[max(self.spacy.start - max_words, 0) : end]
 
     def audio(self) -> np.ndarray:
         return _loader.utils.read_audio(
@@ -853,6 +881,7 @@ def make_passages(
     items at once as possible.
     TODO: Add `check_invariants` to `UnprocessedPassage`, so that, we can enforce invariants
     that this code relies on.
+    TODO: Load the correct spaCy model based on language.
 
     Args:
         dataset: Dataset with a list of documents each with a list of passsages.
@@ -903,6 +932,17 @@ def make_passages(
         object.__setattr__(passage, "nonalignments", Alignment.stow(passage.nonalignments))
         for span in passage.speech_segments:
             object.__setattr__(span, "passage_alignments", passage.alignments)
+
+    logger.info(f"[{label}] Loading spaCy...")
+    nlp = get_nlp()
+
+    logger.info(f"[{label}] Tokenizing with spaCy...")
+    doc_bin = DocBin(attrs=tuple())
+    for doc in tqdm(nlp.pipe(s.script for s in flat), total=len(flat)):
+        doc_bin.add(doc)
+    doc_bin_in_bytes = doc_bin.to_bytes()
+    for passage in flat:
+        object.__setattr__(passage, "doc_bin_in_bytes", doc_bin_in_bytes)
 
     logger.info(f"[{label}] Done! {lib.utils.mazel_tov()}")
     return flat
