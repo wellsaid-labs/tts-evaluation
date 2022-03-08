@@ -24,6 +24,21 @@ from tests import _utils
 from tests._utils import make_metadata
 
 
+def make_alignment(script=(0, 0), transcript=(0, 0), audio=(0.0, 0.0)):
+    """Make an `Alignment` for testing."""
+    return Alignment(script, audio, transcript)
+
+
+def make_alignments(
+    alignments: typing.Tuple[typing.Tuple[typing.Tuple[int, int], typing.Tuple[int, int]], ...]
+) -> typing.List[Alignment]:
+    """
+    Make a tuple of `Alignment`(s) for testing where `script` and `transcript`
+    have the same alignments.
+    """
+    return [make_alignment(a, a, b) for a, b in alignments]
+
+
 def make_passage(
     alignments: typing.List[Alignment] = [],
     nonalignments: typing.Optional[typing.List[Alignment]] = None,

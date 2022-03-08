@@ -20,22 +20,17 @@ from tests._utils import (
     get_audio_metadata_side_effect,
     subprocess_run_side_effect,
 )
-from tests.run._utils import make_passage
+from tests.run._utils import make_alignments, make_passage
 
 TEST_DATA_LJ = TEST_DATA_PATH / "audio" / "bit(rate(lj_speech,24000),32).wav"
 TEST_DATA_LJ_16_BIT = TEST_DATA_PATH / "audio" / "rate(lj_speech,24000).wav"
-
-
-def _make_alignment(script=(0, 0), transcript=(0, 0), audio=(0.0, 0.0)):
-    """Make an `Alignment` for testing."""
-    return Alignment(script, audio, transcript)
 
 
 def _make_alignments(
     alignments: typing.Tuple[typing.Tuple[int, int], ...]
 ) -> typing.List[Alignment]:
     """Make a tuple of `Alignment`(s) for testing."""
-    return [_make_alignment(a, a, a) for a in alignments]
+    return make_alignments(tuple([(a, a) for a in alignments]))
 
 
 def test_read_audio():
