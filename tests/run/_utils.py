@@ -29,7 +29,17 @@ def make_alignment(script=(0, 0), transcript=(0, 0), audio=(0.0, 0.0)):
     return Alignment(script, audio, transcript)
 
 
-def make_alignments(
+def make_alignments_1d(
+    alignments: typing.Tuple[typing.Tuple[int, int], ...]
+) -> typing.List[Alignment]:
+    """
+    Make a tuple of `Alignment`(s) for testing where `script`, `transcript` and `audio`
+    have the same alignments.
+    """
+    return [make_alignment(a, a, a) for a in alignments]
+
+
+def make_alignments_2d(
     alignments: typing.Tuple[typing.Tuple[typing.Tuple[int, int], typing.Tuple[int, int]], ...]
 ) -> typing.List[Alignment]:
     """
