@@ -5,9 +5,9 @@ import pytest
 
 import run
 from run._utils import _find_duplicate_passages, _len_of_dups, split_dataset
-from run.data._loader import Alignment, make_en_speaker
+from run.data._loader import make_en_speaker
 from tests._utils import TEST_DATA_PATH
-from tests.run._utils import make_passage
+from tests.run._utils import make_alignments_1d, make_passage
 
 TEST_DATA_PATH = TEST_DATA_PATH / "audio"
 TEST_DATA_LJ = TEST_DATA_PATH / "bit(rate(lj_speech,24000),32).wav"
@@ -46,12 +46,11 @@ def test__find_duplicate_passages__no_duplicates():
 
 def test__len_of_dups():
     """Test `run._utils._len_of_dups` handles a basic case."""
-    alignments = [Alignment((0, 1), (0, 1), (0, 1))]
     passages = [
-        make_passage(script="a", alignments=alignments),
-        make_passage(script="b", alignments=alignments),
-        make_passage(script="c", alignments=alignments),
-        make_passage(script="a", alignments=alignments),
+        make_passage(script="a"),
+        make_passage(script="b"),
+        make_passage(script="c"),
+        make_passage(script="a"),
     ]
     assert _len_of_dups((0, passages[0]), passages, 1.0) == 2
     assert _len_of_dups((1, passages[1]), passages, 1.0) == 1
@@ -68,7 +67,7 @@ def test_split_dataset__deduplication(_):
     speaker_d = make_en_speaker("d")
     groups = [set([speaker_a, speaker_b, speaker_c, speaker_d])]
     passage = lambda script, speaker: make_passage(
-        script=script, speaker=speaker, alignments=[Alignment((0, 1), (0, 1), (0, 1))]
+        script=script, speaker=speaker, alignments=make_alignments_1d([(0, 1)])
     )
     dev_speakers = set([speaker_a, speaker_b, speaker_c])
     dev_length = 1
@@ -127,7 +126,7 @@ def test_split_dataset__order(_):
     speaker_b = make_en_speaker("b")
     groups = [set([speaker_a, speaker_b])]
     passage = lambda script, speaker: make_passage(
-        script=script, speaker=speaker, alignments=[Alignment((0, 1), (0, 1), (0, 1))]
+        script=script, speaker=speaker, alignments=make_alignments_1d([(0, 1)])
     )
     dev_speakers = set([speaker_a, speaker_b])
     dev_length = 1
@@ -158,7 +157,7 @@ def test_split_dataset__groups(_):
     speaker_b = make_en_speaker("b")
     groups = [{speaker_a}, {speaker_b}]
     passage = lambda script, speaker: make_passage(
-        script=script, speaker=speaker, alignments=[Alignment((0, 1), (0, 1), (0, 1))]
+        script=script, speaker=speaker, alignments=make_alignments_1d([(0, 1)])
     )
     dev_speakers = set([speaker_a, speaker_b])
     dev_length = 1

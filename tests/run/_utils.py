@@ -1,4 +1,5 @@
 import pathlib
+import re
 import shutil
 import tempfile
 import typing
@@ -30,7 +31,7 @@ def make_alignment(script=(0, 0), transcript=(0, 0), audio=(0.0, 0.0)):
 
 
 def make_alignments_1d(
-    alignments: typing.Tuple[typing.Tuple[int, int], ...]
+    alignments: typing.Sequence[typing.Tuple[int, int]]
 ) -> typing.List[Alignment]:
     """
     Make a tuple of `Alignment`(s) for testing where `script`, `transcript` and `audio`
@@ -39,35 +40,67 @@ def make_alignments_1d(
     return [make_alignment(a, a, a) for a in alignments]
 
 
+def script_to_alignments(script: str) -> typing.Tuple[typing.Tuple[int, int]]:
+    """Get the indicies of each "word" in `script`.
+
+    Example:
+        >>> script_to_alignments("This is a test")
+        ((0, 3), (5, 6), (8, 8), (10, 13))
+    """
+    return tuple([(m.start(), m.end()) for m in re.finditer(r"\S+", script)])
+
+
 def make_alignments_2d(
-    alignments: typing.Tuple[typing.Tuple[typing.Tuple[int, int], typing.Tuple[int, int]], ...]
+    script: str, audio_alignments: typing.Sequence[typing.Tuple[float, float]]
 ) -> typing.List[Alignment]:
     """
     Make a tuple of `Alignment`(s) for testing where `script` and `transcript`
     have the same alignments.
     """
-    return [make_alignment(a, a, b) for a, b in alignments]
+    script_alignments = script_to_alignments(script)
+    return [make_alignment(a, a, b) for a, b in zip(script_alignments, audio_alignments)]
+
+
+def _max_alignment(
+    alignments: typing.Sequence[Alignment], attr: typing.Literal["script", "transcript", "audio"]
+):
+    return max([getattr(a, attr)[1] for a in alignments])
 
 
 def make_passage(
-    alignments: typing.List[Alignment] = [],
-    nonalignments: typing.Optional[typing.List[Alignment]] = None,
+    alignments: typing.Optional[typing.Sequence[Alignment]] = None,
+    nonalignments: typing.Optional[typing.Sequence[Alignment]] = None,
     speaker: Speaker = make_en_speaker(""),
     audio_file: lib.audio.AudioMetadata = make_metadata(),
     script: typing.Optional[str] = None,
     transcript: typing.Optional[str] = None,
-    speech_segments: typing.Optional[typing.Tuple[Span, ...]] = None,
+    speech_segments: typing.Optional[typing.Sequence[Span]] = None,
     **kwargs,
 ) -> Passage:
     """Make a `Passage` for testing."""
-    alignments_ = Alignment.stow(alignments)
-    max_ = lambda attr: max([getattr(a, attr)[1] for a in alignments])
-    make_str: typing.Callable[[str], str]
-    make_str = lambda attr: "." * max_(attr) if len(alignments) else ""
-    script_ = make_str("script") if script is None else script
-    transcript_ = make_str("transcript") if transcript is None else transcript
-    sesh = Session((speaker, str(audio_file)))
-    passage = Passage(audio_file, sesh, script_, transcript_, alignments_, **kwargs)
+    # Set `alignments`, `script`, and `transcript`
+    alignments = [] if alignments is None and script is None else alignments
+    if alignments is None and script is not None:
+        alignments = [Alignment(a, a, a) for a in script_to_alignments(script)]
+    elif alignments is not None and script is None:
+        if len(alignments) > 0:
+            script = "." * _max_alignment(alignments, "script")
+            transcript = "." * _max_alignment(alignments, "transcript")
+        else:
+            script, transcript = "", ""
+
+    assert script is not None
+    assert alignments is not None
+    passage = Passage(
+        audio_file,
+        Session((speaker, str(audio_file))),
+        script,
+        script if transcript is None else transcript,
+        Alignment.stow(alignments),
+        **kwargs,
+    )
+
+    # Set `index`, `passages`, and `nonalignments`
     object.__setattr__(passage, "index", 0)
     object.__setattr__(passage, "passages", [passage])
     if nonalignments is None:
@@ -75,9 +108,12 @@ def make_passage(
     else:
         nonalignments_ = Alignment.stow(nonalignments)
     object.__setattr__(passage, "nonalignments", nonalignments_)
-    default_speech_segments = tuple(passage[i] for i in range(len(alignments)))
+
+    # Set `speech_segments`
+    default_speech_segments = [passage[i] for i in range(len(alignments))]
     speech_segments = default_speech_segments if speech_segments is None else speech_segments
-    object.__setattr__(passage, "speech_segments", speech_segments)
+    object.__setattr__(passage, "speech_segments", tuple(speech_segments))
+
     return passage
 
 
