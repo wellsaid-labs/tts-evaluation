@@ -619,20 +619,20 @@ def apply_to_tensors(
         [apply(value) for value in dict_.values()]
 
 
+BatchType = typing.TypeVar("BatchType", bound="Batch")
+
+
 @dataclasses.dataclass(frozen=True)
 class Batch:
-    def apply(self, call: typing.Callable[[torch.Tensor], torch.Tensor]) -> Batch:
+    def apply(self: BatchType, call: typing.Callable[[torch.Tensor], torch.Tensor]) -> BatchType:
         """Apply `call` to `SequenceBatch` in `Batch`."""
+        # TODO: Given that this has a specific use case with `SequenceBatch` it shouldn't
+        # have a generic name like `apply`.
         apply = lambda o: apply_to_tensors(o, call, True) if isinstance(o, SequenceBatch) else o
         dict_ = lib.utils.dataclass_as_dict(self)
         return dataclasses.replace(self, **{k: apply(v) for k, v in dict_.items()})
 
-    def apply_(self, call: typing.Callable[[torch.Tensor], torch.Tensor]) -> None:
-        """Apply `call` to `SequenceBatch` in `Batch`, in-place."""
-        apply = lambda o: apply_to_tensors(o, call, False) if isinstance(o, SequenceBatch) else o
-        [apply(value) for value in lib.utils.dataclass_as_dict(self).values()]
-
-    def pin_memory(self) -> Batch:
+    def pin_memory(self: BatchType) -> BatchType:
         """Learn more about this special function:
         https://pytorch.org/docs/stable/data.html#memory-pinning
 
@@ -778,7 +778,8 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
         """
         assert self.iter is not None
         for _ in range(self.cuda_prefetch - len(self.prefetched)):
-            self.prefetched.append(next(self.iter).apply(self.process_tensor))
+            next_: Batch = next(self.iter)
+            self.prefetched.append(next_.apply(self.process_tensor))
 
     def __iter__(self) -> typing.Iterator[DataLoaderVar]:
         if self.iter is None:
