@@ -198,7 +198,6 @@ class Passage:
     Args:
         audio_file: A voice-over of the `script`.
         session: A label used to group passages recorded together.
-        speaker: An identifier of the voice.
         script: The `script` the `speaker` was reading from.
         transcript: The `transcript` of the `audio`.
         alignments: Alignments (sorted) that align the `script`, `transcript` and `audio`.
@@ -216,7 +215,6 @@ class Passage:
 
     audio_file: AudioMetadata
     session: Session
-    speaker: Speaker
     script: str
     transcript: str
     alignments: Tuple[Alignment]
@@ -257,6 +255,10 @@ class Passage:
     @property
     def audio_stop(self) -> float:
         return self.speech_segments[-1].audio_stop
+
+    @property
+    def speaker(self):
+        return self.session[0]
 
     def audio(self):
         return _loader.utils.read_audio(self.audio_file)
@@ -470,7 +472,7 @@ class Span:
 
     @property
     def speaker(self):
-        return self.passage.speaker
+        return self.passage.session[0]
 
     @property
     def session(self) -> Session:

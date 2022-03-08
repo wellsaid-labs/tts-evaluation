@@ -41,9 +41,7 @@ def make_passage(
     script_ = make_str("script") if script is None else script
     transcript_ = make_str("transcript") if transcript is None else transcript
     sesh = Session((speaker, str(audio_file)))
-    passage = run.data._loader.Passage(
-        audio_file, sesh, speaker, script_, transcript_, alignments, **kwargs
-    )
+    passage = run.data._loader.Passage(audio_file, sesh, script_, transcript_, alignments, **kwargs)
     object.__setattr__(passage, "nonalignments", nonalignments)
     default_speech_segments = tuple(passage[i] for i in range(len(alignments)))
     speech_segments = default_speech_segments if speech_segments is None else speech_segments

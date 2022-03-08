@@ -69,7 +69,6 @@ def test_lj_speech_dataset(
         assert data[0] == run.data._loader.Passage(
             audio_file=_utils.make_metadata(directory / "LJSpeech-1.1/wavs/LJ001-0001.wav"),
             session=run.data._loader.Session((LINDA_JOHNSON, "LJ001")),
-            speaker=LINDA_JOHNSON,
             script=(
                 "Printing, in the only sense with which we are at present concerned, differs "
                 "from most if not from all the arts and crafts represented in the Exhibition"
