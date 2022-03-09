@@ -35,7 +35,7 @@ def configure():
     # TODO: After "grapheme to phoneme" is deprecated consider setting these automatically.
     max_tokens = 1000
     max_speakers = 100
-    max_sessions = 10000
+    max_sessions = 2000
 
     # NOTE: Configure the model sizes.
     config = {
@@ -43,7 +43,7 @@ def configure():
             max_tokens=max_tokens,
             max_speakers=max_speakers,
             max_sessions=max_sessions,
-            max_token_embed_size=500,
+            max_token_embed_size=300,
         ),
         lib.spectrogram_model.encoder.Encoder.__init__: HParams(
             # SOURCE (Tacotron 2):

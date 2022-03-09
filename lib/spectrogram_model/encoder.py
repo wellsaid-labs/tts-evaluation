@@ -286,15 +286,21 @@ class Encoder(torch.nn.Module):
             embed([[m[i] for m in seq] for seq in inputs.token_metadata], batch_first=True)[0]
             for i, embed in enumerate(self.embed_token_metadata)
         ]
-        empty = torch.empty(*tokens.shape[:2], 0, device=device)
-        token_metadata = torch.cat(token_metadata, dim=1) if len(token_metadata) > 0 else empty
+        token_metadata = (
+            torch.cat(token_metadata, dim=1)
+            if len(token_metadata) > 0
+            else torch.empty(*tokens.shape[:2], 0, device=device)
+        )
 
-        token_embed = torch.zeros(*tokens.shape[:2], self.max_token_embed_size, device=device)
         if isinstance(inputs.token_embeddings, list):
-            token_embed_: torch.Tensor = pad_sequence(inputs.token_embeddings, batch_first=True)
+            token_embed: torch.Tensor = pad_sequence(inputs.token_embeddings, batch_first=True)
         else:
-            token_embed_ = inputs.token_embeddings
-        token_embed[:, :, 0 : token_embed_.shape[2]] = token_embed_
+            token_embed = inputs.token_embeddings
+
+        if token_embed.shape[2] != self.max_token_embed_size:
+            token_embed_ = torch.zeros(*tokens.shape[:2], self.max_token_embed_size, device=device)
+            token_embed_[:, :, 0 : token_embed.shape[2]] = token_embed
+            token_embed = token_embed_
 
         # [batch_size, num_tokens, hidden_size] (cat)
         # [batch_size, num_tokens, token_meta_embed_size] (cat)
@@ -343,8 +349,14 @@ class Encoder(torch.nn.Module):
 
         tokens = [tokens[i][s] for i, s in enumerate(inputs.slices)]
         tokens = torch.nn.utils.rnn.pad_sequence(tokens)
-        tokens_mask = [tokens_mask[i][s] for i, s in enumerate(inputs.slices)]
-        tokens_mask = torch.nn.utils.rnn.pad_sequence(tokens_mask, batch_first=True)
+        tokens_mask = torch.zeros(
+            tokens.shape[1],
+            tokens.shape[0],
+            device=tokens.device,
+            dtype=torch.bool,
+        )
+        for i, slice in enumerate(inputs.slices):
+            tokens_mask[i, : slice.stop - slice.start] = True
         num_tokens = tokens_mask.sum(dim=1)
 
         return Encoded(tokens, tokens_mask, num_tokens, seq_metadata)
