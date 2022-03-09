@@ -94,7 +94,6 @@ def make_passage(
     passage = Passage(
         audio_file,
         Session((speaker, str(audio_file))),
-        speaker,
         script,
         script if transcript is None else transcript,
         Alignment.stow(alignments),
