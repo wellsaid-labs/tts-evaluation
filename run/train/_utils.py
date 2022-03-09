@@ -867,13 +867,15 @@ def run_workers(
     return lib.distributed.spawn(_run_workers_helper, args=args)  # type: ignore
 
 
-@dataclasses.dataclass(frozen=True)
-class MetricsKey:
+class MetricsKey(typing.NamedTuple):
+    # NOTE: This is intended be "subclassed". Originally, we used `dataclasses`
+    # but found them to be slower than `typing.NamedTuple` when dealing with large amounts of
+    # metrics. `lib/test_distributed#test_dict_store__speed` was used for benchmarking.
 
     label: str
 
 
-MetricsKeyTypeVar = typing.TypeVar("MetricsKeyTypeVar", bound=MetricsKey)
+MetricsKeyTypeVar = typing.TypeVar("MetricsKeyTypeVar", bound=tuple)
 MetricsStoreValues = typing.List[typing.Tuple[float]]
 MetricsReduceOp = typing.Callable[[typing.List[float]], float]
 # NOTE: `MetricsSelect` selects a subset of `MetricsStoreValues`.

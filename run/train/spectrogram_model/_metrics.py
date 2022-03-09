@@ -1,6 +1,5 @@
 import collections
 import collections.abc
-import dataclasses
 import math
 import typing
 from functools import partial
@@ -249,8 +248,8 @@ def get_alignment_std(preds: Preds) -> torch.Tensor:
 _GetMetrics = typing.Dict[GetLabel, float]
 
 
-@dataclasses.dataclass(frozen=True)
-class MetricsKey(_utils.MetricsKey):
+class MetricsKey(typing.NamedTuple):
+    label: str
     speaker: typing.Optional[Speaker] = None
     text_length_bucket: typing.Optional[int] = None
 

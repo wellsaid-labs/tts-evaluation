@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import collections
-import gzip
+import gc
 import itertools
 import logging
 import pickle
@@ -94,11 +94,16 @@ class DictStore:
 
     @staticmethod
     def _decode(encoded: str) -> typing.Dict:
-        return pickle.loads(gzip.decompress(bytes.fromhex(encoded)))
+        # NOTE: Speed up `pickle.loads` with this approach:
+        # https://stackoverflow.com/questions/2766685/how-can-i-speed-up-unpickling-large-objects-if-i-have-plenty-of-ram
+        gc.disable()
+        loaded = pickle.loads(bytes.fromhex(encoded))
+        gc.enable()
+        return loaded
 
     @staticmethod
     def _encode(values: typing.Dict) -> str:
-        return gzip.compress(pickle.dumps(values)).hex()
+        return pickle.dumps(values, protocol=pickle.HIGHEST_PROTOCOL).hex()
 
     def _gather(self, data: typing.Dict) -> typing.List[typing.Dict]:
         outputs = [None for _ in range(get_world_size())]
