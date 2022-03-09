@@ -9,13 +9,12 @@ import typing
 from concurrent import futures
 from dataclasses import field
 from enum import Enum
-from functools import cached_property, partial
+from functools import partial
 from pathlib import Path
 
 import numpy as np
 import spacy.tokens.doc
 from hparams import HParam, configurable
-from spacy.tokens import DocBin
 
 import lib
 import run
@@ -233,7 +232,7 @@ class Passage:
     last: Alignment = field(init=False, repr=False, compare=False)
     passages: typing.List[Passage] = field(init=False, repr=False, compare=False)
     index: int = field(init=False, repr=False, compare=False)
-    doc_bin_in_bytes: bytes = field(init=False, repr=False, compare=False)
+    _doc: spacy.tokens.doc.Doc = field(init=False, repr=False, compare=False)
 
     def __post_init__(self):
         if len(self.alignments) > 0:  # NOTE: Cache `first` and `last`, if they exist.
@@ -243,6 +242,8 @@ class Passage:
         # NOTE: Error if `dataclasses.replace` is run on a linked `Passage`.
         if hasattr(self, "passages"):
             assert self is self.passages[self.index]
+
+        assert not hasattr(self, "_doc")
 
     @property
     def prev(self):
@@ -267,13 +268,22 @@ class Passage:
     def speaker(self):
         return self.session[0]
 
-    @cached_property
-    def docs(self) -> typing.List[spacy.tokens.doc.Doc]:
-        return list(DocBin().from_bytes(self.doc_bin_in_bytes).get_docs(get_nlp().vocab))
-
-    @cached_property
+    @property
     def doc(self) -> spacy.tokens.doc.Doc:
-        return self.docs[self.index]
+        if hasattr(self, "_doc"):
+            return self._doc
+        # NOTE: For performance, process all `self.passages` together, and cache the results.
+        docs = get_nlp().pipe(s.script for s in self.passages)
+        for passage, doc in zip(self.passages, docs):
+            object.__setattr__(passage, "_doc", doc)
+        return self._doc
+
+    def __getstate__(self):
+        # NOTE: Delete temporary `_doc`, learn more here:  https://spacy.io/usage/saving-loading
+        state = self.__dict__.copy()
+        if hasattr(state, "_doc"):
+            del state["_doc"]
+        return state
 
     def audio(self):
         return _loader.utils.read_audio(self.audio_file)
@@ -561,12 +571,7 @@ class Span:
     @property
     def spacy(self) -> spacy.tokens.span.Span:
         span = self.passage.doc.char_span(self.script_slice.start, self.script_slice.stop)
-        if span is None:
-            message = (
-                "Invalid `spacy.tokens.Span` selected:"
-                f"\n{self.script_slice}\n{self.script}\n{[t for t in self.passage.doc]}"
-            )
-            raise RuntimeError(message)
+        assert span is not None, "Invalid `spacy.tokens.Span` selected."
         return span
 
     @configurable
@@ -872,20 +877,6 @@ def _default_session(passage: UnprocessedPassage) -> Session:
     return Session((passage.speaker, passage.audio_path.stem))
 
 
-def _add_spacy(passages: typing.List[Passage], label, no_tqdm: bool):
-    """Parse passages with spaCy."""
-    logger.info(f"[{label}] Loading spaCy...")
-    nlp = get_nlp()
-
-    logger.info(f"[{label}] Tokenizing with spaCy...")
-    doc_bin = DocBin(attrs=tuple())
-    for doc in tqdm_(nlp.pipe(s.script for s in passages), total=len(passages), disable=no_tqdm):
-        doc_bin.add(doc)
-    doc_bin_in_bytes = doc_bin.to_bytes()
-    for passage in passages:
-        object.__setattr__(passage, "doc_bin_in_bytes", doc_bin_in_bytes)
-
-
 @lib.utils.log_runtime
 def make_passages(
     label: str,
@@ -951,8 +942,6 @@ def make_passages(
         object.__setattr__(passage, "nonalignments", Alignment.stow(passage.nonalignments))
         for span in passage.speech_segments:
             object.__setattr__(span, "passage_alignments", passage.alignments)
-
-    _add_spacy(flat, label, no_tqdm)
 
     logger.info(f"[{label}] Done! {lib.utils.mazel_tov()}")
     return flat
