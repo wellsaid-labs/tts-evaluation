@@ -93,7 +93,7 @@ def make_passage(
     assert alignments is not None
     passage = Passage(
         audio_file,
-        Session(str(audio_file)),
+        Session((speaker, str(audio_file))),
         speaker,
         script,
         script if transcript is None else transcript,
