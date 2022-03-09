@@ -59,25 +59,25 @@ def _dict_store_helper(rank, nprocs, backend="gloo", init_method="tcp://127.0.0.
     if rank == 0:
         store.update({"a": 1, "b": 1})
         assert store.data == {
-            "a": [(1, 2)],
-            "b": [(1,)],
-            "c": [(2,)],
+            "a": [[1, 2]],
+            "b": [[1]],
+            "c": [[2]],
         }
 
         store.update({"b": 1, "c": 1})
         assert store.data == {
-            "a": [(1, 2), tuple()],
-            "b": [(1,), (1,)],
-            "c": [(2,), (1, 2)],
-            "d": [tuple(), (2,)],
+            "a": [[1, 2], tuple()],
+            "b": [[1], [1]],
+            "c": [[2], [1, 2]],
+            "d": [tuple(), [2]],
         }
 
         store.update({"a": "a", "b": None})
         assert store.data == {
-            "a": [(1, 2), tuple(), ("a",)],
-            "b": [(1,), (1,), (None,)],
-            "c": [(2,), (1, 2), (["c"],)],
-            "d": [tuple(), (2,), ({"d": "d"},)],
+            "a": [[1, 2], tuple(), ["a"]],
+            "b": [[1], [1], [None]],
+            "c": [[2], [1, 2], [["c"]]],
+            "d": [tuple(), [2], [{"d": "d"}]],
         }
 
     if rank == 1:
@@ -107,9 +107,10 @@ def _dict_store__speed_helper(rank, nprocs, backend="gloo", init_method="tcp://1
 
     data = {(i, str(i)): random.random() for i in range(3000)}
     event = time.perf_counter()
-    store.update(data)
+    for _ in range(5):
+        store.update(data)
     timing = time.perf_counter() - event
-    assert timing < 0.075
+    assert timing < 0.15
     print(timing)
 
 
