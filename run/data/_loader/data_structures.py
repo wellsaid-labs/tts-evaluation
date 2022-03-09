@@ -561,7 +561,12 @@ class Span:
     @property
     def spacy(self) -> spacy.tokens.span.Span:
         span = self.passage.doc.char_span(self.script_slice.start, self.script_slice.stop)
-        assert span is not None, "Invalid `spacy.tokens.Span` selected."
+        if span is None:
+            message = (
+                "Invalid `spacy.tokens.Span` selected:"
+                f"\n{self.script_slice}\n{self.script}\n{[t for t in self.passage.doc]}"
+            )
+            raise RuntimeError(message)
         return span
 
     @configurable
