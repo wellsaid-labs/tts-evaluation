@@ -215,7 +215,7 @@ def test_encoder():
     output.sum().backward()
 
 
-def test_encoder_filter_size():
+def test_encoder__filter_size():
     """Test `encoder.Encoder` handles different filter sizes."""
     for filter_size in [1, 3, 5]:
         module, arg, (num_tokens, batch_size, out_size) = _make_encoder(
@@ -226,7 +226,7 @@ def test_encoder_filter_size():
         output.sum().backward()
 
 
-def test_encoder_padding_invariance():
+def test_encoder__padding_invariance():
     """Test `encoder.Encoder` is consistent regardless of the padding."""
     (module, arg, (_, batch_size, _)) = _make_encoder(dropout=0)
     expected = module(arg)
