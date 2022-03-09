@@ -30,12 +30,14 @@ Setup your local development environment by following [these instructions](LOCAL
    runs out of capacity.
 
    If starting from scratch, use a standard ubuntu image:
+
    ```zsh
    IMAGE_PROJECT='ubuntu-os-cloud'
    IMAGE_FAMILY='ubuntu-1804-lts'
    ```
 
    If starting from your own image, set the image project and family appropriately:
+
    ```zsh
    IMAGE_PROJECT='voice-research-255602'
    IMAGE_FAMILY='your-image-family-name'    # Example: $IMAGE_FAMILY used to image your machine
@@ -181,9 +183,9 @@ Setup your local development environment by following [these instructions](LOCAL
    ❓ LEARN MORE: PyTorch leaves zombie processes that must be killed, check out:
    https://leimao.github.io/blog/Kill-PyTorch-Distributed-Training-Processes/
 
-2. Detach from your screen session by typing `Ctrl-A` then `D`.
+1. Detach from your screen session by typing `Ctrl-A` then `D`.
 
-3. You can now exit your VM with the `exit` command.
+1. You can now exit your VM with the `exit` command.
 
 ### From your local repository
 
@@ -250,4 +252,5 @@ Setup your local development environment by following [these instructions](LOCAL
       --zone=$VM_ZONE
    ```
 
-   When you're ready to begin signal model training, start from the top of these instructions and use your `$IMAGE_FAMILY` envrionment variable to build your new instance!
+   When you're ready to begin signal model training, start from the top of these instructions and
+   use your `$IMAGE_FAMILY` envrionment variable to build your new instance!

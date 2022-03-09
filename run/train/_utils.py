@@ -870,6 +870,9 @@ def run_workers(
 
 
 class MetricsKey(typing.NamedTuple):
+    # NOTE: This is intended be "subclassed". Originally, we used `dataclasses`
+    # but found them to be slower than `typing.NamedTuple` when dealing with large amounts of
+    # metrics. `lib/test_distributed#test_dict_store__speed` was used for benchmarking.
 
     label: str
 

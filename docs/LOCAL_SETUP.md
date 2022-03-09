@@ -59,7 +59,7 @@ a team member to create you an account.
 With your new account, you'll need to create a `.comet.config` file in this repositories root
 level directory with these configurations:
 
-```
+```txt
 [comet]
 workspace=wellsaid-labs
 api_key=<api_key>
