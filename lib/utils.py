@@ -546,7 +546,7 @@ class PaddingAndLazyEmbedding(torch.nn.Module):
         """
         return not torch.isclose(self._unk_embedding_hash, self._get_unk_embedding_hash())
 
-    def _token_to_idx(self, token: typing.Hashable) -> int:
+    def _tok_to_idx(self, token: typing.Hashable) -> int:
         """Get the index of `token` and return `unk_token` if `token` is not found.
 
         Raises:
@@ -559,12 +559,12 @@ class PaddingAndLazyEmbedding(torch.nn.Module):
         if not self.training and not self.allow_unk_on_eval and token not in self.vocab:
             raise KeyError(f"Token not found: {token}")
 
-        if token not in self.vocab and not self.training and token not in self._unk_tokens:
+        if not self.training and token not in self.vocab and token not in self._unk_tokens:
             logger.info("Marking '%s' token as unknown token", token)
             # NOTE: Track unknown tokens so that they are not logged over and over.
             self._unk_tokens.add(token)
 
-        return self.vocab.get(token, self.vocab[self.unk_token])
+        return self.vocab.get(token, self.unk_idx)
 
     def __call__(
         self, tokens: Hashable1d2dList, **kwargs
@@ -598,14 +598,19 @@ class PaddingAndLazyEmbedding(torch.nn.Module):
                 self._update_vocab()
 
         has_one_dim = not isinstance(tokens[0], list)
-        t2i = functools.partial(self._token_to_idx, **kwargs)
-        indices = [[t2i(t)] if has_one_dim else [t2i(i) for i in t] for t in tokens]
-        sequences = [torch.tensor(s, device=self.weight.device, dtype=torch.long) for s in indices]
-        kwargs = dict(padding_value=self.pad_idx, batch_first=batch_first)
-        padded = torch.nn.utils.rnn.pad_sequence(sequences, **kwargs)
-        padded = padded.squeeze(1 if batch_first else 0) if has_one_dim else padded
-        mask = padded != self.pad_idx
-        return self.embed(padded), mask
+        max_len = 1 if has_one_dim else max(len(t) for t in tokens)
+        indices = []
+        for maybe_seq_or_tok in tokens:
+            if isinstance(maybe_seq_or_tok, list):
+                seq = [self._tok_to_idx(t, **kwargs) for t in maybe_seq_or_tok]
+                padding = [self.pad_idx] * (max_len - len(seq))
+                indices.append(seq + padding)
+            else:
+                indices.append(self._tok_to_idx(maybe_seq_or_tok, **kwargs))
+        indices_ = torch.tensor(indices, device=self.weight.device, dtype=torch.long)
+        indices_ = indices_ if batch_first or has_one_dim else indices_.transpose(0, 1)
+        mask = indices_ != self.pad_idx
+        return self.embed(indices_), mask
 
 
 _ClampReturnType = typing.TypeVar("_ClampReturnType")
