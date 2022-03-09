@@ -35,7 +35,7 @@ def _make_token_embeddings(
     span = span[:] if isinstance(span, spacy.tokens.doc.Doc) else span
     embeddings = torch.zeros(len(str(span)), span.doc.vector.size)
     for word in span:
-        word_embedding = torch.from_numpy(word.vector).unsqueeze(0).repeat(len(word), 1)
+        word_embedding = torch.tensor(word.vector).unsqueeze(0).repeat(len(word), 1)
         idx = word.idx - span.start_char
         embeddings[idx : idx + len(word)] = word_embedding
     return embeddings
