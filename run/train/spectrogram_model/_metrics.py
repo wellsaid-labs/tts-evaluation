@@ -377,10 +377,10 @@ class Metrics(_utils.Metrics[MetricsKey]):
         """
         values, _reduce = self._make_values()
 
-        for span, num_frames, spacy_span, has_reached_max in zip(
+        for span, num_frames, tokens, has_reached_max in zip(
             batch.spans,
             self._to_list(batch.spectrogram.lengths),
-            batch.inputs.spans,
+            batch.inputs.tokens,
             self._to_list(preds.reached_max),
         ):
             # NOTE: Create a key for `self.NUM_SPANS` so a value exists, even if zero.
@@ -394,12 +394,11 @@ class Metrics(_utils.Metrics[MetricsKey]):
                 _reduce(self.NUM_FRAMES_MAX, v=num_frames, op=max)
 
                 speaker: typing.Optional[Speaker]
-                len_tokens = len(str(spacy_span))
                 for speaker in [None, span.speaker]:
                     _reduce(self.NUM_FRAMES, speaker, v=num_frames)
                     _reduce(self.NUM_SECONDS, speaker, v=span.audio_length)
-                    _reduce(self.NUM_TOKENS, speaker, v=len_tokens)
-                    _reduce(self.MAX_FRAMES_PER_TOKEN, speaker, v=num_frames / len_tokens, op=max)
+                    _reduce(self.NUM_TOKENS, speaker, v=len(tokens))
+                    _reduce(self.MAX_FRAMES_PER_TOKEN, speaker, v=num_frames / len(tokens), op=max)
 
         return dict(values)
 
