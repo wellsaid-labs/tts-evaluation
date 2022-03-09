@@ -61,10 +61,10 @@ def test_integration():
             assert len(metrics.data[MetricsKey(key, batch.spans[0].speaker)]) == 1
         assert all(metrics.data[MetricsKey(metrics.NUM_CORRECT_STOP_TOKEN)]) == 1
 
-        max_frames = [(batch.spectrogram.lengths.max().item(),)]
-        num_frames = [(batch.spectrogram.lengths.sum().item(),)]
-        num_tokens = [(sum(len(t) for t in batch.inputs.tokens),)]
-        num_seconds = [(sum(s.audio_length for s in batch.spans),)]
+        max_frames = [[batch.spectrogram.lengths.max().item()]]
+        num_frames = [[batch.spectrogram.lengths.sum().item()]]
+        num_tokens = [[sum(len(t) for t in batch.inputs.tokens)]]
+        num_seconds = [[sum(s.audio_length for s in batch.spans)]]
         bucket = len(batch.spans[0].script) // metrics.TEXT_LENGTH_BUCKET_SIZE
         values = {
             MetricsKey(metrics.NUM_FRAMES_MAX): max_frames,
@@ -74,9 +74,9 @@ def test_integration():
             MetricsKey(metrics.NUM_FRAMES, JUDY_BIEBER): num_frames,
             MetricsKey(metrics.NUM_SECONDS): num_seconds,
             MetricsKey(metrics.NUM_SECONDS, JUDY_BIEBER): num_seconds,
-            MetricsKey(metrics.NUM_SPANS_PER_TEXT_LENGTH, None, bucket): [(batch_size,)],
-            MetricsKey(metrics.NUM_SPANS): [(len(batch),)],
-            MetricsKey(metrics.NUM_SPANS, JUDY_BIEBER): [(len(batch),)],
+            MetricsKey(metrics.NUM_SPANS_PER_TEXT_LENGTH, None, bucket): [[batch_size]],
+            MetricsKey(metrics.NUM_SPANS): [[len(batch)]],
+            MetricsKey(metrics.NUM_SPANS, JUDY_BIEBER): [[len(batch)]],
             MetricsKey(metrics.NUM_TOKENS): num_tokens,
             MetricsKey(metrics.NUM_TOKENS, JUDY_BIEBER): num_tokens,
         }
