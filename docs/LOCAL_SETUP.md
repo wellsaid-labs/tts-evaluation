@@ -65,6 +65,8 @@ workspace=wellsaid-labs
 api_key=<api_key>
 rest_api_key=<rest_api_key>
 disable_auto_logging=1
+url_override=https://www.comet-ml.com/clientlib/
+optimizer_url=http://www.comet-ml.com/optimizer/
 ```
 
 Learn more about where to find the `api_key` and `rest_api_key` configurations on
