@@ -118,5 +118,5 @@ class Decoded(typing.NamedTuple):
     # torch.LongTensor [num_frames, batch_size]
     window_starts: torch.Tensor
 
-    # The last `Decoder` hidden state. 
+    # The last `Decoder` hidden state.
     hidden_state: DecoderHiddenState
