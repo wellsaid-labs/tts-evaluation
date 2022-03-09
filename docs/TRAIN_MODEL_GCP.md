@@ -166,7 +166,11 @@ Setup your local development environment by following [these instructions](LOCAL
    ---
    Or select a `SPECTROGRAM_CHECKPOINT`...
    ```
-   SPECTROGRAM_CHECKPOINT="/opt/wellsaid-labs/Text-to-Speech/path/to/spectrogram/checkpoint"
+   find /opt/wellsaid-labs/Text-to-Speech/disk/experiments/spectrogram_model/ -name <step_######.pt>
+   ```
+   And store it...
+   ```
+   SPECTROGRAM_CHECKPOINT="<paste>"
    ```
    ...and run this command to train a signal model:
    ```bash
