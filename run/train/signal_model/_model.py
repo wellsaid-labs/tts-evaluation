@@ -14,8 +14,14 @@ class SignalModel(signal_model.SignalModel):
     @configurable
     def __init__(self, max_speakers: int = HParam(), max_sessions: int = HParam(), *args, **kwargs):
         super().__init__((max_speakers, max_sessions), *args, **kwargs)
-        self.speaker_embed = typing.cast(PaddingAndLazyEmbedding, self.encoder.embed_metadata[0])
-        self.session_embed = typing.cast(PaddingAndLazyEmbedding, self.encoder.embed_metadata[1])
+
+    @property
+    def speaker_embed(self) -> PaddingAndLazyEmbedding:
+        return typing.cast(PaddingAndLazyEmbedding, self.encoder.embed_metadata[0])
+
+    @property
+    def session_embed(self) -> PaddingAndLazyEmbedding:
+        return typing.cast(PaddingAndLazyEmbedding, self.encoder.embed_metadata[1])
 
     @property
     def speaker_vocab(self) -> typing.Dict[Speaker, int]:
@@ -57,8 +63,14 @@ class SpectrogramDiscriminator(signal_model.SpectrogramDiscriminator):
     @configurable
     def __init__(self, *args, max_speakers: int = HParam(), max_sessions: int = HParam(), **kwargs):
         super().__init__(*args, max_seq_meta_values=(max_speakers, max_sessions), **kwargs)
-        self.speaker_embed = typing.cast(PaddingAndLazyEmbedding, self.encoder.embed_metadata[0])
-        self.session_embed = typing.cast(PaddingAndLazyEmbedding, self.encoder.embed_metadata[1])
+
+    @property
+    def speaker_embed(self) -> PaddingAndLazyEmbedding:
+        return typing.cast(PaddingAndLazyEmbedding, self.encoder.embed_metadata[0])
+
+    @property
+    def session_embed(self) -> PaddingAndLazyEmbedding:
+        return typing.cast(PaddingAndLazyEmbedding, self.encoder.embed_metadata[1])
 
     @property
     def speaker_vocab(self) -> typing.Dict[Speaker, int]:
