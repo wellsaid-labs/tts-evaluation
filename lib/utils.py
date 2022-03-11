@@ -547,7 +547,8 @@ class PaddingAndLazyEmbedding(torch.nn.Module):
         in the same direction.
 
         TODO: Set `atol` automatically, increase it whenever an update comes through with no new
-        tokens, and decrease it every time it comes through with more than one token...
+        tokens, and decrease it every time it comes through with more than one token... use binary
+        search to narrow the search space.
         """
         next_unk_embedding_hash = self._get_unk_embedding_hash()
         prev = self._prev_unk_embedding_hash - self._prev_prev_unk_embedding_hash
