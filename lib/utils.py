@@ -469,7 +469,8 @@ class PaddingAndLazyEmbedding(torch.nn.Module):
 
         self._new_tokens = set()
         self._unk_tokens = set()
-        self.register_buffer("_unk_embedding_hash", self._get_unk_embedding_hash())
+        self.register_buffer("_prev_prev_unk_embedding_hash", self._get_unk_embedding_hash())
+        self.register_buffer("_prev_unk_embedding_hash", self._get_unk_embedding_hash())
 
     def _get_unk_embedding_hash(self) -> torch.Tensor:
         """Hash representing the current value of the `unk_token`."""
@@ -531,16 +532,27 @@ class PaddingAndLazyEmbedding(torch.nn.Module):
             if token not in self.vocab:
                 self.vocab[token] = len(self.vocab)
 
-        self._unk_embedding_hash = self._get_unk_embedding_hash()
         self._new_tokens = set()
 
-    def _has_trained_on_new_tokens(self):
+    def _has_trained_on_new_tokens(self, atol: float = 1e-05):
         """
         NOTE: Iff the `unk_token` was updated, then the model has trained on a new token it hasn't
         seen before, so we should update the vocabulary, reactively.
+
+        NOTE: In order to judge if the `unk_token` embedding was updated, we see if it's direction
+        has changed. In comparing direction, instead of the current embedding, we are able to
+        reduce the influence of second-order gradients, which are always updating the embedding
+        in the same direction.
         """
-        new_hash = self._get_unk_embedding_hash()
-        return not torch.isclose(self._unk_embedding_hash, new_hash, atol=1e-3).all()
+        next_unk_embedding_hash = self._get_unk_embedding_hash()
+        prev = self._prev_unk_embedding_hash - self._prev_prev_unk_embedding_hash
+        next = next_unk_embedding_hash - self._prev_unk_embedding_hash
+        is_not_close = not torch.isclose(prev, next, atol=atol).all()
+        if is_not_close:
+            logger.info(f"The `unk_token` embedding was updated {(next - prev).abs().max()}.")
+        self._prev_prev_unk_embedding_hash = self._prev_unk_embedding_hash
+        self._prev_unk_embedding_hash = next_unk_embedding_hash
+        return is_not_close
 
     def _tok_to_idx(self, token: typing.Hashable) -> int:
         """Get the index of `token` and return `unk_token` if `token` is not found.
