@@ -28,14 +28,14 @@ def _get_case(c: str) -> _Casing:
 
 
 def _make_token_embeddings(
-    span: typing.Union[spacy.tokens.span.Span, spacy.tokens.doc.Doc]
+    span: typing.Union[spacy.tokens.span.Span, spacy.tokens.doc.Doc], device: torch.device
 ) -> torch.Tensor:
     """Make a `Tensor` that is an embedding of the `span`."""
     # TODO: Instead of using `zeros`, what if we tried training a vector, instead?
     span = span[:] if isinstance(span, spacy.tokens.doc.Doc) else span
-    embeddings = torch.zeros(len(str(span)), span.doc.vector.size)
+    embeddings = torch.zeros(len(str(span)), span.doc.vector.size, device=device)
     for word in span:
-        word_embedding = torch.tensor(word.vector).unsqueeze(0).repeat(len(word), 1)
+        word_embedding = torch.tensor(word.vector, device=device).unsqueeze(0).repeat(len(word), 1)
         idx = word.idx - span.start_char
         embeddings[idx : idx + len(word)] = word_embedding
     return embeddings
@@ -50,7 +50,9 @@ def _append_tokens_and_metadata(
     inputs.tokens.append(list(str(span).lower()))
 
 
-def preprocess_spans(spans: typing.List[Span]) -> spectrogram_model.Inputs:
+def preprocess_spans(
+    spans: typing.List[Span], device: torch.device = torch.device("cpu")
+) -> spectrogram_model.Inputs:
     """Preprocess inputs to inputs by including casing, context, and embeddings."""
     return_ = spectrogram_model.Inputs([], [], [], [], [])
     for span in spans:
@@ -59,7 +61,7 @@ def preprocess_spans(spans: typing.List[Span]) -> spectrogram_model.Inputs:
         return_.slices.append(slice(start_char, start_char + len(str(span.spacy))))
         return_.seq_metadata.append((span.speaker, span.session))
         _append_tokens_and_metadata(return_, context)
-        typing.cast(list, return_.token_embeddings).append(_make_token_embeddings(context))
+        typing.cast(list, return_.token_embeddings).append(_make_token_embeddings(context, device))
     token_embeddings = torch.nn.utils.rnn.pad_sequence(return_.token_embeddings, batch_first=True)
     return return_._replace(token_embeddings=token_embeddings)
 
@@ -74,14 +76,16 @@ class Inputs(typing.NamedTuple):
     doc: typing.List[spacy.tokens.doc.Doc]
 
 
-def preprocess_inputs(inputs: Inputs) -> spectrogram_model.Inputs:
+def preprocess_inputs(
+    inputs: Inputs, device: torch.device = torch.device("cpu")
+) -> spectrogram_model.Inputs:
     """Preprocess inputs to inputs by including casing, context, and embeddings."""
     return_ = spectrogram_model.Inputs([], [], [], [], [])
     for doc, sesh in zip(inputs.doc, inputs.session):
         return_.slices.append(slice(0, len(str(doc))))
         return_.seq_metadata.append((sesh[0], sesh))
         _append_tokens_and_metadata(return_, doc)
-        typing.cast(list, return_.token_embeddings).append(_make_token_embeddings(doc))
+        typing.cast(list, return_.token_embeddings).append(_make_token_embeddings(doc, device))
     token_embeddings = torch.nn.utils.rnn.pad_sequence(return_.token_embeddings, batch_first=True)
     return return_._replace(token_embeddings=token_embeddings)
 
@@ -187,8 +191,8 @@ class SpectrogramModel(spectrogram_model.SpectrogramModel):
 
     def __call__(self, inputs: InputsTyping, *args, mode: Mode = Mode.FORWARD, **kwargs):
         if isinstance(inputs, Inputs):
-            inputs = preprocess_inputs(inputs)
+            inputs = preprocess_inputs(inputs, self.encoder.embed_token.weight.device)
         elif isinstance(inputs, list):
-            inputs = preprocess_spans(inputs)
+            inputs = preprocess_spans(inputs, self.encoder.embed_token.weight.device)
 
         return super().__call__(inputs, *args, mode=mode, **kwargs)
