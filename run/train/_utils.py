@@ -333,6 +333,8 @@ class CometMLExperiment:
             message = f"Comet parameter `{key}` is:\n{pprinter.pformat(value)}"
             lib.utils.call_once(logger.info, message)
             return "<<<Printed in standard out.>>>"
+        if hasattr(value, "__qualname__"):
+            return f"<function {value.__qualname__}>"  # type: ignore
         return repr(value)
 
     def log_parameter(self, key: run._config.Label, value: typing.Any):
