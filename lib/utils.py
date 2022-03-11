@@ -572,21 +572,24 @@ class PaddingAndLazyEmbedding(torch.nn.Module):
             KeyError: Iff the module is in evaluation mode and "unknown token" is disabled this
                 will error iff `token` isn't in `self.vocab`.
         """
-        if self.training:
-            assert token in self.vocab or token in self._new_tokens, "Invariant failure."
+        # NOTE: Useful invariant for debugging
+        # if self.training:
+        #     assert token in self.vocab or token in self._new_tokens, "Invariant failure."
 
-        if not self.training and not self.allow_unk_on_eval and token not in self.vocab:
+        idx = self.vocab.get(token, self.unk_idx)
+
+        if not self.training and not self.allow_unk_on_eval and idx is self.unk_idx:
             raise KeyError(f"Token not found: {token}")
 
-        if not self.training and token not in self.vocab and token not in self._unk_tokens:
+        if not self.training and idx is self.unk_idx and token not in self._unk_tokens:
             logger.info(f"[Evaluation] Marking '{token}' token as unknown token")
             # NOTE: Track unknown tokens so that they are not logged over and over.
             self._unk_tokens.add(token)
 
-        if self.training and token not in self.vocab:
+        if self.training and idx is self.unk_idx:
             logger.info(f"[Training] Using unknown token in-place of '{token}'.")
 
-        return self.vocab.get(token, self.unk_idx)
+        return idx
 
     def _should_update_proactively(self):
         return (
