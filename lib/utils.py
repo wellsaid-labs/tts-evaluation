@@ -469,12 +469,11 @@ class PaddingAndLazyEmbedding(torch.nn.Module):
 
         self._new_tokens = set()
         self._unk_tokens = set()
-        self.register_buffer("_unk_embedding_hash", torch.tensor(0.0))
+        self.register_buffer("_unk_embedding_hash", self._get_unk_embedding_hash())
 
     def _get_unk_embedding_hash(self) -> torch.Tensor:
         """Hash representing the current value of the `unk_token`."""
-        idx = torch.tensor(self.vocab[self.unk_token], device=self.weight.device)
-        return self.embed(idx).sum().detach().clone().requires_grad_(False)
+        return self.embed.weight[self.unk_idx].detach().clone().requires_grad_(False)
 
     def _queue_new_tokens(self, tokens: Hashable1d2dList):
         """Queue up tokens for a vocab update."""
@@ -526,6 +525,7 @@ class PaddingAndLazyEmbedding(torch.nn.Module):
                     new_tokens = sorted(set(new_tokens))  # type: ignore
                 except TypeError:
                     pass
+            logger.info(f"Updating vocab with new tokens: {set(new_tokens)}")
 
         for token in new_tokens:
             if token not in self.vocab:
@@ -539,7 +539,8 @@ class PaddingAndLazyEmbedding(torch.nn.Module):
         NOTE: Iff the `unk_token` was updated, then the model has trained on a new token it hasn't
         seen before, so we should update the vocabulary, reactively.
         """
-        return not torch.isclose(self._unk_embedding_hash, self._get_unk_embedding_hash())
+        new_hash = self._get_unk_embedding_hash()
+        return not torch.isclose(self._unk_embedding_hash, new_hash, atol=1e-3).all()
 
     def _tok_to_idx(self, token: typing.Hashable) -> int:
         """Get the index of `token` and return `unk_token` if `token` is not found.
@@ -555,9 +556,12 @@ class PaddingAndLazyEmbedding(torch.nn.Module):
             raise KeyError(f"Token not found: {token}")
 
         if not self.training and token not in self.vocab and token not in self._unk_tokens:
-            logger.info("Marking '%s' token as unknown token", token)
+            logger.info("[Evaluation] Marking '%s' token as unknown token", token)
             # NOTE: Track unknown tokens so that they are not logged over and over.
             self._unk_tokens.add(token)
+
+        if self.training and token not in self.vocab:
+            logger.info(f"[Training] Using unknown token in-place of '{token}'.")
 
         return self.vocab.get(token, self.unk_idx)
 
