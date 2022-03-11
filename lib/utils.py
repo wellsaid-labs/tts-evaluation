@@ -531,7 +531,7 @@ class PaddingAndLazyEmbedding(torch.nn.Module):
                 except TypeError:
                     pass
 
-            if not self._should_update_proactively():
+            if not self._should_update_proactively() and lib.distributed.is_master():
                 logger.info(f"Retroactively updating vocab (in this order): {new_tokens}")
 
         for token in new_tokens:
@@ -540,15 +540,16 @@ class PaddingAndLazyEmbedding(torch.nn.Module):
 
         self._new_tokens = set()
 
-    def _has_trained_on_new_tokens(self, atol: float = 1e-04):
+    def _has_trained_on_new_tokens(self, atol: float = 5e-04):
         """
         NOTE: Iff the `unk_token` was updated, then the model has trained on a new token it hasn't
         seen before, so we should update the vocabulary, reactively.
 
         NOTE: In order to judge if the `unk_token` embedding was updated, we see if it's direction
         has changed. In comparing direction, instead of the current embedding, we are able to
-        reduce the influence of second-order gradients, which are always updating the embedding
-        in the same direction.
+        reduce the influence of second-order gradients (momentum), which are always updating the
+        embedding in the same direction. This isn't perfect because there are additional things
+        like... an exponential moving average on the second order gradient.
 
         TODO: Set `atol` automatically, increase it whenever an update comes through with no new
         tokens, and decrease it every time it comes through with more than one token... use binary
@@ -558,7 +559,7 @@ class PaddingAndLazyEmbedding(torch.nn.Module):
         prev = self._prev_unk_embedding_hash - self._prev_prev_unk_embedding_hash
         next = next_unk_embedding_hash - self._prev_unk_embedding_hash
         is_not_close = not torch.isclose(prev, next, atol=atol).all()
-        if is_not_close:
+        if is_not_close and lib.distributed.is_master():
             logger.info(f"The `unk_token` embedding was updated {(next - prev).abs().max()}.")
         self._prev_prev_unk_embedding_hash = self._prev_unk_embedding_hash
         self._prev_unk_embedding_hash = next_unk_embedding_hash
