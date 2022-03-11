@@ -421,6 +421,8 @@ class PaddingAndLazyEmbedding(torch.nn.Module):
             and padding embedding.
         proactive_updates: The number of forward passes this will update proactively (before the
             forward pass) rather than reactively (after the forward pass).
+        update_every: This allows for a proactive update every `update_every` steps since the
+            retroactive mechanics are not precise.
         allow_unk_on_eval: Iff then the "unknown token" may be used during evaluation, otherwise
             this will error if a new token is encountered during evaluation.
         *args: Arguments passed to `torch.nn.Embedding`.
@@ -443,6 +445,7 @@ class PaddingAndLazyEmbedding(torch.nn.Module):
         max_embeddings: int,
         *args,
         proactive_updates: int = 100,
+        update_every: int = 1000,
         allow_unk_on_eval: bool = True,
         **kwargs,
     ):
@@ -450,6 +453,7 @@ class PaddingAndLazyEmbedding(torch.nn.Module):
 
         self.allow_unk_on_eval = allow_unk_on_eval
         self.proactive_updates = proactive_updates
+        self.update_every = update_every
         self._training_forward_pass_counter = 0
 
         self.pad_idx = self._Tokens.PAD_TOKEN.value
@@ -584,7 +588,10 @@ class PaddingAndLazyEmbedding(torch.nn.Module):
         return self.vocab.get(token, self.unk_idx)
 
     def _should_update_proactively(self):
-        return self._training_forward_pass_counter <= self.proactive_updates
+        return (
+            self._training_forward_pass_counter <= self.proactive_updates
+            or self._training_forward_pass_counter % self.update_every == 0
+        )
 
     def __call__(
         self, tokens: Hashable1d2dList, **kwargs
