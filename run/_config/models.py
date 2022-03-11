@@ -83,7 +83,7 @@ def configure():
             # number of characters the model is attending too at a time. That metric can be used
             # to set the `window_length`.
             window_length=9,
-            avg_frames_per_token=1.4555,
+            avg_frames_per_token=1.422,
         ),
         lib.spectrogram_model.decoder.Decoder.__init__: HParams(
             encoder_output_size=encoder_output_size,
