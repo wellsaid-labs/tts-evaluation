@@ -486,6 +486,7 @@ def _visualize_inferred(
         audio=audio,
         context=args.state.comet.context,
         text=args.batch.spans[item].script,
+        text_context=str(args.batch.spans[item].spacy_with_context()),
         speaker=args.batch.spans[item].speaker,
         session=args.batch.spans[item].session,
         predicted_loudness=get_average_db_rms_level(predicted_spectrogram.unsqueeze(1)).item(),
