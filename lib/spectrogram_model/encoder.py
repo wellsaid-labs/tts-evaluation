@@ -287,7 +287,7 @@ class Encoder(torch.nn.Module):
             for i, embed in enumerate(self.embed_token_metadata)
         ]
         token_metadata = (
-            torch.cat(token_metadata, dim=1)
+            (torch.cat(token_metadata, dim=2) if len(token_metadata) > 1 else token_metadata[0])
             if len(token_metadata) > 0
             else torch.empty(*tokens.shape[:2], 0, device=device)
         )
