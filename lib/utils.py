@@ -390,13 +390,6 @@ class LSTMCell(torch.nn.LSTMCell):
         return super().forward(input, hx=hx)
 
 
-def is_sortable(obj):
-    """Iff `obj` can be sorted in Python, return `True`."""
-    # NOTE: https://stackoverflow.com/questions/19614260/check-if-an-object-is-order-able-in-python
-    cls = obj.__class__
-    return cls.__lt__ != object.__lt__ or cls.__gt__ != object.__gt__
-
-
 Hashable1d2dList = typing.Union[
     typing.List[typing.Hashable], typing.List[typing.List[typing.Hashable]]
 ]
@@ -428,6 +421,8 @@ class PaddingAndLazyEmbedding(torch.nn.Module):
             and padding embedding.
         proactive_updates: The number of forward passes this will update proactively (before the
             forward pass) rather than reactively (after the forward pass).
+        update_every: This allows for a proactive update every `update_every` steps since the
+            retroactive mechanics are not precise.
         allow_unk_on_eval: Iff then the "unknown token" may be used during evaluation, otherwise
             this will error if a new token is encountered during evaluation.
         *args: Arguments passed to `torch.nn.Embedding`.
@@ -450,6 +445,7 @@ class PaddingAndLazyEmbedding(torch.nn.Module):
         max_embeddings: int,
         *args,
         proactive_updates: int = 100,
+        update_every: int = 1000,
         allow_unk_on_eval: bool = True,
         **kwargs,
     ):
@@ -457,6 +453,7 @@ class PaddingAndLazyEmbedding(torch.nn.Module):
 
         self.allow_unk_on_eval = allow_unk_on_eval
         self.proactive_updates = proactive_updates
+        self.update_every = update_every
         self._training_forward_pass_counter = 0
 
         self.pad_idx = self._Tokens.PAD_TOKEN.value
@@ -476,7 +473,8 @@ class PaddingAndLazyEmbedding(torch.nn.Module):
 
         self._new_tokens = set()
         self._unk_tokens = set()
-        self.register_buffer("_unk_embedding_hash", self._get_unk_embedding_hash())
+        self.register_buffer("_prev_prev_unk_embedding_hash", self._get_unk_embedding_hash())
+        self.register_buffer("_prev_unk_embedding_hash", self._get_unk_embedding_hash())
 
     def _get_unk_embedding_hash(self) -> torch.Tensor:
         """Hash representing the current value of the `unk_token`."""
@@ -532,22 +530,40 @@ class PaddingAndLazyEmbedding(torch.nn.Module):
                     new_tokens = sorted(set(new_tokens))  # type: ignore
                 except TypeError:
                     pass
-            logger.info(f"Updating vocab with new tokens (in this order): {new_tokens}")
+
+            if not self._should_update_proactively() and lib.distributed.is_master():
+                logger.info(f"Retroactively updating vocab (in this order): {new_tokens}")
 
         for token in new_tokens:
             if token not in self.vocab:
                 self.vocab[token] = len(self.vocab)
 
-        self._unk_embedding_hash = self._get_unk_embedding_hash()
         self._new_tokens = set()
 
-    def _has_trained_on_new_tokens(self):
+    def _has_trained_on_new_tokens(self, atol: float = 5e-04):
         """
         NOTE: Iff the `unk_token` was updated, then the model has trained on a new token it hasn't
         seen before, so we should update the vocabulary, reactively.
+
+        NOTE: In order to judge if the `unk_token` embedding was updated, we see if it's direction
+        has changed. In comparing direction, instead of the current embedding, we are able to
+        reduce the influence of second-order gradients (momentum), which are always updating the
+        embedding in the same direction. This isn't perfect because there are additional things
+        like... an exponential moving average on the second order gradient.
+
+        TODO: Set `atol` automatically, increase it whenever an update comes through with no new
+        tokens, and decrease it every time it comes through with more than one token... use binary
+        search to narrow the search space.
         """
-        new_hash = self._get_unk_embedding_hash()
-        return not torch.isclose(self._unk_embedding_hash, new_hash, atol=1e-3).all()
+        next_unk_embedding_hash = self._get_unk_embedding_hash()
+        prev = self._prev_unk_embedding_hash - self._prev_prev_unk_embedding_hash
+        next = next_unk_embedding_hash - self._prev_unk_embedding_hash
+        is_not_close = not torch.isclose(prev, next, atol=atol).all()
+        if is_not_close and lib.distributed.is_master():
+            logger.info(f"The `unk_token` embedding was updated {(next - prev).abs().max()}.")
+        self._prev_prev_unk_embedding_hash = self._prev_unk_embedding_hash
+        self._prev_unk_embedding_hash = next_unk_embedding_hash
+        return is_not_close
 
     def _tok_to_idx(self, token: typing.Hashable) -> int:
         """Get the index of `token` and return `unk_token` if `token` is not found.
@@ -572,6 +588,12 @@ class PaddingAndLazyEmbedding(torch.nn.Module):
 
         return self.vocab.get(token, self.unk_idx)
 
+    def _should_update_proactively(self):
+        return (
+            self._training_forward_pass_counter <= self.proactive_updates
+            or self._training_forward_pass_counter % self.update_every == 0
+        )
+
     def __call__(
         self, tokens: Hashable1d2dList, **kwargs
     ) -> typing.Tuple[torch.Tensor, torch.Tensor]:
@@ -595,11 +617,10 @@ class PaddingAndLazyEmbedding(torch.nn.Module):
         if self.training:
             self._training_forward_pass_counter += 1
             self._queue_new_tokens(tokens)
-            update_proactively = self._training_forward_pass_counter <= self.proactive_updates
             if (
-                update_proactively
-                or self._has_trained_on_new_tokens()
+                self._should_update_proactively()
                 or not lib.distributed.is_initialized()
+                or self._has_trained_on_new_tokens()
             ):
                 self._update_vocab()
 
