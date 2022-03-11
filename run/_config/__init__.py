@@ -1,6 +1,6 @@
 from run._config.all import configure
 from run._config.audio import FRAME_HOP, NUM_FRAME_CHANNELS
-from run._config.data import DATASETS, DEV_SPEAKERS
+from run._config.data import DATASETS, DEFAULT_SCRIPT, DEV_SPEAKERS
 from run._config.environment import (
     CHECKPOINTS_PATH,
     DATA_PATH,
@@ -41,6 +41,7 @@ __all__ = [
     "FRAME_HOP",
     "NUM_FRAME_CHANNELS",
     "DATASETS",
+    "DEFAULT_SCRIPT",
     "DEV_SPEAKERS",
     "CHECKPOINTS_PATH",
     "DATA_PATH",

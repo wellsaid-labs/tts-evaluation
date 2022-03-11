@@ -20,6 +20,7 @@ import lib
 import run
 from lib.audio import get_audio_metadata
 from lib.text import natural_keys
+from run._config import DEFAULT_SCRIPT
 from run._streamlit import (
     WebPath,
     get_session_state,
@@ -39,10 +40,6 @@ from run._tts import (
 )
 from run.data._loader import Speaker
 
-DEFAULT_SCRIPT = (
-    "Your creative life will evolve in ways that you can’t possibly imagine. Trust"
-    " your gut. Don’t overthink it. And allow yourself a little room to play."
-)
 STREAMING_SERVICE_PORT = 5000
 STREAMING_SERVICE_ENDPOINT = f"http://localhost:{STREAMING_SERVICE_PORT}"
 

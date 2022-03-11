@@ -399,16 +399,9 @@ def load(path: Path, device: torch.device = torch.device("cpu")) -> typing.Any:
         device: Device to load onto.
     """
     logger.info("Loading: %s", path)
-
     assert path.suffix == PT_EXTENSION
     assert path.is_file(), f"Path ({path}) must point to a file."
-
-    def remap(storage, loc):
-        if "cuda" in loc and device.type == "cuda":
-            return storage.cuda(device=device.index)
-        return storage
-
-    return torch.load(str(path), map_location=remap)
+    return torch.load(str(path), map_location=device)
 
 
 _LoadMostRecentFileReturnType = typing.TypeVar("_LoadMostRecentFileReturnType")

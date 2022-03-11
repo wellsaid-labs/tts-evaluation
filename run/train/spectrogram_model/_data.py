@@ -338,8 +338,8 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
     spectrogram, spectrogram_mask = _signals_to_spectrograms(signals)
 
     return Batch(
-        # NOTE: Prune unused attributes from `Passage`, in order to reduce batch size, which in
-        # turn makes it easier to send to other processes, for example.
+        # NOTE: Prune unused attributes from `Passage` by creating a new `Passage`, in order to
+        # reduce batch size, which in turn makes it easier to send to other processes, for example.
         spans=[dataclasses.replace(s, passage=dataclasses.replace(s.passage)) for s in spans],
         audio=signals,
         spectrogram=spectrogram,

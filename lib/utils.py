@@ -525,7 +525,7 @@ class PaddingAndLazyEmbedding(torch.nn.Module):
                     new_tokens = sorted(set(new_tokens))  # type: ignore
                 except TypeError:
                     pass
-            logger.info(f"Updating vocab with new tokens: {set(new_tokens)}")
+            logger.info(f"Updating vocab with new tokens (in this order): {new_tokens}")
 
         for token in new_tokens:
             if token not in self.vocab:

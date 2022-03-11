@@ -86,6 +86,8 @@ class DictStore:
     NOTE: Speed up `pickle.loads` with this approach:
     https://stackoverflow.com/questions/2766685/how-can-i-speed-up-unpickling-large-objects-if-i-have-plenty-of-ram
 
+    TODO: Add a method for queuing up `update` and `log` requests, and doing them all at once.
+
     Args:
         data: On the master process, this is a merged collection of data from the worker processes.
     """
