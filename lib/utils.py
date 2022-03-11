@@ -556,7 +556,7 @@ class PaddingAndLazyEmbedding(torch.nn.Module):
             raise KeyError(f"Token not found: {token}")
 
         if not self.training and token not in self.vocab and token not in self._unk_tokens:
-            logger.info("[Evaluation] Marking '%s' token as unknown token", token)
+            logger.info(f"[Evaluation] Marking '{token}' token as unknown token")
             # NOTE: Track unknown tokens so that they are not logged over and over.
             self._unk_tokens.add(token)
 
