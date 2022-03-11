@@ -591,8 +591,8 @@ class PaddingAndLazyEmbedding(torch.nn.Module):
             update_proactively = self._training_forward_pass_counter <= self.proactive_updates
             if (
                 update_proactively
-                or self._has_trained_on_new_tokens()
                 or not lib.distributed.is_initialized()
+                or self._has_trained_on_new_tokens()
             ):
                 self._update_vocab()
 
