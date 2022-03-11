@@ -286,11 +286,7 @@ class Encoder(torch.nn.Module):
             embed([[m[i] for m in seq] for seq in inputs.token_metadata], batch_first=True)[0]
             for i, embed in enumerate(self.embed_token_metadata)
         ]
-        token_metadata = (
-            (torch.cat(token_metadata, dim=2) if len(token_metadata) > 1 else token_metadata[0])
-            if len(token_metadata) > 0
-            else torch.empty(*tokens.shape[:2], 0, device=device)
-        )
+        token_metadata = tuple(token_metadata)
 
         if isinstance(inputs.token_embeddings, list):
             token_embed: torch.Tensor = pad_sequence(inputs.token_embeddings, batch_first=True)
@@ -308,7 +304,7 @@ class Encoder(torch.nn.Module):
         # [batch_size, num_tokens, max_token_embed_size] →
         # [batch_size, num_tokens,
         #  hidden_size + seq_meta_embed_size + max_token_embed_size]
-        tokens = torch.cat([tokens, seq_metadata_expanded, token_metadata, token_embed], dim=2)
+        tokens = torch.cat([tokens, seq_metadata_expanded, *token_metadata, token_embed], dim=2)
 
         # [batch_size, num_tokens,
         #  hidden_size + seq_meta_embed_size + token_meta_embed_size + max_token_embed_size] →
