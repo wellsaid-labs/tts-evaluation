@@ -526,7 +526,9 @@ class PaddingAndLazyEmbedding(torch.nn.Module):
                     new_tokens = sorted(set(new_tokens))  # type: ignore
                 except TypeError:
                     pass
-            logger.info(f"Updating vocab with new tokens (in this order): {new_tokens}")
+
+            if not self._should_update_proactively():
+                logger.info(f"Retroactively updating vocab (in this order): {new_tokens}")
 
         for token in new_tokens:
             if token not in self.vocab:
@@ -534,7 +536,7 @@ class PaddingAndLazyEmbedding(torch.nn.Module):
 
         self._new_tokens = set()
 
-    def _has_trained_on_new_tokens(self, atol: float = 1e-05):
+    def _has_trained_on_new_tokens(self, atol: float = 1e-04):
         """
         NOTE: Iff the `unk_token` was updated, then the model has trained on a new token it hasn't
         seen before, so we should update the vocabulary, reactively.
@@ -543,6 +545,9 @@ class PaddingAndLazyEmbedding(torch.nn.Module):
         has changed. In comparing direction, instead of the current embedding, we are able to
         reduce the influence of second-order gradients, which are always updating the embedding
         in the same direction.
+
+        TODO: Set `atol` automatically, increase it whenever an update comes through with no new
+        tokens, and decrease it every time it comes through with more than one token...
         """
         next_unk_embedding_hash = self._get_unk_embedding_hash()
         prev = self._prev_unk_embedding_hash - self._prev_prev_unk_embedding_hash
@@ -577,6 +582,9 @@ class PaddingAndLazyEmbedding(torch.nn.Module):
 
         return self.vocab.get(token, self.unk_idx)
 
+    def _should_update_proactively(self):
+        return self._training_forward_pass_counter <= self.proactive_updates
+
     def __call__(
         self, tokens: Hashable1d2dList, **kwargs
     ) -> typing.Tuple[torch.Tensor, torch.Tensor]:
@@ -600,9 +608,8 @@ class PaddingAndLazyEmbedding(torch.nn.Module):
         if self.training:
             self._training_forward_pass_counter += 1
             self._queue_new_tokens(tokens)
-            update_proactively = self._training_forward_pass_counter <= self.proactive_updates
             if (
-                update_proactively
+                self._should_update_proactively()
                 or not lib.distributed.is_initialized()
                 or self._has_trained_on_new_tokens()
             ):
