@@ -36,9 +36,20 @@ class SpectrogramModel(spectrogram_model.SpectrogramModel):
         **kwargs,
     ):
         super().__init__(max_tokens, (max_speakers, max_sessions), *args, **kwargs)
-        self.token_embed = self.encoder.embed_token
-        self.speaker_embed = typing.cast(PaddingAndLazyEmbedding, self.encoder.embed_metadata[0])
-        self.session_embed = typing.cast(PaddingAndLazyEmbedding, self.encoder.embed_metadata[1])
+
+    @property
+    def token_embed(self) -> PaddingAndLazyEmbedding:
+        # NOTE: `torch.nn.Module` has special hooks for attributes which we avoid by setting this
+        # as a property, instead.
+        return self.encoder.embed_token
+
+    @property
+    def speaker_embed(self) -> PaddingAndLazyEmbedding:
+        return typing.cast(PaddingAndLazyEmbedding, self.encoder.embed_metadata[0])
+
+    @property
+    def session_embed(self) -> PaddingAndLazyEmbedding:
+        return typing.cast(PaddingAndLazyEmbedding, self.encoder.embed_metadata[1])
 
     @property
     def token_vocab(self) -> typing.Dict[str, int]:
