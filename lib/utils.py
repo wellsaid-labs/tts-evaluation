@@ -390,13 +390,6 @@ class LSTMCell(torch.nn.LSTMCell):
         return super().forward(input, hx=hx)
 
 
-def is_sortable(obj):
-    """Iff `obj` can be sorted in Python, return `True`."""
-    # NOTE: https://stackoverflow.com/questions/19614260/check-if-an-object-is-order-able-in-python
-    cls = obj.__class__
-    return cls.__lt__ != object.__lt__ or cls.__gt__ != object.__gt__
-
-
 Hashable1d2dList = typing.Union[
     typing.List[typing.Hashable], typing.List[typing.List[typing.Hashable]]
 ]
@@ -524,17 +517,19 @@ class PaddingAndLazyEmbedding(torch.nn.Module):
             outputs = [None for _ in range(lib.distributed.get_world_size())]
             torch.distributed.all_gather_object(outputs, new_tokens)
             outputs = typing.cast(typing.List[typing.List[typing.Hashable]], outputs)
-            new_tokens = list(set(t for l in outputs for t in l))
+            new_tokens = [t for l in outputs for t in l]
             if len(new_tokens) > 0:
-                is_all_sortable = all(is_sortable(t) for t in new_tokens)
-                type_ = type(new_tokens[0])
-                is_same_type = all(isinstance(t, type_) for t in new_tokens)
-                # NOTE: Ensure that the order `new_tokens` are added in is consistent for external
-                # observers.
-                new_tokens = sorted(new_tokens) if is_all_sortable and is_same_type else new_tokens
+                try:
+                    # NOTE: Ensure that the order `new_tokens` are added in is consistent for
+                    # external observers.
+                    # NOTE: `set` has a different order between processes, so it must be sorted.
+                    new_tokens = sorted(set(new_tokens))  # type: ignore
+                except TypeError:
+                    pass
 
         for token in new_tokens:
-            self.vocab[token] = len(self.vocab)
+            if token not in self.vocab:
+                self.vocab[token] = len(self.vocab)
 
         self._unk_embedding_hash = self._get_unk_embedding_hash()
         self._new_tokens = set()
