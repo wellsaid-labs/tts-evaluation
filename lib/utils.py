@@ -540,7 +540,7 @@ class PaddingAndLazyEmbedding(torch.nn.Module):
 
         self._new_tokens = set()
 
-    def _has_trained_on_new_tokens(self, atol: float = 5e-04):
+    def _has_trained_on_new_tokens(self, atol: float = 2e-04):
         """
         NOTE: Iff the `unk_token` was updated, then the model has trained on a new token it hasn't
         seen before, so we should update the vocabulary, reactively.
