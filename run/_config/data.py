@@ -12,6 +12,11 @@ from run.data._loader import Language, Passage, Span
 
 logger = logging.getLogger(__name__)
 
+# NOTE: This is useful for one-off evaluation.
+DEFAULT_SCRIPT = (
+    "Your creative life will evolve in ways that you can’t possibly imagine. Trust"
+    " your gut. Don’t overthink it. And allow yourself a little room to play."
+)
 
 DATASETS = copy.copy(_loader.DATASETS)
 # NOTE: Elliot and Elizabeth has unannotated character portrayals.

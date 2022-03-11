@@ -765,13 +765,19 @@ def _nltk_download(dependency):
 @functools.lru_cache(maxsize=None)
 def load_en_core_web_md(*args, **kwargs) -> spacy_en.English:
     """Load and cache in memory a spaCy `spacy_en.English` object."""
-    return en_core_web_md.load(*args, **kwargs)
+    logger.info("Loading spaCy model `en_core_web_md`...")
+    nlp = en_core_web_md.load(*args, **kwargs)
+    logger.info("Loaded spaCy model `en_core_web_md`.")
+    return nlp
 
 
 @functools.lru_cache(maxsize=None)
 def load_en_core_web_sm(*args, **kwargs) -> spacy_en.English:
     """Load and cache in memory a spaCy `spacy_en.English` object."""
-    return en_core_web_sm.load(*args, **kwargs)
+    logger.info("Loading spaCy model `en_core_web_sm`...")
+    nlp = en_core_web_sm.load(*args, **kwargs)
+    logger.info("Loaded spaCy model `en_core_web_sm`.")
+    return nlp
 
 
 @functools.lru_cache(maxsize=None)
