@@ -10,6 +10,7 @@ import streamlit as st
 import lib
 import run
 from lib.text import natural_keys
+from run._config import DEFAULT_SCRIPT
 from run._streamlit import (
     audio_to_web_path,
     load_tts,
@@ -19,11 +20,6 @@ from run._streamlit import (
 )
 from run._tts import CHECKPOINTS_LOADERS, Checkpoints, batch_text_to_speech
 from run.data._loader import Session, Speaker
-
-DEFAULT_SCRIPT = (
-    "Your creative life will evolve in ways that you can’t possibly imagine. Trust"
-    " your gut. Don’t overthink it. And allow yourself a little room to play."
-)
 
 
 def main():
