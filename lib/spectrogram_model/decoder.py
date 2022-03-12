@@ -3,7 +3,7 @@ import typing
 import torch
 import torch.nn
 from hparams import HParam, configurable
-from torch.nn import functional
+from torch.nn.functional import pad
 
 from lib.spectrogram_model.attention import Attention
 from lib.spectrogram_model.containers import (
@@ -90,8 +90,7 @@ class Decoder(torch.nn.Module):
         cum_alignment = torch.cat([init_cum_alignment, cum_alignment], -1)
         # [batch_size, num_tokens + cum_align_padding] →
         # [batch_size, num_tokens + 2 * cum_align_padding]
-        kwargs = dict(mode="constant", value=0.0)
-        cum_alignment = functional.pad(cum_alignment, [0, cum_alignment_padding], **kwargs)
+        cum_alignment = pad(cum_alignment, [0, cum_alignment_padding], mode="constant", value=0.0)
 
         return DecoderHiddenState(
             last_attention_context=init_attention_context,
