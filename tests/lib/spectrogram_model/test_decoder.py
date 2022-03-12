@@ -136,7 +136,7 @@ def test_decoder__pad_encoded():
     module = _make_decoder()
     encoded, (batch_size, num_tokens) = _make_encoded(module)
     window_length, encoder_size = module.attention.window_length - 1, module.encoder_output_size
-    pad_token = torch.rand(batch_size, module.encoder_output_size)
+    pad_token = torch.rand(batch_size, module.encoder_out_size)
     padded = module._pad_encoded(encoded, pad_token)
 
     assert padded.tokens.dtype == torch.float
