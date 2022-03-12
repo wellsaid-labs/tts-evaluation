@@ -50,11 +50,11 @@ class Decoder(torch.nn.Module):
         self.lstm_hidden_size = lstm_hidden_size
         self.encoder_output_size = encoder_output_size
         input_size = seq_meta_embed_size + encoder_output_size
-        initial_state_ouput_size = num_frame_channels + 1 + encoder_output_size
+        self.initial_state_segments = [self.num_frame_channels, 1, self.encoder_output_size]
         self.initial_state = torch.nn.Sequential(
             torch.nn.Linear(input_size, input_size),
             torch.nn.ReLU(),
-            torch.nn.Linear(input_size, initial_state_ouput_size),
+            torch.nn.Linear(input_size, sum(self.initial_state_segments)),
         )
         self.pre_net = PreNet(num_frame_channels, seq_meta_embed_size, pre_net_size)
         self.lstm_layer_one = LSTMCell(pre_net_size + input_size, lstm_hidden_size)
@@ -72,13 +72,11 @@ class Decoder(torch.nn.Module):
         device = encoded.tokens.device
         cum_align_padding = self.attention.cumulative_alignment_padding
 
-        segments = [self.num_frame_channels, 1, self.encoder_output_size]
         # [batch_size, seq_meta_embed_size + encoder_output_size] →
         # [batch_size, num_frame_channels + 1 + encoder_output_size] →
         # ([batch_size, num_frame_channels], [batch_size, 1], [batch_size, encoder_output_size])
         first_token = torch.cat([encoded.seq_metadata, encoded.tokens[0]], dim=1)
-        state = self.initial_state(first_token).split(segments, dim=-1)
-        initial_frame, initial_cum_align, initial_attention_context = state
+        state = self.initial_state(first_token).split(self.initial_state_segments, dim=-1)
 
         # NOTE: The `cum_align` or `cumulative_alignment` vector has a positive value for every
         # token that is has attended to. Assuming the model is attending to tokens from
