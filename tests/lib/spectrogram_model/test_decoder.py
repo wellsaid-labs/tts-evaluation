@@ -44,7 +44,7 @@ def _make_decoder(
     )
 
 
-def test_autoregressive_decoder():
+def test_decoder():
     """Test `decoder.Decoder` handles a basic case."""
     batch_size = 5
     num_tokens = 6
@@ -98,7 +98,7 @@ def test_autoregressive_decoder():
     (frames.sum() + stop_token.sum()).backward()
 
 
-def test_autoregressive_decoder__target():
+def test_decoder__target():
     """Test `decoder.Decoder` handles `target_frames` inputs."""
     batch_size = 5
     num_frames = 3
