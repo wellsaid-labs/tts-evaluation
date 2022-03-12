@@ -57,7 +57,7 @@ def _make_encoded(
     return encoded, (batch_size, num_tokens)
 
 
-def test_autoregressive_decoder():
+def test_decoder():
     """Test `decoder.Decoder` handles a basic case."""
     module = _make_decoder()
     encoded, (batch_size, num_tokens) = _make_encoded(module)
@@ -96,7 +96,7 @@ def test_autoregressive_decoder():
     (decoded.frames.sum() + decoded.stop_tokens.sum()).backward()
 
 
-def test_autoregressive_decoder__target():
+def test_decoder__target():
     """Test `decoder.Decoder` handles `target_frames` inputs."""
     num_frames = 3
     module = _make_decoder()

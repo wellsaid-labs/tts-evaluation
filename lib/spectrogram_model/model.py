@@ -7,12 +7,11 @@ import typing
 import torch
 import torch.nn
 from hparams import HParam, configurable
-from torchnlp.utils import lengths_to_mask
 from tqdm import tqdm
 
 from lib.spectrogram_model import decoder, encoder
 from lib.spectrogram_model.containers import Encoded, Inputs, Preds
-from lib.utils import NumeralizePadEmbed
+from lib.utils import NumeralizePadEmbed, lengths_to_mask
 
 logger = logging.getLogger(__name__)
 

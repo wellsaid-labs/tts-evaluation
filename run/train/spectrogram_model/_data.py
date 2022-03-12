@@ -18,14 +18,13 @@ from hparams import HParam, configurable
 from third_party import LazyLoader
 from torchnlp.encoders.text import SequenceBatch, stack_and_pad_tensors
 from torchnlp.samplers import DeterministicSampler, DistributedBatchSampler
-from torchnlp.utils import lengths_to_mask
 
 import lib
 import run
 from lib.audio import sec_to_sample
 from lib.distributed import get_rank, get_world_size, is_initialized
 from lib.samplers import BucketBatchSampler
-from lib.utils import Tuple, flatten_2d
+from lib.utils import Tuple, flatten_2d, lengths_to_mask
 from run.data._loader import Alignment, Language, Span
 from run.train import _utils
 from run.train.spectrogram_model._model import Inputs
