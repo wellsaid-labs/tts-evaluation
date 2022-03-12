@@ -50,7 +50,7 @@ class Decoder(torch.nn.Module):
         self.lstm_hidden_size = lstm_hidden_size
         self.encoder_out_size = encoder_out_size
         input_size = seq_meta_embed_size + encoder_out_size
-        init_state_ouput_size = num_frame_channels + 1 + encoder_out_size
+        self.init_state_segments = [self.num_frame_channels, 1, self.encoder_out_size]
         self.init_state = torch.nn.Sequential(
             torch.nn.Linear(input_size, input_size),
             torch.nn.ReLU(),
@@ -72,12 +72,11 @@ class Decoder(torch.nn.Module):
         device = encoded.tokens.device
         cum_align_padding = self.attention.cumulative_alignment_padding
 
-        segments = [self.num_frame_channels, 1, self.encoder_out_size]
         # [batch_size, seq_meta_embed_size + encoder_out_size] →
         # [batch_size, num_frame_channels + 1 + encoder_out_size] →
         # ([batch_size, num_frame_channels], [batch_size, 1], [batch_size, encoder_out_size])
         first_token = torch.cat([encoded.seq_metadata, encoded.tokens[0]], dim=1)
-        state = self.init_state(first_token).split(segments, dim=-1)
+        state = self.init_state(first_token).split(self.init_state_segments, dim=-1)
         init_frame, init_cum_align, init_attention_context = state
 
         # NOTE: The `cum_align` or `cumulative_alignment` vector has a positive value for every
