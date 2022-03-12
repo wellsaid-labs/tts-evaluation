@@ -297,8 +297,7 @@ class Decoder(torch.nn.Module):
         # [num_frames, batch_size, lstm_hidden_size]
         frames, lstm_two_hidden_state = self.lstm_layer_two(frames, lstm_two_hidden_state)
 
-        # [num_frames, batch_size, pre_net_hidden_size + 2] →
-        # [num_frames, batch_size]
+        # [num_frames, batch_size, lstm_hidden_size] → [num_frames, batch_size]
         stop_token = self.linear_stop_token(frames).squeeze(2)
 
         # [num_frames, batch_size,
