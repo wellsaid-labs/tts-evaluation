@@ -679,6 +679,7 @@ def _worker_init_fn(
     NOTE: Set `num_threads` to ensure that these workers share resources with the main process.
     """
     hparams.hparams._configuration = config
+    sys.setprofile(None)  # TODO: After `hparams` is upgraded, remove this.
     info = torch.utils.data.get_worker_info()
     assert isinstance(info, torch.utils.data._utils.worker.WorkerInfo)
     lib.environment.set_basic_logging_config()
@@ -851,6 +852,7 @@ def _run_workers_helper(
     device = _init_distributed(device_index)
     comet = comet_partial(disabled=not is_master(), auto_output_logging=False)
     hparams.hparams._configuration = config
+    sys.setprofile(None)  # TODO: After `hparams` is upgraded, remove this.
     set_run_seed()
     checkpoint_ = None if checkpoint is None else load(checkpoint, device=device)
     return run_worker(device, comet, checkpoint_, *args)
