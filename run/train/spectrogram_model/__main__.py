@@ -69,11 +69,6 @@ def _make_configuration(
         _worker._run_step: HParams(
             # NOTE: This scalar calibrates the loss so that it's scale is similar to Tacotron-2.
             spectrogram_loss_scalar=1 / 100,
-            # NOTE: Learn more about this parameter here: https://arxiv.org/abs/2002.08709
-            # NOTE: This value is the minimum loss the test set achieves before the model
-            # starts overfitting on the train set.
-            # TODO: Try increasing the stop token minimum loss because it still overfit.
-            stop_token_min_loss=0.027,
             # NOTE: This value is the average spectrogram length in the training dataset.
             average_spectrogram_length=117.5,
         ),

@@ -129,3 +129,30 @@ def test_decoder__target():
     assert isinstance(decoded.hidden_state.lstm_two_hidden_state, tuple)
 
     (decoded.frames.sum() + decoded.stop_tokens.sum()).backward()
+
+
+def test_decoder__pad_encoded():
+    """Test `decoder.Decoder` pads encoded correctly."""
+    module = _make_decoder()
+    encoded, (batch_size, num_tokens) = _make_encoded(module)
+    window_length, encoder_size = module.attention.window_length - 1, module.encoder_output_size
+    pad_token = torch.rand(batch_size, module.encoder_output_size)
+    padded = module._pad_encoded(encoded, pad_token)
+
+    assert padded.tokens.dtype == torch.float
+    assert padded.tokens.shape == (num_tokens + window_length, batch_size, encoder_size)
+
+    assert padded.tokens_mask.dtype == torch.bool
+    assert padded.tokens_mask.shape == (batch_size, num_tokens + window_length)
+
+    assert padded.num_tokens.dtype == torch.long
+    assert padded.num_tokens.shape == (batch_size,)
+
+    for i in range(window_length):
+        padding = padded.tokens[num_tokens + i, torch.arange(batch_size)]
+        assert torch.equal(padding, pad_token)
+        assert padded.tokens_mask[torch.arange(batch_size), num_tokens + i].all()
+
+    assert padded.tokens.masked_select(~padded.tokens_mask.transpose(0, 1).unsqueeze(-1)).sum() == 0
+    assert torch.equal(padded.tokens_mask.sum(dim=1), padded.num_tokens)
+    assert torch.equal(encoded.num_tokens + window_length, padded.num_tokens)

@@ -84,9 +84,9 @@ def get_weighted_std(tensor: torch.Tensor, dim: int = 0) -> torch.Tensor:
         dim: Compute standard deviation along `dim` in `tensor`.
     """
     # Expects normalized weightes total of 0, 1 to ensure correct variance decisions
-    assert all(
-        math.isclose(value, 1, abs_tol=1e-3) for value in tensor.sum(dim=dim).view(-1).tolist()
-    )
+    # assert all(
+    #     math.isclose(value, 1, abs_tol=1e-3) for value in tensor.sum(dim=dim).view(-1).tolist()
+    # )
 
     # Create position matrix where the index is the position and the value is the weight
     indicies = torch.arange(0, tensor.shape[dim], dtype=tensor.dtype, device=tensor.device)

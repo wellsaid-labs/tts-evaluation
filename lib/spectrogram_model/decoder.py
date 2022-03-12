@@ -13,7 +13,7 @@ from lib.spectrogram_model.containers import (
     Encoded,
 )
 from lib.spectrogram_model.pre_net import PreNet
-from lib.utils import LSTM, LSTMCell
+from lib.utils import LSTM, LSTMCell, lengths_to_mask
 
 
 class Decoder(torch.nn.Module):
@@ -50,7 +50,12 @@ class Decoder(torch.nn.Module):
         self.lstm_hidden_size = lstm_hidden_size
         self.encoder_output_size = encoder_output_size
         input_size = seq_meta_embed_size + encoder_output_size
-        self.initial_state_segments = [self.num_frame_channels, 1, self.encoder_output_size]
+        self.initial_state_segments = [
+            self.num_frame_channels,
+            1,
+            self.encoder_output_size,
+            self.encoder_output_size,
+        ]
         self.initial_state = torch.nn.Sequential(
             torch.nn.Linear(input_size, input_size),
             torch.nn.ReLU(),
@@ -63,26 +68,54 @@ class Decoder(torch.nn.Module):
         self.linear_out = torch.nn.Linear(lstm_hidden_size + input_size, num_frame_channels)
         self.linear_stop_token = torch.nn.Sequential(
             torch.nn.Dropout(stop_net_dropout),
-            torch.nn.Linear(lstm_hidden_size, 1),
+            torch.nn.Linear(lstm_hidden_size + encoder_output_size // 4, 1),
         )
+
+    def _pad_encoded(self, encoded: Encoded, pad_token: torch.Tensor):
+        """Add padding to `encoded` so that the attention module window has space at the end of the
+        sequence.
+
+        Args:
+            pad_token (torch.FloatTensor [batch_size, encoder_output_size]): Pad token to
+                add to the end of each sequence.
+        """
+        device, pad_length = encoded.tokens.device, self.attention.window_length - 1
+        batch_size, encoder_size = encoded.tokens_mask.shape[0], self.encoder_output_size
+
+        mask_padding = torch.zeros(batch_size, pad_length, device=device, dtype=torch.bool)
+        tokens_mask = torch.cat([encoded.tokens_mask, mask_padding], dim=1)
+        tokens_padding = torch.zeros(pad_length, batch_size, encoder_size, device=device)
+        tokens = torch.cat([encoded.tokens, tokens_padding], dim=0)
+
+        indices = ~tokens_mask.transpose(0, 1)
+        tokens[indices] = pad_token.unsqueeze(0).expand(*tokens.shape)[indices]
+        num_tokens = encoded.num_tokens + pad_length
+        tokens_mask = lengths_to_mask(num_tokens)
+
+        return encoded._replace(tokens=tokens, tokens_mask=tokens_mask, num_tokens=num_tokens)
 
     def _make_hidden_state(self, encoded: Encoded) -> DecoderHiddenState:
         """Make an initial hidden state, if one is not provided."""
-        max_num_tokens, batch_size, _ = encoded.tokens.shape
-        device = encoded.tokens.device
+        (_, batch_size, _), device = encoded.tokens.shape, encoded.tokens.device
         cum_align_padding = self.attention.cumulative_alignment_padding
 
         # [batch_size, seq_meta_embed_size + encoder_output_size] →
         # [batch_size, num_frame_channels + 1 + encoder_output_size] →
-        # ([batch_size, num_frame_channels], [batch_size, 1], [batch_size, encoder_output_size])
+        # ([batch_size, num_frame_channels],
+        #  [batch_size, 1],
+        #  [batch_size, encoder_output_size],
+        #  [batch_size, encoder_output_size])
         first_token = torch.cat([encoded.seq_metadata, encoded.tokens[0]], dim=1)
         state = self.initial_state(first_token).split(self.initial_state_segments, dim=-1)
+        initial_frame, initial_cum_align, initial_attention_context, pad_token = state
+
+        padded_encoded = self._pad_encoded(encoded, pad_token)
 
         # NOTE: The `cum_align` or `cumulative_alignment` vector has a positive value for every
         # token that is has attended to. Assuming the model is attending to tokens from
         # left-to-right and the model starts reading at the first token, then any padding to the
         # left of the first token should be positive to be consistent.
-        cum_align = torch.zeros(batch_size, max_num_tokens, device=device)
+        cum_align = torch.zeros(batch_size, padded_encoded.tokens.shape[0], device=device)
         # [batch_size, 1] → [batch_size, cum_align_padding]
         initial_cum_align = initial_cum_align.expand(-1, cum_align_padding).abs()
         # [batch_size, num_tokens] → [batch_size, num_tokens + cum_align_padding]
@@ -98,6 +131,7 @@ class Decoder(torch.nn.Module):
                 cumulative_alignment=cum_align,
                 window_start=torch.zeros(batch_size, device=device, dtype=torch.long),
             ),
+            padded_encoded=self._pad_encoded(encoded, pad_token),
             lstm_one_hidden_state=None,
             lstm_two_hidden_state=None,
         )
@@ -137,6 +171,7 @@ class Decoder(torch.nn.Module):
             last_attention_context,
             last_frame,
             attention_hidden_state,
+            padded_encoded,
             lstm_one_hidden_state,
             lstm_two_hidden_state,
         ) = hidden_state
@@ -180,7 +215,7 @@ class Decoder(torch.nn.Module):
             # attention_context [batch_size, encoder_output_size]
             query = frame.unsqueeze(0)
             last_attention_context, alignment, attention_hidden_state = self.attention(
-                encoded=encoded, query=query, hidden_state=attention_hidden_state, **kwargs
+                encoded=padded_encoded, query=query, hidden_state=attention_hidden_state, **kwargs
             )
 
             frames_list.append(frame)
@@ -222,9 +257,13 @@ class Decoder(torch.nn.Module):
         # [num_frames, batch_size, lstm_hidden_size]
         frames, lstm_two_hidden_state = self.lstm_layer_two(frames, lstm_two_hidden_state)
 
-        # [num_frames, batch_size, lstm_hidden_size] →
+        # [num_frames, batch_size, lstm_hidden_size (concat) encoder_output_size // 4] →
         # [num_frames, batch_size]
-        stop_token = self.linear_stop_token(frames).squeeze(2)
+        # NOTE: In order to prevent overfitting, only use part of the attention context to determine
+        # the stop token.
+        quarter = self.encoder_output_size // 4
+        stop_token = torch.cat([frames, attention_contexts[:, :, :quarter]], dim=2)
+        stop_token = self.linear_stop_token(stop_token).squeeze(2)
 
         # [num_frames, batch_size,
         #  lstm_hidden_size (concat) encoder_output_size (concat) seq_meta_embed_size] →
@@ -235,8 +274,14 @@ class Decoder(torch.nn.Module):
             last_attention_context=last_attention_context,
             last_frame=frames[-1].unsqueeze(0),
             attention_hidden_state=attention_hidden_state,
+            padded_encoded=padded_encoded,
             lstm_one_hidden_state=lstm_one_hidden_state,
             lstm_two_hidden_state=lstm_two_hidden_state,
         )
 
-        return Decoded(frames, stop_token, alignments.detach(), window_starts, hidden_state)
+        # [num_frames, batch_size, num_tokens + window_length - 1] →
+        # [num_frames, batch_size, num_tokens]
+        alignments = alignments.detach()[:, :, : encoded.tokens.shape[0]]
+        alignments = alignments.masked_fill(~encoded.tokens_mask.unsqueeze(0), 0)
+
+        return Decoded(frames, stop_token, alignments, window_starts, hidden_state)
