@@ -19,7 +19,7 @@ def _make_decoder(
     speaker_embedding_size=8,
     pre_net_size=3,
     lstm_hidden_size=4,
-    encoder_output_size=5,
+    encoder_out_size=5,
     stop_net_dropout=0.5,
 ) -> Decoder:
     """Make `decoder.Decoder` for testing."""
@@ -39,7 +39,7 @@ def _make_decoder(
         speaker_embedding_size=speaker_embedding_size,
         pre_net_size=pre_net_size,
         lstm_hidden_size=lstm_hidden_size,
-        encoder_output_size=encoder_output_size,
+        encoder_out_size=encoder_out_size,
         stop_net_dropout=stop_net_dropout,
     )
 
@@ -49,7 +49,7 @@ def test_autoregressive_decoder():
     batch_size = 5
     num_tokens = 6
     module = _make_decoder()
-    tokens = torch.rand(num_tokens, batch_size, module.encoder_output_size)
+    tokens = torch.rand(num_tokens, batch_size, module.encoder_out_size)
     tokens_mask = torch.ones(batch_size, num_tokens, dtype=torch.bool)
     speaker = torch.zeros(batch_size, module.speaker_embedding_size)
     hidden_state = None
@@ -88,7 +88,7 @@ def test_autoregressive_decoder():
         assert hidden_state.last_attention_context.dtype == torch.float
         assert hidden_state.last_attention_context.shape == (
             batch_size,
-            module.encoder_output_size,
+            module.encoder_out_size,
         )
 
         assert isinstance(hidden_state.attention_hidden_state, AttentionHiddenState)
@@ -104,7 +104,7 @@ def test_autoregressive_decoder__target():
     num_frames = 3
     num_tokens = 6
     module = _make_decoder()
-    tokens = torch.rand(num_tokens, batch_size, module.encoder_output_size)
+    tokens = torch.rand(num_tokens, batch_size, module.encoder_out_size)
     tokens_mask = torch.ones(batch_size, num_tokens, dtype=torch.bool)
     target_frames = torch.rand(num_frames, batch_size, module.num_frame_channels)
     speaker = torch.zeros(batch_size, module.speaker_embedding_size)
@@ -135,7 +135,7 @@ def test_autoregressive_decoder__target():
     assert hidden_state.last_attention_context.dtype == torch.float
     assert hidden_state.last_attention_context.shape == (
         batch_size,
-        module.encoder_output_size,
+        module.encoder_out_size,
     )
 
     assert isinstance(hidden_state.attention_hidden_state, AttentionHiddenState)
