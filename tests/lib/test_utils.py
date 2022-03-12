@@ -15,7 +15,7 @@ import torch.nn
 from torchnlp.random import fork_rng
 
 import lib
-from lib.utils import NumeralizePadEmbed, Timeline, TimelineMap, pad_tensor
+from lib.utils import NumeralizePadEmbed, Timeline, TimelineMap, lengths_to_mask, pad_tensor
 from tests._utils import assert_almost_equal
 
 
@@ -282,7 +282,7 @@ def test_lstm__hidden_state():
     with fork_rng(seed=123):
         rnn = torch.nn.LSTM(10, 20, 2, bidirectional=True)
     output, updated_hidden_state = rnn(
-        input_, (other_rnn.initial_hidden_state, other_rnn.initial_cell_state)
+        input_, (other_rnn.init_hidden_state, other_rnn.init_cell_state)
     )
 
     assert_almost_equal(output, other_output)
@@ -301,7 +301,7 @@ def test_lstm__batch_first():
     with fork_rng(seed=123):
         rnn = torch.nn.LSTM(10, 20, 2, bidirectional=True, batch_first=True)
     output, updated_hidden_state = rnn(
-        input_, (other_rnn.initial_hidden_state, other_rnn.initial_cell_state)
+        input_, (other_rnn.init_hidden_state, other_rnn.init_cell_state)
     )
 
     assert_almost_equal(output, other_output)
@@ -320,7 +320,7 @@ def test_lstm__mono():
     with fork_rng(seed=123):
         rnn = torch.nn.LSTM(10, 20, 2, bidirectional=False)
     output, updated_hidden_state = rnn(
-        input_, (other_rnn.initial_hidden_state, other_rnn.initial_cell_state)
+        input_, (other_rnn.init_hidden_state, other_rnn.init_cell_state)
     )
 
     assert_almost_equal(output, other_output)
@@ -356,9 +356,7 @@ def test_lstm_cell__hidden_state():
 
     with fork_rng(seed=123):
         rnn = torch.nn.LSTMCell(10, 20)
-    updated_hidden_state = rnn(
-        input_, (other_rnn.initial_hidden_state, other_rnn.initial_cell_state)
-    )
+    updated_hidden_state = rnn(input_, (other_rnn.init_hidden_state, other_rnn.init_cell_state))
 
     assert_almost_equal(updated_hidden_state[0], other_updated_hidden_state[0])
     assert_almost_equal(updated_hidden_state[1], other_updated_hidden_state[1])
@@ -779,6 +777,19 @@ def test_triplets():
 
 
 def test_lengths_to_mask():
-    """Test `lengths_to_mask`."""
+    """Test `lengths_to_mask` with a variety of shapes."""
+    # Test tensors with various shapes
     expected = torch.tensor([[True, False, False], [True, True, False], [True, True, True]])
-    assert torch.equal(lib.utils.lengths_to_mask([1, 2, 3]), expected)
+    assert torch.equal(lengths_to_mask([1, 2, 3]), expected)
+    assert torch.equal(lengths_to_mask(torch.tensor([1, 2, 3])), expected)
+    assert torch.equal(lengths_to_mask(torch.tensor([[1, 2, 3]])), expected)
+
+    # Test scalars with various shapes
+    assert torch.equal(lengths_to_mask(1), torch.tensor([[True]]))
+    assert torch.equal(lengths_to_mask(torch.tensor(1)), torch.tensor([[True]]))
+    assert torch.equal(lengths_to_mask(torch.tensor([1])), torch.tensor([[True]]))
+
+    # Test empty tensors with various shapes
+    assert torch.equal(lengths_to_mask([]), torch.empty(0, 0, dtype=torch.bool))
+    assert torch.equal(lengths_to_mask(torch.tensor([])), torch.empty(0, 0, dtype=torch.bool))
+    assert torch.equal(lengths_to_mask(torch.tensor([[]])), torch.empty(0, 0, dtype=torch.bool))

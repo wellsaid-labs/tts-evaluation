@@ -82,8 +82,8 @@ class Encoded(typing.NamedTuple):
 class AttentionHiddenState(typing.NamedTuple):
     """Attention hidden state from previous time steps, used to predict the next time step."""
 
-    # torch.FloatTensor [batch_size, num_tokens + 2 * cumulative_alignment_padding]
-    cumulative_alignment: torch.Tensor
+    # torch.FloatTensor [batch_size, num_tokens + 2 * cum_alignment_padding]
+    cum_alignment: torch.Tensor
 
     # torch.LongTensor [batch_size]
     window_start: torch.Tensor
@@ -93,7 +93,7 @@ class DecoderHiddenState(typing.NamedTuple):
     """Decoder hidden state from previous time steps, used to predict the next time step."""
 
     # `Attention` last output.
-    # torch.FloatTensor [batch_size, encoder_output_size]
+    # torch.FloatTensor [batch_size, encoder_out_size]
     last_attention_context: torch.Tensor
 
     # The last predicted frame.
