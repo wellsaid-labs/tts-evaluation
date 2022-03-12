@@ -721,7 +721,7 @@ def lengths_to_mask(
     into a tensor, all together.
     """
     device = lengths.device if device is None and isinstance(lengths, torch.Tensor) else device
-    tokens_mask = torch.zeros(len(lengths), max(lengths), device=device, dtype=torch.bool)
+    tokens_mask = torch.zeros(len(lengths), int(max(lengths)), device=device, dtype=torch.bool)
     for i, length in enumerate(lengths):
         tokens_mask[i, :length] = True
     return tokens_mask
