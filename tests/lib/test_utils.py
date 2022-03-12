@@ -13,7 +13,7 @@ import torch.nn
 from torchnlp.random import fork_rng
 
 import lib
-from lib.utils import Timeline, TimelineMap, pad_tensor
+from lib.utils import NumeralizePadEmbed, Timeline, TimelineMap, pad_tensor
 from tests._utils import assert_almost_equal
 
 
@@ -364,7 +364,7 @@ def test_lstm_cell__hidden_state():
 
 def test_numeralize_pad_embed__1d():
     """Test `NumeralizePadEmbed` in a basic training case with a 1-dimensional input."""
-    model = lib.utils.NumeralizePadEmbed(100, 16)
+    model = NumeralizePadEmbed(100, 16)
     initial_vocab = model.vocab.copy()
     embedded, mask = model(["a"])
     assert torch.equal(embedded, model.embed(torch.tensor([2])))
@@ -375,7 +375,7 @@ def test_numeralize_pad_embed__1d():
 
 def test_numeralize_pad_embed__2d():
     """Test `NumeralizePadEmbed` in a basic training case with a 2-dimensional input."""
-    model = lib.utils.NumeralizePadEmbed(100, 16)
+    model = NumeralizePadEmbed(100, 16)
     initial_vocab = model.vocab.copy()
     embedded, mask = model([["a"]])
     assert torch.equal(embedded, model.embed(torch.tensor([[2]])))
@@ -384,20 +384,21 @@ def test_numeralize_pad_embed__2d():
     assert len(model._new_tokens) == 0
 
 
-def test_numeralize_pad_embed__no_proactive_updates():
-    """Test `NumeralizePadEmbed` that `proactive_updates` has no impact on non-distributed
-    training."""
-    model = lib.utils.NumeralizePadEmbed(100, 16, proactive_updates=0)
+def test_numeralize_pad_embed__no_updates():
+    """Test `NumeralizePadEmbed` that timed updated have no impact on non-distributed training."""
+    model = NumeralizePadEmbed(100, 16)
     initial_vocab = model.vocab.copy()
+    model.update_every = 100
     embedded, mask = model([["a"]])
-    assert torch.equal(embedded, model.embed(torch.tensor([[2]])))
+    embedded, mask = model([["b"]])
+    assert torch.equal(embedded, model.embed(torch.tensor([[3]])))
     assert torch.equal(mask, torch.tensor([[True]]))
-    assert model.vocab == {**initial_vocab, "a": 2}
+    assert model.vocab == {**initial_vocab, "a": 2, "b": 3}
 
 
 def test_numeralize_pad_embed__padding():
     """Test `NumeralizePadEmbed` pads and masks the output correctly."""
-    model = lib.utils.NumeralizePadEmbed(100, 16)
+    model = NumeralizePadEmbed(100, 16)
     initial_vocab = model.vocab.copy()
 
     embedded, mask = model([["a"]])
@@ -414,7 +415,7 @@ def test_numeralize_pad_embed__padding():
 def test_numeralize_pad_embed__allow_unk_on_eval():
     """Test `NumeralizePadEmbed` handles unknown tokens during evaluation and doesn't update
     vocab."""
-    model = lib.utils.NumeralizePadEmbed(100, 16, allow_unk_on_eval=False)
+    model = NumeralizePadEmbed(100, 16, allow_unk_on_eval=False)
     initial_vocab = model.vocab.copy()
 
     model.eval()
@@ -437,7 +438,7 @@ def test_numeralize_pad_embed__allow_unk_on_eval():
 
 def test_numeralize_pad_embed__zero_length():
     """Test `NumeralizePadEmbed` can handle a zero length sequence."""
-    model = lib.utils.NumeralizePadEmbed(100, 16)
+    model = NumeralizePadEmbed(100, 16)
     model.train(mode=False)
     embedded, mask = model([[]])
     assert embedded.shape == (0, 1, 16)
@@ -447,7 +448,7 @@ def test_numeralize_pad_embed__zero_length():
 def test_numeralize_pad_embed__upate_tokens():
     """Test `NumeralizePadEmbed` update tokens can add/update new tokens and embeddings."""
     embedding_size = 16
-    model = lib.utils.NumeralizePadEmbed(100, embedding_size)
+    model = NumeralizePadEmbed(100, embedding_size)
     initial_vocab = model.vocab.copy()
 
     # Add new token
@@ -469,7 +470,7 @@ def test_numeralize_pad_embed__upate_tokens():
 
 def test_numeralize_pad_embed__too_many_tokens():
     """Test `NumeralizePadEmbed` errors if too many tokens have been registered."""
-    model = lib.utils.NumeralizePadEmbed(1, 16)
+    model = NumeralizePadEmbed(1, 16)
     model([["a"]])
     with pytest.raises(ValueError):
         model([["b"]])
@@ -481,7 +482,7 @@ def _init_numeralize_pad_embed(rank, nprocs, file_name, *args, **kwargs):
     torch.distributed.init_process_group(
         backend="gloo", init_method=f"file://{file_name}", world_size=nprocs, rank=rank
     )
-    model = lib.utils.NumeralizePadEmbed(*args, **kwargs)
+    model = NumeralizePadEmbed(*args, **kwargs)
     initial_vocab = model.vocab.copy()
     model = torch.nn.parallel.DistributedDataParallel(model)
     optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
@@ -508,8 +509,8 @@ def _numeralize_pad_embed__distributed_helper(rank, nprocs, file_name):
         model = model.train(mode=False)
         model(input_)
     expected = {**initial_vocab, 0: 2, 100: 3, 1: 4, 101: 5, 2: 6, 102: 7}
-    assert typing.cast(lib.utils.NumeralizePadEmbed, model.module).vocab == expected
-    assert len(typing.cast(lib.utils.NumeralizePadEmbed, model.module)._new_tokens) == 0
+    assert typing.cast(NumeralizePadEmbed, model.module).vocab == expected
+    assert len(typing.cast(NumeralizePadEmbed, model.module)._new_tokens) == 0
 
 
 def test_numeralize_pad_embed__distributed():
@@ -525,8 +526,8 @@ def _numeralize_pad_embed__distributed_duplicate_tokens_helper(rank, nprocs, fil
     out.sum().backward()
     optimizer.step()
     expected = {**initial_vocab, 0: 2, 1: 3, 2: 4, 3: 5}
-    assert typing.cast(lib.utils.NumeralizePadEmbed, model.module).vocab == expected
-    assert len(typing.cast(lib.utils.NumeralizePadEmbed, model.module)._new_tokens) == 0
+    assert typing.cast(NumeralizePadEmbed, model.module).vocab == expected
+    assert len(typing.cast(NumeralizePadEmbed, model.module)._new_tokens) == 0
 
 
 def test_numeralize_pad_embed__distributed_duplicate_tokens():
@@ -534,54 +535,23 @@ def test_numeralize_pad_embed__distributed_duplicate_tokens():
     _spawn_helper(_numeralize_pad_embed__distributed_duplicate_tokens_helper)
 
 
-def _numeralize_pad_embed__distributed_no_update_helper(rank, nprocs, file_name):
-    _, model, optimizer = _init_numeralize_pad_embed(
-        rank, nprocs, file_name, 100, 16, proactive_updates=0
-    )
+def _numeralize_pad_embed__distributed_updates_helper(rank, nprocs, file_name):
+    _, model, optimizer = _init_numeralize_pad_embed(rank, nprocs, file_name, 100, 16)
     side_effect = torch.distributed.all_gather_object
     with mock.patch("lib.utils.torch.distributed.all_gather_object") as all_gather_mock:
         all_gather_mock.side_effect = lambda *a, **k: side_effect(*a, **k)
         assert all_gather_mock.call_count == 0
-
-        model([["a"]])[0].sum().backward()
-        optimizer.step()
-        assert all_gather_mock.call_count == 1
-
-        model = model.train(mode=False)
-        model([["a"]])[0].sum().backward()
-        optimizer.step()
-        assert all_gather_mock.call_count == 1
-
-        model = model.train(mode=True)
-        model([["a"]])[0].sum().backward()
-        optimizer.step()
-        assert all_gather_mock.call_count == 1
-
-
-def test_numeralize_pad_embed__distributed_no_update():
-    """Test `NumeralizePadEmbed` does not unnecessarily call
-    `torch.distributed.all_gather_object`."""
-    _spawn_helper(_numeralize_pad_embed__distributed_no_update_helper)
-
-
-def _numeralize_pad_embed__distributed_proactive_updates_helper(rank, nprocs, file_name):
-    proactive_updates = 5
-    _, model, optimizer = _init_numeralize_pad_embed(
-        rank, nprocs, file_name, 100, 16, proactive_updates=proactive_updates
-    )
-    side_effect = torch.distributed.all_gather_object
-    with mock.patch("lib.utils.torch.distributed.all_gather_object") as all_gather_mock:
-        all_gather_mock.side_effect = lambda *a, **k: side_effect(*a, **k)
-        assert all_gather_mock.call_count == 0
-        for i in range(proactive_updates * 2):
+        for i, update_every in zip(range(10), [1, 2, 2, 4, 4, 4, 4, 8, 8, 8]):
             model([["a"]])[0].sum().backward()
+            assert all_gather_mock.call_count == math.log2(update_every) + 1
+            assert typing.cast(NumeralizePadEmbed, model.module).update_every == update_every
             optimizer.step()
-            assert all_gather_mock.call_count == min(i + 1, proactive_updates)
 
 
-def test_numeralize_pad_embed__distributed_proactive_updates():
-    """Test `NumeralizePadEmbed` calls `torch.distributed.all_gather_object` proactively."""
-    _spawn_helper(_numeralize_pad_embed__distributed_proactive_updates_helper)
+def test_numeralize_pad_embed__distributed_updates():
+    """Test `NumeralizePadEmbed` calls `torch.distributed.all_gather_object` the right number of
+    times."""
+    _spawn_helper(_numeralize_pad_embed__distributed_updates_helper)
 
 
 def test_clamp():
