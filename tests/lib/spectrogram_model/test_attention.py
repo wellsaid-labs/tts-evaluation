@@ -110,10 +110,10 @@ def _make_attention(
     tokens = torch.randn(max_num_tokens, batch_size, attention_hidden_size)
     tokens_mask = torch.ones(batch_size, max_num_tokens, dtype=torch.bool)
     query = torch.randn(1, batch_size, query_hidden_size)
-    padding = (module.cumulative_alignment_padding, module.cumulative_alignment_padding)
-    cumulative_alignment = torch.zeros(batch_size, max_num_tokens)
+    padding = (module.cum_alignment_padding, module.cum_alignment_padding)
+    cum_alignment = torch.zeros(batch_size, max_num_tokens)
     hidden_state = AttentionHiddenState(
-        cumulative_alignment=lib.utils.pad_tensor(cumulative_alignment, padding, 1, value=1.0),
+        cum_alignment=lib.utils.pad_tensor(cum_alignment, padding, 1, value=1.0),
         window_start=torch.zeros(batch_size, dtype=torch.long),
     )
     seq_metadata = torch.randn(batch_size, seq_meta_embed_size)
@@ -129,9 +129,9 @@ def _add_padding(
     padded_tokens = torch.cat([encoded.tokens, tokens_padding], dim=0)
     tokens_mask_padding = torch.zeros(encoded.tokens_mask.shape[0], amount, dtype=torch.bool)
     padded_tokens_mask = torch.cat([encoded.tokens_mask, tokens_mask_padding], dim=1)
-    alignment_padding = torch.randn(hidden_state.cumulative_alignment.shape[0], amount)
-    cumulative_alignment = torch.cat([hidden_state.cumulative_alignment, alignment_padding], 1)
-    padded_hidden_state = hidden_state._replace(cumulative_alignment=cumulative_alignment)
+    alignment_padding = torch.randn(hidden_state.cum_alignment.shape[0], amount)
+    cum_alignment = torch.cat([hidden_state.cum_alignment, alignment_padding], 1)
+    padded_hidden_state = hidden_state._replace(cum_alignment=cum_alignment)
     padded_encoded = encoded._replace(tokens=padded_tokens, tokens_mask=padded_tokens_mask)
     return padded_encoded, padded_hidden_state
 
@@ -139,7 +139,7 @@ def _add_padding(
 assert_almost_equal = partial(_utils.assert_almost_equal, decimal=5)
 
 
-def test_location_relative_attention():
+def test_attention():
     """Test `attention.Attention` handles a basic case."""
     module, (encoded, query, hidden_state), (batch_size, max_num_tokens) = _make_attention()
     encoded.tokens_mask[:, -1].fill_(0)
@@ -153,10 +153,10 @@ def test_location_relative_attention():
         assert context.shape == (batch_size, module.hidden_size)
         assert alignment.dtype == torch.float
         assert alignment.shape == (batch_size, max_num_tokens)
-        assert hidden_state.cumulative_alignment.dtype == torch.float
-        assert hidden_state.cumulative_alignment.shape == (
+        assert hidden_state.cum_alignment.dtype == torch.float
+        assert hidden_state.cum_alignment.shape == (
             batch_size,
-            max_num_tokens + 2 * module.cumulative_alignment_padding,
+            max_num_tokens + 2 * module.cum_alignment_padding,
         )
         assert hidden_state.window_start.dtype == torch.long
         assert hidden_state.window_start.shape == (batch_size,)
@@ -179,17 +179,17 @@ def test_location_relative_attention():
             assert alignment_sum[i].item() == pytest.approx(1, 0.0001)
 
         # NOTE: Check the softmax computation was applied correctly.
-        padding = module.cumulative_alignment_padding
-        alignment_sum = hidden_state.cumulative_alignment[:, padding:-padding].sum(dim=1)
+        padding = module.cum_alignment_padding
+        alignment_sum = hidden_state.cum_alignment[:, padding:-padding].sum(dim=1)
         for i in range(batch_size):
             assert alignment_sum[i].item() == pytest.approx(j + 1)
 
         last_hidden_state = hidden_state
 
-    (context.sum() + hidden_state.cumulative_alignment.sum() + alignment.sum()).backward()
+    (context.sum() + hidden_state.cum_alignment.sum() + alignment.sum()).backward()
 
 
-def test_location_relative_attention__batch_invariance():
+def test_attention__batch_invariance():
     """Test `attention.Attention` is consistent regardless of the batch size."""
     module, (encoded, query, hidden_state), (batch_size, _) = _make_attention(dropout=0)
 
@@ -204,7 +204,7 @@ def test_location_relative_attention__batch_invariance():
         ),
         query[:, slice_],
         hidden_state._replace(
-            cumulative_alignment=hidden_state.cumulative_alignment[slice_],
+            cum_alignment=hidden_state.cum_alignment[slice_],
             window_start=hidden_state.window_start[slice_],
         ),
     )
@@ -214,13 +214,13 @@ def test_location_relative_attention__batch_invariance():
     assert_almost_equal(batch_context[slice_], context)
     assert_almost_equal(batch_alignment[slice_], alignment)
     assert_almost_equal(
-        batch_new_hidden_state.cumulative_alignment[slice_],
-        new_hidden_state.cumulative_alignment,
+        batch_new_hidden_state.cum_alignment[slice_],
+        new_hidden_state.cum_alignment,
     )
     assert_almost_equal(batch_new_hidden_state.window_start[slice_], new_hidden_state.window_start)
 
 
-def test_location_relative_attention__padding_invariance():
+def test_attention__padding_invariance():
     """Test `attention.Attention` is consistent regardless of the padding."""
     module, (encoded, query, hidden_state), _ = _make_attention(dropout=0)
     num_padding = 4
@@ -233,13 +233,13 @@ def test_location_relative_attention__padding_invariance():
     assert_almost_equal(padded_context, context)
     assert_almost_equal(padded_alignment[:, :-num_padding], alignment)
     assert_almost_equal(
-        padded_hidden_state.cumulative_alignment[:, :-num_padding],
-        hidden_state.cumulative_alignment,
+        padded_hidden_state.cum_alignment[:, :-num_padding],
+        hidden_state.cum_alignment,
     )
     assert_almost_equal(padded_hidden_state.window_start, hidden_state.window_start)
 
 
-def test_location_relative_attention__zero():
+def test_attention__zero():
     """Test `attention.Attention` doesn't have a discontinuity at zero."""
     module, (encoded, query, hidden_state), (batch_size, max_num_tokens) = _make_attention()
     tokens_mask = torch.randn(batch_size, max_num_tokens) < 0.5
@@ -247,10 +247,10 @@ def test_location_relative_attention__zero():
     encoded.tokens.zero_()
     query.zero_()
     context, alignment, hidden_state = module(encoded, query, hidden_state)
-    (context.sum() + hidden_state.cumulative_alignment.sum() + alignment.sum()).backward()
+    (context.sum() + hidden_state.cum_alignment.sum() + alignment.sum()).backward()
 
 
-def test_location_relative_attention__window_invariance():
+def test_attention__window_invariance():
     """Test `attention.Attention` is consistent regardless of the window size, if
     the window size is larger than the number of tokens."""
     max_num_tokens = 6
@@ -269,5 +269,5 @@ def test_location_relative_attention__window_invariance():
     assert other_hidden_state.window_start.sum() == 0
     assert_almost_equal(other_context, context)
     assert_almost_equal(other_alignment, alignment)
-    assert_almost_equal(other_hidden_state.cumulative_alignment, hidden_state_.cumulative_alignment)
+    assert_almost_equal(other_hidden_state.cum_alignment, hidden_state_.cum_alignment)
     assert_almost_equal(other_hidden_state.window_start, hidden_state_.window_start)
