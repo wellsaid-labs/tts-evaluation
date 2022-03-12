@@ -103,7 +103,7 @@ class Decoder(torch.nn.Module):
     def _make_init_hidden_state(
         self, tokens: torch.Tensor, speaker: torch.Tensor
     ) -> DecoderHiddenState:
-        """Make an init hidden state, if one is not provided.
+        """Make an initial hidden state, if one is not provided.
 
         Args:
             tokens (torch.FloatTensor [num_tokens, batch_size, encoder_out_size])
