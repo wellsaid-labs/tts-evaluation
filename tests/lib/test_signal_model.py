@@ -445,7 +445,7 @@ def _side_effect(num_embeddings: int, *args, padding_idx=None, **kwargs):
 
     TODO: Remove and update `test_signal_model__version` values.
     """
-    default_tokens = len(lib.utils.PaddingAndLazyEmbedding._Tokens)
+    default_tokens = len(lib.utils.NumeralizePadEmbed._Tokens)
     return Embedding(num_embeddings - default_tokens, *args, padding_idx=None, **kwargs)
 
 
@@ -459,7 +459,7 @@ def _make_backward_compatible_model(config: _Config):
         model, *other = _make_small_signal_model(config)
 
     for embed, max_values in zip(model.encoder.embed_metadata, config.max_seq_meta_values):
-        embed = typing.cast(lib.utils.PaddingAndLazyEmbedding, embed)
+        embed = typing.cast(lib.utils.NumeralizePadEmbed, embed)
         embed.vocab.update({i: i for i in range(max_values)})
         embed.num_embeddings = len(embed.vocab)
 

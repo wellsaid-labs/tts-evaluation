@@ -9,7 +9,7 @@ from torch.nn.utils.rnn import pad_sequence
 from torchnlp.nn import LockedDropout
 
 from lib.spectrogram_model.containers import Encoded, Inputs
-from lib.utils import LSTM, PaddingAndLazyEmbedding
+from lib.utils import LSTM, NumeralizePadEmbed
 
 
 @lru_cache(maxsize=8)
@@ -207,7 +207,7 @@ class Encoder(torch.nn.Module):
         self.embed_seq_metadata = self._make_embeds(seq_meta_embed_size, max_seq_meta_values)
         self.seq_meta_embed_dropout = torch.nn.Dropout(seq_meta_embed_dropout)
         self.embed_token_metadata = self._make_embeds(token_meta_embed_size, max_token_meta_values)
-        self.embed_token = PaddingAndLazyEmbedding(max_tokens, hidden_size)
+        self.embed_token = NumeralizePadEmbed(max_tokens, hidden_size)
         self.embed = torch.nn.Sequential(
             torch.nn.Linear(
                 hidden_size + seq_meta_embed_size + max_token_embed_size + token_meta_embed_size,
@@ -257,7 +257,7 @@ class Encoder(torch.nn.Module):
         message = "`embed_size` must be divisable by the number of metadata attributes."
         assert len(max_values) == 0 or embed_size % len(max_values) == 0, message
         size = embed_size // len(max_values) if len(max_values) > 0 else 0
-        return ModuleList(PaddingAndLazyEmbedding(n, embedding_dim=size) for n in max_values)
+        return ModuleList(NumeralizePadEmbed(n, embedding_dim=size) for n in max_values)
 
     def __call__(self, inputs: Inputs) -> Encoded:
         return super().__call__(inputs)
