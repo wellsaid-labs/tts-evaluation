@@ -12,7 +12,7 @@ from tqdm import tqdm
 
 from lib.spectrogram_model import decoder, encoder
 from lib.spectrogram_model.containers import Encoded, Inputs, Preds
-from lib.utils import PaddingAndLazyEmbedding
+from lib.utils import NumeralizePadEmbed
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +96,7 @@ class SpectrogramModel(torch.nn.Module):
         """If `True` then the "unknown token" may be used during evaluation, otherwise this will
         error if a new token is encountered during evaluation."""
         for mod in self.modules():
-            if isinstance(mod, PaddingAndLazyEmbedding):
+            if isinstance(mod, NumeralizePadEmbed):
                 mod.allow_unk_on_eval = val
 
     def _mask_stop_token(

@@ -362,9 +362,9 @@ def test_lstm_cell__hidden_state():
     assert_almost_equal(updated_hidden_state[1], other_updated_hidden_state[1])
 
 
-def test_padding_and_lazy_embedding__1d():
-    """Test `PaddingAndLazyEmbedding` in a basic training case with a 1-dimensional input."""
-    model = lib.utils.PaddingAndLazyEmbedding(100, 16)
+def test_numeralize_pad_embed__1d():
+    """Test `NumeralizePadEmbed` in a basic training case with a 1-dimensional input."""
+    model = lib.utils.NumeralizePadEmbed(100, 16)
     initial_vocab = model.vocab.copy()
     embedded, mask = model(["a"])
     assert torch.equal(embedded, model.embed(torch.tensor([2])))
@@ -373,9 +373,9 @@ def test_padding_and_lazy_embedding__1d():
     assert len(model._new_tokens) == 0
 
 
-def test_padding_and_lazy_embedding__2d():
-    """Test `PaddingAndLazyEmbedding` in a basic training case with a 2-dimensional input."""
-    model = lib.utils.PaddingAndLazyEmbedding(100, 16)
+def test_numeralize_pad_embed__2d():
+    """Test `NumeralizePadEmbed` in a basic training case with a 2-dimensional input."""
+    model = lib.utils.NumeralizePadEmbed(100, 16)
     initial_vocab = model.vocab.copy()
     embedded, mask = model([["a"]])
     assert torch.equal(embedded, model.embed(torch.tensor([[2]])))
@@ -384,10 +384,10 @@ def test_padding_and_lazy_embedding__2d():
     assert len(model._new_tokens) == 0
 
 
-def test_padding_and_lazy_embedding__no_proactive_updates():
-    """Test `PaddingAndLazyEmbedding` that `proactive_updates` has no impact on non-distributed
+def test_numeralize_pad_embed__no_proactive_updates():
+    """Test `NumeralizePadEmbed` that `proactive_updates` has no impact on non-distributed
     training."""
-    model = lib.utils.PaddingAndLazyEmbedding(100, 16, proactive_updates=0)
+    model = lib.utils.NumeralizePadEmbed(100, 16, proactive_updates=0)
     initial_vocab = model.vocab.copy()
     embedded, mask = model([["a"]])
     assert torch.equal(embedded, model.embed(torch.tensor([[2]])))
@@ -395,9 +395,9 @@ def test_padding_and_lazy_embedding__no_proactive_updates():
     assert model.vocab == {**initial_vocab, "a": 2}
 
 
-def test_padding_and_lazy_embedding__padding():
-    """Test `PaddingAndLazyEmbedding` pads and masks the output correctly."""
-    model = lib.utils.PaddingAndLazyEmbedding(100, 16)
+def test_numeralize_pad_embed__padding():
+    """Test `NumeralizePadEmbed` pads and masks the output correctly."""
+    model = lib.utils.NumeralizePadEmbed(100, 16)
     initial_vocab = model.vocab.copy()
 
     embedded, mask = model([["a"]])
@@ -411,10 +411,10 @@ def test_padding_and_lazy_embedding__padding():
     assert model.vocab == {**initial_vocab, "a": 2, "b": 3}
 
 
-def test_padding_and_lazy_embedding__allow_unk_on_eval():
-    """Test `PaddingAndLazyEmbedding` handles unknown tokens during evaluation and doesn't update
+def test_numeralize_pad_embed__allow_unk_on_eval():
+    """Test `NumeralizePadEmbed` handles unknown tokens during evaluation and doesn't update
     vocab."""
-    model = lib.utils.PaddingAndLazyEmbedding(100, 16, allow_unk_on_eval=False)
+    model = lib.utils.NumeralizePadEmbed(100, 16, allow_unk_on_eval=False)
     initial_vocab = model.vocab.copy()
 
     model.eval()
@@ -435,19 +435,19 @@ def test_padding_and_lazy_embedding__allow_unk_on_eval():
     assert model._unk_tokens == set()
 
 
-def test_padding_and_lazy_embedding__zero_length():
-    """Test `PaddingAndLazyEmbedding` can handle a zero length sequence."""
-    model = lib.utils.PaddingAndLazyEmbedding(100, 16)
+def test_numeralize_pad_embed__zero_length():
+    """Test `NumeralizePadEmbed` can handle a zero length sequence."""
+    model = lib.utils.NumeralizePadEmbed(100, 16)
     model.train(mode=False)
     embedded, mask = model([[]])
     assert embedded.shape == (0, 1, 16)
     assert mask.shape == (0, 1)
 
 
-def test_padding_and_lazy_embedding__upate_tokens():
-    """Test `PaddingAndLazyEmbedding` update tokens can add/update new tokens and embeddings."""
+def test_numeralize_pad_embed__upate_tokens():
+    """Test `NumeralizePadEmbed` update tokens can add/update new tokens and embeddings."""
     embedding_size = 16
-    model = lib.utils.PaddingAndLazyEmbedding(100, embedding_size)
+    model = lib.utils.NumeralizePadEmbed(100, embedding_size)
     initial_vocab = model.vocab.copy()
 
     # Add new token
@@ -467,21 +467,21 @@ def test_padding_and_lazy_embedding__upate_tokens():
     assert torch.allclose(model.weight[model.vocab["a"]], embedding)
 
 
-def test_padding_and_lazy_embedding__too_many_tokens():
-    """Test `PaddingAndLazyEmbedding` errors if too many tokens have been registered."""
-    model = lib.utils.PaddingAndLazyEmbedding(1, 16)
+def test_numeralize_pad_embed__too_many_tokens():
+    """Test `NumeralizePadEmbed` errors if too many tokens have been registered."""
+    model = lib.utils.NumeralizePadEmbed(1, 16)
     model([["a"]])
     with pytest.raises(ValueError):
         model([["b"]])
 
 
-def _init_padding_and_lazy_embedding(rank, nprocs, file_name, *args, **kwargs):
-    """Initialize various objects for testing the `PaddingAndLazyEmbedding` in a distributed
+def _init_numeralize_pad_embed(rank, nprocs, file_name, *args, **kwargs):
+    """Initialize various objects for testing the `NumeralizePadEmbed` in a distributed
     context."""
     torch.distributed.init_process_group(
         backend="gloo", init_method=f"file://{file_name}", world_size=nprocs, rank=rank
     )
-    model = lib.utils.PaddingAndLazyEmbedding(*args, **kwargs)
+    model = lib.utils.NumeralizePadEmbed(*args, **kwargs)
     initial_vocab = model.vocab.copy()
     model = torch.nn.parallel.DistributedDataParallel(model)
     optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
@@ -496,10 +496,8 @@ def _spawn_helper(func, nprocs=2):
     torch.multiprocessing.spawn(partial_, nprocs=nprocs)
 
 
-def _padding_and_lazy_embedding__distributed_helper(rank, nprocs, file_name):
-    initial_vocab, model, optimizer = _init_padding_and_lazy_embedding(
-        rank, nprocs, file_name, 100, 16
-    )
+def _numeralize_pad_embed__distributed_helper(rank, nprocs, file_name):
+    initial_vocab, model, optimizer = _init_numeralize_pad_embed(rank, nprocs, file_name, 100, 16)
     for i in range(3):
         model = model.train(mode=True)
         optimizer.zero_grad()
@@ -510,36 +508,34 @@ def _padding_and_lazy_embedding__distributed_helper(rank, nprocs, file_name):
         model = model.train(mode=False)
         model(input_)
     expected = {**initial_vocab, 0: 2, 100: 3, 1: 4, 101: 5, 2: 6, 102: 7}
-    assert typing.cast(lib.utils.PaddingAndLazyEmbedding, model.module).vocab == expected
-    assert len(typing.cast(lib.utils.PaddingAndLazyEmbedding, model.module)._new_tokens) == 0
+    assert typing.cast(lib.utils.NumeralizePadEmbed, model.module).vocab == expected
+    assert len(typing.cast(lib.utils.NumeralizePadEmbed, model.module)._new_tokens) == 0
 
 
-def test_padding_and_lazy_embedding__distributed():
-    """Test `PaddingAndLazyEmbedding` in a basic distributed training case."""
-    _spawn_helper(_padding_and_lazy_embedding__distributed_helper)
+def test_numeralize_pad_embed__distributed():
+    """Test `NumeralizePadEmbed` in a basic distributed training case."""
+    _spawn_helper(_numeralize_pad_embed__distributed_helper)
 
 
-def _padding_and_lazy_embedding__distributed_duplicate_tokens_helper(rank, nprocs, file_name):
-    initial_vocab, model, optimizer = _init_padding_and_lazy_embedding(
-        rank, nprocs, file_name, 100, 16
-    )
+def _numeralize_pad_embed__distributed_duplicate_tokens_helper(rank, nprocs, file_name):
+    initial_vocab, model, optimizer = _init_numeralize_pad_embed(rank, nprocs, file_name, 100, 16)
     model = model.train(mode=True)
     optimizer.zero_grad()
     out, _ = model([list(range(4))])
     out.sum().backward()
     optimizer.step()
     expected = {**initial_vocab, 0: 2, 1: 3, 2: 4, 3: 5}
-    assert typing.cast(lib.utils.PaddingAndLazyEmbedding, model.module).vocab == expected
-    assert len(typing.cast(lib.utils.PaddingAndLazyEmbedding, model.module)._new_tokens) == 0
+    assert typing.cast(lib.utils.NumeralizePadEmbed, model.module).vocab == expected
+    assert len(typing.cast(lib.utils.NumeralizePadEmbed, model.module)._new_tokens) == 0
 
 
-def test_padding_and_lazy_embedding__distributed_duplicate_tokens():
-    """Test `PaddingAndLazyEmbedding` syncs devices correctly which submit the same new token."""
-    _spawn_helper(_padding_and_lazy_embedding__distributed_duplicate_tokens_helper)
+def test_numeralize_pad_embed__distributed_duplicate_tokens():
+    """Test `NumeralizePadEmbed` syncs devices correctly which submit the same new token."""
+    _spawn_helper(_numeralize_pad_embed__distributed_duplicate_tokens_helper)
 
 
-def _padding_and_lazy_embedding__distributed_no_update_helper(rank, nprocs, file_name):
-    _, model, optimizer = _init_padding_and_lazy_embedding(
+def _numeralize_pad_embed__distributed_no_update_helper(rank, nprocs, file_name):
+    _, model, optimizer = _init_numeralize_pad_embed(
         rank, nprocs, file_name, 100, 16, proactive_updates=0
     )
     side_effect = torch.distributed.all_gather_object
@@ -562,15 +558,15 @@ def _padding_and_lazy_embedding__distributed_no_update_helper(rank, nprocs, file
         assert all_gather_mock.call_count == 1
 
 
-def test_padding_and_lazy_embedding__distributed_no_update():
-    """Test `PaddingAndLazyEmbedding` does not unnecessarily call
+def test_numeralize_pad_embed__distributed_no_update():
+    """Test `NumeralizePadEmbed` does not unnecessarily call
     `torch.distributed.all_gather_object`."""
-    _spawn_helper(_padding_and_lazy_embedding__distributed_no_update_helper)
+    _spawn_helper(_numeralize_pad_embed__distributed_no_update_helper)
 
 
-def _padding_and_lazy_embedding__distributed_proactive_updates_helper(rank, nprocs, file_name):
+def _numeralize_pad_embed__distributed_proactive_updates_helper(rank, nprocs, file_name):
     proactive_updates = 5
-    _, model, optimizer = _init_padding_and_lazy_embedding(
+    _, model, optimizer = _init_numeralize_pad_embed(
         rank, nprocs, file_name, 100, 16, proactive_updates=proactive_updates
     )
     side_effect = torch.distributed.all_gather_object
@@ -583,9 +579,9 @@ def _padding_and_lazy_embedding__distributed_proactive_updates_helper(rank, npro
             assert all_gather_mock.call_count == min(i + 1, proactive_updates)
 
 
-def test_padding_and_lazy_embedding__distributed_proactive_updates():
-    """Test `PaddingAndLazyEmbedding` calls `torch.distributed.all_gather_object` proactively."""
-    _spawn_helper(_padding_and_lazy_embedding__distributed_proactive_updates_helper)
+def test_numeralize_pad_embed__distributed_proactive_updates():
+    """Test `NumeralizePadEmbed` calls `torch.distributed.all_gather_object` proactively."""
+    _spawn_helper(_numeralize_pad_embed__distributed_proactive_updates_helper)
 
 
 def test_clamp():

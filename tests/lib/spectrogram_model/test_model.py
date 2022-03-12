@@ -372,7 +372,7 @@ def _set_embedding_vocab(model: SpectrogramModel, config: _Config):
     """Update `model` vocab so it can be run in inference mode."""
     model.encoder.embed_token.update_tokens(list(range(config.max_tokens)))
     for i, max_values in enumerate(config.max_seq_meta_values):
-        embedding = typing.cast(lib.utils.PaddingAndLazyEmbedding, model.encoder.embed_metadata[i])
+        embedding = typing.cast(lib.utils.NumeralizePadEmbed, model.encoder.embed_metadata[i])
         embedding.update_tokens(list(range(max_values)))
 
 
@@ -651,7 +651,7 @@ def _side_effect(config: _Config, num_embeddings: int, *args, padding_idx=None, 
     TODO: Remove and update `test_spectrogram_model__version` values.
     """
     assert all(config.max_tokens != n for n in config.max_seq_meta_values)
-    default_tokens = len(lib.utils.PaddingAndLazyEmbedding._Tokens)
+    default_tokens = len(lib.utils.NumeralizePadEmbed._Tokens)
     padding_idx = padding_idx if num_embeddings == (config.max_tokens + default_tokens) else None
     return Embedding(num_embeddings - default_tokens, *args, padding_idx=padding_idx, **kwargs)
 
@@ -669,7 +669,7 @@ def _make_backward_compatible_model(config: _Config, stop_threshold=0.5):
     model.encoder.embed_token.vocab.update({i: i for i in range(config.max_tokens)})
     model.encoder.embed_token.num_embeddings = len(model.encoder.embed_token.vocab)
     for embed, max_values in zip(model.encoder.embed_metadata, config.max_seq_meta_values):
-        embed = typing.cast(lib.utils.PaddingAndLazyEmbedding, embed)
+        embed = typing.cast(lib.utils.NumeralizePadEmbed, embed)
         embed.vocab.update({i: i for i in range(max_values)})
         embed.num_embeddings = len(embed.vocab)
 

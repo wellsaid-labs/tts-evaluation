@@ -395,7 +395,7 @@ Hashable1d2dList = typing.Union[
 ]
 
 
-class PaddingAndLazyEmbedding(torch.nn.Module):
+class NumeralizePadEmbed(torch.nn.Module):
     """An `Embedding` layer with `max_embeddings` that progressively maps new tokens to embeddings.
 
     NOTE: This layer is intended to simplify the boilerplate code required to numeralize, pad,
