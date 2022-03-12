@@ -179,8 +179,8 @@ def get_average_db_rms_level(
         torch.FloatTensor [batch_size]
     """
     num_elements = db_spectrogram.shape[0] if mask is None else mask.sum(dim=1)
-    cumulative_power_rms_level = get_power_rms_level_sum(db_spectrogram, mask, **kwargs)
-    return power_to_db(cumulative_power_rms_level / num_elements)
+    cum_power_rms_level = get_power_rms_level_sum(db_spectrogram, mask, **kwargs)
+    return power_to_db(cum_power_rms_level / num_elements)
 
 
 @configurable

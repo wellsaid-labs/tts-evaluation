@@ -208,9 +208,9 @@ def _mock_model(model: SpectrogramModel) -> typing.Callable[[int], None]:
         token_skip_warning: int,
     ):
         window_start = hidden_state.window_start
-        cumulative_alignment_padding = self.cumulative_alignment_padding
-        slice_ = slice(cumulative_alignment_padding, -cumulative_alignment_padding)
-        first_token = hidden_state.cumulative_alignment[:, slice_].sum() == 0
+        cum_alignment_padding = self.cument_padding
+        slice_ = slice(cum_alignment_padding, -cum_alignment_padding)
+        first_token = hidden_state.cum_alignment[:, slice_].sum() == 0
         context, alignment, hidden_state = _attention_forward(
             encoded, query, hidden_state, token_skip_warning
         )

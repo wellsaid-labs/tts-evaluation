@@ -70,34 +70,34 @@ class Decoder(torch.nn.Module):
         """Make an initial hidden state, if one is not provided."""
         max_num_tokens, batch_size, _ = encoded.tokens.shape
         device = encoded.tokens.device
-        cum_align_padding = self.attention.cumulative_alignment_padding
+        cum_alignment_padding = self.attention.cum_alignment_padding
 
         # [batch_size, seq_meta_embed_size + encoder_out_size] →
         # [batch_size, num_frame_channels + 1 + encoder_out_size] →
         # ([batch_size, num_frame_channels], [batch_size, 1], [batch_size, encoder_out_size])
         first_token = torch.cat([encoded.seq_metadata, encoded.tokens[0]], dim=1)
         state = self.init_state(first_token).split(self.init_state_segments, dim=-1)
-        init_frame, init_cum_align, init_attention_context = state
+        init_frame, init_cum_alignment, init_attention_context = state
 
-        # NOTE: The `cum_align` or `cumulative_alignment` vector has a positive value for every
+        # NOTE: The `cum_alignment` or `cum_alignment` vector has a positive value for every
         # token that is has attended to. Assuming the model is attending to tokens from
         # left-to-right and the model starts reading at the first token, then any padding to the
         # left of the first token should be positive to be consistent.
-        cum_align = torch.zeros(batch_size, max_num_tokens, device=device)
+        cum_alignment = torch.zeros(batch_size, max_num_tokens, device=device)
         # [batch_size, 1] → [batch_size, cum_align_padding]
-        init_cum_align = init_cum_align.expand(-1, cum_align_padding).abs()
+        init_cum_alignment = init_cum_alignment.expand(-1, cum_alignment_padding).abs()
         # [batch_size, num_tokens] → [batch_size, num_tokens + cum_align_padding]
-        cum_align = torch.cat([init_cum_align, cum_align], -1)
+        cum_alignment = torch.cat([init_cum_alignment, cum_alignment], -1)
         # [batch_size, num_tokens + cum_align_padding] →
         # [batch_size, num_tokens + 2 * cum_align_padding]
         kwargs = dict(mode="constant", value=0.0)
-        cum_align = functional.pad(cum_align, [0, cum_align_padding], **kwargs)
+        cum_alignment = functional.pad(cum_alignment, [0, cum_alignment_padding], **kwargs)
 
         return DecoderHiddenState(
             last_attention_context=init_attention_context,
             last_frame=init_frame.unsqueeze(0),
             attention_hidden_state=AttentionHiddenState(
-                cumulative_alignment=cum_align,
+                cum_alignment=cum_alignment,
                 window_start=torch.zeros(batch_size, device=device, dtype=torch.long),
             ),
             lstm_one_hidden_state=None,
