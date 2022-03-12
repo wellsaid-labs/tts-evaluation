@@ -84,11 +84,11 @@ class Decoder(torch.nn.Module):
         self.lstm_hidden_size = lstm_hidden_size
         self.encoder_out_size = encoder_out_size
         input_size = speaker_embedding_size + encoder_out_size
-        initial_state_ouput_size = num_frame_channels + 1 + encoder_out_size
-        self.initial_state = torch.nn.Sequential(
+        self.init_state_segments = [self.num_frame_channels, 1, self.encoder_out_size]
+        self.init_state = torch.nn.Sequential(
             torch.nn.Linear(input_size, input_size),
             torch.nn.ReLU(),
-            torch.nn.Linear(input_size, initial_state_ouput_size),
+            torch.nn.Linear(input_size, sum(self.init_state_segments)),
         )
         self.pre_net = PreNet(num_frame_channels, speaker_embedding_size, pre_net_size)
         self.lstm_layer_one = LSTMCell(pre_net_size + input_size, lstm_hidden_size)
@@ -100,10 +100,10 @@ class Decoder(torch.nn.Module):
             torch.nn.Linear(lstm_hidden_size, 1),
         )
 
-    def _make_initial_hidden_state(
+    def _make_init_hidden_state(
         self, tokens: torch.Tensor, speaker: torch.Tensor
     ) -> DecoderHiddenState:
-        """Make an initial hidden state, if one is not provided.
+        """Make an init hidden state, if one is not provided.
 
         Args:
             tokens (torch.FloatTensor [num_tokens, batch_size, encoder_out_size])
@@ -113,12 +113,12 @@ class Decoder(torch.nn.Module):
         device = tokens.device
         cumulative_alignment_padding = self.attention.cumulative_alignment_padding
 
-        segments = [self.num_frame_channels, 1, self.encoder_out_size]
         # [batch_size, speaker_embedding_dim + encoder_out_size] →
         # [batch_size, num_frame_channels + 1 + encoder_out_size] →
         # ([batch_size, num_frame_channels], [batch_size, 1], [batch_size, encoder_out_size])
-        state = self.initial_state(torch.cat([speaker, tokens[0]], dim=1)).split(segments, dim=-1)
-        initial_frame, initial_cumulative_alignment, initial_attention_context = state
+        segments = self.init_state_segments
+        state = self.init_state(torch.cat([speaker, tokens[0]], dim=1)).split(segments, dim=-1)
+        init_frame, init_cumulative_alignment, init_attention_context = state
 
         # NOTE: The `cumulative_alignment` vector has a positive value for every token that is has
         # attended to. Assuming the model is attending to tokens from left-to-right and the model
@@ -126,11 +126,11 @@ class Decoder(torch.nn.Module):
         # be positive to be consistent.
         cumulative_alignment = torch.zeros(batch_size, max_num_tokens, device=device)
         # [batch_size, 1] → [batch_size, cumulative_alignment_padding]
-        initial_cumulative_alignment = initial_cumulative_alignment.expand(
+        init_cumulative_alignment = init_cumulative_alignment.expand(
             -1, cumulative_alignment_padding
         ).abs()
         # [batch_size, num_tokens] → [batch_size, num_tokens + cumulative_alignment_padding]
-        cumulative_alignment = torch.cat([initial_cumulative_alignment, cumulative_alignment], -1)
+        cumulative_alignment = torch.cat([init_cumulative_alignment, cumulative_alignment], -1)
         # [batch_size, num_tokens + cumulative_alignment_padding] →
         # [batch_size, num_tokens + 2 * cumulative_alignment_padding]
         cumulative_alignment = functional.pad(
@@ -141,8 +141,8 @@ class Decoder(torch.nn.Module):
         )
 
         return DecoderHiddenState(
-            last_attention_context=initial_attention_context,
-            last_frame=initial_frame.unsqueeze(0),
+            last_attention_context=init_attention_context,
+            last_frame=init_frame.unsqueeze(0),
             attention_hidden_state=AttentionHiddenState(
                 cumulative_alignment=cumulative_alignment,
                 window_start=torch.zeros(batch_size, device=device, dtype=torch.long),
@@ -197,9 +197,7 @@ class Decoder(torch.nn.Module):
         )
 
         hidden_state = (
-            self._make_initial_hidden_state(tokens, speaker)
-            if hidden_state is None
-            else hidden_state
+            self._make_init_hidden_state(tokens, speaker) if hidden_state is None else hidden_state
         )
 
         (
