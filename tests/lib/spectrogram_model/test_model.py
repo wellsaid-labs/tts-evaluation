@@ -73,7 +73,7 @@ def _make_spectrogram_model(
         lib.spectrogram_model.decoder.Decoder.__init__: HParams(
             pre_net_size=16,
             lstm_hidden_size=16,
-            encoder_output_size=16,
+            encoder_out_size=16,
             stop_net_dropout=dropout,
         ),
         lib.spectrogram_model.pre_net.PreNet.__init__: HParams(num_layers=1, dropout=dropout),

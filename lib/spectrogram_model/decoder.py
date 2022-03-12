@@ -29,7 +29,7 @@ class Decoder(torch.nn.Module):
         seq_meta_embed_size The size of the sequence metadata embedding.
         pre_net_size: The size of the pre-net hidden representation and output.
         lstm_hidden_size: The hidden size of the LSTM layers.
-        encoder_output_size: The size of the attention context derived from the encoded sequence.
+        encoder_out_size: The size of the attention context derived from the encoded sequence.
         stop_net_dropout: The dropout probability of the stop net.
     """
 
@@ -40,7 +40,7 @@ class Decoder(torch.nn.Module):
         seq_meta_embed_size: int,
         pre_net_size: int = HParam(),
         lstm_hidden_size: int = HParam(),
-        encoder_output_size: int = HParam(),
+        encoder_out_size: int = HParam(),
         stop_net_dropout: float = HParam(),
     ):
         super().__init__()
@@ -48,9 +48,9 @@ class Decoder(torch.nn.Module):
         self.num_frame_channels = num_frame_channels
         self.seq_meta_embed_size = seq_meta_embed_size
         self.lstm_hidden_size = lstm_hidden_size
-        self.encoder_output_size = encoder_output_size
-        input_size = seq_meta_embed_size + encoder_output_size
-        initial_state_ouput_size = num_frame_channels + 1 + encoder_output_size
+        self.encoder_out_size = encoder_out_size
+        input_size = seq_meta_embed_size + encoder_out_size
+        initial_state_ouput_size = num_frame_channels + 1 + encoder_out_size
         self.initial_state = torch.nn.Sequential(
             torch.nn.Linear(input_size, input_size),
             torch.nn.ReLU(),
@@ -72,10 +72,10 @@ class Decoder(torch.nn.Module):
         device = encoded.tokens.device
         cum_align_padding = self.attention.cumulative_alignment_padding
 
-        segments = [self.num_frame_channels, 1, self.encoder_output_size]
-        # [batch_size, seq_meta_embed_size + encoder_output_size] →
-        # [batch_size, num_frame_channels + 1 + encoder_output_size] →
-        # ([batch_size, num_frame_channels], [batch_size, 1], [batch_size, encoder_output_size])
+        segments = [self.num_frame_channels, 1, self.encoder_out_size]
+        # [batch_size, seq_meta_embed_size + encoder_out_size] →
+        # [batch_size, num_frame_channels + 1 + encoder_out_size] →
+        # ([batch_size, num_frame_channels], [batch_size, 1], [batch_size, encoder_out_size])
         first_token = torch.cat([encoded.seq_metadata, encoded.tokens[0]], dim=1)
         state = self.initial_state(first_token).split(segments, dim=-1)
         initial_frame, initial_cum_align, initial_attention_context = state
@@ -168,19 +168,19 @@ class Decoder(torch.nn.Module):
 
             # [batch_size, pre_net_hidden_size] (concat)
             # [batch_size, seq_meta_embed_size] (concat)
-            # [batch_size, encoder_output_size] →
-            # [batch_size, pre_net_hidden_size + encoder_output_size + seq_meta_embed_size]
+            # [batch_size, encoder_out_size] →
+            # [batch_size, pre_net_hidden_size + encoder_out_size + seq_meta_embed_size]
             frame = torch.cat([frame, last_attention_context, encoded.seq_metadata], dim=1)
 
             # frame [batch (batch_size),
-            # input_size (pre_net_hidden_size + encoder_output_size + seq_meta_embed_size)]  →
+            # input_size (pre_net_hidden_size + encoder_out_size + seq_meta_embed_size)]  →
             # [batch_size, lstm_hidden_size]
             lstm_one_hidden_state = self.lstm_layer_one(frame, lstm_one_hidden_state)
             assert lstm_one_hidden_state is not None
             frame = lstm_one_hidden_state[0]
 
             # Initial attention alignment, sometimes refered to as attention weights.
-            # attention_context [batch_size, encoder_output_size]
+            # attention_context [batch_size, encoder_out_size]
             query = frame.unsqueeze(0)
             last_attention_context, alignment, attention_hidden_state = self.attention(
                 encoded=encoded, query=query, hidden_state=attention_hidden_state, **kwargs
@@ -198,7 +198,7 @@ class Decoder(torch.nn.Module):
         alignments = torch.stack(alignments_list, dim=0)
         # [num_frames, batch_size, lstm_hidden_size]
         frames = torch.stack(frames_list, dim=0)
-        # [num_frames, batch_size, encoder_output_size]
+        # [num_frames, batch_size, encoder_out_size]
         attention_contexts = torch.stack(attention_contexts_list, dim=0)
         # [num_frames, batch_size]
         window_starts = torch.stack(window_start_list, dim=0)
@@ -215,13 +215,13 @@ class Decoder(torch.nn.Module):
         seq_metadata = seq_metadata.expand(num_frames, -1, -1)
 
         # [num_frames, batch_size, lstm_hidden_size] (concat)
-        # [num_frames, batch_size, encoder_output_size] (concat)
+        # [num_frames, batch_size, encoder_out_size] (concat)
         # [num_frames, batch_size, seq_meta_embed_size] →
-        # [num_frames, batch_size, lstm_hidden_size + encoder_output_size + seq_meta_embed_size]
+        # [num_frames, batch_size, lstm_hidden_size + encoder_out_size + seq_meta_embed_size]
         frames = torch.cat([frames, attention_contexts, seq_metadata], dim=2)
 
         # frames [seq_len (num_frames), batch (batch_size),
-        # input_size (lstm_hidden_size + encoder_output_size + seq_meta_embed_size)] →
+        # input_size (lstm_hidden_size + encoder_out_size + seq_meta_embed_size)] →
         # [num_frames, batch_size, lstm_hidden_size]
         frames, lstm_two_hidden_state = self.lstm_layer_two(frames, lstm_two_hidden_state)
 
@@ -230,7 +230,7 @@ class Decoder(torch.nn.Module):
         stop_token = self.linear_stop_token(frames).squeeze(2)
 
         # [num_frames, batch_size,
-        #  lstm_hidden_size (concat) encoder_output_size (concat) seq_meta_embed_size] →
+        #  lstm_hidden_size (concat) encoder_out_size (concat) seq_meta_embed_size] →
         # [num_frames, batch_size, num_frame_channels]
         frames = self.linear_out(torch.cat([frames, attention_contexts, seq_metadata], dim=2))
 
