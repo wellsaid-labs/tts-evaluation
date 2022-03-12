@@ -208,7 +208,7 @@ def _mock_model(model: SpectrogramModel) -> typing.Callable[[int], None]:
         token_skip_warning: int,
     ):
         window_start = hidden_state.window_start
-        cum_alignment_padding = self.cument_padding
+        cum_alignment_padding = self.cum_alignment_padding
         slice_ = slice(cum_alignment_padding, -cum_alignment_padding)
         first_token = hidden_state.cum_alignment[:, slice_].sum() == 0
         context, alignment, hidden_state = _attention_forward(
