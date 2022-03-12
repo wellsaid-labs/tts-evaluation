@@ -239,6 +239,11 @@ def test_encoder():
     assert encoded.num_tokens.dtype == torch.long
     assert encoded.num_tokens.shape == (batch_size,)
 
+    mask_ = ~encoded.tokens_mask.transpose(0, 1).unsqueeze(-1)
+    assert encoded.tokens.masked_select(mask_).sum() == 0
+    assert torch.equal(encoded.tokens_mask.sum(dim=1), encoded.num_tokens)
+    assert encoded.num_tokens.tolist(), [len(t) for t in arg.tokens]
+
     encoded.tokens.sum().backward()
 
 
