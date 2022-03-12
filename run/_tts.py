@@ -19,13 +19,12 @@ from hparams import HParam, configurable
 from spacy.lang.en import English
 from third_party import LazyLoader
 from torchnlp.encoders.text import stack_and_pad_tensors
-from torchnlp.utils import lengths_to_mask
 
 from lib.environment import PT_EXTENSION, load
 from lib.signal_model import SignalModel, generate_waveform
 from lib.spectrogram_model import Infer, Mode, Params, SpectrogramModel
 from lib.text import grapheme_to_phoneme, load_en_core_web_md
-from lib.utils import get_chunks, tqdm_
+from lib.utils import get_chunks, lengths_to_mask, tqdm_
 from run import train
 from run._config import CHECKPOINTS_PATH, GRAPHEME_TO_PHONEME_RESTRICTED, normalize_vo_script
 from run.data._loader import Language, Session, Span, Speaker

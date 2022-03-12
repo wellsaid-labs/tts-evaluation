@@ -20,10 +20,11 @@ import torch.utils.data
 from hparams import HParam, configurable
 from third_party import get_parameter_norm
 from torch.nn.functional import binary_cross_entropy_with_logits, mse_loss
-from torchnlp.utils import get_total_parameters, lengths_to_mask
+from torchnlp.utils import get_total_parameters
 
 import lib
 from lib.distributed import is_master
+from lib.utils import lengths_to_mask
 from run._config import (
     ENGLISH_PHONETIC_CHARACTERS,
     PHONEME_SEPARATOR,

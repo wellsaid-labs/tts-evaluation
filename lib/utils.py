@@ -709,3 +709,19 @@ _TqdmVar = typing.TypeVar("_TqdmVar")
 def tqdm_(iterator: typing.Iterable[_TqdmVar], **kwargs) -> typing.Iterable[_TqdmVar]:
     """`tqdm` with typing."""
     return tqdm(iterator, **kwargs)
+
+
+def lengths_to_mask(
+    lengths: typing.Union[typing.List[int], torch.Tensor],
+    device: typing.Optional[torch.device] = None,
+) -> torch.Tensor:
+    """Make a tensor mask from `lengths`.
+
+    TODO: It may be faster to create the mask with Python lists first, and then transform it
+    into a tensor, all together.
+    """
+    device = lengths.device if device is None and isinstance(lengths, torch.Tensor) else device
+    tokens_mask = torch.zeros(len(lengths), max(lengths), device=device, dtype=torch.bool)
+    for i, length in enumerate(lengths):
+        tokens_mask[i, :length] = True
+    return tokens_mask
