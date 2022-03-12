@@ -345,7 +345,8 @@ class Encoder(torch.nn.Module):
 
         tokens = [tokens[i][s] for i, s in enumerate(inputs.slices)]
         tokens = torch.nn.utils.rnn.pad_sequence(tokens)
-        num_tokens = [s.stop - s.start for s in inputs.slices]
+        indices = [s.indices(len(t)) for s, t in zip(inputs.slices, inputs.tokens)]
+        num_tokens = [b - a for a, b, _ in indices]
         num_tokens = torch.tensor(num_tokens, dtype=torch.long, device=tokens.device)
         tokens_mask = lengths_to_mask(num_tokens)
 
