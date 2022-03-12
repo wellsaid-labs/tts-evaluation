@@ -20,6 +20,14 @@ class _Casing(enum.Enum):
     NO_CASING: typing.Final = "no casing"
 
 
+class _Context(enum.Enum):
+    """Knowing that the model has to use context words differently from the script, we use this
+    to deliminate context words from the voice-over script."""
+
+    CONTEXT: typing.Final = "context"
+    SCRIPT: typing.Final = "script"
+
+
 def _get_case(c: str) -> _Casing:
     assert len(c) == 1
     if c.isupper():
@@ -44,10 +52,16 @@ def _make_token_embeddings(
 def _append_tokens_and_metadata(
     inputs: spectrogram_model.Inputs,
     span: typing.Union[spacy.tokens.span.Span, spacy.tokens.doc.Doc],
+    start_char: int,
+    end_char: int,
 ):
     """Preprocess and append `tokens` and `token_metadata` to `inputs`."""
-    inputs.token_metadata.append([(_get_case(c),) for c in str(span)])
+    inputs.token_metadata.append([[_get_case(c)] for c in str(span)])
     inputs.tokens.append(list(str(span).lower()))
+    inputs.slices.append(slice(start_char, end_char))
+    for slice_, metadata in zip(inputs.slices, inputs.token_metadata):
+        [m.append(_Context.SCRIPT) for m in metadata[slice_]]
+        [m.append(_Context.CONTEXT) if len(m) == 1 else m for m in metadata]
 
 
 def preprocess_spans(
@@ -58,9 +72,8 @@ def preprocess_spans(
     for span in spans:
         context = span.spacy_with_context()
         start_char = span.spacy.start_char - context.start_char
-        return_.slices.append(slice(start_char, start_char + len(str(span.spacy))))
         return_.seq_metadata.append((span.speaker, span.session))
-        _append_tokens_and_metadata(return_, context)
+        _append_tokens_and_metadata(return_, context, start_char, start_char + len(str(span.spacy)))
         typing.cast(list, return_.token_embeddings).append(_make_token_embeddings(context, device))
     token_embeddings = torch.nn.utils.rnn.pad_sequence(return_.token_embeddings, batch_first=True)
     return return_._replace(token_embeddings=token_embeddings)
@@ -82,9 +95,8 @@ def preprocess_inputs(
     """Preprocess inputs to inputs by including casing, context, and embeddings."""
     return_ = spectrogram_model.Inputs([], [], [], [], [])
     for doc, sesh in zip(inputs.doc, inputs.session):
-        return_.slices.append(slice(0, len(str(doc))))
         return_.seq_metadata.append((sesh[0], sesh))
-        _append_tokens_and_metadata(return_, doc)
+        _append_tokens_and_metadata(return_, doc, 0, len(str(doc)))
         typing.cast(list, return_.token_embeddings).append(_make_token_embeddings(doc, device))
     token_embeddings = torch.nn.utils.rnn.pad_sequence(return_.token_embeddings, batch_first=True)
     return return_._replace(token_embeddings=token_embeddings)
@@ -110,7 +122,7 @@ class SpectrogramModel(spectrogram_model.SpectrogramModel):
             *args,
             max_tokens=max_tokens,
             max_seq_meta_values=(max_speakers, max_sessions),
-            max_token_meta_values=(len(_Casing),),
+            max_token_meta_values=(len(_Casing), len(_Context)),
             max_token_embed_size=max_token_embed_size,
             **kwargs,
         )

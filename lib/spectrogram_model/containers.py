@@ -13,7 +13,7 @@ class Inputs(typing.NamedTuple):
     seq_metadata: typing.List[typing.Tuple[typing.Hashable, ...]]
 
     # Metadata associated with each token in each sequence
-    token_metadata: typing.List[typing.List[typing.Tuple[typing.Hashable, ...]]]
+    token_metadata: typing.List[typing.List[typing.List[typing.Hashable]]]
 
     # Embeddings associated with each token in each sequence
     # torch.FloatTensor [batch_size, num_tokens, *]
