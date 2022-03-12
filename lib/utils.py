@@ -404,11 +404,16 @@ class NumeralizePadEmbed(torch.nn.Module):
 
     TODO: Add a method for restarting `init_updates`, in case, there is new data.
 
+    NOTE: In a former version of this, we tried to track the `unk_token` embedding to see if it
+          had changed, in order to trigger a vocab update. This turned out to be difficult due
+          to the fancy optimizers with various second order and ema optimization techniques.
+
+          With that in mind, it's theoritically possible, that we could have a fancy update
+          detection mechanism based on changes in `unk_token`.
+
     Args:
         max_embeddings: The maximum number of embeddings needed, in addition to the standard unknown
             and padding embedding.
-        init_updates: The number of steps after initiation to update the vocab.
-        update_every: The number of steps between updates.
         allow_unk_on_eval: Iff then the "unknown token" may be used during evaluation, otherwise
             this will error if a new token is encountered during evaluation.
         *args: Arguments passed to `torch.nn.Embedding`.
@@ -430,17 +435,14 @@ class NumeralizePadEmbed(torch.nn.Module):
         self,
         max_embeddings: int,
         *args,
-        init_updates: int = 200,
-        update_every: int = 500,
         allow_unk_on_eval: bool = True,
         **kwargs,
     ):
         super().__init__()
 
         self.allow_unk_on_eval = allow_unk_on_eval
-        self.init_updates = init_updates
-        self.update_every = update_every
         self._training_forward_pass_counter = 0
+        self.reset()
 
         self.pad_idx = self._Tokens.PAD_TOKEN.value
         self.unk_idx = self._Tokens.UNK_TOKEN.value
@@ -470,7 +472,7 @@ class NumeralizePadEmbed(torch.nn.Module):
 
     def reset(self):
         """Reset the step counter, so that updates happen again."""
-        self._training_forward_pass_counter = 0
+        self.update_every = 1
 
     def update_tokens(
         self,
@@ -522,6 +524,9 @@ class NumeralizePadEmbed(torch.nn.Module):
             if token not in self.vocab:
                 self.vocab[token] = len(self.vocab)
 
+        if len(new_tokens) == 0:
+            self.update_every *= 2
+
         self._new_tokens = set()
 
     def _check_invariants(self):
@@ -555,8 +560,7 @@ class NumeralizePadEmbed(torch.nn.Module):
 
     def _should_update(self):
         return (
-            self._training_forward_pass_counter <= self.init_updates
-            or self._training_forward_pass_counter % self.update_every == 0
+            self._training_forward_pass_counter % self.update_every == 0
             or not lib.distributed.is_initialized()
         )
 
