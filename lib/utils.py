@@ -402,8 +402,6 @@ class NumeralizePadEmbed(torch.nn.Module):
           and embed a simple sequence. In order to support this end-to-end, this embedding layer
           only works with inputs in the form of [batch_size] or [batch_size, num_tokens].
 
-    TODO: Add a method for restarting `init_updates`, in case, there is new data.
-
     NOTE: In a former version of this, we tried to track the `unk_token` embedding to see if it
           had changed, in order to trigger a vocab update. This turned out to be difficult due
           to the fancy optimizers with various second order and ema optimization techniques.

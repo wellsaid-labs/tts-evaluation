@@ -1,5 +1,7 @@
+import enum
 import math
 import pathlib
+import random
 import tempfile
 import typing
 from functools import partial
@@ -491,7 +493,6 @@ def _init_numeralize_pad_embed(rank, nprocs, file_name, *args, **kwargs):
 
 def _spawn_helper(func, nprocs=2):
     """Spawn multiple processes for testing."""
-    nprocs = 2
     file_name = tempfile.mkstemp()[1]
     partial_ = partial(func, nprocs=nprocs, file_name=file_name)
     torch.multiprocessing.spawn(partial_, nprocs=nprocs)
@@ -552,6 +553,32 @@ def test_numeralize_pad_embed__distributed_updates():
     """Test `NumeralizePadEmbed` calls `torch.distributed.all_gather_object` the right number of
     times."""
     _spawn_helper(_numeralize_pad_embed__distributed_updates_helper)
+
+
+class NotSortable(enum.Enum):
+    A = 1
+    B = 2
+    C = 3
+    D = 4
+
+
+def _numeralize_pad_embed__distributed_not_sortable(rank, nprocs, file_name):
+    _, model, _ = _init_numeralize_pad_embed(rank, nprocs, file_name, 100, 16)
+    random.seed(123 + rank)
+    module = typing.cast(NumeralizePadEmbed, model.module)
+    input_ = [random.choice(list(NotSortable)) for _ in range(100)]
+    model(input_)
+    outputs = [None for _ in range(lib.distributed.get_world_size())]
+    torch.distributed.all_gather_object(outputs, module.vocab)
+    assert all(module.vocab == o for o in outputs)
+
+
+def test_numeralize_pad_embed__distributed_not_sortable():
+    """Test `NumeralizePadEmbed` handles unsortable items that have different sorting from process
+    to process. This is a regression test to ensure unsortable items are put in the vocab in the
+    same order between different processes.
+    """
+    _spawn_helper(_numeralize_pad_embed__distributed_not_sortable, nprocs=4)
 
 
 def test_clamp():
