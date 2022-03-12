@@ -277,7 +277,7 @@ def test_lstm__hidden_state():
     with fork_rng(seed=123):
         rnn = torch.nn.LSTM(10, 20, 2, bidirectional=True)
     output, updated_hidden_state = rnn(
-        input_, (other_rnn.initial_hidden_state, other_rnn.initial_cell_state)
+        input_, (other_rnn.init_hidden_state, other_rnn.init_cell_state)
     )
 
     assert_almost_equal(output, other_output)
@@ -296,7 +296,7 @@ def test_lstm__batch_first():
     with fork_rng(seed=123):
         rnn = torch.nn.LSTM(10, 20, 2, bidirectional=True, batch_first=True)
     output, updated_hidden_state = rnn(
-        input_, (other_rnn.initial_hidden_state, other_rnn.initial_cell_state)
+        input_, (other_rnn.init_hidden_state, other_rnn.init_cell_state)
     )
 
     assert_almost_equal(output, other_output)
@@ -315,7 +315,7 @@ def test_lstm__mono():
     with fork_rng(seed=123):
         rnn = torch.nn.LSTM(10, 20, 2, bidirectional=False)
     output, updated_hidden_state = rnn(
-        input_, (other_rnn.initial_hidden_state, other_rnn.initial_cell_state)
+        input_, (other_rnn.init_hidden_state, other_rnn.init_cell_state)
     )
 
     assert_almost_equal(output, other_output)
@@ -351,9 +351,7 @@ def test_lstm_cell__hidden_state():
 
     with fork_rng(seed=123):
         rnn = torch.nn.LSTMCell(10, 20)
-    updated_hidden_state = rnn(
-        input_, (other_rnn.initial_hidden_state, other_rnn.initial_cell_state)
-    )
+    updated_hidden_state = rnn(input_, (other_rnn.init_hidden_state, other_rnn.init_cell_state))
 
     assert_almost_equal(updated_hidden_state[0], other_updated_hidden_state[0])
     assert_almost_equal(updated_hidden_state[1], other_updated_hidden_state[1])
