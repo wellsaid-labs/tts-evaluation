@@ -710,16 +710,25 @@ def tqdm_(iterator: typing.Iterable[_TqdmVar], **kwargs) -> typing.Iterable[_Tqd
 
 
 def lengths_to_mask(
-    lengths: typing.Union[typing.List[int], torch.Tensor],
+    lengths: typing.Union[typing.List[int], torch.Tensor, int],
     device: typing.Optional[torch.device] = None,
 ) -> torch.Tensor:
     """Make a tensor mask from `lengths`.
 
     TODO: It may be faster to create the mask with Python lists first, and then transform it
     into a tensor, all together.
+
+    Returns:
+        torch.BoolTensor [lengths.numel(), max(lengths)]
     """
+    lengths = [lengths] if isinstance(lengths, int) else lengths
     device = lengths.device if device is None and isinstance(lengths, torch.Tensor) else device
-    tokens_mask = torch.zeros(len(lengths), int(max(lengths)), device=device, dtype=torch.bool)
+    if isinstance(lengths, torch.Tensor):
+        lengths = lengths.squeeze()
+        assert len(lengths.shape) < 2, "Lengths must be one or zero dimensional"
+        lengths = lengths.view(-1)
+    max_len = 0 if len(lengths) == 0 else int(max(lengths))
+    tokens_mask = torch.zeros(len(lengths), max_len, device=device, dtype=torch.bool)
     for i, length in enumerate(lengths):
         tokens_mask[i, :length] = True
     return tokens_mask

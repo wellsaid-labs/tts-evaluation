@@ -10,7 +10,7 @@ import torch.nn
 from torchnlp.random import fork_rng
 
 import lib
-from lib.utils import Timeline, TimelineMap, pad_tensor
+from lib.utils import Timeline, TimelineMap, lengths_to_mask, pad_tensor
 from tests._utils import assert_almost_equal
 
 
@@ -555,6 +555,19 @@ def test_triplets():
 
 
 def test_lengths_to_mask():
-    """Test `lengths_to_mask`."""
+    """Test `lengths_to_mask` with a variety of shapes."""
+    # Test tensors with various shapes
     expected = torch.tensor([[True, False, False], [True, True, False], [True, True, True]])
-    assert torch.equal(lib.utils.lengths_to_mask([1, 2, 3]), expected)
+    assert torch.equal(lengths_to_mask([1, 2, 3]), expected)
+    assert torch.equal(lengths_to_mask(torch.tensor([1, 2, 3])), expected)
+    assert torch.equal(lengths_to_mask(torch.tensor([[1, 2, 3]])), expected)
+
+    # Test scalars with various shapes
+    assert torch.equal(lengths_to_mask(1), torch.tensor([[True]]))
+    assert torch.equal(lengths_to_mask(torch.tensor(1)), torch.tensor([[True]]))
+    assert torch.equal(lengths_to_mask(torch.tensor([1])), torch.tensor([[True]]))
+
+    # Test empty tensors with various shapes
+    assert torch.equal(lengths_to_mask([]), torch.empty(0, 0, dtype=torch.bool))
+    assert torch.equal(lengths_to_mask(torch.tensor([])), torch.empty(0, 0, dtype=torch.bool))
+    assert torch.equal(lengths_to_mask(torch.tensor([[]])), torch.empty(0, 0, dtype=torch.bool))
