@@ -8,10 +8,10 @@ import torch.nn
 from torch.nn import Embedding
 from torch.nn.utils.weight_norm import remove_weight_norm, weight_norm
 from torchnlp.random import fork_rng
-from torchnlp.utils import lengths_to_mask
 
 import lib
 from lib.signal_model import SignalModel, generate_waveform
+from lib.utils import lengths_to_mask
 from tests import _utils
 
 assert_almost_equal = lambda *a, **k: _utils.assert_almost_equal(*a, **k, decimal=4)

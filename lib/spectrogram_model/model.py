@@ -7,12 +7,11 @@ import typing
 import torch
 import torch.nn
 from hparams import HParam, configurable
-from torchnlp.utils import lengths_to_mask
 from tqdm import tqdm
 
 from lib.spectrogram_model import decoder, encoder
 from lib.spectrogram_model.containers import Encoded, Inputs, Preds
-from lib.utils import NumeralizePadEmbed
+from lib.utils import NumeralizePadEmbed, lengths_to_mask
 
 logger = logging.getLogger(__name__)
 
@@ -211,7 +210,7 @@ class SpectrogramModel(torch.nn.Module):
                     stop_tokens=torch.stack(stop_tokens, dim=0),
                     alignments=torch.stack(alignments, dim=0),
                     num_frames=lengths,
-                    frames_mask=lengths_to_mask(lengths, device=device),
+                    frames_mask=lengths_to_mask(lengths),
                     num_tokens=encoded.num_tokens,
                     tokens_mask=encoded.tokens_mask,
                     reached_max=reached_max,

@@ -776,3 +776,9 @@ def test_triplets():
         ("a", "b", "c"),
         ("b", "c", None),
     ]
+
+
+def test_lengths_to_mask():
+    """Test `lengths_to_mask`."""
+    expected = torch.tensor([[True, False, False], [True, True, False], [True, True, True]])
+    assert torch.equal(lib.utils.lengths_to_mask([1, 2, 3]), expected)

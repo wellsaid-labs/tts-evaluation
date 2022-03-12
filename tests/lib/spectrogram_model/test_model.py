@@ -13,7 +13,6 @@ from hparams import HParams
 from torch.nn import Embedding
 from torch.nn.functional import binary_cross_entropy_with_logits, mse_loss
 from torchnlp.random import fork_rng
-from torchnlp.utils import lengths_to_mask
 
 import lib
 from lib.spectrogram_model import Inputs, Mode, SpectrogramModel
@@ -25,6 +24,7 @@ from lib.spectrogram_model.containers import (
     Preds,
 )
 from lib.spectrogram_model.decoder import Decoder
+from lib.utils import lengths_to_mask
 from tests import _utils
 
 assert_almost_equal = lambda *a, **k: _utils.assert_almost_equal(*a, **k, decimal=5)

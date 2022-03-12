@@ -9,7 +9,7 @@ from torch.nn.utils.rnn import pad_sequence
 from torchnlp.nn import LockedDropout
 
 from lib.spectrogram_model.containers import Encoded, Inputs
-from lib.utils import LSTM, NumeralizePadEmbed
+from lib.utils import LSTM, NumeralizePadEmbed, lengths_to_mask
 
 
 @lru_cache(maxsize=8)
@@ -345,14 +345,8 @@ class Encoder(torch.nn.Module):
 
         tokens = [tokens[i][s] for i, s in enumerate(inputs.slices)]
         tokens = torch.nn.utils.rnn.pad_sequence(tokens)
-        tokens_mask = torch.zeros(
-            tokens.shape[1],
-            tokens.shape[0],
-            device=tokens.device,
-            dtype=torch.bool,
-        )
-        for i, slice in enumerate(inputs.slices):
-            tokens_mask[i, : slice.stop - slice.start] = True
-        num_tokens = tokens_mask.sum(dim=1)
+        num_tokens = [s.stop - s.start for s in inputs.slices]
+        num_tokens = torch.tensor(num_tokens, dtype=torch.long, device=tokens.device)
+        tokens_mask = lengths_to_mask(num_tokens)
 
         return Encoded(tokens, tokens_mask, num_tokens, seq_metadata)
