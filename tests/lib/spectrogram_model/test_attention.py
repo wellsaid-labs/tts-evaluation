@@ -139,7 +139,7 @@ def _add_padding(
 assert_almost_equal = partial(_utils.assert_almost_equal, decimal=5)
 
 
-def test_location_relative_attention():
+def test_attention():
     """Test `attention.Attention` handles a basic case."""
     module, (encoded, query, hidden_state), (batch_size, max_num_tokens) = _make_attention()
     encoded.tokens_mask[:, -1].fill_(0)
@@ -189,7 +189,7 @@ def test_location_relative_attention():
     (context.sum() + hidden_state.cum_alignment.sum() + alignment.sum()).backward()
 
 
-def test_location_relative_attention__batch_invariance():
+def test_attention__batch_invariance():
     """Test `attention.Attention` is consistent regardless of the batch size."""
     module, (encoded, query, hidden_state), (batch_size, _) = _make_attention(dropout=0)
 
@@ -220,7 +220,7 @@ def test_location_relative_attention__batch_invariance():
     assert_almost_equal(batch_new_hidden_state.window_start[slice_], new_hidden_state.window_start)
 
 
-def test_location_relative_attention__padding_invariance():
+def test_attention__padding_invariance():
     """Test `attention.Attention` is consistent regardless of the padding."""
     module, (encoded, query, hidden_state), _ = _make_attention(dropout=0)
     num_padding = 4
@@ -239,7 +239,7 @@ def test_location_relative_attention__padding_invariance():
     assert_almost_equal(padded_hidden_state.window_start, hidden_state.window_start)
 
 
-def test_location_relative_attention__zero():
+def test_attention__zero():
     """Test `attention.Attention` doesn't have a discontinuity at zero."""
     module, (encoded, query, hidden_state), (batch_size, max_num_tokens) = _make_attention()
     tokens_mask = torch.randn(batch_size, max_num_tokens) < 0.5
@@ -250,7 +250,7 @@ def test_location_relative_attention__zero():
     (context.sum() + hidden_state.cum_alignment.sum() + alignment.sum()).backward()
 
 
-def test_location_relative_attention__window_invariance():
+def test_attention__window_invariance():
     """Test `attention.Attention` is consistent regardless of the window size, if
     the window size is larger than the number of tokens."""
     max_num_tokens = 6
