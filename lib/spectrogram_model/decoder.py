@@ -5,7 +5,6 @@ import torch.nn
 from hparams import HParam, configurable
 from torch.nn.functional import pad
 
-import lib
 from lib.spectrogram_model.attention import Attention
 from lib.spectrogram_model.containers import (
     AttentionHiddenState,
@@ -105,6 +104,7 @@ class Decoder(torch.nn.Module):
         """Make an initial hidden state, if one is not provided."""
         (_, batch_size, _), device = encoded.tokens.shape, encoded.tokens.device
         cum_alignment_padding = self.attention.cum_alignment_padding
+        window_length = self.attention.window_length
 
         # [batch_size, seq_meta_embed_size + encoder_out_size] →
         # [batch_size, num_frame_channels + 1 + encoder_out_size] →
@@ -122,14 +122,16 @@ class Decoder(torch.nn.Module):
         # token that is has attended to. Assuming the model is attending to tokens from
         # left-to-right and the model starts reading at the first token, then any padding to the
         # left of the first token should be positive to be consistent.
-        cum_alignment = torch.zeros(batch_size, padded_encoded.tokens.shape[0], device=device)
-        # [batch_size, 1] → [batch_size, cum_align_padding]
-        init_cum_alignment = init_cum_alignment.expand(-1, cum_alignment_padding).abs()
-        # [batch_size, num_tokens] → [batch_size, num_tokens + cum_align_padding]
+        cum_alignment = torch.zeros(batch_size, encoded.tokens.shape[0], device=device)
+        # [batch_size, 1] → [batch_size, cum_align_padding + window_length // 2]
+        padding = window_length // 2 + cum_alignment_padding
+        init_cum_alignment = init_cum_alignment.expand(-1, padding).abs()
+        # [batch_size, num_tokens] →
+        # [batch_size, num_tokens +  window_length // 2 + cum_alignment_padding]
         cum_alignment = torch.cat([init_cum_alignment, cum_alignment], -1)
-        # [batch_size, num_tokens + cum_align_padding] →
-        # [batch_size, num_tokens + 2 * cum_align_padding]
-        cum_alignment = pad(cum_alignment, [0, cum_alignment_padding], mode="constant", value=0.0)
+        # [batch_size, num_tokens + window_length // 2 + cum_alignment_padding] →
+        # [batch_size, num_tokens + 2 * cum_align_padding + window_length]
+        cum_alignment = pad(cum_alignment, [0, padding], mode="constant", value=0.0)
 
         return DecoderHiddenState(
             last_attention_context=init_attention_context,
@@ -138,7 +140,7 @@ class Decoder(torch.nn.Module):
                 cum_alignment=cum_alignment,
                 window_start=torch.zeros(batch_size, device=device, dtype=torch.long),
             ),
-            padded_encoded=self._pad_encoded(encoded, pad_token),
+            padded_encoded=padded_encoded,
             lstm_one_hidden_state=None,
             lstm_two_hidden_state=None,
         )
