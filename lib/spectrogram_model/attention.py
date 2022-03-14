@@ -105,6 +105,7 @@ class Attention(torch.nn.Module):
         # Learn more:
         # https://datascience.stackexchange.com/questions/23183/why-convolutions-always-use-odd-numbers-as-filter-size
         assert conv_filter_size % 2 == 1, "`conv_filter_size` must be odd"
+        assert window_length % 2 == 1, "`window_length` must be odd"
         self.dropout = dropout
         self.hidden_size = hidden_size
         self.window_length = window_length

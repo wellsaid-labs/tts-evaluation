@@ -79,23 +79,24 @@ class Decoder(torch.nn.Module):
             pad_token (torch.FloatTensor [batch_size, encoder_out_size]): Pad token to
                 add to the end of each sequence.
         """
-        device, pad_length = encoded.tokens.device, self.attention.window_length - 1
+        device, pad_length = encoded.tokens.device, self.attention.window_length // 2
         batch_size, encoder_size = encoded.tokens_mask.shape[0], self.encoder_out_size
 
         mask_padding = torch.zeros(batch_size, pad_length, device=device, dtype=torch.bool)
         # [batch_size, num_tokens] → [batch_size, num_tokens + window_length - 1]
-        tokens_mask = torch.cat([encoded.tokens_mask, mask_padding], dim=1)
+        tokens_mask = torch.cat([mask_padding, encoded.tokens_mask, mask_padding], dim=1)
         tokens_padding = torch.zeros(pad_length, batch_size, encoder_size, device=device)
         # [num_tokens, batch_size, out_dim] → [num_tokens + window_length - 1, batch_size, out_dim]
-        tokens = torch.cat([encoded.tokens, tokens_padding], dim=0)
+        tokens = torch.cat([tokens_padding, encoded.tokens, tokens_padding], dim=0)
 
-        new_num_tokens = encoded.num_tokens + pad_length
+        new_num_tokens = encoded.num_tokens + pad_length * 2
         new_mask = lengths_to_mask(new_num_tokens)
 
         # [batch_size, num_tokens] → [num_tokens, batch_size]
         indices = tokens_mask.logical_xor(new_mask).transpose(0, 1)
         # [batch_size, encoder_out_size] → [num_frames, batch_size, encoder_out_size]
-        tokens[indices] = pad_token.unsqueeze(0).expand(*tokens.shape)[indices]
+        pad_token = pad_token.unsqueeze(0).expand(*tokens.shape)
+        tokens[indices] = pad_token[indices]
 
         return encoded._replace(tokens=tokens, tokens_mask=new_mask, num_tokens=new_num_tokens)
 
@@ -288,5 +289,7 @@ class Decoder(torch.nn.Module):
         # [num_frames, batch_size, num_tokens]
         alignments = alignments.detach()[:, :, : encoded.tokens.shape[0]]
         alignments = alignments.masked_fill(~encoded.tokens_mask.unsqueeze(0), 0)
+
+        assert (window_starts[-1] <= encoded.num_tokens).all(), "Invariant failure"
 
         return Decoded(frames, stop_token, alignments, window_starts, hidden_state)

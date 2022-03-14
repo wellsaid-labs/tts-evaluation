@@ -49,7 +49,7 @@ def _make_decoder(
 
 
 def _make_encoded(
-    module: Decoder, batch_size: int = 12, max_num_tokens: int = 6
+    module: Decoder, batch_size: int = 5, max_num_tokens: int = 6
 ) -> typing.Tuple[Encoded, typing.Tuple[int, int]]:
     """Make `Encoded` for testing."""
     tokens = torch.randn(max_num_tokens, batch_size, module.encoder_out_size)
@@ -154,10 +154,13 @@ def test_decoder__pad_encoded():
     assert padded.num_tokens.dtype == torch.long
     assert padded.num_tokens.shape == (batch_size,)
 
-    for i in range(window_length):
+    pad = window_length // 2
+    for i in range(pad):
         arange = torch.arange(batch_size)
-        assert padded.tokens_mask[arange, encoded.num_tokens + i].all()
-        assert torch.equal(padded.tokens[encoded.num_tokens + i, arange], pad_token)
+        assert padded.tokens_mask[arange, i].all()
+        assert padded.tokens_mask[arange, encoded.num_tokens + i + pad].all()
+        assert torch.equal(padded.tokens[i, arange], pad_token)
+        assert torch.equal(padded.tokens[encoded.num_tokens + i + pad, arange], pad_token)
 
     assert padded.tokens.masked_select(~padded.tokens_mask.transpose(0, 1).unsqueeze(-1)).sum() == 0
     assert torch.equal(padded.tokens_mask.sum(dim=1), padded.num_tokens)

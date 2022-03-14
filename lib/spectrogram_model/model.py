@@ -118,7 +118,7 @@ class SpectrogramModel(torch.nn.Module):
         Returns:
             stop_token (torch.FloatTensor [num_frames (optional), batch_size])
         """
-        at_the_end = window_start >= num_tokens - self.decoder.attention.window_length
+        at_the_end = window_start >= num_tokens - self.decoder.attention.window_length // 2 - 1
         return stop_token.masked_fill(~at_the_end, self.stop_token_eps)
 
     def _is_stop(
@@ -219,11 +219,7 @@ class SpectrogramModel(torch.nn.Module):
 
             if use_tqdm:
                 assert progress_bar is not None
-                half_window_length = self.decoder.attention.window_length // 2
-                # NOTE: The `tqdm` will start at `half_window_length` and it'll end at negative
-                # `half_window_length`; otherwise, it's an accurate representation of the
-                # character progress.
-                progress_bar.update(window_start.cpu().item() + half_window_length - progress_bar.n)
+                progress_bar.update(int(window_start.cpu().item()) - progress_bar.n)
 
         if use_tqdm:
             assert progress_bar is not None
