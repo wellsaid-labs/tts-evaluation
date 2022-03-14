@@ -290,6 +290,6 @@ class Decoder(torch.nn.Module):
         alignments = alignments.detach()[:, :, : encoded.tokens.shape[0]]
         alignments = alignments.masked_fill(~encoded.tokens_mask.unsqueeze(0), 0)
 
-        assert (window_starts[-1] <= encoded.num_tokens).all(), "Invariant failure"
+        assert (window_starts[-1] < encoded.num_tokens).all(), "Invariant failure"
 
         return Decoded(frames, stop_token, alignments, window_starts, hidden_state)
