@@ -27,6 +27,9 @@ Setup your local development environment by following [these instructions](LOCAL
    TYPE='preemptible' # Either 'preemptible' or 'persistent'
    ```
 
+   💡 TIP: Find zones with that support T4 GPUs here:
+   https://cloud.google.com/compute/docs/gpus/gpu-regions-zones
+
    💡 TIP: Don't place all your preemptible instances in the same zone, just in case one zone
    runs out of capacity.
 
