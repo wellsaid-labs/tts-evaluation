@@ -41,10 +41,10 @@ def patch(
     $ python -m run.utils.comet patch XXXXXXXX --overwrite --include="*.py"
 
     $ python -m run.utils.comet patch XXXXXXXX --overwrite --ignore-space-change \
---ignore-whitespace --3way
+--ignore-whitespace --3way --include="*.py"
 
     $ python -m run.utils.comet patch XXXXXXXX --overwrite --ignore-space-change \
---ignore-whitespace --reject
+--ignore-whitespace --reject --include="*.py"
     """
     api = comet_ml.api.API()
     patch_file_name = "git_diff.patch"
