@@ -83,16 +83,21 @@ class Decoder(torch.nn.Module):
         batch_size, encoder_size = encoded.tokens_mask.shape[0], self.encoder_out_size
 
         mask_padding = torch.zeros(batch_size, pad_length, device=device, dtype=torch.bool)
+        # [batch_size, num_tokens] → [batch_size, num_tokens + window_length - 1]
         tokens_mask = torch.cat([encoded.tokens_mask, mask_padding], dim=1)
         tokens_padding = torch.zeros(pad_length, batch_size, encoder_size, device=device)
+        # [num_tokens, batch_size, out_dim] → [num_tokens + window_length - 1, batch_size, out_dim]
         tokens = torch.cat([encoded.tokens, tokens_padding], dim=0)
 
-        indices = ~tokens_mask.transpose(0, 1)
-        tokens[indices] = pad_token.unsqueeze(0).expand(*tokens.shape)[indices]
-        num_tokens = encoded.num_tokens + pad_length
-        tokens_mask = lengths_to_mask(num_tokens)
+        new_num_tokens = encoded.num_tokens + pad_length
+        new_mask = lengths_to_mask(new_num_tokens)
 
-        return encoded._replace(tokens=tokens, tokens_mask=tokens_mask, num_tokens=num_tokens)
+        # [batch_size, num_tokens] → [num_tokens, batch_size]
+        indices = tokens_mask.logical_xor(new_mask).transpose(0, 1)
+        # [batch_size, encoder_out_size] → [num_frames, batch_size, encoder_out_size]
+        tokens[indices] = pad_token.unsqueeze(0).expand(*tokens.shape)[indices]
+
+        return encoded._replace(tokens=tokens, tokens_mask=new_mask, num_tokens=new_num_tokens)
 
     def _make_hidden_state(self, encoded: Encoded) -> DecoderHiddenState:
         """Make an initial hidden state, if one is not provided."""

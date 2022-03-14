@@ -1,3 +1,4 @@
+import random
 import typing
 
 import hparams
@@ -8,6 +9,7 @@ from hparams import HParams
 import lib
 from lib.spectrogram_model.containers import AttentionHiddenState, DecoderHiddenState, Encoded
 from lib.spectrogram_model.decoder import Decoder
+from lib.utils import lengths_to_mask
 
 
 @pytest.fixture(autouse=True)
@@ -47,14 +49,18 @@ def _make_decoder(
 
 
 def _make_encoded(
-    module: Decoder, batch_size: int = 5, num_tokens: int = 6
+    module: Decoder, batch_size: int = 12, max_num_tokens: int = 6
 ) -> typing.Tuple[Encoded, typing.Tuple[int, int]]:
     """Make `Encoded` for testing."""
-    tokens = torch.rand(num_tokens, batch_size, module.encoder_out_size)
-    tokens_mask = torch.ones(batch_size, num_tokens, dtype=torch.bool)
-    seq_metadata = torch.zeros(batch_size, module.seq_meta_embed_size)
-    encoded = Encoded(tokens, tokens_mask, tokens_mask.sum(dim=1), seq_metadata)
-    return encoded, (batch_size, num_tokens)
+    tokens = torch.randn(max_num_tokens, batch_size, module.encoder_out_size)
+    num_tokens = [random.randint(1, max_num_tokens) for _ in range(batch_size)]
+    num_tokens[-1] = max_num_tokens
+    num_tokens = torch.tensor(num_tokens)
+    tokens_mask = lengths_to_mask(num_tokens)
+    tokens = tokens * tokens_mask.transpose(0, 1).unsqueeze(-1)
+    seq_metadata = torch.randn(batch_size, module.seq_meta_embed_size)
+    encoded = Encoded(tokens, tokens_mask, num_tokens, seq_metadata)
+    return encoded, (batch_size, max_num_tokens)
 
 
 def test_decoder():
@@ -149,9 +155,9 @@ def test_decoder__pad_encoded():
     assert padded.num_tokens.shape == (batch_size,)
 
     for i in range(window_length):
-        padding = padded.tokens[num_tokens + i, torch.arange(batch_size)]
-        assert torch.equal(padding, pad_token)
-        assert padded.tokens_mask[torch.arange(batch_size), num_tokens + i].all()
+        arange = torch.arange(batch_size)
+        assert padded.tokens_mask[arange, encoded.num_tokens + i].all()
+        assert torch.equal(padded.tokens[encoded.num_tokens + i, arange], pad_token)
 
     assert padded.tokens.masked_select(~padded.tokens_mask.transpose(0, 1).unsqueeze(-1)).sum() == 0
     assert torch.equal(padded.tokens_mask.sum(dim=1), padded.num_tokens)
