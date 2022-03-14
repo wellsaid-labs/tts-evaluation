@@ -324,10 +324,10 @@ def test_spectrogram_model__is_stop():
     _is_stop = lambda a, b, c, d: model._is_stop(_logit(tensor(a)), tensor(b), tensor(c), tensor(d))
     # NOTE: For example, test that this handles a scenario where the window intersects the boundary
     # and `stop_token` is above threshold.
-    assert _is_stop(1.0, 8, 6, False)[0]
-    assert not _is_stop(1.0, 8, 5, False)[0]
-    assert not _is_stop(0.25, 8, 6, False)[0]
-    assert _is_stop(0.25, 8, 5, True)[0]
+    assert _is_stop(1.0, 8, 5, False)[0]
+    assert not _is_stop(1.0, 8, 4, False)[0]
+    assert not _is_stop(0.25, 8, 5, False)[0]
+    assert _is_stop(0.25, 8, 4, True)[0]
 
 
 def test_spectrogram_model__stop():

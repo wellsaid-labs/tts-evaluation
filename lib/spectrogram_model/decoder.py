@@ -67,13 +67,9 @@ class Decoder(torch.nn.Module):
         self.lstm_layer_two = LSTM(lstm_hidden_size + input_size, lstm_hidden_size)
         self.attention = Attention(query_hidden_size=lstm_hidden_size)
         self.linear_out = torch.nn.Linear(lstm_hidden_size + input_size, num_frame_channels)
-        stop_token_hidden_size = 64
         self.linear_stop_token = torch.nn.Sequential(
-            torch.nn.Linear(2 + self.seq_meta_embed_size, stop_token_hidden_size),
-            torch.nn.ReLU(),
-            torch.nn.Linear(stop_token_hidden_size, stop_token_hidden_size),
-            torch.nn.ReLU(),
-            torch.nn.Linear(stop_token_hidden_size, 1),
+            torch.nn.Dropout(stop_net_dropout),
+            torch.nn.Linear(lstm_hidden_size, 1),
         )
 
     def _pad_encoded(self, encoded: Encoded, pad_token: torch.Tensor):
@@ -268,28 +264,13 @@ class Decoder(torch.nn.Module):
         # [num_frames, batch_size, lstm_hidden_size]
         frames, lstm_two_hidden_state = self.lstm_layer_two(frames, lstm_two_hidden_state)
 
+        # [num_frames, batch_size, lstm_hidden_size] → [num_frames, batch_size]
+        stop_token = self.linear_stop_token(frames).squeeze(2)
+
         # [num_frames, batch_size,
         #  lstm_hidden_size (concat) encoder_out_size (concat) seq_meta_embed_size] →
         # [num_frames, batch_size, num_frame_channels]
         frames = self.linear_out(torch.cat([frames, attention_contexts, seq_metadata], dim=2))
-
-        with torch.no_grad():
-            # [num_frames, batch_size, num_frame_channels] →
-            # [batch_size, num_frames]
-            power_spectrogram = lib.audio.db_to_power(frames.transpose(0, 1) * 10.0)
-            framed_rms = lib.audio.power_spectrogram_to_framed_rms(power_spectrogram)
-            framed_db = lib.audio.amp_to_db(framed_rms).unsqueeze(-1) / 10.0
-            device = window_starts.device
-            max_distance = torch.tensor(self.attention.window_length // 2, device=device)
-            # [batch_size, num_frames]
-            distance = encoded.num_tokens.unsqueeze(1) - window_starts.transpose(0, 1)
-            distance = torch.min(distance, max_distance).unsqueeze(-1) / max_distance
-        stop_token_features = [framed_db.detach(), distance.detach(), seq_metadata.transpose(0, 1)]
-        # [batch_size, num_frames, seq_meta_embed_size + 2] →
-        # [batch_size, num_frames]
-        stop_token = self.linear_stop_token(torch.cat(stop_token_features, dim=2)).squeeze(2)
-        # [batch_size, num_frames] → [num_frames, batch_size]
-        stop_token = stop_token.transpose(0, 1)
 
         hidden_state = DecoderHiddenState(
             last_attention_context=last_attention_context,

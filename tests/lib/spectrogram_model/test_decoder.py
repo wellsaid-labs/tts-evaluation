@@ -36,7 +36,6 @@ def _make_decoder(
             window_length=5,
             avg_frames_per_token=1.0,
         ),
-        lib.audio.power_spectrogram_to_framed_rms: HParams(window=torch.tensor([1.0, 1.0, 1.0])),
     }
     hparams.add_config(config)
     return Decoder(

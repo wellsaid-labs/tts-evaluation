@@ -258,9 +258,12 @@ def _make_stop_token(
     """
     # [num_frames, batch_size, frame_channels] → [num_frames, batch_size]
     stop_token = spectrogram.tensor.new_zeros(spectrogram.tensor.shape[0:2])
+    gaussian_kernel = _get_normalized_half_gaussian(length, standard_deviation)
     for i in range(spectrogram.tensor.shape[1]):
         stop_token_length = int(spectrogram.lengths[0, i].item())
-        stop_token[stop_token_length - 1, i] = 1.0
+        min_ = min(stop_token_length, gaussian_kernel.shape[0])
+        slice_ = slice(stop_token_length - min_, stop_token_length)
+        stop_token[:, i][slice_] = gaussian_kernel[-min_:]
     return SequenceBatch(stop_token, spectrogram.lengths)
 
 
