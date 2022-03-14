@@ -285,7 +285,8 @@ class Decoder(torch.nn.Module):
 
         # [num_frames, batch_size, num_tokens + window_length - 1] →
         # [num_frames, batch_size, num_tokens]
-        alignments = alignments.detach()[:, :, : encoded.tokens.shape[0]]
+        pad_length = self.attention.window_length // 2
+        alignments = alignments.detach()[:, :, pad_length:-pad_length]
         alignments = alignments.masked_fill(~encoded.tokens_mask.unsqueeze(0), 0)
 
         assert (window_starts[-1] < encoded.num_tokens).all(), "Invariant failure"
