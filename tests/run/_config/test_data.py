@@ -16,7 +16,7 @@ def run_around_tests():
 
 
 def test__include_span():
-    """Test `_include_span` handles on a basic cases."""
+    """Test `_include_span` handles basic cases."""
     assert _include_span(make_passage(script="This")[:])
 
     # Exclude script
