@@ -19,7 +19,7 @@ def test__include_span():
     """Test `_include_span` handles basic cases."""
     assert _include_span(make_passage(script="This")[:])
 
-    # Exclude script
+    # Exclude invalid scripts
     assert not _include_span(make_passage(script="This1")[:])
     assert not _include_span(make_passage(script="Th>s")[:])
     assert not _include_span(make_passage(script="Th/s")[:])
