@@ -24,7 +24,7 @@ def test__include_span():
     assert not _include_span(make_passage(script="Th>s")[:])
     assert not _include_span(make_passage(script="Th/s")[:])
 
-    # Exclude audio alignments
+    # Exclude empty audio alignments
     alignments = make_alignments_2d("ThisThisThis", ((0, 0.3),))
     assert not _include_span(make_passage(script="ThisThisThis", alignments=alignments)[:])
     alignments = make_alignments_2d("This", ((0, 0.15),))
