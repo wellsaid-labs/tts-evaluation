@@ -1,8 +1,8 @@
 {
   "env": "staging",
-  "model": "uneeq",
-  "version": "3",
-  "image": "gcr.io/voice-service-2-313121/speech-api-worker@sha256:4848c7c18c173d27eed11130cb4a6f820878eaf5f73c7e06244b7745353b6105",
+  "model": "uneeq-x-asb",
+  "version": "2",
+  "image": "gcr.io/voice-service-2-313121/speech-api-worker@sha256:a8f97ce9921c1f4676c686c239a1b0f11391d56050f7b1329ff9ad70f6cb2913",
   "imageEntrypoint": "run.deploy.worker:app",
   "provideApiKeyAuthForLegacyContainerSupport": "true",
   "stream": {
@@ -23,7 +23,7 @@
   },
   "traffic": [
     {
-      "tag": "3",
+      "tag": "2",
       "percent": 100
     }
   ]
