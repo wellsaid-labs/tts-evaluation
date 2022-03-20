@@ -25,19 +25,21 @@ from run.train._utils import (
 )
 from run.train.signal_model import _metrics, _worker
 
-if typing.TYPE_CHECKING:  # pragma: no cover
-    import typer
-else:
-    typer = LazyLoader("typer", globals(), "typer")
-
 logger = logging.getLogger(__name__)
 
-try:
+if typing.TYPE_CHECKING:
+    import typer
+
     app = typer.Typer()
-except (ModuleNotFoundError, NameError):
-    app = MagicMock()
-    typer = MagicMock()
-    logger.info("Ignoring optional `typer` dependency.")
+else:
+    try:
+        import typer
+
+        app = typer.Typer()
+    except (ModuleNotFoundError, NameError):
+        app = MagicMock()
+        typer = MagicMock()
+        logger.info("Ignoring optional `typer` dependency.")
 
 
 def _make_configuration(

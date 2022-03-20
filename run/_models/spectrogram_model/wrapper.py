@@ -98,7 +98,13 @@ class SpectrogramModelWrapper(SpectrogramModel):
     ) -> Generator:
         ...  # pragma: no cover
 
-    def __call__(self, inputs: InputsWrapper, *args, mode: Mode = Mode.FORWARD, **kwargs):
+    def __call__(
+        self,
+        inputs: InputsWrapper,
+        *args,
+        mode: typing.Literal[Mode.FORWARD] = Mode.FORWARD,
+        **kwargs,
+    ) -> typing.Union[Generator, Preds]:
         seq_metadata = list(zip(inputs.speaker, inputs.session))
         inputs_ = Inputs(tokens=inputs.tokens, seq_metadata=seq_metadata)
         return super().__call__(inputs_, *args, mode=mode, **kwargs)

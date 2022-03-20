@@ -290,9 +290,9 @@ def get_window(window: str, window_length: int, window_hop: int) -> torch.Tensor
     NOTE: `torch.hann_window` does not pass `scipy.signal.check_COLA`, for example. Learn more:
     https://github.com/pytorch/audio/issues/452
     """
-    window = librosa.filters.get_window(window, window_length)
-    assert scipy.signal.check_COLA(window, window_length, window_length - window_hop)
-    return torch.tensor(window).float()
+    numpy_window = librosa.filters.get_window(window, window_length)
+    assert scipy.signal.check_COLA(numpy_window, window_length, window_length - window_hop)
+    return torch.tensor(numpy_window).float()
 
 
 @functools.lru_cache(maxsize=1)

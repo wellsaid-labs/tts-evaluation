@@ -117,7 +117,7 @@ def _chart_alignments_and_non_speech_segments(
     }
     chart = (
         alt.Chart(pd.DataFrame(source))
-        .mark_bar(stroke="#000", strokeWidth=1, strokeOpacity=0.3)
+        .mark_bar(stroke="#000", strokeWidth=1, strokeOpacity=0.3)  # type: ignore
         .encode(x="start", x2="end", y="interval", color="interval")
     )
     chart += make_interval_chart(nonalignment_audio_intervals, color="darkred", strokeWidth=0)
@@ -189,9 +189,14 @@ def _baseline_vad(passage: Passage, audio: np.ndarray):
     low_cut: int = st.slider(label, min_value=1, max_value=nyq_freq - 1, value=300, step=1)
 
     with st.spinner("Measuring RMS..."):
-        kwargs = dict(low_cut=low_cut, frame_length=milli_frame_size, hop_length=milli_stride_size)
         audio_file = passage.audio_file
-        indicies, rms_level_power = _get_non_speech_segments_helper(audio, audio_file, **kwargs)
+        indicies, rms_level_power = _get_non_speech_segments_helper(
+            audio,
+            audio_file,
+            low_cut=low_cut,
+            frame_length=milli_frame_size,
+            hop_length=milli_stride_size,
+        )
         rms_level_db = lib.audio.power_to_db(rms_level_power)
         seconds = np.array([_median(i) / sample_rate for i in indicies])
         chart = _chart_db_rms(seconds, rms_level_db)
@@ -268,8 +273,8 @@ def _webrtc_vad(passage: Passage, audio: np.ndarray, sample_rate: int = 16000):
 
 
 class _SpeechTs(typing.TypedDict):
-    start: float
-    end: float
+    start: int
+    end: int
 
 
 def _silero_vad(passage: Passage, audio: np.ndarray, sample_rate: int = 16000):
@@ -285,13 +290,14 @@ def _silero_vad(passage: Passage, audio: np.ndarray, sample_rate: int = 16000):
         get_speech_ts, _, _, _, _, _ = utils
 
     with st.spinner("Normalizing audio..."):
-        speech_ts: typing.List[_SpeechTs]
         torch.set_num_threads(1)
-        kwargs = dict(min_speech_samples=160, min_silence_samples=160)
         _, norm_audio = _normalize_cache_read_audio(passage, sample_rate=sample_rate)
 
     with st.spinner("Predicting..."):
-        speech_ts = get_speech_ts(torch.tensor(norm_audio), model, **kwargs)
+        speech_ts: typing.List[_SpeechTs]
+        speech_ts = get_speech_ts(
+            torch.tensor(norm_audio), model, min_speech_samples=160, min_silence_samples=160
+        )
         length = len(norm_audio)
         speech_ts = [_SpeechTs(start=0, end=0)] + speech_ts + [_SpeechTs(start=length, end=length)]
         pairs = zip(speech_ts, speech_ts[1:])
@@ -327,10 +333,10 @@ def _get_hard_passages(dataset: run._utils.Dataset, threshold: float = 20) -> ty
     return passages
 
 
-def _init_random_seed(key="random_seed", default_value: int = 123) -> int:
+def _init_random_seed(key: str = "random_seed", default_value: int = 123) -> str:
     """Create a persistent state for the random seed."""
     state = get_session_state()
-    value = st.sidebar.number_input("Random Seed", value=default_value)
+    value = st.sidebar.number_input("Random Seed", value=default_value)  # type: ignore
     if key not in state or value != default_value:
         state[key] = default_value
     return key

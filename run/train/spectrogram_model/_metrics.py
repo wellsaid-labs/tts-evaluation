@@ -14,15 +14,14 @@ import torch.utils
 import torch.utils.data
 
 import lib
-from lib.audio import power_to_db
+from lib.audio import power_spectrogram_to_framed_rms, power_to_db
 from lib.distributed import is_master
-from lib.spectrogram_model import Preds
 from run._config import GetLabel, get_dataset_label, get_model_label
+from run._models.spectrogram_model import Preds, SpectrogramModel
 from run.data._loader import Speaker
 from run.train import _utils
 from run.train._utils import Timer
 from run.train.spectrogram_model._data import Batch
-from run._models.spectrogram_model import SpectrogramModel
 
 
 def get_num_skipped(preds: Preds) -> torch.Tensor:
@@ -224,7 +223,7 @@ def get_alignment_norm(preds: Preds) -> torch.Tensor:
         torch.FloatTensor [batch_size]
     """
     alignments = preds.alignments.masked_fill(~preds.tokens_mask.unsqueeze(0), 0)
-    alignments = alignments.norm(dim=2, p=math.inf)
+    alignments = alignments.norm(dim=2, p=math.inf)  # type: ignore
     alignments = alignments.masked_fill(~preds.frames_mask.transpose(0, 1), 0)
     return alignments.sum(dim=0)
 

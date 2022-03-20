@@ -6,6 +6,7 @@ Usage:
 import functools
 import pathlib
 import tempfile
+import typing
 
 import altair as alt
 import numpy as np
@@ -16,7 +17,7 @@ from matplotlib import pyplot
 
 import lib
 import run
-from lib.audio import amp_to_db, framed_rms_to_rms, sample_to_sec
+from lib.audio import SignalTodBMelSpectrogram, amp_to_db, framed_rms_to_rms, sample_to_sec
 from run._streamlit import audio_to_html, st_html
 
 
@@ -40,18 +41,23 @@ def main():
     run._config.configure()
 
     uploaded_file = st.file_uploader("Audio File", "wav")
+    assert not isinstance(uploaded_file, list)
     ndigits = st.sidebar.slider("Precision", min_value=1, max_value=10, value=5)
     round_ = functools.partial(round, ndigits=ndigits)
-    weightings = (
+    get_weighting_callables = (
         lib.audio.identity_weighting,
         lib.audio.a_weighting,
         lib.audio.iso226_weighting,
         lib.audio.k_weighting,
     )
-    format_func = lambda f: f.__name__
-    weighting = st.sidebar.selectbox("Weighting", weightings, format_func=format_func, index=2)
-    signal_to_spectrogram = lib.audio.SignalTodBMelSpectrogram(get_weighting=weighting)
-
+    format_func: typing.Callable[[typing.Callable], str] = lambda f: f.__name__
+    get_weighting: typing.Callable = st.sidebar.selectbox(
+        "Weighting",
+        get_weighting_callables,
+        format_func=format_func,  # type: ignore
+        index=2,
+    )
+    signal_to_spectrogram = SignalTodBMelSpectrogram(get_weighting=get_weighting)
     if uploaded_file is None:
         st.stop()
 

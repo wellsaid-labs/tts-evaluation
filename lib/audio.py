@@ -11,11 +11,12 @@ from functools import lru_cache, partial
 from pathlib import Path
 
 import numpy as np
+import numpy.typing as npt
 import torch
 import torch.nn
-import torch.nn.functional
 from third_party import LazyLoader
 from third_party.iso226 import iso226_spl_itpl
+from torch.nn import functional
 from tqdm import tqdm
 
 import lib
@@ -292,7 +293,7 @@ def read_wave_audio(
     bytes_per_sample = np.dtype(dtype).itemsize
     sec_to_sample_ = partial(sec_to_sample, sample_rate=metadata.sample_rate)
     header_size = os.path.getsize(metadata.path) - bytes_per_sample * metadata.num_samples
-    start = lib.utils.round_(sec_to_sample_(start) * bytes_per_sample, bytes_per_sample)
+    start = int(lib.utils.round_(sec_to_sample_(start) * bytes_per_sample, bytes_per_sample))
     length = sec_to_sample_(length) if length > 0 else metadata.num_samples - sec_to_sample_(start)
     if memmap:
         ndarray = np.memmap(metadata.path, dtype=dtype, shape=(length,), offset=start + header_size)
@@ -450,7 +451,7 @@ def _mel_filters(
         n_mels=num_mel_bins,
         fmin=lower_hertz,
         fmax=upper_hertz,
-        norm=None,
+        norm=None,  # type: ignore
         htk=True,
     )
 
@@ -515,7 +516,7 @@ def _k_weighting(frequencies: np.ndarray, fs: int) -> np.ndarray:
     a1 = 2.0 * (K * K - 1.0) / a0_
     a2 = (1.0 - K / Q + K * K) / a0_
 
-    h1 = scipy_signal.freqz([b0, b1, b2], [a0, a1, a2], worN=frequencies, fs=fs)[1]
+    h1 = scipy_signal.freqz([b0, b1, b2], [a0, a1, a2], worN=frequencies, fs=fs)[1]  # type: ignore
     h1 = 20 * np.log10(np.absolute(h1))  # type: ignore
 
     # pre-filter 2
@@ -536,7 +537,9 @@ def _k_weighting(frequencies: np.ndarray, fs: int) -> np.ndarray:
 
 
 def k_weighting(
-    frequencies: np.ndarray, sample_rate: int, offset: typing.Optional[float] = None
+    frequencies: np.ndarray,
+    sample_rate: int,
+    offset: typing.Optional[typing.Union[float, np.ndarray]] = None,
 ) -> np.ndarray:
     """K-Weighting as specified in EBU R-128 / ITU BS.1770-4.
 
@@ -666,7 +669,7 @@ def amp_to_power(tensor: _TensorOrArrayOrFloat) -> _TensorOrArrayOrFloat:
 
 def power_to_amp(tensor: _TensorOrArrayOrFloat) -> _TensorOrArrayOrFloat:
     """Convert power units to amplitude units."""
-    return tensor ** 0.5
+    return typing.cast(_TensorOrArrayOrFloat, tensor ** 0.5)
 
 
 def db_to_power(tensor: _TensorOrArrayOrFloat) -> _TensorOrArrayOrFloat:
@@ -876,7 +879,7 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
         num_mel_bins: int,
         window: torch.Tensor,
         min_decibel: float,
-        get_weighting: typing.Callable[[np.ndarray, int], np.ndarray],
+        get_weighting: typing.Callable[[npt.NDArray[np.float_], int], npt.NDArray[np.float_]],
         eps: float = 1e-10,
         **kwargs,
     ):
@@ -960,7 +963,7 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
             # https://librosa.github.io/librosa/_modules/librosa/core/spectrum.html#stft
             padding_ = (self.fft_length - self.frame_hop) // 2
             padding = [padding_, padding_]
-            padded_signal = torch.nn.functional.pad(signal, padding, mode="constant", value=0)
+            padded_signal = functional.pad(signal, padding, mode="constant", value=0)
         else:
             padded_signal = signal
 
@@ -1029,10 +1032,10 @@ def _get_pyloudnorm_meter(sample_rate: int, filter_class: str, **kwargs) -> "pyl
 
 
 def _db_mel_spectrogram_to_spectrogram(
-    db_mel_spectrogram: np.ndarray,
+    db_mel_spectrogram: npt.NDArray[np.float_],
     sample_rate: int,
     fft_length: int,
-    get_weighting: typing.Callable[[np.ndarray], np.ndarray],
+    get_weighting: typing.Callable[[npt.NDArray[np.float_]], npt.NDArray[np.float_]],
     **kwargs,
 ) -> np.ndarray:
     """Transform dB mel spectrogram to spectrogram (lossy).
@@ -1120,7 +1123,7 @@ def griffin_lim(
             n_iter=iterations,
             hop_length=frame_hop,
             win_length=window.shape[0],
-            window=window,
+            window=window,  # type: ignore
         )
         # NOTE: Pad to ensure spectrogram and waveform align.
         waveform = np.pad(waveform, int(frame_hop // 2), mode="constant", constant_values=0)

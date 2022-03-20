@@ -71,9 +71,9 @@ class Checkpoint(run.train._utils.Checkpoint):
         https://github.com/pytorch/pytorch/issues/28594
         """
         assert len(self.discrims) == len(self.discrim_optimizers)
-        assert self.scheduler._step_count == self.step + 1
-        assert self.scheduler.last_epoch == self.step
-        assert self.scheduler.optimizer == self.optimizer
+        assert self.scheduler._step_count == self.step + 1  # type: ignore
+        assert self.scheduler.last_epoch == self.step  # type: ignore
+        assert self.scheduler.optimizer == self.optimizer  # type: ignore
         assert self.ema.step == self.step + 1
         ptrs = set(p.data_ptr() for p in self.model.parameters() if p.requires_grad)
         assert len(self.optimizer.param_groups) == 1
@@ -175,17 +175,7 @@ class _State:
         device: torch.device,
         kwargs: typing.List[typing.Dict],
     ) -> typing.List[SignalTodBMelSpectrogram]:
-        """
-        TODO: How can we prevent this warning?
-        - Can we move `configurable` functions outside of `lib`?
-        - Can we make `hparams` less strict? Especially, for default values, like this one.
-        - Can we, instead of configuring `SignalTodBMelSpectrogram`, configure a different
-          function?
-        """
-        with warnings.catch_warnings():
-            message = r".*Overwriting configured argument.*"
-            warnings.filterwarnings("ignore", module=r".*hparams", message=message)
-            return [SignalTodBMelSpectrogram(**k).to(device, non_blocking=True) for k in kwargs]
+        return [SignalTodBMelSpectrogram(**k).to(device, non_blocking=True) for k in kwargs]
 
     @staticmethod
     def _get_discrims(
@@ -652,7 +642,7 @@ def _run_steps(
 def run_worker(
     device: torch.device,
     comet: CometMLExperiment,
-    checkpoint: typing.Optional[Checkpoint],
+    checkpoint: typing.Optional[run.train._utils.Checkpoint],
     checkpoints_directory: pathlib.Path,
     spectrogram_model_checkpoint: typing.Optional[pathlib.Path],
     train_dataset: run._utils.Dataset,
@@ -665,6 +655,7 @@ def run_worker(
     conditions = [checkpoint is None, spectrogram_model_checkpoint is None]
     message = "Either signal model or spectrogram model checkpoint needs to be defined."
     assert any(conditions) and not all(conditions), message
+    assert isinstance(checkpoint, Checkpoint)
     state = (
         _State.make(typing.cast(pathlib.Path, spectrogram_model_checkpoint), comet, device)
         if checkpoint is None

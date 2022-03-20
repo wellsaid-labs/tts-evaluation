@@ -9,9 +9,9 @@ import torch.nn
 from torchnlp.utils import lengths_to_mask
 from tqdm import tqdm
 
-from lib.spectrogram_model import decoder, encoder
-from run._models.spectrogram_model.containers import Encoded, Inputs, Preds
 from lib.utils import PaddingAndLazyEmbedding
+from run._models.spectrogram_model import decoder, encoder
+from run._models.spectrogram_model.containers import Encoded, Inputs, Preds
 
 logger = logging.getLogger(__name__)
 
@@ -215,7 +215,8 @@ class SpectrogramModel(torch.nn.Module):
                 # NOTE: The `tqdm` will start at `half_window_length` and it'll end at negative
                 # `half_window_length`; otherwise, it's an accurate representation of the
                 # character progress.
-                progress_bar.update(window_start.cpu().item() + half_window_length - progress_bar.n)
+                window_start_int = int(window_start.cpu().item())
+                progress_bar.update(window_start_int + half_window_length - progress_bar.n)
 
         if use_tqdm:
             assert progress_bar is not None

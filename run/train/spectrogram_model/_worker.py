@@ -20,6 +20,7 @@ from torch.nn.functional import binary_cross_entropy_with_logits, mse_loss
 from torchnlp.utils import get_total_parameters
 
 import lib
+import run
 from lib.distributed import is_master
 from lib.utils import PaddingAndLazyEmbedding, log_runtime
 from run._config import Cadence, DatasetType, get_dataset_label, get_model_label
@@ -61,9 +62,9 @@ class Checkpoint(_utils.Checkpoint):
 
     def check_invariants(self):
         """Check datastructure invariants."""
-        assert self.scheduler._step_count == self.step + 1
-        assert self.scheduler.last_epoch == self.step
-        assert self.scheduler.optimizer == self.optimizer
+        assert self.scheduler._step_count == self.step + 1  # type: ignore
+        assert self.scheduler.last_epoch == self.step  # type: ignore
+        assert self.scheduler.optimizer == self.optimizer  # type: ignore
         assert self.ema.step == self.step + 1
         ptrs = set(p.data_ptr() for p in self.model.parameters() if p.requires_grad)
         assert len(self.optimizer.param_groups) == 2
@@ -605,7 +606,7 @@ def exclude_from_decay(
 def run_worker(
     device: torch.device,
     comet: CometMLExperiment,
-    checkpoint: typing.Optional[Checkpoint],
+    checkpoint: typing.Optional[run.train._utils.Checkpoint],
     checkpoints_directory: pathlib.Path,
     train_dataset: Dataset,
     dev_dataset: Dataset,
@@ -615,6 +616,7 @@ def run_worker(
     TODO: Should we checkpoint `metrics` so that metrics like `num_frames_per_speaker`,
     `num_spans_per_text_length`, or `max_num_frames` can be computed accross epochs?
     """
+    assert isinstance(checkpoint, Checkpoint)
     state = (
         _State.from_scratch(comet, device)
         if checkpoint is None

@@ -135,7 +135,7 @@ def maybe_normalize_audio_and_cache(
         if is_normalized_audio_file(audio_file, format_, suffix):
             return audio_file.path
 
-    kwargs_ = dict(
+    kwargs_: typing.Dict[str, typing.Any] = dict(
         suffix=suffix,
         bits=bits,
         sample_rate=sample_rate,
@@ -158,7 +158,7 @@ def get_non_speech_segments_and_cache(
     **kwargs,
 ) -> Timeline:
     """Get non-speech segments in `audio_file` and cache."""
-    kwargs_ = dict(
+    kwargs_: typing.Dict[str, typing.Any] = dict(
         low_cut=low_cut, frame_length=frame_length, hop_length=hop_length, threshold=threshold
     )
     name = get_non_speech_segments_and_cache.__wrapped__.__name__
@@ -231,10 +231,12 @@ class SpanGenerator(typing.Iterator[Span]):
         """Get the percentage overlap between x and the y slice."""
         if x2 == x1:
             return 1.0 if x1 >= y1 and x2 <= y2 else 0.0
-        return (min(x2, y2) - max(x1, y1)) / (x2 - x1)
+        min_ = typing.cast(_Float, min(x2, y2))  # type: ignore
+        max_ = typing.cast(_Float, max(x1, y1))  # type: ignore
+        return (min_ - max_) / (x2 - x1)
 
     @functools.lru_cache(maxsize=None)
-    def _is_include(self, x1: _Float, x2: _Float, y1: _Float, y2: _Float) -> bool:
+    def _is_include(self, x1: _Float, x2: _Float, y1: _Float, y2: _Float):
         return self._overlap(x1, x2, y1, y2) >= random.random()
 
     def next(self, length: float) -> typing.Optional[Span]:
@@ -272,8 +274,8 @@ class SpanGenerator(typing.Iterator[Span]):
             if any(b.audio_start - a.audio_stop > self.max_pause for a, b in pairs):
                 return
 
-        length = timeline.stop(end) - timeline.start(begin)
-        if length > 0 and length <= self.max_seconds:
+        length_ = timeline.stop(end) - timeline.start(begin)
+        if length_ > 0 and length_ <= self.max_seconds:
             slice_ = slice(segments[0].slice.start, segments[-1].slice.stop)
             audio_slice = slice(segments[0].audio_start, segments[-1].audio_stop)
             return passage.span(slice_, audio_slice)
@@ -478,7 +480,7 @@ def conventional_dataset_loader(
     metadata_path = Path(metadata_path_template.format(directory=directory))
     if os.stat(str(metadata_path)).st_size == 0:
         return []
-    df = pandas.read_csv(metadata_path, **metadata_kwargs)
+    df = typing.cast(pandas.DataFrame, pandas.read_csv(metadata_path, **metadata_kwargs))
     get_audio_path = lambda n: Path(audio_path_template.format(directory=directory, file_name=n))
     handled_columns = [metadata_text_column, metadata_audio_column]
     get_other_metadata = lambda r: {k: v for k, v in r.items() if k not in handled_columns}

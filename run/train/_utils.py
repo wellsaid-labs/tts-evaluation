@@ -26,6 +26,7 @@ from functools import partial
 import hparams.hparams
 import numpy
 import torch
+import torch._C
 import torch.cuda
 import torch.distributed
 import torch.nn
@@ -610,7 +611,7 @@ def apply_to_tensors(
     if not dataclasses.is_dataclass(data) and not is_named_tuple:
         return data
 
-    dict_ = typing.cast(dict, data._asdict()) if is_named_tuple else dataclass_as_dict(data)
+    dict_: dict = data._asdict() if is_named_tuple else dataclass_as_dict(data)  # type: ignore
     apply = lambda v: call(v) if torch.is_tensor(v) else apply_to_tensors(v, call, is_return)
     if is_return:
         return data.__class__(**{k: apply(v) for k, v in dict_.items()})
@@ -915,7 +916,7 @@ class Metrics(lib.distributed.DictStore, typing.Generic[MetricsKeyTypeVar]):
         is_multiprocessing = isinstance(data_loader.iter, _MultiProcessingDataLoaderIter)
         if is_multiprocessing and platform.system() != "Darwin":
             iterator = typing.cast(_MultiProcessingDataLoaderIter, data_loader.iter)
-            make_key = typing.get_args(self.__class__.__orig_bases__[0])[0]
+            make_key = typing.get_args(self.__class__.__orig_bases__[0])[0]  # type: ignore
             return {make_key(self.DATA_QUEUE_SIZE): iterator._data_queue.qsize()}
         return {}
 
@@ -967,7 +968,7 @@ class Metrics(lib.distributed.DictStore, typing.Generic[MetricsKeyTypeVar]):
 class _TimerEvent(typing.NamedTuple):
     name: str
     cpu: float
-    cuda: typing.Optional[torch.cuda.streams.Event]
+    cuda: typing.Optional[torch._C._CudaEventBase]  # type: ignore
 
 
 class Timer:
@@ -992,7 +993,7 @@ class Timer:
         event = None
         if torch.cuda.is_available():
             event = torch.cuda.streams.Event(enable_timing=True)
-            event.record()
+            event.record(torch.cuda.default_stream())
         self.events.append(_TimerEvent(name, time.perf_counter(), event))
         return self
 

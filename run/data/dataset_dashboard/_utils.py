@@ -108,7 +108,7 @@ def bucket_and_chart(
     #  function ("sum")."
     return (
         alt.Chart(df)
-        .mark_bar(opacity=opacity)
+        .mark_bar(opacity=opacity)  # type: ignore
         .encode(
             x=alt.X("bucket", type="quantitative", title=x + " (binned)"),
             y=alt.Y(field="count", type="quantitative", title=y, stack=stack),

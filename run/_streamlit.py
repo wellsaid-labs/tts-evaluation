@@ -1,6 +1,7 @@
 import functools
 import logging
 import multiprocessing
+import multiprocessing.pool
 import os
 import pathlib
 import pickle
@@ -225,13 +226,15 @@ def paths_to_html_download_link(
 
 _MapInputVar = typing.TypeVar("_MapInputVar")
 _MapReturnVar = typing.TypeVar("_MapReturnVar")
+_cpu_count = os.cpu_count()
+assert _cpu_count is not None
 
 
 def map_(
     list_: typing.List[_MapInputVar],
     func: typing.Callable[[_MapInputVar], _MapReturnVar],
     chunk_size: int = 8,
-    max_parallel: int = os.cpu_count() * 3,
+    max_parallel: int = _cpu_count * 3,
     progress_bar: bool = True,
 ) -> typing.List[_MapReturnVar]:
     """Apply `func` to `list_` in parallel."""
@@ -326,11 +329,11 @@ def make_interval_chart(
     return (
         alt.Chart(pd.DataFrame(source))
         .mark_rect(
-            fillOpacity=fillOpacity,
-            color=color,
-            stroke=stroke,
-            strokeWidth=strokeWidth,
-            strokeOpacity=strokeOpacity,
+            fillOpacity=fillOpacity,  # type: ignore
+            color=color,  # type: ignore
+            stroke=stroke,  # type: ignore
+            strokeWidth=strokeWidth,  # type: ignore
+            strokeOpacity=strokeOpacity,  # type: ignore
             **kwargs,
         )
         .encode(x=alt.X("x_min", type="quantitative"), x2=alt.X2("x_max"))

@@ -4,6 +4,7 @@ import torch
 import torch.nn
 from torch.nn import functional
 
+from lib.utils import LSTM, LSTMCell
 from run._models.spectrogram_model.attention import Attention
 from run._models.spectrogram_model.containers import (
     AttentionHiddenState,
@@ -12,7 +13,6 @@ from run._models.spectrogram_model.containers import (
     Encoded,
 )
 from run._models.spectrogram_model.pre_net import PreNet
-from lib.utils import LSTM, LSTMCell
 
 
 class Decoder(torch.nn.Module):
@@ -89,8 +89,7 @@ class Decoder(torch.nn.Module):
         cum_align = torch.cat([initial_cum_align, cum_align], -1)
         # [batch_size, num_tokens + cum_align_padding] →
         # [batch_size, num_tokens + 2 * cum_align_padding]
-        kwargs = dict(mode="constant", value=0.0)
-        cum_align = functional.pad(cum_align, [0, cum_align_padding], **kwargs)
+        cum_align = functional.pad(cum_align, [0, cum_align_padding], mode="constant", value=0.0)
 
         return DecoderHiddenState(
             last_attention_context=initial_attention_context,

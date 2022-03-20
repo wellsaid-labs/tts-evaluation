@@ -179,7 +179,8 @@ def rename(
 def _download(gcs_uri: str) -> typing.Tuple[typing.IO[bytes], str]:
     """Helper function for `diff`."""
     blob = gcs_uri_to_blob(gcs_uri)
-    file_ = tempfile.NamedTemporaryFile(prefix=blob.name.split(".")[0].split("/")[-1])
+    name = typing.cast(str, blob.name)
+    file_ = tempfile.NamedTemporaryFile(prefix=name.split(".")[0].split("/")[-1])
     path = pathlib.Path(file_.name)
     blob.download_to_filename(str(path))
     return file_, shlex.quote(str(path.absolute()))

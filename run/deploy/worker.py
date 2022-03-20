@@ -48,7 +48,8 @@ import warnings
 import en_core_web_sm
 import torch
 import torch.backends.mkl
-from flask import Flask, Response, jsonify, request
+from flask import Flask, jsonify, request
+from flask.wrappers import Response
 from spacy.lang.en import English
 
 from lib.environment import load, set_basic_logging_config
@@ -115,43 +116,37 @@ _SPEAKER_ID_TO_SPEAKER: typing.Dict[int, typing.Tuple[Speaker, str]] = {
         english.JACK_RUTKOWSKI__MANUAL_POST,
         "wsl_jackrutkowski_enthusiastic_script_27-processed.wav",
     ),
-    33: (english.ALISTAIR_DAVIS__EN_GB, Session("enthusiastic_script_5_davis.wav")),
-    34: (english.BRIAN_DIAMOND__EN_IE__PROMO, Session("promo_script_7_diamond.wav")),
+    33: (english.ALISTAIR_DAVIS__EN_GB, "enthusiastic_script_5_davis.wav"),
+    34: (english.BRIAN_DIAMOND__EN_IE__PROMO, "promo_script_7_diamond.wav"),
     35: (
         english.CHRISTOPHER_DANIELS__PROMO,
-        Session("promo_script_5_daniels.wav"),
+        "promo_script_5_daniels.wav",
     ),  # Test in staging due to low quality
-    36: (
-        english.DAN_FURCA__PROMO,
-        Session("furca_audio_part3.wav"),
-    ),  # Test in staging due to low quality
-    37: (english.DARBY_CUPIT__PROMO, Session("promo_script_1_cupit_02.wav")),
-    38: (english.IZZY_TUGMAN__PROMO, Session("promo_script_5_tugman.wav")),
-    39: (english.NAOMI_MERCER_MCKELL__PROMO, Session("promo_script_6_mckell.wav")),
+    36: (english.DAN_FURCA__PROMO, "furca_audio_part3.wav"),  # Test in staging due to low quality
+    37: (english.DARBY_CUPIT__PROMO, "promo_script_1_cupit_02.wav"),
+    38: (english.IZZY_TUGMAN__PROMO, "promo_script_5_tugman.wav"),
+    39: (english.NAOMI_MERCER_MCKELL__PROMO, "promo_script_6_mckell.wav"),
     40: (
         english.SHARON_GAULD_ALEXANDER__PROMO,
-        Session("promo_script_5_alexander.wav"),
+        "promo_script_5_alexander.wav",
     ),  # Do not release till paid
-    41: (english.SHAWN_WILLIAMS__PROMO, Session("promo_script_9_williams.wav")),
+    41: (english.SHAWN_WILLIAMS__PROMO, "promo_script_9_williams.wav"),
     # NOTE: Custom voice IDs are random numbers larger than 10,000...
     # TODO: Retrain some of these voices, and reconfigure them.
     11541: (english.LINCOLN__CUSTOM, ""),
     13268907: (english.JOSIE__CUSTOM, ""),
     95313811: (english.JOSIE__CUSTOM__MANUAL_POST, ""),
-    78252076: (english.VERITONE__CUSTOM_VOICE, Session("")),
-    70695443: (english.SUPER_HI_FI__CUSTOM_VOICE, Session("promo_script_5_superhifi.wav")),
-    64197676: (english.US_PHARMACOPEIA__CUSTOM_VOICE, Session("enthusiastic_script-22.wav")),
-    41935205: (
-        english.HAPPIFY__CUSTOM_VOICE,
-        Session("anna_long_emotional_clusters_1st_half_clean.wav"),
-    ),
+    78252076: (english.VERITONE__CUSTOM_VOICE, ""),
+    70695443: (english.SUPER_HI_FI__CUSTOM_VOICE, "promo_script_5_superhifi.wav"),
+    64197676: (english.US_PHARMACOPEIA__CUSTOM_VOICE, "enthusiastic_script-22.wav"),
+    41935205: (english.HAPPIFY__CUSTOM_VOICE, "anna_long_emotional_clusters_1st_half_clean.wav"),
     42400423: (
         english.THE_EXPLANATION_COMPANY__CUSTOM_VOICE,
         "is_it_possible_to_become_invisible.wav",
     ),
     61137774: (english.ENERGY_INDUSTRY_ACADEMY__CUSTOM_VOICE, "sample_script_2.wav"),
-    30610881: (english.VIACOM__CUSTOM_VOICE, Session("kelsey_speech_synthesis_section1.wav")),
-    50481197: (english.HOUR_ONE_NBC__BB_CUSTOM_VOICE, Session("hour_one_nbc_dataset_5.wav")),
+    30610881: (english.VIACOM__CUSTOM_VOICE, "kelsey_speech_synthesis_section1.wav"),
+    50481197: (english.HOUR_ONE_NBC__BB_CUSTOM_VOICE, "hour_one_nbc_dataset_5.wav"),
 }
 SPEAKER_ID_TO_SPEAKER = {
     k: (spk, Session(sesh)) for k, (spk, sesh) in _SPEAKER_ID_TO_SPEAKER.items()

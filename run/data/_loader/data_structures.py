@@ -149,6 +149,11 @@ class Speaker(typing.NamedTuple):
     name: typing.Optional[str] = None
     gender: typing.Optional[str] = None
 
+    # TODO: Remove after this is fixed
+    # https://github.com/microsoft/pyright/issues/3141
+    def __hash__(self):
+        return super().__hash__()
+
 
 make_en_speaker = lambda label, *a, **kw: Speaker(label, Language.ENGLISH, *a, **kw)
 make_de_speaker = lambda label, *a, **kw: Speaker(label, Language.GERMAN, *a, **kw)

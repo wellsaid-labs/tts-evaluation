@@ -78,10 +78,24 @@ def main():
 
     options = list(CHECKPOINTS_LOADERS.keys())
     format_: typing.Callable[[Checkpoints], str] = lambda s: s.value
-    checkpoints_keys: typing.List[Checkpoints]
-    checkpoints_keys = st.multiselect("Checkpoints", options=options, format_func=format_)
-    num_fake_clips = st.number_input("Number of Generated Clips", min_value=1, value=16, step=1)
-    num_real_clips = st.number_input("Number of Real Clips", min_value=1, value=16, step=1)
+    checkpoints_keys = typing.cast(
+        typing.List[Checkpoints],
+        st.multiselect("Checkpoints", options=options, format_func=format_),  # type: ignore
+    )
+    num_fake_clips = st.number_input(
+        "Number of Generated Clips",
+        min_value=1,
+        value=16,  # type: ignore
+        step=1,
+    )
+    num_fake_clips = int(num_fake_clips)
+    num_real_clips = st.number_input(
+        "Number of Real Clips",
+        min_value=1,
+        value=16,  # type: ignore
+        step=1,
+    )
+    num_real_clips = int(num_real_clips)
     shuffle = st.checkbox("Shuffle Clips", value=True)
 
     if not st.button("Generate"):

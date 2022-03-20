@@ -292,9 +292,10 @@ def _dataset_loader(
             normalized = item.parent / ((item.stem + item.suffix).replace(" ", "_"))
             if normalized != item:
                 item.rename(normalized)
-        df = pandas.read_csv(new_path / metadata_file_name, **metadata_kwargs)
+        new_metadata_path = new_path / metadata_file_name
+        df = typing.cast(pandas.DataFrame, pandas.read_csv(new_metadata_path, **metadata_kwargs))
         df[metadata_audio_column] = df[metadata_audio_column].apply(lambda f: f.replace(" ", "_"))
-        df.to_csv(new_path / metadata_file_name, **metadata_kwargs)
+        df.to_csv(new_metadata_path, **metadata_kwargs)
 
     passages = conventional_dataset_loader(
         new_path,

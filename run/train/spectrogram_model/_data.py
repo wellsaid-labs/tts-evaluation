@@ -25,9 +25,9 @@ from lib.audio import sec_to_sample
 from lib.distributed import get_rank, get_world_size, is_initialized
 from lib.samplers import BucketBatchSampler
 from lib.utils import Tuple, flatten_2d
+from run._models.spectrogram_model import Inputs
 from run.data._loader import Alignment, Language, Span
 from run.train import _utils
-from run._models.spectrogram_model import Inputs
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import librosa
@@ -410,7 +410,7 @@ class DataProcessor(typing.Mapping[int, Batch]):
     def __iter__(self):
         return (self[i] for i in range(len(self)))
 
-    def __len__(_) -> int:
+    def __len__(self) -> int:
         return sys.maxsize
 
     def __getitem__(self, index) -> Batch:

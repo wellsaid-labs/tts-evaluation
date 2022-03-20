@@ -17,7 +17,7 @@ from third_party import LazyLoader
 from tqdm import tqdm
 
 import lib
-from lib.utils import flatten, flatten_2d
+from lib.utils import flatten_2d
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import en_core_web_md
@@ -164,8 +164,8 @@ def _grapheme_to_phoneme_with_punctuation(
     docs = list(graphemes)
     if any(isinstance(d, str) for d in docs):
         nlp = load_en_core_web_md(disable=("parser", "ner"))
-        items = list(nlp.pipe([d for d in docs if isinstance(d, str)]))
-        docs = [(items.pop(0) if isinstance(d, str) else d) for d in docs]
+        other_docs = list(nlp.pipe([d for d in docs if isinstance(d, str)]))
+        docs = [(other_docs.pop(0) if isinstance(d, str) else d) for d in docs]
     docs = typing.cast(typing.Union[spacy.tokens.Doc, spacy.tokens.span.Span], docs)
 
     splits: typing.List[typing.List[typing.Union[typing.Tuple[str], str]]] = []
@@ -194,8 +194,8 @@ def _grapheme_to_phoneme_with_punctuation(
     phonemes = _multiline_grapheme_to_phoneme(inputs, separator=separator, **kwargs)
     return_ = []
     for items in splits:
-        items_ = [(phonemes.pop(0) if isinstance(i, str) else list(i)) for i in items]
-        return_.append(separator.join([t for t in flatten(items_) if len(t) > 0]))
+        items_ = [([phonemes.pop(0)] if isinstance(i, str) else list(i)) for i in items]
+        return_.append(separator.join([t for t in flatten_2d(items_) if len(t) > 0]))
     return return_
 
 
@@ -642,7 +642,8 @@ def normalize_vo_script(text: str, non_ascii: frozenset, strip: bool = True) -> 
     """Normalize a voice-over script such that only readable characters remain.
 
     TODO: Use `unidecode.unidecode` in "strict" mode so that data isn't lost.
-    TODO: Clarify that some characters like `«` will be normalized regardless of being in the `non_ascii` set.
+    TODO: Clarify that some characters like `«` will be normalized regardless of being in the
+          `non_ascii` set.
     NOTE: `non_ascii` needs to be explicitly set so that text isn't processed incorrecly accidently.
 
     References:

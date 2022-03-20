@@ -394,8 +394,17 @@ def _analyze_non_speech_segments(passages: typing.List[Passage], max_rows: int, 
     segments = [p.span(slice(0, 0), slice(*i)) for p, i in intervals]
     lambda_ = lambda p: p.audio_length
     unit = "Non Speech Segment"
-    kwargs = dict(normalize=True, max_rows=max_rows, run_all=run_all)
-    _span_metric(segments, lambda_, "Length", "Seconds", 0.5, unit, **kwargs)
+    _span_metric(
+        segments,
+        lambda_,
+        "Length",
+        "Seconds",
+        0.5,
+        unit,
+        normalize=True,
+        max_rows=max_rows,
+        run_all=run_all,
+    )
 
 
 @lib.utils.log_runtime
@@ -415,7 +424,7 @@ def _analyze_dataset(dataset: Dataset, **kwargs):
     _analyze_all_passages(dataset, **kwargs)
 
     question = "How many passage(s) do you want to analyze?"
-    sampled: int = st.sidebar.number_input(question, 0, None, 25)
+    sampled = int(st.sidebar.number_input(question, 0, None, 25))  # type: ignore
     passages = list(utils.dataset_passages(dataset))
     passages = utils.random_sample(passages, sampled) if sampled < total_passages else passages
     st.write("")
@@ -565,14 +574,14 @@ def main():
         st.stop()
 
     question = "How many span(s) do you want to generate?"
-    num_samples: int = sidebar.number_input(question, 0, None, 100)
+    num_samples: int = sidebar.number_input(question, 0, None, 100)  # type: ignore
 
     dataset = {k: v for s in speakers for k, v in get_dataset(frozenset([s])).items()}
     with st.spinner("Generating spans..."):
         spans = _get_spans(dataset, num_samples=num_samples)
 
     question = "What is the maximum number of rows per table?"
-    max_rows: int = sidebar.number_input(question, 0, None, 50)
+    max_rows: int = sidebar.number_input(question, 0, None, 50)  # type: ignore
 
     with st.spinner("Analyzing dataset..."):
         _analyze_dataset(dataset, max_rows=max_rows, run_all=run_all)
