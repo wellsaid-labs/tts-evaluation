@@ -119,15 +119,13 @@ def main():
             image_web_path = make_temp_web_dir() / "alignments.png"
             lib.visualize.plot_alignments(pred.alignments).savefig(image_web_path)
             num_frames = pred.frames.shape[0]
-            alignments = pred.alignments.unsqueeze(1)
-            alignment_norm = (get_alignment_norm(alignments, None, None)[0] / num_frames).item()
             result = {
                 "Checkpoints": checkpoints_.name,
                 "Frames Per Token": num_frames / params.tokens.shape[0],
                 "Num Pause Frames": get_num_pause_frames(pred.frames.unsqueeze(1), None)[0],
-                "Alignment Norm": alignment_norm,
-                "Alignment STD": (get_alignment_std(alignments, None, None)[0] / num_frames).item(),
-                "Alignment Skips": get_num_skipped(alignments, None, None)[0].item(),
+                "Alignment Norm": (get_alignment_norm(pred)[0] / num_frames).item(),
+                "Alignment STD": (get_alignment_std(pred)[0] / num_frames).item(),
+                "Alignment Skips": get_num_skipped(pred)[0].item(),
                 "Alignment": f'<img src="{web_path_to_url(image_web_path)}" />',
                 **make_result(span, audio),
             }

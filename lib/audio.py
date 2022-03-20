@@ -530,7 +530,7 @@ def _k_weighting(frequencies: np.ndarray, fs: int) -> np.ndarray:
     b1 = -2.0
     b2 = 1.0
 
-    h2 = scipy_signal.freqz([b0, b1, b2], [a0, a1, a2], worN=frequencies, fs=fs)[1]
+    h2 = scipy_signal.freqz([b0, b1, b2], [a0, a1, a2], worN=frequencies, fs=fs)[1]  # type: ignore
     h2 = 20 * np.log10(np.absolute(h2))  # type: ignore
 
     return h1 + h2
@@ -570,9 +570,8 @@ def k_weighting(
     """
     # SOURCE (ITU-R BS.1770):
     # The constant −0.691 in equation (2) cancels out the K-weighting gain for 997 Hz.
-    offset = (
-        -_k_weighting(np.array([REFERENCE_FREQUENCY]), sample_rate) if offset is None else offset
-    )
+    if offset is None:
+        offset = -_k_weighting(np.array([REFERENCE_FREQUENCY]), sample_rate)
     return _k_weighting(frequencies, sample_rate) + offset
 
 
@@ -589,9 +588,9 @@ def a_weighting(frequencies: np.ndarray, *_) -> np.ndarray:
     Returns:
         np.ndarray [*frequencies.shape]: Weighting for each frequency.
     """
-    return librosa.core.A_weighting(frequencies, min_db=None) - librosa.core.A_weighting(
-        np.array([REFERENCE_FREQUENCY]), min_db=None
-    )
+    reference_freq = np.array([REFERENCE_FREQUENCY])
+    reference = librosa.core.A_weighting(reference_freq, min_db=None)  # type: ignore
+    return librosa.core.A_weighting(frequencies, min_db=None) - reference  # type: ignore
 
 
 def iso226_weighting(frequencies: np.ndarray, *_) -> np.ndarray:
