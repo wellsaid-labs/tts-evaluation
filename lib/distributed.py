@@ -2,8 +2,7 @@
 # https://stackoverflow.com/questions/33533148/how-do-i-specify-that-the-return-type-of-a-method-is-the-same-as-the-class-itsel
 from __future__ import annotations
 
-import collections
-import gzip
+import gc
 import itertools
 import logging
 import pickle
@@ -84,42 +83,49 @@ class DictStore:
     https://github.com/pytorch/pytorch/issues/53840
     Also, `TCPStore` only allows for integer values.
 
+    NOTE: Speed up `pickle.loads` with this approach:
+    https://stackoverflow.com/questions/2766685/how-can-i-speed-up-unpickling-large-objects-if-i-have-plenty-of-ram
+
+    TODO: Add a method for queuing up `update` and `log` requests, and doing them all at once.
+
     Args:
         data: On the master process, this is a merged collection of data from the worker processes.
     """
 
     def __init__(self):
-        self.data: typing.Dict[typing.Any, typing.List[typing.Tuple]] = {}
+        self.data: typing.Dict[typing.Any, typing.List[typing.Sequence]] = {}
         self._operation = -1
 
     @staticmethod
     def _decode(encoded: str) -> typing.Dict:
-        return pickle.loads(gzip.decompress(bytes.fromhex(encoded)))
+        return pickle.loads(bytes.fromhex(encoded))
 
     @staticmethod
     def _encode(values: typing.Dict) -> str:
-        return gzip.compress(pickle.dumps(values)).hex()
+        return pickle.dumps(values, protocol=pickle.HIGHEST_PROTOCOL).hex()
 
-    def _gather(self, data: typing.Dict) -> typing.List[typing.Dict]:
+    def _gather(self, data: typing.Dict) -> typing.List[str]:
         outputs = [None for _ in range(get_world_size())]
         torch.distributed.all_gather_object(outputs, self._encode(data))
-        return [self._decode(typing.cast(str, o)) for o in outputs]
+        return typing.cast(typing.List[str], outputs)
 
     def _update(self, data: typing.List[typing.Dict]):
         """Shallow update `self.data` with `data`."""
-        update = collections.defaultdict(list)
-        for dict_ in data:
-            for key, value in dict_.items():
-                update[key].append(value)
-        for key in set(itertools.chain(update.keys(), self.data.keys())):
-            group = tuple(update[key]) if key in update else tuple()
-            if key not in self.data:
-                self.data[key] = [tuple() for _ in range(self._operation)]
-            self.data[key].append(group)
+        update_keys = set(itertools.chain(*tuple(d.keys() for d in data)))
+        data_keys = set(self.data.keys())
+        new_keys = update_keys - data_keys
+        self.data.update({k: [tuple()] * self._operation for k in new_keys})
+        for key in data_keys - update_keys:
+            self.data[key].append(tuple())
+        for key in update_keys:
+            self.data[key].append([d[key] for d in data if key in d])
 
     def update(self, data: typing.Dict):
         """Shallow update the master process `self.data` with `data`."""
         self._operation += 1
-        merged = self._gather(data)
+        gathered = self._gather(data)
         if is_master():
-            self._update(merged)
+            gc.disable()
+            decoded = [self._decode(typing.cast(str, o)) for o in gathered]
+            gc.enable()
+            self._update(decoded)

@@ -16,7 +16,7 @@ def configure():
     # SOURCE (Tacotron 2):
     # Attention probabilities are computed after projecting inputs and location
     # features to 128-dimensional hidden representations.
-    encoder_output_size = 128
+    encoder_out_size = 128
 
     # SOURCE (Tacotron 2):
     # Specifically, generation completes at the first frame for which this
@@ -58,7 +58,7 @@ def configure():
             # bi-directional [19] LSTM [20] layer containing 512 units (256) in each
             # direction) to generate the encoded features.
             lstm_layers=2,
-            out_size=encoder_output_size,
+            out_size=encoder_out_size,
         ),
         run._models.spectrogram_model.attention.Attention.__init__: config.Args(
             # SOURCE (Tacotron 2):
@@ -78,7 +78,7 @@ def configure():
             avg_frames_per_token=1.4555,
         ),
         run._models.spectrogram_model.decoder.Decoder.__init__: config.Args(
-            encoder_output_size=encoder_output_size,
+            encoder_out_size=encoder_out_size,
             # SOURCE (Tacotron 2):
             # The prediction from the previous time step is first passed through a small
             # pre-net containing 2 fully connected layers of 256 hidden ReLU units.

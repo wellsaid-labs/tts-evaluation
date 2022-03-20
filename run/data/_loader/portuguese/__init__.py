@@ -16,6 +16,7 @@ DATASETS = typing.cast(typing.Dict[Speaker, DataLoader], WSL_DATASETS)
 DATASETS.update(typing.cast(typing.Dict[Speaker, DataLoader], LIBRIVOX_DATASETS))
 
 __all__ = [
+    "librivox",
     "wsl",
     "RND__LIBRIVOX__FELIPE_PT",
     "RND__LIBRIVOX__LENI_PT",

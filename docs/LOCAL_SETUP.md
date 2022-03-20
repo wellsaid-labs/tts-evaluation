@@ -59,12 +59,14 @@ a team member to create you an account.
 With your new account, you'll need to create a `.comet.config` file in this repositories root
 level directory with these configurations:
 
-```
+```txt
 [comet]
 workspace=wellsaid-labs
 api_key=<api_key>
 rest_api_key=<rest_api_key>
 disable_auto_logging=1
+url_override=https://www.comet-ml.com/clientlib/
+optimizer_url=http://www.comet-ml.com/optimizer/
 ```
 
 Learn more about where to find the `api_key` and `rest_api_key` configurations on

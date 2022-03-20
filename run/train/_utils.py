@@ -334,6 +334,8 @@ class CometMLExperiment:
             message = f"Comet parameter `{key}` is:\n{pprinter.pformat(value)}"
             lib.utils.call_once(logger.info, message)
             return "<<<Printed in standard out.>>>"
+        if hasattr(value, "__qualname__"):
+            return f"<function {value.__qualname__}>"  # type: ignore
         return repr(value)
 
     def log_parameter(self, key: run._config.Label, value: typing.Any):
@@ -417,6 +419,8 @@ def _run_experiment(
     lib.environment.check_module_versions()
     if debug:
         _get_dataset.clear_cache()
+    else:
+        sys.setprofile(None)  # TODO: After `hparams` is upgraded, remove this.
     train_dataset, dev_dataset = _get_dataset(debug)
     comet.log_parameters(_get_dataset_stats(train_dataset, dev_dataset))
     return train_dataset, dev_dataset
@@ -619,20 +623,18 @@ def apply_to_tensors(
         [apply(value) for value in dict_.values()]
 
 
+BatchType = typing.TypeVar("BatchType", bound="Batch")
+
+
 @dataclasses.dataclass(frozen=True)
 class Batch:
-    def apply(self, call: typing.Callable[[torch.Tensor], torch.Tensor]) -> Batch:
+    def apply(self: BatchType, call: typing.Callable[[torch.Tensor], torch.Tensor]) -> BatchType:
         """Apply `call` to `SequenceBatch` in `Batch`."""
         apply = lambda o: apply_to_tensors(o, call, True) if isinstance(o, SequenceBatch) else o
         dict_ = lib.utils.dataclass_as_dict(self)
         return dataclasses.replace(self, **{k: apply(v) for k, v in dict_.items()})
 
-    def apply_(self, call: typing.Callable[[torch.Tensor], torch.Tensor]) -> None:
-        """Apply `call` to `SequenceBatch` in `Batch`, in-place."""
-        apply = lambda o: apply_to_tensors(o, call, False) if isinstance(o, SequenceBatch) else o
-        [apply(value) for value in lib.utils.dataclass_as_dict(self).values()]
-
-    def pin_memory(self) -> Batch:
+    def pin_memory(self: BatchType) -> BatchType:
         """Learn more about this special function:
         https://pytorch.org/docs/stable/data.html#memory-pinning
 
@@ -675,6 +677,7 @@ def _worker_init_fn(
     NOTE: Set `num_threads` to ensure that these workers share resources with the main process.
     """
     hparams.hparams._configuration = config
+    sys.setprofile(None)  # TODO: After `hparams` is upgraded, remove this.
     info = torch.utils.data.get_worker_info()
     assert isinstance(info, torch.utils.data._utils.worker.WorkerInfo)
     lib.environment.set_basic_logging_config()
@@ -778,7 +781,8 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
         """
         assert self.iter is not None
         for _ in range(self.cuda_prefetch - len(self.prefetched)):
-            self.prefetched.append(next(self.iter).apply(self.process_tensor))
+            next_: Batch = next(self.iter)
+            self.prefetched.append(next_.apply(self.process_tensor))
 
     def __iter__(self) -> typing.Iterator[DataLoaderVar]:
         if self.iter is None:
@@ -846,6 +850,7 @@ def _run_workers_helper(
     device = _init_distributed(device_index)
     comet = comet_partial(disabled=not is_master(), auto_output_logging=False)
     hparams.hparams._configuration = config
+    sys.setprofile(None)  # TODO: After `hparams` is upgraded, remove this.
     set_run_seed()
     checkpoint_ = None if checkpoint is None else load(checkpoint, device=device)
     return run_worker(device, comet, checkpoint_, *args)
@@ -868,13 +873,15 @@ def run_workers(
     return lib.distributed.spawn(_run_workers_helper, args=args)  # type: ignore
 
 
-@dataclasses.dataclass(frozen=True)
-class MetricsKey:
+class MetricsKey(typing.NamedTuple):
+    # NOTE: This is intended be "subclassed". Originally, we used `dataclasses`
+    # but found them to be slower than `typing.NamedTuple` when dealing with large amounts of
+    # metrics. `lib/test_distributed#test_dict_store__speed` was used for benchmarking.
 
     label: str
 
 
-MetricsKeyTypeVar = typing.TypeVar("MetricsKeyTypeVar", bound=MetricsKey)
+MetricsKeyTypeVar = typing.TypeVar("MetricsKeyTypeVar", bound=tuple)
 MetricsStoreValues = typing.List[typing.Tuple[float]]
 MetricsReduceOp = typing.Callable[[typing.List[float]], float]
 # NOTE: `MetricsSelect` selects a subset of `MetricsStoreValues`.

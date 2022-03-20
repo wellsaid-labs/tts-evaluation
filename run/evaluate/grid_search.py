@@ -39,14 +39,12 @@ import run
 from lib.environment import PT_EXTENSION, ROOT_PATH, load
 from lib.text import natural_keys
 from run import train
-from run._config import SIGNAL_MODEL_EXPERIMENTS_PATH, SPECTROGRAM_MODEL_EXPERIMENTS_PATH
-from run._streamlit import (
+from run._config import (
     DEFAULT_SCRIPT,
-    audio_to_web_path,
-    paths_to_html_download_link,
-    st_html,
-    web_path_to_url,
+    SIGNAL_MODEL_EXPERIMENTS_PATH,
+    SPECTROGRAM_MODEL_EXPERIMENTS_PATH,
 )
+from run._streamlit import audio_to_web_path, paths_to_html_download_link, st_html, web_path_to_url
 from run._tts import TTSPackage, text_to_speech
 
 st.set_page_config(layout="wide")

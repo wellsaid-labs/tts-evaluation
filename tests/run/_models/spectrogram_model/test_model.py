@@ -13,10 +13,10 @@ from hparams import HParams
 from torch.nn import Embedding
 from torch.nn.functional import binary_cross_entropy_with_logits, mse_loss
 from torchnlp.random import fork_rng
-from torchnlp.utils import lengths_to_mask
 
 import lib
-from lib.spectrogram_model import Inputs, Mode, SpectrogramModel
+from lib.utils import lengths_to_mask
+from run._models.spectrogram_model import Inputs, Mode, SpectrogramModel
 from run._models.spectrogram_model.attention import Attention
 from run._models.spectrogram_model.containers import (
     AttentionHiddenState,
@@ -73,7 +73,7 @@ def _make_spectrogram_model(
         lib.spectrogram_model.decoder.Decoder.__init__: HParams(
             pre_net_size=16,
             lstm_hidden_size=16,
-            encoder_output_size=16,
+            encoder_out_size=16,
             stop_net_dropout=dropout,
         ),
         lib.spectrogram_model.pre_net.PreNet.__init__: HParams(num_layers=1, dropout=dropout),
@@ -208,9 +208,9 @@ def _mock_model(model: SpectrogramModel) -> typing.Callable[[int], None]:
         token_skip_warning: int,
     ):
         window_start = hidden_state.window_start
-        cumulative_alignment_padding = self.cumulative_alignment_padding
-        slice_ = slice(cumulative_alignment_padding, -cumulative_alignment_padding)
-        first_token = hidden_state.cumulative_alignment[:, slice_].sum() == 0
+        cum_alignment_padding = self.cum_alignment_padding
+        slice_ = slice(cum_alignment_padding, -cum_alignment_padding)
+        first_token = hidden_state.cum_alignment[:, slice_].sum() == 0
         context, alignment, hidden_state = _attention_forward(
             encoded, query, hidden_state, token_skip_warning
         )
@@ -372,7 +372,7 @@ def _set_embedding_vocab(model: SpectrogramModel, config: _Config):
     """Update `model` vocab so it can be run in inference mode."""
     model.encoder.embed_token.update_tokens(list(range(config.max_tokens)))
     for i, max_values in enumerate(config.max_seq_meta_values):
-        embedding = typing.cast(lib.utils.PaddingAndLazyEmbedding, model.encoder.embed_metadata[i])
+        embedding = typing.cast(lib.utils.NumeralizePadEmbed, model.encoder.embed_metadata[i])
         embedding.update_tokens(list(range(max_values)))
 
 
@@ -502,24 +502,24 @@ _expected_parameters = {
     "encoder.lstm.rnn_layers.0.0.weight_hh_l0": torch.tensor(5.275919),
     "encoder.lstm.rnn_layers.0.0.bias_ih_l0": torch.tensor(-1.311591),
     "encoder.lstm.rnn_layers.0.0.bias_hh_l0": torch.tensor(-0.637413),
-    "encoder.lstm.rnn_layers.0.0.initial_hidden_state": torch.tensor(1.588171),
-    "encoder.lstm.rnn_layers.0.0.initial_cell_state": torch.tensor(-1.368738),
+    "encoder.lstm.rnn_layers.0.0.init_hidden_state": torch.tensor(1.588171),
+    "encoder.lstm.rnn_layers.0.0.init_cell_state": torch.tensor(-1.368738),
     "encoder.lstm.rnn_layers.0.1.weight_ih_l0": torch.tensor(-2.351552),
     "encoder.lstm.rnn_layers.0.1.weight_hh_l0": torch.tensor(-4.956273),
     "encoder.lstm.rnn_layers.0.1.bias_ih_l0": torch.tensor(-1.248557),
     "encoder.lstm.rnn_layers.0.1.bias_hh_l0": torch.tensor(-1.170437),
-    "encoder.lstm.rnn_layers.0.1.initial_hidden_state": torch.tensor(2.101204),
-    "encoder.lstm.rnn_layers.0.1.initial_cell_state": torch.tensor(4.115802),
+    "encoder.lstm.rnn_layers.0.1.init_hidden_state": torch.tensor(2.101204),
+    "encoder.lstm.rnn_layers.0.1.init_cell_state": torch.tensor(4.115802),
     "encoder.lstm_norm.weight": torch.tensor(3.985575),
     "encoder.lstm_norm.bias": torch.tensor(-6.604763),
     "encoder.project_out.1.weight": torch.tensor(-2.717630),
     "encoder.project_out.1.bias": torch.tensor(0.226285),
     "encoder.project_out.2.weight": torch.tensor(5.298065),
     "encoder.project_out.2.bias": torch.tensor(3.595932),
-    "decoder.initial_state.0.weight": torch.tensor(-0.311898),
-    "decoder.initial_state.0.bias": torch.tensor(-0.189921),
-    "decoder.initial_state.2.weight": torch.tensor(0.960531),
-    "decoder.initial_state.2.bias": torch.tensor(-0.015286),
+    "decoder.init_state.0.weight": torch.tensor(-0.311898),
+    "decoder.init_state.0.bias": torch.tensor(-0.189921),
+    "decoder.init_state.2.weight": torch.tensor(0.960531),
+    "decoder.init_state.2.bias": torch.tensor(-0.015286),
     "decoder.pre_net.layers.0.0.weight": torch.tensor(-4.600914),
     "decoder.pre_net.layers.0.0.bias": torch.tensor(0.042175),
     "decoder.pre_net.layers.0.2.weight": torch.tensor(2.474819),
@@ -528,14 +528,14 @@ _expected_parameters = {
     "decoder.lstm_layer_one.weight_hh": torch.tensor(1.214987),
     "decoder.lstm_layer_one.bias_ih": torch.tensor(1.377370),
     "decoder.lstm_layer_one.bias_hh": torch.tensor(1.508063),
-    "decoder.lstm_layer_one.initial_hidden_state": torch.tensor(2.194119),
-    "decoder.lstm_layer_one.initial_cell_state": torch.tensor(-0.949346),
+    "decoder.lstm_layer_one.init_hidden_state": torch.tensor(2.194119),
+    "decoder.lstm_layer_one.init_cell_state": torch.tensor(-0.949346),
     "decoder.lstm_layer_two.weight_ih_l0": torch.tensor(-7.278845),
     "decoder.lstm_layer_two.weight_hh_l0": torch.tensor(-7.797914),
     "decoder.lstm_layer_two.bias_ih_l0": torch.tensor(0.398802),
     "decoder.lstm_layer_two.bias_hh_l0": torch.tensor(-0.777656),
-    "decoder.lstm_layer_two.initial_hidden_state": torch.tensor(0.557445),
-    "decoder.lstm_layer_two.initial_cell_state": torch.tensor(-5.485558),
+    "decoder.lstm_layer_two.init_hidden_state": torch.tensor(0.557445),
+    "decoder.lstm_layer_two.init_cell_state": torch.tensor(-5.485558),
     "decoder.attention.alignment_conv.weight": torch.tensor(-1.962989),
     "decoder.attention.alignment_conv.bias": torch.tensor(-0.437283),
     "decoder.attention.project_query.weight": torch.tensor(-0.806193),
@@ -567,24 +567,24 @@ _expected_grads = {
     "encoder.lstm.rnn_layers.0.0.weight_hh_l0": torch.tensor(-0.522231),
     "encoder.lstm.rnn_layers.0.0.bias_ih_l0": torch.tensor(1.671067),
     "encoder.lstm.rnn_layers.0.0.bias_hh_l0": torch.tensor(1.671067),
-    "encoder.lstm.rnn_layers.0.0.initial_hidden_state": torch.tensor(-0.577697),
-    "encoder.lstm.rnn_layers.0.0.initial_cell_state": torch.tensor(-0.550854),
+    "encoder.lstm.rnn_layers.0.0.init_hidden_state": torch.tensor(-0.577697),
+    "encoder.lstm.rnn_layers.0.0.init_cell_state": torch.tensor(-0.550854),
     "encoder.lstm.rnn_layers.0.1.weight_ih_l0": torch.tensor(-25.273197),
     "encoder.lstm.rnn_layers.0.1.weight_hh_l0": torch.tensor(0.215798),
     "encoder.lstm.rnn_layers.0.1.bias_ih_l0": torch.tensor(1.894700),
     "encoder.lstm.rnn_layers.0.1.bias_hh_l0": torch.tensor(1.894700),
-    "encoder.lstm.rnn_layers.0.1.initial_hidden_state": torch.tensor(0.136555),
-    "encoder.lstm.rnn_layers.0.1.initial_cell_state": torch.tensor(0.478012),
+    "encoder.lstm.rnn_layers.0.1.init_hidden_state": torch.tensor(0.136555),
+    "encoder.lstm.rnn_layers.0.1.init_cell_state": torch.tensor(0.478012),
     "encoder.lstm_norm.weight": torch.tensor(6.709639),
     "encoder.lstm_norm.bias": torch.tensor(3.587944),
     "encoder.project_out.1.weight": torch.tensor(-0.000019),
     "encoder.project_out.1.bias": torch.tensor(0.000000),
     "encoder.project_out.2.weight": torch.tensor(11.672823),
     "encoder.project_out.2.bias": torch.tensor(19.259249),
-    "decoder.initial_state.0.weight": torch.tensor(-0.061283),
-    "decoder.initial_state.0.bias": torch.tensor(0.164277),
-    "decoder.initial_state.2.weight": torch.tensor(-2.805097),
-    "decoder.initial_state.2.bias": torch.tensor(-0.309708),
+    "decoder.init_state.0.weight": torch.tensor(-0.061283),
+    "decoder.init_state.0.bias": torch.tensor(0.164277),
+    "decoder.init_state.2.weight": torch.tensor(-2.805097),
+    "decoder.init_state.2.bias": torch.tensor(-0.309708),
     "decoder.pre_net.layers.0.0.weight": torch.tensor(-0.162394),
     "decoder.pre_net.layers.0.0.bias": torch.tensor(0.000772),
     "decoder.pre_net.layers.0.2.weight": torch.tensor(0.048216),
@@ -593,14 +593,14 @@ _expected_grads = {
     "decoder.lstm_layer_one.weight_hh": torch.tensor(-0.367154),
     "decoder.lstm_layer_one.bias_ih": torch.tensor(-0.012093),
     "decoder.lstm_layer_one.bias_hh": torch.tensor(-0.012093),
-    "decoder.lstm_layer_one.initial_hidden_state": torch.tensor(0.007095),
-    "decoder.lstm_layer_one.initial_cell_state": torch.tensor(-0.297339),
+    "decoder.lstm_layer_one.init_hidden_state": torch.tensor(0.007095),
+    "decoder.lstm_layer_one.init_cell_state": torch.tensor(-0.297339),
     "decoder.lstm_layer_two.weight_ih_l0": torch.tensor(19.436945),
     "decoder.lstm_layer_two.weight_hh_l0": torch.tensor(5.100532),
     "decoder.lstm_layer_two.bias_ih_l0": torch.tensor(2.016759),
     "decoder.lstm_layer_two.bias_hh_l0": torch.tensor(2.016759),
-    "decoder.lstm_layer_two.initial_hidden_state": torch.tensor(-0.185272),
-    "decoder.lstm_layer_two.initial_cell_state": torch.tensor(2.316336),
+    "decoder.lstm_layer_two.init_hidden_state": torch.tensor(-0.185272),
+    "decoder.lstm_layer_two.init_cell_state": torch.tensor(2.316336),
     "decoder.attention.alignment_conv.weight": torch.tensor(-0.062329),
     "decoder.attention.alignment_conv.bias": torch.tensor(-0.036579),
     "decoder.attention.project_query.weight": torch.tensor(0.053658),
@@ -651,7 +651,7 @@ def _side_effect(config: _Config, num_embeddings: int, *args, padding_idx=None, 
     TODO: Remove and update `test_spectrogram_model__version` values.
     """
     assert all(config.max_tokens != n for n in config.max_seq_meta_values)
-    default_tokens = len(lib.utils.PaddingAndLazyEmbedding._Tokens)
+    default_tokens = len(lib.utils.NumeralizePadEmbed._Tokens)
     padding_idx = padding_idx if num_embeddings == (config.max_tokens + default_tokens) else None
     return Embedding(num_embeddings - default_tokens, *args, padding_idx=padding_idx, **kwargs)
 
@@ -669,7 +669,7 @@ def _make_backward_compatible_model(config: _Config, stop_threshold=0.5):
     model.encoder.embed_token.vocab.update({i: i for i in range(config.max_tokens)})
     model.encoder.embed_token.num_embeddings = len(model.encoder.embed_token.vocab)
     for embed, max_values in zip(model.encoder.embed_metadata, config.max_seq_meta_values):
-        embed = typing.cast(lib.utils.PaddingAndLazyEmbedding, embed)
+        embed = typing.cast(lib.utils.NumeralizePadEmbed, embed)
         embed.vocab.update({i: i for i in range(max_values)})
         embed.num_embeddings = len(embed.vocab)
 

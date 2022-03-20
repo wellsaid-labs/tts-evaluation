@@ -13,7 +13,7 @@ import torch.nn
 from torch.nn import functional
 from torch.nn.utils.weight_norm import WeightNorm, remove_weight_norm, weight_norm
 
-from lib.utils import PaddingAndLazyEmbedding, log_runtime, pad_tensor, trim_tensors
+from lib.utils import NumeralizePadEmbed, log_runtime, pad_tensor, trim_tensors
 
 logger = logging.getLogger(__name__)
 
@@ -289,7 +289,7 @@ class _Encoder(torch.nn.Module):
         message = "`seq_meta_embed_size` must be divisable by the number of metadata attributes."
         assert seq_meta_embed_size % len(max_seq_meta_values) == 0, message
         self.embed_metadata = torch.nn.ModuleList(
-            PaddingAndLazyEmbedding(n, seq_meta_embed_size // len(max_seq_meta_values))
+            NumeralizePadEmbed(n, seq_meta_embed_size // len(max_seq_meta_values))
             for n in max_seq_meta_values
         )
         self.out_size = seq_meta_embed_size + frame_size
@@ -448,7 +448,7 @@ class SignalModel(torch.nn.Module):
         """If `True` then the "unknown token" may be used during evaluation, otherwise this will
         error if a new token is encountered during evaluation."""
         for mod in self.modules():
-            if isinstance(mod, PaddingAndLazyEmbedding):
+            if isinstance(mod, NumeralizePadEmbed):
                 mod.allow_unk_on_eval = val
 
     @log_runtime

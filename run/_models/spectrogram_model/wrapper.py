@@ -3,7 +3,7 @@ import typing
 
 import torch
 
-from lib.utils import PaddingAndLazyEmbedding
+from lib.utils import NumeralizePadEmbed
 from run._models.spectrogram_model.containers import Inputs, Preds
 from run._models.spectrogram_model.model import Generator, Mode, SpectrogramModel
 from run.data._loader import Session, Speaker
@@ -34,9 +34,20 @@ class SpectrogramModelWrapper(SpectrogramModel):
         **kwargs,
     ):
         super().__init__(max_tokens, (max_speakers, max_sessions), *args, **kwargs)
-        self.token_embed = self.encoder.embed_token
-        self.speaker_embed = typing.cast(PaddingAndLazyEmbedding, self.encoder.embed_metadata[0])
-        self.session_embed = typing.cast(PaddingAndLazyEmbedding, self.encoder.embed_metadata[1])
+
+    @property
+    def token_embed(self) -> NumeralizePadEmbed:
+        # NOTE: `torch.nn.Module` has special hooks for attributes which we avoid by setting this
+        # as a property, instead.
+        return self.encoder.embed_token
+
+    @property
+    def speaker_embed(self) -> NumeralizePadEmbed:
+        return typing.cast(NumeralizePadEmbed, self.encoder.embed_metadata[0])
+
+    @property
+    def session_embed(self) -> NumeralizePadEmbed:
+        return typing.cast(NumeralizePadEmbed, self.encoder.embed_metadata[1])
 
     @property
     def token_vocab(self) -> typing.Dict[str, int]:

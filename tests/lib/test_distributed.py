@@ -1,4 +1,6 @@
 import functools
+import random
+import time
 
 import torch
 import torch.distributed
@@ -57,25 +59,25 @@ def _dict_store_helper(rank, nprocs, backend="gloo", init_method="tcp://127.0.0.
     if rank == 0:
         store.update({"a": 1, "b": 1})
         assert store.data == {
-            "a": [(1, 2)],
-            "b": [(1,)],
-            "c": [(2,)],
+            "a": [[1, 2]],
+            "b": [[1]],
+            "c": [[2]],
         }
 
         store.update({"b": 1, "c": 1})
         assert store.data == {
-            "a": [(1, 2), tuple()],
-            "b": [(1,), (1,)],
-            "c": [(2,), (1, 2)],
-            "d": [tuple(), (2,)],
+            "a": [[1, 2], tuple()],
+            "b": [[1], [1]],
+            "c": [[2], [1, 2]],
+            "d": [tuple(), [2]],
         }
 
         store.update({"a": "a", "b": None})
         assert store.data == {
-            "a": [(1, 2), tuple(), ("a",)],
-            "b": [(1,), (1,), (None,)],
-            "c": [(2,), (1, 2), (["c"],)],
-            "d": [tuple(), (2,), ({"d": "d"},)],
+            "a": [[1, 2], tuple(), ["a"]],
+            "b": [[1], [1], [None]],
+            "c": [[2], [1, 2], [["c"]]],
+            "d": [tuple(), [2], [{"d": "d"}]],
         }
 
     if rank == 1:
@@ -93,4 +95,27 @@ def test_dict_store():
     """Test `lib.distributed.DictStore` gathers data onto master."""
     nprocs = 2
     partial = functools.partial(_dict_store_helper, nprocs=nprocs)
+    torch.multiprocessing.spawn(partial, nprocs=nprocs)
+
+
+def _dict_store__speed_helper(rank, nprocs, backend="gloo", init_method="tcp://127.0.0.1:23456"):
+    torch.distributed.init_process_group(
+        backend=backend, init_method=init_method, world_size=nprocs, rank=rank
+    )
+    assert lib.distributed.is_initialized()
+    store = lib.distributed.DictStore()
+
+    data = {(i, str(i)): random.random() for i in range(3000)}
+    event = time.perf_counter()
+    for _ in range(5):
+        store.update(data)
+    timing = time.perf_counter() - event
+    assert timing < 0.15
+    print(timing)
+
+
+def test_dict_store__speed():
+    """Test `lib.distributed.DictStore` is fast based on a realistic workload."""
+    nprocs = 4
+    partial = functools.partial(_dict_store__speed_helper, nprocs=nprocs)
     torch.multiprocessing.spawn(partial, nprocs=nprocs)

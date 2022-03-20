@@ -2,7 +2,7 @@ import typing
 
 import torch
 
-from lib.utils import PaddingAndLazyEmbedding
+from lib.utils import NumeralizePadEmbed
 from run._models.signal_model.model import SignalModel, SpectrogramDiscriminator, generate_waveform
 from run.data._loader import Session, Speaker
 
@@ -12,8 +12,14 @@ class SignalModelWrapper(SignalModel):
 
     def __init__(self, max_speakers: int, max_sessions: int, *args, **kwargs):
         super().__init__((max_speakers, max_sessions), *args, **kwargs)
-        self.speaker_embed = typing.cast(PaddingAndLazyEmbedding, self.encoder.embed_metadata[0])
-        self.session_embed = typing.cast(PaddingAndLazyEmbedding, self.encoder.embed_metadata[1])
+
+    @property
+    def speaker_embed(self) -> NumeralizePadEmbed:
+        return typing.cast(NumeralizePadEmbed, self.encoder.embed_metadata[0])
+
+    @property
+    def session_embed(self) -> NumeralizePadEmbed:
+        return typing.cast(NumeralizePadEmbed, self.encoder.embed_metadata[1])
 
     @property
     def speaker_vocab(self) -> typing.Dict[Speaker, int]:
@@ -54,8 +60,14 @@ class SpectrogramDiscriminatorWrapper(SpectrogramDiscriminator):
 
     def __init__(self, *args, max_speakers: int, max_sessions: int, **kwargs):
         super().__init__(*args, max_seq_meta_values=(max_speakers, max_sessions), **kwargs)
-        self.speaker_embed = typing.cast(PaddingAndLazyEmbedding, self.encoder.embed_metadata[0])
-        self.session_embed = typing.cast(PaddingAndLazyEmbedding, self.encoder.embed_metadata[1])
+
+    @property
+    def speaker_embed(self) -> NumeralizePadEmbed:
+        return typing.cast(NumeralizePadEmbed, self.encoder.embed_metadata[0])
+
+    @property
+    def session_embed(self) -> NumeralizePadEmbed:
+        return typing.cast(NumeralizePadEmbed, self.encoder.embed_metadata[1])
 
     @property
     def speaker_vocab(self) -> typing.Dict[Speaker, int]:

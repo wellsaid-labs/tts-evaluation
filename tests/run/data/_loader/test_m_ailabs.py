@@ -45,7 +45,6 @@ def test_m_ailabs_speech_dataset(
             session=run.data._loader.Session(
                 (JUDY_BIEBER, "dorothy_and_wizard_oz/wavs/dorothy_and_wizard_oz_01")
             ),
-            speaker=JUDY_BIEBER,
             script="To My Readers.",
             transcript="To My Readers.",
             alignments=Alignment.stow([Alignment((0, 14), (0.0, 0.0), (0, 14))]),

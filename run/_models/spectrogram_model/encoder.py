@@ -6,8 +6,8 @@ import torch.nn
 from torch.nn import ModuleList
 from torchnlp.nn import LockedDropout
 
+from lib.utils import LSTM, NumeralizePadEmbed
 from run._models.spectrogram_model.containers import Encoded, Inputs
-from lib.utils import LSTM, PaddingAndLazyEmbedding
 
 
 @lru_cache(maxsize=8)
@@ -197,12 +197,12 @@ class Encoder(torch.nn.Module):
         assert seq_meta_embed_size % len(max_seq_meta_values) == 0, message
 
         self.embed_metadata = ModuleList(
-            PaddingAndLazyEmbedding(n, seq_meta_embed_size // len(max_seq_meta_values))
+            NumeralizePadEmbed(n, seq_meta_embed_size // len(max_seq_meta_values))
             for n in max_seq_meta_values
         )
         self.seq_meta_embed_dropout = torch.nn.Dropout(seq_meta_embed_dropout)
 
-        self.embed_token = PaddingAndLazyEmbedding(max_tokens, hidden_size)
+        self.embed_token = NumeralizePadEmbed(max_tokens, hidden_size)
         self.embed = torch.nn.Sequential(
             torch.nn.Linear(hidden_size + seq_meta_embed_size, hidden_size),
             torch.nn.ReLU(),

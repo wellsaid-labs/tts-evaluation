@@ -22,7 +22,7 @@ from torchnlp.utils import get_total_parameters
 import lib
 import run
 from lib.distributed import is_master
-from lib.utils import PaddingAndLazyEmbedding, log_runtime
+from lib.utils import NumeralizePadEmbed, log_runtime
 from run._config import Cadence, DatasetType, get_dataset_label, get_model_label
 from run._models.spectrogram_model import Mode, Preds, SpectrogramModel
 from run._utils import Dataset
@@ -527,7 +527,7 @@ def _log_vocab(state: _State, dataset_type: DatasetType):
 
     label = partial(get_dataset_label, cadence=Cadence.RUN, type_=dataset_type)
     model = typing.cast(SpectrogramModel, state.model.module)
-    filter_ = lambda v: [t for t in v.keys() if not isinstance(t, PaddingAndLazyEmbedding._Tokens)]
+    filter_ = lambda v: [t for t in v.keys() if not isinstance(t, NumeralizePadEmbed._Tokens)]
     session_vocab = filter_(model.session_vocab)
     token_vocab = filter_(model.token_vocab)
     speaker_vocab = filter_(model.speaker_vocab)

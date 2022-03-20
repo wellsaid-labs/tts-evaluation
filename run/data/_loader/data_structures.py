@@ -202,7 +202,6 @@ class Passage:
     Args:
         audio_file: A voice-over of the `script`.
         session: A label used to group passages recorded together.
-        speaker: An identifier of the voice.
         script: The `script` the `speaker` was reading from.
         transcript: The `transcript` of the `audio`.
         alignments: Alignments (sorted) that align the `script`, `transcript` and `audio`.
@@ -220,7 +219,6 @@ class Passage:
 
     audio_file: AudioMetadata
     session: Session
-    speaker: Speaker
     script: str
     transcript: str
     alignments: Tuple[Alignment]
@@ -261,6 +259,10 @@ class Passage:
     @property
     def audio_stop(self) -> float:
         return self.speech_segments[-1].audio_stop
+
+    @property
+    def speaker(self):
+        return self.session[0]
 
     def audio(self):
         return _loader.utils.read_audio(self.audio_file)
@@ -860,6 +862,7 @@ def make_passages(
         **kwargs: Keyword arguments passed to `Passage`.
     """
     no_tqdm = not add_tqdm
+    tqdm = partial(tqdm_, disable=no_tqdm)
 
     logger.info(f"[{label}] Normalizing audio files...")
     normalized_audio_files = _normalize_audio_files(dataset, no_tqdm)
@@ -872,33 +875,32 @@ def make_passages(
 
     logger.info(f"[{label}] Making passages...")
     documents: typing.List[typing.List[Passage]] = [[] for _ in range(len(dataset))]
-    iterator = tqdm_([(i, p) for i, d in enumerate(dataset) for p in d], disable=no_tqdm)
+    iterator = tqdm([(i, p) for i, d in enumerate(dataset) for p in d])
     for i, item in iterator:
         if item.audio_path not in normalized_audio_files:
             logger.warning(f"[{label}] Skipping, audio path ({item.audio_path.name}) isn't a file.")
             continue
-        kwargs = {**kwargs, "speaker": item.speaker, "script": item.script}
         kwargs = {**kwargs, "transcript": item.transcript, "other_metadata": item.other_metadata}
-        kwargs = {**kwargs, "session": get_session(item)}
+        kwargs = {**kwargs, "session": get_session(item), "script": item.script}
         audio_file = normalized_audio_files[item.audio_path]
         alignments = _normalize_alignments(item, audio_file)
         documents[i].append(Passage(audio_file=audio_file, alignments=alignments, **kwargs))
 
     logger.info(f"[{label}] Linking passages...")
-    for doc in tqdm_(documents, disable=no_tqdm):
+    for doc in tqdm(documents):
         for i, passage in enumerate(doc):
             object.__setattr__(passage, "passages", doc)
             object.__setattr__(passage, "index", i)
 
     flat = flatten_2d(documents)
     logger.info(f"[{label}] Making nonalignments and speech segments...")
-    for passage in tqdm_(flat, disable=no_tqdm):
+    for passage in tqdm(flat):
         object.__setattr__(passage, "nonalignments", _make_nonalignments(passage))
         object.__setattr__(passage, "non_speech_segments", non_speech_segments[passage.audio_file])
         object.__setattr__(passage, "speech_segments", _make_speech_segments(passage))
 
     logger.info(f"[{label}] Checking invariants and packing...")
-    for passage in tqdm_(flat, disable=no_tqdm):
+    for passage in tqdm(flat):
         passage.check_invariants()
         object.__setattr__(passage, "alignments", Alignment.stow(passage.alignments))
         object.__setattr__(passage, "nonalignments", Alignment.stow(passage.nonalignments))

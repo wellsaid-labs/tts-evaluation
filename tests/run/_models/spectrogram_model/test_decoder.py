@@ -25,7 +25,7 @@ def _make_decoder(
     seq_meta_embed_size=8,
     pre_net_size=3,
     lstm_hidden_size=4,
-    encoder_output_size=5,
+    encoder_out_size=5,
     stop_net_dropout=0.5,
 ) -> Decoder:
     """Make `decoder.Decoder` for testing."""
@@ -45,7 +45,7 @@ def _make_decoder(
         seq_meta_embed_size=seq_meta_embed_size,
         pre_net_size=pre_net_size,
         lstm_hidden_size=lstm_hidden_size,
-        encoder_output_size=encoder_output_size,
+        encoder_out_size=encoder_out_size,
         stop_net_dropout=stop_net_dropout,
     )
 
@@ -54,14 +54,14 @@ def _make_encoded(
     module: Decoder, batch_size: int = 5, num_tokens: int = 6
 ) -> typing.Tuple[Encoded, typing.Tuple[int, int]]:
     """Make `Encoded` for testing."""
-    tokens = torch.rand(num_tokens, batch_size, module.encoder_output_size)
+    tokens = torch.rand(num_tokens, batch_size, module.encoder_out_size)
     tokens_mask = torch.ones(batch_size, num_tokens, dtype=torch.bool)
     seq_metadata = torch.zeros(batch_size, module.seq_meta_embed_size)
     encoded = Encoded(tokens, tokens_mask, tokens_mask.sum(dim=1), seq_metadata)
     return encoded, (batch_size, num_tokens)
 
 
-def test_autoregressive_decoder():
+def test_decoder():
     """Test `decoder.Decoder` handles a basic case."""
     module = _make_decoder()
     encoded, (batch_size, num_tokens) = _make_encoded(module)
@@ -89,7 +89,7 @@ def test_autoregressive_decoder():
         assert decoded.hidden_state.last_frame.shape == expected
 
         assert decoded.hidden_state.last_attention_context.dtype == torch.float
-        expected = (batch_size, module.encoder_output_size)
+        expected = (batch_size, module.encoder_out_size)
         assert decoded.hidden_state.last_attention_context.shape == expected
 
         assert isinstance(decoded.hidden_state.attention_hidden_state, AttentionHiddenState)
@@ -100,7 +100,7 @@ def test_autoregressive_decoder():
     (decoded.frames.sum() + decoded.stop_tokens.sum()).backward()
 
 
-def test_autoregressive_decoder__target():
+def test_decoder__target():
     """Test `decoder.Decoder` handles `target_frames` inputs."""
     num_frames = 3
     module = _make_decoder()
@@ -125,7 +125,7 @@ def test_autoregressive_decoder__target():
     assert decoded.hidden_state.last_frame.shape == (1, batch_size, module.num_frame_channels)
 
     assert decoded.hidden_state.last_attention_context.dtype == torch.float
-    expected = (batch_size, module.encoder_output_size)
+    expected = (batch_size, module.encoder_out_size)
     assert decoded.hidden_state.last_attention_context.shape == expected
 
     assert isinstance(decoded.hidden_state.attention_hidden_state, AttentionHiddenState)
