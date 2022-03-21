@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 import torch
 import torch.nn
-import torch.nn.functional
+from torch.nn import functional
 from hparams import HParams
 from torchnlp.encoders.text import stack_and_pad_tensors
 
@@ -425,74 +425,66 @@ def test_pad_remainder__right():
 
 def test_full_scale_sine_wave():
     """Test `lib.audio.full_scale_sine_wave` generates a sine wave."""
-    np.testing.assert_almost_equal(
-        lib.audio.full_scale_sine_wave(25, 2),
-        np.array(
-            [
-                0.0,
-                0.4817537,
-                0.844328,
-                0.9980267,
-                0.904827,
-                0.58778524,
-                0.12533319,
-                -0.36812454,
-                -0.77051336,
-                -0.98228735,
-                -0.9510565,
-                -0.6845468,
-                -0.24868982,
-                0.2486897,
-                0.6845471,
-                0.9510567,
-                0.98228717,
-                0.7705128,
-                0.36812377,
-                -0.12533331,
-                -0.5877855,
-                -0.9048268,
-                -0.99802667,
-                -0.84432745,
-                -0.48175353,
-            ]
-        ),
-    )
+    expected = [
+        0.0,
+        0.4817537,
+        0.844328,
+        0.9980267,
+        0.904827,
+        0.58778524,
+        0.12533319,
+        -0.36812454,
+        -0.77051336,
+        -0.98228735,
+        -0.9510565,
+        -0.6845468,
+        -0.24868982,
+        0.2486897,
+        0.6845471,
+        0.9510567,
+        0.98228717,
+        0.7705128,
+        0.36812377,
+        -0.12533331,
+        -0.5877855,
+        -0.9048268,
+        -0.99802667,
+        -0.84432745,
+        -0.48175353,
+    ]
+    np.testing.assert_almost_equal(lib.audio.full_scale_sine_wave(25, 2), np.array(expected))
 
 
 def test_full_scale_square_wave():
     """Test `lib.audio.full_scale_square_wave` generates a square wave."""
-    np.testing.assert_almost_equal(
-        lib.audio.full_scale_square_wave(25, 2),
-        np.array(
-            [
-                1.0,
-                1.0,
-                1.0,
-                1.0,
-                1.0,
-                1.0,
-                1.0,
-                -1.0,
-                -1.0,
-                -1.0,
-                -1.0,
-                -1.0,
-                -1.0,
-                1.0,
-                1.0,
-                1.0,
-                1.0,
-                1.0,
-                1.0,
-                -1.0,
-                -1.0,
-                -1.0,
-                -1.0,
-                -1.0,
-                -1.0,
-            ]
-        ),
-    )
+    expected = [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        -1.0,
+        -1.0,
+        -1.0,
+        -1.0,
+        -1.0,
+        -1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        -1.0,
+        -1.0,
+        -1.0,
+        -1.0,
+        -1.0,
+        -1.0,
+    ]
+    np.testing.assert_almost_equal(lib.audio.full_scale_square_wave(25, 2), np.array(expected))
 
 
 def test_k_weighting():
@@ -716,7 +708,7 @@ def test_power_spectrogram_to_framed_rms__batch():
         torch.tensor(lib.audio.full_scale_square_wave()),
     ]
     batched_signal = torch.stack(tensors)
-    padded_batched_signal = torch.nn.functional.pad(batched_signal, [frame_length, frame_length])
+    padded_batched_signal = functional.pad(batched_signal, [frame_length, frame_length])
     batched_spectrogram = torch.stft(
         padded_batched_signal,
         n_fft=frame_length,
@@ -780,7 +772,7 @@ def test_signal_to_db_mel_spectrogram():
         fmax=None,
         fmin=0.0,
     )
-    melspec = librosa.power_to_db(melspec, amin=amin, top_db=None)
+    melspec = librosa.power_to_db(melspec, amin=amin, top_db=None)  # type: ignore
     melspec = np.maximum(melspec, min_decibel).transpose()
 
     module = lib.audio.SignalTodBMelSpectrogram(
@@ -819,7 +811,7 @@ def test_signal_to_db_mel_spectrogram__intermediate():
         min_decibel=float("-inf"),
         lower_hertz=0,
     )
-    tensor = torch.nn.Parameter(torch.randn(batch_size, 2400))
+    tensor = torch.nn.parameter.Parameter(torch.randn(batch_size, 2400))
     db_mel_spectrogram, db_spectrogram, spectrogram = module(tensor, intermediate=True)
 
     assert spectrogram.shape == (batch_size, db_mel_spectrogram.shape[1], n_fft // 2 + 1)

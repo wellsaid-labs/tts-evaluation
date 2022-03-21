@@ -10,7 +10,7 @@ from run.train.spectrogram_model import _data, _metrics, _model
 from tests._utils import TEST_DATA_PATH, assert_almost_equal
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(autouse=True, scope="module")
 def run_around_tests():
     """Set a basic configuration."""
     run._config.configure()

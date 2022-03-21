@@ -1011,12 +1011,6 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
             return db_mel_spectrogram
 
 
-@lru_cache(maxsize=None)
-def get_signal_to_db_mel_spectrogram(*args, **kwargs) -> SignalTodBMelSpectrogram:
-    """Get cached `SignalTodBMelSpectrogram` module."""
-    return SignalTodBMelSpectrogram(*args, **kwargs)
-
-
 def get_pyloudnorm_meter(sample_rate: int, filter_class: str, **kwargs) -> "pyloudnorm.Meter":
     return _get_pyloudnorm_meter(sample_rate=sample_rate, filter_class=filter_class, **kwargs)
 

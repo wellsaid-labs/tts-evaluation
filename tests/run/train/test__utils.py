@@ -20,7 +20,7 @@ TEST_DATA_PATH = TEST_DATA_PATH / "audio"
 TEST_DATA_LJ = TEST_DATA_PATH / "bit(rate(lj_speech,24000),32).wav"
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(autouse=True, scope="module")
 def run_around_tests():
     """Set a basic configuration."""
     run._config.configure()

@@ -14,7 +14,8 @@ import typing
 import hparams.hparams
 import requests
 import streamlit as st
-from flask import Flask, Response, request
+from flask import Flask, request
+from flask.wrappers import Response
 
 import lib
 import run
@@ -100,7 +101,9 @@ def _streaming_service(
 
     @app.route("/shutdown")
     def shutdown():
-        request.environ.get("werkzeug.server.shutdown")()
+        shutdown = request.environ.get("werkzeug.server.shutdown")
+        assert shutdown is not None
+        shutdown()
         return "Server shutting down..."
 
     @app.route("/stream.mp3")

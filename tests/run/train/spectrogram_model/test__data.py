@@ -17,7 +17,7 @@ from run.train.spectrogram_model import _data
 from tests._utils import assert_almost_equal, assert_uniform_distribution
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(autouse=True, scope="module")
 def run_around_tests():
     """Set a basic configuration."""
     run._config.configure()

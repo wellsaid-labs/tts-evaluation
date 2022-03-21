@@ -12,6 +12,7 @@ import pytest
 import torch
 import torch.distributed
 import torch.nn
+from torch.multiprocessing.spawn import spawn
 from torchnlp.random import fork_rng
 
 import lib
@@ -486,7 +487,7 @@ def _spawn_helper(func, nprocs=2):
     """Spawn multiple processes for testing."""
     file_name = tempfile.mkstemp()[1]
     partial_ = partial(func, nprocs=nprocs, file_name=file_name)
-    torch.multiprocessing.spawn(partial_, nprocs=nprocs)
+    spawn(partial_, nprocs=nprocs)
 
 
 def _numeralize_pad_embed__distributed_helper(rank, nprocs, file_name):

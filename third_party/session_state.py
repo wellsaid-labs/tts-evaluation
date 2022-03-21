@@ -1,4 +1,5 @@
 # type: ignore
+# flake8: noqa
 """Hack to add per-session state to Streamlit.
 Usage
 -----

@@ -101,7 +101,7 @@ def test_get_non_speech_segments_and_cache():
 def test__maybe_normalize_audio_and_cache():
     """Test that `_maybe_normalize_audio_and_cache` uses the cache."""
     metadata = lib.audio.get_audio_metadata(TEST_DATA_LJ)
-    kwargs = dict(
+    kwargs: typing.Dict[str, typing.Any] = dict(
         suffix=".wav",
         data_type=lib.audio.AudioDataType.FLOATING_POINT,
         bits=16,

@@ -10,7 +10,7 @@ import lib
 from run.data import _loader
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(autouse=True, scope="package")
 def run_around_tests():
     """Set a basic configuration."""
     suffix = ".wav"

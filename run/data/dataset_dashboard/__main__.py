@@ -57,7 +57,9 @@ logger = logging.getLogger(__name__)
 def _get_spans(dataset: Dataset, num_samples: int) -> typing.List[Span]:
     """Generate spans from our datasets."""
     logger.info("Generating spans...")
-    generator = run._utils.SpanGenerator(dataset, include_span=lambda *a: True, max_pause=math.inf)
+    generator = run._utils.SpanGenerator(
+        dataset, include_span=lambda *_: True, max_pause=math.inf
+    )
     with fork_rng(123):
         spans = [next(generator) for _ in tqdm.tqdm(range(num_samples), total=num_samples)]
     logger.info(f"Finished generating spans! {mazel_tov()}")

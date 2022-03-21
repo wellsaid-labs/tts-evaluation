@@ -7,7 +7,7 @@ from run.data import _loader
 from tests.run._utils import make_alignments_1d, make_alignments_2d, make_passage
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(autouse=True, scope="module")
 def run_around_tests():
     """Set a basic configuration."""
     run._config.configure()

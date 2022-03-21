@@ -15,7 +15,7 @@ from run.train.spectrogram_model._data import InputEncoder
 logger = logging.getLogger(__name__)
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(autouse=True, scope="module")
 def run_around_tests():
     config = {
         lib.text.grapheme_to_phoneme: hparams.HParams(separator=run._config.PHONEME_SEPARATOR),
