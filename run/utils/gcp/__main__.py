@@ -192,7 +192,7 @@ def _make_instance(
     if preemptible:
         assert zone is not None, "Zone selection not supported for preemptible instances."
         _make_instance_group_manager(name, zone, template_op, health_check)
-        watch_preemptible_instance.__wrapped__(name, zone)
+        watch_preemptible_instance(name, zone)
 
     for zone in _get_zones() if zone is None else [zone]:
         logger.info(f"Attempting zone: '{zone}'")
@@ -213,7 +213,7 @@ def _make_instance(
             logger.error(f"Failed to create instance on '{zone}':\n{str(e)}")
 
     if zone is not None:
-        watch_persistent_instance.__wrapped__(name, zone)
+        watch_persistent_instance(name, zone)
 
 
 @persistent_app.command("make-instance")
