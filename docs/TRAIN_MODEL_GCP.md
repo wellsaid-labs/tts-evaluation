@@ -77,7 +77,7 @@ Setup your local development environment by following [these instructions](LOCAL
 1. SSH into the instance...
 
    ```zsh
-   VM_NAME=$(python -m run.utils.gcp most-recent --name $NAME)
+   VM_NAME=$(python -m run.utils.gcp $TYPE most-recent --name $NAME)
    echo "VM_NAME=$VM_NAME"
    VM_ZONE=$(python -m run.utils.gcp zone --name $VM_NAME)
    gcloud compute ssh --zone=$VM_ZONE $VM_NAME
