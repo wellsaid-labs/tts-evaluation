@@ -192,7 +192,7 @@ def _make_instance(
     if preemptible:
         assert zone is not None, "Zone selection not supported for preemptible instances."
         _make_instance_group_manager(name, zone, template_op, health_check)
-        watch_preemptible_instance(name, zone)
+        watch_preemptible_instance.__wrapped__(name, zone)
 
     for zone in _get_zones() if zone is None else [zone]:
         logger.info(f"Attempting zone: '{zone}'")
@@ -213,7 +213,7 @@ def _make_instance(
             logger.error(f"Failed to create instance on '{zone}':\n{str(e)}")
 
     if zone is not None:
-        watch_persistent_instance(name, zone)
+        watch_persistent_instance.__wrapped__(name, zone)
 
 
 @persistent_app.command("make-instance")
@@ -258,7 +258,7 @@ def make_preemptible_instance(
 def watch_persistent_instance(
     name: str = typer.Option(...),
     zone: str = typer.Option(...),
-    poll_interval: int = typer.Option(5),
+    poll_interval: int = 5,
 ):
     """Print the status of instance named NAME in ZONE."""
     lib.environment.set_basic_logging_config()
@@ -273,7 +273,7 @@ def watch_persistent_instance(
 def watch_preemptible_instance(
     name: str = typer.Option(...),
     zone: str = typer.Option(...),
-    poll_interval: int = typer.Option(5),
+    poll_interval: int = 5,
 ):
     """Print the status of instance named NAME in ZONE."""
     lib.environment.set_basic_logging_config()
