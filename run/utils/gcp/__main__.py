@@ -53,7 +53,7 @@ def _wait_for_operation(
         time.sleep(poll_interval)
 
 
-def _make_instance_group_manager(name: str, template_op: typing.Dict, health_check: str):
+def _make_instance_group_manager(name: str, zone: str, template_op: typing.Dict, health_check: str):
     """Make the instance group manager along with a health check for a instance template."""
     try:
         body = {
@@ -93,9 +93,15 @@ def _make_instance_group_manager(name: str, template_op: typing.Dict, health_che
     logger.info("Created instance group manager: %s", manager_op["targetLink"])
 
 
+def _get_zones() -> typing.List[str]:
+    """Get a list of available zones."""
+    zones_op = compute.zones().list(project=project).execute()
+    return [z["name"] for z in zones_op["items"]]
+
+
 def _make_instance(
     name: str,
-    zone: str,
+    zone: typing.Optional[str],
     machine_type: str,
     gpu_type: str,
     gpu_count: int,
@@ -109,7 +115,14 @@ def _make_instance(
     health_check: str,
     preemptible: bool,
 ):
-    """Create a managed and preemptible instance named NAME in ZONE."""
+    """Create a managed and preemptible instance named NAME in ZONE.
+
+    Args:
+        ...
+        zone: This can be a zone like "us-east1-c". If a zone is not provided, this will try to
+            many different zones until one succeeds.
+        ...
+    """
     lib.environment.set_basic_logging_config()
 
     images = compute.images()
@@ -177,23 +190,36 @@ def _make_instance(
     logger.info("Created instance template: %s", template_op["targetLink"])
 
     if preemptible:
-        return _make_instance_group_manager(name, template_op, health_check)
+        assert zone is not None, "Zone selection not supported for preemptible instances."
+        _make_instance_group_manager(name, zone, template_op, health_check)
+        watch_preemptible_instance(name, zone)
 
-    client = compute.instances()
-    # NOTE: An instance template is created and used to create a single instance to simplify the
-    # code.
-    link = template_op["targetLink"]
-    body = {"name": name}
-    instance_op = client.insert(body=body, project=project, zone=zone, sourceInstanceTemplate=link)
-    instance_op = instance_op.execute()
-    instance_op = _wait_for_operation(instance_op["name"], zone=zone, is_global=False)
-    logger.info("Created instance: %s", instance_op["targetLink"])
+    for zone in _get_zones() if zone is None else [zone]:
+        logger.info(f"Attempting zone: '{zone}'")
+        client = compute.instances()
+        # NOTE: An instance template is created and used to create a single instance to simplify the
+        # code.
+        link = template_op["targetLink"]
+        body = {"name": name}
+        instance_op = client.insert(
+            body=body, project=project, zone=zone, sourceInstanceTemplate=link
+        )
+        try:
+            instance_op = instance_op.execute()
+            instance_op = _wait_for_operation(instance_op["name"], zone=zone, is_global=False)
+            logger.info("Created instance: %s", instance_op["targetLink"])
+            break
+        except Exception as e:
+            logger.error(f"Failed to create instance on '{zone}':\n{str(e)}")
+
+    if zone is not None:
+        watch_persistent_instance(name, zone)
 
 
 @persistent_app.command("make-instance")
 def make_persistent_instance(
     name: str = typer.Option(...),
-    zone: str = typer.Option(...),
+    zone: str = typer.Option(None, help="Select a specific zone for training."),
     machine_type: str = typer.Option(...),
     gpu_type: str = typer.Option(...),
     gpu_count: int = typer.Option(...),

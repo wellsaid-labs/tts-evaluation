@@ -33,6 +33,9 @@ Setup your local development environment by following [these instructions](LOCAL
    💡 TIP: Don't place all your preemptible instances in the same zone, just in case one zone
    runs out of capacity.
 
+   💡 TIP: For persistent instances, the `ZONE` parameter is optional. If it's not provided, then
+    this will try all the zones until one is found.
+
    If starting from scratch, use a standard ubuntu image:
 
    ```zsh
@@ -63,7 +66,6 @@ Setup your local development environment by following [these instructions](LOCAL
       --metadata="startup-script-user=$GCP_USER" \
       --metadata="train-script-path=$TRAIN_SCRIPT_PATH" \
       --metadata-from-file="startup-script=run/utils/gcp/resume_training_on_start_up.sh"
-   python -m run.utils.gcp $TYPE watch-instance --name=$NAME --zone=$ZONE
    ```
 
    ❓ LEARN MORE: See our machine type benchmarks [here](./TRAIN_MODEL_GCP_BENCHMARKS.md).
@@ -77,7 +79,8 @@ Setup your local development environment by following [these instructions](LOCAL
    ```zsh
    VM_NAME=$(python -m run.utils.gcp most-recent --name $NAME)
    echo "VM_NAME=$VM_NAME"
-   gcloud compute ssh --zone=$ZONE $VM_NAME
+   VM_ZONE=$(python -m run.utils.gcp zone --name $VM_NAME)
+   gcloud compute ssh --zone=$VM_ZONE $VM_NAME
    ```
 
    Continue to run this command until it succeeds.
