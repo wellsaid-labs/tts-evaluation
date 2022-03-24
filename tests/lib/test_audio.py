@@ -42,7 +42,7 @@ def run_around_tests():
     frame_hop = fft_length // 4
     window = librosa.filters.get_window("hann", fft_length)
     hertz_bounds = {"lower_hertz": 20, "upper_hertz": 20000}
-    config_ = {
+    config = {
         power_spectrogram_to_framed_rms: cf.Args(window=torch.tensor(window).float()),
         lib.audio.signal_to_framed_rms: cf.Args(frame_length=fft_length, hop_length=frame_hop),
         lib.audio.pad_remainder: cf.Args(multiple=frame_hop, mode="constant", constant_values=0.0),
@@ -68,7 +68,7 @@ def run_around_tests():
             **hertz_bounds,
         ),
     }
-    cf.add(config_)
+    cf.add(config)
     yield
     cf.purge()
 

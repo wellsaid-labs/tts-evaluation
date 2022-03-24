@@ -17,10 +17,10 @@ logger = logging.getLogger(__name__)
 
 @pytest.fixture(autouse=True, scope="module")
 def run_around_tests():
-    config_ = {
+    config = {
         lib.text.grapheme_to_phoneme: cf.Args(separator=run._config.PHONEME_SEPARATOR),
     }
-    cf.add(config_)
+    cf.add(config)
     yield
     cf.purge()
 

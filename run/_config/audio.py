@@ -74,7 +74,7 @@ def configure(sample_rate=24000):
     try:
         window = run._utils.get_window("hann", FRAME_SIZE, FRAME_HOP)
         window_correction_factor = lib.audio.get_window_correction_factor(window)
-        config_ = {
+        config = {
             lib.audio.power_spectrogram_to_framed_rms: Args(
                 window=window,
                 window_correction_factor=window_correction_factor,
@@ -82,7 +82,7 @@ def configure(sample_rate=24000):
             lib.audio.SignalTodBMelSpectrogram: Args(window=window),
             lib.audio.griffin_lim: Args(window=window.numpy()),
         }
-        cf.add(config_)
+        cf.add(config)
     except ImportError:
         logger.info("Ignoring optional `scipy` and `librosa` configurations.")
 
@@ -91,15 +91,15 @@ def configure(sample_rate=24000):
     hertz_bounds = {"lower_hertz": 20, "upper_hertz": 20000}
 
     try:
-        config_ = {
+        config = {
             librosa.effects.trim: Args(frame_length=FRAME_SIZE, hop_length=FRAME_HOP),
         }
-        cf.add(config_)
+        cf.add(config)
     except ImportError:
         logger.info("Ignoring optional `librosa` configurations.")
 
     args = Args(sample_rate=sample_rate)
-    config_ = {
+    config = {
         lib.visualize.plot_waveform: args,
         lib.visualize.plot_spectrogram: args,
         lib.visualize.plot_mel_spectrogram: args,
@@ -111,16 +111,11 @@ def configure(sample_rate=24000):
         run._tts.text_to_speech_ffmpeg_generator: args,
         lib.audio.get_pyloudnorm_meter: args,
     }
-    cf.add(config_)
+    cf.add(config)
 
-    config_ = {
-        lib.visualize.plot_spectrogram: Args(
-            frame_hop=FRAME_HOP,
-        ),
-        lib.visualize.plot_mel_spectrogram: Args(
-            frame_hop=FRAME_HOP,
-            **hertz_bounds,
-        ),
+    config = {
+        lib.visualize.plot_spectrogram: Args(frame_hop=FRAME_HOP),
+        lib.visualize.plot_mel_spectrogram: Args(frame_hop=FRAME_HOP, **hertz_bounds),
         lib.audio.pad_remainder: Args(multiple=FRAME_HOP, mode="constant", constant_values=0.0),
         lib.audio.signal_to_framed_rms: Args(frame_length=FRAME_SIZE, hop_length=FRAME_HOP),
         lib.audio.SignalTodBMelSpectrogram: Args(
@@ -215,4 +210,4 @@ def configure(sample_rate=24000):
             standard_deviation=2,
         ),
     }
-    cf.add(config_)
+    cf.add(config)

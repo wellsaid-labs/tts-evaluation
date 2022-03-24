@@ -24,7 +24,7 @@ def run_around_tests():
     non_speech_segment_frame_length = 50
     temp_dir = tempfile.TemporaryDirectory()
     temp_dir_path = pathlib.Path(temp_dir.name)
-    config_ = {
+    config = {
         _loader.utils.normalize_audio_suffix: cf.Args(suffix=suffix),
         _loader.utils.normalize_audio: cf.Args(
             suffix=suffix,
@@ -47,6 +47,6 @@ def run_around_tests():
             suffix=suffix, data_type=data_type, bits=bits, format_=format_
         ),
     }
-    cf.add(config_)
+    cf.add(config)
     yield
     cf.purge()

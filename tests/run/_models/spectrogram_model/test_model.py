@@ -53,7 +53,7 @@ def _make_spectrogram_model(
     stop_token_eps: float = 1e-10,
 ) -> SpectrogramModel:
     """Make `spectrogram_model.SpectrogramModel` for testing."""
-    config_ = {
+    config = {
         run._models.spectrogram_model.encoder.Encoder: cf.Args(
             seq_meta_embed_dropout=dropout,
             out_size=16,
@@ -77,8 +77,9 @@ def _make_spectrogram_model(
             window_length=window_length,
             avg_frames_per_token=1.0,
         ),
+        torch.nn.LayerNorm: cf.Args(eps=1e-05),
     }
-    cf.add(config_, overwrite=True)
+    cf.add(config, overwrite=True)
     model = SpectrogramModel(
         max_tokens=params.max_tokens,
         max_seq_meta_values=params.max_seq_meta_values,

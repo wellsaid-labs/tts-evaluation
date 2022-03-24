@@ -132,7 +132,7 @@ def configure():
     # NOTE: For other datasets like M-AILABS and LJ, this assumes that there is no duplication
     # between different speakers.
     groups += [{s} for s in _loader.DATASETS.keys() if s not in _loader.WSL_DATASETS]
-    config_ = {
+    config = {
         run._utils.get_dataset: cf.Args(
             datasets=DATASETS,
             include_psge=_include_passage,
@@ -143,4 +143,4 @@ def configure():
         ),
         run._utils.SpanGenerator: cf.Args(max_seconds=15, include_span=_include_span),
     }
-    cf.add(config_)
+    cf.add(config)

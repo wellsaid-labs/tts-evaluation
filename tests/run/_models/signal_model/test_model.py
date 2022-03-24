@@ -111,6 +111,7 @@ _ModelInputs = typing.Tuple[torch.Tensor, typing.List[typing.Tuple[int, int]], t
 
 def _make_small_signal_model(config: _Config) -> typing.Tuple[SignalModel, _ModelInputs]:
     """Make `SignalModel` and it's inputs for testing."""
+    cf.add({torch.nn.LayerNorm: cf.Args(eps=1e-05)}, overwrite=True)
     model = SignalModel(
         max_seq_meta_values=config.max_seq_meta_values,
         seq_meta_embed_size=config.seq_meta_embed_size,

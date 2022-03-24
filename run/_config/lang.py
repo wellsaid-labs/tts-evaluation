@@ -154,8 +154,8 @@ def is_sound_alike(a: str, b: str, language: Language) -> bool:
 
 def configure():
     """Configure modules involved in processing text."""
-    config_ = {
+    config = {
         lib.text.grapheme_to_phoneme: cf.Args(separator=PHONEME_SEPARATOR),
         run._config.data._include_passage: cf.Args(language=LANGUAGE),
     }
-    cf.add(config_)
+    cf.add(config)

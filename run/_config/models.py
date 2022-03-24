@@ -31,7 +31,7 @@ def configure():
     max_sessions = 10000
 
     # NOTE: Configure the model sizes.
-    config_ = {
+    config = {
         run._models.spectrogram_model.encoder.Encoder: cf.Args(
             # SOURCE (Tacotron 2):
             # Input characters are represented using a learned 512-dimensional character embedding
@@ -117,10 +117,10 @@ def configure():
             hidden_size=512,
         ),
     }
-    cf.add(config_)
+    cf.add(config)
 
     # NOTE: Configure the model regularization.
-    config_ = {
+    config = {
         # SOURCE (Tacotron 2):
         # In order to introduce output variation at inference time, dropout with probability 0.5 is
         # applied only to layers in the pre-net of the autoregressive decoder.
@@ -132,9 +132,9 @@ def configure():
             dropout=0.1, seq_meta_embed_dropout=0.1
         ),
     }
-    cf.add(config_)
+    cf.add(config)
 
-    config_ = {
+    config = {
         # NOTE: Window size smoothing parameter is not sensitive.
         lib.optimizers.AdaptiveGradientNormClipper: cf.Args(window_size=128, norm_type=2),
         # NOTE: The `beta` parameter is not sensitive.
@@ -152,11 +152,11 @@ def configure():
             stop_threshold=stop_threshold,
         ),
     }
-    cf.add(config_)
+    cf.add(config)
 
-    config_ = {
+    config = {
         # NOTE: BERT uses `eps=1e-12` for `LayerNorm`, see here:
         # https://github.com/huggingface/transformers/blob/master/src/transformers/configuration_bert.py
         torch.nn.LayerNorm: cf.Args(eps=1e-12),
     }
-    cf.add(config_)
+    cf.add(config)

@@ -16,7 +16,7 @@ from tests.run.data._loader._utils import maybe_normalize_audio_and_cache_side_e
 @mock.patch("run.data._loader.data_structures.get_audio_metadata")
 @mock.patch("run.data._loader.data_structures._loader.utils.maybe_normalize_audio_and_cache")
 @mock.patch("run.data._loader.data_structures._loader.utils.get_non_speech_segments_and_cache")
-@mock.patch("run.data._loader.data_structures.config.partial")
+@mock.patch("run.data._loader.data_structures.cf.partial")
 @mock.patch("urllib.request.urlretrieve")
 def test_m_ailabs_speech_dataset(
     mock_urlretrieve,
