@@ -1,5 +1,6 @@
 from unittest import mock
 
+import config as cf
 import torch
 import torch.distributed
 
@@ -22,7 +23,9 @@ def setup_experiment(mock_urlretrieve):
     # Test loading and splitting data
     dataset = make_small_dataset()
     dev_speakers = set([JUDY_BIEBER])
-    train_dataset, dev_dataset = split_dataset(dataset, dev_speakers, 3)
+    train_dataset, dev_dataset = cf.partial(split_dataset)(
+        dataset, dev_speakers=dev_speakers, approx_dev_len=3
+    )
 
     # Check dataset statistics are correct
     stats = _get_dataset_stats(train_dataset, dev_dataset)

@@ -1,3 +1,4 @@
+from run._config import audio, data, environment, labels, lang
 from run._config.all import configure
 from run._config.audio import FRAME_HOP, NUM_FRAME_CHANNELS
 from run._config.data import DATASETS, DEFAULT_SCRIPT, DEV_SPEAKERS
@@ -37,6 +38,11 @@ from run._config.lang import (
 # TODO: Reduce the usage of globals, and use configuration if possible.
 
 __all__ = [
+    "audio",
+    "data",
+    "environment",
+    "labels",
+    "lang",
     "configure",
     "FRAME_HOP",
     "NUM_FRAME_CHANNELS",

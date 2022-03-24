@@ -3,7 +3,7 @@ import re
 import typing
 from functools import lru_cache, partial
 
-from hparams import HParams, add_config
+import config as cf
 from third_party import LazyLoader
 
 import lib
@@ -148,7 +148,4 @@ def is_sound_alike(a: str, b: str, language: Language) -> bool:
 
 def configure():
     """Configure modules involved in processing text."""
-    config = {
-        run._config.data._include_passage: HParams(language=LANGUAGE),
-    }
-    add_config(config)
+    cf.add({run._config.data._include_passage: cf.Args(language=LANGUAGE)})

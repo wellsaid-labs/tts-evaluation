@@ -9,22 +9,25 @@ import types
 import typing
 from functools import partial
 
+import config as cf
 import torch
 import torch.distributed
 import torch.nn
 import torch.optim
 import torch.utils
 import torch.utils.data
-from hparams import HParam, configurable
 from third_party import get_parameter_norm
 from torch.nn.functional import binary_cross_entropy_with_logits, mse_loss
 from torchnlp.utils import get_total_parameters
 
 import lib
+from lib.audio import griffin_lim
 from lib.distributed import is_master
 from lib.utils import NumeralizePadEmbed, log_runtime
+from lib.visualize import plot_alignments, plot_logits, plot_mel_spectrogram
 from run._config import Cadence, DatasetType, get_dataset_label, get_model_label
-from run._utils import Dataset, configurable_
+from run._models.spectrogram_model import Mode, Preds, SpectrogramModel
+from run._utils import Dataset
 from run.train import _utils
 from run.train._utils import (
     CometMLExperiment,
@@ -45,10 +48,8 @@ from run.train.spectrogram_model._metrics import (
     get_alignment_norm,
     get_average_db_rms_level,
 )
-from run.train.spectrogram_model._model import SpectrogramModel
 
 logger = logging.getLogger(__name__)
-torch.optim.AdamW.__init__ = configurable_(torch.optim.AdamW.__init__)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -63,9 +64,9 @@ class Checkpoint(_utils.Checkpoint):
 
     def check_invariants(self):
         """Check datastructure invariants."""
-        assert self.scheduler._step_count == self.step + 1
-        assert self.scheduler.last_epoch == self.step
-        assert self.scheduler.optimizer == self.optimizer
+        assert self.scheduler._step_count == self.step + 1  # type: ignore
+        assert self.scheduler.last_epoch == self.step  # type: ignore
+        assert self.scheduler.optimizer == self.optimizer  # type: ignore
         assert self.ema.step == self.step + 1
         ptrs = set(p.data_ptr() for p in self.model.parameters() if p.requires_grad)
         assert len(self.optimizer.param_groups) == 2
@@ -122,7 +123,7 @@ class _State:
     @staticmethod
     def _get_model(comet: CometMLExperiment, device: torch.device) -> SpectrogramModel:
         """Initialize a model onto `device`."""
-        model = SpectrogramModel().to(device, non_blocking=True)
+        model = cf.partial(SpectrogramModel)().to(device, non_blocking=True)
         comet.set_model_graph(str(model))
         label = get_model_label("num_parameters", Cadence.STATIC)
         comet.log_parameter(label, get_total_parameters(model))
@@ -153,12 +154,11 @@ class _State:
         return [{"params": no_decay_params, "weight_decay": 0.0}, {"params": decay_params}]
 
     @staticmethod
-    @configurable
     def _get_optimizers(
         model: torch.nn.Module,
-        optimizer: typing.Type[torch.optim.AdamW] = HParam(),
-        lr_multiplier_schedule: typing.Callable[[int], float] = HParam(),
-        exclude_from_decay: ExcludeFromDecay = HParam(),
+        optimizer: typing.Type[torch.optim.AdamW],
+        lr_multiplier_schedule: typing.Callable[[int], float],
+        exclude_from_decay: ExcludeFromDecay,
     ) -> typing.Tuple[
         torch.optim.AdamW,
         lib.optimizers.AdaptiveGradientNormClipper,
@@ -172,10 +172,11 @@ class _State:
         https://github.com/pytorch/pytorch/issues/2830
         """
         params = list(filter(lambda p: p.requires_grad, model.parameters()))
-        optimizer_ = optimizer(_State._make_optimizer_groups(model, exclude_from_decay))
-        clipper = lib.optimizers.AdaptiveGradientNormClipper(params)
+        optim_groups = _State._make_optimizer_groups(model, exclude_from_decay)
+        optimizer_ = cf.partial(optimizer)(optim_groups)
+        clipper = cf.partial(lib.optimizers.AdaptiveGradientNormClipper)(params)
         scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer_, lr_multiplier_schedule)
-        ema = lib.optimizers.ExponentialMovingParameterAverage(params)
+        ema = cf.partial(lib.optimizers.ExponentialMovingParameterAverage)(params)
         return optimizer_, clipper, ema, scheduler
 
     def to_checkpoint(self):
@@ -223,27 +224,26 @@ class _State:
         # will be synchronized. Learn more:
         # https://discuss.pytorch.org/t/proper-distributeddataparallel-usage/74564/2
         model = torch.nn.parallel.DistributedDataParallel(model, [device], device)
-        return cls(model, *cls._get_optimizers(model), comet, device)
+        return cls(model, *cf.partial(cls._get_optimizers)(model), comet, device)
 
 
 def _worker_init_fn():
     # NOTE: Each worker needs the same random seed to be in-sync.
-    set_run_seed()
+    set_run_seed(cf.get())
 
 
-@configurable
 def _get_data_loaders(
     state: _State,
     train_dataset: Dataset,
     dev_dataset: Dataset,
-    train_batch_size: int = HParam(),
-    dev_batch_size: int = HParam(),
-    train_steps_per_epoch: int = HParam(),
-    dev_steps_per_epoch: int = HParam(),
-    is_train_balanced: bool = HParam(),
-    is_dev_balanced: bool = HParam(),
-    num_workers: int = HParam(),
-    prefetch_factor: int = HParam(),
+    train_batch_size: int,
+    dev_batch_size: int,
+    train_steps_per_epoch: int,
+    dev_steps_per_epoch: int,
+    is_train_balanced: bool,
+    is_dev_balanced: bool,
+    num_workers: int,
+    prefetch_factor: int,
 ) -> typing.Tuple[DataLoader[Batch], DataLoader[Batch]]:
     """Initialize training and development data loaders."""
     step = int(state.step.item())
@@ -275,7 +275,7 @@ class _HandleBatchArgs(typing.NamedTuple):
     cadence: Cadence = Cadence.STEP
 
 
-def _visualize_source_vs_target(args: _HandleBatchArgs, preds: lib.spectrogram_model.Preds):
+def _visualize_source_vs_target(args: _HandleBatchArgs, preds: Preds):
     """Visualize predictions as compared to the original `batch`.
 
     TODO: Add `pick` so that we can find examples which perform poorly in training, and hence are
@@ -298,21 +298,20 @@ def _visualize_source_vs_target(args: _HandleBatchArgs, preds: lib.spectrogram_m
     model = partial(get_model_label, cadence=args.cadence)
     dataset = partial(get_dataset_label, cadence=args.cadence, type_=args.dataset_type)
     figures = {
-        model("spectrogram_delta"): lib.visualize.plot_mel_spectrogram(predicted_delta),
-        model("predicted_spectrogram"): lib.visualize.plot_mel_spectrogram(predicted_spectrogram),
-        model("alignment"): lib.visualize.plot_alignments(predicted_alignments),
-        model("stop_token"): lib.visualize.plot_logits(predicted_stop_token),
-        dataset("gold_spectrogram"): lib.visualize.plot_mel_spectrogram(gold_spectrogram),
+        model("spectrogram_delta"): plot_mel_spectrogram(predicted_delta, **cf.get()),
+        model("predicted_spectrogram"): plot_mel_spectrogram(predicted_spectrogram, **cf.get()),
+        model("alignment"): plot_alignments(predicted_alignments),
+        model("stop_token"): plot_logits(predicted_stop_token),
+        dataset("gold_spectrogram"): plot_mel_spectrogram(gold_spectrogram, **cf.get()),
     }
     args.state.comet.log_figures(figures)
 
 
-@configurable
 def _run_step(
     args: _HandleBatchArgs,
-    spectrogram_loss_scalar: float = HParam(),
-    stop_token_min_loss: float = HParam(),
-    average_spectrogram_length: float = HParam(),
+    spectrogram_loss_scalar: float,
+    stop_token_min_loss: float,
+    average_spectrogram_length: float,
 ):
     """Run the `model` on the next batch from `data_loader`, and maybe update it.
 
@@ -343,9 +342,9 @@ def _run_step(
         inputs=args.batch.inputs,
         target_frames=args.batch.spectrogram.tensor,
         target_mask=args.batch.spectrogram_mask.tensor,
-        mode=lib.spectrogram_model.Mode.FORWARD,
+        mode=Mode.FORWARD,
     )
-    preds = typing.cast(lib.spectrogram_model.Preds, preds)
+    preds = typing.cast(Preds, preds)
 
     # SOURCE: Tacotron 2
     # We minimize the summed mean squared error (MSE) from before and after the post-net to aid
@@ -419,12 +418,12 @@ def _run_step(
     args.metrics.update(values)
 
 
-def _min_alignment_norm(_: _HandleBatchArgs, preds: lib.spectrogram_model.Preds) -> int:
+def _min_alignment_norm(_: _HandleBatchArgs, preds: Preds) -> int:
     """Get the index of the prediction that has the smallest alignment norm."""
     return int(torch.argmin(get_alignment_norm(preds)))
 
 
-def _max_num_frames_diff(args: _HandleBatchArgs, preds: lib.spectrogram_model.Preds) -> int:
+def _max_num_frames_diff(args: _HandleBatchArgs, preds: Preds) -> int:
     """Get the index of the prediction that most deviates from the original spectrogram length."""
     return int(torch.argmax((args.batch.spectrogram.lengths - preds.num_frames).abs()))
 
@@ -437,13 +436,11 @@ def _random_sequence(args: _HandleBatchArgs, *_) -> int:
 class _Pick(typing.Protocol):
     """Get a batch index given the arguments and predictions."""
 
-    def __call__(self, args: _HandleBatchArgs, preds: lib.spectrogram_model.Preds) -> int:
+    def __call__(self, args: _HandleBatchArgs, preds: Preds) -> int:
         ...
 
 
-def _visualize_inferred(
-    args: _HandleBatchArgs, preds: lib.spectrogram_model.Preds, pick: _Pick = _random_sequence
-):
+def _visualize_inferred(args: _HandleBatchArgs, preds: Preds, pick: _Pick = _random_sequence):
     """Run in inference mode and visualize results.
 
     TODO: Visualize any related text annotations.
@@ -467,16 +464,17 @@ def _visualize_inferred(
     dataset = lambda n: get_dataset_label(
         f"{n}/{pick_label}", cadence=args.cadence, type_=args.dataset_type
     )
+    _plot_mel_spectrogram = cf.partial(plot_mel_spectrogram)
     figures = (
-        (dataset("gold_spectrogram"), lib.visualize.plot_mel_spectrogram, gold_spectrogram),
-        (model("predicted_spectrogram"), lib.visualize.plot_mel_spectrogram, predicted_spectrogram),
-        (model("alignment"), lib.visualize.plot_alignments, predicted_alignments),
-        (model("stop_token"), lib.visualize.plot_logits, predicted_stop_token),
+        (dataset("gold_spectrogram"), _plot_mel_spectrogram, gold_spectrogram),
+        (model("predicted_spectrogram"), _plot_mel_spectrogram, predicted_spectrogram),
+        (model("alignment"), plot_alignments, predicted_alignments),
+        (model("stop_token"), plot_logits, predicted_stop_token),
     )
     assets = args.state.comet.log_figures({l: v(n) for l, v, n in figures})
     audio = {
-        "predicted_griffin_lim_audio": lib.audio.griffin_lim(predicted_spectrogram.cpu().numpy()),
-        "gold_griffin_lim_audio": lib.audio.griffin_lim(gold_spectrogram.cpu().numpy()),
+        "predicted_griffin_lim_audio": griffin_lim(predicted_spectrogram.cpu().numpy(), **cf.get()),
+        "gold_griffin_lim_audio": griffin_lim(gold_spectrogram.cpu().numpy(), **cf.get()),
         "gold_audio": args.batch.audio[item].cpu().numpy(),
     }
     log_npy = args.state.comet.log_npy
@@ -505,8 +503,8 @@ def _run_inference(args: _HandleBatchArgs):
     """
     args.timer.record_event(args.timer.MODEL_FORWARD)
     model = typing.cast(SpectrogramModel, args.state.model.module)
-    preds = model(args.batch.inputs, mode=lib.spectrogram_model.Mode.INFER)
-    preds = typing.cast(lib.spectrogram_model.Preds, preds)
+    preds = model(args.batch.inputs, mode=Mode.INFER)
+    preds = typing.cast(Preds, preds)
 
     if args.visualize:
         args.timer.record_event(args.timer.VISUALIZE_PREDICTIONS)
@@ -613,7 +611,7 @@ def exclude_from_decay(
 def run_worker(
     device: torch.device,
     comet: CometMLExperiment,
-    checkpoint: typing.Optional[Checkpoint],
+    checkpoint: typing.Optional[_utils.Checkpoint],
     checkpoints_directory: pathlib.Path,
     train_dataset: Dataset,
     dev_dataset: Dataset,
@@ -623,15 +621,16 @@ def run_worker(
     TODO: Should we checkpoint `metrics` so that metrics like `num_frames_per_speaker`,
     `num_spans_per_text_length`, or `max_num_frames` can be computed accross epochs?
     """
+    assert isinstance(checkpoint, Checkpoint)
     state = (
         _State.from_scratch(comet, device)
         if checkpoint is None
         else _State.from_checkpoint(checkpoint, comet, device)
     )
-    train_loader, dev_loader = _get_data_loaders(state, train_dataset, dev_dataset)
+    train_loader, dev_loader = _get_data_loaders(state, train_dataset, dev_dataset, **cf.get())
     contexts: typing.List[typing.Tuple[Context, DatasetType, DataLoader, _HandleBatch]] = [
-        (Context.TRAIN, DatasetType.TRAIN, train_loader, _run_step),
-        (Context.EVALUATE, DatasetType.DEV, dev_loader, _run_step),
+        (Context.TRAIN, DatasetType.TRAIN, train_loader, cf.partial(_run_step)),
+        (Context.EVALUATE, DatasetType.DEV, dev_loader, cf.partial(_run_step)),
         (Context.EVALUATE_INFERENCE, DatasetType.DEV, dev_loader, _run_inference),
     ]
     save_checkpoint(state.to_checkpoint(), checkpoints_directory, f"step_{state.step.item()}")

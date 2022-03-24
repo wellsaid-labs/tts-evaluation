@@ -4,14 +4,14 @@ import logging
 import math
 import typing
 
+import config as cf
 import torch
 import torch.nn
-from hparams import HParam, configurable
 from tqdm import tqdm
 
-from lib.spectrogram_model import decoder, encoder
-from lib.spectrogram_model.containers import Encoded, Inputs, Preds
 from lib.utils import NumeralizePadEmbed, lengths_to_mask
+from run._models.spectrogram_model import decoder, encoder
+from run._models.spectrogram_model.containers import Encoded, Inputs, Preds
 
 logger = logging.getLogger(__name__)
 
@@ -63,19 +63,18 @@ class SpectrogramModel(torch.nn.Module):
         stop_token_eps: The stop probability assigned to the initial frames.
     """
 
-    @configurable
     def __init__(
         self,
         max_tokens: int,
         max_seq_meta_values: typing.Tuple[int, ...],
         max_token_meta_values: typing.Tuple[int, ...],
         max_token_embed_size: int,
-        token_meta_embed_size: int = HParam(),
-        seq_meta_embed_size: int = HParam(),
-        num_frame_channels: int = HParam(),
-        max_frames_per_token: float = HParam(),
-        output_scalar: float = HParam(),
-        stop_threshold: float = HParam(),
+        token_meta_embed_size: int,
+        seq_meta_embed_size: int,
+        num_frame_channels: int,
+        max_frames_per_token: float,
+        output_scalar: float,
+        stop_threshold: float,
         stop_token_eps: float = 1e-10,
     ):
         super().__init__()
@@ -90,8 +89,13 @@ class SpectrogramModel(torch.nn.Module):
             max_seq_meta_values=max_seq_meta_values,
             token_meta_embed_size=token_meta_embed_size,
             seq_meta_embed_size=seq_meta_embed_size,
+            **cf.get(),
         )
-        self.decoder = decoder.Decoder(num_frame_channels, seq_meta_embed_size)
+        self.decoder = decoder.Decoder(
+            num_frame_channels=num_frame_channels,
+            seq_meta_embed_size=seq_meta_embed_size,
+            **cf.get(),
+        )
         self.output_scalar: torch.Tensor
         self.register_buffer("output_scalar", torch.tensor(output_scalar).float())
         self.stop_token_eps: torch.Tensor
@@ -223,7 +227,8 @@ class SpectrogramModel(torch.nn.Module):
                 # NOTE: The `tqdm` will start at `half_window_length` and it'll end at negative
                 # `half_window_length`; otherwise, it's an accurate representation of the
                 # character progress.
-                progress_bar.update(window_start.cpu().item() + half_window_length - progress_bar.n)
+                window_start_int = int(window_start.cpu().item())
+                progress_bar.update(window_start_int + half_window_length - progress_bar.n)
 
         if use_tqdm:
             assert progress_bar is not None

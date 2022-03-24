@@ -1,15 +1,15 @@
 import typing
 from functools import lru_cache
 
+import config as cf
 import torch
 import torch.nn
-from hparams import HParam, configurable
 from torch.nn import ModuleList
 from torch.nn.utils.rnn import pad_sequence
 from torchnlp.nn import LockedDropout
 
-from lib.spectrogram_model.containers import Encoded, Inputs
 from lib.utils import LSTM, NumeralizePadEmbed, lengths_to_mask
+from run._models.spectrogram_model.containers import Encoded, Inputs
 
 
 @lru_cache(maxsize=8)
@@ -151,6 +151,9 @@ class _RightMaskedBiRNN(torch.nn.Module):
 
 
 class _LayerNorm(torch.nn.LayerNorm):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs, **cf.get(func=torch.nn.LayerNorm))
+
     def forward(self, tensor: torch.Tensor) -> torch.Tensor:
         return super().forward(tensor.transpose(1, 2)).transpose(1, 2)
 
@@ -179,7 +182,6 @@ class Encoder(torch.nn.Module):
         dropout: Dropout probability used to regularize the encoders hidden representation.
     """
 
-    @configurable
     def __init__(
         self,
         max_tokens: int,
@@ -188,13 +190,13 @@ class Encoder(torch.nn.Module):
         max_token_embed_size: int,
         seq_meta_embed_size: int,
         token_meta_embed_size: int,
-        seq_meta_embed_dropout: float = HParam(),
-        out_size: int = HParam(),
-        hidden_size: int = HParam(),
-        num_conv_layers: int = HParam(),
-        conv_filter_size: int = HParam(),
-        lstm_layers: int = HParam(),
-        dropout: float = HParam(),
+        seq_meta_embed_dropout: float,
+        out_size: int,
+        hidden_size: int,
+        num_conv_layers: int,
+        conv_filter_size: int,
+        lstm_layers: int,
+        dropout: float,
     ):
         super().__init__()
 
@@ -202,6 +204,8 @@ class Encoder(torch.nn.Module):
         # https://datascience.stackexchange.com/questions/23183/why-convolutions-always-use-odd-numbers-as-filter-size
         assert conv_filter_size % 2 == 1, "`conv_filter_size` must be odd"
         assert hidden_size % 2 == 0, "`hidden_size` must be even"
+
+        layer_norm = cf.partial(torch.nn.LayerNorm)
 
         self.max_token_embed_size = max_token_embed_size
         self.embed_seq_metadata = self._make_embeds(seq_meta_embed_size, max_seq_meta_values)
@@ -214,7 +218,7 @@ class Encoder(torch.nn.Module):
                 hidden_size,
             ),
             torch.nn.ReLU(),
-            torch.nn.LayerNorm(hidden_size),
+            layer_norm(hidden_size),
         )
 
         self.conv_layers = ModuleList(
@@ -239,13 +243,13 @@ class Encoder(torch.nn.Module):
             hidden_size=hidden_size // 2,
             num_layers=lstm_layers,
         )
-        self.lstm_norm = torch.nn.LayerNorm(hidden_size)
+        self.lstm_norm = layer_norm(hidden_size)
         self.lstm_dropout = LockedDropout(dropout)
 
         self.project_out = torch.nn.Sequential(
             LockedDropout(dropout),
             torch.nn.Linear(hidden_size, out_size),
-            torch.nn.LayerNorm(out_size),
+            layer_norm(out_size),
         )
 
         for module in self.conv_layers.modules():

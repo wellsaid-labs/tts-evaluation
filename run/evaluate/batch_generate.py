@@ -27,6 +27,7 @@ import pathlib
 import random
 import typing
 
+import config as cf
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -78,17 +79,31 @@ def main():
 
     options = list(CHECKPOINTS_LOADERS.keys())
     format_: typing.Callable[[Checkpoints], str] = lambda s: s.value
-    checkpoints_keys: typing.List[Checkpoints]
-    checkpoints_keys = st.multiselect("Checkpoints", options=options, format_func=format_)
-    num_fake_clips = st.number_input("Number of Generated Clips", min_value=1, value=16, step=1)
-    num_real_clips = st.number_input("Number of Real Clips", min_value=1, value=16, step=1)
+    checkpoints_keys = typing.cast(
+        typing.List[Checkpoints],
+        st.multiselect("Checkpoints", options=options, format_func=format_),  # type: ignore
+    )
+    num_fake_clips = st.number_input(
+        "Number of Generated Clips",
+        min_value=1,
+        value=16,  # type: ignore
+        step=1,
+    )
+    num_fake_clips = int(num_fake_clips)
+    num_real_clips = st.number_input(
+        "Number of Real Clips",
+        min_value=1,
+        value=16,  # type: ignore
+        step=1,
+    )
+    num_real_clips = int(num_real_clips)
     shuffle = st.checkbox("Shuffle Clips", value=True)
 
     if not st.button("Generate"):
         st.stop()
 
     results = []
-    generator = run._utils.SpanGenerator(get_dev_dataset(), balanced=True)
+    generator = cf.partial(run._utils.SpanGenerator)(get_dev_dataset(), balanced=True)
     for _ in range(num_real_clips):
         span = next(generator)
         results.append({"Checkpoints": "original", **make_result(span, span.audio())})
@@ -105,15 +120,14 @@ def main():
             image_web_path = make_temp_web_dir() / "alignments.png"
             lib.visualize.plot_alignments(pred.alignments).savefig(image_web_path)
             num_frames = pred.frames.shape[0]
-            alignments = pred.alignments.unsqueeze(1)
-            alignment_norm = (get_alignment_norm(alignments, None, None)[0] / num_frames).item()
+            num_pause_frames = get_num_pause_frames(pred.frames.unsqueeze(1), None, **cf.get())
             result = {
                 "Checkpoints": checkpoints_.name,
                 "Frames Per Token": num_frames / params.tokens.shape[0],
-                "Num Pause Frames": get_num_pause_frames(pred.frames.unsqueeze(1), None)[0],
-                "Alignment Norm": alignment_norm,
-                "Alignment STD": (get_alignment_std(alignments, None, None)[0] / num_frames).item(),
-                "Alignment Skips": get_num_skipped(alignments, None, None)[0].item(),
+                "Num Pause Frames": num_pause_frames[0],
+                "Alignment Norm": (get_alignment_norm(pred)[0] / num_frames).item(),
+                "Alignment STD": (get_alignment_std(pred)[0] / num_frames).item(),
+                "Alignment Skips": get_num_skipped(pred)[0].item(),
                 "Alignment": f'<img src="{web_path_to_url(image_web_path)}" />',
                 **make_result(span, audio),
             }

@@ -1,6 +1,7 @@
 import functools
 import logging
 import multiprocessing
+import multiprocessing.pool
 import os
 import pathlib
 import pickle
@@ -9,6 +10,7 @@ import tempfile
 import typing
 import zipfile
 
+import config as cf
 import numpy as np
 import tqdm
 from streamlit.server.server import Server
@@ -219,13 +221,15 @@ def paths_to_html_download_link(
 
 _MapInputVar = typing.TypeVar("_MapInputVar")
 _MapReturnVar = typing.TypeVar("_MapReturnVar")
+_cpu_count = os.cpu_count()
+assert _cpu_count is not None
 
 
 def map_(
     list_: typing.List[_MapInputVar],
     func: typing.Callable[[_MapInputVar], _MapReturnVar],
     chunk_size: int = 8,
-    max_parallel: int = os.cpu_count() * 3,
+    max_parallel: int = _cpu_count * 3,
     progress_bar: bool = True,
 ) -> typing.List[_MapReturnVar]:
     """Apply `func` to `list_` in parallel."""
@@ -259,7 +263,7 @@ def get_dataset(speaker_labels: typing.FrozenSet[str]) -> Dataset:
     logger.info("Loading dataset...")
     with st.spinner(f"Loading dataset(s): {','.join(list(speaker_labels))}"):
         datasets = {k: v for k, v in run._config.DATASETS.items() if k.label in speaker_labels}
-        dataset = run._utils.get_dataset(datasets)
+        dataset = cf.partial(run._utils.get_dataset)(datasets)
         logger.info(f"Finished loading {set(speaker_labels)} dataset(s)! {lib.utils.mazel_tov()}")
     return dataset
 
@@ -268,7 +272,8 @@ def get_dataset(speaker_labels: typing.FrozenSet[str]) -> Dataset:
 def get_dev_dataset() -> Dataset:
     """Load dev dataset, and cache."""
     with st.spinner("Loading dataset..."):
-        _, dev_dataset = run._utils.split_dataset(run._utils.get_dataset())
+        dataset = run._utils.get_dataset(**cf.get())
+        _, dev_dataset = run._utils.split_dataset(dataset, **cf.get())
     return dev_dataset
 
 
@@ -320,11 +325,11 @@ def make_interval_chart(
     return (
         alt.Chart(pd.DataFrame(source))
         .mark_rect(
-            fillOpacity=fillOpacity,
-            color=color,
-            stroke=stroke,
-            strokeWidth=strokeWidth,
-            strokeOpacity=strokeOpacity,
+            fillOpacity=fillOpacity,  # type: ignore
+            color=color,  # type: ignore
+            stroke=stroke,  # type: ignore
+            strokeWidth=strokeWidth,  # type: ignore
+            strokeOpacity=strokeOpacity,  # type: ignore
             **kwargs,
         )
         .encode(x=alt.X("x_min", type="quantitative"), x2=alt.X2("x_max"))

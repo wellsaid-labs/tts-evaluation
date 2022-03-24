@@ -3,7 +3,7 @@ import logging
 import pathlib
 import typing
 
-from hparams import HParam, HParams, add_config, configurable
+import config as cf
 
 import lib
 import run
@@ -22,6 +22,10 @@ DATASETS = copy.copy(_loader.DATASETS)
 # NOTE: Elliot and Elizabeth has unannotated character portrayals.
 del DATASETS[_loader.english.ELLIOT_MILLER]
 del DATASETS[_loader.english.ELIZABETH_KLETT]
+# NOTE: The following custom datasets are poor quality and should be excluded.
+del DATASETS[_loader.english.HOUR_ONE_NBC__BB_CUSTOM_VOICE]
+del DATASETS[_loader.english.VIACOM__CUSTOM_VOICE]
+del DATASETS[_loader.english.UNEEQ__ASB_CUSTOM_VOICE]
 
 DEV_SPEAKERS = _loader.WSL_DATASETS.copy()
 # NOTE: The `MARI_MONGE__PROMO` dataset is too short for evaluation, at 15 minutes long.
@@ -39,9 +43,8 @@ del DATASETS[_loader.english.HOUR_ONE_NBC__BB_CUSTOM_VOICE]
 del DATASETS[_loader.english.VIACOM__CUSTOM_VOICE]
 
 
-@configurable
 def _include_passage(
-    passage: Passage, root: pathlib.Path, language: typing.Optional[Language] = HParam()
+    passage: Passage, root: pathlib.Path, language: typing.Optional[Language] = None
 ) -> bool:
     """Return `True` iff `passage` should be included in the dataset."""
     repr_ = f"{passage.__class__.__name__}("
@@ -136,15 +139,15 @@ def configure():
     # between different speakers.
     groups += [{s} for s in _loader.DATASETS.keys() if s not in _loader.WSL_DATASETS]
     config = {
-        run._utils.get_dataset: HParams(
+        run._utils.get_dataset: cf.Args(
             datasets=DATASETS,
             include_psge=_include_passage,
             handle_psge=lib.utils.identity,
         ),
-        run._utils.split_dataset: HParams(
+        run._utils.split_dataset: cf.Args(
             groups=groups, dev_speakers=DEV_SPEAKERS, approx_dev_len=30 * 60, min_sim=0.9
         ),
-        run.data._loader.data_structures.Span.spacy_with_context: HParams(max_words=10),
-        run._utils.SpanGenerator.__init__: HParams(max_seconds=15, include_span=_include_span),
+        run.data._loader.data_structures.Span.spacy_with_context: cf.Args(max_words=10),
+        run._utils.SpanGenerator.__init__: cf.Args(max_seconds=15, include_span=_include_span),
     }
-    add_config(config)
+    cf.add(config)

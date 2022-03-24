@@ -9,9 +9,9 @@ import random
 import typing
 from functools import partial
 
+import config as cf
 import torch
 import torch.nn
-from hparams import HParam, configurable
 from third_party import LazyLoader
 from torchnlp.random import fork_rng
 from tqdm import tqdm
@@ -37,12 +37,11 @@ logger = logging.getLogger(__name__)
 Dataset = typing.Dict[_loader.Speaker, typing.List[_loader.Passage]]
 
 
-@configurable
 def get_dataset(
-    datasets: typing.Dict[_loader.Speaker, _loader.DataLoader] = HParam(),
-    path: pathlib.Path = HParam(),
-    include_psge: typing.Callable[[_loader.Passage, pathlib.Path], bool] = HParam(),
-    handle_psge: typing.Callable[[_loader.Passage], _loader.Passage] = HParam(),
+    datasets: typing.Dict[_loader.Speaker, _loader.DataLoader],
+    path: pathlib.Path,
+    include_psge: typing.Callable[[_loader.Passage, pathlib.Path], bool],
+    handle_psge: typing.Callable[[_loader.Passage], _loader.Passage],
     max_workers: int = 0,
 ) -> Dataset:
     """Define a TTS dataset.
@@ -165,13 +164,12 @@ def _split_dataset(dataset: Dataset, dev_len: int, min_sim: float) -> TrainDev:
 
 
 @lib.utils.log_runtime
-@configurable
 def split_dataset(
     dataset: Dataset,
-    dev_speakers: typing.Set[_loader.Speaker] = HParam(),
-    approx_dev_len: int = HParam(),
-    min_sim: float = HParam(),
-    groups: typing.List[typing.Set[_loader.Speaker]] = HParam(),
+    dev_speakers: typing.Set[_loader.Speaker],
+    approx_dev_len: int,
+    min_sim: float,
+    groups: typing.List[typing.Set[_loader.Speaker]],
     seed: int = 123,
 ) -> TrainDev:
     """Split `dataset` into a train and development dataset. Ensures that `dev` and `train` share
@@ -252,12 +250,11 @@ class SpanGenerator(typing.Iterator[_loader.Span]):
     """
 
     @lib.utils.log_runtime
-    @configurable
     def __init__(
         self,
         dataset: Dataset,
-        max_seconds: int = HParam(),
-        include_span: typing.Callable[[_loader.Span], bool] = HParam(),
+        max_seconds: int,
+        include_span: typing.Callable[[_loader.Span], bool],
         balanced: bool = True,
         **kwargs,
     ):
@@ -267,7 +264,9 @@ class SpanGenerator(typing.Iterator[_loader.Span]):
         for speaker, passages in dataset.items():
             is_singles = all([len(p.alignments) == 1 for p in passages])
             max_seconds_ = math.inf if is_singles else max_seconds
-            self.generators[speaker] = _loader.SpanGenerator(passages, max_seconds_, **kwargs)
+            self.generators[speaker] = cf.partial(_loader.SpanGenerator)(
+                passages, max_seconds_, **kwargs
+            )
         self.counter = {s: 0.0 for s in dataset.keys()}
         self.expected = {
             s: 1.0 if balanced else float(sum(p.segmented_audio_length() for p in d))
@@ -294,9 +293,9 @@ def get_window(window: str, window_length: int, window_hop: int) -> torch.Tensor
     NOTE: `torch.hann_window` does not pass `scipy.signal.check_COLA`, for example. Learn more:
     https://github.com/pytorch/audio/issues/452
     """
-    window = librosa.filters.get_window(window, window_length)
-    assert scipy.signal.check_COLA(window, window_length, window_length - window_hop)
-    return torch.tensor(window).float()
+    numpy_window = librosa.filters.get_window(window, window_length)
+    assert scipy.signal.check_COLA(numpy_window, window_length, window_length - window_hop)
+    return torch.tensor(numpy_window).float()
 
 
 @functools.lru_cache(maxsize=1)
@@ -320,13 +319,3 @@ def gcs_uri_to_blob(gcs_uri: str) -> "storage.Blob":
 def blob_to_gcs_uri(blob: "storage.Blob") -> str:
     """Get GCS URI (e.g. "gs://cloud-samples-tests/speech/brooklyn.flac") from `blob`."""
     return "gs://" + blob.bucket.name + "/" + blob.name
-
-
-def configurable_(func: typing.Callable):
-    """`configurable` has issues if it's run twice, on the same function.
-
-    TODO: Remove this, once, this issue is resolved: https://github.com/PetrochukM/HParams/issues/8
-    """
-    if not hasattr(func, "_configurable"):
-        return configurable(func)
-    return func

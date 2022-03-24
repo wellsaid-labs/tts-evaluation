@@ -1,7 +1,7 @@
 import logging
 from functools import partial
 
-import hparams
+import config as cf
 import pytest
 
 import lib
@@ -15,14 +15,14 @@ from run.train.spectrogram_model._data import InputEncoder
 logger = logging.getLogger(__name__)
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(autouse=True, scope="module")
 def run_around_tests():
     config = {
-        lib.text.grapheme_to_phoneme: hparams.HParams(separator=run._config.PHONEME_SEPARATOR),
+        lib.text.grapheme_to_phoneme: cf.Args(separator=run._config.PHONEME_SEPARATOR),
     }
-    hparams.add_config(config)
+    cf.add(config)
     yield
-    hparams.clear_config()
+    cf.purge()
 
 
 def test_flask_exception():

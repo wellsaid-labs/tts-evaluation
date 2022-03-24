@@ -12,6 +12,7 @@ import pytest
 import torch
 import torch.distributed
 import torch.nn
+from torch.multiprocessing.spawn import spawn
 from torchnlp.random import fork_rng
 
 import lib
@@ -86,13 +87,6 @@ def test_get_weighted_std__error():
     """Test `lib.utils.get_weighted_std` errors if the distribution is not normalized."""
     with pytest.raises(AssertionError):
         lib.utils.get_weighted_std(torch.tensor([0, 0.25, 0.25, 0.25]), dim=0)
-
-
-def test_flatten():
-    assert lib.utils.flatten([[1, 2], [3, 4], [5]]) == [1, 2, 3, 4, 5]
-    assert lib.utils.flatten([[1, [[2]], [[[3]]]], [["4"], {5: 5}]]) == [1, 2, 3, "4", {5: 5}]
-    assert lib.utils.flatten([[1], [2, 3], [4, [5, [6, [7, [8]]]]]]) == [1, 2, 3, 4, 5, 6, 7, 8]
-    assert lib.utils.flatten([[[[]]], [], [[]], [[], []]]) == []
 
 
 def test_flatten_2d():
@@ -198,7 +192,7 @@ def test_disk_cache():
 
 
 def test_disk_cache__clear_cache():
-    """Test is `lib.utils.disk_cache` can clea cache."""
+    """Test is `lib.utils.disk_cache` can clear cache."""
     temp_dir = tempfile.TemporaryDirectory()
     temp_dir_path = pathlib.Path(temp_dir.name) / "cache.pickle"
     assert not temp_dir_path.exists()
@@ -493,7 +487,7 @@ def _spawn_helper(func, nprocs=2):
     """Spawn multiple processes for testing."""
     file_name = tempfile.mkstemp()[1]
     partial_ = partial(func, nprocs=nprocs, file_name=file_name)
-    torch.multiprocessing.spawn(partial_, nprocs=nprocs)
+    spawn(partial_, nprocs=nprocs)
 
 
 def _numeralize_pad_embed__distributed_helper(rank, nprocs, file_name):

@@ -4,7 +4,7 @@ import time
 
 import torch
 import torch.distributed
-import torch.multiprocessing
+from torch.multiprocessing.spawn import spawn
 
 import lib
 
@@ -24,7 +24,7 @@ def _is_initialized(rank, nprocs):
 def test_is_initialized():
     """Test `lib.distributed.is_initialized` returns `True` if distributed is initialized."""
     nprocs = 2
-    torch.multiprocessing.spawn(functools.partial(_is_initialized, nprocs=nprocs), nprocs=nprocs)
+    spawn(functools.partial(_is_initialized, nprocs=nprocs), nprocs=nprocs)
 
 
 def test_is_initialized__not_initialized():
@@ -41,7 +41,7 @@ def _is_master(rank, nprocs):
 def test_is_master():
     """Test `lib.distributed.is_master` differentiates master and worker processes."""
     nprocs = 2
-    torch.multiprocessing.spawn(functools.partial(_is_master, nprocs=nprocs), nprocs=nprocs)
+    spawn(functools.partial(_is_master, nprocs=nprocs), nprocs=nprocs)
 
 
 def test_is_master__not_initialized():
@@ -95,7 +95,7 @@ def test_dict_store():
     """Test `lib.distributed.DictStore` gathers data onto master."""
     nprocs = 2
     partial = functools.partial(_dict_store_helper, nprocs=nprocs)
-    torch.multiprocessing.spawn(partial, nprocs=nprocs)
+    spawn(partial, nprocs=nprocs)
 
 
 def _dict_store__speed_helper(rank, nprocs, backend="gloo", init_method="tcp://127.0.0.1:23456"):
@@ -118,4 +118,4 @@ def test_dict_store__speed():
     """Test `lib.distributed.DictStore` is fast based on a realistic workload."""
     nprocs = 4
     partial = functools.partial(_dict_store__speed_helper, nprocs=nprocs)
-    torch.multiprocessing.spawn(partial, nprocs=nprocs)
+    spawn(partial, nprocs=nprocs)

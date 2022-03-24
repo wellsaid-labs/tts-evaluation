@@ -1,16 +1,16 @@
 import torch
 
-import lib.spectrogram_model.pre_net
+import run
 
 
 def test_pre_net():
-    """Test `lib.spectrogram_model.pre_net.PreNet` handles a basic case."""
+    """Test `run._models.spectrogram_model.pre_net.PreNet` handles a basic case."""
     num_frames = 32
     batch_size = 5
     size = 64
     num_frame_channels = 60
     seq_meta_embed_size = 128
-    pre_net = lib.spectrogram_model.pre_net.PreNet(
+    pre_net = run._models.spectrogram_model.pre_net.PreNet(
         size=size,
         num_frame_channels=num_frame_channels,
         seq_meta_embed_size=seq_meta_embed_size,

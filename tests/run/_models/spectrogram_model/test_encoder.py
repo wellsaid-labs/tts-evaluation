@@ -1,48 +1,49 @@
 import typing
 from functools import partial
 
+import config as cf
 import torch
 import torch.nn
 from torchnlp.random import fork_rng
 
-import lib.spectrogram_model.encoder
-from lib.spectrogram_model.containers import Inputs
+from run._models import spectrogram_model
+from run._models.spectrogram_model.containers import Inputs
 from tests import _utils
 
 assert_almost_equal = partial(_utils.assert_almost_equal, decimal=5)
 
 
 def test__roll():
-    """Test `lib.spectrogram_model.encoder._roll` to roll given a simple tensor."""
+    """Test `spectrogram_model.encoder._roll` to roll given a simple tensor."""
     tensor = torch.tensor([1, 2, 3, 4, 5, 6])
-    result = lib.spectrogram_model.encoder._roll(tensor, shift=torch.tensor(4), dim=0)
+    result = spectrogram_model.encoder._roll(tensor, shift=torch.tensor(4), dim=0)
     assert torch.equal(result, torch.tensor([3, 4, 5, 6, 1, 2]))
 
 
 def test__roll__2d():
-    """Test `lib.spectrogram_model.encoder._roll` to roll given a 2d `tensor` with variable
+    """Test `spectrogram_model.encoder._roll` to roll given a 2d `tensor` with variable
     `shift`. Furthermore, this tests a negative `dim`."""
     tensor = torch.tensor([[1, 2, 3], [1, 2, 3], [1, 2, 3]])
-    result = lib.spectrogram_model.encoder._roll(tensor, shift=torch.tensor([0, 1, 2]), dim=-1)
+    result = spectrogram_model.encoder._roll(tensor, shift=torch.tensor([0, 1, 2]), dim=-1)
     assert torch.equal(result, torch.tensor([[1, 2, 3], [3, 1, 2], [2, 3, 1]]))
 
 
 def test__roll__transpose():
-    """Test `lib.spectrogram_model.encoder._roll` to roll given a transposed 2d `tensor`.
-     `lib.spectrogram_model.encoder._roll` should return consistent results regardless of the
+    """Test `spectrogram_model.encoder._roll` to roll given a transposed 2d `tensor`.
+     `spectrogram_model.encoder._roll` should return consistent results regardless of the
     dimension and ordering of the data."""
     tensor = torch.tensor([[1, 2, 3], [1, 2, 3], [1, 2, 3]]).transpose(0, 1)
-    result = lib.spectrogram_model.encoder._roll(
+    result = spectrogram_model.encoder._roll(
         tensor, shift=torch.tensor([0, 1, 2]), dim=0
     ).transpose(0, 1)
     assert torch.equal(result, torch.tensor([[1, 2, 3], [3, 1, 2], [2, 3, 1]]))
 
 
 def test__roll__3d():
-    """Test `lib.spectrogram_model.encoder._roll` to roll given a 3d `tensor` and 2d `start`."""
+    """Test `spectrogram_model.encoder._roll` to roll given a 3d `tensor` and 2d `start`."""
     tensor = torch.tensor([1, 2, 3]).view(1, 3, 1).expand(4, 3, 4)
     shift = torch.arange(0, 16).view(4, 4)
-    result = lib.spectrogram_model.encoder._roll(tensor, shift=shift, dim=1)
+    result = spectrogram_model.encoder._roll(tensor, shift=shift, dim=1)
     assert shift[0, 0] == 0
     assert torch.equal(result[0, :, 0], torch.tensor([1, 2, 3]))
     assert shift[0, 1] == 1
@@ -59,15 +60,15 @@ def test__roll__3d():
 
 def _make_rnn(
     input_size: int = 4, hidden_size: int = 5, num_layers: int = 2, **kwargs
-) -> lib.spectrogram_model.encoder._RightMaskedBiRNN:
+) -> spectrogram_model.encoder._RightMaskedBiRNN:
     """Make `encoder._RightMaskedBiRNN` for testing."""
-    return lib.spectrogram_model.encoder._RightMaskedBiRNN(
+    return spectrogram_model.encoder._RightMaskedBiRNN(
         input_size=input_size, hidden_size=hidden_size, num_layers=num_layers, **kwargs
     )
 
 
 def _make_rnn_inputs(
-    module: lib.spectrogram_model.encoder._RightMaskedBiRNN,
+    module: spectrogram_model.encoder._RightMaskedBiRNN,
     batch_size: int = 2,
     seq_len: int = 3,
 ) -> typing.Tuple[torch.Tensor, torch.Tensor]:
@@ -124,7 +125,7 @@ def test__right_masked_bi_rnn__jagged_mask():
     tokens_mask = torch.tensor([[1, 1, 1, 0, 0], [1, 1, 0, 0, 0]], dtype=torch.bool).transpose(0, 1)
     num_tokens = tokens_mask.sum(dim=0)
 
-    masked_bi_rnn = lib.spectrogram_model.encoder._RightMaskedBiRNN(
+    masked_bi_rnn = spectrogram_model.encoder._RightMaskedBiRNN(
         input_size=input_size,
         hidden_size=hidden_size,
         num_layers=1,
@@ -189,7 +190,7 @@ def _make_encoder(
     context=3,
 ):
     """Make `encoder.Encoder` and it's inputs for testing."""
-    encoder = lib.spectrogram_model.encoder.Encoder(
+    encoder = cf.partial(spectrogram_model.encoder.Encoder)(
         max_tokens=max_tokens,
         max_seq_meta_values=max_seq_meta_values,
         max_token_meta_values=max_token_meta_values,

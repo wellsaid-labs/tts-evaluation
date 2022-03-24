@@ -9,12 +9,11 @@ import pathlib
 import random
 import subprocess
 import typing
-import warnings
 from pathlib import Path
 
+import config as cf
 import numpy as np
 import torch
-from hparams import HParam, configurable
 from third_party import LazyLoader
 
 import lib
@@ -55,32 +54,27 @@ def read_audio(audio_file: AudioMetadata, *args, **kwargs) -> np.ndarray:
     return audio
 
 
-@configurable
-def normalize_audio_suffix(path: Path, suffix: str = HParam()) -> Path:
+def normalize_audio_suffix(path: Path, suffix: str) -> Path:
     """Normalize the last suffix to `suffix` in `path`."""
     assert len(path.suffixes) == 1, "`path` has multiple suffixes."
     return path.parent / (path.stem + suffix)
 
 
-@configurable
 def normalize_audio(
     source: Path,
     destination: Path,
-    suffix: str = HParam(),
-    data_type: AudioDataType = HParam(),
-    bits: int = HParam(),
-    sample_rate: int = HParam(),
-    num_channels: int = HParam(),
+    suffix: str,
+    data_type: AudioDataType,
+    bits: int,
+    sample_rate: int,
+    num_channels: int,
 ):
     return lib.audio.normalize_audio(
         source, destination, suffix, data_type, bits, sample_rate, num_channels
     )
 
 
-@configurable
-def is_normalized_audio_file(
-    audio_file: AudioMetadata, audio_format: AudioFormat = HParam(), suffix: str = HParam()
-):
+def is_normalized_audio_file(audio_file: AudioMetadata, audio_format: AudioFormat, suffix: str):
     """Check if `audio_file` is normalized to `audio_format`."""
     attrs = [f.name for f in dataclasses.fields(AudioFormat) if f.name != "encoding"]
     bool_ = audio_file.path.suffix == suffix
@@ -90,9 +84,8 @@ def is_normalized_audio_file(
     return bool_ and all(getattr(audio_format, a) == getattr(audio_file, a) for a in attrs)
 
 
-@configurable
 def _cache_path(
-    original: pathlib.Path, prefix: str, suffix: str, cache_dir=HParam(), **kwargs
+    original: pathlib.Path, prefix: str, suffix: str, cache_dir, **kwargs
 ) -> pathlib.Path:
     """Make `Path` for caching results given the `original` file.
 
@@ -113,65 +106,49 @@ def _cache_path(
     return cache_path
 
 
-@configurable
 def maybe_normalize_audio_and_cache(
     audio_file: AudioMetadata,
-    suffix: str = HParam(),
-    data_type: AudioDataType = HParam(),
-    bits: int = HParam(),
-    sample_rate: int = HParam(),
-    num_channels: int = HParam(),
-    encoding: lib.audio.AudioEncoding = HParam(),
-    bit_rate: str = HParam(),
-    precision: str = HParam(),
+    suffix: str,
+    data_type: AudioDataType,
+    bits: int,
+    format_: AudioFormat,
     **kwargs,
 ) -> pathlib.Path:
     """Normalize `audio_file`, if it's not already normalized, and cache the results.
 
     TODO: Remove redundancy in parameters.
     """
-    format_ = AudioFormat(
-        sample_rate=sample_rate,
-        num_channels=num_channels,
-        encoding=encoding,
-        bit_rate=bit_rate,
-        precision=precision,
-    )
-    with warnings.catch_warnings():
-        message = r".*Overwriting configured argument.*"
-        warnings.filterwarnings("ignore", module=r".*hparams", message=message)
-        if is_normalized_audio_file(audio_file, format_, suffix):
-            return audio_file.path
+    if is_normalized_audio_file(audio_file, format_, suffix):
+        return audio_file.path
 
-    kwargs_ = dict(
+    kwargs_: typing.Dict[str, typing.Any] = dict(
         suffix=suffix,
         bits=bits,
-        sample_rate=sample_rate,
-        num_channels=num_channels,
+        sample_rate=format_.sample_rate,
+        num_channels=format_.num_channels,
         data_type=data_type,
     )
-    name = maybe_normalize_audio_and_cache.__wrapped__.__name__
-    cache = _cache_path(audio_file.path, name, **kwargs_, **kwargs)
+    name = maybe_normalize_audio_and_cache.__name__
+    cache = cf.partial(_cache_path)(audio_file.path, name, **kwargs_, **kwargs)
     if not cache.exists():
         lib.audio.normalize_audio(audio_file.path, cache, **kwargs_)
     return cache
 
 
-@configurable
 def get_non_speech_segments_and_cache(
     audio_file: AudioMetadata,
-    low_cut: int = HParam(),
-    frame_length: float = HParam(),
-    hop_length: float = HParam(),
-    threshold: float = HParam(),
+    low_cut: int,
+    frame_length: float,
+    hop_length: float,
+    threshold: float,
     **kwargs,
 ) -> Timeline:
     """Get non-speech segments in `audio_file` and cache."""
-    kwargs_ = dict(
+    kwargs_: typing.Dict[str, typing.Any] = dict(
         low_cut=low_cut, frame_length=frame_length, hop_length=hop_length, threshold=threshold
     )
-    name = get_non_speech_segments_and_cache.__wrapped__.__name__
-    cache_path = _cache_path(audio_file.path, name, ".npy", **kwargs_, **kwargs)
+    name = get_non_speech_segments_and_cache.__name__
+    cache_path = cf.partial(_cache_path)(audio_file.path, name, ".npy", **kwargs_, **kwargs)
     if cache_path.exists():
         loaded = np.load(cache_path, allow_pickle=False)
         return Timeline(list(typing.cast(FloatFloat, tuple(t)) for t in loaded))
@@ -211,12 +188,11 @@ class SpanGenerator(typing.Iterator[Span]):
         **kwargs: Additional key-word arguments passed `Timeline`.
     """
 
-    @configurable
     def __init__(
         self,
         passages: typing.List[Passage],
         max_seconds: float,
-        max_pause: float = HParam(),
+        max_pause: float,
         **kwargs,
     ):
         assert max_seconds > 0, "The maximum interval length must be a positive number."
@@ -241,10 +217,12 @@ class SpanGenerator(typing.Iterator[Span]):
         """Get the percentage overlap between x and the y slice."""
         if x2 == x1:
             return 1.0 if x1 >= y1 and x2 <= y2 else 0.0
-        return (min(x2, y2) - max(x1, y1)) / (x2 - x1)
+        min_ = typing.cast(_Float, min(x2, y2))  # type: ignore
+        max_ = typing.cast(_Float, max(x1, y1))  # type: ignore
+        return (min_ - max_) / (x2 - x1)
 
     @functools.lru_cache(maxsize=None)
-    def _is_include(self, x1: _Float, x2: _Float, y1: _Float, y2: _Float) -> bool:
+    def _is_include(self, x1: _Float, x2: _Float, y1: _Float, y2: _Float):
         return self._overlap(x1, x2, y1, y2) >= random.random()
 
     def next(self, length: float) -> typing.Optional[Span]:
@@ -282,8 +260,8 @@ class SpanGenerator(typing.Iterator[Span]):
             if any(b.audio_start - a.audio_stop > self.max_pause for a, b in pairs):
                 return
 
-        length = timeline.stop(end) - timeline.start(begin)
-        if length > 0 and length <= self.max_seconds:
+        length_ = timeline.stop(end) - timeline.start(begin)
+        if length_ > 0 and length_ <= self.max_seconds:
             slice_ = slice(segments[0].slice.start, segments[-1].slice.stop)
             audio_slice = slice(segments[0].audio_start, segments[-1].audio_stop)
             return passage.span(slice_, audio_slice)
@@ -488,7 +466,7 @@ def conventional_dataset_loader(
     metadata_path = Path(metadata_path_template.format(directory=directory))
     if os.stat(str(metadata_path)).st_size == 0:
         return []
-    df = pandas.read_csv(metadata_path, **metadata_kwargs)
+    df = typing.cast(pandas.DataFrame, pandas.read_csv(metadata_path, **metadata_kwargs))
     get_audio_path = lambda n: Path(audio_path_template.format(directory=directory, file_name=n))
     handled_columns = [metadata_text_column, metadata_audio_column]
     get_other_metadata = lambda r: {k: v for k, v in r.items() if k not in handled_columns}

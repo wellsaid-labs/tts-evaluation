@@ -5,10 +5,9 @@ from functools import lru_cache
 
 import torch
 import torch.nn
-from hparams import HParam, configurable
 from torchnlp.nn import LockedDropout
 
-from lib.spectrogram_model.containers import AttentionHiddenState, Encoded
+from run._models.spectrogram_model.containers import AttentionHiddenState, Encoded
 
 logger = logging.getLogger(__name__)
 
@@ -91,15 +90,14 @@ class Attention(torch.nn.Module):
         window_length: The size of the attention window applied during inference.
     """
 
-    @configurable
     def __init__(
         self,
         query_hidden_size: int,
-        hidden_size: int = HParam(),
-        conv_filter_size: int = HParam(),
-        dropout: float = HParam(),
-        window_length: int = HParam(),
-        avg_frames_per_token: float = HParam(),
+        hidden_size: int,
+        conv_filter_size: int,
+        dropout: float,
+        window_length: int,
+        avg_frames_per_token: float,
     ):
         super().__init__()
         # Learn more:

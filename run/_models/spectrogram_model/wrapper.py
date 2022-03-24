@@ -5,11 +5,10 @@ import typing
 import spacy
 import spacy.tokens
 import torch
-from hparams import HParam, configurable
 
-from lib import spectrogram_model
-from lib.spectrogram_model import Generator, Mode, Preds
 from lib.utils import NumeralizePadEmbed
+from run._models.spectrogram_model.containers import Inputs, Preds
+from run._models.spectrogram_model.model import Generator, Mode, SpectrogramModel
 from run.data._loader import Session, Span, Speaker
 
 
@@ -50,7 +49,7 @@ def _make_token_embeddings(
 
 
 def _append_tokens_and_metadata(
-    inputs: spectrogram_model.Inputs,
+    inputs: Inputs,
     span: typing.Union[spacy.tokens.span.Span, spacy.tokens.doc.Doc],
     start_char: int,
     end_char: int,
@@ -66,9 +65,9 @@ def _append_tokens_and_metadata(
 
 def preprocess_spans(
     spans: typing.List[Span], device: torch.device = torch.device("cpu")
-) -> spectrogram_model.Inputs:
+) -> Inputs:
     """Preprocess inputs to inputs by including casing, context, and embeddings."""
-    return_ = spectrogram_model.Inputs([], [], [], [], [])
+    return_ = Inputs([], [], [], [], [])
     for span in spans:
         context = span.spacy_with_context()
         start_char = span.spacy.start_char - context.start_char
@@ -79,7 +78,7 @@ def preprocess_spans(
     return return_._replace(token_embeddings=token_embeddings)
 
 
-class Inputs(typing.NamedTuple):
+class InputsWrapper(typing.NamedTuple):
     """The model inputs."""
 
     # Batch of recording sessions per speaker
@@ -89,11 +88,9 @@ class Inputs(typing.NamedTuple):
     doc: typing.List[spacy.tokens.doc.Doc]
 
 
-def preprocess_inputs(
-    inputs: Inputs, device: torch.device = torch.device("cpu")
-) -> spectrogram_model.Inputs:
+def preprocess_inputs(inputs: InputsWrapper, device: torch.device = torch.device("cpu")) -> Inputs:
     """Preprocess inputs to inputs by including casing, context, and embeddings."""
-    return_ = spectrogram_model.Inputs([], [], [], [], [])
+    return_ = Inputs([], [], [], [], [])
     for doc, sesh in zip(inputs.doc, inputs.session):
         return_.seq_metadata.append((sesh[0], sesh))
         _append_tokens_and_metadata(return_, doc, 0, len(str(doc)))
@@ -102,19 +99,18 @@ def preprocess_inputs(
     return return_._replace(token_embeddings=token_embeddings)
 
 
-InputsTyping = typing.Union[Inputs, typing.List[Span], spectrogram_model.Inputs]
+InputsTyping = typing.Union[Inputs, typing.List[Span], Inputs]
 
 
-class SpectrogramModel(spectrogram_model.SpectrogramModel):
+class SpectrogramModelWrapper(SpectrogramModel):
     """This is a wrapper over `SpectrogramModel` that normalizes the input."""
 
-    @configurable
     def __init__(
         self,
-        max_tokens: int = HParam(),
-        max_speakers: int = HParam(),
-        max_sessions: int = HParam(),
-        max_token_embed_size: int = HParam(),
+        max_tokens: int,
+        max_speakers: int,
+        max_sessions: int,
+        max_token_embed_size: int,
         *args,
         **kwargs,
     ):
@@ -173,7 +169,7 @@ class SpectrogramModel(spectrogram_model.SpectrogramModel):
     @typing.overload
     def __call__(
         self,
-        inputs: InputsTyping,
+        inputs: InputsWrapper,
         target_frames: torch.Tensor,
         target_mask: typing.Optional[torch.Tensor] = None,
         mode: typing.Literal[Mode.FORWARD] = Mode.FORWARD,
@@ -183,7 +179,7 @@ class SpectrogramModel(spectrogram_model.SpectrogramModel):
     @typing.overload
     def __call__(
         self,
-        inputs: InputsTyping,
+        inputs: InputsWrapper,
         use_tqdm: bool = False,
         token_skip_warning: float = math.inf,
         mode: typing.Literal[Mode.INFER] = Mode.INFER,
@@ -193,7 +189,7 @@ class SpectrogramModel(spectrogram_model.SpectrogramModel):
     @typing.overload
     def __call__(
         self,
-        inputs: InputsTyping,
+        inputs: InputsWrapper,
         split_size: float = 32,
         use_tqdm: bool = False,
         token_skip_warning: float = math.inf,
@@ -201,10 +197,16 @@ class SpectrogramModel(spectrogram_model.SpectrogramModel):
     ) -> Generator:
         ...  # pragma: no cover
 
-    def __call__(self, inputs: InputsTyping, *args, mode: Mode = Mode.FORWARD, **kwargs):
-        if isinstance(inputs, Inputs):
-            inputs = preprocess_inputs(inputs, self.encoder.embed_token.weight.device)
+    def __call__(
+        self,
+        inputs: InputsWrapper,
+        *args,
+        mode: typing.Literal[Mode.FORWARD] = Mode.FORWARD,
+        **kwargs,
+    ) -> typing.Union[Generator, Preds]:
+        if isinstance(inputs, InputsWrapper):
+            inputs_ = preprocess_inputs(inputs, self.encoder.embed_token.weight.device)
         elif isinstance(inputs, list):
-            inputs = preprocess_spans(inputs, self.encoder.embed_token.weight.device)
+            inputs_ = preprocess_spans(inputs, self.encoder.embed_token.weight.device)
 
-        return super().__call__(inputs, *args, mode=mode, **kwargs)
+        return super().__call__(inputs_, *args, mode=mode, **kwargs)

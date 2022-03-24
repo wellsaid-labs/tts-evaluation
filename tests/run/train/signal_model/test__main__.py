@@ -2,7 +2,8 @@ import pathlib
 import tempfile
 from unittest import mock
 
-from hparams import add_config
+import config as cf
+import pytest
 
 import lib
 from run._config import Cadence, DatasetType
@@ -21,10 +22,17 @@ from tests.run._utils import make_spec_and_sig_worker_state, mock_distributed_da
 from tests.run.train._utils import setup_experiment
 
 
+@pytest.fixture(autouse=True, scope="module")
+def run_around_tests():
+    """Set a basic configuration."""
+    yield
+    cf.purge()
+
+
 def test_integration():
     train_dataset, dev_dataset, comet, device = setup_experiment()
-    add_config(spectrogram_model.__main__._make_configuration(train_dataset, dev_dataset, True))
-    add_config(_make_configuration(train_dataset, dev_dataset, True))
+    cf.add(spectrogram_model.__main__._make_configuration(train_dataset, dev_dataset, True))
+    cf.add(_make_configuration(train_dataset, dev_dataset, True))
     _, state, __ = make_spec_and_sig_worker_state(comet, device)
 
     batch_size = 1

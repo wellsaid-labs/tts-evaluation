@@ -4,11 +4,13 @@ import pickle
 import typing
 from unittest import mock
 
+import config as cf
 import numpy as np
 import pytest
 
 import lib
 from lib.utils import Timeline
+from run._lang_config import normalize_vo_script
 from run.data._loader import make_en_speaker
 from run.data._loader.data_structures import (
     Alignment,
@@ -48,8 +50,8 @@ def test__maybe_normalize_vo_script():
     """Test `_maybe_normalize_vo_script` against some basic cases."""
     normal_script = "abc"
     assert _maybe_normalize_vo_script(normal_script, Language.ENGLISH) == normal_script
-    script = "áƀć"
-    assert _maybe_normalize_vo_script(script, Language.ENGLISH) == "ábc"
+    script = "áƀć°€¹"
+    assert _maybe_normalize_vo_script(script, Language.ENGLISH) == "ábcde'"
 
 
 def test__filter_non_speech_segments():
@@ -122,20 +124,21 @@ def test__make_speech_segments_helper():
     audio_file = lib.audio.get_audio_metadata(TEST_DATA_LJ)
     next_alignment = (audio_file.length, audio_file.length)
     args = (audio_alignments, prev_alignment, next_alignment, audio_file.length)
-    make = lambda t: _make_speech_segments_helper(*args, t)
+    make = lambda t: _make_speech_segments_helper(*args, t, **cf.get())
 
     speech_segments = (
         (slice(0, 7), slice(0.0, 2.775)),
         (slice(7, 12), slice(2.9599583333333337, 4.91)),
         (slice(12, len(audio_alignments)), slice(5.264958333333333, 7.405)),
     )
-    timeline = get_non_speech_segments_and_cache(audio_file)
+    get_nss_and_cache = cf.partial(get_non_speech_segments_and_cache)
+    timeline = get_nss_and_cache(audio_file)
     assert make(timeline) == speech_segments
-    timeline = get_non_speech_segments_and_cache(audio_file, threshold=-1000)
+    timeline = get_nss_and_cache(audio_file, threshold=-1000)
     assert make(timeline) == tuple()
-    timeline = get_non_speech_segments_and_cache(audio_file, threshold=0)
+    timeline = get_nss_and_cache(audio_file, threshold=0)
     assert make(timeline) == tuple()
-    timeline = get_non_speech_segments_and_cache(audio_file, threshold=-40)
+    timeline = get_nss_and_cache(audio_file, threshold=-40)
     assert make(timeline) == (
         (slice(0, 5, None), slice(0.009958333333333326, 1.7699999999999998, None)),
         (slice(5, 7, None), slice(1.7949583333333334, 2.62, None)),
@@ -159,6 +162,7 @@ def test__make_speech_segments_helper__partial():
         next_alignment=(2, 2),
         max_length=2,
         nss_timeline=Timeline([(0.0, 0.0), (0.0, 0.0)]),
+        **cf.get(),
     )
     assert speech_segments == tuple()
 
@@ -188,6 +192,7 @@ def test__make_speech_segments_helper__prev_alignment():
         next_alignment=(1.5, 1.5),
         max_length=1.5,
         nss_timeline=Timeline([(0.0, 0.2), (0.3, 0.75), (1.0, 1.5)]),
+        **cf.get(),
     )
     assert speech_segments == tuple()
 
@@ -201,6 +206,7 @@ def test__make_speech_segments_helper__next_alignment():
         next_alignment=(1.5, 1.75),
         max_length=2.0,
         nss_timeline=Timeline([(0.0, 0.2), (1.75, 2.0)]),
+        **cf.get(),
     )
     assert speech_segments == tuple()
 
@@ -225,13 +231,36 @@ def test__check_updated_script(mock_error):
     _check_updated_script("", passage, "abc", "abc")
     assert mock_error.called == 0
 
-    passage = make_unprocessed_passage(script="áƀć", transcript="áƀć", alignments=tuple())
-    _check_updated_script("", passage, "abc", "abc")
+    passage = make_unprocessed_passage(script="áƀćde'", transcript="áƀć°€¹", alignments=tuple())
+    _check_updated_script("", passage, "abcde'", "abcde'")
     assert mock_error.called == 1
+
+    with pytest.raises(AssertionError):
+        passage = make_unprocessed_passage(script="áƀćde'", transcript="áƀć°€¹", alignments=tuple())
+        _check_updated_script("", passage, "abcde'", "abcdegeurone")
 
     with pytest.raises(AssertionError):
         passage = make_unprocessed_passage(script="ab\f", transcript="ab", alignments=tuple())
         _check_updated_script("", passage, "ab", "ab")
+
+
+@mock.patch("run.data._loader.data_structures.logger.error")
+def test__check_updated_script__with__maybe_normalize_vo_script(mock_error):
+    script = "áƀćde'"
+    transcript = "áƀć°€¹"
+    passage = make_unprocessed_passage(script=script, transcript=transcript, alignments=tuple())
+    updated_script = _maybe_normalize_vo_script(script, language=Language.ENGLISH)
+    updated_transcript = _maybe_normalize_vo_script(transcript, language=Language.ENGLISH)
+    _check_updated_script("", passage, updated_script, updated_transcript)
+    assert mock_error.called == 1
+
+    with pytest.raises(AssertionError):
+        script = "áƀćde'"
+        transcript = "áƀć°€¹"
+        passage = make_unprocessed_passage(script=script, transcript=transcript, alignments=tuple())
+        updated_script = normalize_vo_script(script, Language.ENGLISH)
+        updated_transcript = normalize_vo_script(transcript, Language.ENGLISH)
+        _check_updated_script("", passage, updated_script, updated_transcript)
 
 
 def test_passage_span__identity():

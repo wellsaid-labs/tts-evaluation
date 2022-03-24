@@ -3,6 +3,8 @@ import math
 import typing
 from unittest import mock
 
+import config as cf
+import pytest
 import torch
 import torch.nn
 from torch.nn import Embedding
@@ -10,16 +12,25 @@ from torch.nn.utils.weight_norm import remove_weight_norm, weight_norm
 from torchnlp.random import fork_rng
 
 import lib
-from lib.signal_model import SignalModel, generate_waveform
+import run
 from lib.utils import lengths_to_mask
+from run._models.signal_model.model import SignalModel, generate_waveform
 from tests import _utils
 
 assert_almost_equal = lambda *a, **k: _utils.assert_almost_equal(*a, **k, decimal=4)
 
 
+@pytest.fixture(autouse=True, scope="module")
+def run_around_tests():
+    """Set a basic configuration."""
+    run._config.configure()
+    yield
+    cf.purge()
+
+
 def test__interpolate_and_concat():
-    """Test `lib.signal_model._InterpolateAndConcat` trims and concats."""
-    module = lib.signal_model._InterpolateAndConcat(size=1, scale_factor=2)
+    """Test `run._models.signal_model.model._InterpolateAndConcat` trims and concats."""
+    module = run._models.signal_model.model._InterpolateAndConcat(size=1, scale_factor=2)
     concat = torch.arange(0, 3, dtype=torch.float).view(1, 1, 3)
     tensor = torch.ones(1, 1, 4)
     output = module(tensor, concat)
@@ -27,8 +38,8 @@ def test__interpolate_and_concat():
 
 
 def test__interpolate_and_mask():
-    """Test `lib.signal_model._InterpolateAndMask` trims and masks."""
-    module = lib.signal_model._InterpolateAndMask(scale_factor=2)
+    """Test `run._models.signal_model.model._InterpolateAndMask` trims and masks."""
+    module = run._models.signal_model.model._InterpolateAndMask(scale_factor=2)
     mask = torch.tensor([0, 1, 0], dtype=torch.float).view(1, 1, 3)
     tensor = torch.full((1, 1, 4), 2, dtype=torch.float)
     output = module(tensor, mask)
@@ -36,22 +47,25 @@ def test__interpolate_and_mask():
 
 
 def test__pixel_shuffle_1d():
-    """Test `lib.signal_model._PixelShuffle1d` reshapes the input correctly."""
-    module = lib.signal_model._PixelShuffle1d(upscale_factor=4)
+    """Test `run._models.signal_model.model._PixelShuffle1d` reshapes the input correctly."""
+    module = run._models.signal_model.model._PixelShuffle1d(upscale_factor=4)
     tensor = torch.arange(0, 12).view(1, 3, 4).transpose(1, 2)
     output = module(tensor)
     assert_almost_equal(output, torch.tensor([[[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]]]))
 
 
 def test__block():
-    """Test `lib.signal_model._Block` is differentiable and outputs the right shape."""
+    """Test `run._models.signal_model.model._Block` is differentiable and outputs the right
+    shape."""
     in_channels = 4
     num_frames = 4
     batch_size = 3
     out_channels = 2
     upscale_factor = 2
     input_scale = 4
-    module = lib.signal_model._Block(in_channels, out_channels, upscale_factor, input_scale)
+    module = run._models.signal_model.model._Block(
+        in_channels, out_channels, upscale_factor, input_scale
+    )
     padding = math.ceil(module.padding_required) * input_scale * 2
     excess_padding = (
         (math.ceil(module.padding_required) - module.padding_required) * input_scale * 2
@@ -70,12 +84,13 @@ def test__block():
 
 
 def test__has_weight_norm():
-    """Test `lib.signal_model._has_weight_norm` detects `torch.nn.utils.weight_norm`."""
+    """Test `run._models.signal_model.model._has_weight_norm` detects
+    `torch.nn.utils.weight_norm`."""
     module = torch.nn.Linear(20, 40)
     weight_norm(module, name="weight")
-    assert lib.signal_model._has_weight_norm(module)
+    assert run._models.signal_model.model._has_weight_norm(module)
     remove_weight_norm(module, name="weight")
-    assert not lib.signal_model._has_weight_norm(module)
+    assert not run._models.signal_model.model._has_weight_norm(module)
 
 
 class _Config(typing.NamedTuple):
@@ -96,6 +111,7 @@ _ModelInputs = typing.Tuple[torch.Tensor, typing.List[typing.Tuple[int, int]], t
 
 def _make_small_signal_model(config: _Config) -> typing.Tuple[SignalModel, _ModelInputs]:
     """Make `SignalModel` and it's inputs for testing."""
+    cf.add({torch.nn.LayerNorm: cf.Args(eps=1e-05)}, overwrite=True)
     model = SignalModel(
         max_seq_meta_values=config.max_seq_meta_values,
         seq_meta_embed_size=config.seq_meta_embed_size,
@@ -198,14 +214,14 @@ def test_train():
 
 
 def test_spectrogram_discriminator():
-    """Test `lib.signal_model.SpectrogramDiscriminator` output is the right shape and
+    """Test `run._models.signal_model.model.SpectrogramDiscriminator` output is the right shape and
     differentiable."""
     batch_size = 4
     num_frames = 16
     fft_length = 1024
     num_mel_bins = 128
     max_seq_meta_values = (12, 10)
-    discriminator = lib.signal_model.SpectrogramDiscriminator(
+    discriminator = run._models.signal_model.model.SpectrogramDiscriminator(
         fft_length, num_mel_bins, max_seq_meta_values, 12, 16
     )
     spectrogram = torch.randn(batch_size, num_frames, fft_length // 2 + 1)
@@ -220,7 +236,7 @@ def test_spectrogram_discriminator():
 
 
 def test_generate_waveform():
-    """Test `lib.signal_model.generate_waveform` is consistent with `SignalModel`
+    """Test `run._models.signal_model.model.generate_waveform` is consistent with `SignalModel`
     given different spectrogram generators.
     """
     config = _Config(num_frames=53, batch_size=2)
@@ -235,8 +251,8 @@ def test_generate_waveform():
 
 
 def test_generate_waveform__padding_invariance():
-    """Test `lib.signal_model.generate_waveform` output doesn't vary with masked padding, and the
-    output is masked."""
+    """Test `run._models.signal_model.model.generate_waveform` output doesn't vary with masked
+    padding, and the output is masked."""
     split_size = 26
     config = _Config(num_frames=27, batch_size=2, padding=7)
     model, (spectrogram, seq_metadata, mask) = _make_small_signal_model(config)
