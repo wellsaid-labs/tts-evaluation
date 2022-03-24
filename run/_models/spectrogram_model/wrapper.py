@@ -2,6 +2,7 @@ import enum
 import math
 import typing
 
+import config as cf
 import spacy
 import spacy.tokens
 import torch
@@ -69,7 +70,7 @@ def preprocess_spans(
     """Preprocess inputs to inputs by including casing, context, and embeddings."""
     return_ = Inputs([], [], [], [], [])
     for span in spans:
-        context = span.spacy_with_context()
+        context = span.spacy_with_context(**cf.get())
         start_char = span.spacy.start_char - context.start_char
         return_.seq_metadata.append((span.speaker, span.session))
         _append_tokens_and_metadata(return_, context, start_char, start_char + len(str(span.spacy)))
@@ -99,7 +100,7 @@ def preprocess_inputs(inputs: InputsWrapper, device: torch.device = torch.device
     return return_._replace(token_embeddings=token_embeddings)
 
 
-InputsTyping = typing.Union[Inputs, typing.List[Span], Inputs]
+InputsTyping = typing.Union[InputsWrapper, typing.List[Span], Inputs]
 
 
 class SpectrogramModelWrapper(SpectrogramModel):
@@ -199,14 +200,14 @@ class SpectrogramModelWrapper(SpectrogramModel):
 
     def __call__(
         self,
-        inputs: InputsWrapper,
+        inputs: InputsTyping,
         *args,
         mode: typing.Literal[Mode.FORWARD] = Mode.FORWARD,
         **kwargs,
     ) -> typing.Union[Generator, Preds]:
         if isinstance(inputs, InputsWrapper):
-            inputs_ = preprocess_inputs(inputs, self.encoder.embed_token.weight.device)
+            inputs = preprocess_inputs(inputs, self.encoder.embed_token.weight.device)
         elif isinstance(inputs, list):
-            inputs_ = preprocess_spans(inputs, self.encoder.embed_token.weight.device)
+            inputs = preprocess_spans(inputs, self.encoder.embed_token.weight.device)
 
-        return super().__call__(inputs_, *args, mode=mode, **kwargs)
+        return super().__call__(inputs, *args, mode=mode, **kwargs)
