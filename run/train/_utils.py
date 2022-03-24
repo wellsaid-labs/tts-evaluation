@@ -23,7 +23,7 @@ import typing
 from datetime import timedelta
 from functools import partial
 
-import hparams.hparams
+import config as cf
 import numpy
 import torch
 import torch._C
@@ -33,7 +33,6 @@ import torch.nn
 import torch.optim
 import torch.utils.data
 import torch.utils.data._utils.worker
-from hparams import HParams, get_config
 from third_party import LazyLoader
 from torch.utils.data.dataloader import _BaseDataLoaderIter, _MultiProcessingDataLoaderIter
 from torchnlp.encoders.text import SequenceBatch
@@ -67,37 +66,6 @@ else:
 lib.environment.enable_fault_handler()
 logger = logging.getLogger(__name__)
 pprinter = pprint.PrettyPrinter(indent=2)
-
-
-def _nested_to_flat_config_helper(
-    config: typing.Dict[str, typing.Any], delimitator: str, keys: typing.List[str]
-) -> typing.Dict[str, typing.Any]:
-    ret_ = {}
-    for key in config:
-        if isinstance(config[key], dict) and not isinstance(config, HParams):
-            ret_.update(_nested_to_flat_config_helper(config[key], delimitator, keys + [key]))
-        else:
-            ret_[delimitator.join(keys + [key])] = config[key]
-    return ret_
-
-
-def _nested_to_flat_config(
-    config: typing.Dict[str, typing.Any], delimitator: str = "."
-) -> typing.Dict[str, typing.Any]:
-    """Convert nested `hparam` configuration a flat configuration by concatenating keys with a
-    `delimitator`.
-
-    Args:
-        ...
-        delimitator: Delimitator used to join keys.
-    """
-    return _nested_to_flat_config_helper(config=config, delimitator=delimitator, keys=[])
-
-
-def get_config_parameters() -> typing.Dict[run._config.Label, typing.Any]:
-    """Get `hparams` configuration as a flat dictionary that can be logged."""
-    flat = _nested_to_flat_config(get_config())
-    return {run._config.get_config_label(k): v for k, v in flat.items()}
 
 
 class Context(enum.Enum):
@@ -296,7 +264,7 @@ class CometMLExperiment:
     ) -> typing.Optional[str]:
         """Upload the audio and return the URL."""
         file_ = io.BytesIO()
-        lib.audio.write_audio(file_, data)
+        lib.audio.write_audio(file_, data, **cf.get())
         asset = self.log_asset(file_, file_name=file_name)
         return asset["web"] if asset is not None else asset
 
@@ -408,8 +376,8 @@ def _get_dataset_stats(
 def _get_dataset(debug: bool):
     """Helper function for `_run_experiment` to get the train and dev datasets."""
     _datasets = {k: v for k, v in list(run._config.DATASETS.items())[:1]}
-    dataset = run._utils.get_dataset(**({"datasets": _datasets} if debug else {}))
-    return run._utils.split_dataset(dataset)
+    dataset = run._utils.get_dataset(**({"datasets": _datasets} if debug else {}), **cf.get())
+    return run._utils.split_dataset(dataset, **cf.get())
 
 
 def _run_experiment(
@@ -419,8 +387,6 @@ def _run_experiment(
     lib.environment.check_module_versions()
     if debug:
         _get_dataset.clear_cache()
-    else:
-        sys.setprofile(None)  # TODO: After `hparams` is upgraded, remove this.
     train_dataset, dev_dataset = _get_dataset(debug)
     comet.log_parameters(_get_dataset_stats(train_dataset, dev_dataset))
     return train_dataset, dev_dataset
@@ -664,7 +630,7 @@ def set_num_threads(num_threads: int):
 
 def _worker_init_fn(
     _,
-    config: typing.Dict,
+    configuration: cf.Config,
     worker_init_fn: typing.Optional[typing.Callable],
     rank: int,
     num_threads: int = 1,
@@ -676,8 +642,8 @@ def _worker_init_fn(
     like for a configuration, just in case the configuration is on a new process.
     NOTE: Set `num_threads` to ensure that these workers share resources with the main process.
     """
-    hparams.hparams._configuration = config
-    sys.setprofile(None)  # TODO: After `hparams` is upgraded, remove this.
+    cf.enable_fast_trace()
+    cf.add(configuration)
     info = torch.utils.data.get_worker_info()
     assert isinstance(info, torch.utils.data._utils.worker.WorkerInfo)
     lib.environment.set_basic_logging_config()
@@ -734,7 +700,7 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
             batch_size=typing.cast(int, None),
             worker_init_fn=functools.partial(
                 _worker_init_fn,
-                config=copy.deepcopy(get_config()),
+                configuration=copy.deepcopy(cf.export()),
                 worker_init_fn=worker_init_fn,
                 rank=lib.distributed.get_rank(),
             ),
@@ -841,7 +807,7 @@ class _RunWorker(typing.Protocol):
 def _run_workers_helper(
     device_index: int,
     comet_partial: typing.Callable[..., CometMLExperiment],
-    config: typing.Dict[str, typing.Any],
+    configuration: cf.Config,
     checkpoint: typing.Optional[pathlib.Path],
     run_worker: _RunWorker,
     *args,
@@ -849,9 +815,9 @@ def _run_workers_helper(
     lib.environment.set_basic_logging_config(device_index)
     device = _init_distributed(device_index)
     comet = comet_partial(disabled=not is_master(), auto_output_logging=False)
-    hparams.hparams._configuration = config
-    sys.setprofile(None)  # TODO: After `hparams` is upgraded, remove this.
-    set_run_seed()
+    cf.enable_fast_trace()
+    cf.add(configuration)
+    set_run_seed(**cf.get())
     checkpoint_ = None if checkpoint is None else load(checkpoint, device=device)
     return run_worker(device, comet, checkpoint_, *args)
 
@@ -868,7 +834,7 @@ def run_workers(
     https://github.com/pytorch/pytorch/issues/51849
     """
     partial_ = functools.partial(CometMLExperiment, experiment_key=comet.get_key())
-    args = (partial_, copy.deepcopy(get_config()), checkpoint, run_worker, *args)
+    args = (partial_, copy.deepcopy(cf.export()), checkpoint, run_worker, *args)
     logger.info("Spawning workers %s", lib.utils.mazel_tov())
     return lib.distributed.spawn(_run_workers_helper, args=args)  # type: ignore
 

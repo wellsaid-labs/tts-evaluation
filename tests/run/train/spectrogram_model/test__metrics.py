@@ -1,12 +1,13 @@
 import functools
 
-import hparams
+import config as cf
 import pytest
 import torch
 
 import lib
 import run
-from run.train.spectrogram_model import _data, _metrics, _model
+from run._models.spectrogram_model import Preds
+from run.train.spectrogram_model import _data, _metrics
 from tests._utils import TEST_DATA_PATH, assert_almost_equal
 
 
@@ -15,12 +16,12 @@ def run_around_tests():
     """Set a basic configuration."""
     run._config.configure()
     yield
-    hparams.clear_config()
+    cf.purge()
 
 
 def _make_preds(
     alignments: torch.Tensor, tokens_mask: torch.Tensor, frames_mask: torch.Tensor
-) -> _model.Preds:
+) -> Preds:
     """Make `Preds` for computing metrics.
 
     Args:
@@ -28,7 +29,7 @@ def _make_preds(
         tokens_mask (torch.BoolTensor [batch_size, num_tokens])
         frames_mask (torch.BoolTensor [batch_size, num_frames])
     """
-    return _model.Preds(
+    return Preds(
         frames=torch.tensor(0),
         stop_tokens=torch.tensor(0),
         alignments=alignments,
@@ -231,7 +232,7 @@ def test_get_average_db_rms_level():
     """Test `_metrics.get_power_rms_level_sum` gets the correct RMS level for a test file."""
     audio_path = TEST_DATA_PATH / "audio" / "bit(rate(lj_speech,24000),32).wav"
     metadata = lib.audio.get_audio_metadata(audio_path)
-    run.data._loader.is_normalized_audio_file(metadata)
+    run.data._loader.is_normalized_audio_file(metadata, **cf.get())
     audio = lib.audio.read_audio(audio_path)
     audio = _data._pad_and_trim_signal(audio)
     signal_to_spectrogram = lambda s, **k: _data._signals_to_spectrograms([s], **k)[0].tensor
@@ -246,7 +247,7 @@ def test_get_num_pause_frames():
     """Test `_metrics.get_power_rms_level_sum` gets the correct number of pause frames."""
     audio_path = TEST_DATA_PATH / "audio" / "bit(rate(lj_speech,24000),32).wav"
     metadata = lib.audio.get_audio_metadata(audio_path)
-    run.data._loader.is_normalized_audio_file(metadata)
+    run.data._loader.is_normalized_audio_file(metadata, **cf.get())
     audio = lib.audio.read_audio(audio_path)
     fft_length = 2048
     frame_hop = fft_length // 4

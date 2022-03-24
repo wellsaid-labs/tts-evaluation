@@ -6,6 +6,7 @@ import sys
 import typing
 from concurrent import futures
 
+import config as cf
 import numpy
 import torch
 import torch.cuda
@@ -122,7 +123,7 @@ def _random_loudness_annotations(
     loudness_mask = torch.zeros(len(span.script), dtype=torch.bool)
     for alignment in _random_nonoverlapping_alignments(span.alignments, max_annotations):
         slice_ = slice(alignment.script[0], alignment.script[1])
-        loudness_ = _get_loudness(signal, span.audio_file.sample_rate, alignment)
+        loudness_ = _get_loudness(signal, span.audio_file.sample_rate, alignment, **cf.get())
         if loudness_ is not None:
             loudness[slice_] = loudness_
             loudness_mask[slice_] = True
@@ -185,9 +186,20 @@ def _pad_and_trim_signal(signal: numpy.ndarray) -> torch.Tensor:
     TODO: Instead of padding with zeros, we should consider padding with real-data.
     TODO: Add some randomness to the audio file trimming so that the stop token cannot overfit.
     """
-    signal = lib.audio.pad_remainder(signal)
-    _, trim = librosa.effects.trim(signal)
+    signal = lib.audio.pad_remainder(signal, **cf.get())
+    _, trim = librosa.effects.trim(signal, **cf.get())
     return torch.tensor(signal[trim[0] : trim[1]], requires_grad=False)
+
+
+@functools.lru_cache(maxsize=None)
+def _get_signal_to_db_mel_spectrogram_helper(**kwargs):
+    return lib.audio.SignalTodBMelSpectrogram(**kwargs)
+
+
+def _get_signal_to_db_mel_spectrogram(**kwargs):
+    """Get cached `SignalTodBMelSpectrogram` module."""
+    kwargs = {**cf.get(func=lib.audio.SignalTodBMelSpectrogram), **kwargs}
+    return _get_signal_to_db_mel_spectrogram_helper(**kwargs)
 
 
 def _signals_to_spectrograms(
@@ -201,7 +213,7 @@ def _signals_to_spectrograms(
         spectrogram_mask (SequenceBatch[torch.BoolTensor [num_frames, batch_size],
             torch.LongTensor [1, batch_size]))
     """
-    signal_to_spectrogram = lib.audio.get_signal_to_db_mel_spectrogram(**kwargs)
+    signal_to_spectrogram = _get_signal_to_db_mel_spectrogram(**kwargs)
     signals_ = stack_and_pad_tensors(signals)
     db_mel_spectrogram = signal_to_spectrogram(signals_.tensor, aligned=True)
     lengths = signals_.lengths // signal_to_spectrogram.frame_hop
@@ -311,7 +323,7 @@ def _en_span_to_tokens(spans: typing.List[Span]) -> typing.List[typing.List[str]
         span = en_docs[i].char_span(script_slice.start, script_slice.stop)  # type: ignore
         assert span is not None, "Invalid `spacy.tokens.Span` selected."
         en_docs[i] = span.as_doc()
-    phonemes = typing.cast(typing.List[str], lib.text.grapheme_to_phoneme(en_docs))
+    phonemes = typing.cast(typing.List[str], cf.partial(lib.text.grapheme_to_phoneme)(en_docs))
     return [p.split(run._config.PHONEME_SEPARATOR) for p in phonemes]
 
 
@@ -369,7 +381,7 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
         audio=signals,
         spectrogram=spectrogram,
         spectrogram_mask=spectrogram_mask,
-        stop_token=_make_stop_token(spectrogram),
+        stop_token=_make_stop_token(spectrogram, **cf.get()),
         inputs=Inputs(tokens=tokens, speaker=speakers, session=sessions),
     )
 
@@ -394,7 +406,7 @@ class DataProcessor(typing.Mapping[int, Batch]):
         - Checkpoint the random state of every worker, and use it to restart those workers. We'd
           likely need to setup a communication channel with workers, in order to implement this.
         """
-        iter_ = run._utils.SpanGenerator(dataset, **kwargs)
+        iter_ = cf.partial(run._utils.SpanGenerator)(dataset, **kwargs)
         iter_ = BucketBatchSampler(iter_, batch_size, False, self._data_iterator_sort_key)
         iter_ = DeterministicSampler(iter_, run._config.RANDOM_SEED + step, cuda=False)
         if is_initialized():

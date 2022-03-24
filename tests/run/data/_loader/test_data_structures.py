@@ -4,6 +4,7 @@ import pickle
 import typing
 from unittest import mock
 
+import config as cf
 import numpy as np
 import pytest
 
@@ -122,20 +123,21 @@ def test__make_speech_segments_helper():
     audio_file = lib.audio.get_audio_metadata(TEST_DATA_LJ)
     next_alignment = (audio_file.length, audio_file.length)
     args = (audio_alignments, prev_alignment, next_alignment, audio_file.length)
-    make = lambda t: _make_speech_segments_helper(*args, t)
+    make = lambda t: _make_speech_segments_helper(*args, t, **cf.get())
 
     speech_segments = (
         (slice(0, 7), slice(0.0, 2.775)),
         (slice(7, 12), slice(2.9599583333333337, 4.91)),
         (slice(12, len(audio_alignments)), slice(5.264958333333333, 7.405)),
     )
-    timeline = get_non_speech_segments_and_cache(audio_file)
+    get_nss_and_cache = cf.partial(get_non_speech_segments_and_cache)
+    timeline = get_nss_and_cache(audio_file)
     assert make(timeline) == speech_segments
-    timeline = get_non_speech_segments_and_cache(audio_file, threshold=-1000)
+    timeline = get_nss_and_cache(audio_file, threshold=-1000)
     assert make(timeline) == tuple()
-    timeline = get_non_speech_segments_and_cache(audio_file, threshold=0)
+    timeline = get_nss_and_cache(audio_file, threshold=0)
     assert make(timeline) == tuple()
-    timeline = get_non_speech_segments_and_cache(audio_file, threshold=-40)
+    timeline = get_nss_and_cache(audio_file, threshold=-40)
     assert make(timeline) == (
         (slice(0, 5, None), slice(0.009958333333333326, 1.7699999999999998, None)),
         (slice(5, 7, None), slice(1.7949583333333334, 2.62, None)),
@@ -159,6 +161,7 @@ def test__make_speech_segments_helper__partial():
         next_alignment=(2, 2),
         max_length=2,
         nss_timeline=Timeline([(0.0, 0.0), (0.0, 0.0)]),
+        **cf.get(),
     )
     assert speech_segments == tuple()
 
@@ -188,6 +191,7 @@ def test__make_speech_segments_helper__prev_alignment():
         next_alignment=(1.5, 1.5),
         max_length=1.5,
         nss_timeline=Timeline([(0.0, 0.2), (0.3, 0.75), (1.0, 1.5)]),
+        **cf.get(),
     )
     assert speech_segments == tuple()
 
@@ -201,6 +205,7 @@ def test__make_speech_segments_helper__next_alignment():
         next_alignment=(1.5, 1.75),
         max_length=2.0,
         nss_timeline=Timeline([(0.0, 0.2), (1.75, 2.0)]),
+        **cf.get(),
     )
     assert speech_segments == tuple()
 

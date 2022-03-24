@@ -33,6 +33,7 @@ import math
 import typing
 
 import altair as alt
+import config as cf
 import pandas as pd
 import streamlit as st
 import tqdm
@@ -57,8 +58,8 @@ logger = logging.getLogger(__name__)
 def _get_spans(dataset: Dataset, num_samples: int) -> typing.List[Span]:
     """Generate spans from our datasets."""
     logger.info("Generating spans...")
-    generator = run._utils.SpanGenerator(
-        dataset, include_span=lambda *_: True, max_pause=math.inf
+    generator = cf.partial(run._utils.SpanGenerator)(
+        dataset, **cf.get(), include_span=lambda *_: True, max_pause=math.inf
     )
     with fork_rng(123):
         spans = [next(generator) for _ in tqdm.tqdm(range(num_samples), total=num_samples)]

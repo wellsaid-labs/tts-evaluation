@@ -39,7 +39,6 @@ import lib
 import run
 from lib.audio import (
     AudioDataType,
-    AudioEncoding,
     AudioMetadata,
     _get_non_speech_segments_helper,
     get_audio_metadata,
@@ -245,12 +244,15 @@ def _webrtc_vad(passage: Passage, audio: np.ndarray, sample_rate: int = 16000):
     with st.spinner("Normalizing audio..."):
         _, norm_audio = _normalize_cache_read_audio(
             passage,
-            sample_rate=sample_rate,
-            bits=16,
             data_type=AudioDataType.SIGNED_INTEGER,
-            encoding=AudioEncoding.PCM_INT_16_BIT,
-            bit_rate="364k",
-            precision="16-bit",
+            bits=16,
+            format_=lib.audio.AudioFormat(
+                sample_rate=sample_rate,
+                bit_rate="364k",
+                precision="16-bit",
+                num_channels=1,
+                encoding=lib.audio.AudioEncoding.PCM_INT_16_BIT,
+            ),
         )
 
     with st.spinner("Detecting voice activity..."):
@@ -291,7 +293,15 @@ def _silero_vad(passage: Passage, audio: np.ndarray, sample_rate: int = 16000):
 
     with st.spinner("Normalizing audio..."):
         torch.set_num_threads(1)
-        _, norm_audio = _normalize_cache_read_audio(passage, sample_rate=sample_rate)
+        # TODO: `bit_rate` and `precision` should be set automatically.
+        format_ = lib.audio.AudioFormat(
+            sample_rate=sample_rate,
+            num_channels=1,
+            encoding=lib.audio.AudioEncoding.PCM_FLOAT_32_BIT,
+            bit_rate="768k",
+            precision="25-bit",
+        )
+        _, norm_audio = _normalize_cache_read_audio(passage, format_=format_)
 
     with st.spinner("Predicting..."):
         speech_ts: typing.List[_SpeechTs]

@@ -6,9 +6,9 @@ import math
 import pathlib
 import random
 import typing
-import warnings
 from functools import partial
 
+import config as cf
 import torch
 import torch.nn
 import torch.optim
@@ -21,9 +21,9 @@ from torchnlp.utils import get_total_parameters
 
 import lib
 import run
-from lib.audio import SignalTodBMelSpectrogram, Spectrograms
+from lib.audio import SignalTodBMelSpectrogram, Spectrograms, griffin_lim
 from lib.distributed import get_rank, get_world_size, is_master
-from lib.visualize import plot_mel_spectrogram, plot_spectrogram
+from lib.visualize import plot_alignments, plot_logits, plot_mel_spectrogram, plot_spectrogram
 from run._config import (
     RANDOM_SEED,
     Cadence,
@@ -143,7 +143,7 @@ class _State:
 
     @staticmethod
     def _get_model(device: torch.device, comet: CometMLExperiment) -> SignalModel:
-        model = SignalModel().to(device, non_blocking=True)
+        model = SignalModel(**cf.get()).to(device, non_blocking=True)
         comet.set_model_graph(str(model))
         label = get_model_label("num_parameters", Cadence.STATIC)
         comet.log_parameter(label, get_total_parameters(model))
@@ -166,9 +166,9 @@ class _State:
         """Initialize model optimizers."""
         params = list(filter(lambda p: p.requires_grad, model.parameters()))
         optimizer_ = optimizer(params)
-        clipper = lib.optimizers.AdaptiveGradientNormClipper(params)
+        clipper = cf.partial(lib.optimizers.AdaptiveGradientNormClipper)(params)
         scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer_, lr_multiplier_schedule)
-        ema = lib.optimizers.ExponentialMovingParameterAverage(params)
+        ema = cf.partial(lib.optimizers.ExponentialMovingParameterAverage)(params)
         return optimizer_, clipper, ema, scheduler
 
     @staticmethod
@@ -176,13 +176,15 @@ class _State:
         device: torch.device,
         kwargs: typing.List[typing.Dict],
     ) -> typing.List[SignalTodBMelSpectrogram]:
-        return [SignalTodBMelSpectrogram(**k).to(device, non_blocking=True) for k in kwargs]
+        modules = [cf.call(SignalTodBMelSpectrogram, **k, _overwrite=True) for k in kwargs]
+        return [m.to(device, non_blocking=True) for m in modules]
 
     @staticmethod
     def _get_discrims(
         device: torch.device, args: typing.List[typing.Tuple[int, int]]
     ) -> typing.List[SpectrogramDiscriminator]:
-        return [SpectrogramDiscriminator(*a).to(device, non_blocking=True) for a in args]
+        discrim = cf.partial(SpectrogramDiscriminator)
+        return [discrim(*a).to(device, non_blocking=True) for a in args]
 
     @staticmethod
     def _get_discrim_optimizers(
@@ -245,7 +247,7 @@ class _State:
             checkpoint.clipper,
             checkpoint.ema,
             checkpoint.scheduler,
-            cls._get_signal_to_spectrogram_modules(device),
+            cls._get_signal_to_spectrogram_modules(device, **cf.get()),
             discrims,
             checkpoint.discrim_optimizers,
             spectrogram_model,
@@ -266,13 +268,13 @@ class _State:
         distribute = partial(DistributedDataParallel, device_ids=[device], output_device=device)
         spectrogram_model = cls.load_spectrogram_model(comet, spectrogram_model_checkpoint_path)
         model = distribute(cls._get_model(device, comet))
-        discrims = [distribute(d) for d in cls._get_discrims(device)]
+        discrims = [distribute(d) for d in cls._get_discrims(device, **cf.get())]
         return cls(
             model,
-            *cls._get_optimizers(model),
-            cls._get_signal_to_spectrogram_modules(device),
+            *cls._get_optimizers(model, **cf.get()),
+            cls._get_signal_to_spectrogram_modules(device, **cf.get()),
             discrims,
-            cls._get_discrim_optimizers(discrims),
+            cls._get_discrim_optimizers(discrims, **cf.get()),
             spectrogram_model,
             spectrogram_model_checkpoint_path,
             comet,
@@ -387,7 +389,7 @@ def _run_discriminator(
     predictions = typing.cast(torch.Tensor, predictions)
     discriminator_loss = binary_cross_entropy_with_logits(predictions, labels, reduction="none")
     get_discrim_values = partial(
-        args.metrics.get_discrim_values,
+        cf.partial(args.metrics.get_discrim_values),
         fft_length=typing.cast(SpectrogramDiscriminator, discriminator.module).fft_length,
         batch=args.batch,
         real_logits=predictions[:batch_size],
@@ -459,7 +461,9 @@ def _run_step(args: _HandleBatchArgs):
     for i, signal_to_spectrogram in enumerate(args.state.signal_to_spectrogram_modules):
         pred_specs = signal_to_spectrogram(signal, intermediate=True)
         gold_specs = signal_to_spectrogram(target_signal, intermediate=True)
-        generator_loss, get_discrim_values = _run_discriminator(args, i, pred_specs, gold_specs)
+        generator_loss, get_discrim_values = _run_discriminator(
+            args, i, pred_specs, gold_specs, **cf.get()
+        )
         l1 = l1_loss(pred_specs.db_mel, gold_specs.db_mel, reduction="none").mean(dim=[1, 2])
         mse = mse_loss(pred_specs.db_mel, gold_specs.db_mel, reduction="none").mean(dim=[1, 2])
         loss += l1.mean() + mse.mean() + generator_loss.mean()
@@ -520,7 +524,7 @@ def _log_specs(state: _State, gold: torch.Tensor, pred: torch.Tensor, **kwargs):
                 fft_length = signal_to_spectrogram.fft_length
                 label = get_label(f"{key}_{fft_length}_spectrogram", fft_length=fft_length)
                 plot = plot_mel_spectrogram if "_mel" in key else plot_spectrogram
-                state.comet.log_figure(label, plot(spec))
+                state.comet.log_figure(label, cf.partial(plot)(spec))
 
 
 @lib.utils.log_runtime
@@ -551,7 +555,7 @@ def _visualize_inferred(
         speaker=batch.batch.spans[item].speaker,
     )
     get_label = partial(get_dataset_label, cadence=Cadence.STEP, type_=dataset_type)
-    plot = plot_mel_spectrogram(spectrogram.squeeze(0))
+    plot = plot_mel_spectrogram(spectrogram.squeeze(0), **cf.get())
     state.comet.log_figure(get_label("input_spectrogram"), plot)
     _log_specs(state, target.to(state.device), predicted, cadence=Cadence.STEP, type_=dataset_type)
 
@@ -584,15 +588,17 @@ def _visualize_inferred_end_to_end(
     num_frames = batch.batch.spectrogram.lengths[:, item]
     gold_spectrogram = batch.batch.spectrogram.tensor[:num_frames, item]
     figures = {
-        dataset_label_("gold_spectrogram"): plot_mel_spectrogram(gold_spectrogram),
-        model_label_("predicted_spectrogram"): plot_mel_spectrogram(preds.frames.squeeze(1)),
-        model_label_("alignment"): lib.visualize.plot_alignments(preds.alignments.squeeze(1)),
-        model_label_("stop_token"): lib.visualize.plot_logits(preds.stop_tokens.squeeze(1)),
+        dataset_label_("gold_spectrogram"): plot_mel_spectrogram(gold_spectrogram, **cf.get()),
+        model_label_("predicted_spectrogram"): plot_mel_spectrogram(
+            preds.frames.squeeze(1), **cf.get()
+        ),
+        model_label_("alignment"): plot_alignments(preds.alignments.squeeze(1)),
+        model_label_("stop_token"): plot_logits(preds.stop_tokens.squeeze(1)),
     }
     state.comet.log_figures(figures)
     audio = {
-        "predicted_griffin_lim_audio": lib.audio.griffin_lim(preds.frames.squeeze(1).numpy()),
-        "gold_griffin_lim_audio": lib.audio.griffin_lim(gold_spectrogram.numpy()),
+        "predicted_griffin_lim_audio": griffin_lim(preds.frames.squeeze(1).numpy(), **cf.get()),
+        "gold_griffin_lim_audio": griffin_lim(gold_spectrogram.numpy(), **cf.get()),
         "predicted_signal_model_audio": predicted.cpu().numpy(),
         "gold_audio": target.numpy(),
     }
@@ -662,7 +668,7 @@ def run_worker(
         if checkpoint is None
         else _State.from_checkpoint(checkpoint, comet, device)
     )
-    train_loader, dev_loader = _get_data_loaders(state, train_dataset, dev_dataset)
+    train_loader, dev_loader = _get_data_loaders(state, train_dataset, dev_dataset, **cf.get())
     contexts: typing.List[typing.Tuple[Context, DatasetType, DataLoader, _HandleBatch]] = [
         (Context.TRAIN, DatasetType.TRAIN, train_loader, _run_step),
         (Context.EVALUATE, DatasetType.DEV, dev_loader, _run_step),

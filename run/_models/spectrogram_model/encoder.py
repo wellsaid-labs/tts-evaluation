@@ -1,6 +1,7 @@
 import typing
 from functools import lru_cache
 
+import config as cf
 import torch
 import torch.nn
 from torch.nn import ModuleList
@@ -149,6 +150,9 @@ class _RightMaskedBiRNN(torch.nn.Module):
 
 
 class _LayerNorm(torch.nn.LayerNorm):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs, **cf.get(func=torch.nn.LayerNorm))
+
     def forward(self, tensor: torch.Tensor) -> torch.Tensor:
         return super().forward(tensor.transpose(1, 2)).transpose(1, 2)
 
@@ -196,6 +200,8 @@ class Encoder(torch.nn.Module):
         message = "`seq_meta_embed_size` must be divisable by the number of metadata attributes."
         assert seq_meta_embed_size % len(max_seq_meta_values) == 0, message
 
+        layer_norm = cf.partial(torch.nn.LayerNorm)
+
         self.embed_metadata = ModuleList(
             NumeralizePadEmbed(n, seq_meta_embed_size // len(max_seq_meta_values))
             for n in max_seq_meta_values
@@ -206,7 +212,7 @@ class Encoder(torch.nn.Module):
         self.embed = torch.nn.Sequential(
             torch.nn.Linear(hidden_size + seq_meta_embed_size, hidden_size),
             torch.nn.ReLU(),
-            torch.nn.LayerNorm(hidden_size),
+            layer_norm(hidden_size),
         )
         self.conv_layers = ModuleList(
             torch.nn.Sequential(
@@ -228,12 +234,12 @@ class Encoder(torch.nn.Module):
             hidden_size=hidden_size // 2,
             num_layers=lstm_layers,
         )
-        self.lstm_norm = torch.nn.LayerNorm(hidden_size)
+        self.lstm_norm = layer_norm(hidden_size)
         self.lstm_dropout = LockedDropout(dropout)
         self.project_out = torch.nn.Sequential(
             LockedDropout(dropout),
             torch.nn.Linear(hidden_size, out_size),
-            torch.nn.LayerNorm(out_size),
+            layer_norm(out_size),
         )
 
         for module in self.conv_layers.modules():

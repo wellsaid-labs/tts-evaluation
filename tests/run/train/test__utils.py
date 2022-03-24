@@ -2,7 +2,7 @@ import tempfile
 import time
 from pathlib import Path
 
-import hparams
+import config as cf
 import pytest
 import torch
 import torch.distributed
@@ -25,7 +25,7 @@ def run_around_tests():
     """Set a basic configuration."""
     run._config.configure()
     yield
-    hparams.clear_config()
+    cf.purge()
 
 
 def test__maybe_make_experiment_directories(capsys):
@@ -143,7 +143,7 @@ def test_set_context():
     """Test `run.train._utils.set_context` updates comet, module, and grad context."""
     comet = run.train._utils.CometMLExperiment(disabled=True)
     rnn = torch.nn.LSTM(10, 20, 2).eval()
-    ema = lib.optimizers.ExponentialMovingParameterAverage(rnn.parameters())
+    ema = lib.optimizers.ExponentialMovingParameterAverage(rnn.parameters(), **cf.get())
 
     assert not rnn.training
     with run.train._utils.set_context(run.train._utils.Context.TRAIN, comet, rnn, ema=ema):
@@ -160,28 +160,6 @@ def test_set_context():
         output, _ = rnn(torch.randn(5, 3, 10))
         assert not output.requires_grad
         assert len(ema.backup) > 0
-
-
-def test__nested_to_flat_config():
-    """Test `_nested_to_flat_config` flattens nested dicts, including edge cases with
-    an empty dict."""
-    assert (
-        run.train._utils._nested_to_flat_config(
-            {
-                "a": {
-                    "b": "c",
-                    "d": {
-                        "e": "f",
-                    },
-                },
-                "g": "h",
-                "i": {},
-                "j": [],
-            },
-            delimitator=".",
-        )
-        == {"a.b": "c", "a.d.e": "f", "g": "h", "j": []}
-    )
 
 
 def test_timer():

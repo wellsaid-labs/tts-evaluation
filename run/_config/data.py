@@ -3,7 +3,7 @@ import logging
 import pathlib
 import typing
 
-import config
+import config as cf
 
 import lib
 import run
@@ -133,14 +133,14 @@ def configure():
     # between different speakers.
     groups += [{s} for s in _loader.DATASETS.keys() if s not in _loader.WSL_DATASETS]
     config_ = {
-        run._utils.get_dataset: config.Args(
+        run._utils.get_dataset: cf.Args(
             datasets=DATASETS,
             include_psge=_include_passage,
             handle_psge=lib.utils.identity,
         ),
-        run._utils.split_dataset: config.Args(
+        run._utils.split_dataset: cf.Args(
             groups=groups, dev_speakers=DEV_SPEAKERS, approx_dev_len=30 * 60, min_sim=0.9
         ),
-        run._utils.SpanGenerator.__init__: config.Args(max_seconds=15, include_span=_include_span),
+        run._utils.SpanGenerator: cf.Args(max_seconds=15, include_span=_include_span),
     }
-    config.add(config_)
+    cf.add(config_)

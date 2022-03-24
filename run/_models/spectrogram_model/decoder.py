@@ -1,5 +1,6 @@
 import typing
 
+import config as cf
 import torch
 import torch.nn
 from torch.nn import functional
@@ -54,10 +55,10 @@ class Decoder(torch.nn.Module):
             torch.nn.ReLU(),
             torch.nn.Linear(input_size, sum(self.init_state_segments)),
         )
-        self.pre_net = PreNet(num_frame_channels, seq_meta_embed_size, pre_net_size)
+        self.pre_net = cf.partial(PreNet)(num_frame_channels, seq_meta_embed_size, pre_net_size)
         self.lstm_layer_one = LSTMCell(pre_net_size + input_size, lstm_hidden_size)
         self.lstm_layer_two = LSTM(lstm_hidden_size + input_size, lstm_hidden_size)
-        self.attention = Attention(query_hidden_size=lstm_hidden_size)
+        self.attention = cf.partial(Attention)(query_hidden_size=lstm_hidden_size)
         self.linear_out = torch.nn.Linear(lstm_hidden_size + input_size, num_frame_channels)
         self.linear_stop_token = torch.nn.Sequential(
             torch.nn.Dropout(stop_net_dropout),

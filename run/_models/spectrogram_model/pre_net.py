@@ -1,3 +1,4 @@
+import config as cf
 import torch
 import torch.nn
 from torch.nn import functional
@@ -51,7 +52,7 @@ class PreNet(torch.nn.Module):
                     out_features=size,
                 ),
                 torch.nn.ReLU(inplace=True),
-                torch.nn.LayerNorm(size),
+                torch.nn.LayerNorm(size, **cf.get()),
                 _AlwaysDropout(p=dropout),
             )
             for i in range(num_layers)

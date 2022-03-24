@@ -13,6 +13,7 @@ import typing
 from queue import SimpleQueue
 from subprocess import PIPE
 
+import config as cf
 import numpy
 import torch
 from spacy.lang.en import English
@@ -258,7 +259,7 @@ def process_tts_inputs(
         for substring in GRAPHEME_TO_PHONEME_RESTRICTED:
             if substring in normalized:
                 raise PublicTextValueError(f"Text cannot contain these characters: {substring}")
-        tokens = typing.cast(str, grapheme_to_phoneme(nlp(normalized)))
+        tokens = typing.cast(str, grapheme_to_phoneme(nlp(normalized), **cf.get()))
         tokens = tokens.split(PHONEME_SEPARATOR)
     else:
         tokens = list(normalized)
@@ -340,7 +341,7 @@ def batch_text_to_speech(
     en_tokens = []
     if len(en_inputs) > 0:
         docs: typing.List[spacy.tokens.Doc] = list(nlp.pipe([i[1][0] for i in en_inputs]))
-        en_tokens = typing.cast(typing.List[str], grapheme_to_phoneme(docs))
+        en_tokens = typing.cast(typing.List[str], grapheme_to_phoneme(docs, **cf.get()))
         en_tokens = [t.split(PHONEME_SEPARATOR) for t in en_tokens]
 
     inputs_ = [(i, (list(t), sp, sh)) for i, (t, sp, sh) in enumerate(inputs)]
@@ -401,8 +402,8 @@ def _dequeue(queue: SimpleQueue) -> typing.Generator[bytes, None, None]:
 def text_to_speech_ffmpeg_generator(
     package: TTSPackage,
     inputs: Inputs,
-    logger_: logging.Logger = logger,
     sample_rate: int,
+    logger: logging.Logger = logger,
     input_flags: typing.Tuple[str, ...] = ("-f", "f32le", "-acodec", "pcm_f32le", "-ac", "1"),
     output_flags: typing.Tuple[str, ...] = ("-f", "mp3", "-b:a", "192k"),
 ) -> typing.Generator[bytes, None, None]:
@@ -447,7 +448,7 @@ def text_to_speech_ffmpeg_generator(
 
     try:
         thread.start()
-        logger_.info("Generating waveform...")
+        logger.info("Generating waveform...")
         generator = get_spectrogram()
         for waveform in generate_waveform(
             package.signal_model, generator, inputs.speaker, inputs.session
@@ -457,7 +458,7 @@ def text_to_speech_ffmpeg_generator(
             yield from _dequeue(queue)
         close()
         yield from _dequeue(queue)
-        logger_.info("Finished waveform generation.")
+        logger.info("Finished waveform generation.")
     except BaseException:
         close()
-        logger_.exception("Abrupt stop to waveform generation...")
+        logger.exception("Abrupt stop to waveform generation...")

@@ -105,11 +105,7 @@ def test__maybe_normalize_audio_and_cache():
         suffix=".wav",
         data_type=lib.audio.AudioDataType.FLOATING_POINT,
         bits=16,
-        sample_rate=metadata.sample_rate,
-        num_channels=metadata.num_channels,
-        encoding=metadata.encoding,
-        bit_rate=metadata.bit_rate,
-        precision=metadata.precision,
+        format_=metadata.format,
     )
     path = _loader.utils.maybe_normalize_audio_and_cache(metadata, **kwargs)
     assert path == metadata.path

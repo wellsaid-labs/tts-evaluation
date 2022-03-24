@@ -9,6 +9,7 @@ import types
 import typing
 from functools import partial
 
+import config as cf
 import torch
 import torch.distributed
 import torch.nn
@@ -20,9 +21,10 @@ from torch.nn.functional import binary_cross_entropy_with_logits, mse_loss
 from torchnlp.utils import get_total_parameters
 
 import lib
-import run
+from lib.audio import griffin_lim
 from lib.distributed import is_master
 from lib.utils import NumeralizePadEmbed, log_runtime
+from lib.visualize import plot_alignments, plot_logits, plot_mel_spectrogram
 from run._config import Cadence, DatasetType, get_dataset_label, get_model_label
 from run._models.spectrogram_model import Mode, Preds, SpectrogramModel
 from run._utils import Dataset
@@ -121,7 +123,7 @@ class _State:
     @staticmethod
     def _get_model(comet: CometMLExperiment, device: torch.device) -> SpectrogramModel:
         """Initialize a model onto `device`."""
-        model = SpectrogramModel().to(device, non_blocking=True)
+        model = cf.partial(SpectrogramModel)().to(device, non_blocking=True)
         comet.set_model_graph(str(model))
         label = get_model_label("num_parameters", Cadence.STATIC)
         comet.log_parameter(label, get_total_parameters(model))
@@ -170,10 +172,11 @@ class _State:
         https://github.com/pytorch/pytorch/issues/2830
         """
         params = list(filter(lambda p: p.requires_grad, model.parameters()))
-        optimizer_ = optimizer(_State._make_optimizer_groups(model, exclude_from_decay))
-        clipper = lib.optimizers.AdaptiveGradientNormClipper(params)
+        optim_groups = _State._make_optimizer_groups(model, exclude_from_decay)
+        optimizer_ = cf.partial(optimizer)(optim_groups)
+        clipper = cf.partial(lib.optimizers.AdaptiveGradientNormClipper)(params)
         scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer_, lr_multiplier_schedule)
-        ema = lib.optimizers.ExponentialMovingParameterAverage(params)
+        ema = cf.partial(lib.optimizers.ExponentialMovingParameterAverage)(params)
         return optimizer_, clipper, ema, scheduler
 
     def to_checkpoint(self):
@@ -221,12 +224,12 @@ class _State:
         # will be synchronized. Learn more:
         # https://discuss.pytorch.org/t/proper-distributeddataparallel-usage/74564/2
         model = torch.nn.parallel.DistributedDataParallel(model, [device], device)
-        return cls(model, *cls._get_optimizers(model), comet, device)
+        return cls(model, *cf.partial(cls._get_optimizers)(model), comet, device)
 
 
 def _worker_init_fn():
     # NOTE: Each worker needs the same random seed to be in-sync.
-    set_run_seed()
+    set_run_seed(cf.get())
 
 
 def _get_data_loaders(
@@ -295,11 +298,11 @@ def _visualize_source_vs_target(args: _HandleBatchArgs, preds: Preds):
     model = partial(get_model_label, cadence=args.cadence)
     dataset = partial(get_dataset_label, cadence=args.cadence, type_=args.dataset_type)
     figures = {
-        model("spectrogram_delta"): lib.visualize.plot_mel_spectrogram(predicted_delta),
-        model("predicted_spectrogram"): lib.visualize.plot_mel_spectrogram(predicted_spectrogram),
-        model("alignment"): lib.visualize.plot_alignments(predicted_alignments),
-        model("stop_token"): lib.visualize.plot_logits(predicted_stop_token),
-        dataset("gold_spectrogram"): lib.visualize.plot_mel_spectrogram(gold_spectrogram),
+        model("spectrogram_delta"): plot_mel_spectrogram(predicted_delta, **cf.get()),
+        model("predicted_spectrogram"): plot_mel_spectrogram(predicted_spectrogram, **cf.get()),
+        model("alignment"): plot_alignments(predicted_alignments),
+        model("stop_token"): plot_logits(predicted_stop_token),
+        dataset("gold_spectrogram"): plot_mel_spectrogram(gold_spectrogram, **cf.get()),
     }
     args.state.comet.log_figures(figures)
 
@@ -461,16 +464,17 @@ def _visualize_inferred(args: _HandleBatchArgs, preds: Preds, pick: _Pick = _ran
     dataset = lambda n: get_dataset_label(
         f"{n}/{pick_label}", cadence=args.cadence, type_=args.dataset_type
     )
+    _plot_mel_spectrogram = cf.partial(plot_mel_spectrogram)
     figures = (
-        (dataset("gold_spectrogram"), lib.visualize.plot_mel_spectrogram, gold_spectrogram),
-        (model("predicted_spectrogram"), lib.visualize.plot_mel_spectrogram, predicted_spectrogram),
-        (model("alignment"), lib.visualize.plot_alignments, predicted_alignments),
-        (model("stop_token"), lib.visualize.plot_logits, predicted_stop_token),
+        (dataset("gold_spectrogram"), _plot_mel_spectrogram, gold_spectrogram),
+        (model("predicted_spectrogram"), _plot_mel_spectrogram, predicted_spectrogram),
+        (model("alignment"), plot_alignments, predicted_alignments),
+        (model("stop_token"), plot_logits, predicted_stop_token),
     )
     assets = args.state.comet.log_figures({l: v(n) for l, v, n in figures})
     audio = {
-        "predicted_griffin_lim_audio": lib.audio.griffin_lim(predicted_spectrogram.cpu().numpy()),
-        "gold_griffin_lim_audio": lib.audio.griffin_lim(gold_spectrogram.cpu().numpy()),
+        "predicted_griffin_lim_audio": griffin_lim(predicted_spectrogram.cpu().numpy(), **cf.get()),
+        "gold_griffin_lim_audio": griffin_lim(gold_spectrogram.cpu().numpy(), **cf.get()),
         "gold_audio": args.batch.audio[item].cpu().numpy(),
     }
     log_npy = args.state.comet.log_npy
@@ -622,10 +626,10 @@ def run_worker(
         if checkpoint is None
         else _State.from_checkpoint(checkpoint, comet, device)
     )
-    train_loader, dev_loader = _get_data_loaders(state, train_dataset, dev_dataset)
+    train_loader, dev_loader = _get_data_loaders(state, train_dataset, dev_dataset, **cf.get())
     contexts: typing.List[typing.Tuple[Context, DatasetType, DataLoader, _HandleBatch]] = [
-        (Context.TRAIN, DatasetType.TRAIN, train_loader, _run_step),
-        (Context.EVALUATE, DatasetType.DEV, dev_loader, _run_step),
+        (Context.TRAIN, DatasetType.TRAIN, train_loader, cf.partial(_run_step)),
+        (Context.EVALUATE, DatasetType.DEV, dev_loader, cf.partial(_run_step)),
         (Context.EVALUATE_INFERENCE, DatasetType.DEV, dev_loader, _run_inference),
     ]
     save_checkpoint(state.to_checkpoint(), checkpoints_directory, f"step_{state.step.item()}")

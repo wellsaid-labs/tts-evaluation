@@ -1,4 +1,4 @@
-import config
+import config as cf
 
 import lib
 import run
@@ -34,7 +34,7 @@ def configure():
         directory.mkdir(exist_ok=True)
 
     config_ = {
-        run._utils.get_dataset: config.Args(path=DATA_PATH),
-        run.data._loader.utils._cache_path: config.Args(cache_dir=TTS_DISK_CACHE_NAME),
+        run._utils.get_dataset: cf.Args(path=DATA_PATH),
+        run.data._loader.utils._cache_path: cf.Args(cache_dir=TTS_DISK_CACHE_NAME),
     }
-    config.add(config_)
+    cf.add(config_)

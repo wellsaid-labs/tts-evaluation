@@ -7,6 +7,7 @@ import math
 import typing
 from contextlib import nullcontext
 
+import config as cf
 import numpy as np
 import torch
 import torch.nn
@@ -257,6 +258,9 @@ class _Block(torch.nn.Module):
 
 
 class _LayerNorm(torch.nn.LayerNorm):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs, **cf.get(func=torch.nn.LayerNorm))
+
     def __call__(self, tensor: torch.Tensor) -> torch.Tensor:
         return super().__call__(tensor)
 

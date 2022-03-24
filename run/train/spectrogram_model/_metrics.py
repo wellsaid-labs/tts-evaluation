@@ -5,6 +5,7 @@ import typing
 from functools import partial
 from operator import add
 
+import config as cf
 import torch
 import torch.distributed
 import torch.nn
@@ -157,7 +158,7 @@ def get_power_rms_level_sum(
     """
     spectrogram = typing.cast(torch.Tensor, lib.audio.db_to_power(db_spectrogram.transpose(0, 1)))
     # [batch_size, num_frames, frame_channels] → [batch_size, num_frames]
-    rms = lib.audio.power_spectrogram_to_framed_rms(spectrogram, **kwargs)
+    rms = cf.partial(power_spectrogram_to_framed_rms)(spectrogram, **kwargs)
     return (rms if mask is None else rms * mask).pow(2).sum(dim=1)
 
 
@@ -200,7 +201,7 @@ def get_num_pause_frames(
     # [num_frames, batch_size, frame_channels] → [batch_size, num_frames, frame_channels]
     power_spec = lib.audio.db_to_power(db_spectrogram).transpose(0, 1)
     # [batch_size, num_frames, frame_channels] → [batch_size, num_frames]
-    framed_rms_level = lib.audio.power_spectrogram_to_framed_rms(power_spec, **kwargs)
+    framed_rms_level = cf.partial(power_spectrogram_to_framed_rms)(power_spec, **kwargs)
     is_silent = framed_rms_level < lib.audio.db_to_amp(max_loudness)  # [batch_size, num_frames]
     is_silent = is_silent if mask is None else is_silent * mask
     frames_threshold = min_length * sample_rate / frame_hop
@@ -407,8 +408,8 @@ class Metrics(_utils.Metrics[MetricsKey]):
             self._to_list(get_num_jumps(preds)),
             self._to_list(get_alignment_std(preds)),
             self._to_list(get_alignment_norm(preds)),
-            self._to_list(get_num_small_max(preds)),
-            self._to_list(get_num_repeated(preds)),
+            self._to_list(get_num_small_max(preds, **cf.get())),
+            self._to_list(get_num_repeated(preds, **cf.get())),
             self._to_list(preds.num_frames),
             self._to_list(preds.reached_max),
         ):
@@ -439,8 +440,8 @@ class Metrics(_utils.Metrics[MetricsKey]):
             batch.spans,
             self._to_list(loudness),
             self._to_list(get_power_rms_level_sum(preds.frames, preds.frames_mask)),
-            get_num_pause_frames(batch.spectrogram.tensor, spectrogram_mask),
-            get_num_pause_frames(preds.frames, preds.frames_mask),
+            get_num_pause_frames(batch.spectrogram.tensor, spectrogram_mask, **cf.get()),
+            get_num_pause_frames(preds.frames, preds.frames_mask, **cf.get()),
             self._to_list(preds.reached_max),
         ):
             if model.training or not has_reached_max:
@@ -577,7 +578,7 @@ class Metrics(_utils.Metrics[MetricsKey]):
             record_event = lambda e: None if timer is None else timer.record_event(e)
             record_event(Timer.REDUCE_METRICS)
             metrics = {
-                **self._get_model_metrics(select=select, is_verbose=is_verbose),
+                **self._get_model_metrics(select=select, is_verbose=is_verbose, **cf.get()),
                 **self._get_dataset_metrics(select=select, is_verbose=is_verbose),
                 **self._get_loudness_metrics(select=select, is_verbose=is_verbose),
             }

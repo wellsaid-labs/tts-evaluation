@@ -43,8 +43,8 @@ Example (Gunicorn):
 import gc
 import os
 import typing
-import warnings
 
+import config as cf
 import en_core_web_sm
 import torch
 import torch.backends.mkl
@@ -193,17 +193,6 @@ def handle_invalid_usage(error: FlaskException):
     return response
 
 
-@app.before_first_request
-def before_first_request():
-    # NOTE: Remove this warning after this is fixed...
-    # https://github.com/PetrochukM/HParams/issues/6
-    warnings.filterwarnings(
-        "ignore",
-        module=r".*hparams",
-        message=r".*The decorator was not executed immediately before*",
-    )
-
-
 class RequestArgs(typing.TypedDict):
     speaker_id: int
     text: str
@@ -305,7 +294,7 @@ def get_stream():
     }
     output_flags = ("-f", "mp3", "-b:a", "192k")
     generator = text_to_speech_ffmpeg_generator(
-        TTS_PACKAGE, input, app.logger, output_flags=output_flags
+        TTS_PACKAGE, input, **cf.get(), logger=app.logger, output_flags=output_flags
     )
     return Response(generator, headers=headers, mimetype="audio/mpeg")
 

@@ -7,18 +7,18 @@ import tempfile
 import typing
 from functools import partial
 
-import hparams
+import config as cf
 import librosa
 import numpy as np
 import pytest
 import torch
 import torch.nn
 from torch.nn import functional
-from hparams import HParams
 from torchnlp.encoders.text import stack_and_pad_tensors
 
 import lib
 from lib.audio import (
+    SignalTodBMelSpectrogram,
     amp_to_power,
     db_to_power,
     framed_rms_to_rms,
@@ -32,7 +32,7 @@ TEST_DATA_LJ = TEST_DATA_PATH / "bit(rate(lj_speech,24000),32).wav"
 TEST_DATA_LJ_MULTI_CHANNEL = TEST_DATA_PATH / "channels(bit(rate(lj_speech,24000),32),2).wav"
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(scope="module", autouse=True)
 def run_around_tests():
     """Set a basic configuration for `lib.audio`."""
     fft_length = 2048
@@ -42,12 +42,12 @@ def run_around_tests():
     frame_hop = fft_length // 4
     window = librosa.filters.get_window("hann", fft_length)
     hertz_bounds = {"lower_hertz": 20, "upper_hertz": 20000}
-    config = {
-        power_spectrogram_to_framed_rms: HParams(window=torch.tensor(window).float()),
-        lib.audio.signal_to_framed_rms: HParams(frame_length=fft_length, hop_length=frame_hop),
-        lib.audio.pad_remainder: HParams(multiple=frame_hop, mode="constant", constant_values=0.0),
-        lib.audio.write_audio: HParams(sample_rate=sample_rate),
-        lib.audio.SignalTodBMelSpectrogram.__init__: HParams(
+    config_ = {
+        power_spectrogram_to_framed_rms: cf.Args(window=torch.tensor(window).float()),
+        lib.audio.signal_to_framed_rms: cf.Args(frame_length=fft_length, hop_length=frame_hop),
+        lib.audio.pad_remainder: cf.Args(multiple=frame_hop, mode="constant", constant_values=0.0),
+        lib.audio.write_audio: cf.Args(sample_rate=sample_rate),
+        SignalTodBMelSpectrogram: cf.Args(
             sample_rate=sample_rate,
             frame_hop=frame_hop,
             window=torch.tensor(window).float(),
@@ -57,7 +57,7 @@ def run_around_tests():
             get_weighting=lib.audio.iso226_weighting,
             **hertz_bounds,
         ),
-        lib.audio.griffin_lim: HParams(
+        lib.audio.griffin_lim: cf.Args(
             frame_hop=frame_hop,
             fft_length=fft_length,
             window=window,
@@ -68,9 +68,9 @@ def run_around_tests():
             **hertz_bounds,
         ),
     }
-    hparams.add_config(config)
+    cf.add(config_)
     yield
-    hparams.clear_config()
+    cf.purge()
 
 
 def test_unit_conversion():
@@ -292,7 +292,7 @@ def test_write_audio__read_audio():
     audio = lib.audio.read_audio(TEST_DATA_LJ)
     with tempfile.TemporaryDirectory() as directory:
         copy = pathlib.Path(directory) / "copy.wav"
-        lib.audio.write_audio(copy, audio)
+        lib.audio.write_audio(copy, audio, metadata.sample_rate)
         copy_metadata = lib.audio.get_audio_metadata(copy)
         assert metadata.sample_rate == copy_metadata.sample_rate
         assert metadata.num_channels == copy_metadata.num_channels
@@ -306,7 +306,7 @@ def test_write_audio__overwrite():
     with tempfile.NamedTemporaryFile() as file_:
         path = pathlib.Path(file_.name)
         with pytest.raises(ValueError):
-            lib.audio.write_audio(path, np.array([0.0], dtype=np.float32))
+            lib.audio.write_audio(path, np.array([0.0], dtype=np.float32), **cf.get())
 
 
 def test_write_audio__dtype():
@@ -314,7 +314,8 @@ def test_write_audio__dtype():
     with tempfile.TemporaryDirectory() as directory:
         path = pathlib.Path(directory) / "invalid.wav"
         with pytest.raises(AssertionError):
-            lib.audio.write_audio(path, np.array([0.0, 0.0, 0.5, -0.5], dtype=np.float64))
+            audio = np.array([0.0, 0.0, 0.5, -0.5], dtype=np.float64)
+            lib.audio.write_audio(path, audio, **cf.get())
 
 
 def test_write_audio__bounds():
@@ -322,7 +323,8 @@ def test_write_audio__bounds():
     with tempfile.TemporaryDirectory() as directory:
         path = pathlib.Path(directory) / "invalid.wav"
         with pytest.raises(AssertionError):
-            lib.audio.write_audio(path, np.array([1.1, 1.2, -3.0, -2.0], dtype=np.float64))
+            audio = np.array([1.1, 1.2, -3.0, -2.0], dtype=np.float64)
+            lib.audio.write_audio(path, audio, **cf.get())
 
 
 def test_normalize_audio():
@@ -735,7 +737,7 @@ def test_power_spectrogram_to_framed_rms__zero_elements():
 
 
 def test_signal_to_db_mel_spectrogram():
-    """Test `lib.audio.SignalTodBMelSpectrogram` against an equivilant `librosa` implmentation."""
+    """Test `SignalTodBMelSpectrogram` against an equivilant `librosa` implmentation."""
     n_fft = 2048
     win_length = 2048
     hop_length = 512
@@ -775,7 +777,7 @@ def test_signal_to_db_mel_spectrogram():
     melspec = librosa.power_to_db(melspec, amin=amin, top_db=None)  # type: ignore
     melspec = np.maximum(melspec, min_decibel).transpose()
 
-    module = lib.audio.SignalTodBMelSpectrogram(
+    module = cf.partial(SignalTodBMelSpectrogram)(
         fft_length=n_fft,
         frame_hop=hop_length,
         sample_rate=metadata.sample_rate,
@@ -795,7 +797,7 @@ def test_signal_to_db_mel_spectrogram():
 
 
 def test_signal_to_db_mel_spectrogram__intermediate():
-    """Test `lib.audio.SignalTodBMelSpectrogram` intermediate values are consistent:
+    """Test `SignalTodBMelSpectrogram` intermediate values are consistent:
     - The shapes are correct.
     - The total frame power is preserved between `db_spectrogram` and `db_mel_spectrogram`.
     - The `spectrogram` is correct.
@@ -804,7 +806,7 @@ def test_signal_to_db_mel_spectrogram__intermediate():
     n_fft = 2048
     hop_length = n_fft // 4
     window = torch.hann_window(n_fft)
-    module = lib.audio.SignalTodBMelSpectrogram(
+    module = cf.partial(SignalTodBMelSpectrogram)(
         fft_length=n_fft,
         frame_hop=hop_length,
         window=window,
@@ -833,32 +835,32 @@ def test_signal_to_db_mel_spectrogram__intermediate():
 
 
 def test_signal_to_db_mel_spectrogram__backward():
-    """Test `lib.audio.SignalTodBMelSpectrogram` is differentiable."""
-    tensor = torch.nn.Parameter(torch.randn(2400))
-    module = lib.audio.get_signal_to_db_mel_spectrogram()
+    """Test `SignalTodBMelSpectrogram` is differentiable."""
+    tensor = torch.nn.parameter.Parameter(torch.randn(2400))
+    module = SignalTodBMelSpectrogram(**cf.get())
     for output in module(tensor, intermediate=True):
         output.sum().backward(retain_graph=True)
 
 
 def test_signal_to_db_mel_spectrogram__zeros():
-    """Test `lib.audio.SignalTodBMelSpectrogram` is differentiable given zeros."""
-    tensor = torch.nn.Parameter(torch.zeros(2400))
-    module = lib.audio.get_signal_to_db_mel_spectrogram()
+    """Test `SignalTodBMelSpectrogram` is differentiable given zeros."""
+    tensor = torch.nn.parameter.Parameter(torch.zeros(2400))
+    module = SignalTodBMelSpectrogram(**cf.get())
     for output in module(tensor, intermediate=True):
         output.sum().backward(retain_graph=True)
 
 
 def test_signal_to_db_mel_spectrogram__batch():
-    """Test `lib.audio.SignalTodBMelSpectrogram` is invariant to the batch size."""
-    tensor = torch.nn.Parameter(torch.randn(10, 2400))
-    module = lib.audio.get_signal_to_db_mel_spectrogram()
+    """Test `SignalTodBMelSpectrogram` is invariant to the batch size."""
+    tensor = torch.nn.parameter.Parameter(torch.randn(10, 2400))
+    module = SignalTodBMelSpectrogram(**cf.get())
     results = module(tensor)
     result = module(tensor[0])
     _utils.assert_almost_equal(results[0], result, decimal=5)
 
 
 def test_signal_to_db_mel_spectrogram__padded_batch():
-    """Test `lib.audio.SignalTodBMelSpectrogram` is invariant to the batch size and padding."""
+    """Test `SignalTodBMelSpectrogram` is invariant to the batch size and padding."""
     fft_length = 2048
     hop_length = fft_length // 4
     window = torch.from_numpy(librosa.filters.get_window("hann", fft_length)).float()
@@ -868,7 +870,9 @@ def test_signal_to_db_mel_spectrogram__padded_batch():
         signal = lib.audio.pad_remainder(torch.randn(2400 + i * 300).numpy(), hop_length)
         signals_.append(torch.from_numpy(signal))
     signals = stack_and_pad_tensors(signals_)
-    module = lib.audio.SignalTodBMelSpectrogram(fft_length, hop_length, window=window)
+    module = cf.partial(SignalTodBMelSpectrogram)(
+        fft_length=fft_length, frame_hop=hop_length, window=window
+    )
     expectations = module(signals.tensor, aligned=True)
     for i in range(batch_size):
         result = module(signals_[i], aligned=True)
@@ -877,14 +881,14 @@ def test_signal_to_db_mel_spectrogram__padded_batch():
 
 
 def test_signal_to_db_mel_spectrogram__alignment():
-    """Test `lib.audio.SignalTodBMelSpectrogram` can be aligned to the signal."""
+    """Test `SignalTodBMelSpectrogram` can be aligned to the signal."""
     fft_length = 2048
     frame_size = 1200
     frame_hop = frame_size // 4
     metadata = lib.audio.get_audio_metadata(TEST_DATA_LJ)
     signal = lib.audio.read_audio(TEST_DATA_LJ)
     signal = lib.audio.pad_remainder(signal, frame_hop)
-    module = lib.audio.get_signal_to_db_mel_spectrogram(
+    module = cf.partial(SignalTodBMelSpectrogram)(
         fft_length=fft_length,
         frame_hop=frame_hop,
         sample_rate=metadata.sample_rate,
@@ -921,7 +925,7 @@ def test__loudness():
         # samples are sampled less frequency than other samples.
         fft_length = int(metadata.sample_rate * 0.4)
         window = torch.ones(fft_length)
-        signal_to_db_spectrogram = lib.audio.get_signal_to_db_mel_spectrogram(
+        signal_to_db_spectrogram = SignalTodBMelSpectrogram(
             fft_length=fft_length,
             frame_hop=fft_length // 4,
             sample_rate=metadata.sample_rate,
@@ -957,22 +961,27 @@ def test_griffin_lim():
     """Test that `lib.audio.griffin_lim` executes."""
     metadata = lib.audio.get_audio_metadata(TEST_DATA_LJ)
     signal = lib.audio.read_audio(TEST_DATA_LJ)
-    signal = lib.audio.pad_remainder(signal)
-    module = lib.audio.get_signal_to_db_mel_spectrogram(sample_rate=metadata.sample_rate)
+    signal = lib.audio.pad_remainder(signal, **cf.get())
+    module = cf.partial(SignalTodBMelSpectrogram)(sample_rate=metadata.sample_rate)
     db_mel_spectrogram = module(torch.tensor(signal), aligned=True).numpy()
-    waveform = lib.audio.griffin_lim(db_mel_spectrogram, sample_rate=metadata.sample_rate)
+    waveform = cf.partial(lib.audio.griffin_lim)(
+        db_mel_spectrogram, sample_rate=metadata.sample_rate
+    )
     assert waveform.shape[0] == signal.shape[0]
 
 
 def test_griffin_lim__large_numbers():
     """Test that `lib.audio.griffin_lim` produces empty array for large numbers."""
-    shape = lib.audio.griffin_lim(np.random.uniform(low=-2000, high=2000, size=(50, 50))).shape
+    audio = np.random.uniform(low=-2000, high=2000, size=(50, 50))
+    shape = lib.audio.griffin_lim(audio, **cf.get()).shape
     assert shape == (0,)
 
 
 def test_griffin_lim__small_array():
     """Test that `lib.audio.griffin_lim` produces empty array for a small array."""
-    assert lib.audio.griffin_lim(np.random.uniform(low=-1, high=1, size=(1, 1))).shape == (0,)
+    audio = np.random.uniform(low=-1, high=1, size=(1, 1))
+    audio = lib.audio.griffin_lim(audio, **cf.get())
+    assert audio.shape == (0,)
 
 
 def test_highpass_filter():

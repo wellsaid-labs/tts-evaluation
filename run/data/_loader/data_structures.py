@@ -12,6 +12,7 @@ from enum import Enum
 from functools import partial
 from pathlib import Path
 
+import config as cf
 import numpy as np
 
 import lib
@@ -746,7 +747,8 @@ def _normalize_audio_files(
     audio_paths = list(set(p.audio_path for l in dataset for p in l))
     audio_paths = [a for a, e in zip(audio_paths, executor.map(_exists, audio_paths)) if e]
     audio_files = get_audio_metadata_(audio_paths)
-    generator = executor.map(_loader.utils.maybe_normalize_audio_and_cache, audio_files)
+    maybe_norm = cf.partial(_loader.utils.maybe_normalize_audio_and_cache)
+    generator = executor.map(maybe_norm, audio_files)
     normal_audio_paths = list(tqdm_(generator, total=len(audio_files), disable=no_tqdm))
     return {a: n for a, n in zip(audio_paths, get_audio_metadata_(normal_audio_paths))}
 
@@ -766,12 +768,13 @@ def _get_non_speech_segments(
     """
     audio_paths = list(set(p.audio_path for l in dataset for p in l))
     audio_files = [normalized_audio_files[p] for p in audio_paths if p in normalized_audio_files]
+    get_nss_and_cache = cf.partial(_loader.utils.get_non_speech_segments_and_cache)
     if max([f.length for f in audio_files]) > threshold:
         iterator = tqdm_(audio_files, disable=no_tqdm)
-        return {a: _loader.utils.get_non_speech_segments_and_cache(a) for a in iterator}
+        return {a: get_nss_and_cache(a) for a in iterator}
 
     executor = futures.ThreadPoolExecutor()
-    generator = executor.map(_loader.utils.get_non_speech_segments_and_cache, audio_files)
+    generator = executor.map(get_nss_and_cache, audio_files)
     non_speech_segments = list(tqdm_(generator, total=len(audio_files), disable=no_tqdm))
     return {a: n for a, n in zip(audio_files, non_speech_segments)}
 
@@ -828,6 +831,7 @@ def _make_speech_segments(passage: Passage) -> typing.List[Span]:
         passage._next_alignment().audio,
         passage.audio_file.length,
         passage.non_speech_segments,
+        **cf.get(),
     )
     return [passage.span(*s) for s in speech_segments]
 

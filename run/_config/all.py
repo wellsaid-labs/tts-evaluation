@@ -1,14 +1,11 @@
-import sys
-
-import config
+import config as cf
 
 from run._config import audio, data, environment, lang, models
 
 
 def configure():
     """Configure required modules."""
-    # TODO: Consider removing after configuration is setup.
-    sys.setprofile(config.profile)
+    cf.enable_fast_trace()
     environment.configure()
     audio.configure()
     models.configure()

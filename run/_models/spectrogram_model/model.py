@@ -4,6 +4,7 @@ import logging
 import math
 import typing
 
+import config as cf
 import torch
 import torch.nn
 from tqdm import tqdm
@@ -81,8 +82,13 @@ class SpectrogramModel(torch.nn.Module):
             max_tokens=max_tokens,
             max_seq_meta_values=max_seq_meta_values,
             seq_meta_embed_size=seq_meta_embed_size,
+            **cf.get(),
         )
-        self.decoder = decoder.Decoder(num_frame_channels, seq_meta_embed_size)
+        self.decoder = decoder.Decoder(
+            num_frame_channels=num_frame_channels,
+            seq_meta_embed_size=seq_meta_embed_size,
+            **cf.get(),
+        )
         self.output_scalar: torch.Tensor
         self.register_buffer("output_scalar", torch.tensor(output_scalar).float())
         self.stop_token_eps: torch.Tensor

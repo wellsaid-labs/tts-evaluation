@@ -27,6 +27,7 @@ import pathlib
 import random
 import typing
 
+import config as cf
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -102,7 +103,7 @@ def main():
         st.stop()
 
     results = []
-    generator = run._utils.SpanGenerator(get_dev_dataset(), balanced=True)
+    generator = cf.partial(run._utils.SpanGenerator)(get_dev_dataset(), balanced=True)
     for _ in range(num_real_clips):
         span = next(generator)
         results.append({"Checkpoints": "original", **make_result(span, span.audio())})
@@ -119,10 +120,11 @@ def main():
             image_web_path = make_temp_web_dir() / "alignments.png"
             lib.visualize.plot_alignments(pred.alignments).savefig(image_web_path)
             num_frames = pred.frames.shape[0]
+            num_pause_frames = get_num_pause_frames(pred.frames.unsqueeze(1), None, **cf.get())
             result = {
                 "Checkpoints": checkpoints_.name,
                 "Frames Per Token": num_frames / params.tokens.shape[0],
-                "Num Pause Frames": get_num_pause_frames(pred.frames.unsqueeze(1), None)[0],
+                "Num Pause Frames": num_pause_frames[0],
                 "Alignment Norm": (get_alignment_norm(pred)[0] / num_frames).item(),
                 "Alignment STD": (get_alignment_std(pred)[0] / num_frames).item(),
                 "Alignment Skips": get_num_skipped(pred)[0].item(),

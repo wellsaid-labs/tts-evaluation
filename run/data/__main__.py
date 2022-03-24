@@ -14,13 +14,12 @@ import pathlib
 import re
 import shlex
 import subprocess
-import sys
 import tempfile
 import time
 import typing
 import unicodedata
 
-import hparams
+import config as cf
 import numpy as np
 import tabulate
 import tqdm
@@ -240,17 +239,17 @@ def audio_normalize(
 ):
     """Normalize audio file format(s) in PATHS and save to directory DEST."""
     if bits is not None:
-        hparams.add_config({_loader.normalize_audio: hparams.HParams(bits=bits)})
+        cf.add({_loader.normalize_audio: cf.Args(bits=bits)})
     if data_type is not None:
-        hparams.add_config({_loader.normalize_audio: hparams.HParams(data_type=data_type)})
+        cf.add({_loader.normalize_audio: cf.Args(data_type=data_type)})
 
     progress_bar = tqdm.tqdm(total=round(_get_total_length(paths)))
     for path in paths:
-        dest_path = _loader.normalize_audio_suffix(dest / path.name)
+        dest_path = _loader.normalize_audio_suffix(dest / path.name, **cf.get())
         if dest_path.exists():
             logger.error(f"Skipping, file already exists: {dest_path}")
         else:
-            _loader.normalize_audio(path, dest_path)
+            _loader.normalize_audio(path, dest_path, **cf.get())
             progress_bar.update(round(lib.audio.get_audio_metadata(path).length))
 
 
@@ -309,10 +308,6 @@ def _read_csv(
 
     TODO: Improve the TSV vs CSV logic so that it is more precise.
     """
-    # NOTE: There is a bug with `setprofile` and `read_csv`:
-    # https://github.com/pandas-dev/pandas/issues/41069
-    sys.setprofile(None)
-
     read_csv = lambda *a, **k: typing.cast(pandas.DataFrame, pandas.read_csv(*a, **k))
     all_columns = list(optional_columns) + [required_column]
 

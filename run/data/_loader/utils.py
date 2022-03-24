@@ -9,9 +9,9 @@ import pathlib
 import random
 import subprocess
 import typing
-import warnings
 from pathlib import Path
 
+import config as cf
 import numpy as np
 import torch
 from third_party import LazyLoader
@@ -111,39 +111,25 @@ def maybe_normalize_audio_and_cache(
     suffix: str,
     data_type: AudioDataType,
     bits: int,
-    sample_rate: int,
-    num_channels: int,
-    encoding: lib.audio.AudioEncoding,
-    bit_rate: str,
-    precision: str,
+    format_: AudioFormat,
     **kwargs,
 ) -> pathlib.Path:
     """Normalize `audio_file`, if it's not already normalized, and cache the results.
 
     TODO: Remove redundancy in parameters.
     """
-    format_ = AudioFormat(
-        sample_rate=sample_rate,
-        num_channels=num_channels,
-        encoding=encoding,
-        bit_rate=bit_rate,
-        precision=precision,
-    )
-    with warnings.catch_warnings():
-        message = r".*Overwriting configured argument.*"
-        warnings.filterwarnings("ignore", module=r".*hparams", message=message)
-        if is_normalized_audio_file(audio_file, format_, suffix):
-            return audio_file.path
+    if is_normalized_audio_file(audio_file, format_, suffix):
+        return audio_file.path
 
     kwargs_: typing.Dict[str, typing.Any] = dict(
         suffix=suffix,
         bits=bits,
-        sample_rate=sample_rate,
-        num_channels=num_channels,
+        sample_rate=format_.sample_rate,
+        num_channels=format_.num_channels,
         data_type=data_type,
     )
-    name = maybe_normalize_audio_and_cache.__wrapped__.__name__
-    cache = _cache_path(audio_file.path, name, **kwargs_, **kwargs)
+    name = maybe_normalize_audio_and_cache.__name__
+    cache = cf.partial(_cache_path)(audio_file.path, name, **kwargs_, **kwargs)
     if not cache.exists():
         lib.audio.normalize_audio(audio_file.path, cache, **kwargs_)
     return cache
@@ -161,8 +147,8 @@ def get_non_speech_segments_and_cache(
     kwargs_: typing.Dict[str, typing.Any] = dict(
         low_cut=low_cut, frame_length=frame_length, hop_length=hop_length, threshold=threshold
     )
-    name = get_non_speech_segments_and_cache.__wrapped__.__name__
-    cache_path = _cache_path(audio_file.path, name, ".npy", **kwargs_, **kwargs)
+    name = get_non_speech_segments_and_cache.__name__
+    cache_path = cf.partial(_cache_path)(audio_file.path, name, ".npy", **kwargs_, **kwargs)
     if cache_path.exists():
         loaded = np.load(cache_path, allow_pickle=False)
         return Timeline(list(typing.cast(FloatFloat, tuple(t)) for t in loaded))

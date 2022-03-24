@@ -1,23 +1,15 @@
 import typing
 
-import hparams
-import pytest
+import config as cf
 import torch
-from hparams import HParams
 
-import lib
+import run
 from run._models.spectrogram_model.containers import (
     AttentionHiddenState,
     DecoderHiddenState,
     Encoded,
 )
 from run._models.spectrogram_model.decoder import Decoder
-
-
-@pytest.fixture(autouse=True)
-def run_around_tests():
-    yield
-    hparams.clear_config()
 
 
 def _make_decoder(
@@ -29,24 +21,26 @@ def _make_decoder(
     stop_net_dropout=0.5,
 ) -> Decoder:
     """Make `decoder.Decoder` for testing."""
-    config = {
-        lib.spectrogram_model.pre_net.PreNet.__init__: HParams(num_layers=1, dropout=0.5),
-        lib.spectrogram_model.attention.Attention.__init__: HParams(
+    _config = {
+        run._models.spectrogram_model.pre_net.PreNet: cf.Args(num_layers=1, dropout=0.5),
+        run._models.spectrogram_model.attention.Attention: cf.Args(
             hidden_size=4,
             conv_filter_size=3,
             dropout=0.1,
             window_length=5,
             avg_frames_per_token=1.0,
         ),
+        run._models.spectrogram_model.decoder.Decoder: cf.Args(
+            pre_net_size=pre_net_size,
+            lstm_hidden_size=lstm_hidden_size,
+            encoder_out_size=encoder_out_size,
+            stop_net_dropout=stop_net_dropout,
+        ),
     }
-    hparams.add_config(config)
-    return Decoder(
+    cf.add(_config, overwrite=True)
+    return cf.partial(Decoder)(
         num_frame_channels=num_frame_channels,
         seq_meta_embed_size=seq_meta_embed_size,
-        pre_net_size=pre_net_size,
-        lstm_hidden_size=lstm_hidden_size,
-        encoder_out_size=encoder_out_size,
-        stop_net_dropout=stop_net_dropout,
     )
 
 

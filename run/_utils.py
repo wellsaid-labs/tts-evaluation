@@ -9,6 +9,7 @@ import random
 import typing
 from functools import partial
 
+import config as cf
 import torch
 import torch.nn
 from third_party import LazyLoader
@@ -263,7 +264,9 @@ class SpanGenerator(typing.Iterator[_loader.Span]):
         for speaker, passages in dataset.items():
             is_singles = all([len(p.alignments) == 1 for p in passages])
             max_seconds_ = math.inf if is_singles else max_seconds
-            self.generators[speaker] = _loader.SpanGenerator(passages, max_seconds_, **kwargs)
+            self.generators[speaker] = cf.partial(_loader.SpanGenerator)(
+                passages, max_seconds_, **kwargs
+            )
         self.counter = {s: 0.0 for s in dataset.keys()}
         self.expected = {
             s: 1.0 if balanced else float(sum(p.segmented_audio_length() for p in d))

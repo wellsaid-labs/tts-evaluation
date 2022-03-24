@@ -16,9 +16,11 @@ from tests.run.data._loader._utils import maybe_normalize_audio_and_cache_side_e
 @mock.patch("run.data._loader.data_structures.get_audio_metadata")
 @mock.patch("run.data._loader.data_structures._loader.utils.maybe_normalize_audio_and_cache")
 @mock.patch("run.data._loader.data_structures._loader.utils.get_non_speech_segments_and_cache")
+@mock.patch("run.data._loader.data_structures.config.partial")
 @mock.patch("urllib.request.urlretrieve")
 def test_m_ailabs_speech_dataset(
     mock_urlretrieve,
+    mock_config_partial,
     mock_get_non_speech_segments_and_cache,
     mock_normalize_and_cache,
     mock_get_audio_metadata,
@@ -28,7 +30,8 @@ def test_m_ailabs_speech_dataset(
     mock_urlretrieve.side_effect = _utils.first_parameter_url_side_effect
     mock_get_audio_metadata.side_effect = _utils.get_audio_metadata_side_effect
     mock_normalize_and_cache.side_effect = maybe_normalize_audio_and_cache_side_effect
-    mock_get_non_speech_segments_and_cache.side_effect = lambda *a, **k: lib.utils.Timeline([])
+    mock_config_partial.side_effect = _utils.config_partial_side_effect
+    mock_get_non_speech_segments_and_cache.side_effect = lambda *_, **__: lib.utils.Timeline([])
     archive = _utils.TEST_DATA_PATH / "datasets" / "M-AILABS" / "en_US.tgz"
 
     with tempfile.TemporaryDirectory() as path:
