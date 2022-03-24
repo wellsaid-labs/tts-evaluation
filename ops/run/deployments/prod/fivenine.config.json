@@ -1,12 +1,12 @@
 {
-  "env": "staging",
-  "model": "uneeq",
-  "version": "3",
-  "image": "gcr.io/voice-service-2-313121/speech-api-worker@sha256:4848c7c18c173d27eed11130cb4a6f820878eaf5f73c7e06244b7745353b6105",
+  "env": "prod",
+  "model": "fivenine",
+  "version": "1",
+  "image": "gcr.io/voice-service-2-313121/speech-api-worker@sha256:0cef9a4eda14e3cbd72b557d3e54c245d6127b18ceb0d7b83407b73a0533c675",
   "imageEntrypoint": "run.deploy.worker:app",
   "provideApiKeyAuthForLegacyContainerSupport": "true",
   "stream": {
-    "minScale": 0,
+    "minScale": 1,
     "maxScale": 32,
     "concurrency": 1,
     "paths": [
@@ -14,7 +14,7 @@
     ]
   },
   "validate": {
-    "minScale": 0,
+    "minScale": 1,
     "maxScale": 8,
     "concurrency": 4,
     "paths": [
@@ -23,7 +23,7 @@
   },
   "traffic": [
     {
-      "tag": "3",
+      "tag": "1",
       "percent": 100
     }
   ]

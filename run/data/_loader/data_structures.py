@@ -705,8 +705,25 @@ def _make_speech_segments_helper(
     return tuple(speech_segments)
 
 
+def _normalize_non_standard_characters(text: str) -> str:
+    """Google STT transcripts occasionally utilizes unexpected symbols that haven't been normalized.
+    If the transcripts are normalized during training, the alignments get out of sync due to the
+    normalization (coming from `unidecode`) using more characters than the nonstandard character.
+        Examples: ° would be normalized to deg
+                  € would be normalized to eur
+
+    TODO: Normalize Google STT transcripts before syncing and aligning.
+    TODO: Remove this function once all datasets have been preprocessed on latest code.
+    """
+    text = text.replace("¹", "'")
+    text = text.replace("°", "d")
+    text = text.replace("€", "e")
+    return text
+
+
 def _maybe_normalize_vo_script(script: str, language: Language) -> str:
     """Normalize a script if it's not normalized."""
+    script = _normalize_non_standard_characters(script)
     if not run._config.is_normalized_vo_script(script, language):
         return run._config.normalize_vo_script(script, language)
     return script

@@ -16,15 +16,15 @@ def run_around_tests():
 
 
 def test__include_span():
-    """Test `_include_span` handles on a basic cases."""
+    """Test `_include_span` handles basic cases."""
     assert _include_span(make_passage(script="This")[:])
 
-    # Exclude script
+    # Exclude invalid scripts
     assert not _include_span(make_passage(script="This1")[:])
     assert not _include_span(make_passage(script="Th>s")[:])
     assert not _include_span(make_passage(script="Th/s")[:])
 
-    # Exclude audio alignments
+    # Exclude empty audio alignments
     alignments = make_alignments_2d("ThisThisThis", ((0, 0.3),))
     assert not _include_span(make_passage(script="ThisThisThis", alignments=alignments)[:])
     alignments = make_alignments_2d("This", ((0, 0.15),))
