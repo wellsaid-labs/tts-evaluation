@@ -40,7 +40,7 @@ del DATASETS[_loader.english.VIACOM__CUSTOM_VOICE]
 
 
 def _include_passage(
-    passage: Passage, root: pathlib.Path, language: typing.Optional[Language]
+    passage: Passage, root: pathlib.Path, language: typing.Optional[Language] = None
 ) -> bool:
     """Return `True` iff `passage` should be included in the dataset."""
     repr_ = f"{passage.__class__.__name__}("

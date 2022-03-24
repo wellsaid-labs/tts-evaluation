@@ -266,7 +266,7 @@ class _LayerNorm(torch.nn.LayerNorm):
 
 def _has_weight_norm(module: torch.nn.Module, name: str = "weight") -> bool:
     """Check if module has `WeightNorm` decorator."""
-    for k, hook in module._forward_pre_hooks.items():
+    for _, hook in module._forward_pre_hooks.items():
         if isinstance(hook, WeightNorm) and hook.name == name:
             return True
     return False

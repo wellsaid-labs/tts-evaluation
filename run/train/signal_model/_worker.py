@@ -34,6 +34,7 @@ from run._config import (
 )
 from run._models import spectrogram_model
 from run._models.signal_model import SignalModel, SpectrogramDiscriminator, generate_waveform
+from run.train import _utils
 from run.train._utils import (
     CometMLExperiment,
     Context,
@@ -51,7 +52,7 @@ logger = logging.getLogger(__name__)
 
 
 @dataclasses.dataclass(frozen=True)
-class Checkpoint(run.train._utils.Checkpoint):
+class Checkpoint(_utils.Checkpoint):
     """Checkpoint used to checkpoint signal model training."""
 
     model: SignalModel
@@ -642,7 +643,7 @@ def _run_steps(
 def run_worker(
     device: torch.device,
     comet: CometMLExperiment,
-    checkpoint: typing.Optional[run.train._utils.Checkpoint],
+    checkpoint: typing.Optional[_utils.Checkpoint],
     checkpoints_directory: pathlib.Path,
     spectrogram_model_checkpoint: typing.Optional[pathlib.Path],
     train_dataset: run._utils.Dataset,

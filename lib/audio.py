@@ -123,6 +123,16 @@ class AudioMetadata(AudioFormat):
     def length(self):
         return sample_to_sec(self.num_samples, self.sample_rate)
 
+    @property
+    def format(self):
+        return AudioFormat(
+            sample_rate=self.sample_rate,
+            num_channels=self.num_channels,
+            encoding=self.encoding,
+            bit_rate=self.bit_rate,
+            precision=self.precision,
+        )
+
 
 def _parse_audio_metadata(metadata: str) -> AudioMetadata:
     """Parse audio metadata returned by `sox --i`.

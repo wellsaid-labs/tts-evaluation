@@ -606,7 +606,7 @@ def exclude_from_decay(
 def run_worker(
     device: torch.device,
     comet: CometMLExperiment,
-    checkpoint: typing.Optional[run.train._utils.Checkpoint],
+    checkpoint: typing.Optional[_utils.Checkpoint],
     checkpoints_directory: pathlib.Path,
     train_dataset: Dataset,
     dev_dataset: Dataset,

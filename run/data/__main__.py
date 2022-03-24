@@ -49,7 +49,6 @@ audio_app = typer.Typer()
 app.add_typer(audio_app, name="audio")
 csv_app = typer.Typer()
 app.add_typer(csv_app, name="csv")
-run._config.configure()
 
 
 def _get_total_length(paths: typing.List[pathlib.Path]) -> float:
@@ -445,4 +444,5 @@ def prefix(
 
 
 if __name__ == "__main__":
+    run._config.configure()
     app()

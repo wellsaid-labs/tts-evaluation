@@ -250,7 +250,7 @@ def test_get_num_pause_frames():
     audio = lib.audio.read_audio(audio_path)
     fft_length = 2048
     frame_hop = fft_length // 4
-    sample_rate = 24000
+    sample_rate = metadata.sample_rate
     window = run._utils.get_window("hann", fft_length, frame_hop)
     audio = torch.tensor(lib.audio.pad_remainder(audio, multiple=frame_hop))
     signal_to_spectrogram = lambda s, **k: _data._signals_to_spectrograms([s], **k)[0].tensor

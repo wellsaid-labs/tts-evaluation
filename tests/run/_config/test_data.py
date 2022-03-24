@@ -1,18 +1,6 @@
-import hparams
-import pytest
-
-import run
 from run._config.data import _include_span
 from run.data import _loader
 from tests.run._utils import make_alignments_1d, make_alignments_2d, make_passage
-
-
-@pytest.fixture(autouse=True, scope="module")
-def run_around_tests():
-    """Set a basic configuration."""
-    run._config.configure()
-    yield
-    hparams.clear_config()
 
 
 def test__include_span():
