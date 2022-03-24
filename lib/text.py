@@ -11,6 +11,8 @@ from collections import defaultdict
 from typing import get_args
 
 import ftfy
+import spacy
+import spacy.tokens
 import unidecode
 from spacy.lang import en as spacy_en
 from third_party import LazyLoader
@@ -120,104 +122,6 @@ def grapheme_to_phoneme(
 
         return_.append(phoneme.strip(separator))
     return return_
-
-
-def _multiline_grapheme_to_phoneme(
-    graphemes: typing.List[str], separator: str = "", **kwargs
-) -> typing.List[str]:
-    # NOTE: `grapheme` is split on new lines because `espeak` is inconsistent in it's handling of
-    # new lines.
-    splits = [g.split("\n") for g in graphemes]
-    phonemes = _line_grapheme_to_phoneme(flatten_2d(splits), separator=separator, **kwargs)
-    return_ = []
-    for split in splits:
-        concat = (separator + "\n" + separator).join(phonemes[: len(split)])
-        phonemes = phonemes[len(split) :]
-        # NOTE: We need to remove double separators from when there are consecutive new lines like
-        # "\n\n\n", for example.
-        if len(separator) > 0:
-            concat = re.sub(r"%s+" % re.escape(separator), separator, concat).strip(separator)
-        return_.append(concat)
-    return return_
-
-
-def _grapheme_to_phoneme_with_punctuation(
-    *graphemes: typing.Union[str, spacy.tokens.Doc, spacy.tokens.span.Span],
-    separator: str = "",
-    **kwargs,
-) -> typing.List[str]:
-    """Convert grapheme to phoneme while preserving punctuation.
-
-    Args:
-        doc
-        separator: The separator used to separate phonemes, stress, and punctuation.
-        **kwargs: Key-word arguments passed to `_multiline_grapheme_to_phoneme`.
-
-    Returns: Phonemes with the original punctuation (as defined by spaCy).
-    """
-    # NOTE: Create a `spacy.tokens.Doc` for every `str`.
-    docs = list(graphemes)
-    if any(isinstance(d, str) for d in docs):
-        nlp = load_en_core_web_md(disable=("parser", "ner"))
-        other_docs = list(nlp.pipe([d for d in docs if isinstance(d, str)]))
-        docs = [(other_docs.pop(0) if isinstance(d, str) else d) for d in docs]
-    docs = typing.cast(typing.Union[spacy.tokens.Doc, spacy.tokens.span.Span], docs)
-
-    splits: typing.List[typing.List[typing.Union[typing.Tuple[str], str]]] = []
-    for doc in docs:
-        message = "The separator is not unique."
-        assert not separator or all(separator not in t.text for t in doc), message
-
-        # NOTE: `is_punct` is not contextual while `pos == spacy.symbols.PUNCT` is, see:
-        # https://github.com/explosion/spaCy/issues/998. This enables us to phonemize cases like:
-        # - "form of non-linguistic representations"  (ADJ)
-        # - "The psychopaths' empathic reaction"  (PART)
-        # - "judgement, name & face memory" (CCONJ)
-        # - "to public interest/national security" (SYM)
-        # - "spectacular, grand // desco da" (SYM)
-        items: typing.List[typing.Union[typing.Tuple[str], str]] = []
-        iterator = itertools.groupby(doc, lambda t: t.pos == spacy.symbols.PUNCT)  # type: ignore
-        for is_punct, group in iterator:
-            phrase = "".join([t.text_with_ws for t in group])
-            is_alpha_numeric = any(c.isalpha() or c.isdigit() for c in phrase)
-            if is_punct and is_alpha_numeric:
-                logger.debug("Punctuation contains alphanumeric characters: %s" % phrase)
-            items.append(tuple(phrase) if is_punct and not is_alpha_numeric else phrase)
-        splits.append(items)
-
-    inputs = [i for i in flatten_2d(splits) if isinstance(i, str)]
-    phonemes = _multiline_grapheme_to_phoneme(inputs, separator=separator, **kwargs)
-    return_ = []
-    for items in splits:
-        items_ = [([phonemes.pop(0)] if isinstance(i, str) else list(i)) for i in items]
-        return_.append(separator.join([t for t in flatten_2d(items_) if len(t) > 0]))
-    return return_
-
-
-def grapheme_to_phoneme(graphemes, **kwargs):
-    """Convert graphemes into phonemes and preserve punctuation.
-
-    NOTE: `espeak` can give different results for the same argument, sometimes. For example,
-    "Fitness that's invigorating, not intimidating!" sometimes returns...
-    1. "f|ˈ|ɪ|t|n|ə|s| |ð|æ|t|s| |ɪ|n|v|ˈ|ɪ|ɡ|ɚ|ɹ|ˌ|eɪ|ɾ|ɪ|ŋ|,| "...
-    2. "f|ˈ|ɪ|t|n|ə|s| |ð|æ|t|s| |ɪ|n|v|ˈ|ɪ|ɡ|oː|ɹ|ˌ|eɪ|ɾ|ɪ|ŋ|,| "...
-    NOTE: Since eSpeak, unfortunately, doesn't take extra context to determining the pronunciation.
-    This means it'll sometimes be wrong in ambigious cases on the text edges.
-
-    TODO: Replace the eSpeak with a in-house solution including:
-    - `lib.text.normalize_non_standard_words`
-    - CMU dictionary or https://github.com/kylebgorman/wikipron for most words
-    - spaCy for homographs similar to https://github.com/Kyubyong/g2p
-    - A neural network trained on CMU dictionary for words not in the dictionaries.
-    TODO: Type this function once spaCy supports typing.
-
-    Args:
-        graphemes: The graphemes to convert to phonemes.
-        **kwargs: Key-word arguments passed to `_grapheme_to_phoneme_with_punctuation`.
-    """
-    if isinstance(graphemes, (list, tuple)):
-        return _grapheme_to_phoneme_with_punctuation(*tuple(graphemes), **kwargs)
-    return tuple(_grapheme_to_phoneme_with_punctuation(graphemes, **kwargs))[0]
 
 
 """ Learn more about pronunciation dictionarys:

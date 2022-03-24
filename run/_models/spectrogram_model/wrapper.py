@@ -170,7 +170,7 @@ class SpectrogramModelWrapper(SpectrogramModel):
     @typing.overload
     def __call__(
         self,
-        inputs: InputsWrapper,
+        inputs: InputsTyping,
         target_frames: torch.Tensor,
         target_mask: typing.Optional[torch.Tensor] = None,
         mode: typing.Literal[Mode.FORWARD] = Mode.FORWARD,
@@ -180,7 +180,7 @@ class SpectrogramModelWrapper(SpectrogramModel):
     @typing.overload
     def __call__(
         self,
-        inputs: InputsWrapper,
+        inputs: InputsTyping,
         use_tqdm: bool = False,
         token_skip_warning: float = math.inf,
         mode: typing.Literal[Mode.INFER] = Mode.INFER,
@@ -190,7 +190,7 @@ class SpectrogramModelWrapper(SpectrogramModel):
     @typing.overload
     def __call__(
         self,
-        inputs: InputsWrapper,
+        inputs: InputsTyping,
         split_size: float = 32,
         use_tqdm: bool = False,
         token_skip_warning: float = math.inf,

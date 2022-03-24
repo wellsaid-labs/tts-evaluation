@@ -103,7 +103,7 @@ def _include_span(span: Span):
     TODO: The character "." is ambigious. It is sometimes prounced "dot" and sometimes it's silent.
     There may be some inconsistency between eSpeak and the voice over with regards to ".".
     """
-    script = str(span.spacy_with_context())
+    script = str(span.spacy_with_context(cf.get()))
 
     if "<" in script or ">" in script:
         return False

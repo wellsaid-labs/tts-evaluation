@@ -214,7 +214,7 @@ def _make_encoder(
     sessions = torch.randint(1, max_seq_meta_values[1], (batch_size,)).tolist()
     tokens = torch.randint(1, max_tokens, (batch_size, num_tokens_pad)).tolist()
     token_meta = torch.randint(1, max_tokens, (batch_size, num_tokens_pad)).tolist()
-    token_meta = [[(t,) for t in s] for s in token_meta]
+    token_meta = [[[t] for t in s] for s in token_meta]
     token_embeddings = list(torch.randn(batch_size, num_tokens_pad, max_token_embed_size).unbind())
     inputs = Inputs(
         tokens=tokens,
@@ -270,7 +270,7 @@ def test_encoder__padding_invariance():
     module.zero_grad()
     for padding_len in range(1, 10):
         pad_token = [module.embed_token.pad_token] * padding_len
-        pad_meta = [(module.embed_token_metadata[0].pad_token,)] * padding_len
+        pad_meta = [[module.embed_token_metadata[0].pad_token]] * padding_len
         inputs = arg._replace(
             tokens=[t + pad_token for t in arg.tokens],
             token_metadata=[t + pad_meta for t in arg.token_metadata],

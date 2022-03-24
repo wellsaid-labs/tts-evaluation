@@ -10,7 +10,7 @@ import pytest
 
 import lib
 from lib.utils import Timeline
-from run._lang_config import normalize_vo_script
+from run._config import normalize_vo_script
 from run.data._loader import make_en_speaker
 from run.data._loader.data_structures import (
     Alignment,

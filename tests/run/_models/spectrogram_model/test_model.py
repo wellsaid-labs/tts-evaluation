@@ -123,7 +123,7 @@ def _make_inputs(
     inputs = Inputs(
         tokens=tokens,
         seq_metadata=list(zip(speakers, sessions)),
-        token_metadata=[[tuple() for _ in s] for s in tokens],
+        token_metadata=[[[] for _ in s] for s in tokens],
         token_embeddings=[torch.empty(int(n), 0) for n in num_tokens],
         slices=[slice(0, int(n)) for n in num_tokens],
     )

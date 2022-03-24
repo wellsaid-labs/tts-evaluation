@@ -25,7 +25,8 @@ from lib.audio import sec_to_sample
 from lib.distributed import get_rank, get_world_size, is_initialized
 from lib.samplers import BucketBatchSampler
 from lib.utils import Tuple, flatten_2d, lengths_to_mask
-from run._models.spectrogram_model import Inputs, preprocess_spans
+from run._models.spectrogram_model import preprocess_spans
+from run._models.spectrogram_model.model import Inputs
 from run.data._loader import Alignment, Span
 from run.train import _utils
 

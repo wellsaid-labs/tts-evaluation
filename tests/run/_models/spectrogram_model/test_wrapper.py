@@ -5,7 +5,12 @@ import torch
 
 import lib
 import run
-from run.train.spectrogram_model._model import Inputs, _Casing, preprocess_inputs, preprocess_spans
+from run._models.spectrogram_model.wrapper import (
+    InputsWrapper,
+    _Casing,
+    preprocess_inputs,
+    preprocess_spans,
+)
 from tests.run._utils import make_passage
 
 
@@ -74,7 +79,9 @@ def test_preprocess_inputs_and_spans():
     script = "In 1968 the U.S. Army"
     passage = make_passage(script=script)
     pre_span = preprocess_spans([passage[1:-1]])
-    pre_doc = preprocess_inputs(Inputs(session=[passage.session], doc=[nlp(passage[1:-1].script)]))
+    pre_doc = preprocess_inputs(
+        InputsWrapper(session=[passage.session], doc=[nlp(passage[1:-1].script)])
+    )
     assert pre_doc.seq_metadata == pre_span.seq_metadata
     assert pre_doc.tokens[0] == pre_span.tokens[0][3:-5]
     assert pre_doc.token_metadata[0] == pre_span.token_metadata[0][3:-5]
