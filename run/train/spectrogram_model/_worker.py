@@ -229,7 +229,7 @@ class _State:
 
 def _worker_init_fn():
     # NOTE: Each worker needs the same random seed to be in-sync.
-    set_run_seed(cf.get())
+    set_run_seed(**cf.get())
 
 
 def _get_data_loaders(

@@ -1,6 +1,16 @@
-from run._config.data import _include_span
+import config as cf
+import pytest
+
+from run._config.data import _include_span, configure
 from run.data import _loader
 from tests.run._utils import make_alignments_1d, make_alignments_2d, make_passage
+
+
+@pytest.fixture(autouse=True)
+def run_around_test():
+    configure()
+    yield
+    cf.purge()
 
 
 def test__include_span():

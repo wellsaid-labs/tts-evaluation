@@ -1,4 +1,4 @@
-import hparams
+import config as cf
 import pytest
 import spacy.vocab
 import torch
@@ -19,7 +19,7 @@ def run_around_tests():
     """Set a basic configuration."""
     run._config.configure()
     yield
-    hparams.clear_config()
+    cf.purge()
 
 
 def test_preprocess_spans():

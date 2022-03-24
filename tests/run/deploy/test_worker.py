@@ -15,16 +15,6 @@ from run.train.spectrogram_model._data import InputEncoder
 logger = logging.getLogger(__name__)
 
 
-@pytest.fixture(autouse=True, scope="module")
-def run_around_tests():
-    config = {
-        lib.text.grapheme_to_phoneme: cf.Args(separator=run._config.PHONEME_SEPARATOR),
-    }
-    cf.add(config)
-    yield
-    cf.purge()
-
-
 def test_flask_exception():
     """Test `FlaskException` `to_dict` produces the correct dictionary."""
     exception = FlaskException("This is a test", 404, code="NOT_FOUND", payload={"blah": "hi"})
