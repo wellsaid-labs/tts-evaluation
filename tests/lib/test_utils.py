@@ -192,7 +192,7 @@ def test_disk_cache():
 
 
 def test_disk_cache__clear_cache():
-    """Test is `lib.utils.disk_cache` can clea cache."""
+    """Test is `lib.utils.disk_cache` can clear cache."""
     temp_dir = tempfile.TemporaryDirectory()
     temp_dir_path = pathlib.Path(temp_dir.name) / "cache.pickle"
     assert not temp_dir_path.exists()

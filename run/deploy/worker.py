@@ -131,15 +131,37 @@ _SPEAKER_ID_TO_SPEAKER: typing.Dict[int, typing.Tuple[Speaker, str]] = {
         "promo_script_5_alexander.wav",
     ),  # Do not release till paid
     41: (english.SHAWN_WILLIAMS__PROMO, "promo_script_9_williams.wav"),
+    42: (english.ADRIENNE_WALKER__CONVO, "conversational_script_5_walker.wav"),
+    43: (english.ALICIA_HARRIS__CONVO, "conversational_script_6_harris.wav"),
+    44: (english.JACK_RUTKOWSKI__CONVO, "conversational_script_3_rutkowski.wav"),
+    45: (english.MEGAN_SINCLAIR__CONVO, "conversational_script_1_sinclair.wav"),
+    46: (english.SAM_SCHOLL__CONVO, "conversational_script_2_scholl.wav"),
+    47: (english.STEVEN_WAHLBERG__CONVO, "conversational_script_3_wahlberg.wav"),
+    48: (english.SUSAN_MURPHY__CONVO, "conversational_script_4_murphy.wav"),
+    49: (english.ALESSANDRA_RUIZ, "narration_script_5_ruiz.wav"),
+    50: (english.ALEX_MARRERO, "narration_script_3_marrero.wav"),
+    51: (english.DANA_HURLEY, "narration_script_2_hurley.wav"),
+    52: (english.DIONTAE_BLACK, "narration_script_5_black.wav"),
+    53: (english.MARC_WHITE, "narration_script_5_white.wav"),
+    54: (english.SETH_JONES, "narration_script_5_jones.wav"),
+    55: (english.SOPHIE_REPPERT, "narration_script_2_reppert.wav"),
+    56: (english.ALEXANDER_HILL_KNIGHT, "narration_script_5_hillknight.wav"),
+    57: (english.PIOTR_KOHNKE, "narration_script_8_kohnke.wav"),
+    58: (english.STEVE_NEWMAN, "newman_final_page_13.wav"),
     # NOTE: Custom voice IDs are random numbers larger than 10,000...
     # TODO: Retrain some of these voices, and reconfigure them.
     11541: (english.LINCOLN__CUSTOM, ""),
     13268907: (english.JOSIE__CUSTOM, ""),
     95313811: (english.JOSIE__CUSTOM__MANUAL_POST, ""),
+    50794582: (english.UNEEQ__ASB_CUSTOM_VOICE, "script-20-enthusiastic.wav"),
+    50794583: (english.UNEEQ__ASB_CUSTOM_VOICE_COMBINED, "script-28-enthusiastic.wav"),
     78252076: (english.VERITONE__CUSTOM_VOICE, ""),
     70695443: (english.SUPER_HI_FI__CUSTOM_VOICE, "promo_script_5_superhifi.wav"),
     64197676: (english.US_PHARMACOPEIA__CUSTOM_VOICE, "enthusiastic_script-22.wav"),
-    41935205: (english.HAPPIFY__CUSTOM_VOICE, "anna_long_emotional_clusters_1st_half_clean.wav"),
+    41935205: (
+        english.HAPPIFY__CUSTOM_VOICE,
+        "anna_long_emotional_clusters_1st_half_clean.wav",
+    ),
     42400423: (
         english.THE_EXPLANATION_COMPANY__CUSTOM_VOICE,
         "is_it_possible_to_become_invisible.wav",
@@ -147,9 +169,11 @@ _SPEAKER_ID_TO_SPEAKER: typing.Dict[int, typing.Tuple[Speaker, str]] = {
     61137774: (english.ENERGY_INDUSTRY_ACADEMY__CUSTOM_VOICE, "sample_script_2.wav"),
     30610881: (english.VIACOM__CUSTOM_VOICE, "kelsey_speech_synthesis_section1.wav"),
     50481197: (english.HOUR_ONE_NBC__BB_CUSTOM_VOICE, "hour_one_nbc_dataset_5.wav"),
+    77552139: (english.STUDY_SYNC__CUSTOM_VOICE, "fernandes_audio_5.wav"),
+    25502195: (english.FIVE_NINE__CUSTOM_VOICE, "wsl_five9_audio_3.wav"),
 }
 SPEAKER_ID_TO_SPEAKER = {
-    k: (spk, Session(sesh)) for k, (spk, sesh) in _SPEAKER_ID_TO_SPEAKER.items()
+    k: (spk, sesh) for k, (spk, sesh) in _SPEAKER_ID_TO_SPEAKER.items()
 }
 
 

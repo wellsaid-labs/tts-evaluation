@@ -22,6 +22,10 @@ DATASETS = copy.copy(_loader.DATASETS)
 # NOTE: Elliot and Elizabeth has unannotated character portrayals.
 del DATASETS[_loader.english.ELLIOT_MILLER]
 del DATASETS[_loader.english.ELIZABETH_KLETT]
+# NOTE: The following custom datasets are poor quality and should be excluded.
+del DATASETS[_loader.english.HOUR_ONE_NBC__BB_CUSTOM_VOICE]
+del DATASETS[_loader.english.VIACOM__CUSTOM_VOICE]
+del DATASETS[_loader.english.UNEEQ__ASB_CUSTOM_VOICE]
 
 DEV_SPEAKERS = _loader.WSL_DATASETS.copy()
 # NOTE: The `MARI_MONGE__PROMO` dataset is too short for evaluation, at 15 minutes long.
