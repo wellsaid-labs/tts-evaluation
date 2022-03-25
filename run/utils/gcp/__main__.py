@@ -176,7 +176,11 @@ def _make_instance(
                     ],
                 }
             ],
-            "scheduling": {"preemptible": True},
+            "scheduling": {
+                "preemptible": preemptible,
+                "automaticRestart": not preemptible,
+                "onHostMaintenance": "TERMINATE",
+            },
             "serviceAccounts": [
                 {
                     "email": "default",
@@ -200,9 +204,8 @@ def _make_instance(
         # NOTE: An instance template is created and used to create a single instance to simplify the
         # code.
         link = template_op["targetLink"]
-        body = {"name": name}
         instance_op = client.insert(
-            body=body, project=project, zone=zone, sourceInstanceTemplate=link
+            body={"name": name}, project=project, zone=zone, sourceInstanceTemplate=link
         )
         try:
             instance_op = instance_op.execute()
@@ -318,7 +321,7 @@ def delete_persistent_instance(name: str = typer.Option(...), zone: str = typer.
     _delete_instance_template(name, zone)
 
 
-@preemptible_app.command("make-instance")
+@preemptible_app.command("delete-instance")
 def delete_preemptible_instance(name: str = typer.Option(...), zone: str = typer.Option(...)):
     """Delete the instance named NAME in ZONE."""
     lib.environment.set_basic_logging_config()
