@@ -38,9 +38,6 @@ del DEV_SPEAKERS[_loader.english.SAM_SCHOLL]
 # NOTE: The `BETH_CAMERON__CUSTOM` dataset isn't included in the studio.
 del DEV_SPEAKERS[_loader.english.BETH_CAMERON__CUSTOM]
 DEV_SPEAKERS = set(DEV_SPEAKERS.keys())
-# NOTE: The following custom datasets are poor quality and should be excluded.
-del DATASETS[_loader.english.HOUR_ONE_NBC__BB_CUSTOM_VOICE]
-del DATASETS[_loader.english.VIACOM__CUSTOM_VOICE]
 
 
 def _include_passage(
