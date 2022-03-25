@@ -321,7 +321,7 @@ def delete_persistent_instance(name: str = typer.Option(...), zone: str = typer.
     _delete_instance_template(name, zone)
 
 
-@preemptible_app.command("make-instance")
+@preemptible_app.command("delete-instance")
 def delete_preemptible_instance(name: str = typer.Option(...), zone: str = typer.Option(...)):
     """Delete the instance named NAME in ZONE."""
     lib.environment.set_basic_logging_config()

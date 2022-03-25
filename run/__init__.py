@@ -6,4 +6,6 @@ from run import _utils, data, train, utils
 from run import _tts  # isort: skip
 from run import deploy  # isort: skip
 
+# NOTE: `_streamlit` is not imported due to side-effects from the import.
+
 __all__ = ["_config", "_utils", "data", "train", "utils", "_tts", "deploy"]
