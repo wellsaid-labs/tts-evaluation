@@ -99,9 +99,9 @@ def _make_configuration(train_dataset: Dataset, dev_dataset: Dataset, debug: boo
         # We also apply L2 regularization with weight 10−6
         # NOTE: No L2 regularization performed better based on Comet experiments in March 2020.
         torch.optim.AdamW: cf.Args(
-            eps=10 ** -6,
+            eps=10**-6,
             weight_decay=0.01,
-            lr=10 ** -3,
+            lr=10**-3,
             amsgrad=False,
             betas=(0.9, 0.999),
         ),

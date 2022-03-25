@@ -172,9 +172,7 @@ _SPEAKER_ID_TO_SPEAKER: typing.Dict[int, typing.Tuple[Speaker, str]] = {
     77552139: (english.STUDY_SYNC__CUSTOM_VOICE, "fernandes_audio_5.wav"),
     25502195: (english.FIVE_NINE__CUSTOM_VOICE, "wsl_five9_audio_3.wav"),
 }
-SPEAKER_ID_TO_SPEAKER = {
-    k: (spk, sesh) for k, (spk, sesh) in _SPEAKER_ID_TO_SPEAKER.items()
-}
+SPEAKER_ID_TO_SPEAKER = {k: (spk, sesh) for k, (spk, sesh) in _SPEAKER_ID_TO_SPEAKER.items()}
 
 
 class FlaskException(Exception):

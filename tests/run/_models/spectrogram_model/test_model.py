@@ -166,7 +166,7 @@ def _rand_logit(*shape: int, offset=0) -> torch.Tensor:
         >>> set_seed(123); _make_size_invariant_random_tensor(3)
         tensor([ 0.4721,  1.2948, -0.0914])
     """
-    with fork_rng(random.randint(0, 2 ** 16)):
+    with fork_rng(random.randint(0, 2**16)):
         return_ = torch.zeros(*shape)
         for i in range(offset):
             torch.rand(1)
