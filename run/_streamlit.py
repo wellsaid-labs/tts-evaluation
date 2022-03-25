@@ -120,6 +120,8 @@ def session_cache(func: None = None, **kwargs) -> SessionCache:
 def session_cache(func: typing.Optional[typing.Callable] = None, **kwargs):
     """`lru_cache` wrapper for `streamlit` that caches accross reruns.
 
+    NOTE: `session_cache` will trigger an import of `streamlit`.
+
     Learn more: https://github.com/streamlit/streamlit/issues/2382
     """
     if not func:
