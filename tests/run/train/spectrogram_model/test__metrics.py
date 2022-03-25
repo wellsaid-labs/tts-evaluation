@@ -200,7 +200,7 @@ def test_get_power_rms_level_sum():
     rms = _metrics.get_power_rms_level_sum(
         db_spectrogram, window=window, window_correction_factor=None
     )
-    assert_almost_equal(rms / db_spectrogram.shape[0], torch.Tensor([1.0000001, 0.500006]))
+    assert_almost_equal(rms / db_spectrogram.shape[0], torch.tensor([1.0000001, 0.500006]))
 
 
 def test_get_power_rms_level_sum__precise():
@@ -225,7 +225,7 @@ def test_get_power_rms_level_sum__precise():
     rms = _metrics.get_power_rms_level_sum(
         db_spectrogram, window=window, window_correction_factor=None
     )
-    assert_almost_equal(rms / (sample_rate / frame_hop), torch.Tensor([1.0, 0.49999998418]))
+    assert_almost_equal(rms / (sample_rate / frame_hop), torch.tensor([1.0, 0.49999998418]))
 
 
 def test_get_average_db_rms_level():

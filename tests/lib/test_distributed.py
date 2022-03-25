@@ -110,8 +110,7 @@ def _dict_store__speed_helper(rank, nprocs, backend="gloo", init_method="tcp://1
     for _ in range(5):
         store.update(data)
     timing = time.perf_counter() - event
-    assert timing < 0.15
-    print(timing)
+    assert timing < 0.2, timing
 
 
 def test_dict_store__speed():
