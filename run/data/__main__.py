@@ -34,11 +34,11 @@ from run.data import _loader
 if typing.TYPE_CHECKING:  # pragma: no cover
     import Levenshtein
     import pandas
-    from spacy.lang import en as spacy_en
+    import spacy.language as language
 else:
     Levenshtein = LazyLoader("Levenshtein", globals(), "Levenshtein")
     pandas = LazyLoader("pandas", globals(), "pandas")
-    spacy_en = LazyLoader("spacy_en", globals(), "spacy.lang.en")
+    language = LazyLoader("language", globals(), "spacy.language")
 
 
 lib.environment.set_basic_logging_config()
@@ -272,7 +272,7 @@ def text(
 
 
 def _csv_normalize(
-    text: str, nlp: typing.Optional[spacy_en.English], language: _loader.Language
+    text: str, nlp: typing.Optional[language.Language], language: _loader.Language
 ) -> str:
     """Helper for the `csv_normalize` command.
 

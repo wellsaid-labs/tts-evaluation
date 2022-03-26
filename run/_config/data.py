@@ -149,7 +149,7 @@ def configure():
         run._utils.split_dataset: cf.Args(
             groups=groups, dev_speakers=DEV_SPEAKERS, approx_dev_len=30 * 60, min_sim=0.9
         ),
-        run.data._loader.data_structures.Span.spacy_with_context: cf.Args(max_words=10),
+        run.data._loader.data_structures.Span.spacy_with_context: cf.Args(max_words=20),
         run._utils.SpanGenerator: cf.Args(max_seconds=15, include_span=_include_span),
     }
     cf.add(config)

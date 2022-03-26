@@ -31,6 +31,7 @@ from run.data._loader.data_structures import (
 from run.data._loader.english import LINDA_JOHNSON
 from run.data._loader.utils import get_non_speech_segments_and_cache
 from tests._utils import TEST_DATA_PATH
+from tests.run._utils import make_passage
 
 TEST_DATA_LJ = TEST_DATA_PATH / "audio" / "bit(rate(lj_speech,24000),32).wav"
 
@@ -544,3 +545,12 @@ def test_has_a_mistranscription__span():
     assert has_a_mistranscription(passages[0][1:])
     assert has_a_mistranscription(passages[1][:])
     assert not has_a_mistranscription(passages[1][1:])
+
+
+def test_spacy_with_context():
+    """Test that `spacy_with_context` gets the full context."""
+    script = "Give it back! He pleaded."
+    passage = make_passage(script=script)
+    assert str(passage[2:4].spacy_with_context(10)) == "Give it back! He pleaded."
+    assert str(passage[2:4].spacy_with_context(0)) == "back! He"
+    assert str(passage[2:4].spacy) == "back! He"

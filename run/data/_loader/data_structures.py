@@ -15,6 +15,7 @@ from pathlib import Path
 import config as cf
 import numpy as np
 import spacy.tokens.doc
+import spacy.tokens.span
 
 import lib
 import run
@@ -30,7 +31,7 @@ Slice = slice  # NOTE: `pylance` is buggy if we use `slice` directly for typing.
 
 
 def get_nlp():
-    return lib.text.load_en_core_web_md(disable=("parser", "ner", "tagger"))
+    return lib.text.load_en_core_web_md(disable=("ner", "tagger"))
 
 
 class NonalignmentSpans(typing.NamedTuple):
@@ -575,10 +576,14 @@ class Span:
         return span
 
     def spacy_with_context(self, max_words: int) -> spacy.tokens.span.Span:
-        """Get a `spacy.tokens.span.Span` with the required context for voicing `self`."""
+        """Get a `spacy.tokens.span.Span` with the required context for voicing `self`.
+
+        NOTE: `self.spacy.sents` is buggy.
+        """
         doc = self.passage.doc
-        end = min(self.spacy.end + max_words, len(doc))
-        return doc[max(self.spacy.start - max_words, 0) : end]
+        start = max(self.spacy.start - max_words, self.spacy[:1].sent.start)
+        end = min(self.spacy.end + max_words, self.spacy[-1:].sent.end)
+        return doc[start:end]
 
     def audio(self) -> np.ndarray:
         return _loader.utils.read_audio(

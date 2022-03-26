@@ -15,6 +15,7 @@ import spacy
 import spacy.tokens
 import unidecode
 from spacy.lang import en as spacy_en
+from spacy.language import Language
 from third_party import LazyLoader
 from tqdm import tqdm
 
@@ -464,11 +465,12 @@ def get_pronunciations(
             return_.append(None)
         else:
             pos = lib.text.SPACY_TO_AMEPD_POS[token.pos]
-            tense = spacy_en.TAG_MAP[token.tag_].get("Tense", None)
-            prounciation = lib.text.get_pronunciation(token.text, pos, tense)
+            tense = token.morph.get("Tense")
+            tense = None if len(tense) == 0 else tense[0].lower()
+            prounciation = lib.text.get_pronunciation(token.text, pos, tense)  # type: ignore
             if is_initialism(token):
                 lib.utils.call_once(
-                    logger.warning,  # type: ignore
+                    logger.warning,
                     "Guessing '%s' is an initialism.",
                     token.text,
                 )
@@ -661,8 +663,8 @@ def _nltk_download(dependency):
 
 
 @functools.lru_cache(maxsize=None)
-def load_en_core_web_md(*args, **kwargs) -> spacy_en.English:
-    """Load and cache in memory a spaCy `spacy_en.English` object."""
+def load_en_core_web_md(*args, **kwargs) -> Language:
+    """Load and cache in memory a spaCy `Language` object."""
     logger.info("Loading spaCy model `en_core_web_md`...")
     nlp = en_core_web_md.load(*args, **kwargs)
     logger.info("Loaded spaCy model `en_core_web_md`.")
@@ -670,8 +672,8 @@ def load_en_core_web_md(*args, **kwargs) -> spacy_en.English:
 
 
 @functools.lru_cache(maxsize=None)
-def load_en_core_web_sm(*args, **kwargs) -> spacy_en.English:
-    """Load and cache in memory a spaCy `spacy_en.English` object."""
+def load_en_core_web_sm(*args, **kwargs) -> Language:
+    """Load and cache in memory a spaCy `Language` object."""
     logger.info("Loading spaCy model `en_core_web_sm`...")
     nlp = en_core_web_sm.load(*args, **kwargs)
     logger.info("Loaded spaCy model `en_core_web_sm`.")
@@ -679,8 +681,8 @@ def load_en_core_web_sm(*args, **kwargs) -> spacy_en.English:
 
 
 @functools.lru_cache(maxsize=None)
-def load_en_english(*args, **kwargs) -> spacy_en.English:
-    """Load and cache in memory a spaCy `spacy_en.English` object."""
+def load_en_english(*args, **kwargs) -> Language:
+    """Load and cache in memory a spaCy `Language` object."""
     return spacy_en.English(*args, **kwargs)
 
 
