@@ -9,7 +9,12 @@ import torch
 import torch.optim
 
 import lib
-from run._config import NUM_FRAME_CHANNELS, RANDOM_SEED, SPECTROGRAM_MODEL_EXPERIMENTS_PATH, Label
+from run._config import (
+    NUM_FRAME_CHANNELS,
+    RANDOM_SEED,
+    SPECTROGRAM_MODEL_EXPERIMENTS_PATH,
+    get_config_label,
+)
 from run._utils import Dataset
 from run.train._utils import (
     CometMLExperiment,
@@ -147,7 +152,7 @@ def _run_app(
     """
     cf.add(_make_configuration(train_dataset, dev_dataset, debug))
     cf.add(cli_config)
-    comet.log_parameters({Label(k): v for k, v in cf.log().items()})
+    comet.log_parameters({get_config_label(k): v for k, v in cf.log().items()})
     return run_workers(
         _worker.run_worker, comet, checkpoint, checkpoints_directory, train_dataset, dev_dataset
     )

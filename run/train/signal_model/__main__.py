@@ -12,7 +12,7 @@ import torch.utils
 import torch.utils.data
 
 import lib
-from run._config import FRAME_HOP, RANDOM_SEED, SIGNAL_MODEL_EXPERIMENTS_PATH, Label
+from run._config import FRAME_HOP, RANDOM_SEED, SIGNAL_MODEL_EXPERIMENTS_PATH, get_config_label
 from run._utils import Dataset, get_window
 from run.train._utils import (
     CometMLExperiment,
@@ -137,7 +137,7 @@ def _run_app(
     """Run signal model training."""
     cf.add(_make_configuration(train_dataset, dev_dataset, debug))
     cf.add(cli_config)
-    comet.log_parameters({Label(k): v for k, v in cf.log().items()})
+    comet.log_parameters({get_config_label(k): v for k, v in cf.log().items()})
     return run_workers(
         _worker.run_worker,
         comet,
