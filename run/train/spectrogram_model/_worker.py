@@ -1,3 +1,4 @@
+import atexit
 import contextlib
 import copy
 import dataclasses
@@ -672,7 +673,10 @@ def run_worker(
     TODO: Should we checkpoint `metrics` so that metrics like `num_frames_per_speaker`,
     `num_spans_per_text_length`, or `max_num_frames` can be computed accross epochs?
     """
-    assert isinstance(checkpoint, Checkpoint)
+    if is_master():
+        atexit.register(cf.purge)
+
+    assert isinstance(checkpoint, Checkpoint) or checkpoint is None
     state = (
         _State.from_scratch(comet, device)
         if checkpoint is None

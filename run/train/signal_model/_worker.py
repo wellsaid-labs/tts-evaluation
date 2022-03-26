@@ -1,3 +1,4 @@
+import atexit
 import contextlib
 import copy
 import dataclasses
@@ -659,10 +660,13 @@ def run_worker(
 
     TODO: Support training from ground truth spectrograms.
     """
+    if is_master():
+        atexit.register(cf.purge)
+
     conditions = [checkpoint is None, spectrogram_model_checkpoint is None]
     message = "Either signal model or spectrogram model checkpoint needs to be defined."
     assert any(conditions) and not all(conditions), message
-    assert isinstance(checkpoint, Checkpoint)
+    assert isinstance(checkpoint, Checkpoint) or checkpoint is None
     state = (
         _State.make(typing.cast(pathlib.Path, spectrogram_model_checkpoint), comet, device)
         if checkpoint is None

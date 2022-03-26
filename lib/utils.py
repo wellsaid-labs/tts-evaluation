@@ -99,7 +99,7 @@ def get_weighted_std(tensor: torch.Tensor, dim: int = 0) -> torch.Tensor:
 
     weighted_mean = (indicies * tensor).sum(dim=dim) / tensor.sum(dim=dim)
     weighted_variance = ((indicies - weighted_mean.unsqueeze(dim=dim)) ** 2 * tensor).sum(dim=dim)
-    weighted_standard_deviation = weighted_variance**0.5
+    weighted_standard_deviation = weighted_variance ** 0.5
 
     numel = weighted_standard_deviation.numel()
     assert numel == 0 or not torch.isnan(weighted_standard_deviation.min()), "NaN detected."
@@ -253,7 +253,7 @@ def disk_cache(path: pathlib.Path):
 
             return result
 
-        wrapper.clear_cache = lambda: path.unlink()
+        wrapper.clear_cache = lambda: path.unlink() if path.exists() else None
 
         return typing.cast(_CacheReturnDecoratorFunction, wrapper)
 

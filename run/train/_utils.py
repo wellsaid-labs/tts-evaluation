@@ -53,6 +53,7 @@ from run._config import (
     get_timer_label,
 )
 from run._utils import Dataset
+from run.data._loader.data_structures import Language
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import comet_ml
@@ -352,7 +353,8 @@ class CometMLExperiment:
 
     def add_tags(self, tags: typing.List[str]):
         logger.info("Added tags to experiment: %s", tags)
-        self._experiment.add_tags(tags)
+        if len(tags) != 0:
+            self._experiment.add_tags(tags)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -382,11 +384,16 @@ def _get_dataset_stats(
 
 
 @disk_cache(run._config.DATASET_CACHE_PATH)
-def _get_dataset(debug: bool):
+def _get_dataset(debug: bool, language: typing.Optional[Language] = None):
     """Helper function for `_run_experiment` to get the train and dev datasets."""
-    _datasets = {k: v for k, v in list(run._config.DATASETS.items())[:1]}
-    dataset = run._utils.get_dataset(**({"datasets": _datasets} if debug else {}), **cf.get())
-    return run._utils.split_dataset(dataset, **cf.get())
+    kwargs = {}
+    if debug:
+        speakers = run._config.DEV_SPEAKERS
+        speaker = next((s for s in speakers if s.language is language or language is None), None)
+        assert speaker is not None
+        kwargs = {"datasets": {speaker: run._config.DATASETS[speaker]}}
+    dataset = cf.call(run._utils.get_dataset, **kwargs)
+    return cf.partial(run._utils.split_dataset)(dataset)
 
 
 def _run_experiment(
@@ -395,8 +402,9 @@ def _run_experiment(
     """Helper function for `start_experiment` and  `resume_experiment`."""
     lib.environment.check_module_versions()
     if debug:
-        _get_dataset.clear_cache()
-    train_dataset, dev_dataset = _get_dataset(debug)
+        train_dataset, dev_dataset = cf.partial(_get_dataset.__wrapped__)(debug)
+    else:
+        train_dataset, dev_dataset = cf.partial(_get_dataset)(debug)
     comet.log_parameters(_get_dataset_stats(train_dataset, dev_dataset))
     return train_dataset, dev_dataset
 

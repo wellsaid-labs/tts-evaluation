@@ -54,7 +54,8 @@ def get_dataset(
         ...
     """
     logger.info("Loading dataset...")
-    load = lambda s, d, **k: (s, [handle_psge(p) for p in d(path, **k) if include_psge(p, path)])
+    partial_ = cf.partial(include_psge)
+    load = lambda s, d, **k: (s, [handle_psge(p) for p in d(path, **k) if partial_(p, path)])
     if max_workers > 0:
         with multiprocessing.pool.ThreadPool(processes=min(max_workers, len(datasets))) as pool:
             items = list(pool.starmap(load, datasets.items()))

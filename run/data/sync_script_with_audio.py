@@ -167,7 +167,7 @@ class Stats:
 STATS = Stats()
 CONTROL_CHARACTERS_REGEX = re.compile(r"[\x00-\x08\x0b\x0c\x0d\x0e-\x1f]")
 
-normalize_vo_script = lru_cache(maxsize=2**20)(_config.normalize_vo_script)
+normalize_vo_script = lru_cache(maxsize=2 ** 20)(_config.normalize_vo_script)
 
 
 def format_ratio(a: float, b: float) -> str:

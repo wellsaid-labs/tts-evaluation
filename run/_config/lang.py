@@ -7,7 +7,7 @@ import config as cf
 from third_party import LazyLoader
 
 import lib
-import run._config.data
+import run
 from lib.text import get_spoken_chars, grapheme_to_phoneme
 from lib.utils import identity
 from run.data._loader import Language
@@ -92,7 +92,7 @@ except ImportError:
     logger.info("Ignoring optional `google` import.")
 
 
-@lru_cache(maxsize=2**20)
+@lru_cache(maxsize=2 ** 20)
 def _grapheme_to_phoneme(grapheme: str) -> str:
     """Fast grapheme to phoneme implementation where punctuation is ignored.
 
@@ -122,7 +122,7 @@ def _remove_letter_casing(a: str) -> str:
     return a.lower()
 
 
-@lru_cache(maxsize=2**20)
+@lru_cache(maxsize=2 ** 20)
 def is_sound_alike(a: str, b: str, language: Language) -> bool:
     """Return `True` if `str` `a` and `str` `b` sound a-like.
 
@@ -148,4 +148,8 @@ def is_sound_alike(a: str, b: str, language: Language) -> bool:
 
 def configure():
     """Configure modules involved in processing text."""
-    cf.add({run._config.data._include_passage: cf.Args(language=LANGUAGE)})
+    config = {
+        run._config.data._include_passage: cf.Args(language=LANGUAGE),
+        run.train._utils._get_dataset: cf.Args(language=LANGUAGE),
+    }
+    cf.add(config)

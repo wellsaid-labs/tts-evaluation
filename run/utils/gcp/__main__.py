@@ -19,7 +19,7 @@ import googleapiclient.discovery
 import googleapiclient.errors
 import typer
 
-import lib
+from lib.environment import set_basic_logging_config
 
 logger = logging.getLogger(__name__)
 app = typer.Typer(context_settings=dict(max_content_width=math.inf))
@@ -53,8 +53,31 @@ def _wait_for_operation(
         time.sleep(poll_interval)
 
 
-def _make_instance_group_manager(name: str, zone: str, template_op: typing.Dict, health_check: str):
-    """Make the instance group manager along with a health check for a instance template."""
+def _has_made_preemptible_instance(name: str, zone: str, poll_interval: int = 1):
+    """Check if instance group manager successfully created an instance on it's first attempt."""
+    client = compute.instanceGroupManagers()
+    while True:
+        list_op = client.listManagedInstances(project=project, zone=zone, instanceGroupManager=name)
+        instance = list_op.execute()["managedInstances"][0]
+        # NOTE: Learn more about the instance life cycle, here:
+        # https://cloud.google.com/compute/docs/instances/instance-life-cycle
+        if "instanceStatus" in instance and instance["instanceStatus"] == "RUNNING":
+            return True
+        if "lastAttempt" in instance and len(instance["lastAttempt"]) > 0:
+            return False
+        time.sleep(poll_interval)
+
+
+def _get_zones() -> typing.List[str]:
+    """Get a list of available zones."""
+    zones_op = compute.zones().list(project=project).execute()
+    return [z["name"] for z in zones_op["items"]]
+
+
+def _make_preemptible_instance(
+    name: str, zone: typing.Optional[str], template_op: typing.Dict, health_check: str
+):
+    """Create a preemptible instance."""
     try:
         body = {
             "checkIntervalSec": 10,
@@ -72,31 +95,62 @@ def _make_instance_group_manager(name: str, zone: str, template_op: typing.Dict,
     except googleapiclient.errors.HttpError as error:
         logger.warning(error._get_reason())
 
-    body = {
-        "name": name,
-        "baseInstanceName": name,
-        "instanceTemplate": template_op["targetLink"],
-        "targetSize": 1,
-        "statefulPolicy": {
-            "preservedState": {"disks": {name: {"autoDelete": "ON_PERMANENT_INSTANCE_DELETION"}}}
-        },
-        "autoHealingPolicies": [
-            {
-                "initialDelaySec": 300.0,
-                "healthCheck": f"projects/{project}/global/healthChecks/{health_check}",
-            }
-        ],
-    }
-    client = compute.instanceGroupManagers()
-    manager_op = client.insert(project=project, zone=zone, body=body).execute()
-    manager_op = _wait_for_operation(manager_op["name"], zone=zone, is_global=False)
-    logger.info("Created instance group manager: %s", manager_op["targetLink"])
+    for zone in _get_zones() if zone is None else [zone]:
+        logger.info(f"Attempting zone: '{zone}'")
+        body = {
+            "name": name,
+            "baseInstanceName": name,
+            "instanceTemplate": template_op["targetLink"],
+            "targetSize": 1,
+            "statefulPolicy": {
+                "preservedState": {
+                    "disks": {name: {"autoDelete": "ON_PERMANENT_INSTANCE_DELETION"}}
+                }
+            },
+            "autoHealingPolicies": [
+                {
+                    "initialDelaySec": 300.0,
+                    "healthCheck": f"projects/{project}/global/healthChecks/{health_check}",
+                }
+            ],
+        }
+
+        try:
+            client = compute.instanceGroupManagers()
+            manager_op = client.insert(project=project, zone=zone, body=body).execute()
+            manager_op = _wait_for_operation(manager_op["name"], zone=zone, is_global=False)
+            logger.info("Created instance group manager: %s", manager_op["targetLink"])
+            if _has_made_preemptible_instance(name, zone):
+                break
+            else:
+                _delete_instance_group(name, zone)
+        except Exception as e:
+            logger.error(f"Failed to create instance on '{zone}':\n{str(e)}")
 
 
-def _get_zones() -> typing.List[str]:
-    """Get a list of available zones."""
-    zones_op = compute.zones().list(project=project).execute()
-    return [z["name"] for z in zones_op["items"]]
+def _make_and_watch_persistent_instance(
+    name: str, zone: typing.Optional[str], template_op: typing.Dict
+):
+    """Create and then watch a presistent instance."""
+    for zone in _get_zones() if zone is None else [zone]:
+        logger.info(f"Attempting zone: '{zone}'")
+        client = compute.instances()
+        # NOTE: An instance template is created and used to create a single instance to simplify the
+        # code.
+        link = template_op["targetLink"]
+        instance_op = client.insert(
+            body={"name": name}, project=project, zone=zone, sourceInstanceTemplate=link
+        )
+        try:
+            instance_op = instance_op.execute()
+            instance_op = _wait_for_operation(instance_op["name"], zone=zone, is_global=False)
+            logger.info("Created instance: %s", instance_op["targetLink"])
+            break
+        except Exception as e:
+            logger.error(f"Failed to create instance on '{zone}':\n{str(e)}")
+
+    if zone is not None:
+        watch_persistent_instance(name, zone)
 
 
 def _make_instance(
@@ -112,7 +166,7 @@ def _make_instance(
     image: typing.Optional[str],
     metadata: typing.List[str],
     metadata_from_file: typing.List[str],
-    health_check: str,
+    health_check: typing.Optional[str],
     preemptible: bool,
 ):
     """Create a managed and preemptible instance named NAME in ZONE.
@@ -123,7 +177,7 @@ def _make_instance(
             many different zones until one succeeds.
         ...
     """
-    lib.environment.set_basic_logging_config()
+    set_basic_logging_config()
 
     images = compute.images()
     if image_family is not None and image is None:
@@ -194,29 +248,10 @@ def _make_instance(
     logger.info("Created instance template: %s", template_op["targetLink"])
 
     if preemptible:
-        assert zone is not None, "Zone selection not supported for preemptible instances."
-        _make_instance_group_manager(name, zone, template_op, health_check)
-        watch_preemptible_instance(name, zone)
-
-    for zone in _get_zones() if zone is None else [zone]:
-        logger.info(f"Attempting zone: '{zone}'")
-        client = compute.instances()
-        # NOTE: An instance template is created and used to create a single instance to simplify the
-        # code.
-        link = template_op["targetLink"]
-        instance_op = client.insert(
-            body={"name": name}, project=project, zone=zone, sourceInstanceTemplate=link
-        )
-        try:
-            instance_op = instance_op.execute()
-            instance_op = _wait_for_operation(instance_op["name"], zone=zone, is_global=False)
-            logger.info("Created instance: %s", instance_op["targetLink"])
-            break
-        except Exception as e:
-            logger.error(f"Failed to create instance on '{zone}':\n{str(e)}")
-
-    if zone is not None:
-        watch_persistent_instance(name, zone)
+        assert health_check is not None
+        _make_preemptible_instance(name, zone, template_op, health_check)
+    else:
+        _make_and_watch_persistent_instance(name, zone, template_op)
 
 
 @persistent_app.command("make-instance")
@@ -233,7 +268,7 @@ def make_persistent_instance(
     image: typing.Optional[str] = typer.Option(None),
     metadata: typing.List[str] = typer.Option([]),
     metadata_from_file: typing.List[str] = typer.Option([]),
-    health_check: str = typer.Option("check-ssh"),
+    health_check: str = typer.Option(None),
 ):
     return _make_instance(**locals(), preemptible=False)
 
@@ -241,7 +276,7 @@ def make_persistent_instance(
 @preemptible_app.command("make-instance")
 def make_preemptible_instance(
     name: str = typer.Option(...),
-    zone: str = typer.Option(...),
+    zone: str = typer.Option(None, help="Select a specific zone for training."),
     machine_type: str = typer.Option(...),
     gpu_type: str = typer.Option(...),
     gpu_count: int = typer.Option(...),
@@ -264,7 +299,7 @@ def watch_persistent_instance(
     poll_interval: int = 5,
 ):
     """Print the status of instance named NAME in ZONE."""
-    lib.environment.set_basic_logging_config()
+    set_basic_logging_config()
     client = compute.instances()
     while True:
         instance = client.get(project=project, zone=zone, instance=name).execute()
@@ -279,7 +314,7 @@ def watch_preemptible_instance(
     poll_interval: int = 5,
 ):
     """Print the status of instance named NAME in ZONE."""
-    lib.environment.set_basic_logging_config()
+    set_basic_logging_config()
     client = compute.instanceGroupManagers()
     while True:
         list_op = client.listManagedInstances(project=project, zone=zone, instanceGroupManager=name)
@@ -295,21 +330,7 @@ def watch_preemptible_instance(
         time.sleep(poll_interval)
 
 
-def _delete_instance_template(name: str, zone: str):
-    try:
-        client = compute.instances()
-        instance_op = client.delete(project=project, zone=zone, instance=name).execute()
-        instance_op = _wait_for_operation(instance_op["name"], zone=zone, is_global=False)
-        logger.info("Deleted instance: %s", instance_op["targetLink"])
-    except googleapiclient.errors.HttpError as error:
-        logger.warning(error._get_reason())
-
-
-@persistent_app.command("delete-instance")
-def delete_persistent_instance(name: str = typer.Option(...), zone: str = typer.Option(...)):
-    """Delete the instance named NAME in ZONE."""
-    lib.environment.set_basic_logging_config()
-
+def _delete_instance_template(name: str):
     try:
         client = compute.instanceTemplates()
         template_op = client.delete(project=project, instanceTemplate=name).execute()
@@ -318,14 +339,24 @@ def delete_persistent_instance(name: str = typer.Option(...), zone: str = typer.
     except googleapiclient.errors.HttpError as error:
         logger.warning(error._get_reason())
 
-    _delete_instance_template(name, zone)
 
-
-@preemptible_app.command("delete-instance")
-def delete_preemptible_instance(name: str = typer.Option(...), zone: str = typer.Option(...)):
+@persistent_app.command("delete-instance")
+def delete_persistent_instance(name: str = typer.Option(...), zone: str = typer.Option(...)):
     """Delete the instance named NAME in ZONE."""
-    lib.environment.set_basic_logging_config()
+    set_basic_logging_config()
 
+    try:
+        client = compute.instances()
+        instance_op = client.delete(project=project, zone=zone, instance=name).execute()
+        instance_op = _wait_for_operation(instance_op["name"], zone=zone, is_global=False)
+        logger.info("Deleted instance: %s", instance_op["targetLink"])
+    except googleapiclient.errors.HttpError as error:
+        logger.warning(error._get_reason())
+
+    _delete_instance_template(name)
+
+
+def _delete_instance_group(name: str, zone: str):
     try:
         client = compute.instanceGroupManagers()
         manager_op = client.delete(project=project, zone=zone, instanceGroupManager=name).execute()
@@ -342,7 +373,13 @@ def delete_preemptible_instance(name: str = typer.Option(...), zone: str = typer
     except googleapiclient.errors.HttpError as error:
         logger.warning(error._get_reason())
 
-    _delete_instance_template(name, zone)
+
+@preemptible_app.command("delete-instance")
+def delete_preemptible_instance(name: str = typer.Option(...), zone: str = typer.Option(...)):
+    """Delete the instance named NAME in ZONE."""
+    set_basic_logging_config()
+    _delete_instance_group(name, zone)
+    _delete_instance_template(name)
 
 
 """
@@ -433,7 +470,7 @@ def image_and_delete(
 
     NOTE: This will remove the instance from it's managed group, and it cannot be put back.
     """
-    lib.environment.set_basic_logging_config()
+    set_basic_logging_config()
     try:
         compute.images().get(project=project, image=image_name).execute()
         logger.error("The image '%s' already exists.", image_name)

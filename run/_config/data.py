@@ -22,10 +22,6 @@ DATASETS = copy.copy(_loader.DATASETS)
 # NOTE: Elliot and Elizabeth has unannotated character portrayals.
 del DATASETS[_loader.english.ELLIOT_MILLER]
 del DATASETS[_loader.english.ELIZABETH_KLETT]
-# NOTE: The following custom datasets are poor quality and should be excluded.
-del DATASETS[_loader.english.HOUR_ONE_NBC__BB_CUSTOM_VOICE]
-del DATASETS[_loader.english.VIACOM__CUSTOM_VOICE]
-del DATASETS[_loader.english.UNEEQ__ASB_CUSTOM_VOICE]
 
 DEV_SPEAKERS = _loader.WSL_DATASETS.copy()
 # NOTE: The `MARI_MONGE__PROMO` dataset is too short for evaluation, at 15 minutes long.
@@ -37,6 +33,15 @@ del DEV_SPEAKERS[_loader.english.JACK_RUTKOWSKI]
 del DEV_SPEAKERS[_loader.english.SAM_SCHOLL]
 # NOTE: The `BETH_CAMERON__CUSTOM` dataset isn't included in the studio.
 del DEV_SPEAKERS[_loader.english.BETH_CAMERON__CUSTOM]
+
+for dataset in [DEV_SPEAKERS, DATASETS]:
+    # NOTE: The following custom datasets are poor quality and should be excluded.
+    del dataset[_loader.english.HOUR_ONE_NBC__BB_CUSTOM_VOICE]
+    del dataset[_loader.english.VIACOM__CUSTOM_VOICE]
+    del dataset[_loader.english.UNEEQ__ASB_CUSTOM_VOICE]
+    # NOTE: The alignments don't match up with the scripts.
+    del dataset[_loader.english.UNEEQ__ASB_CUSTOM_VOICE_COMBINED]
+
 DEV_SPEAKERS = set(DEV_SPEAKERS.keys())
 
 
@@ -48,7 +53,7 @@ def _include_passage(
     repr_ += f"{passage.audio_file.path.relative_to(root)},"
     repr_ += f" {(passage.script[:50] + '...') if len(passage.script) > 50 else passage.script})"
 
-    if language is None or passage.speaker.language != language:
+    if language is not None and passage.speaker.language != language:
         return False
 
     if len(passage.alignments) == 0:

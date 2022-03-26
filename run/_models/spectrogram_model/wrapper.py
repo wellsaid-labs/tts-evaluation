@@ -70,7 +70,7 @@ def preprocess_spans(
     spans: typing.List[Span], device: torch.device = torch.device("cpu")
 ) -> Inputs:
     """Preprocess inputs to inputs by including casing, context, and embeddings."""
-    return_ = Inputs([], [[], []], [[], []], [], [])
+    return_ = Inputs([], [[], []], [[], []], [], [], device)
     for span in spans:
         context = span.spacy_with_context(**cf.get())
         start_char = span.spacy.start_char - context.start_char
@@ -94,7 +94,7 @@ class InputsWrapper(typing.NamedTuple):
 
 def preprocess_inputs(inputs: InputsWrapper, device: torch.device = torch.device("cpu")) -> Inputs:
     """Preprocess inputs to inputs by including casing, context, and embeddings."""
-    return_ = Inputs([], [[], []], [[], []], [], [])
+    return_ = Inputs([], [[], []], [[], []], [], [], device)
     for doc, sesh in zip(inputs.doc, inputs.session):
         return_.seq_metadata[0].append(sesh[0])
         return_.seq_metadata[1].append(sesh)

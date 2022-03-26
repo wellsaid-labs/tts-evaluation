@@ -29,6 +29,8 @@ class Inputs:
     # Slice of tokens in each sequence to be voiced
     slices: typing.List[slice]
 
+    device: torch.device = torch.device("cpu")
+
     # Number of tokens after `slices` is applied
     # torch.LongTensor [batch_size]
     num_tokens: torch.Tensor = dataclasses.field(init=False)
@@ -40,8 +42,9 @@ class Inputs:
     def __post_init__(self):
         indices = [s.indices(len(t)) for s, t in zip(self.slices, self.tokens)]
         num_tokens = [b - a for a, b, _ in indices]
-        object.__setattr__(self, "num_tokens", torch.tensor(num_tokens, dtype=torch.long))
-        object.__setattr__(self, "tokens_mask", lengths_to_mask(num_tokens))
+        num_tokens_ = torch.tensor(num_tokens, dtype=torch.long, device=self.device)
+        object.__setattr__(self, "num_tokens", num_tokens_)
+        object.__setattr__(self, "tokens_mask", lengths_to_mask(num_tokens, device=self.device))
 
 
 class Preds(typing.NamedTuple):

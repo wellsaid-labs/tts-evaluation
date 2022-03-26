@@ -608,7 +608,7 @@ def has_digit(text: str) -> bool:
 SPACES_REGEX = re.compile(r"\s+")
 
 
-@functools.lru_cache(maxsize=2**20)
+@functools.lru_cache(maxsize=2 ** 20)
 def get_spoken_chars(text: str, punc_regex: re.Pattern) -> str:
     """Remove all unspoken characters from string including spaces, marks, casing, etc.
 

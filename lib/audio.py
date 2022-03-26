@@ -182,7 +182,7 @@ def _get_audio_metadata_helper(chunk: typing.List[Path]) -> typing.List[AudioMet
 
 def _get_audio_metadata(
     *paths: Path,
-    max_arg_length: int = 2**16,
+    max_arg_length: int = 2 ** 16,
     max_parallel: int = typing.cast(int, os.cpu_count()),
     add_tqdm: bool = False,
 ) -> typing.Iterator[AudioMetadata]:
@@ -673,12 +673,12 @@ def amp_to_db(tensor: _TensorOrArrayOrFloat, **kwargs) -> _TensorOrArrayOrFloat:
 
 def amp_to_power(tensor: _TensorOrArrayOrFloat) -> _TensorOrArrayOrFloat:
     """Convert amplitude (https://en.wikipedia.org/wiki/Amplitude) units to power units."""
-    return tensor**2
+    return tensor ** 2
 
 
 def power_to_amp(tensor: _TensorOrArrayOrFloat) -> _TensorOrArrayOrFloat:
     """Convert power units to amplitude units."""
-    return typing.cast(_TensorOrArrayOrFloat, tensor**0.5)
+    return typing.cast(_TensorOrArrayOrFloat, tensor ** 0.5)
 
 
 def db_to_power(tensor: _TensorOrArrayOrFloat) -> _TensorOrArrayOrFloat:
