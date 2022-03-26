@@ -12,9 +12,10 @@ from enum import Enum
 from functools import partial
 from pathlib import Path
 
+import config as cf
 import numpy as np
 import spacy.tokens.doc
-from hparams import HParam, configurable
+import spacy.tokens.span
 
 import lib
 import run
@@ -30,7 +31,7 @@ Slice = slice  # NOTE: `pylance` is buggy if we use `slice` directly for typing.
 
 
 def get_nlp():
-    return lib.text.load_en_core_web_md(disable=("parser", "ner", "tagger"))
+    return lib.text.load_en_core_web_md(disable=("ner", "tagger"))
 
 
 class NonalignmentSpans(typing.NamedTuple):
@@ -574,12 +575,15 @@ class Span:
         assert span is not None, "Invalid `spacy.tokens.Span` selected."
         return span
 
-    @configurable
-    def spacy_with_context(self, max_words: int = HParam()) -> spacy.tokens.span.Span:
-        """Get a `spacy.tokens.span.Span` with the required context for voicing `self`."""
+    def spacy_with_context(self, max_words: int) -> spacy.tokens.span.Span:
+        """Get a `spacy.tokens.span.Span` with the required context for voicing `self`.
+
+        NOTE: `self.spacy.sents` is buggy.
+        """
         doc = self.passage.doc
-        end = min(self.spacy.end + max_words, len(doc))
-        return doc[max(self.spacy.start - max_words, 0) : end]
+        start = max(self.spacy.start - max_words, self.spacy[:1].sent.start)
+        end = min(self.spacy.end + max_words, self.spacy[-1:].sent.end)
+        return doc[start:end]
 
     def audio(self) -> np.ndarray:
         return _loader.utils.read_audio(
@@ -693,14 +697,13 @@ def _filter_non_speech_segments(
         yield slice_
 
 
-@configurable
 def _make_speech_segments_helper(
     alignments: typing.List[FloatFloat],
     prev_alignment: FloatFloat,
     next_alignment: FloatFloat,
     max_length: float,
     nss_timeline: Timeline,
-    pad: float = HParam(),
+    pad: float,
 ) -> typing.Tuple[typing.Tuple[slice, ...], ...]:
     """Make a list of `Span`s that start and end with silence.
 
@@ -743,8 +746,25 @@ def _make_speech_segments_helper(
     return tuple(speech_segments)
 
 
+def _normalize_non_standard_characters(text: str) -> str:
+    """Google STT transcripts occasionally utilizes unexpected symbols that haven't been normalized.
+    If the transcripts are normalized during training, the alignments get out of sync due to the
+    normalization (coming from `unidecode`) using more characters than the nonstandard character.
+        Examples: ° would be normalized to deg
+                  € would be normalized to eur
+
+    TODO: Normalize Google STT transcripts before syncing and aligning.
+    TODO: Remove this function once all datasets have been preprocessed on latest code.
+    """
+    text = text.replace("¹", "'")
+    text = text.replace("°", "d")
+    text = text.replace("€", "e")
+    return text
+
+
 def _maybe_normalize_vo_script(script: str, language: Language) -> str:
     """Normalize a script if it's not normalized."""
+    script = _normalize_non_standard_characters(script)
     if not run._config.is_normalized_vo_script(script, language):
         return run._config.normalize_vo_script(script, language)
     return script
@@ -786,7 +806,8 @@ def _normalize_audio_files(
     audio_paths = list(set(p.audio_path for l in dataset for p in l))
     audio_paths = [a for a, e in zip(audio_paths, executor.map(_exists, audio_paths)) if e]
     audio_files = get_audio_metadata_(audio_paths)
-    generator = executor.map(_loader.utils.maybe_normalize_audio_and_cache, audio_files)
+    maybe_norm = cf.partial(_loader.utils.maybe_normalize_audio_and_cache)
+    generator = executor.map(maybe_norm, audio_files)
     normal_audio_paths = list(tqdm_(generator, total=len(audio_files), disable=no_tqdm))
     return {a: n for a, n in zip(audio_paths, get_audio_metadata_(normal_audio_paths))}
 
@@ -806,12 +827,13 @@ def _get_non_speech_segments(
     """
     audio_paths = list(set(p.audio_path for l in dataset for p in l))
     audio_files = [normalized_audio_files[p] for p in audio_paths if p in normalized_audio_files]
+    get_nss_and_cache = cf.partial(_loader.utils.get_non_speech_segments_and_cache)
     if max([f.length for f in audio_files]) > threshold:
         iterator = tqdm_(audio_files, disable=no_tqdm)
-        return {a: _loader.utils.get_non_speech_segments_and_cache(a) for a in iterator}
+        return {a: get_nss_and_cache(a) for a in iterator}
 
     executor = futures.ThreadPoolExecutor()
-    generator = executor.map(_loader.utils.get_non_speech_segments_and_cache, audio_files)
+    generator = executor.map(get_nss_and_cache, audio_files)
     non_speech_segments = list(tqdm_(generator, total=len(audio_files), disable=no_tqdm))
     return {a: n for a, n in zip(audio_files, non_speech_segments)}
 
@@ -868,6 +890,7 @@ def _make_speech_segments(passage: Passage) -> typing.List[Span]:
         passage._next_alignment().audio,
         passage.audio_file.length,
         passage.non_speech_segments,
+        **cf.get(),
     )
     return [passage.span(*s) for s in speech_segments]
 

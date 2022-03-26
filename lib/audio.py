@@ -11,12 +11,12 @@ from functools import lru_cache, partial
 from pathlib import Path
 
 import numpy as np
+import numpy.typing as npt
 import torch
 import torch.nn
-import torch.nn.functional
-from hparams import HParam, configurable
 from third_party import LazyLoader
 from third_party.iso226 import iso226_spl_itpl
+from torch.nn import functional
 from tqdm import tqdm
 
 import lib
@@ -122,6 +122,16 @@ class AudioMetadata(AudioFormat):
     @property
     def length(self):
         return sample_to_sec(self.num_samples, self.sample_rate)
+
+    @property
+    def format(self):
+        return AudioFormat(
+            sample_rate=self.sample_rate,
+            num_channels=self.num_channels,
+            encoding=self.encoding,
+            bit_rate=self.bit_rate,
+            precision=self.precision,
+        )
 
 
 def _parse_audio_metadata(metadata: str) -> AudioMetadata:
@@ -293,7 +303,7 @@ def read_wave_audio(
     bytes_per_sample = np.dtype(dtype).itemsize
     sec_to_sample_ = partial(sec_to_sample, sample_rate=metadata.sample_rate)
     header_size = os.path.getsize(metadata.path) - bytes_per_sample * metadata.num_samples
-    start = lib.utils.round_(sec_to_sample_(start) * bytes_per_sample, bytes_per_sample)
+    start = int(lib.utils.round_(sec_to_sample_(start) * bytes_per_sample, bytes_per_sample))
     length = sec_to_sample_(length) if length > 0 else metadata.num_samples - sec_to_sample_(start)
     if memmap:
         ndarray = np.memmap(metadata.path, dtype=dtype, shape=(length,), offset=start + header_size)
@@ -302,11 +312,10 @@ def read_wave_audio(
     return clip_waveform(ndarray)
 
 
-@configurable
 def write_audio(
     path: typing.Union[Path, typing.BinaryIO],
     audio: typing.Union[np.ndarray, torch.Tensor],
-    sample_rate: int = HParam(),
+    sample_rate: int,
     overwrite: bool = False,
 ):
     """Write a `np.float32` array in a Waveform Audio File Format (WAV) format at `path`.
@@ -394,10 +403,7 @@ def apply_audio_filters(source: AudioMetadata, destination: Path, audio_filters:
     subprocess.run([str(c) for c in command], check=True)
 
 
-@configurable
-def pad_remainder(
-    signal: np.ndarray, multiple: int = HParam(), center: bool = True, **kwargs
-) -> np.ndarray:
+def pad_remainder(signal: np.ndarray, multiple: int, center: bool = True, **kwargs) -> np.ndarray:
     """Pad signal such that `signal.shape[0] % multiple == 0`.
 
     Args:
@@ -455,7 +461,7 @@ def _mel_filters(
         n_mels=num_mel_bins,
         fmin=lower_hertz,
         fmax=upper_hertz,
-        norm=None,
+        norm=None,  # type: ignore
         htk=True,
     )
 
@@ -520,7 +526,7 @@ def _k_weighting(frequencies: np.ndarray, fs: int) -> np.ndarray:
     a1 = 2.0 * (K * K - 1.0) / a0_
     a2 = (1.0 - K / Q + K * K) / a0_
 
-    h1 = scipy_signal.freqz([b0, b1, b2], [a0, a1, a2], worN=frequencies, fs=fs)[1]
+    h1 = scipy_signal.freqz([b0, b1, b2], [a0, a1, a2], worN=frequencies, fs=fs)[1]  # type: ignore
     h1 = 20 * np.log10(np.absolute(h1))  # type: ignore
 
     # pre-filter 2
@@ -534,14 +540,16 @@ def _k_weighting(frequencies: np.ndarray, fs: int) -> np.ndarray:
     b1 = -2.0
     b2 = 1.0
 
-    h2 = scipy_signal.freqz([b0, b1, b2], [a0, a1, a2], worN=frequencies, fs=fs)[1]
+    h2 = scipy_signal.freqz([b0, b1, b2], [a0, a1, a2], worN=frequencies, fs=fs)[1]  # type: ignore
     h2 = 20 * np.log10(np.absolute(h2))  # type: ignore
 
     return h1 + h2
 
 
 def k_weighting(
-    frequencies: np.ndarray, sample_rate: int, offset: typing.Optional[float] = None
+    frequencies: np.ndarray,
+    sample_rate: int,
+    offset: typing.Optional[typing.Union[float, np.ndarray]] = None,
 ) -> np.ndarray:
     """K-Weighting as specified in EBU R-128 / ITU BS.1770-4.
 
@@ -572,9 +580,8 @@ def k_weighting(
     """
     # SOURCE (ITU-R BS.1770):
     # The constant −0.691 in equation (2) cancels out the K-weighting gain for 997 Hz.
-    offset = (
-        -_k_weighting(np.array([REFERENCE_FREQUENCY]), sample_rate) if offset is None else offset
-    )
+    if offset is None:
+        offset = -_k_weighting(np.array([REFERENCE_FREQUENCY]), sample_rate)
     return _k_weighting(frequencies, sample_rate) + offset
 
 
@@ -591,9 +598,9 @@ def a_weighting(frequencies: np.ndarray, *_) -> np.ndarray:
     Returns:
         np.ndarray [*frequencies.shape]: Weighting for each frequency.
     """
-    return librosa.core.A_weighting(frequencies, min_db=None) - librosa.core.A_weighting(
-        np.array([REFERENCE_FREQUENCY]), min_db=None
-    )
+    reference_freq = np.array([REFERENCE_FREQUENCY])
+    reference = librosa.core.A_weighting(reference_freq, min_db=None)  # type: ignore
+    return librosa.core.A_weighting(frequencies, min_db=None) - reference  # type: ignore
 
 
 def iso226_weighting(frequencies: np.ndarray, *_) -> np.ndarray:
@@ -671,7 +678,7 @@ def amp_to_power(tensor: _TensorOrArrayOrFloat) -> _TensorOrArrayOrFloat:
 
 def power_to_amp(tensor: _TensorOrArrayOrFloat) -> _TensorOrArrayOrFloat:
     """Convert power units to amplitude units."""
-    return tensor ** 0.5
+    return typing.cast(_TensorOrArrayOrFloat, tensor ** 0.5)
 
 
 def db_to_power(tensor: _TensorOrArrayOrFloat) -> _TensorOrArrayOrFloat:
@@ -702,10 +709,7 @@ def signal_to_rms(signal: np.ndarray, axis: int = 0) -> np.ndarray:
     return power_to_amp(signal_to_rms_power(signal, axis=axis))
 
 
-@configurable
-def signal_to_framed_rms(
-    signal: np.ndarray, frame_length: int = HParam(), hop_length: int = HParam()
-) -> np.ndarray:
+def signal_to_framed_rms(signal: np.ndarray, frame_length: int, hop_length: int) -> np.ndarray:
     """Compute the framed root mean square from a signal.
 
     Args:
@@ -741,10 +745,9 @@ def get_window_correction_factor(window: torch.Tensor) -> float:
     return float(window_correction_factor)
 
 
-@configurable
 def power_spectrogram_to_framed_rms(
     power_spectrogram: torch.Tensor,
-    window: torch.Tensor = HParam(),
+    window: torch.Tensor,
     window_correction_factor: typing.Optional[float] = None,
 ) -> torch.Tensor:
     """Compute the root mean square from a spectrogram.
@@ -877,16 +880,15 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
         **kwargs: Additional arguments passed to `_mel_filters`.
     """
 
-    @configurable
     def __init__(
         self,
-        fft_length: int = HParam(),
-        frame_hop: int = HParam(),
-        sample_rate: int = HParam(),
-        num_mel_bins: int = HParam(),
-        window: torch.Tensor = HParam(),
-        min_decibel: float = HParam(),
-        get_weighting: typing.Callable[[np.ndarray, int], np.ndarray] = HParam(),
+        fft_length: int,
+        frame_hop: int,
+        sample_rate: int,
+        num_mel_bins: int,
+        window: torch.Tensor,
+        min_decibel: float,
+        get_weighting: typing.Callable[[npt.NDArray[np.float_], int], npt.NDArray[np.float_]],
         eps: float = 1e-10,
         **kwargs,
     ):
@@ -970,7 +972,7 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
             # https://librosa.github.io/librosa/_modules/librosa/core/spectrum.html#stft
             padding_ = (self.fft_length - self.frame_hop) // 2
             padding = [padding_, padding_]
-            padded_signal = torch.nn.functional.pad(signal, padding, mode="constant", value=0)
+            padded_signal = functional.pad(signal, padding, mode="constant", value=0)
         else:
             padded_signal = signal
 
@@ -1019,16 +1021,7 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
             return db_mel_spectrogram
 
 
-@lru_cache(maxsize=None)
-def get_signal_to_db_mel_spectrogram(*args, **kwargs) -> SignalTodBMelSpectrogram:
-    """Get cached `SignalTodBMelSpectrogram` module."""
-    return SignalTodBMelSpectrogram(*args, **kwargs)
-
-
-@configurable
-def get_pyloudnorm_meter(
-    sample_rate: int, filter_class: str = HParam(), **kwargs
-) -> "pyloudnorm.Meter":
+def get_pyloudnorm_meter(sample_rate: int, filter_class: str, **kwargs) -> "pyloudnorm.Meter":
     return _get_pyloudnorm_meter(sample_rate=sample_rate, filter_class=filter_class, **kwargs)
 
 
@@ -1042,10 +1035,10 @@ def _get_pyloudnorm_meter(sample_rate: int, filter_class: str, **kwargs) -> "pyl
 
 
 def _db_mel_spectrogram_to_spectrogram(
-    db_mel_spectrogram: np.ndarray,
+    db_mel_spectrogram: npt.NDArray[np.float_],
     sample_rate: int,
     fft_length: int,
-    get_weighting: typing.Callable[[np.ndarray], np.ndarray],
+    get_weighting: typing.Callable[[npt.NDArray[np.float_]], npt.NDArray[np.float_]],
     **kwargs,
 ) -> np.ndarray:
     """Transform dB mel spectrogram to spectrogram (lossy).
@@ -1074,15 +1067,14 @@ def _db_mel_spectrogram_to_spectrogram(
 
 
 @lib.utils.log_runtime
-@configurable
 def griffin_lim(
     db_mel_spectrogram: np.ndarray,
-    sample_rate: int = HParam(),
-    fft_length: int = HParam(),
-    frame_hop: int = HParam(),
-    window: np.ndarray = HParam(),
-    power: float = HParam(),
-    iterations: int = HParam(),
+    sample_rate: int,
+    fft_length: int,
+    frame_hop: int,
+    window: np.ndarray,
+    power: float,
+    iterations: int,
     **kwargs,
 ) -> np.ndarray:
     """Transform dB mel spectrogram to waveform with the Griffin-Lim algorithm.
@@ -1134,7 +1126,7 @@ def griffin_lim(
             n_iter=iterations,
             hop_length=frame_hop,
             win_length=window.shape[0],
-            window=window,
+            window=window,  # type: ignore
         )
         # NOTE: Pad to ensure spectrogram and waveform align.
         waveform = np.pad(waveform, int(frame_hop // 2), mode="constant", constant_values=0)

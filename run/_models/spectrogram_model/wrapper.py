@@ -1,15 +1,16 @@
+import dataclasses
 import enum
 import math
 import typing
 
+import config as cf
 import spacy
 import spacy.tokens
 import torch
-from hparams import HParam, configurable
 
-from lib import spectrogram_model
-from lib.spectrogram_model import Generator, Mode, Preds
 from lib.utils import NumeralizePadEmbed
+from run._models.spectrogram_model.containers import Inputs, Preds
+from run._models.spectrogram_model.model import Generator, Mode, SpectrogramModel
 from run.data._loader import Session, Span, Speaker
 
 
@@ -50,36 +51,38 @@ def _make_token_embeddings(
 
 
 def _append_tokens_and_metadata(
-    inputs: spectrogram_model.Inputs,
+    inputs: Inputs,
     span: typing.Union[spacy.tokens.span.Span, spacy.tokens.doc.Doc],
     start_char: int,
     end_char: int,
 ):
     """Preprocess and append `tokens` and `token_metadata` to `inputs`."""
-    inputs.token_metadata.append([[_get_case(c)] for c in str(span)])
-    inputs.tokens.append(list(str(span).lower()))
+    text = str(span)
+    inputs.tokens.append(list(text.lower()))
     inputs.slices.append(slice(start_char, end_char))
-    for slice_, metadata in zip(inputs.slices, inputs.token_metadata):
-        [m.append(_Context.SCRIPT) for m in metadata[slice_]]
-        [m.append(_Context.CONTEXT) if len(m) == 1 else m for m in metadata]
+    inputs.token_metadata[0].append([_get_case(c) for c in text])
+    inputs.token_metadata[1].append([_Context.CONTEXT for _ in text])
+    for i in range(*inputs.slices[-1].indices(len(text))):
+        inputs.token_metadata[1][-1][i] = _Context.SCRIPT
 
 
 def preprocess_spans(
     spans: typing.List[Span], device: torch.device = torch.device("cpu")
-) -> spectrogram_model.Inputs:
+) -> Inputs:
     """Preprocess inputs to inputs by including casing, context, and embeddings."""
-    return_ = spectrogram_model.Inputs([], [], [], [], [])
+    return_ = Inputs([], [[], []], [[], []], [], [], device)
     for span in spans:
-        context = span.spacy_with_context()
+        context = span.spacy_with_context(**cf.get())
         start_char = span.spacy.start_char - context.start_char
-        return_.seq_metadata.append((span.speaker, span.session))
+        return_.seq_metadata[0].append(span.speaker)
+        return_.seq_metadata[1].append(span.session)
         _append_tokens_and_metadata(return_, context, start_char, start_char + len(str(span.spacy)))
         typing.cast(list, return_.token_embeddings).append(_make_token_embeddings(context, device))
     token_embeddings = torch.nn.utils.rnn.pad_sequence(return_.token_embeddings, batch_first=True)
-    return return_._replace(token_embeddings=token_embeddings)
+    return dataclasses.replace(return_, token_embeddings=token_embeddings)
 
 
-class Inputs(typing.NamedTuple):
+class InputsWrapper(typing.NamedTuple):
     """The model inputs."""
 
     # Batch of recording sessions per speaker
@@ -89,32 +92,30 @@ class Inputs(typing.NamedTuple):
     doc: typing.List[spacy.tokens.doc.Doc]
 
 
-def preprocess_inputs(
-    inputs: Inputs, device: torch.device = torch.device("cpu")
-) -> spectrogram_model.Inputs:
+def preprocess_inputs(inputs: InputsWrapper, device: torch.device = torch.device("cpu")) -> Inputs:
     """Preprocess inputs to inputs by including casing, context, and embeddings."""
-    return_ = spectrogram_model.Inputs([], [], [], [], [])
+    return_ = Inputs([], [[], []], [[], []], [], [], device)
     for doc, sesh in zip(inputs.doc, inputs.session):
-        return_.seq_metadata.append((sesh[0], sesh))
+        return_.seq_metadata[0].append(sesh[0])
+        return_.seq_metadata[1].append(sesh)
         _append_tokens_and_metadata(return_, doc, 0, len(str(doc)))
         typing.cast(list, return_.token_embeddings).append(_make_token_embeddings(doc, device))
     token_embeddings = torch.nn.utils.rnn.pad_sequence(return_.token_embeddings, batch_first=True)
-    return return_._replace(token_embeddings=token_embeddings)
+    return dataclasses.replace(return_, token_embeddings=token_embeddings)
 
 
-InputsTyping = typing.Union[Inputs, typing.List[Span], spectrogram_model.Inputs]
+InputsTyping = typing.Union[InputsWrapper, typing.List[Span], Inputs]
 
 
-class SpectrogramModel(spectrogram_model.SpectrogramModel):
+class SpectrogramModelWrapper(SpectrogramModel):
     """This is a wrapper over `SpectrogramModel` that normalizes the input."""
 
-    @configurable
     def __init__(
         self,
-        max_tokens: int = HParam(),
-        max_speakers: int = HParam(),
-        max_sessions: int = HParam(),
-        max_token_embed_size: int = HParam(),
+        max_tokens: int,
+        max_speakers: int,
+        max_sessions: int,
+        max_token_embed_size: int,
         *args,
         **kwargs,
     ):
@@ -142,16 +143,24 @@ class SpectrogramModel(spectrogram_model.SpectrogramModel):
         return typing.cast(NumeralizePadEmbed, self.encoder.embed_seq_metadata[1])
 
     @property
-    def token_vocab(self) -> typing.Dict[str, int]:
-        return typing.cast(typing.Dict[str, int], self.token_embed.vocab)
+    def token_vocab(self):
+        return typing.cast(
+            typing.Dict[typing.Union[str, NumeralizePadEmbed._Tokens], int], self.token_embed.vocab
+        )
 
     @property
-    def speaker_vocab(self) -> typing.Dict[Speaker, int]:
-        return typing.cast(typing.Dict[Speaker, int], self.speaker_embed.vocab)
+    def speaker_vocab(self):
+        return typing.cast(
+            typing.Dict[typing.Union[Speaker, NumeralizePadEmbed._Tokens], int],
+            self.speaker_embed.vocab,
+        )
 
     @property
-    def session_vocab(self) -> typing.Dict[Session, int]:
-        return typing.cast(typing.Dict[Session, int], self.session_embed.vocab)
+    def session_vocab(self):
+        return typing.cast(
+            typing.Dict[typing.Union[Session, NumeralizePadEmbed._Tokens], int],
+            self.session_embed.vocab,
+        )
 
     def update_token_vocab(
         self, tokens: typing.List[str], embeddings: typing.Optional[torch.Tensor] = None
@@ -201,8 +210,14 @@ class SpectrogramModel(spectrogram_model.SpectrogramModel):
     ) -> Generator:
         ...  # pragma: no cover
 
-    def __call__(self, inputs: InputsTyping, *args, mode: Mode = Mode.FORWARD, **kwargs):
-        if isinstance(inputs, Inputs):
+    def __call__(
+        self,
+        inputs: InputsTyping,
+        *args,
+        mode: typing.Literal[Mode.FORWARD] = Mode.FORWARD,
+        **kwargs,
+    ) -> typing.Union[Generator, Preds]:
+        if isinstance(inputs, InputsWrapper):
             inputs = preprocess_inputs(inputs, self.encoder.embed_token.weight.device)
         elif isinstance(inputs, list):
             inputs = preprocess_spans(inputs, self.encoder.embed_token.weight.device)

@@ -5,8 +5,8 @@ import tempfile
 import typing
 from unittest import mock
 
+import config as cf
 import torch
-from hparams import add_config
 
 import lib
 import run
@@ -178,7 +178,7 @@ def make_mock_tts_package() -> typing.Tuple[run._utils.Dataset, TTSPackage]:
     comet = train._utils.CometMLExperiment(disabled=True, project_name="project name")
     device = torch.device("cpu")
     dataset = make_small_dataset()
-    add_config(train.spectrogram_model.__main__._make_configuration(dataset, dataset, False))
-    add_config(train.signal_model.__main__._make_configuration(dataset, dataset, False))
+    cf.add(train.spectrogram_model.__main__._make_configuration(dataset, dataset, False))
+    cf.add(train.signal_model.__main__._make_configuration(dataset, dataset, False))
     spec_state, sig_state, _ = make_spec_and_sig_worker_state(comet, device)
     return dataset, package_tts(spec_state.to_checkpoint(), sig_state.to_checkpoint())

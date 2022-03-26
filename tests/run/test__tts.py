@@ -2,6 +2,8 @@ import logging
 import math
 import threading
 
+import config as cf
+import pytest
 from torchnlp.random import fork_rng
 
 import lib
@@ -9,6 +11,12 @@ from run._tts import make_tts_inputs, process_tts_inputs, text_to_speech_ffmpeg_
 from tests.run._utils import make_mock_tts_package
 
 logger = logging.getLogger(__name__)
+
+
+@pytest.fixture(autouse=True)
+def run_around_test():
+    yield
+    cf.purge()
 
 
 def _make_args():
@@ -36,7 +44,7 @@ def test_text_to_speech_ffmpeg_generator():
     """
     with fork_rng(seed=123):
         package, encoded = _make_args()
-        generator = text_to_speech_ffmpeg_generator(package, encoded)
+        generator = text_to_speech_ffmpeg_generator(package, encoded, **cf.get())
         assert len(b"".join([s for s in generator])) == 353805
 
 
@@ -45,7 +53,7 @@ def test_text_to_speech_ffmpeg_generator__thread_leak():
     with fork_rng(seed=123):
         package, encoded = _make_args()
         active_threads = threading.active_count()
-        generator = text_to_speech_ffmpeg_generator(package, encoded)
+        generator = text_to_speech_ffmpeg_generator(package, encoded, **cf.get())
         package.spectrogram_model.stop_threshold = math.inf
         next(generator)
         assert active_threads + 1 == threading.active_count()

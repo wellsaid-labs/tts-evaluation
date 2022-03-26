@@ -3,7 +3,6 @@ import typing
 
 import numpy as np
 import torch
-from hparams import HParam, configurable
 from third_party import LazyLoader
 
 if typing.TYPE_CHECKING:  # pragma: no cover
@@ -72,9 +71,8 @@ def plot_logits(logits: typing.Union[torch.Tensor, np.ndarray]) -> "matplotlib.f
     return figure
 
 
-@configurable
 def plot_waveform(
-    signal: typing.Union[torch.Tensor, np.ndarray], sample_rate: int = HParam()
+    signal: typing.Union[torch.Tensor, np.ndarray], sample_rate: int
 ) -> "matplotlib.figure.Figure":
     """Plot the amplitude envelope of a waveform.
 
@@ -92,11 +90,10 @@ def plot_waveform(
     return figure
 
 
-@configurable
 def plot_mel_spectrogram(
     spectrogram: typing.Union[torch.Tensor, np.ndarray],
-    lower_hertz: typing.Optional[int] = HParam(),
-    upper_hertz: typing.Optional[int] = HParam(),
+    lower_hertz: typing.Optional[int],
+    upper_hertz: typing.Optional[int],
     y_axis: str = "mel",
     **kwargs,
 ) -> "matplotlib.figure.Figure":
@@ -114,11 +111,10 @@ def plot_mel_spectrogram(
     )
 
 
-@configurable
 def plot_spectrogram(
     spectrogram: typing.Union[torch.Tensor, np.ndarray],
-    sample_rate: int = HParam(),
-    frame_hop: int = HParam(),
+    sample_rate: int,
+    frame_hop: int,
     cmap: str = "turbo",
     y_axis: str = "linear",
     x_axis: str = "time",

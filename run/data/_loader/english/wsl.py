@@ -40,6 +40,18 @@ SUSAN_MURPHY = make_en_speaker("susan_murphy", "Susan Murphy")
 
 ALISTAIR_DAVIS__EN_GB = make_en_speaker("alistair_davis__en_gb", "Alistair Davis (British English)")
 
+### 2021 Q1 NARRATION ###
+ALESSANDRA_RUIZ = make_en_speaker("alessandra_ruiz", "Alessandra Ruiz")
+ALEX_MARRERO = make_en_speaker("alex_marrero", "Alex Marrero")
+ALEXANDER_HILL_KNIGHT = make_en_speaker("alexander_hill_knight", "Alexander Hill Knight (en_GB)")
+DANA_HURLEY = make_en_speaker("dana_hurley", "Dana Hurley")
+DIONTAE_BLACK = make_en_speaker("diontae_black", "Diontae Black")
+MARC_WHITE = make_en_speaker("marc_white", "Marc White")
+PIOTR_KOHNKE = make_en_speaker("piotr_kohnke", "Piotr Kohnke (en_AU)")
+SETH_JONES = make_en_speaker("seth_jones", "Seth Jones")
+SOPHIE_REPPERT = make_en_speaker("sophie_reppert", "Sophie Reppert")
+STEVE_NEWMAN = make_en_speaker("steve_newman", "Steve Newman (en_GB)")
+
 ###############
 # PROMOTIONAL #
 ###############
@@ -71,6 +83,16 @@ SHARON_GAULD_ALEXANDER__PROMO = make_en_speaker(
 )
 SHAWN_WILLIAMS__PROMO = make_en_speaker("shawn_williams__promo", "Shawn Williams (Promo)")
 
+##################
+# CONVERSATIONAL #
+##################
+ADRIENNE_WALKER__CONVO = make_en_speaker("adrienne_walker__convo", "Adrienne Walker (Convo)")
+ALICIA_HARRIS__CONVO = make_en_speaker("alicia_harris__convo", "Alicia Harris (Convo)")
+JACK_RUTKOWSKI__CONVO = make_en_speaker("jack_rutkowski__convo", "Jack Rutkowski (Convo)")
+MEGAN_SINCLAIR__CONVO = make_en_speaker("megan_sinclair__convo", "Megan Sinclair (Convo)")
+SAM_SCHOLL__CONVO = make_en_speaker("sam_scholl__convo", "Sam Scholl (Convo)")
+STEVEN_WAHLBERG__CONVO = make_en_speaker("steven_wahlberg__convo", "Steven Wahlberg (Convo)")
+SUSAN_MURPHY__CONVO = make_en_speaker("susan_murphy__convo", "Susan Murphy (Convo)")
 
 #########
 # OTHER #
@@ -81,6 +103,13 @@ OTIS_JIRY__STORY = make_en_speaker("otis_jiry__promo", "Otis Jiry (Story-Telling
 #################
 # CUSTOM VOICES #
 #################
+UNEEQ__ASB_CUSTOM_VOICE = make_en_speaker(
+    "uneeq__asb_custom_voice", "UneeQ - ASB (Custom Voice V2)"
+)
+# UneeQ Custom Voice, built via combining V1 and V2 datasets, normalized to 21 LUFS
+UNEEQ__ASB_CUSTOM_VOICE_COMBINED = make_en_speaker(
+    "uneeq__asb__combined_data_21_lufs", "UneeQ - ASB (Custom Voice V3)"
+)
 ENERGY_INDUSTRY_ACADEMY__CUSTOM_VOICE = make_en_speaker(
     "energy_industry_academy__custom_voice", "Energy Industry Academy (Custom Voice)"
 )
@@ -99,6 +128,8 @@ VIACOM__CUSTOM_VOICE = make_en_speaker("viacom__custom_voice", "Viacom (Custom V
 HOUR_ONE_NBC__BB_CUSTOM_VOICE = make_en_speaker(
     "hour_one_nbc__bb_custom_voice", "HourOne X NBC (BB Custom Voice)"
 )
+STUDY_SYNC__CUSTOM_VOICE = make_en_speaker("studysync__custom_voice", "StudySync (Custom Voice)")
+FIVE_NINE__CUSTOM_VOICE = make_en_speaker("fivenine__custom_voice", "Five9 (Custom Voice)")
 
 _wsl_speakers = [s for s in locals().values() if isinstance(s, Speaker)]
 WSL_DATASETS = {s: partial(wsl_gcs_dataset_loader, speaker=s) for s in _wsl_speakers}

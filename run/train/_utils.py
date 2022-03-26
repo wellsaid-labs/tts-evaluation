@@ -12,6 +12,7 @@ import io
 import itertools
 import logging
 import math
+import numbers
 import os
 import pathlib
 import platform
@@ -23,16 +24,16 @@ import typing
 from datetime import timedelta
 from functools import partial
 
-import hparams.hparams
+import config as cf
 import numpy
 import torch
+import torch._C
 import torch.cuda
 import torch.distributed
 import torch.nn
 import torch.optim
 import torch.utils.data
 import torch.utils.data._utils.worker
-from hparams import HParam, HParams, configurable, get_config
 from third_party import LazyLoader
 from torch.utils.data.dataloader import _BaseDataLoaderIter, _MultiProcessingDataLoaderIter
 from torchnlp.encoders.text import SequenceBatch
@@ -52,6 +53,7 @@ from run._config import (
     get_timer_label,
 )
 from run._utils import Dataset
+from run.data._loader.data_structures import Language
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import comet_ml
@@ -66,37 +68,6 @@ else:
 lib.environment.enable_fault_handler()
 logger = logging.getLogger(__name__)
 pprinter = pprint.PrettyPrinter(indent=2)
-
-
-def _nested_to_flat_config_helper(
-    config: typing.Dict[str, typing.Any], delimitator: str, keys: typing.List[str]
-) -> typing.Dict[str, typing.Any]:
-    ret_ = {}
-    for key in config:
-        if isinstance(config[key], dict) and not isinstance(config, HParams):
-            ret_.update(_nested_to_flat_config_helper(config[key], delimitator, keys + [key]))
-        else:
-            ret_[delimitator.join(keys + [key])] = config[key]
-    return ret_
-
-
-def _nested_to_flat_config(
-    config: typing.Dict[str, typing.Any], delimitator: str = "."
-) -> typing.Dict[str, typing.Any]:
-    """Convert nested `hparam` configuration a flat configuration by concatenating keys with a
-    `delimitator`.
-
-    Args:
-        ...
-        delimitator: Delimitator used to join keys.
-    """
-    return _nested_to_flat_config_helper(config=config, delimitator=delimitator, keys=[])
-
-
-def get_config_parameters() -> typing.Dict[run._config.Label, typing.Any]:
-    """Get `hparams` configuration as a flat dictionary that can be logged."""
-    flat = _nested_to_flat_config(get_config())
-    return {run._config.get_config_label(k): v for k, v in flat.items()}
 
 
 class Context(enum.Enum):
@@ -196,6 +167,10 @@ class CometMLExperiment:
         return typing.cast(typing.Optional[int], self._experiment.curr_step)
 
     @property
+    def curr_epoch(self) -> typing.Optional[int]:
+        return typing.cast(typing.Optional[int], self._experiment.curr_epoch)
+
+    @property
     def context(self) -> typing.Optional[str]:
         return typing.cast(typing.Optional[str], self._experiment.context)
 
@@ -253,6 +228,10 @@ class CometMLExperiment:
             self._first_epoch_step = self.curr_step
             self._first_epoch_time = time.time()
         self._experiment.log_current_epoch(epoch)
+        self._experiment.set_epoch(epoch)
+        if not self._experiment.alive:
+            print("HERE!")
+            self._experiment.curr_epoch = typing.cast(numbers.Number, epoch)
 
     def log_epoch_end(self, epoch: int):
         assert self.curr_step is not None
@@ -295,7 +274,7 @@ class CometMLExperiment:
     ) -> typing.Optional[str]:
         """Upload the audio and return the URL."""
         file_ = io.BytesIO()
-        lib.audio.write_audio(file_, data)
+        lib.audio.write_audio(file_, data, **cf.get())
         asset = self.log_asset(file_, file_name=file_name)
         return asset["web"] if asset is not None else asset
 
@@ -374,7 +353,8 @@ class CometMLExperiment:
 
     def add_tags(self, tags: typing.List[str]):
         logger.info("Added tags to experiment: %s", tags)
-        self._experiment.add_tags(tags)
+        if len(tags) != 0:
+            self._experiment.add_tags(tags)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -404,11 +384,16 @@ def _get_dataset_stats(
 
 
 @disk_cache(run._config.DATASET_CACHE_PATH)
-def _get_dataset(debug: bool):
+def _get_dataset(debug: bool, language: typing.Optional[Language] = None):
     """Helper function for `_run_experiment` to get the train and dev datasets."""
-    _datasets = {k: v for k, v in list(run._config.DATASETS.items())[:1]}
-    dataset = run._utils.get_dataset(**({"datasets": _datasets} if debug else {}))
-    return run._utils.split_dataset(dataset)
+    kwargs = {}
+    if debug:
+        speakers = run._config.DEV_SPEAKERS
+        speaker = next((s for s in speakers if s.language is language or language is None), None)
+        assert speaker is not None
+        kwargs = {"datasets": {speaker: run._config.DATASETS[speaker]}}
+    dataset = cf.call(run._utils.get_dataset, **kwargs)
+    return cf.partial(run._utils.split_dataset)(dataset)
 
 
 def _run_experiment(
@@ -417,10 +402,9 @@ def _run_experiment(
     """Helper function for `start_experiment` and  `resume_experiment`."""
     lib.environment.check_module_versions()
     if debug:
-        _get_dataset.clear_cache()
+        train_dataset, dev_dataset = cf.partial(_get_dataset.__wrapped__)(debug)
     else:
-        sys.setprofile(None)  # TODO: After `hparams` is upgraded, remove this.
-    train_dataset, dev_dataset = _get_dataset(debug)
+        train_dataset, dev_dataset = cf.partial(_get_dataset)(debug)
     comet.log_parameters(_get_dataset_stats(train_dataset, dev_dataset))
     return train_dataset, dev_dataset
 
@@ -584,8 +568,7 @@ def set_epoch(comet: CometMLExperiment, step: int, steps_per_epoch: int):
     comet.log_epoch_end(epoch)
 
 
-@configurable
-def set_run_seed(seed: int = HParam()):
+def set_run_seed(seed: int):
     lib.environment.set_seed(seed)
 
 
@@ -615,7 +598,7 @@ def apply_to_tensors(
     if not dataclasses.is_dataclass(data) and not is_named_tuple:
         return data
 
-    dict_ = typing.cast(dict, data._asdict()) if is_named_tuple else dataclass_as_dict(data)
+    dict_: dict = data._asdict() if is_named_tuple else dataclass_as_dict(data)  # type: ignore
     apply = lambda v: call(v) if torch.is_tensor(v) else apply_to_tensors(v, call, is_return)
     if is_return:
         return data.__class__(**{k: apply(v) for k, v in dict_.items()})
@@ -666,7 +649,7 @@ def set_num_threads(num_threads: int):
 
 def _worker_init_fn(
     _,
-    config: typing.Dict,
+    configuration: cf.Config,
     worker_init_fn: typing.Optional[typing.Callable],
     rank: int,
     num_threads: int = 1,
@@ -678,8 +661,8 @@ def _worker_init_fn(
     like for a configuration, just in case the configuration is on a new process.
     NOTE: Set `num_threads` to ensure that these workers share resources with the main process.
     """
-    hparams.hparams._configuration = config
-    sys.setprofile(None)  # TODO: After `hparams` is upgraded, remove this.
+    cf.enable_fast_trace()
+    cf.add(configuration)
     info = torch.utils.data.get_worker_info()
     assert isinstance(info, torch.utils.data._utils.worker.WorkerInfo)
     lib.environment.set_basic_logging_config()
@@ -730,13 +713,13 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
         self._set_r_limit()
         self.device = device
         self.stream = torch.cuda.streams.Stream() if torch.cuda.is_available() else None
-        self.loader = torch.utils.data.dataloader.DataLoader(
+        self.loader = torch.utils.data.DataLoader(
             dataset,
             pin_memory=True,
             batch_size=typing.cast(int, None),
             worker_init_fn=functools.partial(
                 _worker_init_fn,
-                config=copy.deepcopy(get_config()),
+                configuration=copy.deepcopy(cf.export()),
                 worker_init_fn=worker_init_fn,
                 rank=lib.distributed.get_rank(),
             ),
@@ -843,7 +826,7 @@ class _RunWorker(typing.Protocol):
 def _run_workers_helper(
     device_index: int,
     comet_partial: typing.Callable[..., CometMLExperiment],
-    config: typing.Dict[str, typing.Any],
+    configuration: cf.Config,
     checkpoint: typing.Optional[pathlib.Path],
     run_worker: _RunWorker,
     *args,
@@ -851,9 +834,9 @@ def _run_workers_helper(
     lib.environment.set_basic_logging_config(device_index)
     device = _init_distributed(device_index)
     comet = comet_partial(disabled=not is_master(), auto_output_logging=False)
-    hparams.hparams._configuration = config
-    sys.setprofile(None)  # TODO: After `hparams` is upgraded, remove this.
-    set_run_seed()
+    cf.enable_fast_trace()
+    cf.add(configuration)
+    set_run_seed(**cf.get())
     checkpoint_ = None if checkpoint is None else load(checkpoint, device=device)
     return run_worker(device, comet, checkpoint_, *args)
 
@@ -870,7 +853,7 @@ def run_workers(
     https://github.com/pytorch/pytorch/issues/51849
     """
     partial_ = functools.partial(CometMLExperiment, experiment_key=comet.get_key())
-    args = (partial_, copy.deepcopy(get_config()), checkpoint, run_worker, *args)
+    args = (partial_, copy.deepcopy(cf.export()), checkpoint, run_worker, *args)
     logger.info("Spawning workers %s", lib.utils.mazel_tov())
     return lib.distributed.spawn(_run_workers_helper, args=args)  # type: ignore
 
@@ -925,7 +908,7 @@ class Metrics(lib.distributed.DictStore, typing.Generic[MetricsKeyTypeVar]):
         is_multiprocessing = isinstance(data_loader.iter, _MultiProcessingDataLoaderIter)
         if is_multiprocessing and platform.system() != "Darwin":
             iterator = typing.cast(_MultiProcessingDataLoaderIter, data_loader.iter)
-            make_key = typing.get_args(self.__class__.__orig_bases__[0])[0]
+            make_key = typing.get_args(self.__class__.__orig_bases__[0])[0]  # type: ignore
             return {make_key(self.DATA_QUEUE_SIZE): iterator._data_queue.qsize()}
         return {}
 
@@ -977,7 +960,7 @@ class Metrics(lib.distributed.DictStore, typing.Generic[MetricsKeyTypeVar]):
 class _TimerEvent(typing.NamedTuple):
     name: str
     cpu: float
-    cuda: typing.Optional[torch.cuda.streams.Event]
+    cuda: typing.Optional[torch._C._CudaEventBase]  # type: ignore
 
 
 class Timer:
@@ -1002,7 +985,7 @@ class Timer:
         event = None
         if torch.cuda.is_available():
             event = torch.cuda.streams.Event(enable_timing=True)
-            event.record()
+            event.record(torch.cuda.default_stream())
         self.events.append(_TimerEvent(name, time.perf_counter(), event))
         return self
 

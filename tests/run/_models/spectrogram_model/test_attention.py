@@ -6,9 +6,8 @@ import pytest
 import torch
 
 import lib
-import lib.spectrogram_model.attention
-from lib.spectrogram_model.attention import Attention, _window
-from lib.spectrogram_model.containers import AttentionHiddenState, Encoded
+from run._models.spectrogram_model.attention import Attention, _window
+from run._models.spectrogram_model.containers import AttentionHiddenState, Encoded
 from tests import _utils
 
 

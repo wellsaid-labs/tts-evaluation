@@ -1,3 +1,4 @@
+import atexit
 import contextlib
 import copy
 import dataclasses
@@ -6,24 +7,24 @@ import math
 import pathlib
 import random
 import typing
-import warnings
 from functools import partial
 
+import config as cf
 import torch
 import torch.nn
 import torch.optim
 import torch.utils.data
 import torch.utils.data._utils.worker
-from hparams import HParam, configurable
 from third_party import get_parameter_norm
 from torch.nn.functional import binary_cross_entropy_with_logits, l1_loss, mse_loss
 from torch.nn.parallel import DistributedDataParallel
 from torchnlp.utils import get_total_parameters
 
 import lib
-from lib.audio import SignalTodBMelSpectrogram, Spectrograms
+import run
+from lib.audio import SignalTodBMelSpectrogram, Spectrograms, griffin_lim
 from lib.distributed import get_rank, get_world_size, is_master
-from lib.visualize import plot_mel_spectrogram, plot_spectrogram
+from lib.visualize import plot_alignments, plot_logits, plot_mel_spectrogram, plot_spectrogram
 from run._config import (
     RANDOM_SEED,
     Cadence,
@@ -32,8 +33,9 @@ from run._config import (
     get_dataset_label,
     get_model_label,
 )
-from run._utils import Dataset, configurable_
-from run.train import _utils, spectrogram_model
+from run._models import spectrogram_model
+from run._models.signal_model import SignalModel, SpectrogramDiscriminator, generate_waveform
+from run.train import _utils
 from run.train._utils import (
     CometMLExperiment,
     Context,
@@ -46,10 +48,8 @@ from run.train._utils import (
 )
 from run.train.signal_model._data import Batch, DataProcessor
 from run.train.signal_model._metrics import Metrics, MetricsValues
-from run.train.signal_model._model import SignalModel, SpectrogramDiscriminator, generate_waveform
 
 logger = logging.getLogger(__name__)
-torch.optim.Adam.__init__ = configurable_(torch.optim.Adam.__init__)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -73,9 +73,9 @@ class Checkpoint(_utils.Checkpoint):
         https://github.com/pytorch/pytorch/issues/28594
         """
         assert len(self.discrims) == len(self.discrim_optimizers)
-        assert self.scheduler._step_count == self.step + 1
-        assert self.scheduler.last_epoch == self.step
-        assert self.scheduler.optimizer == self.optimizer
+        assert self.scheduler._step_count == self.step + 1  # type: ignore
+        assert self.scheduler.last_epoch == self.step  # type: ignore
+        assert self.scheduler.optimizer == self.optimizer  # type: ignore
         assert self.ema.step == self.step + 1
         ptrs = set(p.data_ptr() for p in self.model.parameters() if p.requires_grad)
         assert len(self.optimizer.param_groups) == 1
@@ -124,7 +124,7 @@ class _State:
     discrims: typing.List[DistributedDataParallel]
     discrim_optimizers: typing.List[torch.optim.Adam]
     # NOTE: An additional underscore was added because Pylance had issues with the former naming.
-    spectrogram_model_: spectrogram_model._model.SpectrogramModel
+    spectrogram_model_: spectrogram_model.SpectrogramModel
     spectrogram_model_checkpoint_path: pathlib.Path
     comet: CometMLExperiment
     device: torch.device
@@ -144,7 +144,7 @@ class _State:
 
     @staticmethod
     def _get_model(device: torch.device, comet: CometMLExperiment) -> SignalModel:
-        model = SignalModel().to(device, non_blocking=True)
+        model = SignalModel(**cf.get()).to(device, non_blocking=True)
         comet.set_model_graph(str(model))
         label = get_model_label("num_parameters", Cadence.STATIC)
         comet.log_parameter(label, get_total_parameters(model))
@@ -154,11 +154,10 @@ class _State:
         return model
 
     @staticmethod
-    @configurable
     def _get_optimizers(
         model: torch.nn.Module,
-        optimizer: typing.Callable[..., torch.optim.Adam] = HParam(),
-        lr_multiplier_schedule: typing.Callable[[int], float] = HParam(),
+        optimizer: typing.Callable[..., torch.optim.Adam],
+        lr_multiplier_schedule: typing.Callable[[int], float],
     ) -> typing.Tuple[
         torch.optim.Adam,
         lib.optimizers.AdaptiveGradientNormClipper,
@@ -168,41 +167,30 @@ class _State:
         """Initialize model optimizers."""
         params = list(filter(lambda p: p.requires_grad, model.parameters()))
         optimizer_ = optimizer(params)
-        clipper = lib.optimizers.AdaptiveGradientNormClipper(params)
+        clipper = cf.partial(lib.optimizers.AdaptiveGradientNormClipper)(params)
         scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer_, lr_multiplier_schedule)
-        ema = lib.optimizers.ExponentialMovingParameterAverage(params)
+        ema = cf.partial(lib.optimizers.ExponentialMovingParameterAverage)(params)
         return optimizer_, clipper, ema, scheduler
 
     @staticmethod
-    @configurable
     def _get_signal_to_spectrogram_modules(
         device: torch.device,
-        kwargs: typing.List[typing.Dict] = HParam(),
+        kwargs: typing.List[typing.Dict],
     ) -> typing.List[SignalTodBMelSpectrogram]:
-        """
-        TODO: How can we prevent this warning?
-        - Can we move `configurable` functions outside of `lib`?
-        - Can we make `hparams` less strict? Especially, for default values, like this one.
-        - Can we, instead of configuring `SignalTodBMelSpectrogram`, configure a different
-          function?
-        """
-        with warnings.catch_warnings():
-            message = r".*Overwriting configured argument.*"
-            warnings.filterwarnings("ignore", module=r".*hparams", message=message)
-            return [SignalTodBMelSpectrogram(**k).to(device, non_blocking=True) for k in kwargs]
+        modules = [cf.call(SignalTodBMelSpectrogram, **k, _overwrite=True) for k in kwargs]
+        return [m.to(device, non_blocking=True) for m in modules]
 
     @staticmethod
-    @configurable
     def _get_discrims(
-        device: torch.device, args: typing.List[typing.Tuple[int, int]] = HParam()
+        device: torch.device, args: typing.List[typing.Tuple[int, int]]
     ) -> typing.List[SpectrogramDiscriminator]:
-        return [SpectrogramDiscriminator(*a).to(device, non_blocking=True) for a in args]
+        discrim = cf.partial(SpectrogramDiscriminator)
+        return [discrim(*a).to(device, non_blocking=True) for a in args]
 
     @staticmethod
-    @configurable
     def _get_discrim_optimizers(
         discrims: typing.List[DistributedDataParallel],
-        optimizer: typing.Callable[..., torch.optim.Adam] = HParam(),
+        optimizer: typing.Callable[..., torch.optim.Adam],
     ):
         is_include = lambda p: p.requires_grad
         return [optimizer(filter(is_include, d.parameters())) for d in discrims]
@@ -231,7 +219,7 @@ class _State:
     @staticmethod
     def load_spectrogram_model(
         comet: CometMLExperiment, spectrogram_model_checkpoint_path: pathlib.Path
-    ) -> spectrogram_model._model.SpectrogramModel:
+    ) -> spectrogram_model.SpectrogramModel:
         checkpoint = lib.environment.load(spectrogram_model_checkpoint_path)
         label = get_config_label("spectrogram_model_experiment_key")
         comet.log_other(label, checkpoint.comet_experiment_key)
@@ -260,7 +248,7 @@ class _State:
             checkpoint.clipper,
             checkpoint.ema,
             checkpoint.scheduler,
-            cls._get_signal_to_spectrogram_modules(device),
+            cls._get_signal_to_spectrogram_modules(device, **cf.get()),
             discrims,
             checkpoint.discrim_optimizers,
             spectrogram_model,
@@ -281,13 +269,13 @@ class _State:
         distribute = partial(DistributedDataParallel, device_ids=[device], output_device=device)
         spectrogram_model = cls.load_spectrogram_model(comet, spectrogram_model_checkpoint_path)
         model = distribute(cls._get_model(device, comet))
-        discrims = [distribute(d) for d in cls._get_discrims(device)]
+        discrims = [distribute(d) for d in cls._get_discrims(device, **cf.get())]
         return cls(
             model,
-            *cls._get_optimizers(model),
-            cls._get_signal_to_spectrogram_modules(device),
+            *cls._get_optimizers(model, **cf.get()),
+            cls._get_signal_to_spectrogram_modules(device, **cf.get()),
             discrims,
-            cls._get_discrim_optimizers(discrims),
+            cls._get_discrim_optimizers(discrims, **cf.get()),
             spectrogram_model,
             spectrogram_model_checkpoint_path,
             comet,
@@ -310,21 +298,20 @@ def _worker_init_fn(
     lib.environment.set_seed(seed)
 
 
-@configurable
 def _get_data_loaders(
     state: _State,
-    train_dataset: Dataset,
-    dev_dataset: Dataset,
-    train_batch_size: int = HParam(),
-    dev_batch_size: int = HParam(),
-    train_slice_size: int = HParam(),
-    dev_slice_size: int = HParam(),
-    train_span_bucket_size: int = HParam(),
-    dev_span_bucket_size: int = HParam(),
-    train_steps_per_epoch: int = HParam(),
-    dev_steps_per_epoch: int = HParam(),
-    num_workers: int = HParam(),
-    prefetch_factor: int = HParam(),
+    train_dataset: run._utils.Dataset,
+    dev_dataset: run._utils.Dataset,
+    train_batch_size: int,
+    dev_batch_size: int,
+    train_slice_size: int,
+    dev_slice_size: int,
+    train_span_bucket_size: int,
+    dev_span_bucket_size: int,
+    train_steps_per_epoch: int,
+    dev_steps_per_epoch: int,
+    num_workers: int,
+    prefetch_factor: int,
 ) -> typing.Tuple[DataLoader[Batch], DataLoader[Batch]]:
     """Initialize training and development data loaders."""
     model = state.model.module if isinstance(state.model, DistributedDataParallel) else state.model
@@ -359,14 +346,13 @@ class _HandleBatchArgs(typing.NamedTuple):
     cadence: Cadence = Cadence.STEP
 
 
-@configurable
 def _run_discriminator(
     args: _HandleBatchArgs,
     i: int,
     fake_specs: Spectrograms,
     real_specs: Spectrograms,
-    real_label: bool = HParam(),
-    fake_label: bool = HParam(),
+    real_label: bool,
+    fake_label: bool,
 ) -> typing.Tuple[torch.Tensor, typing.Callable[..., MetricsValues]]:
     """Discriminate between fake and real spectrograms.
 
@@ -404,7 +390,7 @@ def _run_discriminator(
     predictions = typing.cast(torch.Tensor, predictions)
     discriminator_loss = binary_cross_entropy_with_logits(predictions, labels, reduction="none")
     get_discrim_values = partial(
-        args.metrics.get_discrim_values,
+        cf.partial(args.metrics.get_discrim_values),
         fft_length=typing.cast(SpectrogramDiscriminator, discriminator.module).fft_length,
         batch=args.batch,
         real_logits=predictions[:batch_size],
@@ -476,7 +462,9 @@ def _run_step(args: _HandleBatchArgs):
     for i, signal_to_spectrogram in enumerate(args.state.signal_to_spectrogram_modules):
         pred_specs = signal_to_spectrogram(signal, intermediate=True)
         gold_specs = signal_to_spectrogram(target_signal, intermediate=True)
-        generator_loss, get_discrim_values = _run_discriminator(args, i, pred_specs, gold_specs)
+        generator_loss, get_discrim_values = _run_discriminator(
+            args, i, pred_specs, gold_specs, **cf.get()
+        )
         l1 = l1_loss(pred_specs.db_mel, gold_specs.db_mel, reduction="none").mean(dim=[1, 2])
         mse = mse_loss(pred_specs.db_mel, gold_specs.db_mel, reduction="none").mean(dim=[1, 2])
         loss += l1.mean() + mse.mean() + generator_loss.mean()
@@ -537,7 +525,7 @@ def _log_specs(state: _State, gold: torch.Tensor, pred: torch.Tensor, **kwargs):
                 fft_length = signal_to_spectrogram.fft_length
                 label = get_label(f"{key}_{fft_length}_spectrogram", fft_length=fft_length)
                 plot = plot_mel_spectrogram if "_mel" in key else plot_spectrogram
-                state.comet.log_figure(label, plot(spec))
+                state.comet.log_figure(label, cf.partial(plot)(spec))
 
 
 @lib.utils.log_runtime
@@ -568,7 +556,7 @@ def _visualize_inferred(
         speaker=batch.batch.spans[item].speaker,
     )
     get_label = partial(get_dataset_label, cadence=Cadence.STEP, type_=dataset_type)
-    plot = plot_mel_spectrogram(spectrogram.squeeze(0))
+    plot = plot_mel_spectrogram(spectrogram.squeeze(0), **cf.get())
     state.comet.log_figure(get_label("input_spectrogram"), plot)
     _log_specs(state, target.to(state.device), predicted, cadence=Cadence.STEP, type_=dataset_type)
 
@@ -583,14 +571,14 @@ def _visualize_inferred_end_to_end(
 
     batch = typing.cast(Batch, next(iter(data_loader)))
     item = random.randint(0, len(batch.batch) - 1)
-    inputs = spectrogram_model._model.Inputs(
+    inputs = spectrogram_model.Inputs(
         tokens=batch.batch.inputs.tokens[item : item + 1],
         speaker=batch.batch.inputs.speaker[item : item + 1],
         session=batch.batch.inputs.session[item : item + 1],
     )
     # NOTE: The `spectrogram_model` runs on CPU to conserve GPU memory.
-    preds = state.spectrogram_model_(inputs=inputs, mode=lib.spectrogram_model.Mode.INFER)
-    preds = typing.cast(spectrogram_model._model.Preds, preds)
+    preds = state.spectrogram_model_(inputs=inputs, mode=run._models.spectrogram_model.Mode.INFER)
+    preds = typing.cast(spectrogram_model.Preds, preds)
     splits = preds.frames.transpose(0, 1).to(state.device).split(split_size)
     signal_model = typing.cast(SignalModel, state.model.module)
     predicted = list(generate_waveform(signal_model, splits, inputs.speaker, inputs.session))
@@ -601,15 +589,17 @@ def _visualize_inferred_end_to_end(
     num_frames = batch.batch.spectrogram.lengths[:, item]
     gold_spectrogram = batch.batch.spectrogram.tensor[:num_frames, item]
     figures = {
-        dataset_label_("gold_spectrogram"): plot_mel_spectrogram(gold_spectrogram),
-        model_label_("predicted_spectrogram"): plot_mel_spectrogram(preds.frames.squeeze(1)),
-        model_label_("alignment"): lib.visualize.plot_alignments(preds.alignments.squeeze(1)),
-        model_label_("stop_token"): lib.visualize.plot_logits(preds.stop_tokens.squeeze(1)),
+        dataset_label_("gold_spectrogram"): plot_mel_spectrogram(gold_spectrogram, **cf.get()),
+        model_label_("predicted_spectrogram"): plot_mel_spectrogram(
+            preds.frames.squeeze(1), **cf.get()
+        ),
+        model_label_("alignment"): plot_alignments(preds.alignments.squeeze(1)),
+        model_label_("stop_token"): plot_logits(preds.stop_tokens.squeeze(1)),
     }
     state.comet.log_figures(figures)
     audio = {
-        "predicted_griffin_lim_audio": lib.audio.griffin_lim(preds.frames.squeeze(1).numpy()),
-        "gold_griffin_lim_audio": lib.audio.griffin_lim(gold_spectrogram.numpy()),
+        "predicted_griffin_lim_audio": griffin_lim(preds.frames.squeeze(1).numpy(), **cf.get()),
+        "gold_griffin_lim_audio": griffin_lim(gold_spectrogram.numpy(), **cf.get()),
         "predicted_signal_model_audio": predicted.cpu().numpy(),
         "gold_audio": target.numpy(),
     }
@@ -660,25 +650,29 @@ def _run_steps(
 def run_worker(
     device: torch.device,
     comet: CometMLExperiment,
-    checkpoint: typing.Optional[Checkpoint],
+    checkpoint: typing.Optional[_utils.Checkpoint],
     checkpoints_directory: pathlib.Path,
     spectrogram_model_checkpoint: typing.Optional[pathlib.Path],
-    train_dataset: Dataset,
-    dev_dataset: Dataset,
+    train_dataset: run._utils.Dataset,
+    dev_dataset: run._utils.Dataset,
 ) -> typing.NoReturn:
     """Train and evaluate the signal model in a loop.
 
     TODO: Support training from ground truth spectrograms.
     """
+    if is_master():
+        atexit.register(cf.purge)
+
     conditions = [checkpoint is None, spectrogram_model_checkpoint is None]
     message = "Either signal model or spectrogram model checkpoint needs to be defined."
     assert any(conditions) and not all(conditions), message
+    assert isinstance(checkpoint, Checkpoint) or checkpoint is None
     state = (
         _State.make(typing.cast(pathlib.Path, spectrogram_model_checkpoint), comet, device)
         if checkpoint is None
         else _State.from_checkpoint(checkpoint, comet, device)
     )
-    train_loader, dev_loader = _get_data_loaders(state, train_dataset, dev_dataset)
+    train_loader, dev_loader = _get_data_loaders(state, train_dataset, dev_dataset, **cf.get())
     contexts: typing.List[typing.Tuple[Context, DatasetType, DataLoader, _HandleBatch]] = [
         (Context.TRAIN, DatasetType.TRAIN, train_loader, _run_step),
         (Context.EVALUATE, DatasetType.DEV, dev_loader, _run_step),

@@ -6,6 +6,7 @@ import sys
 import typing
 from concurrent import futures
 
+import config as cf
 import numpy
 import torch
 import torch.cuda
@@ -14,7 +15,6 @@ import torch.nn
 import torch.optim
 import torch.utils
 import torch.utils.data
-from hparams import HParam, configurable
 from third_party import LazyLoader
 from torchnlp.encoders.text import SequenceBatch, stack_and_pad_tensors
 from torchnlp.samplers import DeterministicSampler, DistributedBatchSampler
@@ -24,11 +24,11 @@ import run
 from lib.audio import sec_to_sample
 from lib.distributed import get_rank, get_world_size, is_initialized
 from lib.samplers import BucketBatchSampler
-from lib.spectrogram_model import Inputs
 from lib.utils import Tuple, flatten_2d, lengths_to_mask
+from run._models.spectrogram_model import preprocess_spans
+from run._models.spectrogram_model.model import Inputs
 from run.data._loader import Alignment, Span
 from run.train import _utils
-from run.train.spectrogram_model._model import preprocess_spans
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import librosa
@@ -84,13 +84,12 @@ def _random_nonoverlapping_alignments(
     return tuple(return_)
 
 
-@configurable
 def _get_loudness(
     audio: numpy.ndarray,
     sample_rate: int,
     alignment: Alignment,
-    block_size: float = HParam(),
-    precision: int = HParam(),
+    block_size: float,
+    precision: int,
     **kwargs,
 ) -> typing.Optional[float]:
     """Get the loudness in LUFS for an `alignment` in `audio`.
@@ -111,9 +110,8 @@ def _get_loudness(
     return None
 
 
-@configurable
 def _random_loudness_annotations(
-    span: Span, signal: numpy.ndarray, max_annotations: int = HParam()
+    span: Span, signal: numpy.ndarray, max_annotations: int
 ) -> typing.Tuple[torch.Tensor, torch.Tensor]:
     """
     Args:
@@ -124,16 +122,15 @@ def _random_loudness_annotations(
     loudness_mask = torch.zeros(len(span.script), dtype=torch.bool)
     for alignment in _random_nonoverlapping_alignments(span.alignments, max_annotations):
         slice_ = slice(alignment.script[0], alignment.script[1])
-        loudness_ = _get_loudness(signal, span.audio_file.sample_rate, alignment)
+        loudness_ = _get_loudness(signal, span.audio_file.sample_rate, alignment, **cf.get())
         if loudness_ is not None:
             loudness[slice_] = loudness_
             loudness_mask[slice_] = True
     return loudness, loudness_mask
 
 
-@configurable
 def _random_speed_annotations(
-    span: Span, max_annotations: int = HParam(), precision: int = HParam()
+    span: Span, max_annotations: int, precision: int
 ) -> typing.Tuple[torch.Tensor, torch.Tensor]:
     """
     Args:
@@ -173,9 +170,20 @@ def _pad_and_trim_signal(signal: numpy.ndarray) -> torch.Tensor:
     TODO: Instead of padding with zeros, we should consider padding with real-data.
     TODO: Add some randomness to the audio file trimming so that the stop token cannot overfit.
     """
-    signal = lib.audio.pad_remainder(signal)
-    _, trim = librosa.effects.trim(signal)
+    signal = lib.audio.pad_remainder(signal, **cf.get())
+    _, trim = librosa.effects.trim(signal, **cf.get())
     return torch.tensor(signal[trim[0] : trim[1]], requires_grad=False)
+
+
+@functools.lru_cache(maxsize=None)
+def _get_signal_to_db_mel_spectrogram_helper(**kwargs):
+    return lib.audio.SignalTodBMelSpectrogram(**kwargs)
+
+
+def _get_signal_to_db_mel_spectrogram(**kwargs):
+    """Get cached `SignalTodBMelSpectrogram` module."""
+    kwargs = {**cf.get(func=lib.audio.SignalTodBMelSpectrogram), **kwargs}
+    return _get_signal_to_db_mel_spectrogram_helper(**kwargs)
 
 
 def _signals_to_spectrograms(
@@ -189,7 +197,7 @@ def _signals_to_spectrograms(
         spectrogram_mask (SequenceBatch[torch.BoolTensor [num_frames, batch_size],
             torch.LongTensor [1, batch_size]))
     """
-    signal_to_spectrogram = lib.audio.get_signal_to_db_mel_spectrogram(**kwargs)
+    signal_to_spectrogram = _get_signal_to_db_mel_spectrogram(**kwargs)
     signals_ = stack_and_pad_tensors(signals)
     db_mel_spectrogram = signal_to_spectrogram(signals_.tensor, aligned=True)
     lengths = signals_.lengths // signal_to_spectrogram.frame_hop
@@ -221,10 +229,7 @@ def _get_normalized_half_gaussian(length: int, standard_deviation: float) -> tor
     return torch.tensor(kernel).float()
 
 
-@configurable
-def _make_stop_token(
-    spectrogram: SequenceBatch, length: int = HParam(), standard_deviation: float = HParam()
-):
+def _make_stop_token(spectrogram: SequenceBatch, length: int, standard_deviation: float):
     """Create a batch of stop tokens from a spectrogram batch.
 
     NOTE: The exact stop token distribution is uncertain because there are multiple valid
@@ -291,8 +296,10 @@ class Batch(_utils.Batch):
     def apply(self, call: typing.Callable[[torch.Tensor], torch.Tensor]) -> "Batch":
         batch: Batch = super().apply(call)
         assert isinstance(batch.inputs.token_embeddings, torch.Tensor)
-        inputs = batch.inputs._replace(token_embeddings=call(batch.inputs.token_embeddings))
-        return dataclasses.replace(batch, inputs=inputs)
+        object.__setattr__(batch.inputs, "token_embeddings", call(batch.inputs.token_embeddings))
+        object.__setattr__(batch.inputs, "num_tokens", call(batch.inputs.num_tokens))
+        object.__setattr__(batch.inputs, "tokens_mask", call(batch.inputs.tokens_mask))
+        return batch
 
     def __len__(self):
         return len(self.spans)
@@ -343,7 +350,7 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
         audio=signals,
         spectrogram=spectrogram,
         spectrogram_mask=spectrogram_mask,
-        stop_token=_make_stop_token(spectrogram),
+        stop_token=_make_stop_token(spectrogram, **cf.get()),
         inputs=preprocess_spans(spans),
     )
 
@@ -368,7 +375,7 @@ class DataProcessor(typing.Mapping[int, Batch]):
         - Checkpoint the random state of every worker, and use it to restart those workers. We'd
           likely need to setup a communication channel with workers, in order to implement this.
         """
-        iter_ = run._utils.SpanGenerator(dataset, **kwargs)
+        iter_ = cf.partial(run._utils.SpanGenerator)(dataset, **kwargs)
         iter_ = BucketBatchSampler(iter_, batch_size, False, self._data_iterator_sort_key)
         iter_ = DeterministicSampler(iter_, run._config.RANDOM_SEED + step, cuda=False)
         if is_initialized():
@@ -383,7 +390,7 @@ class DataProcessor(typing.Mapping[int, Batch]):
     def __iter__(self):
         return (self[i] for i in range(len(self)))
 
-    def __len__(_) -> int:
+    def __len__(self) -> int:
         return sys.maxsize
 
     def __getitem__(self, index) -> Batch:

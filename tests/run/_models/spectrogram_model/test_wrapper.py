@@ -1,11 +1,16 @@
-import hparams
+import config as cf
 import pytest
 import spacy.vocab
 import torch
 
 import lib
 import run
-from run.train.spectrogram_model._model import Inputs, _Casing, preprocess_inputs, preprocess_spans
+from run._models.spectrogram_model.wrapper import (
+    InputsWrapper,
+    _Casing,
+    preprocess_inputs,
+    preprocess_spans,
+)
 from tests.run._utils import make_passage
 
 
@@ -14,7 +19,7 @@ def run_around_tests():
     """Set a basic configuration."""
     run._config.configure()
     yield
-    hparams.clear_config()
+    cf.purge()
 
 
 def test_preprocess_spans():
@@ -25,7 +30,7 @@ def test_preprocess_spans():
     passage = make_passage(script=script)
     processed = preprocess_spans([passage[:-1]])
     assert processed.tokens == [list(script.lower())]
-    assert processed.seq_metadata == [(passage.speaker, passage.session)]
+    assert processed.seq_metadata == [[passage.speaker], [passage.session]]
     casing = [
         _Casing.UPPER,  # I
         _Casing.LOWER,  # n
@@ -74,10 +79,12 @@ def test_preprocess_inputs_and_spans():
     script = "In 1968 the U.S. Army"
     passage = make_passage(script=script)
     pre_span = preprocess_spans([passage[1:-1]])
-    pre_doc = preprocess_inputs(Inputs(session=[passage.session], doc=[nlp(passage[1:-1].script)]))
+    pre_doc = preprocess_inputs(
+        InputsWrapper(session=[passage.session], doc=[nlp(passage[1:-1].script)])
+    )
     assert pre_doc.seq_metadata == pre_span.seq_metadata
     assert pre_doc.tokens[0] == pre_span.tokens[0][3:-5]
-    assert pre_doc.token_metadata[0] == pre_span.token_metadata[0][3:-5]
+    assert pre_doc.token_metadata == [[s[3:-5] for s in m] for m in pre_span.token_metadata]
     assert torch.allclose(pre_doc.token_embeddings[0], pre_span.token_embeddings[0][3:-5])
     doc_slice, span_slice = pre_doc.slices[0], pre_span.slices[0]
     assert doc_slice.stop - doc_slice.start == span_slice.stop - span_slice.start

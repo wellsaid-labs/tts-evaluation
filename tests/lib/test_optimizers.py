@@ -58,11 +58,11 @@ def test_adaptive_gradient_norm_clipper__large_gradient():
     clippers = lib.optimizers.AdaptiveGradientNormClipper([parameters], 3, float("inf"))
 
     parameters.grad = torch.tensor([math.nan])
-    with pytest.raises(ValueError):
+    with pytest.raises(RuntimeError):
         clippers.clip()
 
     parameters.grad = torch.tensor([math.inf])
-    with pytest.raises(ValueError):
+    with pytest.raises(RuntimeError):
         clippers.clip()
 
 

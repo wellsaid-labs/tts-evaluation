@@ -62,7 +62,7 @@ def st_select_paths(label: str, dir: pathlib.Path, suffix: str) -> typing.List[p
         key=lambda x: natural_keys(str(x)),
         reverse=True,
     )
-    paths = st.multiselect(label, options=options, format_func=path_label)
+    paths = st.multiselect(label, options=options, format_func=path_label)  # type: ignore
     paths = cast(typing.List[pathlib.Path], paths)
     paths = [f for p in paths for f in ([p] if p.is_file() else list(p.glob(f"**/*{suffix}")))]
     if len(paths) > 0:

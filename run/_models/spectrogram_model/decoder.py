@@ -1,19 +1,19 @@
 import typing
 
+import config as cf
 import torch
 import torch.nn
-from hparams import HParam, configurable
-from torch.nn.functional import pad
+from torch.nn import functional
 
-from lib.spectrogram_model.attention import Attention
-from lib.spectrogram_model.containers import (
+from lib.utils import LSTM, LSTMCell, lengths_to_mask
+from run._models.spectrogram_model.attention import Attention
+from run._models.spectrogram_model.containers import (
     AttentionHiddenState,
     Decoded,
     DecoderHiddenState,
     Encoded,
 )
-from lib.spectrogram_model.pre_net import PreNet
-from lib.utils import LSTM, LSTMCell, lengths_to_mask
+from run._models.spectrogram_model.pre_net import PreNet
 
 
 class Decoder(torch.nn.Module):
@@ -33,15 +33,14 @@ class Decoder(torch.nn.Module):
         stop_net_dropout: The dropout probability of the stop net.
     """
 
-    @configurable
     def __init__(
         self,
         num_frame_channels: int,
         seq_meta_embed_size: int,
-        pre_net_size: int = HParam(),
-        lstm_hidden_size: int = HParam(),
-        encoder_out_size: int = HParam(),
-        stop_net_dropout: float = HParam(),
+        pre_net_size: int,
+        lstm_hidden_size: int,
+        encoder_out_size: int,
+        stop_net_dropout: float,
     ):
         super().__init__()
 
@@ -61,10 +60,10 @@ class Decoder(torch.nn.Module):
             torch.nn.ReLU(),
             torch.nn.Linear(input_size, sum(self.init_state_segments)),
         )
-        self.pre_net = PreNet(num_frame_channels, seq_meta_embed_size, pre_net_size)
+        self.pre_net = cf.partial(PreNet)(num_frame_channels, seq_meta_embed_size, pre_net_size)
         self.lstm_layer_one = LSTMCell(pre_net_size + input_size, lstm_hidden_size)
         self.lstm_layer_two = LSTM(lstm_hidden_size + input_size, lstm_hidden_size)
-        self.attention = Attention(query_hidden_size=lstm_hidden_size)
+        self.attention = cf.partial(Attention)(query_hidden_size=lstm_hidden_size)
         self.linear_out = torch.nn.Linear(lstm_hidden_size + input_size, num_frame_channels)
         self.linear_stop_token = torch.nn.Sequential(
             torch.nn.Dropout(stop_net_dropout),
@@ -129,9 +128,9 @@ class Decoder(torch.nn.Module):
         # [batch_size, num_tokens] →
         # [batch_size, num_tokens +  window_length // 2 + cum_alignment_padding]
         cum_alignment = torch.cat([init_cum_alignment, cum_alignment], -1)
-        # [batch_size, num_tokens + window_length // 2 + cum_alignment_padding] →
-        # [batch_size, num_tokens + 2 * cum_align_padding + window_length]
-        cum_alignment = pad(cum_alignment, [0, padding], mode="constant", value=0.0)
+        # [batch_size, num_tokens + cum_align_padding] →
+        # [batch_size, num_tokens + 2 * cum_align_padding]
+        cum_alignment = functional.pad(cum_alignment, [0, padding], mode="constant", value=0.0)
 
         return DecoderHiddenState(
             last_attention_context=init_attention_context,

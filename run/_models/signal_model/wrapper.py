@@ -1,18 +1,16 @@
 import typing
 
 import torch
-from hparams import HParam, configurable
 
-from lib import signal_model
 from lib.utils import NumeralizePadEmbed
+from run._models.signal_model.model import SignalModel, SpectrogramDiscriminator, generate_waveform
 from run.data._loader import Session, Speaker
 
 
-class SignalModel(signal_model.SignalModel):
+class SignalModelWrapper(SignalModel):
     """This is a wrapper over `SignalModel` that normalizes the input."""
 
-    @configurable
-    def __init__(self, max_speakers: int = HParam(), max_sessions: int = HParam(), *args, **kwargs):
+    def __init__(self, max_speakers: int, max_sessions: int, *args, **kwargs):
         super().__init__((max_speakers, max_sessions), *args, **kwargs)
 
     @property
@@ -24,12 +22,18 @@ class SignalModel(signal_model.SignalModel):
         return typing.cast(NumeralizePadEmbed, self.encoder.embed_metadata[1])
 
     @property
-    def speaker_vocab(self) -> typing.Dict[Speaker, int]:
-        return typing.cast(typing.Dict[Speaker, int], self.speaker_embed.vocab)
+    def speaker_vocab(self):
+        return typing.cast(
+            typing.Dict[typing.Union[Speaker, NumeralizePadEmbed._Tokens], int],
+            self.speaker_embed.vocab,
+        )
 
     @property
-    def session_vocab(self) -> typing.Dict[Session, int]:
-        return typing.cast(typing.Dict[Session, int], self.session_embed.vocab)
+    def session_vocab(self):
+        return typing.cast(
+            typing.Dict[typing.Union[Session, NumeralizePadEmbed._Tokens], int],
+            self.session_embed.vocab,
+        )
 
     def update_speaker_vocab(
         self, speakers: typing.List[Speaker], embeddings: typing.Optional[torch.Tensor] = None
@@ -57,11 +61,10 @@ class SignalModel(signal_model.SignalModel):
         return super().__call__(spectrogram, seq_metadata, spectrogram_mask, pad_input)
 
 
-class SpectrogramDiscriminator(signal_model.SpectrogramDiscriminator):
+class SpectrogramDiscriminatorWrapper(SpectrogramDiscriminator):
     """This is a wrapper over `SpectrogramDiscriminator` that normalizes the input."""
 
-    @configurable
-    def __init__(self, *args, max_speakers: int = HParam(), max_sessions: int = HParam(), **kwargs):
+    def __init__(self, *args, max_speakers: int, max_sessions: int, **kwargs):
         super().__init__(*args, max_seq_meta_values=(max_speakers, max_sessions), **kwargs)
 
     @property
@@ -73,12 +76,18 @@ class SpectrogramDiscriminator(signal_model.SpectrogramDiscriminator):
         return typing.cast(NumeralizePadEmbed, self.encoder.embed_metadata[1])
 
     @property
-    def speaker_vocab(self) -> typing.Dict[Speaker, int]:
-        return typing.cast(typing.Dict[Speaker, int], self.speaker_embed.vocab)
+    def speaker_vocab(self):
+        return typing.cast(
+            typing.Dict[typing.Union[Speaker, NumeralizePadEmbed._Tokens], int],
+            self.speaker_embed.vocab,
+        )
 
     @property
-    def session_vocab(self) -> typing.Dict[Session, int]:
-        return typing.cast(typing.Dict[Session, int], self.session_embed.vocab)
+    def session_vocab(self):
+        return typing.cast(
+            typing.Dict[typing.Union[Session, NumeralizePadEmbed._Tokens], int],
+            self.session_embed.vocab,
+        )
 
     def __call__(
         self,
@@ -92,12 +101,12 @@ class SpectrogramDiscriminator(signal_model.SpectrogramDiscriminator):
         return super().__call__(spectrogram, db_spectrogram, db_mel_spectrogram, seq_metadata)
 
 
-def generate_waveform(
-    model: SignalModel,
+def generate_waveform_wrapper(
+    model: SignalModelWrapper,
     spectrogram: typing.Iterable[torch.Tensor],
     speaker: typing.List[Speaker],
     session: typing.List[Session],
     spectrogram_mask: typing.Optional[typing.Iterable[torch.Tensor]] = None,
 ) -> typing.Iterator[torch.Tensor]:
     seq_metadata = list(zip(speaker, session))
-    return signal_model.generate_waveform(model, spectrogram, seq_metadata, spectrogram_mask)
+    return generate_waveform(model, spectrogram, seq_metadata, spectrogram_mask)

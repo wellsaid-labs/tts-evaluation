@@ -3,7 +3,7 @@ import logging
 import pathlib
 import typing
 
-from hparams import HParam, HParams, add_config, configurable
+import config as cf
 
 import lib
 import run
@@ -33,22 +33,27 @@ del DEV_SPEAKERS[_loader.english.JACK_RUTKOWSKI]
 del DEV_SPEAKERS[_loader.english.SAM_SCHOLL]
 # NOTE: The `BETH_CAMERON__CUSTOM` dataset isn't included in the studio.
 del DEV_SPEAKERS[_loader.english.BETH_CAMERON__CUSTOM]
+
+for dataset in [DEV_SPEAKERS, DATASETS]:
+    # NOTE: The following custom datasets are poor quality and should be excluded.
+    del dataset[_loader.english.HOUR_ONE_NBC__BB_CUSTOM_VOICE]
+    del dataset[_loader.english.VIACOM__CUSTOM_VOICE]
+    del dataset[_loader.english.UNEEQ__ASB_CUSTOM_VOICE]
+    # NOTE: The alignments don't match up with the scripts.
+    del dataset[_loader.english.UNEEQ__ASB_CUSTOM_VOICE_COMBINED]
+
 DEV_SPEAKERS = set(DEV_SPEAKERS.keys())
-# NOTE: The following custom datasets are poor quality and should be excluded.
-del DATASETS[_loader.english.HOUR_ONE_NBC__BB_CUSTOM_VOICE]
-del DATASETS[_loader.english.VIACOM__CUSTOM_VOICE]
 
 
-@configurable
 def _include_passage(
-    passage: Passage, root: pathlib.Path, language: typing.Optional[Language] = HParam()
+    passage: Passage, root: pathlib.Path, language: typing.Optional[Language] = None
 ) -> bool:
     """Return `True` iff `passage` should be included in the dataset."""
     repr_ = f"{passage.__class__.__name__}("
     repr_ += f"{passage.audio_file.path.relative_to(root)},"
     repr_ += f" {(passage.script[:50] + '...') if len(passage.script) > 50 else passage.script})"
 
-    if language is None or passage.speaker.language != language:
+    if language is not None and passage.speaker.language != language:
         return False
 
     if len(passage.alignments) == 0:
@@ -100,7 +105,7 @@ def _include_span(span: Span):
     TODO: The character "." is ambigious. It is sometimes prounced "dot" and sometimes it's silent.
     There may be some inconsistency between eSpeak and the voice over with regards to ".".
     """
-    script = str(span.spacy_with_context())
+    script = str(span.spacy_with_context(**cf.get()))
 
     if "<" in script or ">" in script:
         return False
@@ -136,15 +141,15 @@ def configure():
     # between different speakers.
     groups += [{s} for s in _loader.DATASETS.keys() if s not in _loader.WSL_DATASETS]
     config = {
-        run._utils.get_dataset: HParams(
+        run._utils.get_dataset: cf.Args(
             datasets=DATASETS,
             include_psge=_include_passage,
             handle_psge=lib.utils.identity,
         ),
-        run._utils.split_dataset: HParams(
+        run._utils.split_dataset: cf.Args(
             groups=groups, dev_speakers=DEV_SPEAKERS, approx_dev_len=30 * 60, min_sim=0.9
         ),
-        run.data._loader.data_structures.Span.spacy_with_context: HParams(max_words=10),
-        run._utils.SpanGenerator.__init__: HParams(max_seconds=15, include_span=_include_span),
+        run.data._loader.data_structures.Span.spacy_with_context: cf.Args(max_words=20),
+        run._utils.SpanGenerator: cf.Args(max_seconds=15, include_span=_include_span),
     }
-    add_config(config)
+    cf.add(config)

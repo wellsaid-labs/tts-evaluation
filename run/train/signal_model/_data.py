@@ -4,6 +4,7 @@ import random
 import typing
 from functools import partial
 
+import config as cf
 import torch
 import torch.utils.data
 from torch.nn import functional
@@ -11,10 +12,8 @@ from torchnlp.encoders.text import SequenceBatch, stack_and_pad_tensors
 
 import lib
 import run
-import run._config
-import run._utils
-import run.train
 from lib.samplers import BucketBatchSampler
+from run._models.spectrogram_model import SpectrogramModel
 from run.data._loader import Session, Speaker
 from run.train import _utils
 from run.train import spectrogram_model as spectrogram_model_module
@@ -158,7 +157,7 @@ class DataProcessor(torch.utils.data.IterableDataset):
         batch_size: int,
         span_bucket_size: int,
         slice_padding: int,
-        spectrogram_model: spectrogram_model_module._model.SpectrogramModel,
+        spectrogram_model: SpectrogramModel,
     ):
         """
         TODO: Consider unbalanced sampling from the training dataset, similar to, the spectrogram
@@ -172,7 +171,7 @@ class DataProcessor(torch.utils.data.IterableDataset):
             slice_padding: The number of frames of padding on either side of the spectrogram.
             ...
         """
-        iterator = run._utils.SpanGenerator(dataset)
+        iterator = cf.partial(run._utils.SpanGenerator)(dataset)
         iterator = BucketBatchSampler(iterator, span_bucket_size, False, self._sort_key)
         self.iterator = typing.cast(typing.Iterator[typing.List[run.data._loader.Span]], iterator)
         self.batch_size = batch_size
@@ -195,7 +194,7 @@ class DataProcessor(torch.utils.data.IterableDataset):
             inputs=batch.inputs,
             target_frames=batch.spectrogram.tensor,
             target_mask=batch.spectrogram_mask.tensor,
-            mode=lib.spectrogram_model.Mode.FORWARD,
+            mode=run._models.spectrogram_model.Mode.FORWARD,
         )
         num_frames = batch.spectrogram.lengths.sum().item()
         weights = batch.spectrogram.lengths.view(-1).float()
@@ -217,7 +216,7 @@ class DataProcessor(torch.utils.data.IterableDataset):
                 target_signal=self._stack([s.target_signal for s in slices]),
                 signal_mask=self._stack([s.signal_mask for s in slices]),
                 speaker=[m[0] for m in metadata],
-                session=metadata,
+                session=[m[1] for m in metadata],
             )
 
     def __iter__(self) -> typing.Iterator[Batch]:

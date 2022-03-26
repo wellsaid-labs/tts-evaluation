@@ -2,7 +2,7 @@ import collections
 import math
 import typing
 
-import hparams
+import config as cf
 import librosa
 import numpy as np
 import pytest
@@ -17,12 +17,12 @@ from run.train.spectrogram_model import _data
 from tests._utils import assert_almost_equal, assert_uniform_distribution
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(autouse=True, scope="module")
 def run_around_tests():
     """Set a basic configuration."""
     run._config.configure()
     yield
-    hparams.clear_config()
+    cf.purge()
 
 
 def test__random_nonoverlapping_alignments():
@@ -94,7 +94,9 @@ def test__signals_to_spectrograms():
     spectrogram, spectrogram_mask = _data._signals_to_spectrograms(
         signals, fft_length=fft_length, frame_hop=hop_length, window=window
     )
-    module = lib.audio.SignalTodBMelSpectrogram(fft_length, hop_length, window=window)
+    module = cf.partial(lib.audio.SignalTodBMelSpectrogram)(
+        fft_length=fft_length, frame_hop=hop_length, window=window
+    )
     for i in range(batch_size):
         result = module(signals[i], aligned=True)
         expected = spectrogram.tensor[:, i][: spectrogram.lengths[:, i]]

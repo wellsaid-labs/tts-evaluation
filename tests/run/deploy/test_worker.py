@@ -1,28 +1,18 @@
 import logging
 from functools import partial
 
-import hparams
+import config as cf
 import pytest
 
 import lib
 import run
-from lib.text import _line_grapheme_to_phoneme
+from lib.text import grapheme_to_phoneme
 from run.data._loader import Session
 from run.data._loader.english import JUDY_BIEBER
 from run.deploy.worker import FlaskException, validate_and_unpack
 from run.train.spectrogram_model._data import InputEncoder
 
 logger = logging.getLogger(__name__)
-
-
-@pytest.fixture(autouse=True)
-def run_around_tests():
-    config = {
-        lib.text.grapheme_to_phoneme: hparams.HParams(separator=run._config.PHONEME_SEPARATOR),
-    }
-    hparams.add_config(config)
-    yield
-    hparams.clear_config()
 
 
 def test_flask_exception():

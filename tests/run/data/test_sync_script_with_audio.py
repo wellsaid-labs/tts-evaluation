@@ -31,7 +31,7 @@ def test__get_speech_context__overlap():
     """Test `_get_speech_context` creates a speech context with limited length overlapping
     phrases."""
     context = _get_speech_context("a b c d e f g h i j", Language.ENGLISH, 5, 0.2)
-    assert set(context.phrases) == set(["a b c", "c d e", "e f g", "g h i", "i j"])
+    assert set(context.phrases) == set(["a b c", "c d e", "e f g", "g h i", "i j"])  # type: ignore
 
 
 def test__get_speech_context__continuous():
@@ -39,7 +39,7 @@ def test__get_speech_context__continuous():
     `max_phrase_length`."""
     expected = set(["g h i", "i j"])
     context = _get_speech_context("abcdef g h i j", Language.ENGLISH, 5, 0.2)
-    assert set(context.phrases) == expected
+    assert set(context.phrases) == expected  # type: ignore
 
 
 def _get_script_tokens(scripts: typing.List[str]) -> typing.List[ScriptToken]:

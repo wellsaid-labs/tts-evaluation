@@ -21,13 +21,19 @@ Setup your local development environment by following [these instructions](LOCAL
 
    ```zsh
    TRAIN_SCRIPT_PATH='path/to/train' # EXAMPLE: run/train/spectrogram_model
-   ZONE='your-vm-zone' # EXAMPLE: us-east1-c
    NAME=$USER"-your-instance-name" # EXAMPLE: michaelp-baseline
    GCP_USER='your-gcp-user-name' # Example: michaelp
+   TYPE='preemptible' # Either 'preemptible' or 'persistent'
    ```
+
+   💡 TIP: Find zones with that support T4 GPUs here:
+   https://cloud.google.com/compute/docs/gpus/gpu-regions-zones
 
    💡 TIP: Don't place all your preemptible instances in the same zone, just in case one zone
    runs out of capacity.
+
+   💡 TIP: For persistent instances, the `ZONE` parameter is optional. If it's not provided, then
+    this will try all the zones until one is found.
 
    If starting from scratch, use a standard ubuntu image:
 
@@ -46,9 +52,8 @@ Setup your local development environment by following [these instructions](LOCAL
 1. Create an instance for training...
 
    ```zsh
-   python -m run.utils.gcp make-instance \
+   python -m run.utils.gcp $TYPE make-instance \
       --name=$NAME \
-      --zone=$ZONE \
       --machine-type='n1-standard-32' \
       --gpu-type='nvidia-tesla-t4' \
       --gpu-count=4 \
@@ -59,7 +64,6 @@ Setup your local development environment by following [these instructions](LOCAL
       --metadata="startup-script-user=$GCP_USER" \
       --metadata="train-script-path=$TRAIN_SCRIPT_PATH" \
       --metadata-from-file="startup-script=run/utils/gcp/resume_training_on_start_up.sh"
-   python -m run.utils.gcp watch-instance --name=$NAME --zone=$ZONE
    ```
 
    ❓ LEARN MORE: See our machine type benchmarks [here](./TRAIN_MODEL_GCP_BENCHMARKS.md).
@@ -71,9 +75,10 @@ Setup your local development environment by following [these instructions](LOCAL
 1. SSH into the instance...
 
    ```zsh
-   VM_NAME=$(python -m run.utils.gcp most-recent --name $NAME)
+   VM_NAME=$(python -m run.utils.gcp $TYPE most-recent --name $NAME)
    echo "VM_NAME=$VM_NAME"
-   gcloud compute ssh --zone=$ZONE $VM_NAME
+   VM_ZONE=$(python -m run.utils.gcp zone --name $VM_NAME)
+   gcloud compute ssh --zone=$VM_ZONE $VM_NAME
    ```
 
    Continue to run this command until it succeeds.
@@ -92,7 +97,7 @@ Setup your local development environment by following [these instructions](LOCAL
 1. Use `run.utils.lsyncd` to live sync your repository to your VM instance...
 
    ```bash
-   VM_NAME=$(python -m run.utils.gcp most-recent --filter $USER)
+   VM_NAME=$(python -m run.utils.gcp $TYPE most-recent --name $NAME)
    echo "VM_NAME=$VM_NAME"
    ```
 
@@ -210,16 +215,15 @@ Setup your local development environment by following [these instructions](LOCAL
 1. Setup your environment variables again...
 
    ```zsh
-   ZONE='your-vm-zone' # EXAMPLE: us-central1-a
    NAME=$USER"-your-instance-name" # EXAMPLE: michaelp-baseline
+   VM_NAME=$(python -m run.utils.gcp most-recent --name $NAME)
+   echo "VM_NAME=$VM_NAME"
+   VM_ZONE=$(python -m run.utils.gcp zone --name $VM_NAME)
    ```
 
 1. (Optional) Download checkpoints to your local drive...
 
    ```bash
-   VM_NAME=$(python -m run.utils.gcp most-recent --name $NAME)
-   VM_ZONE=$(python -m run.utils.gcp zone --name $VM_NAME)
-
    DIR_NAME='' # EXAMPLE: spectrogram_model
    CHECKPOINT='' # EXAMPLE: '**/**/checkpoints/step_630927.pt'
 
@@ -233,7 +237,7 @@ Setup your local development environment by following [these instructions](LOCAL
 1. Delete your instance...
 
    ```zsh
-   python -m run.utils.gcp delete-instance --name=$NAME --zone=$ZONE
+   python -m run.utils.gcp $TYPE delete-instance --name=$VM_NAME --zone=$VM_ZONE
    ```
 
    You may need to run the above a couple of times.
@@ -243,11 +247,9 @@ Setup your local development environment by following [these instructions](LOCAL
    ```zsh
    IMAGE_FAMILY=$NAME # EXAMPLE: michaelp-baseline
    IMAGE_NAME="$IMAGE_FAMILY-v1" # EXAMPLE: michaelp-baseline-v1
-   VM_NAME=$(python -m run.utils.gcp most-recent --name $NAME)
-   VM_ZONE=$(python -m run.utils.gcp zone --name $VM_NAME)
-   gcloud compute ssh --zone=$ZONE $VM_NAME \
+   gcloud compute ssh --zone=$VM_ZONE $VM_NAME \
       --command="rm /opt/wellsaid-labs/AUTO_START_FROM_CHECKPOINT"
-   python -m run.utils.gcp image-and-delete \
+   python -m run.utils.gcp $TYPE image-and-delete \
       --image-family=$IMAGE_FAMILY \
       --image-name=$IMAGE_NAME \
       --name=$NAME \

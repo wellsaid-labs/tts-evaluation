@@ -21,7 +21,7 @@ from run.data.__main__ import (
 )
 
 
-def _rename_side_effect(path: Path, _expected=Path):
+def _rename_side_effect(path: Path, _expected: Path):
     """Side-effect for `Path.rename`."""
     assert path == _expected
 

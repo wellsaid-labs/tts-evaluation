@@ -1,3 +1,4 @@
+# type: ignore
 import math
 
 from torch.utils.data.sampler import BatchSampler, SubsetRandomSampler
