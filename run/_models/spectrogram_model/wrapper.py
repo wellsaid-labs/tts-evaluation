@@ -139,16 +139,24 @@ class SpectrogramModelWrapper(SpectrogramModel):
         return typing.cast(NumeralizePadEmbed, self.encoder.embed_seq_metadata[1])
 
     @property
-    def token_vocab(self) -> typing.Dict[str, int]:
-        return typing.cast(typing.Dict[str, int], self.token_embed.vocab)
+    def token_vocab(self):
+        return typing.cast(
+            typing.Dict[typing.Union[str, NumeralizePadEmbed._Tokens], int], self.token_embed.vocab
+        )
 
     @property
-    def speaker_vocab(self) -> typing.Dict[Speaker, int]:
-        return typing.cast(typing.Dict[Speaker, int], self.speaker_embed.vocab)
+    def speaker_vocab(self):
+        return typing.cast(
+            typing.Dict[typing.Union[Speaker, NumeralizePadEmbed._Tokens], int],
+            self.speaker_embed.vocab,
+        )
 
     @property
-    def session_vocab(self) -> typing.Dict[Session, int]:
-        return typing.cast(typing.Dict[Session, int], self.session_embed.vocab)
+    def session_vocab(self):
+        return typing.cast(
+            typing.Dict[typing.Union[Session, NumeralizePadEmbed._Tokens], int],
+            self.session_embed.vocab,
+        )
 
     def update_token_vocab(
         self, tokens: typing.List[str], embeddings: typing.Optional[torch.Tensor] = None

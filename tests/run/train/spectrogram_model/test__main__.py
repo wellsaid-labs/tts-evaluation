@@ -16,6 +16,7 @@ from run.train.spectrogram_model._worker import (
     _log_vocab,
     _run_inference,
     _run_step,
+    _visualize_select_cases,
 )
 from tests.run._utils import make_spec_worker_state, mock_distributed_data_parallel
 from tests.run.train._utils import setup_experiment
@@ -95,7 +96,7 @@ def test_integration():
         metrics.log(is_verbose=True, type_=DatasetType.TRAIN, cadence=Cadence.MULTI_STEP)
         _log_vocab(state, DatasetType.TRAIN)
 
-    # Test `_run_inference` with `Metrics` and `_State`
+    # Test `_run_inference` with `Metrics` and `_State`, along with `_visualize_select_cases`
     with set_context(Context.EVALUATE_INFERENCE, comet, state.model):
         timer = Timer()
         metrics = Metrics(comet)
@@ -109,6 +110,8 @@ def test_integration():
 
         metrics.log(lambda l: l[-1:], type_=DatasetType.TRAIN, cadence=Cadence.STEP)
         metrics.log(is_verbose=True, type_=DatasetType.TRAIN, cadence=Cadence.MULTI_STEP)
+
+        _visualize_select_cases(state, DatasetType.TEST, Cadence.MULTI_STEP, ["Hi There"])
 
     # Test loading and saving a checkpoint
     with mock.patch("torch.nn.parallel.DistributedDataParallel") as module:

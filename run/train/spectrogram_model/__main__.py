@@ -38,6 +38,22 @@ else:
         logger.info("Ignoring optional `typer` dependency.")
 
 
+TEST_CASES = [
+    "For more updates on covid 19, please contact us via the URL at the bottom of the screen, or "
+    "visit our office in Seattle at the address shown here.",
+    "I've listed INTJ on my resume because it's important for me that you understand how I "
+    "conduct myself in stressful situations.",
+    "The website is live and you can access your records via the various APIs slash URLs or use "
+    "the Studio as an alternate avenue.",
+    "The nurses will resume the triage conduct around the oropharyngeal and test for "
+    "tachydysrhythmia to ensure the patient lives another day.",
+    "Access your clusters using the Kubernetes API. You can alternate between the CLI and the "
+    "web interface.",
+    "Live from Seattle, it's AIQTV, with the governor's special address on the coronavirus. Don't "
+    "forget to record this broadcast for viewing later.",
+]
+
+
 def _make_configuration(train_dataset: Dataset, dev_dataset: Dataset, debug: bool) -> cf.Config:
     """Make additional configuration for spectrogram model training."""
     train_size = sum(sum(p.segmented_audio_length() for p in d) for d in train_dataset.values())
@@ -90,6 +106,7 @@ def _make_configuration(train_dataset: Dataset, dev_dataset: Dataset, debug: boo
             num_workers=2,
             prefetch_factor=2 if debug else 10,
         ),
+        _worker._visualize_select_cases: cf.Args(cases=TEST_CASES),
         _metrics.Metrics._get_model_metrics: cf.Args(num_frame_channels=NUM_FRAME_CHANNELS),
         # NOTE: Based on the alignment visualizations, if the maximum alignment is less than 30%
         # then a misalignment has likely occured.

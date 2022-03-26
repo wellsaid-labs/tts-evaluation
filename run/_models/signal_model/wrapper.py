@@ -22,12 +22,18 @@ class SignalModelWrapper(SignalModel):
         return typing.cast(NumeralizePadEmbed, self.encoder.embed_metadata[1])
 
     @property
-    def speaker_vocab(self) -> typing.Dict[Speaker, int]:
-        return typing.cast(typing.Dict[Speaker, int], self.speaker_embed.vocab)
+    def speaker_vocab(self):
+        return typing.cast(
+            typing.Dict[typing.Union[Speaker, NumeralizePadEmbed._Tokens], int],
+            self.speaker_embed.vocab,
+        )
 
     @property
-    def session_vocab(self) -> typing.Dict[Session, int]:
-        return typing.cast(typing.Dict[Session, int], self.session_embed.vocab)
+    def session_vocab(self):
+        return typing.cast(
+            typing.Dict[typing.Union[Session, NumeralizePadEmbed._Tokens], int],
+            self.session_embed.vocab,
+        )
 
     def update_speaker_vocab(
         self, speakers: typing.List[Speaker], embeddings: typing.Optional[torch.Tensor] = None
@@ -70,12 +76,18 @@ class SpectrogramDiscriminatorWrapper(SpectrogramDiscriminator):
         return typing.cast(NumeralizePadEmbed, self.encoder.embed_metadata[1])
 
     @property
-    def speaker_vocab(self) -> typing.Dict[Speaker, int]:
-        return typing.cast(typing.Dict[Speaker, int], self.speaker_embed.vocab)
+    def speaker_vocab(self):
+        return typing.cast(
+            typing.Dict[typing.Union[Speaker, NumeralizePadEmbed._Tokens], int],
+            self.speaker_embed.vocab,
+        )
 
     @property
-    def session_vocab(self) -> typing.Dict[Session, int]:
-        return typing.cast(typing.Dict[Session, int], self.session_embed.vocab)
+    def session_vocab(self):
+        return typing.cast(
+            typing.Dict[typing.Union[Session, NumeralizePadEmbed._Tokens], int],
+            self.session_embed.vocab,
+        )
 
     def __call__(
         self,

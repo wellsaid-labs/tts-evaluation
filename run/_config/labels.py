@@ -17,6 +17,7 @@ class Cadence(enum.Enum):
 class DatasetType(enum.Enum):
     TRAIN: typing.Final = "train"
     DEV: typing.Final = "dev"
+    TEST: typing.Final = "test"
 
 
 class Device(enum.Enum):

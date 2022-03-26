@@ -26,8 +26,9 @@ from lib.distributed import is_master
 from lib.utils import NumeralizePadEmbed, log_runtime
 from lib.visualize import plot_alignments, plot_logits, plot_mel_spectrogram
 from run._config import Cadence, DatasetType, get_dataset_label, get_model_label
-from run._models.spectrogram_model import Mode, Preds, SpectrogramModel
+from run._models.spectrogram_model import Inputs, Mode, Preds, SpectrogramModel
 from run._utils import Dataset
+from run.data._loader.data_structures import get_nlp
 from run.train import _utils
 from run.train._utils import (
     CometMLExperiment,
@@ -522,6 +523,56 @@ def _run_inference(args: _HandleBatchArgs):
     args.metrics.update(values)
 
 
+def _visualize_select_cases(
+    state: _State,
+    dataset_type: DatasetType,
+    cadence: Cadence,
+    cases: typing.List[str],
+):
+    """Run spectrogram model in inference mode and visualize a test case."""
+    if not is_master():
+        return
+
+    model = typing.cast(SpectrogramModel, state.model.module)
+    session_vocab = [s for s in model.session_vocab.keys() if isinstance(s, tuple)]
+    sessions = [random.choice(session_vocab)]
+    assert state.comet.curr_epoch is not None
+    cases = [cases[state.comet.curr_epoch % len(cases)]]
+    docs = [get_nlp()(t) for t in cases]
+    item = 0
+    preds = model(Inputs(sessions, docs), mode=Mode.INFER)
+
+    text_length = int(preds.num_tokens[item].item())
+    num_frames_predicted = int(preds.num_frames[item].item())
+    # spectrogram [num_frames, frame_channels]
+    predicted_spectrogram = preds.frames[:num_frames_predicted, item]
+    predicted_alignments = preds.alignments[:num_frames_predicted, item, :text_length]
+    predicted_stop_token = preds.stop_tokens[:num_frames_predicted, item]
+
+    model = partial(get_model_label, cadence=cadence)
+    _plot_mel_spectrogram = cf.partial(plot_mel_spectrogram)
+    figures = (
+        (model("predicted_spectrogram"), _plot_mel_spectrogram, predicted_spectrogram),
+        (model("alignment"), plot_alignments, predicted_alignments),
+        (model("stop_token"), plot_logits, predicted_stop_token),
+    )
+    assets = state.comet.log_figures({l: v(n) for l, v, n in figures})
+    audio = cf.partial(griffin_lim)(predicted_spectrogram.cpu().numpy())
+    npy_urls = {f"{l} Array": state.comet.log_npy(l, sessions[item][0], a) for l, _, a in figures}
+    link = lambda h: "Failed to upload." if h is None else f'<a href="{h}">{h}</a>'
+    state.comet.log_html_audio(
+        audio={"predicted_griffin_lim_audio": audio},
+        context=state.comet.context,
+        text=cases[item],
+        speaker=sessions[item][0],
+        session=sessions[item][1],
+        predicted_loudness=get_average_db_rms_level(predicted_spectrogram.unsqueeze(1)).item(),
+        dataset_type=dataset_type,
+        **{f"{k} Figure": link(v) for k, v in assets.items()},
+        **{k: link(v) for k, v in npy_urls.items()},
+    )
+
+
 _HandleBatch = typing.Callable[[_HandleBatchArgs], None]
 
 
@@ -637,4 +688,8 @@ def run_worker(
     while True:
         steps_per_epoch = train_loader.num_steps_per_epoch
         [_run_steps(state, *args, steps_per_epoch=steps_per_epoch) for args in contexts]
+
+        with set_context(Context.EVALUATE_INFERENCE, state.comet, state.model, ema=state.ema):
+            _visualize_select_cases(state, DatasetType.TEST, Cadence.MULTI_STEP, **cf.get())
+
         save_checkpoint(state.to_checkpoint(), checkpoints_directory, f"step_{state.step.item()}")
