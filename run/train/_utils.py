@@ -705,7 +705,7 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
         self._set_r_limit()
         self.device = device
         self.stream = torch.cuda.streams.Stream() if torch.cuda.is_available() else None
-        self.loader = torch.utils.data.dataloader.DataLoader(
+        self.loader = torch.utils.data.DataLoader(
             dataset,
             pin_memory=True,
             batch_size=typing.cast(int, None),

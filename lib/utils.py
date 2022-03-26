@@ -943,7 +943,7 @@ def lengths_to_mask(
         lengths = lengths.squeeze()
         assert len(lengths.shape) < 2, "Lengths must be one or zero dimensional"
         lengths = lengths.view(-1)
-    max_len = 0 if len(lengths) == 0 else int(max(lengths))
+    max_len = 0 if len(lengths) == 0 else int(max(lengths))  # type: ignore
     tokens_mask = torch.zeros(len(lengths), max_len, device=device, dtype=torch.bool)
     for i, length in enumerate(lengths):
         tokens_mask[i, :length] = True
