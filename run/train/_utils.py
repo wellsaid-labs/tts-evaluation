@@ -12,6 +12,7 @@ import io
 import itertools
 import logging
 import math
+import numbers
 import os
 import pathlib
 import platform
@@ -165,6 +166,10 @@ class CometMLExperiment:
         return typing.cast(typing.Optional[int], self._experiment.curr_step)
 
     @property
+    def curr_epoch(self) -> typing.Optional[int]:
+        return typing.cast(typing.Optional[int], self._experiment.curr_epoch)
+
+    @property
     def context(self) -> typing.Optional[str]:
         return typing.cast(typing.Optional[str], self._experiment.context)
 
@@ -222,6 +227,10 @@ class CometMLExperiment:
             self._first_epoch_step = self.curr_step
             self._first_epoch_time = time.time()
         self._experiment.log_current_epoch(epoch)
+        self._experiment.set_epoch(epoch)
+        if not self._experiment.alive:
+            print("HERE!")
+            self._experiment.curr_epoch = typing.cast(numbers.Number, epoch)
 
     def log_epoch_end(self, epoch: int):
         assert self.curr_step is not None

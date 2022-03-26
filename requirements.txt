@@ -24,7 +24,7 @@ pyloudnorm
 
 # Visualization Library
 matplotlib
-comet-ml[cpu_logging]==3.8.0
+comet-ml[cpu_logging]==3.28.2
 tabulate
 streamlit==0.89.0
 altair
