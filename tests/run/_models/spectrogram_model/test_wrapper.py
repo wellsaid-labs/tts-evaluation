@@ -30,7 +30,7 @@ def test_preprocess_spans():
     passage = make_passage(script=script)
     processed = preprocess_spans([passage[:-1]])
     assert processed.tokens == [list(script.lower())]
-    assert processed.seq_metadata == [(passage.speaker, passage.session)]
+    assert processed.seq_metadata == [[passage.speaker], [passage.session]]
     casing = [
         _Casing.UPPER,  # I
         _Casing.LOWER,  # n
@@ -84,7 +84,7 @@ def test_preprocess_inputs_and_spans():
     )
     assert pre_doc.seq_metadata == pre_span.seq_metadata
     assert pre_doc.tokens[0] == pre_span.tokens[0][3:-5]
-    assert pre_doc.token_metadata[0] == pre_span.token_metadata[0][3:-5]
+    assert pre_doc.token_metadata == [[s[3:-5] for s in m] for m in pre_span.token_metadata]
     assert torch.allclose(pre_doc.token_embeddings[0], pre_span.token_embeddings[0][3:-5])
     doc_slice, span_slice = pre_doc.slices[0], pre_span.slices[0]
     assert doc_slice.stop - doc_slice.start == span_slice.stop - span_slice.start

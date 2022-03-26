@@ -1,3 +1,4 @@
+import dataclasses
 import enum
 import math
 import typing
@@ -56,27 +57,29 @@ def _append_tokens_and_metadata(
     end_char: int,
 ):
     """Preprocess and append `tokens` and `token_metadata` to `inputs`."""
-    inputs.token_metadata.append([[_get_case(c)] for c in str(span)])
-    inputs.tokens.append(list(str(span).lower()))
+    text = str(span)
+    inputs.tokens.append(list(text.lower()))
     inputs.slices.append(slice(start_char, end_char))
-    for slice_, metadata in zip(inputs.slices, inputs.token_metadata):
-        [m.append(_Context.SCRIPT) for m in metadata[slice_]]
-        [m.append(_Context.CONTEXT) if len(m) == 1 else m for m in metadata]
+    inputs.token_metadata[0].append([_get_case(c) for c in text])
+    inputs.token_metadata[1].append([_Context.CONTEXT for _ in text])
+    for i in range(*inputs.slices[-1].indices(len(text))):
+        inputs.token_metadata[1][-1][i] = _Context.SCRIPT
 
 
 def preprocess_spans(
     spans: typing.List[Span], device: torch.device = torch.device("cpu")
 ) -> Inputs:
     """Preprocess inputs to inputs by including casing, context, and embeddings."""
-    return_ = Inputs([], [], [], [], [])
+    return_ = Inputs([], [[], []], [[], []], [], [])
     for span in spans:
         context = span.spacy_with_context(**cf.get())
         start_char = span.spacy.start_char - context.start_char
-        return_.seq_metadata.append((span.speaker, span.session))
+        return_.seq_metadata[0].append(span.speaker)
+        return_.seq_metadata[1].append(span.session)
         _append_tokens_and_metadata(return_, context, start_char, start_char + len(str(span.spacy)))
         typing.cast(list, return_.token_embeddings).append(_make_token_embeddings(context, device))
     token_embeddings = torch.nn.utils.rnn.pad_sequence(return_.token_embeddings, batch_first=True)
-    return return_._replace(token_embeddings=token_embeddings)
+    return dataclasses.replace(return_, token_embeddings=token_embeddings)
 
 
 class InputsWrapper(typing.NamedTuple):
@@ -91,13 +94,14 @@ class InputsWrapper(typing.NamedTuple):
 
 def preprocess_inputs(inputs: InputsWrapper, device: torch.device = torch.device("cpu")) -> Inputs:
     """Preprocess inputs to inputs by including casing, context, and embeddings."""
-    return_ = Inputs([], [], [], [], [])
+    return_ = Inputs([], [[], []], [[], []], [], [])
     for doc, sesh in zip(inputs.doc, inputs.session):
-        return_.seq_metadata.append((sesh[0], sesh))
+        return_.seq_metadata[0].append(sesh[0])
+        return_.seq_metadata[1].append(sesh)
         _append_tokens_and_metadata(return_, doc, 0, len(str(doc)))
         typing.cast(list, return_.token_embeddings).append(_make_token_embeddings(doc, device))
     token_embeddings = torch.nn.utils.rnn.pad_sequence(return_.token_embeddings, batch_first=True)
-    return return_._replace(token_embeddings=token_embeddings)
+    return dataclasses.replace(return_, token_embeddings=token_embeddings)
 
 
 InputsTyping = typing.Union[InputsWrapper, typing.List[Span], Inputs]

@@ -1,3 +1,4 @@
+import dataclasses
 import typing
 from functools import partial
 
@@ -188,6 +189,7 @@ def _make_encoder(
     batch_size=4,
     num_tokens=5,
     context=3,
+    num_token_metadata=1,
 ):
     """Make `encoder.Encoder` and it's inputs for testing."""
     encoder = cf.partial(spectrogram_model.encoder.Encoder)(
@@ -210,16 +212,15 @@ def _make_encoder(
     [torch.nn.init.normal_(p) for p in encoder.parameters() if p.std() == 0]
 
     num_tokens_pad = num_tokens + context * 2
-    speakers = torch.randint(1, max_seq_meta_values[0], (batch_size,)).tolist()
-    sessions = torch.randint(1, max_seq_meta_values[1], (batch_size,)).tolist()
-    tokens = torch.randint(1, max_tokens, (batch_size, num_tokens_pad)).tolist()
-    token_meta = torch.randint(1, max_tokens, (batch_size, num_tokens_pad)).tolist()
-    token_meta = [[[t] for t in s] for s in token_meta]
+    speakers = torch.randint(1, max_seq_meta_values[0], (batch_size,))
+    sessions = torch.randint(1, max_seq_meta_values[1], (batch_size,))
+    tokens = torch.randint(1, max_tokens, (batch_size, num_tokens_pad))
+    token_meta = torch.randint(1, max_tokens, (num_token_metadata, batch_size, num_tokens_pad))
     token_embeddings = list(torch.randn(batch_size, num_tokens_pad, max_token_embed_size).unbind())
     inputs = Inputs(
-        tokens=tokens,
-        seq_metadata=list(zip(speakers, sessions)),
-        token_metadata=token_meta,
+        tokens=tokens.tolist(),
+        seq_metadata=[speakers.tolist(), sessions.tolist()],
+        token_metadata=token_meta.tolist(),
         token_embeddings=token_embeddings,
         slices=[slice(context, -context) for _ in range(batch_size)],
     )
@@ -270,10 +271,11 @@ def test_encoder__padding_invariance():
     module.zero_grad()
     for padding_len in range(1, 10):
         pad_token = [module.embed_token.pad_token] * padding_len
-        pad_meta = [[module.embed_token_metadata[0].pad_token]] * padding_len
-        inputs = arg._replace(
+        pad_meta = [module.embed_token_metadata[0].pad_token] * padding_len
+        inputs = dataclasses.replace(
+            arg,
             tokens=[t + pad_token for t in arg.tokens],
-            token_metadata=[t + pad_meta for t in arg.token_metadata],
+            token_metadata=[[s + pad_meta for s in m] for m in arg.token_metadata],
             token_embeddings=[
                 torch.cat([t, torch.zeros(padding_len, t.shape[1])]) for t in arg.token_embeddings
             ],

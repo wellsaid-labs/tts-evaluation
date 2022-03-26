@@ -8,7 +8,7 @@ from torch.nn import ModuleList
 from torch.nn.utils.rnn import pad_sequence
 from torchnlp.nn import LockedDropout
 
-from lib.utils import LSTM, NumeralizePadEmbed, lengths_to_mask
+from lib.utils import LSTM, NumeralizePadEmbed
 from run._models.spectrogram_model.containers import Encoded, Inputs
 
 
@@ -277,20 +277,15 @@ class Encoder(torch.nn.Module):
         device = tokens.device
 
         # [batch_size] → [batch_size, seq_meta_embed_size]
-        seq_metadata = [
-            embed([metadata[i] for metadata in inputs.seq_metadata], batch_first=True)[0]
-            for i, embed in enumerate(self.embed_seq_metadata)
-        ]
+        iter_ = zip(self.embed_seq_metadata, inputs.seq_metadata)
+        seq_metadata = [embed(meta, batch_first=True)[0] for embed, meta in iter_]
         seq_metadata = self.seq_meta_embed_dropout(torch.cat(seq_metadata, dim=1))
         # [batch_size, seq_meta_embed_size] → [batch_size, num_tokens, seq_meta_embed_size]
         seq_metadata_expanded = seq_metadata.unsqueeze(1).expand(-1, tokens.shape[1], -1)
 
         # [batch_size, num_tokens] → [batch_size, num_tokens, token_meta_embed_size]
-        token_metadata = [
-            embed([[m[i] for m in seq] for seq in inputs.token_metadata], batch_first=True)[0]
-            for i, embed in enumerate(self.embed_token_metadata)
-        ]
-        token_metadata = tuple(token_metadata)
+        iter_ = zip(self.embed_token_metadata, inputs.token_metadata)
+        token_metadata = tuple([embed(meta, batch_first=True)[0] for embed, meta in iter_])
 
         if isinstance(inputs.token_embeddings, list):
             token_embed: torch.Tensor = pad_sequence(inputs.token_embeddings, batch_first=True)
@@ -349,9 +344,5 @@ class Encoder(torch.nn.Module):
 
         tokens = [tokens[i][s] for i, s in enumerate(inputs.slices)]
         tokens = torch.nn.utils.rnn.pad_sequence(tokens)
-        indices = [s.indices(len(t)) for s, t in zip(inputs.slices, inputs.tokens)]
-        num_tokens = [b - a for a, b, _ in indices]
-        num_tokens = torch.tensor(num_tokens, dtype=torch.long, device=tokens.device)
-        tokens_mask = lengths_to_mask(num_tokens)
 
-        return Encoded(tokens, tokens_mask, num_tokens, seq_metadata)
+        return Encoded(tokens, inputs.tokens_mask, inputs.num_tokens, seq_metadata)

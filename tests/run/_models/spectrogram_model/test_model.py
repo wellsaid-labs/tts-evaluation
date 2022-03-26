@@ -1,3 +1,4 @@
+import dataclasses
 import itertools
 import math
 import random
@@ -122,8 +123,8 @@ def _make_inputs(
 
     inputs = Inputs(
         tokens=tokens,
-        seq_metadata=list(zip(speakers, sessions)),
-        token_metadata=[[[] for _ in s] for s in tokens],
+        seq_metadata=[speakers, sessions],
+        token_metadata=[[[] for _ in tokens]],
         token_embeddings=[torch.empty(int(n), 0) for n in num_tokens],
         slices=[slice(0, int(n)) for n in num_tokens],
     )
@@ -430,10 +431,11 @@ def test_spectrogram_model__infer_batch_padding_invariance():
         set_stop_token_rand_offset(i)
         num_tokens_ = typing.cast(int, num_tokens[i].item())
         with fork_rng(seed=123):
-            inputs_ = inputs._replace(
+            inputs_ = dataclasses.replace(
+                inputs,
                 tokens=[t[:num_tokens_] for t in inputs.tokens][i : i + 1],
-                seq_metadata=inputs.seq_metadata[i : i + 1],
-                token_metadata=inputs.token_metadata[i : i + 1],
+                seq_metadata=[m[i : i + 1] for m in inputs.seq_metadata],
+                token_metadata=[m[i : i + 1] for m in inputs.seq_metadata],
                 token_embeddings=inputs.token_embeddings[i : i + 1],
                 slices=inputs.slices[i : i + 1],
             )
@@ -463,6 +465,7 @@ def test_spectrogram_model__train_batch_padding_invariance():
     batch_inputs.token_embeddings[i] = batch_inputs.token_embeddings[i][:num_tokens]
     slice_ = batch_inputs.slices[i]
     batch_inputs.slices[i] = slice(slice_.start, min(num_tokens, slice_.stop))
+    batch_inputs = dataclasses.replace(batch_inputs)
     target_lengths[i] = params.max_frames - padding
 
     with fork_rng(seed=123):
@@ -473,10 +476,13 @@ def test_spectrogram_model__train_batch_padding_invariance():
         model.zero_grad()
 
     length = typing.cast(int, target_lengths[i].item())
-    inputs = batch_inputs._replace(
+    inputs = dataclasses.replace(
+        batch_inputs,
         tokens=[t[:num_tokens] for t in batch_inputs.tokens][i : i + 1],
-        seq_metadata=batch_inputs.seq_metadata[i : i + 1],
-        token_metadata=[t[:num_tokens] for t in batch_inputs.token_metadata[i : i + 1]],
+        seq_metadata=[m[i : i + 1] for m in batch_inputs.seq_metadata],
+        token_metadata=[
+            [s[:num_tokens] for s in m[i : i + 1]] for m in batch_inputs.token_metadata
+        ],
         token_embeddings=[t[:num_tokens] for t in batch_inputs.token_embeddings[i : i + 1]],
         slices=[slice(s.start, min(s.stop, num_tokens)) for s in batch_inputs.slices[i : i + 1]],
     )
