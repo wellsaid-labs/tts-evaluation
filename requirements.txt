@@ -57,5 +57,6 @@ gunicorn
 
 # Cloud
 google-cloud-speech
+google-cloud-texttospeech
 google-cloud-storage
 google-api-python-client

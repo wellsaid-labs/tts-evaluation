@@ -13,6 +13,10 @@ from run.data._loader.english.m_ailabs import (
     m_ailabs_en_us_judy_bieber_speech_dataset,
     m_ailabs_en_us_mary_ann_speech_dataset,
 )
+from run.data._loader.english.pronunciation_dictionary import (
+    GCP_SPEAKER,
+    pronunciation_dictionary_dataset,
+)
 from run.data._loader.english.wsl import (
     ADRIENNE_WALKER__CONVO,
     ADRIENNE_WALKER_HELLER,
@@ -96,6 +100,7 @@ from run.data._loader.utils import DataLoader
 
 DATASETS = typing.cast(typing.Dict[Speaker, DataLoader], WSL_DATASETS.copy())
 DATASETS[LINDA_JOHNSON] = lj_speech_dataset
+DATASETS[GCP_SPEAKER] = pronunciation_dictionary_dataset
 DATASETS[JUDY_BIEBER] = m_ailabs_en_us_judy_bieber_speech_dataset
 DATASETS[MARY_ANN] = m_ailabs_en_us_mary_ann_speech_dataset
 DATASETS[ELLIOT_MILLER] = m_ailabs_en_us_elliot_miller_speech_dataset
@@ -115,6 +120,8 @@ __all__ = [
     "m_ailabs_en_us_elliot_miller_speech_dataset",
     "m_ailabs_en_us_judy_bieber_speech_dataset",
     "m_ailabs_en_us_mary_ann_speech_dataset",
+    "GCP_SPEAKER",
+    "pronunciation_dictionary_dataset",
     "JOSIE__CUSTOM",
     "JOSIE__CUSTOM__MANUAL_POST",
     "LINCOLN__CUSTOM",
