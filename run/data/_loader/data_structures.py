@@ -31,7 +31,7 @@ Slice = slice  # NOTE: `pylance` is buggy if we use `slice` directly for typing.
 
 
 def get_nlp():
-    return lib.text.load_en_core_web_md(disable=("ner", "tagger"))
+    return lib.text.load_en_core_web_md(disable=("ner", "tagger", "lemmatizer"))
 
 
 class NonalignmentSpans(typing.NamedTuple):

@@ -392,7 +392,7 @@ def _get_dataset(debug: bool, language: typing.Optional[Language] = None):
         speaker = next((s for s in speakers if s.language is language or language is None), None)
         assert speaker is not None
         kwargs = {"datasets": {speaker: run._config.DATASETS[speaker]}}
-    dataset = cf.call(run._utils.get_dataset, **kwargs)
+    dataset = cf.call(run._utils.get_dataset, **kwargs, _overwrite=True)
     return cf.partial(run._utils.split_dataset)(dataset)
 
 
