@@ -25,13 +25,14 @@ from run.data._loader.data_structures import (
     _filter_non_speech_segments,
     _make_speech_segments_helper,
     _maybe_normalize_vo_script,
+    _normalize_upper_casing,
     has_a_mistranscription,
     make_passages,
 )
 from run.data._loader.english import LINDA_JOHNSON
 from run.data._loader.utils import get_non_speech_segments_and_cache
 from tests._utils import TEST_DATA_PATH
-from tests.run._utils import make_passage
+from tests.run._utils import make_passage, script_to_alignments
 
 TEST_DATA_LJ = TEST_DATA_PATH / "audio" / "bit(rate(lj_speech,24000),32).wav"
 
@@ -554,3 +555,14 @@ def test_spacy_with_context():
     assert str(passage[2:4].spacy_with_context(10)) == "Give it back! He pleaded."
     assert str(passage[2:4].spacy_with_context(0)) == "back! He"
     assert str(passage[2:4].spacy) == "back! He"
+
+
+def test__normalize_upper_casing():
+    """Test that `_normalize_upper_casing` ensures upper case consistency between script and
+    transcript."""
+    script, transcript = "THIS is A test. This. TEST.", "This is a TEST. This. TEST."
+    alignments = [Alignment(a, a, a) for a in script_to_alignments(script)]
+    passage = make_unprocessed_passage(script=script, transcript=transcript, alignments=alignments)
+    passage = _normalize_upper_casing("", passage)
+    assert passage.script == "This is a TEST. This. TEST."
+    assert passage.transcript == "This is a TEST. This. TEST."

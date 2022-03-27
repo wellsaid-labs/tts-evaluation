@@ -785,6 +785,36 @@ def _check_updated_script(
             lib.utils.call_once(_check_updated_script_helper, label, attr, original, updated)
 
 
+def _normalize_token_casing(token: str, other_token: str) -> str:
+    """Normalize casing so that `other_token` matches the casing of `token` in standard cases."""
+    if token.islower():
+        return other_token.lower()
+    if token.istitle():
+        return other_token.title()
+    if token.isupper():
+        return other_token.upper()
+    return other_token
+
+
+def _normalize_upper_casing(label: str, passage: UnprocessedPassage):
+    """Normalize upper casing so that `script` and `transcript` are upper case at the same time."""
+    if passage.alignments is None:
+        return passage
+
+    script = passage.script
+    for alignment in passage.alignments:
+        slice_ = slice(*alignment.script)
+        script_token = passage.script[slice_]
+        transcript_token = passage.transcript[slice(*alignment.transcript)]
+        if script_token.isupper() != transcript_token.isupper():
+            script_token = _normalize_token_casing(transcript_token, script_token)
+            script = script[: slice_.start] + script_token + script[slice_.stop :]
+    if script != passage.script:
+        logger.info(f"[{label}] Normalized script from\n'{passage.script}'\nto\n'{script}'")
+        return dataclasses.replace(passage, script=script)
+    return passage
+
+
 UnprocessedDataset = typing.List[typing.List[UnprocessedPassage]]
 
 
@@ -868,7 +898,9 @@ def _normalize_scripts(
         script = new_scripts[(passage.script, passage.speaker.language)]
         transcript = new_scripts[(passage.transcript, passage.speaker.language)]
         _check_updated_script(label, passage, script, transcript)
-        new_document.append(dataclasses.replace(passage, script=script, transcript=transcript))
+        new_passage = dataclasses.replace(passage, script=script, transcript=transcript)
+        new_passage = _normalize_upper_casing(label, new_passage)
+        new_document.append(new_passage)
     return new_dataset
 
 
