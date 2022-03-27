@@ -6,10 +6,10 @@ import dataclasses
 import itertools
 import logging
 import typing
-from concurrent import futures
 from dataclasses import field
 from enum import Enum
 from functools import partial
+from multiprocessing.pool import ThreadPool
 from pathlib import Path
 
 import config as cf
@@ -803,15 +803,15 @@ def _normalize_audio_files(
     TODO: In order to encourage parallelism, the longest files should be run through
     `maybe_normalize_audio_and_cache` first.
     """
-    executor = futures.ThreadPoolExecutor()
     get_audio_metadata_ = partial(get_audio_metadata, add_tqdm=not no_tqdm)
     audio_paths = set(p.audio_path for l in dataset for p in l)
     audio_paths = list(_filter_existing_paths(audio_paths))
     audio_files = get_audio_metadata_(audio_paths)
-    maybe_norm = cf.partial(_loader.utils.maybe_normalize_audio_and_cache)
-    generator = executor.map(maybe_norm, audio_files)
-    logger.info(f"Normalizing and caching {len(audio_files)} audio files...")
-    normal_audio_paths = list(tqdm_(generator, total=len(audio_files), disable=no_tqdm))
+    with ThreadPool() as pool:
+        logger.info(f"Normalizing and caching {len(audio_files)} audio files...")
+        maybe_norm = cf.partial(_loader.utils.maybe_normalize_audio_and_cache)
+        iter_ = pool.imap(maybe_norm, audio_files)
+        normal_audio_paths = list(tqdm_(iter_, total=len(audio_files), disable=no_tqdm))
     return {a: n for a, n in zip(audio_paths, get_audio_metadata_(normal_audio_paths))}
 
 
@@ -835,9 +835,9 @@ def _get_non_speech_segments(
         iterator = tqdm_(audio_files, disable=no_tqdm)
         return {a: get_nss_and_cache(a) for a in iterator}
 
-    executor = futures.ThreadPoolExecutor()
-    generator = executor.map(get_nss_and_cache, audio_files)
-    non_speech_segments = list(tqdm_(generator, total=len(audio_files), disable=no_tqdm))
+    with ThreadPool() as pool:
+        generator = pool.imap(get_nss_and_cache, audio_files)
+        non_speech_segments = list(tqdm_(generator, total=len(audio_files), disable=no_tqdm))
     return {a: n for a, n in zip(audio_files, non_speech_segments)}
 
 
