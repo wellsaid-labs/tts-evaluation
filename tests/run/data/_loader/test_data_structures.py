@@ -25,7 +25,7 @@ from run.data._loader.data_structures import (
     _filter_non_speech_segments,
     _make_speech_segments_helper,
     _maybe_normalize_vo_script,
-    _normalize_upper_casing,
+    _remove_ambiguous_casing,
     has_a_mistranscription,
     make_passages,
 )
@@ -557,12 +557,13 @@ def test_spacy_with_context():
     assert str(passage[2:4].spacy) == "back! He"
 
 
-def test__normalize_upper_casing():
-    """Test that `_normalize_upper_casing` ensures upper case consistency between script and
-    transcript."""
+def test__remove_ambiguous_casing():
+    """Test that `_remove_ambiguous_casing` removes any ambiguously cased tokens."""
     script, transcript = "THIS is A test. This. TEST.", "This is a TEST. This. TEST."
     alignments = [Alignment(a, a, a) for a in script_to_alignments(script)]
     passage = make_unprocessed_passage(script=script, transcript=transcript, alignments=alignments)
-    passage = _normalize_upper_casing("", passage)
-    assert passage.script == "This is a TEST. This. TEST."
-    assert passage.transcript == "This is a TEST. This. TEST."
+    passage = _remove_ambiguous_casing("", passage)
+    normalized = "     is   test. This. TEST."
+    assert passage.alignments == tuple(
+        [Alignment(a, a, a) for a in script_to_alignments(normalized)]
+    )
