@@ -40,9 +40,9 @@ TEST_DATA_LJ = TEST_DATA_PATH / "audio" / "bit(rate(lj_speech,24000),32).wav"
 def make_unprocessed_passage(
     audio_path=pathlib.Path("."),
     speaker=make_en_speaker(""),
-    script="",
-    transcript="",
-    alignments=None,
+    script: str = "",
+    transcript: str = "",
+    alignments: typing.Optional[typing.Tuple[Alignment, ...]] = None,
 ) -> UnprocessedPassage:
     """Make a `UnprocessedPassage` for testing."""
     return UnprocessedPassage(audio_path, speaker, script, transcript, alignments)
@@ -559,11 +559,13 @@ def test_spacy_with_context():
 
 def test__remove_ambiguous_casing():
     """Test that `_remove_ambiguous_casing` removes any ambiguously cased tokens."""
-    script, transcript = "THIS is A test. This. TEST.", "This is a TEST. This. TEST."
-    alignments = [Alignment(a, a, a) for a in script_to_alignments(script)]
+    script, transcript, normalized = (
+        "THIS is A test. This. TEST. urls. URLs.",
+        "This is a TEST. This. TEST. URLs. urls.",
+        "     is         This. TEST.            ",
+    )
+    alignments = tuple([Alignment(a, a, a) for a in script_to_alignments(script)])
     passage = make_unprocessed_passage(script=script, transcript=transcript, alignments=alignments)
     passage = _remove_ambiguous_casing("", passage)
-    normalized = "     is   test. This. TEST."
-    assert passage.alignments == tuple(
-        [Alignment(a, a, a) for a in script_to_alignments(normalized)]
-    )
+    expected = tuple([Alignment(a, a, a) for a in script_to_alignments(normalized)])
+    assert passage.alignments == expected

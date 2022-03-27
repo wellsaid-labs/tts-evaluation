@@ -786,18 +786,28 @@ def _check_updated_script(
 
 
 def _is_casing_ambiguous(label: str, passage: UnprocessedPassage, i: int) -> bool:
-    """Check if script has an upper casing, and the transcript does not."""
+    """Check if the script or transcript has upper casing or mixed casing when the other one
+    does not."""
     assert passage.alignments is not None
     script_token = passage.script[slice(*passage.alignments[i].script)]
     transcript_token = passage.transcript[slice(*passage.alignments[i].transcript)]
-    is_ambiguous = script_token != transcript_token and script_token.isupper()
+    if script_token == transcript_token:
+        return False
+
+    if len(script_token) == 1 and len(transcript_token) == 1:
+        is_ambiguous = script_token.isupper() != transcript_token.isupper()
+    else:
+        is_script_casing = not (script_token.islower() or script_token.istitle())
+        is_transcript_casing = not (transcript_token.islower() or transcript_token.istitle())
+        is_ambiguous = is_script_casing != is_transcript_casing
     if is_ambiguous:
         logger.info(f"[{label}] The casing is ambiguous: '{script_token}' vs '{transcript_token}'")
     return is_ambiguous
 
 
 def _remove_ambiguous_casing(label: str, passage: UnprocessedPassage):
-    """Remove any alignments where the script has an upper case, and the transcript does not."""
+    """Remove any alignments where the script or transcript has upper casing or mixed casing when
+    the other one does not."""
     if passage.alignments is None:
         return passage
 
