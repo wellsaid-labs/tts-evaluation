@@ -658,11 +658,6 @@ def _make_nonalignments(passage: Passage) -> Tuple[Alignment]:
     return typing.cast(Tuple[Alignment], nonalignments)
 
 
-def _exists(path: Path) -> bool:
-    """Helper function for `make_passages` that can be easily mocked."""
-    return path.exists() and path.is_file()
-
-
 def _filter_non_speech_segments(
     alignments: typing.List[FloatFloat],
     alignments_timeline: Timeline,
@@ -793,6 +788,13 @@ def _check_updated_script(
 UnprocessedDataset = typing.List[typing.List[UnprocessedPassage]]
 
 
+def _filter_existing_paths(audio_paths: typing.Set[Path]) -> typing.Set[Path]:
+    logger.info(f"Checking if {len(audio_paths)} audio files exist...")
+    all_parents = set(p.parent for p in audio_paths)
+    all_audio_paths = set(f for p in all_parents for f in p.iterdir() if f.is_file())
+    return audio_paths.intersection(all_audio_paths)
+
+
 def _normalize_audio_files(
     dataset: UnprocessedDataset, no_tqdm: bool
 ) -> typing.Dict[Path, AudioMetadata]:
@@ -803,11 +805,12 @@ def _normalize_audio_files(
     """
     executor = futures.ThreadPoolExecutor()
     get_audio_metadata_ = partial(get_audio_metadata, add_tqdm=not no_tqdm)
-    audio_paths = list(set(p.audio_path for l in dataset for p in l))
-    audio_paths = [a for a, e in zip(audio_paths, executor.map(_exists, audio_paths)) if e]
+    audio_paths = set(p.audio_path for l in dataset for p in l)
+    audio_paths = list(_filter_existing_paths(audio_paths))
     audio_files = get_audio_metadata_(audio_paths)
     maybe_norm = cf.partial(_loader.utils.maybe_normalize_audio_and_cache)
     generator = executor.map(maybe_norm, audio_files)
+    logger.info(f"Normalizing and caching {len(audio_files)} audio files...")
     normal_audio_paths = list(tqdm_(generator, total=len(audio_files), disable=no_tqdm))
     return {a: n for a, n in zip(audio_paths, get_audio_metadata_(normal_audio_paths))}
 
