@@ -27,13 +27,23 @@ Other resources:
 - https://opendata.stackexchange.com/questions/840/database-of-english-words-pronunciation
 - https://forvo.com/
 
+Note on Compression:
+    Use ``tar -czvf name-of-archive.tar.gz /path/to/directory-or-file`` to compress the archive. For
+    those using Mac OS do not use "compress" to create a `.zip` file instead [1].
+
+[1] Mac OS uses Archive Utility to compress a directory creaing by default a
+"Compressed UNIX CPIO Archive file" (CPGZ) under the `.zip` extension. The CPGZ is created with
+Apple's "Apple gzip" that a Linux gzip implementations are unable to handle.
+https://www.intego.com/mac-security-blog/understanding-compressed-files-and-apples-archive-utility
+
 Usage:
     NAME="gcp_pronunciation_dictionary"
     ROOT=$(pwd)/disk/data/$NAME
-    GCS_URI=gs://wellsaid_labs_datasets/$NAME
-
+    GCS_URI=gs://wellsaid_labs_datasets/
     python -m run.data.make_pronunciation_dataset --dataset-name=$NAME
-    gsutil -m cp -r -n $ROOT/ $GCS_URI
+    cd $ROOT
+    tar -czvf "$NAME.tar.gz" metadata.csv wavs
+    gsutil -m cp -r -n $NAME.tar.gz $GCS_URI
 """
 import logging
 import math
@@ -125,7 +135,7 @@ def _make_words(
 
 def main(
     root: pathlib.Path = run._config.DATA_PATH,
-    num_parallel: int = 2,
+    num_parallel: int = 1,
     dataset_name: str = "gcp_pronunciation_dictionary",
     metadata_file_name: str = "metadata.csv",
     wavs_dir_name: str = "wavs",
@@ -145,8 +155,9 @@ def main(
 
     words = _make_words(max_words, num_acronyms, max_acronym_length)
 
-    file_names = [re.sub(XML_TAGS, "", w) for w in words]
-    (root / metadata_file_name).write_text("\n".join(file_names))
+    file_names = [f"{i}_{re.sub(XML_TAGS, '', w)}".lower() for i, w in enumerate(words)]
+    metadata = [f"{f}|{re.sub(XML_TAGS, '', w)}" for f, w in zip(file_names, words)]
+    (root / metadata_file_name).write_text("\n".join(metadata))
     wavs_path = root / wavs_dir_name
     wavs_path.mkdir(exist_ok=False)
     logger.info(f"Synthesizing {len(words)} words....")

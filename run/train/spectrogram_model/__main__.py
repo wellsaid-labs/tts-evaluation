@@ -44,8 +44,8 @@ else:
 
 
 TEST_CASES = [
-    "For more updates on covid 19, please contact us via the URL at the bottom of the screen, or "
-    "visit our office in Seattle at the address shown here.",
+    "For more updates on covid nineteen, please contact us via the URL at the bottom of the "
+    "screen, or visit our office in Seattle at the address shown here.",
     "I've listed INTJ on my resume because it's important for me that you understand how I "
     "conduct myself in stressful situations.",
     "The website is live and you can access your records via the various APIs slash URLs or use "

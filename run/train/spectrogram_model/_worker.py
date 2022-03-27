@@ -640,7 +640,6 @@ def _run_steps(
             timer = Timer().record_event(Timer.LOAD_DATA)
 
         metrics.log(is_verbose=True, type_=dataset_type, cadence=Cadence.MULTI_STEP)
-        _log_vocab(state, dataset_type)
 
 
 def exclude_from_decay(
@@ -692,6 +691,7 @@ def run_worker(
     while True:
         steps_per_epoch = train_loader.num_steps_per_epoch
         [_run_steps(state, *args, steps_per_epoch=steps_per_epoch) for args in contexts]
+        _log_vocab(state, DatasetType.TRAIN)
 
         with set_context(Context.EVALUATE_INFERENCE, state.comet, state.model, ema=state.ema):
             _visualize_select_cases(state, DatasetType.TEST, Cadence.MULTI_STEP, **cf.get())
