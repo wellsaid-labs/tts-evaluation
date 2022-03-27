@@ -913,10 +913,14 @@ def _normalize_scripts(
     new_dataset: UnprocessedDataset = [[] for _ in range(len(dataset))]
     iterator = tqdm_([(p, n) for d, n in zip(dataset, new_dataset) for p in d], disable=no_tqdm)
     for passage, new_document in iterator:
+        name = passage.audio_path.name
         if len(passage.script) == 0 and len(passage.transcript) == 0:
-            message = f"[{label}] Skipping, passage ({passage.audio_path.name}) has no content."
-            logger.error(message)
+            logger.error(f"[{label}] Skipping, passage ({name}) has no content.")
             continue
+        if passage.script.isupper():
+            logger.error(f"[{label}] Skipping, passage ({name}) it's all upper case.")
+            continue
+
         script = new_scripts[(passage.script, passage.speaker.language)]
         transcript = new_scripts[(passage.transcript, passage.speaker.language)]
         _check_updated_script(label, passage, script, transcript)
