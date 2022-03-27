@@ -785,6 +785,27 @@ def _check_updated_script(
             lib.utils.call_once(_check_updated_script_helper, label, attr, original, updated)
 
 
+def _is_casing_ambiguous(label: str, passage: UnprocessedPassage, i: int) -> bool:
+    """Check if script has an upper casing, and the transcript does not."""
+    assert passage.alignments is not None
+    script_token = passage.script[slice(*passage.alignments[i].script)]
+    transcript_token = passage.transcript[slice(*passage.alignments[i].transcript)]
+    is_ambiguous = script_token != transcript_token and script_token.isupper()
+    if is_ambiguous:
+        logger.info(f"[{label}] The casing is ambiguous: '{script_token}' vs '{transcript_token}'")
+    return is_ambiguous
+
+
+def _remove_ambiguous_casing(label: str, passage: UnprocessedPassage):
+    """Remove any alignments where the script has an upper case, and the transcript does not."""
+    if passage.alignments is None:
+        return passage
+
+    iter_ = enumerate(passage.alignments)
+    alignments = [a for i, a in iter_ if not _is_casing_ambiguous(label, passage, i)]
+    return dataclasses.replace(passage, alignments=tuple(alignments))
+
+
 UnprocessedDataset = typing.List[typing.List[UnprocessedPassage]]
 
 
@@ -868,7 +889,9 @@ def _normalize_scripts(
         script = new_scripts[(passage.script, passage.speaker.language)]
         transcript = new_scripts[(passage.transcript, passage.speaker.language)]
         _check_updated_script(label, passage, script, transcript)
-        new_document.append(dataclasses.replace(passage, script=script, transcript=transcript))
+        new_passage = dataclasses.replace(passage, script=script, transcript=transcript)
+        new_passage = _remove_ambiguous_casing(label, new_passage)
+        new_document.append(new_passage)
     return new_dataset
 
 
