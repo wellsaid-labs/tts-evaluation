@@ -265,7 +265,7 @@ def get_dataset(speaker_labels: typing.FrozenSet[str]) -> Dataset:
     logger.info("Loading dataset...")
     with st.spinner(f"Loading dataset(s): {','.join(list(speaker_labels))}"):
         datasets = {k: v for k, v in run._config.DATASETS.items() if k.label in speaker_labels}
-        dataset = cf.partial(run._utils.get_dataset)(datasets)
+        dataset = cf.call(run._utils.get_dataset, datasets=datasets, _overwrite=True)
         logger.info(f"Finished loading {set(speaker_labels)} dataset(s)! {lib.utils.mazel_tov()}")
     return dataset
 
