@@ -37,3 +37,9 @@ def test__include_span():
     span = make_passage(script="A B C", alignments=alignments)[:]
     assert _loader.has_a_mistranscription(span)
     assert not _include_span(span)
+
+    # Include if there is no mistranscription
+    alignments = make_alignments_1d(((0, 1), (4, 5)))
+    span = make_passage(script="A   C", alignments=alignments)[:]
+    assert not _loader.has_a_mistranscription(span)
+    assert _include_span(span)
