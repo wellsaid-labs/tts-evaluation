@@ -5,6 +5,7 @@ from __future__ import annotations
 import dataclasses
 import itertools
 import logging
+import re
 import typing
 from dataclasses import field
 from enum import Enum
@@ -20,6 +21,7 @@ import spacy.tokens.span
 import lib
 import run
 from lib.audio import AudioMetadata, get_audio_metadata
+from lib.text import has_digit
 from lib.utils import Timeline, Tuple, flatten_2d, tqdm_
 from run.data import _loader
 
@@ -785,23 +787,42 @@ def _check_updated_script(
             lib.utils.call_once(_check_updated_script_helper, label, attr, original, updated)
 
 
+def _is_stand_casing(phrase: str):
+    """Check if `phrase` casing is standard.
+
+    NOTE: A non-standard word typically has two upper case characters, side by side.
+    """
+    return all([len(w) == 1 or re.search(r"[A-Z]{2}", w) is None for w in phrase.split()])
+
+
 def _is_casing_ambiguous(label: str, passage: UnprocessedPassage, i: int) -> bool:
-    """Check if the script or transcript has upper casing or mixed casing when the other one
-    does not."""
+    """Ensure the script and transcript have "non standard casing", at the same time.
+
+    TODO:
+    - There still may be some ambiguity with acronyms that are not initialisms like, NASDAQ. The
+    `script` and `transcript` may agree on them, so the model, needs to learn their pronunciation on
+    a case by case basis.
+    """
     assert passage.alignments is not None
     script_token = passage.script[slice(*passage.alignments[i].script)]
     transcript_token = passage.transcript[slice(*passage.alignments[i].transcript)]
-    if script_token == transcript_token:
+    if script_token == transcript_token or has_digit(script_token) or has_digit(transcript_token):
         return False
 
-    if len(script_token) == 1 and len(transcript_token) == 1:
-        is_ambiguous = script_token.isupper() != transcript_token.isupper()
-    else:
-        is_script_casing = not (script_token.islower() or script_token.istitle())
-        is_transcript_casing = not (transcript_token.islower() or transcript_token.istitle())
-        is_ambiguous = is_script_casing != is_transcript_casing
+    new_script_token = run._config.replace_punc(script_token, " ", passage.speaker.language)
+    new_transcript_token = run._config.replace_punc(transcript_token, " ", passage.speaker.language)
+    new_script_token, new_transcript_token = new_script_token.strip(), new_transcript_token.strip()
+    if len(new_script_token) == 1 and len(new_transcript_token) == 1:
+        # NOTE: The transcript is guessing at the sentence structure, so, it may mess up on many
+        # single word tokens; therefore, we exclude those from this analysis.
+        return False
+
+    is_ambiguous = _is_stand_casing(new_script_token) != _is_stand_casing(new_transcript_token)
     if is_ambiguous:
-        logger.info(f"[{label}] The casing is ambiguous: '{script_token}' vs '{transcript_token}'")
+        logger.info(
+            f"[{label}] Ambiguous casing, "
+            f"script '{script_token}' vs transcript '{transcript_token}'"
+        )
     return is_ambiguous
 
 
