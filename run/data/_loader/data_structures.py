@@ -918,7 +918,7 @@ def _normalize_scripts(
             logger.error(f"[{label}] Skipping, passage ({name}) has no content.")
             continue
         if passage.script.isupper():
-            logger.error(f"[{label}] Skipping, passage ({name}) it's all upper case.")
+            logger.warn(f"[{label}] Skipping, passage ({name}) it's all upper case.")
             continue
 
         script = new_scripts[(passage.script, passage.speaker.language)]
