@@ -132,7 +132,7 @@ def _include_span(span: Span):
     return True
 
 
-def configure():
+def configure(overwrite: bool = False):
     """Configure modules that process data, other than audio."""
     # TODO: Remove `BETH_CAMERON__CUSTOM` from the `WSL_DATASETS` groups because it has it's own
     # custom script.
@@ -152,4 +152,4 @@ def configure():
         run.data._loader.data_structures.Span.spacy_with_context: cf.Args(max_words=20),
         run._utils.SpanGenerator: cf.Args(max_seconds=15, include_span=_include_span),
     }
-    cf.add(config)
+    cf.add(config, overwrite)

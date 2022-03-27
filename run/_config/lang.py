@@ -146,10 +146,10 @@ def is_sound_alike(a: str, b: str, language: Language) -> bool:
     return any(func(a) == func(b) for func in (_remove_letter_casing, spoken_chars, sound_out))
 
 
-def configure():
+def configure(overwrite: bool = False):
     """Configure modules involved in processing text."""
     config = {
         run._config.data._include_passage: cf.Args(language=LANGUAGE),
         run.train._utils._get_dataset: cf.Args(language=LANGUAGE),
     }
-    cf.add(config)
+    cf.add(config, overwrite)
