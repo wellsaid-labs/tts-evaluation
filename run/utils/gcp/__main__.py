@@ -20,6 +20,7 @@ import googleapiclient.errors
 import typer
 
 from lib.environment import set_basic_logging_config
+from lib.utils import mazel_tov
 
 logger = logging.getLogger(__name__)
 app = typer.Typer(context_settings=dict(max_content_width=math.inf))
@@ -121,6 +122,7 @@ def _make_preemptible_instance(
             manager_op = _wait_for_operation(manager_op["name"], zone=zone, is_global=False)
             logger.info("Created instance group manager: %s", manager_op["targetLink"])
             if _has_made_preemptible_instance(name, zone):
+                logger.info(f"Success! {mazel_tov()}")
                 break
             else:
                 _delete_instance_group(name, zone)
@@ -144,7 +146,7 @@ def _make_and_watch_persistent_instance(
         try:
             instance_op = instance_op.execute()
             instance_op = _wait_for_operation(instance_op["name"], zone=zone, is_global=False)
-            logger.info("Created instance: %s", instance_op["targetLink"])
+            logger.info(f"{mazel_tov()} Created instance: {instance_op['targetLink']}")
             break
         except Exception as e:
             logger.error(f"Failed to create instance on '{zone}':\n{str(e)}")
