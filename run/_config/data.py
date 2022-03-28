@@ -75,7 +75,10 @@ def _include_passage(
 
     # NOTE: Filter out passages(s) that don't have a lower case character because it'll make
     # it difficult to classify initialisms.
-    if not any(c.islower() for c in passage.script):
+    # NOTE: Ensure that single word initialism scripts are preserved such as those in a
+    # pronunciation dictionary.
+    if passage.script.isupper() and len(passage.script.split()) > 1:
+        logger.warning("%s is all uppercase.", repr_)
         return False
 
     # TODO: Filter out Mary Ann from the dataset instead of filtering the related books.

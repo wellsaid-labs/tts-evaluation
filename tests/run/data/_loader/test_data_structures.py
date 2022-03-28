@@ -560,9 +560,9 @@ def test_spacy_with_context():
 def test__remove_ambiguous_casing():
     """Test that `_remove_ambiguous_casing` removes any ambiguously cased tokens."""
     script, transcript, normalized = (
-        "THIS is A test. This. TEST. urls. URLs. 111. Dash-dash. si punc. Dash-Dash. CatCat. U.S.",
-        "This is a TEST. This. TEST. URLs. urls. one. dash-dash. y p. dash dash. cat-cat. US",
-        "     is A       This. TEST.             111. Dash-dash. si punc. Dash-Dash. CatCat. U.S.",
+        "THIS is A test. This. TEST. urls. URLs. 111. Dash-dash. si punc. Dash-Dash. U.S. P-C-I.",
+        "This is a TEST. This. TEST. URLs. urls. one. dash-dash. y p. dash-dash. u.s. PCI.",
+        "     is A       This. TEST.             111. Dash-dash. si punc. Dash-Dash. U.S. P-C-I.",
     )
     iter_ = zip(script_to_alignments(script), script_to_alignments(transcript))
     alignments = tuple([Alignment(s, s, t) for s, t in iter_])

@@ -790,12 +790,19 @@ def _check_updated_script(
 def _is_stand_casing(phrase: str):
     """Check if `phrase` casing is standard.
 
-    NOTE: A non-standard word typically has two upper case characters, side by side.
+    The casing is standard if...
+    - There are no consecutive uppercase letters.
+    - It's not an initialism or acronym with periods or spaces between letters.
     """
-    return all([len(w) == 1 or re.search(r"[A-Z]{2}", w) is None for w in phrase.split()])
+    split = phrase.split()
+    if len(split) > 1 and all(len(w) == 1 for w in split):
+        return False
+    return all(re.search(r"[A-Z]{2}", w) is None for w in split)
 
 
-def _is_casing_ambiguous(label: str, passage: UnprocessedPassage, i: int) -> bool:
+def _is_casing_ambiguous(
+    passage: UnprocessedPassage, i: int
+) -> typing.Tuple[bool, typing.Optional[str], typing.Optional[str]]:
     """Ensure the script and transcript have "non standard casing", at the same time.
 
     TODO:
@@ -807,7 +814,7 @@ def _is_casing_ambiguous(label: str, passage: UnprocessedPassage, i: int) -> boo
     script_token = passage.script[slice(*passage.alignments[i].script)]
     transcript_token = passage.transcript[slice(*passage.alignments[i].transcript)]
     if script_token == transcript_token or has_digit(script_token) or has_digit(transcript_token):
-        return False
+        return False, None, None
 
     new_script_token = run._config.replace_punc(script_token, " ", passage.speaker.language)
     new_transcript_token = run._config.replace_punc(transcript_token, " ", passage.speaker.language)
@@ -815,15 +822,10 @@ def _is_casing_ambiguous(label: str, passage: UnprocessedPassage, i: int) -> boo
     if len(new_script_token) == 1 and len(new_transcript_token) == 1:
         # NOTE: The transcript is guessing at the sentence structure, so, it may mess up on many
         # single word tokens; therefore, we exclude those from this analysis.
-        return False
+        return False, None, None
 
     is_ambiguous = _is_stand_casing(new_script_token) != _is_stand_casing(new_transcript_token)
-    if is_ambiguous:
-        logger.info(
-            f"[{label}] Ambiguous casing, "
-            f"script '{script_token}' vs transcript '{transcript_token}'"
-        )
-    return is_ambiguous
+    return is_ambiguous, script_token, transcript_token
 
 
 def _remove_ambiguous_casing(label: str, passage: UnprocessedPassage):
@@ -832,8 +834,15 @@ def _remove_ambiguous_casing(label: str, passage: UnprocessedPassage):
     if passage.alignments is None:
         return passage
 
-    iter_ = enumerate(passage.alignments)
-    alignments = [a for i, a in iter_ if not _is_casing_ambiguous(label, passage, i)]
+    ambiguous = [_is_casing_ambiguous(passage, i) for i in range(len(passage.alignments))]
+    alignments = [a for a, (i, _, _) in zip(passage.alignments, ambiguous) if not i]
+    if len(alignments) != len(passage.alignments):
+        tokens = ", ".join(str((s, t)) for (i, s, t) in ambiguous if i)
+        logger.info(
+            f"[{label}] Removed these {len(passage.alignments) - len(alignments)} alignments due "
+            f"to ambiguous casing from passage ({passage.audio_path.name}): {tokens}"
+        )
+
     return dataclasses.replace(passage, alignments=tuple(alignments))
 
 
@@ -917,8 +926,9 @@ def _normalize_scripts(
         if len(passage.script) == 0 and len(passage.transcript) == 0:
             logger.error(f"[{label}] Skipping, passage ({name}) has no content.")
             continue
-        if passage.script.isupper():
-            logger.warn(f"[{label}] Skipping, passage ({name}) it's all upper case.")
+        if passage.script.isupper() and len(passage.script.split()) > 1:
+            message = f"[{label}] Skipping, passage ({name}) it doesn't have lower case characters."
+            logger.warn(message)
             continue
 
         script = new_scripts[(passage.script, passage.speaker.language)]
