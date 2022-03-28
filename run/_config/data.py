@@ -41,17 +41,21 @@ for dataset in [DEV_SPEAKERS, DATASETS]:
     del dataset[_loader.english.UNEEQ__ASB_CUSTOM_VOICE]
     # NOTE: The alignments don't match up with the scripts.
     del dataset[_loader.english.UNEEQ__ASB_CUSTOM_VOICE_COMBINED]
+    # NOTE: The alignments don't sound-a-like, in these datasets.
+    del dataset[_loader.portuguese.FIVE_NINE__CUSTOM_VOICE__PT_BR]
+    del dataset[_loader.portuguese.RND__LIBRIVOX__FELIPE_PT]
+    del dataset[_loader.portuguese.RND__LIBRIVOX__LENI_PT]
+    del dataset[_loader.portuguese.RND__LIBRIVOX__MIRAMONTES_PT]
+    del dataset[_loader.portuguese.RND__LIBRIVOX__SANDRALUNA_PT]
+    del dataset[_loader.spanish.FIVE_NINE__CUSTOM_VOICE__ES_CO]
 
 DEV_SPEAKERS = set(DEV_SPEAKERS.keys())
 
 
-def _include_passage(
-    passage: Passage, root: pathlib.Path, language: typing.Optional[Language] = None
-) -> bool:
+def _include_passage(passage: Passage, language: typing.Optional[Language] = None) -> bool:
     """Return `True` iff `passage` should be included in the dataset."""
-    repr_ = f"{passage.__class__.__name__}("
-    repr_ += f"{passage.audio_file.path.relative_to(root)},"
-    repr_ += f" {(passage.script[:50] + '...') if len(passage.script) > 50 else passage.script})"
+    repr_ = f"{passage.__class__.__name__}({passage.speaker.label}, {passage.session[1]}, "
+    repr_ += f"{(passage.script[:25] + '...') if len(passage.script) > 25 else passage.script})"
 
     if language is not None and passage.speaker.language != language:
         return False

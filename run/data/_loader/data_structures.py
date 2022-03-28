@@ -17,6 +17,7 @@ import config as cf
 import numpy as np
 import spacy.tokens.doc
 import spacy.tokens.span
+from Levenshtein import distance  # type: ignore
 
 import lib
 import run
@@ -830,7 +831,10 @@ def _is_casing_ambiguous(
 
 def _remove_ambiguous_casing(label: str, passage: UnprocessedPassage):
     """Remove any alignments where the script or transcript has upper casing or mixed casing when
-    the other one does not."""
+    the other one does not.
+
+    TODO: Add this to `sync_script_with_audio.py`.
+    """
     if passage.alignments is None:
         return passage
 
@@ -838,12 +842,33 @@ def _remove_ambiguous_casing(label: str, passage: UnprocessedPassage):
     alignments = [a for a, (i, _, _) in zip(passage.alignments, ambiguous) if not i]
     if len(alignments) != len(passage.alignments):
         tokens = ", ".join(str((s, t)) for (i, s, t) in ambiguous if i)
-        logger.info(
-            f"[{label}] Removed these {len(passage.alignments) - len(alignments)} alignments due "
-            f"to ambiguous casing from passage ({passage.audio_path.name}): {tokens}"
+        num_removed = len(passage.alignments) - len(alignments)
+        logger.warning(
+            f"[{label}][{passage.audio_path.name}] Removed {num_removed}/{len(passage.alignments)}"
+            f" alignments due to ambiguous casing: {tokens}"
         )
 
     return dataclasses.replace(passage, alignments=tuple(alignments))
+
+
+def _check_alignments(label: str, passage: UnprocessedPassage):
+    """Check that the alignments between the script and transcript make sense."""
+    if passage.alignments is None:
+        return passage
+
+    pairs = []
+    for alignment in passage.alignments:
+        script_token = passage.script[slice(*alignment.script)]
+        transcript_token = passage.transcript[slice(*alignment.transcript)]
+        if not run._config.is_sound_alike(script_token, transcript_token, passage.speaker.language):
+            pairs.append((script_token, transcript_token))
+
+    if len(pairs) > 0:
+        num_pairs = len(pairs)
+        pairs = sorted(((distance(*p), p) for p in set(pairs)), reverse=True, key=lambda k: k[0])
+        pairs = ", ".join([str(p) for _, p in pairs][:25])
+        prefix = f"[{label}][{passage.audio_path.name}]"
+        logger.warning(f"{prefix} Found {num_pairs} tokens that don't sound-a-like, like: {pairs}")
 
 
 UnprocessedDataset = typing.List[typing.List[UnprocessedPassage]]
@@ -936,6 +961,7 @@ def _normalize_scripts(
         _check_updated_script(label, passage, script, transcript)
         new_passage = dataclasses.replace(passage, script=script, transcript=transcript)
         new_passage = _remove_ambiguous_casing(label, new_passage)
+        _check_alignments(label, new_passage)
         new_document.append(new_passage)
     return new_dataset
 

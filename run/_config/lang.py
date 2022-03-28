@@ -131,6 +131,14 @@ def _remove_letter_casing(a: str) -> str:
 
 
 @lru_cache(maxsize=2 ** 20)
+def _is_sound_alike(a: str, b: str, language: Language) -> bool:
+    a = normalize_vo_script(a, language)
+    b = normalize_vo_script(b, language)
+    spoken_chars = partial(get_spoken_chars, language=language)
+    sound_out = _SOUND_OUT[language] if language in _SOUND_OUT else identity
+    return any(func(a) == func(b) for func in (_remove_letter_casing, spoken_chars, sound_out))
+
+
 def is_sound_alike(a: str, b: str, language: Language) -> bool:
     """Return `True` if `str` `a` and `str` `b` sound a-like.
 
@@ -146,11 +154,10 @@ def is_sound_alike(a: str, b: str, language: Language) -> bool:
         >>> is_sound_alike('financingA', 'financing a', Language.ENGLISH)
         True
     """
-    a = normalize_vo_script(a, language)
-    b = normalize_vo_script(b, language)
-    spoken_chars = partial(lib.text.get_spoken_chars, language=language)
-    sound_out = _SOUND_OUT[language] if language in _SOUND_OUT else identity
-    return any(func(a) == func(b) for func in (_remove_letter_casing, spoken_chars, sound_out))
+    if a == b:
+        return True
+
+    return _is_sound_alike(a, b, language)
 
 
 def configure(overwrite: bool = False):

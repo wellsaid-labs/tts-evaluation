@@ -40,7 +40,7 @@ Dataset = typing.Dict[_loader.Speaker, typing.List[_loader.Passage]]
 def get_dataset(
     datasets: typing.Dict[_loader.Speaker, _loader.DataLoader],
     path: pathlib.Path,
-    include_psge: typing.Callable[[_loader.Passage, pathlib.Path], bool],
+    include_psge: typing.Callable[[_loader.Passage], bool],
     handle_psge: typing.Callable[[_loader.Passage], _loader.Passage],
     max_workers: int = 0,
 ) -> Dataset:
@@ -55,7 +55,7 @@ def get_dataset(
     """
     logger.info("Loading dataset...")
     partial_ = cf.partial(include_psge)
-    load = lambda s, d, **k: (s, [handle_psge(p) for p in d(path, **k) if partial_(p, path)])
+    load = lambda s, d, **k: (s, [handle_psge(p) for p in d(path, **k) if partial_(p)])
     if max_workers > 0:
         with multiprocessing.pool.ThreadPool(processes=min(max_workers, len(datasets))) as pool:
             items = list(pool.starmap(load, datasets.items()))
