@@ -45,7 +45,7 @@ assert FRAME_SIZE % 4 == 0
 FRAME_HOP = FRAME_SIZE // 4
 
 
-def configure(sample_rate=24000):
+def configure(sample_rate: int = 24000, overwrite: bool = False):
     """Configure modules that process audio.
 
     SOURCE (Tacotron 1): We use 24 kHz sampling rate for all experiments.
@@ -82,7 +82,7 @@ def configure(sample_rate=24000):
             lib.audio.SignalTodBMelSpectrogram: Args(window=window),
             lib.audio.griffin_lim: Args(window=window.numpy()),
         }
-        cf.add(config)
+        cf.add(config, overwrite)
     except ImportError:
         logger.info("Ignoring optional `scipy` and `librosa` configurations.")
 
@@ -94,7 +94,7 @@ def configure(sample_rate=24000):
         config = {
             librosa.effects.trim: Args(frame_length=FRAME_SIZE, hop_length=FRAME_HOP),
         }
-        cf.add(config)
+        cf.add(config, overwrite)
     except ImportError:
         logger.info("Ignoring optional `librosa` configurations.")
 
@@ -111,7 +111,7 @@ def configure(sample_rate=24000):
         run._tts.text_to_speech_ffmpeg_generator: args,
         lib.audio.get_pyloudnorm_meter: args,
     }
-    cf.add(config)
+    cf.add(config, overwrite)
 
     config = {
         lib.visualize.plot_spectrogram: Args(frame_hop=FRAME_HOP),
@@ -210,4 +210,4 @@ def configure(sample_rate=24000):
             standard_deviation=2,
         ),
     }
-    cf.add(config)
+    cf.add(config, overwrite)

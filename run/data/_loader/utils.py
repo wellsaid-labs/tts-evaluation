@@ -466,7 +466,9 @@ def conventional_dataset_loader(
     metadata_path = Path(metadata_path_template.format(directory=directory))
     if os.stat(str(metadata_path)).st_size == 0:
         return []
-    df = typing.cast(pandas.DataFrame, pandas.read_csv(metadata_path, **metadata_kwargs))
+    df = typing.cast(
+        pandas.DataFrame, pandas.read_csv(metadata_path, **metadata_kwargs, keep_default_na=False)
+    )
     get_audio_path = lambda n: Path(audio_path_template.format(directory=directory, file_name=n))
     handled_columns = [metadata_text_column, metadata_audio_column]
     get_other_metadata = lambda r: {k: v for k, v in r.items() if k not in handled_columns}

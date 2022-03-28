@@ -29,10 +29,12 @@ from run._config.labels import (
 from run._config.lang import (
     STT_CONFIGS,
     LanguageCode,
+    get_spoken_chars,
     is_normalized_vo_script,
     is_sound_alike,
     is_voiced,
     normalize_vo_script,
+    replace_punc,
 )
 
 # TODO: Reduce the usage of globals, and use configuration if possible.
@@ -71,8 +73,10 @@ __all__ = [
     "get_timer_label",
     "STT_CONFIGS",
     "LanguageCode",
+    "get_spoken_chars",
     "is_normalized_vo_script",
     "is_sound_alike",
     "is_voiced",
     "normalize_vo_script",
+    "replace_punc",
 ]

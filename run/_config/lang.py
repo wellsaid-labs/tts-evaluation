@@ -8,7 +8,7 @@ from third_party import LazyLoader
 
 import lib
 import run
-from lib.text import get_spoken_chars, grapheme_to_phoneme
+from lib.text import grapheme_to_phoneme
 from lib.utils import identity
 from run.data._loader import Language
 
@@ -71,6 +71,17 @@ def is_voiced(text: str, language: Language) -> bool:
     return lib.text.is_voiced(text, _NON_ASCII_CHARS[language])
 
 
+_PUNCT_REGEXES = {l: re.compile(r"[^\w\s" + "".join(_NON_ASCII_CHARS[l]) + r"]") for l in Language}
+
+
+def get_spoken_chars(text: str, language: Language) -> str:
+    return lib.text.get_spoken_chars(text, _PUNCT_REGEXES[language])
+
+
+def replace_punc(text: str, replace: str, language: Language) -> str:
+    return _PUNCT_REGEXES[language].sub(replace, text)
+
+
 SST_CONFIGS = None
 
 try:
@@ -101,14 +112,11 @@ def _grapheme_to_phoneme(grapheme: str) -> str:
     return grapheme_to_phoneme([grapheme], separator="|")[0]
 
 
-_PUNCT_REGEXES = {l: re.compile(r"[^\w\s" + "".join(_NON_ASCII_CHARS[l]) + r"]") for l in Language}
-
-
 def _spoken_chars_and_de_eszett_transliteration(text: str) -> str:
     """
     NOTE: (Rhyan) The "ß" is used to denote a "ss" sound.
     """
-    return get_spoken_chars(text, _PUNCT_REGEXES[Language.GERMAN]).replace("ß", "ss")
+    return get_spoken_chars(text, Language.GERMAN).replace("ß", "ss")
 
 
 # NOTE: Phonetic rules to help determine if two words sound-a-like.
@@ -123,6 +131,14 @@ def _remove_letter_casing(a: str) -> str:
 
 
 @lru_cache(maxsize=2 ** 20)
+def _is_sound_alike(a: str, b: str, language: Language) -> bool:
+    a = normalize_vo_script(a, language)
+    b = normalize_vo_script(b, language)
+    spoken_chars = partial(get_spoken_chars, language=language)
+    sound_out = _SOUND_OUT[language] if language in _SOUND_OUT else identity
+    return any(func(a) == func(b) for func in (_remove_letter_casing, spoken_chars, sound_out))
+
+
 def is_sound_alike(a: str, b: str, language: Language) -> bool:
     """Return `True` if `str` `a` and `str` `b` sound a-like.
 
@@ -138,18 +154,16 @@ def is_sound_alike(a: str, b: str, language: Language) -> bool:
         >>> is_sound_alike('financingA', 'financing a', Language.ENGLISH)
         True
     """
-    a = normalize_vo_script(a, language)
-    b = normalize_vo_script(b, language)
-    punc_regex = _PUNCT_REGEXES[language] if language in _PUNCT_REGEXES else None
-    spoken_chars = partial(get_spoken_chars, punc_regex=punc_regex) if punc_regex else identity
-    sound_out = _SOUND_OUT[language] if language in _SOUND_OUT else identity
-    return any(func(a) == func(b) for func in (_remove_letter_casing, spoken_chars, sound_out))
+    if a == b:
+        return True
+
+    return _is_sound_alike(a, b, language)
 
 
-def configure():
+def configure(overwrite: bool = False):
     """Configure modules involved in processing text."""
     config = {
         run._config.data._include_passage: cf.Args(language=LANGUAGE),
         run.train._utils._get_dataset: cf.Args(language=LANGUAGE),
     }
-    cf.add(config)
+    cf.add(config, overwrite)

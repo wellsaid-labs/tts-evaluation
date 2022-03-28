@@ -44,8 +44,8 @@ else:
 
 
 TEST_CASES = [
-    "For more updates on covid 19, please contact us via the URL at the bottom of the screen, or "
-    "visit our office in Seattle at the address shown here.",
+    "For more updates on covid nineteen, please contact us via the URL at the bottom of the "
+    "screen, or visit our office in Seattle at the address shown here.",
     "I've listed INTJ on my resume because it's important for me that you understand how I "
     "conduct myself in stressful situations.",
     "The website is live and you can access your records via the various APIs slash URLs or use "
@@ -152,7 +152,7 @@ def _run_app(
     """
     cf.add(_make_configuration(train_dataset, dev_dataset, debug))
     cf.add(cli_config)
-    comet.log_parameters({get_config_label(k): v for k, v in cf.log().items()})
+    comet.log_parameters({get_config_label(k): v for k, v in cf.log(lambda x: x).items()})
     return run_workers(
         _worker.run_worker, comet, checkpoint, checkpoints_directory, train_dataset, dev_dataset
     )

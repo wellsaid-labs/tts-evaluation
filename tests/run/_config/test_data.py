@@ -1,7 +1,9 @@
+import pathlib
+
 import config as cf
 import pytest
 
-from run._config.data import _include_span, configure
+from run._config.data import _include_passage, _include_span, configure
 from run.data import _loader
 from tests.run._utils import make_alignments_1d, make_alignments_2d, make_passage
 
@@ -11,6 +13,13 @@ def run_around_test():
     configure()
     yield
     cf.purge()
+
+
+def test__include_passage():
+    # Exclude upper case scripts
+    assert not _include_passage(make_passage(script="THIS IS"), pathlib.Path())
+    # Include single word scripts
+    assert _include_passage(make_passage(script="THIS"), pathlib.Path())
 
 
 def test__include_span():
@@ -37,3 +46,9 @@ def test__include_span():
     span = make_passage(script="A B C", alignments=alignments)[:]
     assert _loader.has_a_mistranscription(span)
     assert not _include_span(span)
+
+    # Include if there is no mistranscription
+    alignments = make_alignments_1d(((0, 1), (4, 5)))
+    span = make_passage(script="A   C", alignments=alignments)[:]
+    assert not _loader.has_a_mistranscription(span)
+    assert _include_span(span)

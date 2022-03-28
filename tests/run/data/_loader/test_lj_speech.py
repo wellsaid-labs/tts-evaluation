@@ -41,7 +41,7 @@ verbalize_test_cases = {
 }
 
 
-@mock.patch("run.data._loader.data_structures._exists", return_value=True)
+@mock.patch("run.data._loader.data_structures._filter_existing_paths")
 @mock.patch("run.data._loader.data_structures.get_audio_metadata")
 @mock.patch("run.data._loader.data_structures._loader.utils.maybe_normalize_audio_and_cache")
 @mock.patch("run.data._loader.data_structures._loader.utils.get_non_speech_segments_and_cache")
@@ -53,9 +53,10 @@ def test_lj_speech_dataset(
     mock_get_non_speech_segments_and_cache,
     mock_normalize_and_cache,
     mock_get_audio_metadata,
-    _,
+    mock_filter_existing_paths,
 ):
     """Test `run.data._loader.lj_speech_dataset` loads and verbalizes the data."""
+    mock_filter_existing_paths.side_effect = lambda x: x
     mock_urlretrieve.side_effect = _utils.first_parameter_url_side_effect
     mock_get_audio_metadata.side_effect = _utils.get_audio_metadata_side_effect
     mock_normalize_and_cache.side_effect = maybe_normalize_audio_and_cache_side_effect

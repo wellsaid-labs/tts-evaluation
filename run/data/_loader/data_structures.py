@@ -5,21 +5,24 @@ from __future__ import annotations
 import dataclasses
 import itertools
 import logging
+import re
 import typing
-from concurrent import futures
 from dataclasses import field
 from enum import Enum
 from functools import partial
+from multiprocessing.pool import ThreadPool
 from pathlib import Path
 
 import config as cf
 import numpy as np
 import spacy.tokens.doc
 import spacy.tokens.span
+from Levenshtein import distance  # type: ignore
 
 import lib
 import run
 from lib.audio import AudioMetadata, get_audio_metadata
+from lib.text import has_digit
 from lib.utils import Timeline, Tuple, flatten_2d, tqdm_
 from run.data import _loader
 
@@ -31,7 +34,7 @@ Slice = slice  # NOTE: `pylance` is buggy if we use `slice` directly for typing.
 
 
 def get_nlp():
-    return lib.text.load_en_core_web_md(disable=("ner", "tagger"))
+    return lib.text.load_en_core_web_md(disable=("ner", "tagger", "lemmatizer"))
 
 
 class NonalignmentSpans(typing.NamedTuple):
@@ -658,11 +661,6 @@ def _make_nonalignments(passage: Passage) -> Tuple[Alignment]:
     return typing.cast(Tuple[Alignment], nonalignments)
 
 
-def _exists(path: Path) -> bool:
-    """Helper function for `make_passages` that can be easily mocked."""
-    return path.exists() and path.is_file()
-
-
 def _filter_non_speech_segments(
     alignments: typing.List[FloatFloat],
     alignments_timeline: Timeline,
@@ -790,7 +788,97 @@ def _check_updated_script(
             lib.utils.call_once(_check_updated_script_helper, label, attr, original, updated)
 
 
+def _is_stand_casing(phrase: str):
+    """Check if `phrase` casing is standard.
+
+    The casing is standard if...
+    - There are no consecutive uppercase letters.
+    - It's not an initialism or acronym with periods or spaces between letters.
+    """
+    split = phrase.split()
+    if len(split) > 1 and all(len(w) == 1 for w in split):
+        return False
+    return all(re.search(r"[A-Z]{2}", w) is None for w in split)
+
+
+def _is_casing_ambiguous(
+    passage: UnprocessedPassage, i: int
+) -> typing.Tuple[bool, typing.Optional[str], typing.Optional[str]]:
+    """Ensure the script and transcript have "non standard casing", at the same time.
+
+    TODO:
+    - There still may be some ambiguity with acronyms that are not initialisms like, NASDAQ. The
+    `script` and `transcript` may agree on them, so the model, needs to learn their pronunciation on
+    a case by case basis.
+    """
+    assert passage.alignments is not None
+    script_token = passage.script[slice(*passage.alignments[i].script)]
+    transcript_token = passage.transcript[slice(*passage.alignments[i].transcript)]
+    if script_token == transcript_token or has_digit(script_token) or has_digit(transcript_token):
+        return False, None, None
+
+    new_script_token = run._config.replace_punc(script_token, " ", passage.speaker.language)
+    new_transcript_token = run._config.replace_punc(transcript_token, " ", passage.speaker.language)
+    new_script_token, new_transcript_token = new_script_token.strip(), new_transcript_token.strip()
+    if len(new_script_token) == 1 and len(new_transcript_token) == 1:
+        # NOTE: The transcript is guessing at the sentence structure, so, it may mess up on many
+        # single word tokens; therefore, we exclude those from this analysis.
+        return False, None, None
+
+    is_ambiguous = _is_stand_casing(new_script_token) != _is_stand_casing(new_transcript_token)
+    return is_ambiguous, script_token, transcript_token
+
+
+def _remove_ambiguous_casing(label: str, passage: UnprocessedPassage):
+    """Remove any alignments where the script or transcript has upper casing or mixed casing when
+    the other one does not.
+
+    TODO: Add this to `sync_script_with_audio.py`.
+    """
+    if passage.alignments is None:
+        return passage
+
+    ambiguous = [_is_casing_ambiguous(passage, i) for i in range(len(passage.alignments))]
+    alignments = [a for a, (i, _, _) in zip(passage.alignments, ambiguous) if not i]
+    if len(alignments) != len(passage.alignments):
+        tokens = ", ".join(str((s, t)) for (i, s, t) in ambiguous if i)
+        num_removed = len(passage.alignments) - len(alignments)
+        logger.warning(
+            f"[{label}][{passage.audio_path.name}] Removed {num_removed}/{len(passage.alignments)}"
+            f" alignments due to ambiguous casing: {tokens}"
+        )
+
+    return dataclasses.replace(passage, alignments=tuple(alignments))
+
+
+def _check_alignments(label: str, passage: UnprocessedPassage):
+    """Check that the alignments between the script and transcript make sense."""
+    if passage.alignments is None:
+        return passage
+
+    pairs = []
+    for alignment in passage.alignments:
+        script_token = passage.script[slice(*alignment.script)]
+        transcript_token = passage.transcript[slice(*alignment.transcript)]
+        if not run._config.is_sound_alike(script_token, transcript_token, passage.speaker.language):
+            pairs.append((script_token, transcript_token))
+
+    if len(pairs) > 0:
+        num_pairs = len(pairs)
+        pairs = sorted(((distance(*p), p) for p in set(pairs)), reverse=True, key=lambda k: k[0])
+        pairs = ", ".join([str(p) for _, p in pairs][:25])
+        prefix = f"[{label}][{passage.audio_path.name}]"
+        logger.warning(f"{prefix} Found {num_pairs} tokens that don't sound-a-like, like: {pairs}")
+
+
 UnprocessedDataset = typing.List[typing.List[UnprocessedPassage]]
+
+
+def _filter_existing_paths(audio_paths: typing.Set[Path]) -> typing.Set[Path]:
+    logger.info(f"Checking if {len(audio_paths)} audio files exist...")
+    all_parents = set(p.parent for p in audio_paths)
+    all_audio_paths = set(f for p in all_parents for f in p.iterdir() if f.is_file())
+    return audio_paths.intersection(all_audio_paths)
 
 
 def _normalize_audio_files(
@@ -801,14 +889,15 @@ def _normalize_audio_files(
     TODO: In order to encourage parallelism, the longest files should be run through
     `maybe_normalize_audio_and_cache` first.
     """
-    executor = futures.ThreadPoolExecutor()
     get_audio_metadata_ = partial(get_audio_metadata, add_tqdm=not no_tqdm)
-    audio_paths = list(set(p.audio_path for l in dataset for p in l))
-    audio_paths = [a for a, e in zip(audio_paths, executor.map(_exists, audio_paths)) if e]
+    audio_paths = set(p.audio_path for l in dataset for p in l)
+    audio_paths = list(_filter_existing_paths(audio_paths))
     audio_files = get_audio_metadata_(audio_paths)
-    maybe_norm = cf.partial(_loader.utils.maybe_normalize_audio_and_cache)
-    generator = executor.map(maybe_norm, audio_files)
-    normal_audio_paths = list(tqdm_(generator, total=len(audio_files), disable=no_tqdm))
+    with ThreadPool() as pool:
+        logger.info(f"Normalizing and caching {len(audio_files)} audio files...")
+        maybe_norm = cf.partial(_loader.utils.maybe_normalize_audio_and_cache)
+        iter_ = pool.imap(maybe_norm, audio_files)
+        normal_audio_paths = list(tqdm_(iter_, total=len(audio_files), disable=no_tqdm))
     return {a: n for a, n in zip(audio_paths, get_audio_metadata_(normal_audio_paths))}
 
 
@@ -832,9 +921,9 @@ def _get_non_speech_segments(
         iterator = tqdm_(audio_files, disable=no_tqdm)
         return {a: get_nss_and_cache(a) for a in iterator}
 
-    executor = futures.ThreadPoolExecutor()
-    generator = executor.map(get_nss_and_cache, audio_files)
-    non_speech_segments = list(tqdm_(generator, total=len(audio_files), disable=no_tqdm))
+    with ThreadPool() as pool:
+        generator = pool.imap(get_nss_and_cache, audio_files)
+        non_speech_segments = list(tqdm_(generator, total=len(audio_files), disable=no_tqdm))
     return {a: n for a, n in zip(audio_files, non_speech_segments)}
 
 
@@ -858,14 +947,22 @@ def _normalize_scripts(
     new_dataset: UnprocessedDataset = [[] for _ in range(len(dataset))]
     iterator = tqdm_([(p, n) for d, n in zip(dataset, new_dataset) for p in d], disable=no_tqdm)
     for passage, new_document in iterator:
+        name = passage.audio_path.name
         if len(passage.script) == 0 and len(passage.transcript) == 0:
-            message = f"[{label}] Skipping, passage ({passage.audio_path.name}) has no content."
-            logger.error(message)
+            logger.error(f"[{label}] Skipping, passage ({name}) has no content.")
             continue
+        if passage.script.isupper() and len(passage.script.split()) > 1:
+            message = f"[{label}] Skipping, passage ({name}) it doesn't have lower case characters."
+            logger.warn(message)
+            continue
+
         script = new_scripts[(passage.script, passage.speaker.language)]
         transcript = new_scripts[(passage.transcript, passage.speaker.language)]
         _check_updated_script(label, passage, script, transcript)
-        new_document.append(dataclasses.replace(passage, script=script, transcript=transcript))
+        new_passage = dataclasses.replace(passage, script=script, transcript=transcript)
+        new_passage = _remove_ambiguous_casing(label, new_passage)
+        _check_alignments(label, new_passage)
+        new_document.append(new_passage)
     return new_dataset
 
 

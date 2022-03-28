@@ -640,7 +640,8 @@ def _run_steps(
             timer = Timer().record_event(Timer.LOAD_DATA)
 
         metrics.log(is_verbose=True, type_=dataset_type, cadence=Cadence.MULTI_STEP)
-        _log_vocab(state, dataset_type)
+        if Context.TRAIN == context:
+            _log_vocab(state, dataset_type)
 
 
 def exclude_from_decay(

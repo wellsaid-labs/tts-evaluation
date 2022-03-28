@@ -11,7 +11,7 @@ from run._config.audio import NUM_FRAME_CHANNELS
 logger = logging.getLogger(__name__)
 
 
-def configure():
+def configure(overwrite: bool = False):
     """Configure spectrogram and signal model."""
     # SOURCE (Tacotron 2):
     # Attention probabilities are computed after projecting inputs and location
@@ -119,7 +119,7 @@ def configure():
             hidden_size=512,
         ),
     }
-    cf.add(config)
+    cf.add(config, overwrite)
 
     # NOTE: Configure the model regularization.
     config = {
@@ -134,7 +134,7 @@ def configure():
             dropout=0.1, seq_meta_embed_dropout=0.1
         ),
     }
-    cf.add(config)
+    cf.add(config, overwrite)
 
     config = {
         # NOTE: Window size smoothing parameter is not sensitive.
@@ -154,11 +154,11 @@ def configure():
             stop_threshold=stop_threshold,
         ),
     }
-    cf.add(config)
+    cf.add(config, overwrite)
 
     config = {
         # NOTE: BERT uses `eps=1e-12` for `LayerNorm`, see here:
         # https://github.com/huggingface/transformers/blob/master/src/transformers/configuration_bert.py
         torch.nn.LayerNorm: cf.Args(eps=1e-12),
     }
-    cf.add(config)
+    cf.add(config, overwrite)

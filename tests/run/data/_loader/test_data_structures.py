@@ -25,13 +25,14 @@ from run.data._loader.data_structures import (
     _filter_non_speech_segments,
     _make_speech_segments_helper,
     _maybe_normalize_vo_script,
+    _remove_ambiguous_casing,
     has_a_mistranscription,
     make_passages,
 )
 from run.data._loader.english import LINDA_JOHNSON
 from run.data._loader.utils import get_non_speech_segments_and_cache
 from tests._utils import TEST_DATA_PATH
-from tests.run._utils import make_passage
+from tests.run._utils import make_passage, script_to_alignments
 
 TEST_DATA_LJ = TEST_DATA_PATH / "audio" / "bit(rate(lj_speech,24000),32).wav"
 
@@ -39,9 +40,9 @@ TEST_DATA_LJ = TEST_DATA_PATH / "audio" / "bit(rate(lj_speech,24000),32).wav"
 def make_unprocessed_passage(
     audio_path=pathlib.Path("."),
     speaker=make_en_speaker(""),
-    script="",
-    transcript="",
-    alignments=None,
+    script: str = "",
+    transcript: str = "",
+    alignments: typing.Optional[typing.Tuple[Alignment, ...]] = None,
 ) -> UnprocessedPassage:
     """Make a `UnprocessedPassage` for testing."""
     return UnprocessedPassage(audio_path, speaker, script, transcript, alignments)
@@ -554,3 +555,18 @@ def test_spacy_with_context():
     assert str(passage[2:4].spacy_with_context(10)) == "Give it back! He pleaded."
     assert str(passage[2:4].spacy_with_context(0)) == "back! He"
     assert str(passage[2:4].spacy) == "back! He"
+
+
+def test__remove_ambiguous_casing():
+    """Test that `_remove_ambiguous_casing` removes any ambiguously cased tokens."""
+    script, transcript, normalized = (
+        "THIS is A test. This. TEST. urls. URLs. 111. Dash-dash. si punc. Dash-Dash. U.S. P-C-I.",
+        "This is a TEST. This. TEST. URLs. urls. one. dash-dash. y p. dash-dash. u.s. PCI.",
+        "     is A       This. TEST.             111. Dash-dash. si punc. Dash-Dash. U.S. P-C-I.",
+    )
+    iter_ = zip(script_to_alignments(script), script_to_alignments(transcript))
+    alignments = tuple([Alignment(s, s, t) for s, t in iter_])
+    passage = make_unprocessed_passage(script=script, transcript=transcript, alignments=alignments)
+    passage = _remove_ambiguous_casing("", passage)
+    assert passage.alignments is not None
+    assert [a.script for a in passage.alignments] == list(script_to_alignments(normalized))
