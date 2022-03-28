@@ -430,7 +430,7 @@ def _max_num_frames_diff(args: _HandleBatchArgs, preds: Preds) -> int:
     return int(torch.argmax((args.batch.spectrogram.lengths - preds.num_frames).abs()))
 
 
-def _random_sequence(args: _HandleBatchArgs, *_) -> int:
+def _random_sequence(args: _HandleBatchArgs, preds: Preds) -> int:
     """Get a random batch index."""
     return random.randint(0, len(args.batch) - 1)
 

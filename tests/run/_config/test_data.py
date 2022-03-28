@@ -1,5 +1,3 @@
-import pathlib
-
 import config as cf
 import pytest
 
@@ -17,9 +15,9 @@ def run_around_test():
 
 def test__include_passage():
     # Exclude upper case scripts
-    assert not _include_passage(make_passage(script="THIS IS"), pathlib.Path())
+    assert not _include_passage(make_passage(script="THIS IS"))
     # Include single word scripts
-    assert _include_passage(make_passage(script="THIS"), pathlib.Path())
+    assert _include_passage(make_passage(script="THIS"))
 
 
 def test__include_span():
