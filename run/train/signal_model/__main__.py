@@ -137,7 +137,7 @@ def _run_app(
     """Run signal model training."""
     cf.add(_make_configuration(train_dataset, dev_dataset, debug))
     cf.add(cli_config)
-    comet.log_parameters({get_config_label(k): v for k, v in cf.log().items()})
+    comet.log_parameters({get_config_label(k): v for k, v in cf.log(lambda x: x).items()})
     return run_workers(
         _worker.run_worker,
         comet,
