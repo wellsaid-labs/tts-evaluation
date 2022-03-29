@@ -225,7 +225,7 @@ class Encoder(torch.nn.Module):
             torch.nn.Sequential(
                 _Conv1dLockedDropout(dropout),
                 torch.nn.Conv1d(
-                    in_channels=hidden_size,
+                    in_channels=hidden_size * 2,
                     out_channels=hidden_size,
                     kernel_size=conv_filter_size,
                     padding=int((conv_filter_size - 1) / 2),
@@ -239,7 +239,7 @@ class Encoder(torch.nn.Module):
 
         self.lstm = _RightMaskedBiRNN(
             rnn_class=LSTM,
-            input_size=hidden_size,
+            input_size=hidden_size * 2,
             hidden_size=hidden_size // 2,
             num_layers=lstm_layers,
         )
@@ -248,7 +248,7 @@ class Encoder(torch.nn.Module):
 
         self.project_out = torch.nn.Sequential(
             LockedDropout(dropout),
-            torch.nn.Linear(hidden_size, out_size),
+            torch.nn.Linear(hidden_size * 2, out_size),
             layer_norm(out_size),
         )
 
@@ -319,9 +319,13 @@ class Encoder(torch.nn.Module):
         # [batch_size, num_tokens] → [batch_size, 1, num_tokens]
         tokens_mask = tokens_mask.unsqueeze(1)
 
+        tokens = tokens.masked_fill(~tokens_mask, 0)
+        conditional = tokens.clone()
+
         for conv, norm in zip(self.conv_layers, self.norm_layers):
             tokens = tokens.masked_fill(~tokens_mask, 0)
-            tokens = norm(tokens + conv(tokens))
+            conv_input = torch.cat((tokens, conditional), dim=1)
+            tokens = norm(tokens + conv(conv_input))
 
         # Our input is expected to have shape `[batch_size, hidden_size, num_tokens]`.
         # The lstm layers expect input of shape
@@ -329,11 +333,14 @@ class Encoder(torch.nn.Module):
         # to permute the tensor first.
         tokens = tokens.permute(2, 0, 1)
         tokens_mask = tokens_mask.permute(2, 0, 1)
-        tokens = self.lstm_norm(
-            tokens + self.lstm(self.lstm_dropout(tokens), tokens_mask, num_tokens)
-        )
+        conditional = conditional.permute(2, 0, 1)
+        lstm_input = self.lstm_dropout(torch.cat((tokens, conditional), dim=2))
+        tokens = self.lstm_norm(tokens + self.lstm(lstm_input, tokens_mask, num_tokens))
 
-        # [num_tokens, batch_size, hidden_size] →
+        # [num_tokens, batch_size, hidden_size] (cat) [num_tokens, batch_size, hidden_size] →
+        # [num_tokens, batch_size, hidden_size * 2]
+        tokens = torch.cat((tokens, conditional), dim=2)
+        # [num_tokens, batch_size, hidden_size * 2] →
         # [num_tokens, batch_size, out_dim]
         tokens = self.project_out(tokens).masked_fill(~tokens_mask, 0)
 
