@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 import math
 import typing
-from contextlib import nullcontext
 
 import config as cf
 import numpy as np
@@ -362,7 +361,7 @@ class SignalModel(torch.nn.Module):
         self.max_channel_size = max_channel_size
         self.mu = mu
         self.upscale_factor = int(np.prod(ratios))
-        self.grad_enabled = None
+        self.set_inference_mode(False)
 
         self.encoder = _Encoder(max_seq_meta_values, seq_meta_embed_size, frame_size)
         self.pre_net = _Sequential(
@@ -500,8 +499,8 @@ class SignalModel(torch.nn.Module):
 
         return spectrogram, spectrogram_mask
 
-    def set_grad_enabled(self, enabled: typing.Optional[bool]):
-        self.grad_enabled = enabled
+    def set_inference_mode(self, enabled: bool):
+        self._inference_mode_enabled = enabled
 
     def __call__(
         self,
@@ -513,8 +512,7 @@ class SignalModel(torch.nn.Module):
         return super().__call__(spectrogram, seq_metadata, spectrogram_mask, pad_input)
 
     def forward(self, *args, **kwargs) -> torch.Tensor:
-        grad_enabled = self.grad_enabled
-        with nullcontext() if grad_enabled is None else torch.set_grad_enabled(grad_enabled):
+        with torch.inference_mode(self._inference_mode_enabled):
             return self._forward(*args, **kwargs)
 
     def _forward(

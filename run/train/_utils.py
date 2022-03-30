@@ -53,7 +53,7 @@ from run._config import (
     get_timer_label,
 )
 from run._utils import Dataset
-from run.data._loader.data_structures import Language
+from run.data._loader.structures import Language
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import comet_ml
@@ -535,7 +535,7 @@ def set_train_mode(
     original = model.training
     model.train(mode=mode)
     with contextlib.nullcontext() if ema is None or mode else ema:
-        with torch.set_grad_enabled(mode=mode):
+        with torch.inference_mode(mode=not mode):
             yield
     model.train(mode=original)
 

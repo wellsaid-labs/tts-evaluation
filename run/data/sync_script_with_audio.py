@@ -300,6 +300,7 @@ def _fix_alignments(
             (stt_tokens[last[1] + 1].slice[0], stt_tokens[next_[1] - 1].slice[-1]),
         )
 
+        assert token.text is not None
         if _config.is_sound_alike(token.text, stt_token.text, language):
             logger.info(f'Fixing alignment between: "{token.text}" and "{stt_token.text}"')
             for j in reversed(range(last[0] + 1, next_[0])):

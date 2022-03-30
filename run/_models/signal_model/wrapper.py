@@ -14,38 +14,12 @@ class SignalModelWrapper(SignalModel):
         super().__init__((max_speakers, max_sessions), *args, **kwargs)
 
     @property
-    def speaker_embed(self) -> NumeralizePadEmbed:
+    def speaker_embed(self) -> NumeralizePadEmbed[Speaker]:
         return typing.cast(NumeralizePadEmbed, self.encoder.embed_metadata[0])
 
     @property
-    def session_embed(self) -> NumeralizePadEmbed:
+    def session_embed(self) -> NumeralizePadEmbed[Session]:
         return typing.cast(NumeralizePadEmbed, self.encoder.embed_metadata[1])
-
-    @property
-    def speaker_vocab(self):
-        return typing.cast(
-            typing.Dict[typing.Union[Speaker, NumeralizePadEmbed._Tokens], int],
-            self.speaker_embed.vocab,
-        )
-
-    @property
-    def session_vocab(self):
-        return typing.cast(
-            typing.Dict[typing.Union[Session, NumeralizePadEmbed._Tokens], int],
-            self.session_embed.vocab,
-        )
-
-    def update_speaker_vocab(
-        self, speakers: typing.List[Speaker], embeddings: typing.Optional[torch.Tensor] = None
-    ):
-        return self.speaker_embed.update_tokens(speakers, embeddings)
-
-    def update_session_vocab(
-        self,
-        sessions: typing.List[Session],
-        embeddings: typing.Optional[torch.Tensor] = None,
-    ):
-        return self.session_embed.update_tokens(sessions, embeddings)
 
     def __call__(
         self,
@@ -68,26 +42,12 @@ class SpectrogramDiscriminatorWrapper(SpectrogramDiscriminator):
         super().__init__(*args, max_seq_meta_values=(max_speakers, max_sessions), **kwargs)
 
     @property
-    def speaker_embed(self) -> NumeralizePadEmbed:
-        return typing.cast(NumeralizePadEmbed, self.encoder.embed_metadata[0])
+    def speaker_embed(self) -> NumeralizePadEmbed[Speaker]:
+        return typing.cast(NumeralizePadEmbed[Speaker], self.encoder.embed_metadata[0])
 
     @property
-    def session_embed(self) -> NumeralizePadEmbed:
-        return typing.cast(NumeralizePadEmbed, self.encoder.embed_metadata[1])
-
-    @property
-    def speaker_vocab(self):
-        return typing.cast(
-            typing.Dict[typing.Union[Speaker, NumeralizePadEmbed._Tokens], int],
-            self.speaker_embed.vocab,
-        )
-
-    @property
-    def session_vocab(self):
-        return typing.cast(
-            typing.Dict[typing.Union[Session, NumeralizePadEmbed._Tokens], int],
-            self.session_embed.vocab,
-        )
+    def session_embed(self) -> NumeralizePadEmbed[Session]:
+        return typing.cast(NumeralizePadEmbed[Session], self.encoder.embed_metadata[1])
 
     def __call__(
         self,

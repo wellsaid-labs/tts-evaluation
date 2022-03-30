@@ -1,9 +1,8 @@
 from unittest import mock
 
 from run._utils import _find_duplicate_passages, _len_of_dups, split_dataset
-from run.data._loader import make_en_speaker
 from tests._utils import TEST_DATA_PATH
-from tests.run._utils import make_alignments_1d, make_passage
+from tests.run._utils import make_alignments_1d, make_passage, make_speaker
 
 TEST_DATA_PATH = TEST_DATA_PATH / "audio"
 TEST_DATA_LJ = TEST_DATA_PATH / "bit(rate(lj_speech,24000),32).wav"
@@ -49,10 +48,10 @@ def test__len_of_dups():
 @mock.patch("random.shuffle", return_value=None)
 def test_split_dataset__deduplication(_):
     """Test `run._utils.split_dataset` handles deduplication accross multiple speakers."""
-    speaker_a = make_en_speaker("a")
-    speaker_b = make_en_speaker("b")
-    speaker_c = make_en_speaker("c")
-    speaker_d = make_en_speaker("d")
+    speaker_a = make_speaker("a")
+    speaker_b = make_speaker("b")
+    speaker_c = make_speaker("c")
+    speaker_d = make_speaker("d")
     groups = [set([speaker_a, speaker_b, speaker_c, speaker_d])]
     passage = lambda script, speaker: make_passage(
         script=script, speaker=speaker, alignments=make_alignments_1d([(0, 1)])
@@ -110,8 +109,8 @@ def test_split_dataset__deduplication(_):
 @mock.patch("random.shuffle", return_value=None)
 def test_split_dataset__order(_):
     """Test `run._utils.split_dataset` handles different dictionary orderings."""
-    speaker_a = make_en_speaker("a")
-    speaker_b = make_en_speaker("b")
+    speaker_a = make_speaker("a")
+    speaker_b = make_speaker("b")
     groups = [set([speaker_a, speaker_b])]
     passage = lambda script, speaker: make_passage(
         script=script, speaker=speaker, alignments=make_alignments_1d([(0, 1)])
@@ -141,8 +140,8 @@ def test_split_dataset__order(_):
 @mock.patch("random.shuffle", return_value=None)
 def test_split_dataset__groups(_):
     """Test `run._utils.split_dataset` handles independent speakers."""
-    speaker_a = make_en_speaker("a")
-    speaker_b = make_en_speaker("b")
+    speaker_a = make_speaker("a")
+    speaker_b = make_speaker("b")
     groups = [{speaker_a}, {speaker_b}]
     passage = lambda script, speaker: make_passage(
         script=script, speaker=speaker, alignments=make_alignments_1d([(0, 1)])

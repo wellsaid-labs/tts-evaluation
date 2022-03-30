@@ -12,22 +12,23 @@ import lib
 import run
 from run import train
 from run._tts import TTSPackage, package_tts
-from run.data._loader import Alignment, Passage, Session, Span, Speaker, make_en_speaker
-from run.data._loader.data_structures import _make_nonalignments
-from run.data._loader.english import (
-    JUDY_BIEBER,
-    LINDA_JOHNSON,
-    lj_speech_dataset,
-    m_ailabs_en_us_judy_bieber_speech_dataset,
-)
+from run.data._loader import structures as struc
+from run.data._loader.english import M_AILABS_DATASETS, lj_speech, m_ailabs
+from run.data._loader.structures import Alignment, _make_nonalignments
 from run.train._utils import save_checkpoint
 from tests import _utils
 from tests._utils import make_metadata
 
 
+def make_speaker(
+    label: str, style: struc.Style = struc.Style.LIBRI, dialect: struc.Dialect = struc.Dialect.EN_US
+):
+    return struc.Speaker(label, style, dialect, label, label)
+
+
 def make_alignment(script=(0, 0), transcript=(0, 0), audio=(0.0, 0.0)):
     """Make an `Alignment` for testing."""
-    return Alignment(script, audio, transcript)
+    return struc.Alignment(script, audio, transcript)
 
 
 def make_alignments_1d(
@@ -70,13 +71,13 @@ def _max_alignment(
 def make_passage(
     alignments: typing.Optional[typing.Sequence[Alignment]] = None,
     nonalignments: typing.Optional[typing.Sequence[Alignment]] = None,
-    speaker: Speaker = make_en_speaker(""),
+    speaker: struc.Speaker = make_speaker(""),
     audio_file: lib.audio.AudioMetadata = make_metadata(),
     script: typing.Optional[str] = None,
     transcript: typing.Optional[str] = None,
-    speech_segments: typing.Optional[typing.Sequence[Span]] = None,
+    speech_segments: typing.Optional[typing.Sequence[struc.Span]] = None,
     **kwargs,
-) -> Passage:
+) -> struc.Passage:
     """Make a `Passage` for testing."""
     # Set `alignments`, `script`, and `transcript`
     alignments = [] if alignments is None and script is None else alignments
@@ -91,9 +92,9 @@ def make_passage(
 
     assert script is not None
     assert alignments is not None
-    passage = Passage(
+    passage = struc.Passage(
         audio_file,
-        Session((speaker, str(audio_file))),
+        struc.Session((speaker, str(audio_file))),
         script,
         script if transcript is None else transcript,
         Alignment.stow(alignments),
@@ -132,8 +133,8 @@ def make_small_dataset() -> run._utils.Dataset:
     shutil.copytree(directory, temp_directory)
     books = [run.data._loader.english.m_ailabs.DOROTHY_AND_WIZARD_OZ]
     return {
-        JUDY_BIEBER: m_ailabs_en_us_judy_bieber_speech_dataset(temp_directory, books=books),
-        LINDA_JOHNSON: lj_speech_dataset(temp_directory),
+        m_ailabs.JUDY_BIEBER: M_AILABS_DATASETS[m_ailabs.JUDY_BIEBER](temp_directory, books=books),
+        lj_speech.LINDA_JOHNSON: lj_speech.lj_speech_dataset(temp_directory),
     }
 
 

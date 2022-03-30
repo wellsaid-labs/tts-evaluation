@@ -147,23 +147,64 @@ class Alignment(typing.NamedTuple):
 class Language(Enum):
     ENGLISH: typing.Final = "English"
     GERMAN: typing.Final = "German"
-    PORTUGUESE_BR: typing.Final = "Portuguese"
-    SPANISH_CO: typing.Final = "Spanish"
+    PORTUGUESE: typing.Final = "Portuguese"
+    SPANISH: typing.Final = "Spanish"
 
 
-class Speaker(typing.NamedTuple):
-    # TODO: Move style, language, post processing attributes to `Passage` because the same speaker
-    # could have multiple styles, languages, and filters applied.
+class Style(Enum):
+    LIBRI: typing.Final = "LibriVox"
+    NARR: typing.Final = "Narration"
+    PROMO: typing.Final = "Promotional"
+    CONVO: typing.Final = "Conversational"
+    DICT: typing.Final = "Dictionary"
+    OTHER: typing.Final = "Other"
+
+
+class Dialect(Enum):
+    DE_DE: typing.Final = (Language.GERMAN, "German (Germany)")
+    EN_AU: typing.Final = (Language.ENGLISH, "English (Australia)")
+    EN_CA: typing.Final = (Language.ENGLISH, "English (Canada)")
+    EN_IE: typing.Final = (Language.ENGLISH, "English (Ireland)")
+    EN_NZ: typing.Final = (Language.ENGLISH, "English (New Zealand)")
+    EN_UK: typing.Final = (Language.ENGLISH, "English (United Kingdom)")
+    EN_UNKNOWNN: typing.Final = (Language.ENGLISH, "English (Unknown)")
+    EN_US: typing.Final = (Language.ENGLISH, "English (United States)")
+    ES_CO: typing.Final = (Language.SPANISH, "Spanish (Colombia)")
+    ES_ES: typing.Final = (Language.SPANISH, "Spanish (Spain)")
+    PT_BR: typing.Final = (Language.PORTUGUESE, "Portuguese (Brazilian)")
+
+
+@dataclasses.dataclass(frozen=True)
+class Speaker:
+    # TODO: Handle multiple dialects or bilingual speakers.
+    # TODO: The `Style` isn't named well because a `Speaker` doesn't have a single style. In the
+    # future, maybe rename `Speaker` to something else.
+
+    # This is a unique name per speaker.
     label: str
-    language: Language
+
+    # This determine the style the speaker was reading.
+    style: Style
+
+    # This is the dialect the speaker was using.
+    dialect: Dialect
+
+    # This is a human-readable name for the voice.
     name: typing.Optional[str] = None
+
+    # For some voices, this is where this speakers data is stored in Google Cloud Storage.
+    gcs_dir: typing.Optional[str] = None
+
+    # There are some voices which are a post-processed version of an original voice.
+    post: bool = False
+
+    # For some voices, this is the gender of the voice, usually required for finding those voices.
     gender: typing.Optional[str] = None
 
+    @property
+    def language(self) -> Language:
+        return self.dialect.value[0]
 
-make_en_speaker = lambda label, *a, **kw: Speaker(label, Language.ENGLISH, *a, **kw)
-make_de_speaker = lambda label, *a, **kw: Speaker(label, Language.GERMAN, *a, **kw)
-make_es_speaker = lambda label, *a, **kw: Speaker(label, Language.SPANISH_CO, *a, **kw)
-make_pt_speaker = lambda label, *a, **kw: Speaker(label, Language.PORTUGUESE_BR, *a, **kw)
 
 # TODO: Implement `__str__` so that we have a more succinct string representation for logging
 Session = typing.NewType("Session", typing.Tuple[Speaker, str])
