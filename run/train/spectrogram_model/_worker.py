@@ -90,12 +90,11 @@ class Checkpoint(_utils.Checkpoint):
     def export(self) -> SpectrogramModel:
         """Export inference ready `SpectrogramModel` without needing additional context managers."""
         self.check_invariants()
-        self.model.grad_enabled = None  # NOTE: For backwards compatibility
         model = None
         with contextlib.ExitStack() as stack:
             stack.enter_context(set_train_mode(self.model, False, self.ema))
             model = copy.deepcopy(self.model)
-            model.set_grad_enabled(False)
+            model.set_inference_mode(True)
             model.allow_unk_on_eval(False)
         self.check_invariants()
         assert model is not None

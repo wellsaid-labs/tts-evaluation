@@ -100,13 +100,12 @@ class Checkpoint(_utils.Checkpoint):
     def export(self) -> SignalModel:
         """Export inference ready `SpectrogramModel` without needing additional context managers."""
         self.check_invariants()
-        self.model.grad_enabled = None  # NOTE: For backwards compatibility
         model = None
         with contextlib.ExitStack() as stack:
             stack.enter_context(set_train_mode(self.model, False, self.ema))
             self.model.del_weight_norm_temp_tensor_()
             model = copy.deepcopy(self.model)
-            model.set_grad_enabled(False)
+            model.set_inference_mode(True)
             model.remove_weight_norm_()
         self.check_invariants()
         assert model is not None
@@ -237,7 +236,6 @@ class _State:
         NOTE: `dataclasses.astuple` isn't compatible with PyTorch, learn more:
         https://github.com/pytorch/pytorch/issues/52127
         """
-        checkpoint.model.grad_enabled = None  # NOTE: For backwards compatibility
         discrims = [DistributedDataParallel(d, [device], device) for d in checkpoint.discrims]
         spectrogram_model = cls.load_spectrogram_model(
             comet, checkpoint.spectrogram_model_checkpoint_path
