@@ -37,6 +37,7 @@ logger = logging.getLogger(__name__)
 Dataset = typing.Dict[_loader.Speaker, typing.List[_loader.Passage]]
 
 
+@lib.utils.log_runtime
 def get_dataset(
     datasets: typing.Dict[_loader.Speaker, _loader.DataLoader],
     path: pathlib.Path,
