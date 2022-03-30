@@ -27,7 +27,7 @@ JOSIE__CUSTOM__MANUAL_POST = struc.Speaker(
 _deprecated_metadata = {
     (
         "Sean Hannity",
-        struc.Speaker("Sean Hannity", struc.Style.CUSTOM, None),  # type: ignore
+        struc.Speaker("Sean Hannity", struc.Style.OTHER, None),  # type: ignore
         "https://drive.google.com/uc?export=download&id=1YHX6yl1kX7lQguxSs4sJ1FPrAS9NZ8O4",
         "Sean Hannity.tar.gz",
         False,

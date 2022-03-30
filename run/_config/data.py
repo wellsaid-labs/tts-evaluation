@@ -21,7 +21,13 @@ DATASETS = copy.copy(_loader.DATASETS)
 # NOTE: Elliot and Elizabeth has unannotated character portrayals.
 del DATASETS[_loader.english.m_ailabs.ELLIOT_MILLER]
 del DATASETS[_loader.english.m_ailabs.ELIZABETH_KLETT]
+# NOTE: The alignments don't sound-a-like, in these datasets.
+del DATASETS[_loader.portuguese.librivox.RND__LIBRIVOX__FELIPE_PT]
+del DATASETS[_loader.portuguese.librivox.RND__LIBRIVOX__LENI_PT]
+del DATASETS[_loader.portuguese.librivox.RND__LIBRIVOX__MIRAMONTES_PT]
+del DATASETS[_loader.portuguese.librivox.RND__LIBRIVOX__SANDRALUNA_PT]
 
+# TODO: Remove any non-production datasets from `WSL_DATASETS` so we don't evaluate on them.
 DEV_SPEAKERS = _loader.WSL_DATASETS.copy()
 # NOTE: The `MARI_MONGE__PROMO` dataset is too short for evaluation, at 15 minutes long.
 del DEV_SPEAKERS[_loader.english.wsl.MARI_MONGE__PROMO]
@@ -42,10 +48,6 @@ for dataset in [DEV_SPEAKERS, DATASETS]:
     del dataset[_loader.english.wsl.UNEEQ__ASB_CUSTOM_VOICE_COMBINED]
     # NOTE: The alignments don't sound-a-like, in these datasets.
     del dataset[_loader.portuguese.wsl.FIVE_NINE__CUSTOM_VOICE__PT_BR]
-    del dataset[_loader.portuguese.librivox.RND__LIBRIVOX__FELIPE_PT]
-    del dataset[_loader.portuguese.librivox.RND__LIBRIVOX__LENI_PT]
-    del dataset[_loader.portuguese.librivox.RND__LIBRIVOX__MIRAMONTES_PT]
-    del dataset[_loader.portuguese.librivox.RND__LIBRIVOX__SANDRALUNA_PT]
     del dataset[_loader.spanish.wsl.FIVE_NINE__CUSTOM_VOICE__ES_CO]
 
 DEV_SPEAKERS = set(DEV_SPEAKERS.keys())
