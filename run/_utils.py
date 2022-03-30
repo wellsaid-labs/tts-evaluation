@@ -66,7 +66,8 @@ def get_dataset(
 
     prepared = {k: v for k, v in items if len(v) > 0}
     _omitted = datasets.keys() - prepared.keys()
-    logger.warning("Omitted %d Speakers: %s", len(_omitted), _omitted)
+    if len(_omitted) > 0:
+        logger.info("Omitted %d Speakers: %s", len(_omitted), _omitted)
 
     return prepared
 
