@@ -204,10 +204,10 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
             # over 4 - 8 frames in January 2020, on Comet.
             # NOTE: This was rounded up to 10 after the spectrograms length was increased by 17%
             # on average.
-            # TODO: In July 2020, the spectrogram size was decreased by 2x, we should test
-            # decreasing `length` by 2x, also.
-            length=10,
-            standard_deviation=2,
+            # NOTE: In July 2020, the spectrogram size was decreased by 2x, so we decreased
+            # these values, also, in March 2022.
+            length=5,
+            standard_deviation=0.75,
         ),
     }
     cf.add(config, overwrite)

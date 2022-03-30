@@ -3,7 +3,8 @@ import pytest
 
 from run._config.data import _include_passage, _include_span, configure
 from run.data import _loader
-from tests.run._utils import make_alignments_1d, make_alignments_2d, make_passage
+from run.data._loader import structures as struc
+from tests.run._utils import make_alignments_1d, make_alignments_2d, make_passage, make_speaker
 
 
 @pytest.fixture(autouse=True)
@@ -50,3 +51,10 @@ def test__include_span():
     span = make_passage(script="A   C", alignments=alignments)[:]
     assert not _loader.has_a_mistranscription(span)
     assert _include_span(span)
+
+    # Exclude questions based on context
+    speaker = make_speaker("", style=struc.Style.NARR)
+    passage = make_passage(script="Am I asking a question?", speaker=speaker)
+    span = passage[2:3]
+    assert span.script == "asking"
+    assert not _include_span(passage[2:3])

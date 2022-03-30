@@ -7,7 +7,7 @@ import config as cf
 import lib
 import run
 from run.data import _loader
-from run.data._loader import Language, Passage, Span
+from run.data._loader import structures as struc
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +53,9 @@ for dataset in [DEV_SPEAKERS, DATASETS]:
 DEV_SPEAKERS = set(DEV_SPEAKERS.keys())
 
 
-def _include_passage(passage: Passage, language: typing.Optional[Language] = None) -> bool:
+def _include_passage(
+    passage: struc.Passage, language: typing.Optional[struc.Language] = None
+) -> bool:
     """Return `True` iff `passage` should be included in the dataset."""
     repr_ = f"{passage.__class__.__name__}({passage.speaker.label}, {passage.session[1]}, "
     repr_ += f"{(passage.script[:25] + '...') if len(passage.script) > 25 else passage.script})"
@@ -102,7 +104,7 @@ def _include_passage(passage: Passage, language: typing.Optional[Language] = Non
     return True
 
 
-def _include_span(span: Span):
+def _include_span(span: struc.Span):
     """Return `True` iff `span` should be included in the dataset.
 
     TODO: The dataset metrics show that 2% of Heather's dataset still has pauses longer than 1s.
@@ -116,6 +118,12 @@ def _include_span(span: Span):
     script = str(span.spacy_with_context(**cf.get()))
 
     if "<" in script or ">" in script:
+        return False
+
+    # NOTE: Questions in `NARR` style voices tend to fall flat, largely due to the content
+    # the voice actors are reading. This behavior is unexpected for customers, so we filtered
+    # out these questions.
+    if "?" in script and span.speaker.style is struc.Style.NARR:
         return False
 
     # NOTE: Filter out any passage(s) with a slash because it's ambigious. It's not obvious if
