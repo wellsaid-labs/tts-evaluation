@@ -1,6 +1,5 @@
 import copy
 import logging
-import typing
 
 import config as cf
 
@@ -53,15 +52,10 @@ for dataset in [DEV_SPEAKERS, DATASETS]:
 DEV_SPEAKERS = set(DEV_SPEAKERS.keys())
 
 
-def _include_passage(
-    passage: struc.Passage, language: typing.Optional[struc.Language] = None
-) -> bool:
+def _include_passage(passage: struc.Passage) -> bool:
     """Return `True` iff `passage` should be included in the dataset."""
     repr_ = f"{passage.__class__.__name__}({passage.speaker.label}, {passage.session[1]}, "
     repr_ += f"{(passage.script[:25] + '...') if len(passage.script) > 25 else passage.script})"
-
-    if language is not None and passage.speaker.language != language:
-        return False
 
     if len(passage.alignments) == 0:
         logger.warning("%s has zero alignments.", repr_)
