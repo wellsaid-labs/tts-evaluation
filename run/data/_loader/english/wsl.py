@@ -165,8 +165,8 @@ HOUR_ONE_NBC__BB_CUSTOM_VOICE = custom(
     "hour_one_nbc__bb_custom_voice",
     "HourOne X NBC (BB Custom Voice)",
 )
-STUDY_SYNC__CUSTOM_VOICE = custom("study_sync__custom_voice", "StudySync (Custom Voice)")
-FIVE_NINE__CUSTOM_VOICE = custom("five_nine__custom_voice", "Five9 (Custom Voice)")
+STUDY_SYNC__CUSTOM_VOICE = custom("studysync__custom_voice", "StudySync (Custom Voice)")
+FIVE_NINE__CUSTOM_VOICE = custom("fivenine__custom_voice", "Five9 (Custom Voice)")
 
 _wsl_speakers = [s for s in locals().values() if isinstance(s, struc.Speaker)]
 WSL_DATASETS = {s: partial(wsl_gcs_dataset_loader, speaker=s) for s in _wsl_speakers}

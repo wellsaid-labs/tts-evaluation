@@ -384,12 +384,13 @@ def _get_dataset_stats(
 
 
 @disk_cache(run._config.DATASET_CACHE_PATH)
-def _get_dataset(debug: bool, language: typing.Optional[Language] = None):
+def _get_dataset(debug: bool, debug_lang: typing.Optional[Language] = None):
     """Helper function for `_run_experiment` to get the train and dev datasets."""
     kwargs = {}
     if debug:
         speakers = run._config.DEV_SPEAKERS
-        speaker = next((s for s in speakers if s.language is language or language is None), None)
+        iter_ = (s for s in speakers if s.language is debug_lang or debug_lang is None)
+        speaker = next(iter_, None)
         assert speaker is not None
         kwargs = {"datasets": {speaker: run._config.DATASETS[speaker]}}
     dataset = cf.call(run._utils.get_dataset, **kwargs, _overwrite=True)

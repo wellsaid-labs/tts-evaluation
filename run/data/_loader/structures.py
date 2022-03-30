@@ -178,7 +178,7 @@ class Dialect(Enum):
 class Speaker:
     # TODO: Handle multiple dialects or bilingual speakers.
     # TODO: The `Style` isn't named well because a `Speaker` doesn't have a single style. In the
-    # future, maybe rename `Speaker` to something else.
+    # future, maybe rename `Speaker` to something else like `Persona`.
 
     # This is a unique name per speaker.
     label: str
