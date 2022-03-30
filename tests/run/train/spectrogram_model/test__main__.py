@@ -39,7 +39,17 @@ def test_integration():
 
     batch_size = 2
     train_loader, dev_loader = _get_data_loaders(
-        state, train_dataset, dev_dataset, batch_size, batch_size, 1, 1, False, True, 0, 2
+        state=state,
+        train_dataset=train_dataset,
+        dev_dataset=dev_dataset,
+        train_batch_size=batch_size,
+        dev_batch_size=batch_size,
+        train_steps_per_epoch=1,
+        dev_steps_per_epoch=1,
+        train_get_weight=lambda _, f: f,
+        dev_get_weight=lambda *_: 1.0,
+        num_workers=0,
+        prefetch_factor=2,
     )
 
     # Test `_run_step` with `Metrics` and `_State`

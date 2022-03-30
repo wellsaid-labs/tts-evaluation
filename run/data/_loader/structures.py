@@ -156,6 +156,7 @@ class Style(Enum):
     NARR: typing.Final = "Narration"
     PROMO: typing.Final = "Promotional"
     CONVO: typing.Final = "Conversational"
+    DICT: typing.Final = "Dictionary"
     OTHER: typing.Final = "Other"
 
 

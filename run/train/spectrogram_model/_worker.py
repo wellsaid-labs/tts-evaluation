@@ -29,7 +29,7 @@ from lib.utils import log_runtime
 from lib.visualize import plot_alignments, plot_logits, plot_mel_spectrogram
 from run._config import Cadence, DatasetType, get_dataset_label, get_model_label
 from run._models.spectrogram_model import Inputs, Mode, Preds, SpectrogramModel
-from run._utils import Dataset
+from run._utils import Dataset, SpanGeneratorGetWeight
 from run.data._loader.structures import Speaker, get_nlp
 from run.train import _utils
 from run.train._utils import (
@@ -243,15 +243,15 @@ def _get_data_loaders(
     dev_batch_size: int,
     train_steps_per_epoch: int,
     dev_steps_per_epoch: int,
-    is_train_balanced: bool,
-    is_dev_balanced: bool,
+    train_get_weight: SpanGeneratorGetWeight,
+    dev_get_weight: SpanGeneratorGetWeight,
     num_workers: int,
     prefetch_factor: int,
 ) -> typing.Tuple[DataLoader[Batch], DataLoader[Batch]]:
     """Initialize training and development data loaders."""
     step = int(state.step.item())
-    train = DataProcessor(train_dataset, train_batch_size, step, balanced=is_train_balanced)
-    dev = DataProcessor(dev_dataset, dev_batch_size, step, balanced=is_dev_balanced)
+    train = DataProcessor(train_dataset, train_batch_size, step, get_weight=train_get_weight)
+    dev = DataProcessor(dev_dataset, dev_batch_size, step, get_weight=dev_get_weight)
     kwargs: typing.Dict[str, typing.Any] = dict(
         num_workers=num_workers,
         device=state.device,
@@ -593,7 +593,6 @@ def _log_vocab(state: _State, dataset_type: DatasetType):
         label("speaker_vocab_size"): len(model.speaker_embed.tokens()),
         label("speaker_vocab"): sorted(s for s in model.speaker_embed.tokens()),
         label("session_vocab_size"): len(session_vocab),
-        label("session_vocab"): sorted((spk.label, sesh) for spk, sesh in session_vocab),
         label("dialect_vocab_size"): len(model.dialect_embed.tokens()),
         label("dialect_vocab"): sorted(d.value for d in model.dialect_embed.tokens()),
         label("style_vocab_size"): len(model.style_embed.tokens()),

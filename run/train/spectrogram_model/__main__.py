@@ -15,7 +15,8 @@ from run._config import (
     SPECTROGRAM_MODEL_EXPERIMENTS_PATH,
     get_config_label,
 )
-from run._utils import Dataset
+from run._utils import Dataset, SpanGeneratorGetWeight
+from run.data._loader.structures import Style
 from run.train._utils import (
     CometMLExperiment,
     resume_experiment,
@@ -44,6 +45,8 @@ else:
 
 
 TEST_CASES = [
+    # NOTE: These statements have a mix of heteronyms, initialisms, hard words (locations,
+    # medical terms, technical terms), etc for testing pronunciation.
     "For more updates on covid nineteen, please contact us via the URL at the bottom of the "
     "screen, or visit our office in Seattle at the address shown here.",
     "I've listed INTJ on my resume because it's important for me that you understand how I "
@@ -56,6 +59,12 @@ TEST_CASES = [
     "web interface.",
     "Live from Seattle, it's AIQTV, with the governor's special address on the coronavirus. Don't "
     "forget to record this broadcast for viewing later.",
+    # NOTE: These questions each have a different expected inflection.
+    "Have you ever hidden a snack so that nobody else would find it and eat it first?",
+    "If you can instantly become an expert in something, what would it be?",
+    "What led to the two of you having a disagreement?",
+    "Why do some words sound funny to us?",
+    "Can fish see air like we see water?",
 ]
 
 
@@ -73,6 +82,10 @@ def _make_configuration(train_dataset: Dataset, dev_dataset: Dataset, debug: boo
     train_steps_per_epoch = 1 if debug else train_steps_per_epoch
     assert train_batch_size % lib.distributed.get_device_count() == 0
     assert dev_batch_size % lib.distributed.get_device_count() == 0
+    # NOTE: The dictionary datasets are small, making up, roughly 1/17th of the training dataset;
+    # however, they have many new words. In attempt to get the model to better learn pronunciation,
+    # this gives 5x more weight to that dataset, so, it'll come up 5x more times during training.
+    train_get_weight: SpanGeneratorGetWeight = lambda s, f: f * (5 if s.style == Style.DICT else 1)
     return {
         set_run_seed: cf.Args(seed=RANDOM_SEED),
         _worker._State._get_optimizers: cf.Args(
@@ -106,8 +119,8 @@ def _make_configuration(train_dataset: Dataset, dev_dataset: Dataset, debug: boo
             dev_batch_size=dev_batch_size,
             train_steps_per_epoch=train_steps_per_epoch,
             dev_steps_per_epoch=int(dev_steps_per_epoch),
-            is_train_balanced=False,
-            is_dev_balanced=True,
+            train_get_weight=train_get_weight,
+            dev_get_weight=lambda *_: 1.0,
             num_workers=2,
             prefetch_factor=2 if debug else 10,
         ),

@@ -103,7 +103,7 @@ def main():
         st.stop()
 
     results = []
-    generator = cf.partial(run._utils.SpanGenerator)(get_dev_dataset(), balanced=True)
+    generator = cf.partial(run._utils.SpanGenerator)(get_dev_dataset(), weight=lambda *_: 1.0)
     for _ in range(num_real_clips):
         span = next(generator)
         results.append({"Checkpoints": "original", **make_result(span, span.audio())})

@@ -11,7 +11,7 @@ from run.data._loader.utils import conventional_dataset_loader
 logger = logging.getLogger(__name__)
 GCP_SPEAKER = struc.Speaker(
     "en-US-Wavenet-D",
-    struc.Style.OTHER,
+    struc.Style.DICT,
     struc.Dialect.EN_US,
     "Google Cloud Speaker",
     "gcp_speaker",
