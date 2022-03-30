@@ -165,6 +165,8 @@ class SpectrogramModel(torch.nn.Module):
     ) -> Generator:
         """Generate frames from the decoder until a stop is predicted or `max_lengths` is reached.
 
+        TODO: Should we consider masking `alignments`, `stop_token`, also?
+
         Args:
             ...
             tokens (torch.FloatTensor [num_tokens, batch_size, encoder_hidden_size])
@@ -198,6 +200,7 @@ class SpectrogramModel(torch.nn.Module):
 
             lengths[~stopped] += 1
             frame = frame.masked_fill(stopped.view(1, -1, 1), 0)
+            hidden_state = hidden_state._replace(last_frame=frame)
             reached_max = lengths == max_lengths
             window_start = hidden_state.attention_hidden_state.window_start
             is_stop, stop_token = self._is_stop(stop_token, num_tokens, window_start, reached_max)
