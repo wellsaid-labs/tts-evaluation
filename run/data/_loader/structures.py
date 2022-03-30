@@ -538,7 +538,7 @@ class Span:
         return self._last.audio[-1] if self.audio_slice_ is None else self.audio_slice_.stop
 
     @property
-    def speaker(self):
+    def speaker(self) -> Speaker:
         return self.passage.session[0]
 
     @property
