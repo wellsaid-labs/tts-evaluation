@@ -12,7 +12,7 @@ ANGELA_MERKEL = make_speaker("angela_merkel", DE_DE, "female")
 EVA_K = make_speaker("eva_k", DE_DE, "female")
 RAMONA_DEININGER = make_speaker("ramona_deininger", DE_DE, "female")
 REBECCA_BRAUNERT_PLUNKETT = make_speaker("rebecca_braunert_plunkett", DE_DE, "female")
-KARLSSON = make_speaker("karlsson", DE_DE, "female")
+KARLSSON = make_speaker("karlsson", DE_DE, "male")
 
 MERKEL_ALONE = Book(DE_DE, ANGELA_MERKEL, "merkel_alone")
 
@@ -70,7 +70,7 @@ def m_ailabs_de_de_speech_dataset(
     237 hours of audio. When extracted, it creates a list of 32 books.
     """
     return m_ailabs_speech_dataset(
-        directory, extracted_name, url, books, DE_DE, check_files, **kwargs
+        directory, extracted_name, url, books, dialect, check_files, **kwargs
     )
 
 
