@@ -20,7 +20,7 @@ def test_get_dataset_label():
     """Test `run._config.get_dataset_label` formats a label appropriately."""
     expected = Label("static/dataset/train/test")
     assert get_dataset_label("test", Cadence.STATIC, DatasetType.TRAIN) == expected
-    expected = Label("static/dataset/dev/wade_c/test")
+    expected = Label("static/dataset/dev/wade_c/narration/test")
     result = get_dataset_label("test", Cadence.STATIC, DatasetType.DEV, WADE_C)
     assert result == expected
 
@@ -29,7 +29,7 @@ def test_get_model_label():
     """Test `run._config.get_model_label` formats a label appropriately."""
     expected = Label("static/model/test")
     assert get_model_label("test", Cadence.STATIC) == expected
-    expected = Label("static/model/wade_c/test")
+    expected = Label("static/model/wade_c/narration/test")
     assert get_model_label("test", Cadence.STATIC, WADE_C) == expected
 
 

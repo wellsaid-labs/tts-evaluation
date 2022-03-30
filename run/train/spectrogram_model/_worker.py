@@ -94,7 +94,7 @@ class Checkpoint(_utils.Checkpoint):
         with contextlib.ExitStack() as stack:
             stack.enter_context(set_train_mode(self.model, False, self.ema))
             model = copy.deepcopy(self.model)
-            model.set_inference_mode(True)
+            model.set_grad_enabled(False)
             model.allow_unk_on_eval(False)
         self.check_invariants()
         assert model is not None

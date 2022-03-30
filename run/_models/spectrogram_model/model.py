@@ -1,3 +1,4 @@
+import contextlib
 import enum
 import logging
 import math
@@ -99,7 +100,7 @@ class SpectrogramModel(torch.nn.Module):
         self.register_buffer("output_scalar", torch.tensor(output_scalar).float())
         self.stop_token_eps: torch.Tensor
         self.register_buffer("stop_token_eps", torch.logit(torch.tensor(stop_token_eps)))
-        self.set_inference_mode(False)
+        self.grad_enabled = None
 
     def allow_unk_on_eval(self, val: bool):
         """If `True` then the "unknown token" may be used during evaluation, otherwise this will
@@ -192,8 +193,8 @@ class SpectrogramModel(torch.nn.Module):
             stopped.sum() < batch_size and lengths[~stopped].max() < max_lengths[~stopped].max()
         )
         while keep_going():
-            if self._inference_mode_enabled is not None:
-                assert torch.is_inference_mode_enabled() == self._inference_mode_enabled
+            if self.grad_enabled is not None:
+                assert torch.is_grad_enabled() == self.grad_enabled
             frame, stop_token, alignment, _, hidden_state = self.decoder(
                 encoded, hidden_state=hidden_state, **kwargs
             )
@@ -289,7 +290,7 @@ class SpectrogramModel(torch.nn.Module):
             token_skip_warning: If the attention skips more than `token_skip_warning`, then
                 a `logger.warning` will be logged.
         """
-        with torch.inference_mode(self._inference_mode_enabled):
+        with self._set_grad_enabled():
             encoded = self.encoder(inputs)
             yield from self._infer_generator(
                 encoded=encoded,
@@ -308,8 +309,14 @@ class SpectrogramModel(torch.nn.Module):
             logger.warning("%d sequences reached max frames", item.reached_max.sum())
         return item
 
-    def set_inference_mode(self, enabled: bool):
-        self._inference_mode_enabled = enabled
+    def set_grad_enabled(self, enabled: typing.Optional[bool]):
+        self.grad_enabled = enabled
+
+    @contextlib.contextmanager
+    def _set_grad_enabled(self):
+        enable = self.grad_enabled
+        with contextlib.nullcontext() if enable is None else torch.set_grad_enabled(enable):
+            yield
 
     @typing.overload
     def __call__(
@@ -353,7 +360,7 @@ class SpectrogramModel(torch.nn.Module):
         NOTE: Since the `forward` function is required to be executed, we use the parameter `mode`
         to overload the function.
         """
-        with torch.inference_mode(self._inference_mode_enabled):
+        with self._set_grad_enabled():
             if mode == Mode.FORWARD:
                 return self._forward(*args, **kwargs)
             elif mode == Mode.GENERATE:

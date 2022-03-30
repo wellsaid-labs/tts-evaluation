@@ -535,7 +535,7 @@ def set_train_mode(
     original = model.training
     model.train(mode=mode)
     with contextlib.nullcontext() if ema is None or mode else ema:
-        with torch.inference_mode(mode=not mode):
+        with torch.set_grad_enabled(mode=mode):
             yield
     model.train(mode=original)
 
