@@ -164,7 +164,7 @@ def is_sound_alike(a: str, b: str, language: Language) -> bool:
 def configure(overwrite: bool = False):
     """Configure modules involved in processing text."""
     config = {
-        run.train._utils._get_dataset: cf.Args(language=LANGUAGE),
-        run._utils.get_dataset: cf.Args(debug_lang=LANGUAGE),
+        run.train._utils._get_dataset: cf.Args(debug_lang=LANGUAGE),
+        run._utils.get_dataset: cf.Args(language=LANGUAGE),
     }
     cf.add(config, overwrite)
