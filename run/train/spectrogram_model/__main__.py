@@ -67,6 +67,9 @@ TEST_CASES = [
     "Can fish see air like we see water?",
 ]
 
+_train_get_weight: SpanGeneratorGetWeight = lambda s, f: f * (5 if s.style == Style.DICT else 1)
+_dev_get_weight: SpanGeneratorGetWeight = lambda *_: 1.0
+
 
 def _make_configuration(train_dataset: Dataset, dev_dataset: Dataset, debug: bool) -> cf.Config:
     """Make additional configuration for spectrogram model training."""
@@ -85,7 +88,7 @@ def _make_configuration(train_dataset: Dataset, dev_dataset: Dataset, debug: boo
     # NOTE: The dictionary datasets are small, making up, roughly 1/17th of the training dataset;
     # however, they have many new words. In attempt to get the model to better learn pronunciation,
     # this gives 5x more weight to that dataset, so, it'll come up 5x more times during training.
-    train_get_weight: SpanGeneratorGetWeight = lambda s, f: f * (5 if s.style == Style.DICT else 1)
+
     return {
         set_run_seed: cf.Args(seed=RANDOM_SEED),
         _worker._State._get_optimizers: cf.Args(
@@ -119,8 +122,8 @@ def _make_configuration(train_dataset: Dataset, dev_dataset: Dataset, debug: boo
             dev_batch_size=dev_batch_size,
             train_steps_per_epoch=train_steps_per_epoch,
             dev_steps_per_epoch=int(dev_steps_per_epoch),
-            train_get_weight=train_get_weight,
-            dev_get_weight=lambda *_: 1.0,
+            train_get_weight=_train_get_weight,
+            dev_get_weight=_dev_get_weight,
             num_workers=2,
             prefetch_factor=2 if debug else 10,
         ),
