@@ -27,7 +27,7 @@ narr = partial(make, style=struc.Style.NARR)
 SOFIA_H = narr("sofia_h", "Sofia H-Heller", "adrienne_walker_heller")
 AVA_M = narr("ava_m", "Ava M", "alicia_harris")
 AVA_M__MANUAL_POST = narr(
-    "ava_m",
+    AVA_M.label,
     "Ava M (Manual Post Processing)",
     "alicia_harris__manual_post",
     post=True,
@@ -41,7 +41,7 @@ ISABEL_V = narr("isabel_v", "Heather Doe", "heather_doe")
 ALANA_B = narr("alana_b", "Alana B", "hilary_noriega")
 KAI_M = narr("kai_m", "Kai M", "jack_rutkowski")
 KAI_M__MANUAL_POST = narr(
-    "kai_m",
+    KAI_M.label,
     "Kai M (Manual Post Processing)",
     "jack_rutkowski__manual_post",
     post=True,
@@ -51,7 +51,7 @@ TRISTAN_F = narr("tristan_f", "Tristan F", "mark_atherlay")
 NICOLE_L = narr("nicole_l", "Nicole L", "megan_sinclair")
 WADE_C = narr("wade_c", "Wade C", "sam_scholl")
 WADE_C__MANUAL_POST = narr(
-    "wade_c",
+    WADE_C.label,
     "Wade C (Manual Post Processing)",
     "sam_scholl__manual_post",
     post=True,
@@ -81,7 +81,7 @@ JAMES_B = narr("james_b", "James B (en_GB)", "steve_newman", Dia.EN_UK)
 # PROMOTIONAL #
 ###############
 promo = partial(make, style=struc.Style.PROMO)
-SOFIA_H__PROMO = promo("sofia_h", "Sofia H-Heller (Promo)", "adrienne_walker__promo")
+SOFIA_H__PROMO = promo(SOFIA_H.label, "Sofia H-Heller (Promo)", "adrienne_walker__promo")
 ERIC_S__EN_IE__PROMO = promo(
     "eric_s__en_ie",
     "Eric S (Promo, Ireland)",
@@ -90,13 +90,13 @@ ERIC_S__EN_IE__PROMO = promo(
 )
 CHASE_J__PROMO = promo("chase_j", "Chase J (Promo)", "christopher_daniels__promo")
 DAMIAN_P__PROMO = promo("damian_p", "Damian P (Promo)", "damon_papadopoulos__promo", Dia.EN_CA)
-JODI_P__PROMO = promo("jodi_p", "Jodi P (Promo)", "dana_hurley__promo")
+JODI_P__PROMO = promo(JODI_P.label, "Jodi P (Promo)", "dana_hurley__promo")
 STEVE_B__PROMO = promo("steve_b", "Steve B (Promo)", "darby_cupit__promo")
 LEE_M__PROMO = promo("lee_m", "Lee M (Promo)", "ed_lacomb__promo")
 BELLA_B__PROMO = promo("bella_b", "Bella B (Promo)", "izzy_tugman__promo")
 SELENE_R__PROMO = promo("selene_r", "Selene R (Promo)", "linsay_rousseau__promo")
 TILDA_C__PROMO = promo("tilda_c", "Tilda C (Promo)", "naomi_mercer_mckell__promo")
-WADE_C__PROMO = promo("wade_c", "Wade C (Promo)", "sam_scholl__promo")
+WADE_C__PROMO = promo(WADE_C.label, "Wade C (Promo)", "sam_scholl__promo")
 PAUL_B__PROMO = promo("paul_b", "Paul B (Promo)", "shawn_williams__promo")
 SHARON_GAULD_ALEXANDER__PROMO = promo(
     "sharon_gauld_alexander",
@@ -109,13 +109,13 @@ SHARON_GAULD_ALEXANDER__PROMO = promo(
 # CONVERSATIONAL #
 ##################
 convo = partial(make, style=struc.Style.CONVO)
-SOFIA_H__CONVO = convo("sofia_h", "Sofia H (Convo)", "adrienne_walker__convo")
-AVA_M__CONVO = convo("ava_m", "Ava M (Convo)", "alicia_harris__convo")
-KAI_M__CONVO = convo("kai_m", "Kai M (Convo)", "jack_rutkowski__convo")
-NICOLE_L__CONVO = convo("nicole_l", "Nicole L (Convo)", "megan_sinclair__convo")
-WADE_C__CONVO = convo("wade_c", "Wade C (Convo)", "sam_scholl__convo")
-PATRICK_K__CONVO = convo("patrick_k", "Patrick K (Convo)", "steven_wahlberg__convo")
-VANESSA_N__CONVO = convo("vanessa_n", "Vanessa N (Convo)", "susan_murphy__convo")
+SOFIA_H__CONVO = convo(SOFIA_H.label, "Sofia H (Convo)", "adrienne_walker__convo")
+AVA_M__CONVO = convo(AVA_M.label, "Ava M (Convo)", "alicia_harris__convo")
+KAI_M__CONVO = convo(KAI_M.label, "Kai M (Convo)", "jack_rutkowski__convo")
+NICOLE_L__CONVO = convo(NICOLE_L.label, "Nicole L (Convo)", "megan_sinclair__convo")
+WADE_C__CONVO = convo(WADE_C.label, "Wade C (Convo)", "sam_scholl__convo")
+PATRICK_K__CONVO = convo(PATRICK_K.label, "Patrick K (Convo)", "steven_wahlberg__convo")
+VANESSA_N__CONVO = convo(VANESSA_N.label, "Vanessa N (Convo)", "susan_murphy__convo")
 
 #########
 # OTHER #
@@ -124,8 +124,8 @@ other = partial(make, style=struc.Style.OTHER)
 MARI_MONGE__PROMO = other("mari_monge", "Mari Monge (Promo)", "mari_monge__promo")
 DAN_FURCA__PROMO = other("dan_furca", "Dan Furca (Promo)", "dan_furca__promo")
 GARRY_J__STORY = other("garry_j", "Garry J (Story-Telling)", "otis_jiry__promo")
-RAMONA_J__CUSTOM = other("ramona_j", "Ramona J (Custom)", "beth_cameron__custom")
-JOE_F__RADIO = promo("joe_f", "Joe F (Radio)", "john_hunerlach__radio")
+RAMONA_J__CUSTOM = other(RAMONA_J.label, "Ramona J (Custom)", "beth_cameron__custom")
+JOE_F__RADIO = promo(JOE_F__NARRATION.label, "Joe F (Radio)", "john_hunerlach__radio")
 
 
 #################
