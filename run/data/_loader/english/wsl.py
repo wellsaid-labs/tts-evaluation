@@ -23,7 +23,7 @@ def make(
 ##############
 # E-LEARNING #
 ##############
-narr = partial(make, style=struc.Style.NARR)
+narr = partial(make, style=struc.Style.OG_NARR)
 SOFIA_H = narr("sofia_h", "Sofia H-Heller", "adrienne_walker_heller")
 AVA_M = narr("ava_m", "Ava M", "alicia_harris")
 AVA_M__MANUAL_POST = narr(
@@ -58,14 +58,15 @@ WADE_C__MANUAL_POST = narr(
 )
 PATRICK_K = narr("patrick_k", "Patrick K", "steven_wahlberg")
 VANESSA_N = narr("vanessa_n", "Vanessa N", "susan_murphy")
+
+# 2021 Q1 NARRATION
+narr = partial(make, style=struc.Style.NARR)
 JUDE_D__EN_GB = narr(
     "jude_d__en_gb",
     "Jude D (British English)",
     "alistair_davis__en_gb",
     Dia.EN_UK,
 )
-
-# 2021 Q1 NARRATION
 GIA_V = narr("gia_v", "Gia V", "alessandra_ruiz")
 ANTONY_A = narr("antony_a", "Antony A", "alex_marrero")
 JARVIS_H = narr("jarvis_h", "Alexander Hill Knight (en_GB)", "alexander_hill_knight", Dia.EN_UK)

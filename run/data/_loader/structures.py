@@ -150,6 +150,11 @@ class Language(Enum):
 
 class Style(Enum):
     LIBRI: typing.Final = "LibriVox"
+    # NOTE: `OG_NARR` style is based on our original and enthusiastic eLearning scripts.
+    # These are open-source text files.
+    OG_NARR: typing.Final = "OG Narration"
+    # NOTE: The `NARR` style is based on custom-written scripts which include dialogues and
+    # questions at a higher frequency than our `OG_NARR`.
     NARR: typing.Final = "Narration"
     PROMO: typing.Final = "Promotional"
     CONVO: typing.Final = "Conversational"
