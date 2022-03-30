@@ -3,14 +3,15 @@ import pytest
 import spacy.vocab
 import torch
 
-import lib
 import run
+from run._config import load_spacy_nlp
 from run._models.spectrogram_model.wrapper import (
     InputsWrapper,
     _Casing,
     preprocess_inputs,
     preprocess_spans,
 )
+from run.data._loader.structures import Language
 from tests.run._utils import make_passage
 
 
@@ -24,7 +25,7 @@ def run_around_tests():
 
 def test_preprocess_spans():
     """Test that `preprocess_spans` handles a basic input."""
-    nlp = lib.text.load_en_core_web_md()
+    nlp = load_spacy_nlp(Language.ENGLISH)
     script = "In 1968 the U.S. Army"
     doc = nlp(script)
     passage = make_passage(script=script)
@@ -75,7 +76,7 @@ def test_preprocess_spans():
 
 def test_preprocess_inputs_and_spans():
     """Test that `preprocess_spans` and `preprocess_inputs` function similarly."""
-    nlp = lib.text.load_en_core_web_md()
+    nlp = load_spacy_nlp(Language.ENGLISH)
     script = "In 1968 the U.S. Army"
     passage = make_passage(script=script)
     pre_span = preprocess_spans([passage[1:-1]])

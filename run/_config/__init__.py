@@ -33,6 +33,7 @@ from run._config.lang import (
     is_normalized_vo_script,
     is_sound_alike,
     is_voiced,
+    load_spacy_nlp,
     normalize_vo_script,
     replace_punc,
 )
@@ -79,4 +80,5 @@ __all__ = [
     "is_voiced",
     "normalize_vo_script",
     "replace_punc",
+    "load_spacy_nlp",
 ]

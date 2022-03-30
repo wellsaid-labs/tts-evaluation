@@ -117,7 +117,7 @@ def _include_span(span: struc.Span):
     # NOTE: Questions in `NARR` style voices tend to fall flat, largely due to the content
     # the voice actors are reading. This behavior is unexpected for customers, so we filtered
     # out these questions.
-    if "?" in script and span.speaker.style is struc.Style.NARR:
+    if "?" in script and span.speaker.style is struc.Style.OG_NARR:
         return False
 
     # NOTE: Filter out any passage(s) with a slash because it's ambigious. It's not obvious if

@@ -16,6 +16,7 @@ from run._config import (
     get_config_label,
 )
 from run._utils import Dataset
+from run.data._loader.structures import Language
 from run.train._utils import (
     CometMLExperiment,
     resume_experiment,
@@ -43,7 +44,7 @@ else:
         logger.info("Ignoring optional `typer` dependency.")
 
 
-TEST_CASES = [
+ENGLISH_TEST_CASES = [
     # NOTE: These statements have a mix of heteronyms, initialisms, hard words (locations,
     # medical terms, technical terms), etc for testing pronunciation.
     "For more updates on covid nineteen, please contact us via the URL at the bottom of the "
@@ -65,6 +66,7 @@ TEST_CASES = [
     "Why do some words sound funny to us?",
     "Can fish see air like we see water?",
 ]
+TEST_CASES = [(Language.ENGLISH, t) for t in ENGLISH_TEST_CASES]
 
 
 def _make_configuration(train_dataset: Dataset, dev_dataset: Dataset, debug: bool) -> cf.Config:

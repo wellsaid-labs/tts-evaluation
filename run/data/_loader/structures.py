@@ -24,6 +24,7 @@ import run
 from lib.audio import AudioMetadata, get_audio_metadata
 from lib.text import has_digit
 from lib.utils import Timeline, Tuple, flatten_2d, tqdm_
+from run import _config
 from run.data import _loader
 
 logger = logging.getLogger(__name__)
@@ -31,10 +32,6 @@ logger = logging.getLogger(__name__)
 FloatFloat = typing.Tuple[float, float]
 IntInt = typing.Tuple[int, int]
 Slice = slice  # NOTE: `pylance` is buggy if we use `slice` directly for typing.
-
-
-def get_nlp():
-    return lib.text.load_en_core_web_md(disable=("ner", "tagger", "lemmatizer"))
 
 
 class NonalignmentSpans(typing.NamedTuple):
@@ -153,6 +150,11 @@ class Language(Enum):
 
 class Style(Enum):
     LIBRI: typing.Final = "LibriVox"
+    # NOTE: `OG_NARR` style is based on our original and enthusiastic eLearning scripts.
+    # These are open-source text files.
+    OG_NARR: typing.Final = "OG Narration"
+    # NOTE: The `NARR` style is based on custom-written scripts which include dialogues and
+    # questions at a higher frequency than our `OG_NARR`.
     NARR: typing.Final = "Narration"
     PROMO: typing.Final = "Promotional"
     CONVO: typing.Final = "Conversational"
@@ -318,7 +320,7 @@ class Passage:
         if hasattr(self, "_doc"):
             return self._doc
         # NOTE: For performance, process all `self.passages` together, and cache the results.
-        docs = get_nlp().pipe(s.script for s in self.passages)
+        docs = _config.load_spacy_nlp(self.speaker.language).pipe(s.script for s in self.passages)
         for passage, doc in zip(self.passages, docs):
             object.__setattr__(passage, "_doc", doc)
         return self._doc
@@ -541,7 +543,7 @@ class Span:
         return self._last.audio[-1] if self.audio_slice_ is None else self.audio_slice_.stop
 
     @property
-    def speaker(self):
+    def speaker(self) -> Speaker:
         return self.passage.session[0]
 
     @property

@@ -27,10 +27,10 @@ from lib.audio import griffin_lim
 from lib.distributed import is_master
 from lib.utils import log_runtime
 from lib.visualize import plot_alignments, plot_logits, plot_mel_spectrogram
-from run._config import Cadence, DatasetType, get_dataset_label, get_model_label
+from run._config import Cadence, DatasetType, get_dataset_label, get_model_label, load_spacy_nlp
 from run._models.spectrogram_model import Inputs, Mode, Preds, SpectrogramModel
 from run._utils import Dataset, SpanGeneratorGetWeight
-from run.data._loader.structures import Speaker, get_nlp
+from run.data._loader.structures import Language, Speaker
 from run.train import _utils
 from run.train._utils import (
     CometMLExperiment,
@@ -94,7 +94,7 @@ class Checkpoint(_utils.Checkpoint):
         with contextlib.ExitStack() as stack:
             stack.enter_context(set_train_mode(self.model, False, self.ema))
             model = copy.deepcopy(self.model)
-            model.set_inference_mode(True)
+            model.set_grad_enabled(False)
             model.allow_unk_on_eval(False)
         self.check_invariants()
         assert model is not None
@@ -529,7 +529,7 @@ def _visualize_select_cases(
     state: _State,
     dataset_type: DatasetType,
     cadence: Cadence,
-    cases: typing.List[str],
+    cases: typing.List[typing.Tuple[Language, str]],
 ):
     """Run spectrogram model in inference mode and visualize a test case."""
     if not is_master():
@@ -537,10 +537,10 @@ def _visualize_select_cases(
 
     model = typing.cast(SpectrogramModel, state.model.module)
     session_vocab = [s for s in model.session_embed.vocab.keys() if isinstance(s, tuple)]
-    sessions = [random.choice(session_vocab)]
     assert state.comet.curr_epoch is not None
     cases = [cases[state.comet.curr_epoch % len(cases)]]
-    docs = [get_nlp()(t) for t in cases]
+    sessions = [random.choice([s for s in session_vocab if s[0].language is l]) for (l, _) in cases]
+    docs = [load_spacy_nlp(l)(t) for (l, t) in cases]
     item = 0
     preds = model(Inputs(sessions, docs), mode=Mode.INFER)
 
@@ -593,7 +593,7 @@ def _log_vocab(state: _State, dataset_type: DatasetType):
         label("speaker_vocab"): sorted(s for s in model.speaker_embed.tokens()),
         label("session_vocab_size"): len(session_vocab),
         label("dialect_vocab_size"): len(model.dialect_embed.tokens()),
-        label("dialect_vocab"): sorted(d.value for d in model.dialect_embed.tokens()),
+        label("dialect_vocab"): sorted(d.value[1] for d in model.dialect_embed.tokens()),
         label("style_vocab_size"): len(model.style_embed.tokens()),
         label("style_vocab"): sorted(s.value for s in model.style_embed.tokens()),
         label("language_vocab_size"): len(model.language_embed.tokens()),

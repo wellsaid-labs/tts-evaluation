@@ -230,7 +230,6 @@ class CometMLExperiment:
         self._experiment.log_current_epoch(epoch)
         self._experiment.set_epoch(epoch)
         if not self._experiment.alive:
-            print("HERE!")
             self._experiment.curr_epoch = typing.cast(numbers.Number, epoch)
 
     def log_epoch_end(self, epoch: int):
@@ -536,7 +535,7 @@ def set_train_mode(
     original = model.training
     model.train(mode=mode)
     with contextlib.nullcontext() if ema is None or mode else ema:
-        with torch.inference_mode(mode=not mode):
+        with torch.set_grad_enabled(mode=mode):
             yield
     model.train(mode=original)
 

@@ -398,10 +398,10 @@ class DataProcessor(typing.Mapping[int, Batch]):
 
 
 def train_get_weight(speaker: Speaker, dataset_size: float):
-    # NOTE: The dictionary datasets are small, making up, roughly 1/17th of the training dataset;
+    # TODO: The dictionary datasets are small, making up, roughly 1/17th of the training dataset;
     # however, they have many new words. In attempt to get the model to better learn pronunciation,
-    # this gives 5x more weight to that dataset, so, it'll come up 5x more times during training.
-    return dataset_size * (5 if speaker.style == Style.DICT else 1)
+    # give 5x more weight to that dataset, so, it'll come up 5x more times during training.
+    return dataset_size
 
 
 def dev_get_weight(speaker: Speaker, dataset_size: float):
