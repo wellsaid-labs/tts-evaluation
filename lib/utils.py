@@ -457,7 +457,10 @@ class NumeralizePadEmbed(torch.nn.Module, typing.Generic[_NumeralizePadEmbedVar]
         if len(self._unk_tokens) > 0:
             self._unk_tokens = set()
         if len(self._new_tokens) + len(self.vocab) > self.num_embeddings:
-            raise ValueError("The number of tokens exceeds the allocated number of embeddings.")
+            raise ValueError(
+                f"The number of tokens exceeds the allocated "
+                f"number of embeddings, {self.num_embeddings}."
+            )
 
     def reset(self):
         """Reset the step counter, so that updates happen again."""
@@ -516,6 +519,12 @@ class NumeralizePadEmbed(torch.nn.Module, typing.Generic[_NumeralizePadEmbedVar]
         for token in new_tokens:
             if token not in self.vocab:
                 self.vocab[token] = len(self.vocab)
+
+        if len(self.vocab) > self.num_embeddings:
+            raise ValueError(
+                f"The number of tokens exceeds the allocated "
+                f"number of embeddings, {self.num_embeddings}."
+            )
 
         if len(new_tokens) == 0:
             self.update_every *= 2

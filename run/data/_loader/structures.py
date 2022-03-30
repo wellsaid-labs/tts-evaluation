@@ -24,6 +24,7 @@ import run
 from lib.audio import AudioMetadata, get_audio_metadata
 from lib.text import has_digit
 from lib.utils import Timeline, Tuple, flatten_2d, tqdm_
+from run import _config
 from run.data import _loader
 
 logger = logging.getLogger(__name__)
@@ -31,10 +32,6 @@ logger = logging.getLogger(__name__)
 FloatFloat = typing.Tuple[float, float]
 IntInt = typing.Tuple[int, int]
 Slice = slice  # NOTE: `pylance` is buggy if we use `slice` directly for typing.
-
-
-def get_nlp():
-    return lib.text.load_en_core_web_md(disable=("ner", "tagger", "lemmatizer"))
 
 
 class NonalignmentSpans(typing.NamedTuple):
@@ -318,7 +315,7 @@ class Passage:
         if hasattr(self, "_doc"):
             return self._doc
         # NOTE: For performance, process all `self.passages` together, and cache the results.
-        docs = get_nlp().pipe(s.script for s in self.passages)
+        docs = _config.load_spacy_nlp(self.speaker.language).pipe(s.script for s in self.passages)
         for passage, doc in zip(self.passages, docs):
             object.__setattr__(passage, "_doc", doc)
         return self._doc

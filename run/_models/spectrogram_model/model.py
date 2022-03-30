@@ -197,7 +197,7 @@ class SpectrogramModel(torch.nn.Module):
             )
 
             lengths[~stopped] += 1
-            frame[:, stopped] *= 0
+            frame = frame.masked_fill(stopped.view(1, -1, 1), 0)
             reached_max = lengths == max_lengths
             window_start = hidden_state.attention_hidden_state.window_start
             is_stop, stop_token = self._is_stop(stop_token, num_tokens, window_start, reached_max)

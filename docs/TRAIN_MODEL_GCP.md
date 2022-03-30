@@ -151,6 +151,15 @@ Setup your local development environment by following [these instructions](LOCAL
    [create a Google Machine Image](https://cloud.google.com/compute/docs/machine-images/create-machine-images)
    so you don't need to setup your VM from scratch again.
 
+1. Download any spaCy models that you may need, potentially including...
+
+   ```bash
+   python -m spacy download en_core_web_md
+   python -m spacy download de_core_news_md
+   python -m spacy download es_core_news_md
+   python -m spacy download pt_core_news_md
+   ```
+
 1. Start a `screen` session with a new virtual environment...
 
    ```bash

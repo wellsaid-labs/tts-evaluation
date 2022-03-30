@@ -28,6 +28,7 @@ from third_party import LazyLoader
 
 import lib
 import run
+from run._config import load_spacy_nlp
 from run._utils import gcs_uri_to_blob
 from run.data import _loader
 
@@ -367,7 +368,7 @@ def csv_normalize(
     """Normalize csv file(s) in PATHS and save to directory DEST."""
     # TODO: It may be worthwhile to process text with SpaCy in non-English languages.
     is_en = language is _loader.Language.ENGLISH
-    nlp = lib.text.load_en_core_web_md(disable=("tagger", "ner")) if is_en else None
+    nlp = load_spacy_nlp(language) if is_en else None
 
     results = []
     for path in tqdm.tqdm(paths):

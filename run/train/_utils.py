@@ -230,7 +230,6 @@ class CometMLExperiment:
         self._experiment.log_current_epoch(epoch)
         self._experiment.set_epoch(epoch)
         if not self._experiment.alive:
-            print("HERE!")
             self._experiment.curr_epoch = typing.cast(numbers.Number, epoch)
 
     def log_epoch_end(self, epoch: int):
