@@ -54,7 +54,7 @@ def _metadata_path_to_book(metadata_path: Path, root: Path, dialect: struc.Diale
     # EXAMPLE: "by_book/female/judy_bieber/dorothy_and_wizard_oz/metadata.csv"
     metadata_path = metadata_path.relative_to(root)
     speaker_gender, speaker_label, book_title = metadata_path.parts[1:4]
-    speaker = make_speaker(speaker_label, gender=speaker_gender.lower(), dialect=dialect)
+    speaker = make_speaker(speaker_label, dialect, speaker_gender.lower())
     return Book(getattr(struc.Dialect, root.name.upper()), speaker, book_title)
 
 
