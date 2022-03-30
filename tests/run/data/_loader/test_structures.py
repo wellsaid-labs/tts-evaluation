@@ -225,7 +225,7 @@ def test__make_speech_segments_helper__padding():
     assert speech_segments == ((slice(0, 1, None), slice(0.0, 1.0, None)),)
 
 
-@mock.patch("run.data._loader.data_structures.logger.error")
+@mock.patch("run.data._loader.structures.logger.error")
 def test__check_updated_script(mock_error):
     """Test `_check_updated_script` against some basic cases."""
     passage = make_unprocessed_passage(script="abc", transcript="abc", alignments=tuple())
@@ -245,7 +245,7 @@ def test__check_updated_script(mock_error):
         _check_updated_script("", passage, "ab", "ab")
 
 
-@mock.patch("run.data._loader.data_structures.logger.error")
+@mock.patch("run.data._loader.structures.logger.error")
 def test__check_updated_script__with__maybe_normalize_vo_script(mock_error):
     script = "áƀćde'"
     transcript = "áƀć°€¹"

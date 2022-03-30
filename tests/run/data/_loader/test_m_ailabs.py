@@ -11,11 +11,11 @@ from tests import _utils
 from tests.run.data._loader._utils import maybe_normalize_audio_and_cache_side_effect
 
 
-@mock.patch("run.data._loader.data_structures._filter_existing_paths")
-@mock.patch("run.data._loader.data_structures.get_audio_metadata")
-@mock.patch("run.data._loader.data_structures._loader.utils.maybe_normalize_audio_and_cache")
-@mock.patch("run.data._loader.data_structures._loader.utils.get_non_speech_segments_and_cache")
-@mock.patch("run.data._loader.data_structures.cf.partial")
+@mock.patch("run.data._loader.structures._filter_existing_paths")
+@mock.patch("run.data._loader.structures.get_audio_metadata")
+@mock.patch("run.data._loader.structures._loader.utils.maybe_normalize_audio_and_cache")
+@mock.patch("run.data._loader.structures._loader.utils.get_non_speech_segments_and_cache")
+@mock.patch("run.data._loader.structures.cf.partial")
 @mock.patch("urllib.request.urlretrieve")
 def test_m_ailabs_speech_dataset(
     mock_urlretrieve,
