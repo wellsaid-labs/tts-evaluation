@@ -138,7 +138,7 @@ def _split_dataset(dataset: Dataset, dev_len: int, min_sim: float) -> TrainDev:
     dev: Dataset = collections.defaultdict(list)
     train: Dataset = collections.defaultdict(list)
     dev_scripts: typing.Set[str] = set()
-    items = sorted(dataset.items(), key=lambda i: i[0])
+    items = sorted(dataset.items(), key=lambda i: i[0].label)
     random.shuffle(items)
     logger.info("Creating initial split...")
     for speaker, passages in tqdm(items):

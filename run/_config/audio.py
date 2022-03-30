@@ -182,7 +182,7 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
         run.data._loader.utils.get_non_speech_segments_and_cache: Args(
             low_cut=300, frame_length=non_speech_segment_frame_length, hop_length=5, threshold=-60
         ),
-        run.data._loader.data_structures._make_speech_segments_helper: Args(
+        run.data._loader.structures._make_speech_segments_helper: Args(
             pad=lib.audio.milli_to_sec(non_speech_segment_frame_length / 2)
         ),
         run.data._loader.utils.maybe_normalize_audio_and_cache: Args(

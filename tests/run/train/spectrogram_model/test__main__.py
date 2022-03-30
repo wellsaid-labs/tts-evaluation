@@ -6,7 +6,7 @@ import pytest
 
 from run._config import Cadence, DatasetType
 from run._models.spectrogram_model import SpectrogramModel
-from run.data._loader.english import JUDY_BIEBER
+from run.data._loader.english.m_ailabs import JUDY_BIEBER
 from run.train._utils import Context, Timer, set_context
 from run.train.spectrogram_model.__main__ import _make_configuration
 from run.train.spectrogram_model._metrics import Metrics, MetricsKey

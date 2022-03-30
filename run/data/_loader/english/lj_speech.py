@@ -8,15 +8,8 @@ from third_party import LazyLoader
 from torchnlp.download import download_file_maybe_extract
 
 import run
-from run.data._loader.data_structures import (
-    Language,
-    Passage,
-    Session,
-    Speaker,
-    UnprocessedPassage,
-    make_en_speaker,
-)
-from run.data._loader.utils import conventional_dataset_loader, make_passages
+from run.data._loader import structures as struc
+from run.data._loader.utils import conventional_dataset_loader
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import num2words
@@ -25,12 +18,12 @@ else:
 
 
 logger = logging.getLogger(__name__)
-LINDA_JOHNSON = make_en_speaker("linda_johnson")
+LINDA_JOHNSON = struc.Speaker("linda_johnson", struc.Style.LIBRI, struc.Dialect.EN_US)
 
 
-def _get_session(passage: UnprocessedPassage) -> Session:
+def _get_session(passage: struc.UnprocessedPassage) -> struc.Session:
     """For the LJ speech dataset, we define each chapter as an individual recording session."""
-    return Session((passage.speaker, str(passage.audio_path.stem.rsplit("-", 1)[0])))
+    return struc.Session((passage.speaker, str(passage.audio_path.stem.rsplit("-", 1)[0])))
 
 
 def lj_speech_dataset(
@@ -38,13 +31,13 @@ def lj_speech_dataset(
     root_directory_name: str = "LJSpeech-1.1",
     check_files=["LJSpeech-1.1/metadata.csv"],
     url: str = "http://data.keithito.com/data/speech/LJSpeech-1.1.tar.bz2",
-    speaker: Speaker = LINDA_JOHNSON,
+    speaker: struc.Speaker = LINDA_JOHNSON,
     verbalize: bool = True,
     metadata_text_column: typing.Union[str, int] = 1,
     add_tqdm: bool = False,
-    get_session: typing.Callable[[UnprocessedPassage], Session] = _get_session,
+    get_session: typing.Callable[[struc.UnprocessedPassage], struc.Session] = _get_session,
     **kwargs,
-) -> typing.List[Passage]:
+) -> typing.List[struc.Passage]:
     """Load the Linda Johnson (LJ) Speech dataset.
 
     This is a public domain speech dataset consisting of 13,100 short audio clips of a single
@@ -92,7 +85,7 @@ def lj_speech_dataset(
         metadata_text_column=metadata_text_column,
     )
     passages = [_process_text(p, verbalize) for p in passages]
-    return list(make_passages(root_directory_name, [passages], add_tqdm, get_session))
+    return list(struc.make_passages(root_directory_name, [passages], add_tqdm, get_session))
 
 
 """
@@ -108,7 +101,7 @@ punctuation.".
 """
 
 
-def _process_text(passage: UnprocessedPassage, verbalize: bool) -> UnprocessedPassage:
+def _process_text(passage: struc.UnprocessedPassage, verbalize: bool) -> struc.UnprocessedPassage:
     script = _normalize_whitespace(passage.script)
     script = _normalize_quotations(script)
 
@@ -125,7 +118,7 @@ def _process_text(passage: UnprocessedPassage, verbalize: bool) -> UnprocessedPa
         script = _verbalize_roman_number(script)
 
     # NOTE: Messes up pound sign (£); therefore, this is after `_verbalize_currency`
-    script = run._config.normalize_vo_script(script, Language.ENGLISH)
+    script = run._config.normalize_vo_script(script, struc.Language.ENGLISH)
     return dataclasses.replace(passage, script=script, transcript=script)
 
 

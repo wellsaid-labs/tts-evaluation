@@ -36,7 +36,7 @@ _NON_ASCII_CHARS: typing.Dict[Language, frozenset] = {
     # Portuguese makes use of five diacritics: the cedilla (ç), acute accent (á, é, í, ó, ú),
     # circumflex accent (â, ê, ô), tilde (ã, õ), and grave accent (à, and rarely è, ì, ò, and ù).
     # src: https://en.wikipedia.org/wiki/Portuguese_orthography
-    Language.PORTUGUESE_BR: frozenset([
+    Language.PORTUGUESE: frozenset([
         "á", "Á", "é", "É", "í", "Í", "ó", "Ó", "ú", "Ú", "ç", "Ç", "â", "Â", "ê", "Ê", "ô", "Ô",
         "ã", "Ã", "õ", "Õ", "à", "À", "è", "È", "ì", "Ì", "ò", "Ò", "ù", "Ù"
     ]),
@@ -45,7 +45,7 @@ _NON_ASCII_CHARS: typing.Dict[Language, frozenset] = {
     # The special characters required are ⟨á⟩, ⟨é⟩, ⟨í⟩, ⟨ó⟩, ⟨ú⟩, ⟨ñ⟩, ⟨Ñ⟩, ⟨ü⟩, ⟨Ü⟩, ⟨¿⟩, ⟨¡⟩
     # and the uppercase ⟨Á⟩, ⟨É⟩, ⟨Í⟩, ⟨Ó⟩, and ⟨Ú⟩.
     # src: https://en.wikipedia.org/wiki/Spanish_orthography
-    Language.SPANISH_CO: frozenset([
+    Language.SPANISH: frozenset([
         "á", "Á", "é", "É", "í", "Í", "ó", "Ó", "ú", "Ú", "ñ", "Ñ", "ü", "Ü"
     ]),
 }
@@ -53,8 +53,8 @@ _NON_ASCII_CHARS: typing.Dict[Language, frozenset] = {
 _NON_ASCII_MARKS: typing.Dict[Language, frozenset] = {
     Language.ENGLISH: frozenset(),
     Language.GERMAN: frozenset(),
-    Language.PORTUGUESE_BR: frozenset(),
-    Language.SPANISH_CO: frozenset(["¿", "¡"]),
+    Language.PORTUGUESE: frozenset(),
+    Language.SPANISH: frozenset(["¿", "¡"]),
 }
 _NON_ASCII_ALL = {l: _NON_ASCII_CHARS[l].union(_NON_ASCII_MARKS[l]) for l in Language}
 
@@ -85,6 +85,7 @@ def replace_punc(text: str, replace: str, language: Language) -> str:
 SST_CONFIGS = None
 
 try:
+    # TODO: Integrate this with the new `Dialect`s data structure.
     _make_config = partial(
         google_speech.RecognitionConfig,
         model="command_and_search",
@@ -95,8 +96,8 @@ try:
     STT_CONFIGS = {
         Language.ENGLISH: _make_config(language_code="en-US", model="video"),
         Language.GERMAN: _make_config(language_code="de-DE"),
-        Language.PORTUGUESE_BR: _make_config(language_code="pt-BR"),
-        Language.SPANISH_CO: _make_config(language_code="es-CO"),
+        Language.PORTUGUESE: _make_config(language_code="pt-BR"),
+        Language.SPANISH: _make_config(language_code="es-CO"),
     }
     LanguageCode = typing.Literal["en-US", "de-DE", "pt-BR", "es-CO"]
 except ImportError:

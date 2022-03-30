@@ -53,7 +53,7 @@ from run._config import (
     get_timer_label,
 )
 from run._utils import Dataset
-from run.data._loader.data_structures import Language
+from run.data._loader.structures import Language
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import comet_ml

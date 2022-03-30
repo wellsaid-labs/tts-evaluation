@@ -26,17 +26,20 @@ from pathlib import Path
 
 from torchnlp.download import download_file_maybe_extract
 
-from run.data._loader.data_structures import Language, Passage, Session, Speaker, UnprocessedPassage
-from run.data._loader.utils import conventional_dataset_loader, make_passages
+from run.data._loader import structures as struc
+from run.data._loader.utils import conventional_dataset_loader
 
 logger = logging.getLogger(__name__)
-Dataset = typing.NewType("Dataset", str)
 
 
 class Book(typing.NamedTuple):
-    dataset: Dataset
-    speaker: Speaker
+    dialect: struc.Dialect
+    speaker: struc.Speaker
     title: str
+
+
+def make_speaker(label: str, dialect: struc.Dialect, gender: str) -> struc.Speaker:
+    return struc.Speaker(label, struc.Style.LIBRI, dialect, gender=gender)
 
 
 def _book_to_metadata_path(book: Book, root: Path) -> Path:
@@ -46,21 +49,21 @@ def _book_to_metadata_path(book: Book, root: Path) -> Path:
     return root / "by_book" / gender / book.speaker.label / book.title / "metadata.csv"
 
 
-def _metadata_path_to_book(metadata_path: Path, root: Path, language: Language) -> Book:
+def _metadata_path_to_book(metadata_path: Path, root: Path, dialect: struc.Dialect) -> Book:
     """Given a path to a book's "metadata.csv", returns the corresponding `Book` object."""
     # EXAMPLE: "by_book/female/judy_bieber/dorothy_and_wizard_oz/metadata.csv"
     metadata_path = metadata_path.relative_to(root)
     speaker_gender, speaker_label, book_title = metadata_path.parts[1:4]
-    speaker = Speaker(speaker_label, gender=speaker_gender.lower(), language=language)
-    return Book(Dataset(root.name), speaker, book_title)
+    speaker = make_speaker(speaker_label, gender=speaker_gender.lower(), dialect=dialect)
+    return Book(getattr(struc.Dialect, root.name.upper()), speaker, book_title)
 
 
-def _get_session(passage: UnprocessedPassage) -> Session:
+def _get_session(passage: struc.UnprocessedPassage) -> struc.Session:
     """For the M-AILABS speech dataset, we define each chapter as an individual recording
     session."""
     chapter = passage.audio_path.stem.rsplit("_", 1)[0]
     label = f"{passage.audio_path.parent.parent.name}/{passage.audio_path.parent.name}/{chapter}"
-    return Session((passage.speaker, label))
+    return struc.Session((passage.speaker, label))
 
 
 def m_ailabs_speech_dataset(
@@ -68,13 +71,13 @@ def m_ailabs_speech_dataset(
     extracted_name: str,
     url: str,
     books: typing.List[Book],
-    language: Language,
+    dialect: struc.Dialect,
     check_files: typing.List[str],
     root_directory_name: str = "M-AILABS",
     metadata_pattern: str = "**/metadata.csv",
     add_tqdm: bool = False,
-    get_session: typing.Callable[[UnprocessedPassage], Session] = _get_session,
-) -> typing.List[Passage]:
+    get_session: typing.Callable[[struc.UnprocessedPassage], struc.Session] = _get_session,
+) -> typing.List[struc.Passage]:
     """Download, extract, and process a M-AILABS dataset.
 
     NOTE: The original URL is `https://data.solak.de/2019/01/the-m-ailabs-speech-dataset/`. Use
@@ -85,6 +88,7 @@ def m_ailabs_speech_dataset(
         extracted_name: Name of the extracted dataset directory.
         url: URL of the dataset `tar.gz` file.
         books: List of books to load.
+        ...
         check_files
         root_directory_name: Name of the dataset directory.
         metadata_pattern: Pattern for all `metadata.csv` files containing (filename, text)
@@ -100,14 +104,14 @@ def m_ailabs_speech_dataset(
     directory = directory / extracted_name
 
     metadata_paths = list(directory.glob(metadata_pattern))
-    downloaded_books = set([_metadata_path_to_book(p, directory, language) for p in metadata_paths])
+    downloaded_books = set([_metadata_path_to_book(p, directory, dialect) for p in metadata_paths])
     assert len(set(books) - downloaded_books) == 0, "Unable to find every book in `books`."
 
-    passages: typing.List[typing.List[UnprocessedPassage]] = []
+    passages: typing.List[typing.List[struc.UnprocessedPassage]] = []
     for book in books:
         metadata_path = _book_to_metadata_path(book, directory)
         loaded = conventional_dataset_loader(
             metadata_path.parent, book.speaker, additional_metadata={"book": book}
         )
         passages.append(loaded)
-    return list(make_passages(name, passages, add_tqdm, get_session))
+    return list(struc.make_passages(name, passages, add_tqdm, get_session))

@@ -1,5 +1,5 @@
-from run.data._loader import data_structures, english, german, m_ailabs, portuguese, spanish, utils
-from run.data._loader.data_structures import (
+from run.data._loader import english, german, m_ailabs, portuguese, spanish, structures, utils
+from run.data._loader.structures import (
     Alignment,
     Language,
     NonalignmentSpans,
@@ -9,14 +9,11 @@ from run.data._loader.data_structures import (
     Speaker,
     alignment_dtype,
     has_a_mistranscription,
-    make_de_speaker,
-    make_en_speaker,
-    make_es_speaker,
-    make_pt_speaker,
     voiced_nonalignment_spans,
 )
 from run.data._loader.utils import (
     DataLoader,
+    DataLoaders,
     SpanGenerator,
     conventional_dataset_loader,
     dataset_loader,
@@ -28,21 +25,33 @@ from run.data._loader.utils import (
     read_audio,
 )
 
-DATASETS = {**portuguese.DATASETS, **spanish.DATASETS, **german.DATASETS, **english.DATASETS}
-WSL_DATASETS = {
+DATASETS: DataLoaders = {
+    **portuguese.DATASETS,
+    **spanish.DATASETS,
+    **german.DATASETS,
+    **english.DATASETS,
+}
+WSL_DATASETS: DataLoaders = {
     **portuguese.WSL_DATASETS,
     **spanish.WSL_DATASETS,
     **german.WSL_DATASETS,
     **english.WSL_DATASETS,
 }
-
+LIBRIVOX_DATASETS: DataLoaders = {
+    **portuguese.LIBRIVOX_DATASETS,
+    **spanish.M_AILABS_DATASETS,
+    **german.M_AILABS_DATASETS,
+    **english.M_AILABS_DATASETS,
+}
+LIBRIVOX_DATASETS[english.lj_speech.LINDA_JOHNSON] = english.lj_speech.lj_speech_dataset
 
 __all__ = [
-    "data_structures",
     "english",
     "german",
     "m_ailabs",
+    "portuguese",
     "spanish",
+    "structures",
     "utils",
     "Alignment",
     "Language",
@@ -51,14 +60,11 @@ __all__ = [
     "Session",
     "Span",
     "Speaker",
-    "make_de_speaker",
-    "make_en_speaker",
-    "make_es_speaker",
-    "make_pt_speaker",
     "alignment_dtype",
     "has_a_mistranscription",
     "voiced_nonalignment_spans",
     "DataLoader",
+    "DataLoaders",
     "SpanGenerator",
     "conventional_dataset_loader",
     "dataset_loader",
@@ -68,4 +74,7 @@ __all__ = [
     "normalize_audio",
     "normalize_audio_suffix",
     "read_audio",
+    "DATASETS",
+    "WSL_DATASETS",
+    "LIBRIVOX_DATASETS",
 ]

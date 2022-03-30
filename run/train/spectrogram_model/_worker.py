@@ -29,7 +29,7 @@ from lib.visualize import plot_alignments, plot_logits, plot_mel_spectrogram
 from run._config import Cadence, DatasetType, get_dataset_label, get_model_label
 from run._models.spectrogram_model import Inputs, Mode, Preds, SpectrogramModel
 from run._utils import Dataset
-from run.data._loader.data_structures import get_nlp
+from run.data._loader.structures import get_nlp
 from run.train import _utils
 from run.train._utils import (
     CometMLExperiment,

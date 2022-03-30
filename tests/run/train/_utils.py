@@ -7,7 +7,8 @@ import torch.distributed
 import run
 from run._config import Cadence, DatasetType
 from run._utils import split_dataset
-from run.data._loader.english import JUDY_BIEBER, LINDA_JOHNSON
+from run.data._loader.english.lj_speech import LINDA_JOHNSON
+from run.data._loader.english.m_ailabs import JUDY_BIEBER
 from run.train._utils import CometMLExperiment, _get_dataset_stats
 from tests import _utils
 from tests.run._utils import make_small_dataset

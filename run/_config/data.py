@@ -1,6 +1,5 @@
 import copy
 import logging
-import pathlib
 import typing
 
 import config as cf
@@ -20,34 +19,34 @@ DEFAULT_SCRIPT = (
 
 DATASETS = copy.copy(_loader.DATASETS)
 # NOTE: Elliot and Elizabeth has unannotated character portrayals.
-del DATASETS[_loader.english.ELLIOT_MILLER]
-del DATASETS[_loader.english.ELIZABETH_KLETT]
+del DATASETS[_loader.english.m_ailabs.ELLIOT_MILLER]
+del DATASETS[_loader.english.m_ailabs.ELIZABETH_KLETT]
 
 DEV_SPEAKERS = _loader.WSL_DATASETS.copy()
 # NOTE: The `MARI_MONGE__PROMO` dataset is too short for evaluation, at 15 minutes long.
-del DEV_SPEAKERS[_loader.english.MARI_MONGE__PROMO]
-# NOTE: The `ALICIA_HARRIS`, `JACK_RUTKOWSKI`, and `SAM_SCHOLL` datasets are duplicate datasets.
+del DEV_SPEAKERS[_loader.english.wsl.MARI_MONGE__PROMO]
+# NOTE: The `AVA_M`, `KAI_M`, and `WADE_C` datasets are duplicate datasets.
 # There is an improved version of their datasets already in `dev_speakers`.
-del DEV_SPEAKERS[_loader.english.ALICIA_HARRIS]
-del DEV_SPEAKERS[_loader.english.JACK_RUTKOWSKI]
-del DEV_SPEAKERS[_loader.english.SAM_SCHOLL]
-# NOTE: The `BETH_CAMERON__CUSTOM` dataset isn't included in the studio.
-del DEV_SPEAKERS[_loader.english.BETH_CAMERON__CUSTOM]
+del DEV_SPEAKERS[_loader.english.wsl.AVA_M]
+del DEV_SPEAKERS[_loader.english.wsl.KAI_M]
+del DEV_SPEAKERS[_loader.english.wsl.WADE_C]
+# NOTE: The `RAMONA_J__CUSTOM` dataset isn't included in the studio.
+del DEV_SPEAKERS[_loader.english.wsl.RAMONA_J__CUSTOM]
 
 for dataset in [DEV_SPEAKERS, DATASETS]:
     # NOTE: The following custom datasets are poor quality and should be excluded.
-    del dataset[_loader.english.HOUR_ONE_NBC__BB_CUSTOM_VOICE]
-    del dataset[_loader.english.VIACOM__CUSTOM_VOICE]
-    del dataset[_loader.english.UNEEQ__ASB_CUSTOM_VOICE]
+    del dataset[_loader.english.wsl.HOUR_ONE_NBC__BB_CUSTOM_VOICE]
+    del dataset[_loader.english.wsl.VIACOM__CUSTOM_VOICE]
+    del dataset[_loader.english.wsl.UNEEQ__ASB_CUSTOM_VOICE]
     # NOTE: The alignments don't match up with the scripts.
-    del dataset[_loader.english.UNEEQ__ASB_CUSTOM_VOICE_COMBINED]
+    del dataset[_loader.english.wsl.UNEEQ__ASB_CUSTOM_VOICE_COMBINED]
     # NOTE: The alignments don't sound-a-like, in these datasets.
-    del dataset[_loader.portuguese.FIVE_NINE__CUSTOM_VOICE__PT_BR]
-    del dataset[_loader.portuguese.RND__LIBRIVOX__FELIPE_PT]
-    del dataset[_loader.portuguese.RND__LIBRIVOX__LENI_PT]
-    del dataset[_loader.portuguese.RND__LIBRIVOX__MIRAMONTES_PT]
-    del dataset[_loader.portuguese.RND__LIBRIVOX__SANDRALUNA_PT]
-    del dataset[_loader.spanish.FIVE_NINE__CUSTOM_VOICE__ES_CO]
+    del dataset[_loader.portuguese.wsl.FIVE_NINE__CUSTOM_VOICE__PT_BR]
+    del dataset[_loader.portuguese.librivox.RND__LIBRIVOX__FELIPE_PT]
+    del dataset[_loader.portuguese.librivox.RND__LIBRIVOX__LENI_PT]
+    del dataset[_loader.portuguese.librivox.RND__LIBRIVOX__MIRAMONTES_PT]
+    del dataset[_loader.portuguese.librivox.RND__LIBRIVOX__SANDRALUNA_PT]
+    del dataset[_loader.spanish.wsl.FIVE_NINE__CUSTOM_VOICE__ES_CO]
 
 DEV_SPEAKERS = set(DEV_SPEAKERS.keys())
 
@@ -156,7 +155,7 @@ def configure(overwrite: bool = False):
         run._utils.split_dataset: cf.Args(
             groups=groups, dev_speakers=DEV_SPEAKERS, approx_dev_len=30 * 60, min_sim=0.9
         ),
-        run.data._loader.data_structures.Span.spacy_with_context: cf.Args(max_words=20),
+        run.data._loader.structures.Span.spacy_with_context: cf.Args(max_words=20),
         run._utils.SpanGenerator: cf.Args(max_seconds=15, include_span=_include_span),
     }
     cf.add(config, overwrite)
