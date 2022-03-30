@@ -211,6 +211,7 @@ class Encoder(torch.nn.Module):
         self.embed_seq_metadata = self._make_embeds(seq_meta_embed_size, max_seq_meta_values)
         self.seq_meta_embed_dropout = torch.nn.Dropout(seq_meta_embed_dropout)
         self.embed_token_metadata = self._make_embeds(token_meta_embed_size, max_token_meta_values)
+        self.embed_token: NumeralizePadEmbed[typing.Hashable]
         self.embed_token = NumeralizePadEmbed(max_tokens, hidden_size)
         self.embed = torch.nn.Sequential(
             torch.nn.Linear(

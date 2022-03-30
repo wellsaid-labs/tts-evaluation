@@ -12,9 +12,9 @@ from matplotlib import pyplot
 import lib
 import run
 from run._config import Cadence, DatasetType, Label, get_dataset_label
-from run.data._loader import Alignment, make_en_speaker
+from run.data._loader import Alignment
 from tests._utils import TEST_DATA_PATH
-from tests.run._utils import make_passage
+from tests.run._utils import make_passage, make_speaker
 
 TEST_DATA_PATH = TEST_DATA_PATH / "audio"
 TEST_DATA_LJ = TEST_DATA_PATH / "bit(rate(lj_speech,24000),32).wav"
@@ -85,8 +85,8 @@ def test__get_dataset_stats():
     """Test `run.train._utils.get_dataset_stats` measures dataset statistics correctly."""
     _alignment = lambda a, b: Alignment((a, b), (a * 10, b * 10), (a, b))
     _passage = lambda a, b, s: make_passage(alignments=[_alignment(a, b)], speaker=s)
-    a = make_en_speaker("a")
-    b = make_en_speaker("b")
+    a = make_speaker("a")
+    b = make_speaker("b")
     train = {a: [_passage(0, 2, a), _passage(0, 2, a)], b: [_passage(0, 1, a)]}
     stats = run.train._utils._get_dataset_stats(train, {})
     static = Cadence.STATIC
@@ -124,9 +124,9 @@ def test_comet_ml_experiment():
         comet.log_html_audio(
             metadata="random metadata",
             audio={"predicted_audio": torch.rand(100), "gold_audio": torch.rand(100)},
-            speaker=make_en_speaker(""),
+            speaker=make_speaker(""),
         )
-        comet.log_npy("random", make_en_speaker(""), torch.rand(100))
+        comet.log_npy("random", make_speaker(""), torch.rand(100))
         figure = pyplot.figure()
         pyplot.close(figure)
         comet.log_figures({run._config.Label("figure"): figure})

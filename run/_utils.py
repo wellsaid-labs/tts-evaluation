@@ -138,7 +138,7 @@ def _split_dataset(dataset: Dataset, dev_len: int, min_sim: float) -> TrainDev:
     dev: Dataset = collections.defaultdict(list)
     train: Dataset = collections.defaultdict(list)
     dev_scripts: typing.Set[str] = set()
-    items = sorted(dataset.items(), key=lambda i: i[0])
+    items = sorted(dataset.items(), key=lambda i: i[0].label)
     random.shuffle(items)
     logger.info("Creating initial split...")
     for speaker, passages in tqdm(items):
@@ -232,6 +232,9 @@ def split_dataset(
     return train, dev
 
 
+SpanGeneratorGetWeight = typing.Callable[[_loader.Speaker, float], float]
+
+
 class SpanGenerator(typing.Iterator[_loader.Span]):
     """Define the dataset generator to train and evaluate the TTS models on.
 
@@ -247,7 +250,11 @@ class SpanGenerator(typing.Iterator[_loader.Span]):
         ...
         dataset
         max_seconds: The maximum seconds delimited by an `Span`.
-        balanced: Generate a similar amount of `Span`s per speaker.
+        ...
+        get_weight: Given the `Speaker` and the size of it's dataset, get it's weight relative
+            to other speakers. The weight is used to determine how many spans to generate from
+            it's dataset. If all the speakers have the same weight, then they'll be sampled
+            from equally.
     """
 
     @lib.utils.log_runtime
@@ -256,7 +263,7 @@ class SpanGenerator(typing.Iterator[_loader.Span]):
         dataset: Dataset,
         max_seconds: int,
         include_span: typing.Callable[[_loader.Span], bool],
-        balanced: bool = True,
+        get_weight: SpanGeneratorGetWeight = lambda *_: 1.0,
         **kwargs,
     ):
         self.max_seconds = max_seconds
@@ -270,7 +277,7 @@ class SpanGenerator(typing.Iterator[_loader.Span]):
             )
         self.counter = {s: 0.0 for s in dataset.keys()}
         self.expected = {
-            s: 1.0 if balanced else float(sum(p.segmented_audio_length() for p in d))
+            s: get_weight(s, float(sum(p.segmented_audio_length() for p in d)))
             for s, d in dataset.items()
         }
         self.include_span = include_span

@@ -40,7 +40,7 @@ def run_around_tests():
         _loader.utils.get_non_speech_segments_and_cache: cf.Args(
             low_cut=300, frame_length=non_speech_segment_frame_length, hop_length=5, threshold=-60
         ),
-        _loader.data_structures._make_speech_segments_helper: cf.Args(
+        _loader.structures._make_speech_segments_helper: cf.Args(
             pad=(non_speech_segment_frame_length / 2) / 1000
         ),
         _loader.utils.maybe_normalize_audio_and_cache: cf.Args(

@@ -5,18 +5,17 @@ from unittest import mock
 
 import lib
 import run.data._loader
-from run.data._loader import Alignment
-from run.data._loader.english import JUDY_BIEBER
-from run.data._loader.english.m_ailabs import US_DATASET, m_ailabs_en_us_speech_dataset
+from run.data._loader import structures as struc
+from run.data._loader.english.m_ailabs import JUDY_BIEBER, Book, m_ailabs_en_us_speech_dataset
 from tests import _utils
 from tests.run.data._loader._utils import maybe_normalize_audio_and_cache_side_effect
 
 
-@mock.patch("run.data._loader.data_structures._filter_existing_paths")
-@mock.patch("run.data._loader.data_structures.get_audio_metadata")
-@mock.patch("run.data._loader.data_structures._loader.utils.maybe_normalize_audio_and_cache")
-@mock.patch("run.data._loader.data_structures._loader.utils.get_non_speech_segments_and_cache")
-@mock.patch("run.data._loader.data_structures.cf.partial")
+@mock.patch("run.data._loader.structures._filter_existing_paths")
+@mock.patch("run.data._loader.structures.get_audio_metadata")
+@mock.patch("run.data._loader.structures._loader.utils.maybe_normalize_audio_and_cache")
+@mock.patch("run.data._loader.structures._loader.utils.get_non_speech_segments_and_cache")
+@mock.patch("run.data._loader.structures.cf.partial")
 @mock.patch("urllib.request.urlretrieve")
 def test_m_ailabs_speech_dataset(
     mock_urlretrieve,
@@ -51,13 +50,9 @@ def test_m_ailabs_speech_dataset(
             ),
             script="To My Readers.",
             transcript="To My Readers.",
-            alignments=Alignment.stow([Alignment((0, 14), (0.0, 0.0), (0, 14))]),
+            alignments=struc.Alignment.stow([struc.Alignment((0, 14), (0.0, 0.0), (0, 14))]),
             other_metadata={
                 1: "To My Readers.",
-                "book": run.data._loader.m_ailabs.Book(
-                    dataset=US_DATASET,
-                    speaker=JUDY_BIEBER,
-                    title="dorothy_and_wizard_oz",
-                ),
+                "book": Book(struc.Dialect.EN_US, JUDY_BIEBER, "dorothy_and_wizard_oz"),
             },
         )

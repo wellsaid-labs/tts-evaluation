@@ -207,7 +207,7 @@ def _baseline_vad(passage: Passage, audio: np.ndarray):
         non_speech_segments = group_audio_frames(sample_rate, is_speech, indicies, is_not_speech)
         intervals = [a.audio for a in passage[:].alignments]
         length = len(non_speech_segments)
-        non_speech_segments = _loader.data_structures._filter_non_speech_segments(
+        non_speech_segments = _loader.structures._filter_non_speech_segments(
             intervals, Timeline(intervals), [slice(*s) for s in non_speech_segments]
         )
         non_speech_segments = list([(s.start, s.stop) for s in non_speech_segments])

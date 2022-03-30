@@ -7,6 +7,7 @@ import torch.nn
 import lib
 import run
 from run._config.audio import NUM_FRAME_CHANNELS
+from run._config.data import DATASETS
 
 logger = logging.getLogger(__name__)
 
@@ -27,8 +28,11 @@ def configure(overwrite: bool = False):
     # parameters.
     # TODO: After "grapheme to phoneme" is deprecated consider setting these automatically.
     max_tokens = 1000
-    max_speakers = 100
     max_sessions = 2000
+    max_speakers = len(set(s.label for s in DATASETS.keys()))
+    max_dialects = len(set(s.dialect for s in DATASETS.keys()))
+    max_styles = len(set(s.style for s in DATASETS.keys()))
+    max_languages = len(set(s.language for s in DATASETS.keys()))
 
     # NOTE: Configure the model sizes.
     config = {
@@ -93,6 +97,9 @@ def configure(overwrite: bool = False):
             max_tokens=max_tokens,
             max_speakers=max_speakers,
             max_sessions=max_sessions,
+            max_dialects=max_dialects,
+            max_styles=max_styles,
+            max_languages=max_languages,
             num_frame_channels=NUM_FRAME_CHANNELS,
             max_token_embed_size=300,
             # SOURCE (Transfer Learning from Speaker Verification to Multispeaker Text-To-Speech
@@ -100,10 +107,11 @@ def configure(overwrite: bool = False):
             # The paper mentions their proposed model uses a 256 dimension embedding.
             # NOTE: See https://github.com/wellsaid-labs/Text-to-Speech/pull/258 to learn more about
             # this parameter.
-            seq_meta_embed_size=128,
+            seq_meta_embed_size=300,
             token_meta_embed_size=128,
         ),
         run._models.signal_model.wrapper.SignalModelWrapper: cf.Args(
+            # TODO: Add support for dialects, styles, etc.
             max_speakers=max_speakers,
             max_sessions=max_sessions,
             seq_meta_embed_size=128,
@@ -113,6 +121,7 @@ def configure(overwrite: bool = False):
         ),
         # NOTE: We found this hidden size to be effective on Comet in April 2020.
         run._models.signal_model.wrapper.SpectrogramDiscriminatorWrapper: cf.Args(
+            # TODO: Add support for dialects, styles, etc.
             max_speakers=max_speakers,
             max_sessions=max_sessions,
             seq_meta_embed_size=128,

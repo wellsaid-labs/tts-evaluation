@@ -1,4 +1,5 @@
 import atexit
+import collections
 import contextlib
 import copy
 import dataclasses
@@ -24,12 +25,12 @@ from torchnlp.utils import get_total_parameters
 import lib
 from lib.audio import griffin_lim
 from lib.distributed import is_master
-from lib.utils import NumeralizePadEmbed, log_runtime
+from lib.utils import log_runtime
 from lib.visualize import plot_alignments, plot_logits, plot_mel_spectrogram
 from run._config import Cadence, DatasetType, get_dataset_label, get_model_label
 from run._models.spectrogram_model import Inputs, Mode, Preds, SpectrogramModel
-from run._utils import Dataset
-from run.data._loader.data_structures import get_nlp
+from run._utils import Dataset, SpanGeneratorGetWeight
+from run.data._loader.structures import Speaker, get_nlp
 from run.train import _utils
 from run.train._utils import (
     CometMLExperiment,
@@ -89,12 +90,11 @@ class Checkpoint(_utils.Checkpoint):
     def export(self) -> SpectrogramModel:
         """Export inference ready `SpectrogramModel` without needing additional context managers."""
         self.check_invariants()
-        self.model.grad_enabled = None  # NOTE: For backwards compatibility
         model = None
         with contextlib.ExitStack() as stack:
             stack.enter_context(set_train_mode(self.model, False, self.ema))
             model = copy.deepcopy(self.model)
-            model.set_grad_enabled(False)
+            model.set_inference_mode(True)
             model.allow_unk_on_eval(False)
         self.check_invariants()
         assert model is not None
@@ -242,15 +242,15 @@ def _get_data_loaders(
     dev_batch_size: int,
     train_steps_per_epoch: int,
     dev_steps_per_epoch: int,
-    is_train_balanced: bool,
-    is_dev_balanced: bool,
+    train_get_weight: SpanGeneratorGetWeight,
+    dev_get_weight: SpanGeneratorGetWeight,
     num_workers: int,
     prefetch_factor: int,
 ) -> typing.Tuple[DataLoader[Batch], DataLoader[Batch]]:
     """Initialize training and development data loaders."""
     step = int(state.step.item())
-    train = DataProcessor(train_dataset, train_batch_size, step, balanced=is_train_balanced)
-    dev = DataProcessor(dev_dataset, dev_batch_size, step, balanced=is_dev_balanced)
+    train = DataProcessor(train_dataset, train_batch_size, step, get_weight=train_get_weight)
+    dev = DataProcessor(dev_dataset, dev_batch_size, step, get_weight=dev_get_weight)
     kwargs: typing.Dict[str, typing.Any] = dict(
         num_workers=num_workers,
         device=state.device,
@@ -430,7 +430,7 @@ def _max_num_frames_diff(args: _HandleBatchArgs, preds: Preds) -> int:
     return int(torch.argmax((args.batch.spectrogram.lengths - preds.num_frames).abs()))
 
 
-def _random_sequence(args: _HandleBatchArgs, *_) -> int:
+def _random_sequence(args: _HandleBatchArgs, preds: Preds) -> int:
     """Get a random batch index."""
     return random.randint(0, len(args.batch) - 1)
 
@@ -486,7 +486,8 @@ def _visualize_inferred(args: _HandleBatchArgs, preds: Preds, pick: _Pick = _ran
         audio=audio,
         context=args.state.comet.context,
         text=args.batch.spans[item].script,
-        text_context=args.batch.inputs.tokens[item],
+        text_context="".join(typing.cast(typing.List[str], args.batch.inputs.tokens[item])),
+        passage=args.batch.spans[item].passage.script,
         speaker=args.batch.spans[item].speaker,
         session=args.batch.spans[item].session,
         predicted_loudness=get_average_db_rms_level(predicted_spectrogram.unsqueeze(1)).item(),
@@ -535,7 +536,7 @@ def _visualize_select_cases(
         return
 
     model = typing.cast(SpectrogramModel, state.model.module)
-    session_vocab = [s for s in model.session_vocab.keys() if isinstance(s, tuple)]
+    session_vocab = [s for s in model.session_embed.vocab.keys() if isinstance(s, tuple)]
     sessions = [random.choice(session_vocab)]
     assert state.comet.curr_epoch is not None
     cases = [cases[state.comet.curr_epoch % len(cases)]]
@@ -584,25 +585,30 @@ def _log_vocab(state: _State, dataset_type: DatasetType):
 
     label = partial(get_dataset_label, cadence=Cadence.RUN, type_=dataset_type)
     model = typing.cast(SpectrogramModel, state.model.module)
-    filter_ = lambda v: [t for t in v.keys() if not isinstance(t, NumeralizePadEmbed._Tokens)]
-    session_vocab = filter_(model.session_vocab)
-    token_vocab = filter_(model.token_vocab)
-    speaker_vocab = filter_(model.speaker_vocab)
+    session_vocab = model.session_embed.tokens()
     parameters = {
-        label("token_vocab_size"): len(token_vocab),
-        label("token_vocab"): sorted(token_vocab),
-        label("speaker_vocab_size"): len(speaker_vocab),
-        label("speaker_vocab"): sorted([s.label for s in speaker_vocab]),
+        label("token_vocab_size"): len(model.token_embed.tokens()),
+        label("token_vocab"): sorted(model.token_embed.tokens()),
+        label("speaker_vocab_size"): len(model.speaker_embed.tokens()),
+        label("speaker_vocab"): sorted(s for s in model.speaker_embed.tokens()),
         label("session_vocab_size"): len(session_vocab),
-        label("session_vocab"): sorted([(spk.label, sesh) for spk, sesh in session_vocab]),
+        label("dialect_vocab_size"): len(model.dialect_embed.tokens()),
+        label("dialect_vocab"): sorted(d.value for d in model.dialect_embed.tokens()),
+        label("style_vocab_size"): len(model.style_embed.tokens()),
+        label("style_vocab"): sorted(s.value for s in model.style_embed.tokens()),
+        label("language_vocab_size"): len(model.language_embed.tokens()),
+        label("language_vocab"): sorted(l.value for l in model.language_embed.tokens()),
     }
     state.comet.log_parameters(parameters)
 
-    for speaker in speaker_vocab:
-        sessions = [sesh for spk, sesh in session_vocab if spk == speaker]
+    sessions: typing.Dict[Speaker, typing.List[str]] = collections.defaultdict(list)
+    for session in session_vocab:
+        sessions[session[0]].append(session[1])
+
+    for speaker, session_label in sessions.items():
         parameters = {
-            label("num_sessions", speaker=speaker): len(sessions),
-            label("sessions", speaker=speaker): sorted(sessions),
+            label("num_sessions", speaker=speaker): len(session_label),
+            label("sessions", speaker=speaker): sorted(session_label),
         }
         state.comet.log_parameters(parameters)
 

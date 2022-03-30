@@ -6,7 +6,7 @@ import pytest
 
 from run._config import Cadence, DatasetType
 from run._models.spectrogram_model import SpectrogramModel
-from run.data._loader.english import JUDY_BIEBER
+from run.data._loader.english.m_ailabs import JUDY_BIEBER
 from run.train._utils import Context, Timer, set_context
 from run.train.spectrogram_model.__main__ import _make_configuration
 from run.train.spectrogram_model._metrics import Metrics, MetricsKey
@@ -39,7 +39,17 @@ def test_integration():
 
     batch_size = 2
     train_loader, dev_loader = _get_data_loaders(
-        state, train_dataset, dev_dataset, batch_size, batch_size, 1, 1, False, True, 0, 2
+        state=state,
+        train_dataset=train_dataset,
+        dev_dataset=dev_dataset,
+        train_batch_size=batch_size,
+        dev_batch_size=batch_size,
+        train_steps_per_epoch=1,
+        dev_steps_per_epoch=1,
+        train_get_weight=lambda _, f: f,
+        dev_get_weight=lambda *_: 1.0,
+        num_workers=0,
+        prefetch_factor=2,
     )
 
     # Test `_run_step` with `Metrics` and `_State`
@@ -55,9 +65,9 @@ def test_integration():
 
         is_not_diff = lambda b, v: len(set(b) - set(v.keys())) == 0
         characters = [c for s in batch.inputs.tokens for c in s]
-        assert is_not_diff(characters, model.token_vocab)
-        assert is_not_diff((s.speaker for s in batch.spans), model.speaker_vocab)
-        assert is_not_diff((s.session for s in batch.spans), model.session_vocab)
+        assert is_not_diff(characters, model.token_embed.vocab)
+        assert is_not_diff((s.speaker.label for s in batch.spans), model.speaker_embed.vocab)
+        assert is_not_diff((s.session for s in batch.spans), model.session_embed.vocab)
 
         # fmt: off
         keys = [

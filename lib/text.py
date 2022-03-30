@@ -640,7 +640,7 @@ def add_space_between_sentences(doc: spacy.tokens.Doc) -> str:
     for prev, curr, next in zip(doc, doc[1:], doc[2:]):
         # NOTE: Add a whitespace after `curr` if it's wedged in between two words with no
         # white space following it.
-        # NOTE: This approach avois tricky cases involving multiple sequential punctuation marks.
+        # NOTE: This approach avoids tricky cases involving multiple sequential punctuation marks.
         if (
             next.is_sent_start
             and len(curr.whitespace_) == 0

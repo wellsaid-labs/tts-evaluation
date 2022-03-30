@@ -182,7 +182,7 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
         run.data._loader.utils.get_non_speech_segments_and_cache: Args(
             low_cut=300, frame_length=non_speech_segment_frame_length, hop_length=5, threshold=-60
         ),
-        run.data._loader.data_structures._make_speech_segments_helper: Args(
+        run.data._loader.structures._make_speech_segments_helper: Args(
             pad=lib.audio.milli_to_sec(non_speech_segment_frame_length / 2)
         ),
         run.data._loader.utils.maybe_normalize_audio_and_cache: Args(
@@ -204,10 +204,10 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
             # over 4 - 8 frames in January 2020, on Comet.
             # NOTE: This was rounded up to 10 after the spectrograms length was increased by 17%
             # on average.
-            # TODO: In July 2020, the spectrogram size was decreased by 2x, we should test
-            # decreasing `length` by 2x, also.
-            length=10,
-            standard_deviation=2,
+            # NOTE: In July 2020, the spectrogram size was decreased by 2x, so we decreased
+            # these values, also, in March 2022.
+            length=5,
+            standard_deviation=0.75,
         ),
     }
     cf.add(config, overwrite)

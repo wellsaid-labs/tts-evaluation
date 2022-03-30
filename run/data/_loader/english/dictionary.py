@@ -5,25 +5,31 @@ import typing
 
 from torchnlp.download import _maybe_extract
 
-from run.data._loader.data_structures import Passage, Session, make_en_speaker
-from run.data._loader.utils import conventional_dataset_loader, make_passages
+from run.data._loader import structures as struc
+from run.data._loader.utils import conventional_dataset_loader
 
 logger = logging.getLogger(__name__)
-GCP_SPEAKER = make_en_speaker("gcp_speaker")
-SESSION = Session((GCP_SPEAKER, ""))
+GCP_SPEAKER = struc.Speaker(
+    "en-US-Wavenet-D",
+    struc.Style.DICT,
+    struc.Dialect.EN_US,
+    "Google Cloud Speaker",
+    "gcp_speaker",
+)
+SESSION = struc.Session((GCP_SPEAKER, ""))
 
 
-def pronunciation_dictionary_dataset(
+def dictionary_dataset(
     directory: pathlib.Path,
     root_directory_name: str = "gcp_pronunciation_dictionary",
     gcs_path: str = "gs://wellsaid_labs_datasets",
     file_name: str = "gcp_pronunciation_dictionary.tar.gz",
-    session: Session = SESSION,
+    session: struc.Session = SESSION,
     metadata_text_column: typing.Union[str, int] = 1,
     add_tqdm: bool = False,
     strict: bool = False,
     **kwargs,
-) -> typing.List[Passage]:
+) -> typing.List[struc.Passage]:
     """Load the a pronunciation dictionary dataset.
 
     Args:
@@ -50,4 +56,4 @@ def pronunciation_dictionary_dataset(
         metadata_text_column=metadata_text_column,
     )
     get_session = lambda *_, **__: session
-    return list(make_passages(root_directory_name, [passages], add_tqdm, get_session))
+    return list(struc.make_passages(root_directory_name, [passages], add_tqdm, get_session))
