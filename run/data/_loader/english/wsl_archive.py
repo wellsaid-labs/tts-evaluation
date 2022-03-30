@@ -25,6 +25,8 @@ JOSIE__CUSTOM__MANUAL_POST = struc.Speaker(
 )
 
 _deprecated_metadata = {
+    # NOTE: This dataset isn't available for commercial use. This was a project commissioned by
+    # iHeartRadio for a proof of concept. It was never intended to be publicized.
     (
         "Sean Hannity",
         struc.Speaker("Sean Hannity", struc.Style.OTHER, None),  # type: ignore
@@ -32,6 +34,7 @@ _deprecated_metadata = {
         "Sean Hannity.tar.gz",
         False,
     ),
+    # NOTE: This dataset was decommissioned due to poor quality.
     (
         "Nadine Nagamatsu",
         struc.Speaker("Nadine Nagamatsu", struc.Style.NARR, None),  # type: ignore
@@ -39,6 +42,7 @@ _deprecated_metadata = {
         "Nadine Nagamatsu.tar.gz",
         False,
     ),
+    # NOTE: The datasets below are custom voices.
     (
         "Lincoln_custom_ma",
         LINCOLN__CUSTOM,
