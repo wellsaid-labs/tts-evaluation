@@ -116,16 +116,16 @@ def test__get_normalized_half_gaussian():
 def test__make_stop_token():
     """Test `_data._make_stop_token` makes a batched stop token."""
     spectrogram = SequenceBatch(torch.ones(8, 4, 16), torch.tensor([2, 4, 6, 8]).unsqueeze(0))
-    stop_token = _data._make_stop_token(spectrogram, 6, 0.75)
+    stop_token = _data._make_stop_token(spectrogram, 6, 2)
     assert_almost_equal(stop_token.lengths, spectrogram.lengths)
     expected = [
-        [0.3115, 0.0002, 0.0000, 0.0000],
-        [1.0000, 0.0204, 0.0000, 0.0000],
-        [0.0000, 0.3115, 0.0002, 0.0000],
-        [0.0000, 1.0000, 0.0204, 0.0000],
-        [0.0000, 0.0000, 0.3115, 0.0002],
-        [0.0000, 0.0000, 1.0000, 0.0204],
-        [0.0000, 0.0000, 0.0000, 0.3115],
+        [0.7910, 0.2445, 0.0363, 0.0000],
+        [1.0000, 0.4947, 0.0966, 0.0000],
+        [0.0000, 0.7910, 0.2445, 0.0363],
+        [0.0000, 1.0000, 0.4947, 0.0966],
+        [0.0000, 0.0000, 0.7910, 0.2445],
+        [0.0000, 0.0000, 1.0000, 0.4947],
+        [0.0000, 0.0000, 0.0000, 0.7910],
         [0.0000, 0.0000, 0.0000, 1.0000],
     ]
     assert_almost_equal(stop_token.tensor, torch.tensor(expected), decimal=4)

@@ -23,14 +23,10 @@ import lib
 from lib.utils import flatten_2d
 
 if typing.TYPE_CHECKING:  # pragma: no cover
-    import en_core_web_md
-    import en_core_web_sm
     import Levenshtein
     import nltk
     import normalise
 else:
-    en_core_web_sm = LazyLoader("en_core_web_sm", globals(), "en_core_web_sm")
-    en_core_web_md = LazyLoader("en_core_web_md", globals(), "en_core_web_md")
     Levenshtein = LazyLoader("Levenshtein", globals(), "Levenshtein")
     nltk = LazyLoader("nltk", globals(), "nltk")
     normalise = LazyLoader("normalise", globals(), "normalise")
@@ -663,21 +659,15 @@ def _nltk_download(dependency):
 
 
 @functools.lru_cache(maxsize=None)
-def load_en_core_web_md(*args, **kwargs) -> Language:
-    """Load and cache in memory a spaCy `Language` object."""
-    logger.info("Loading spaCy model `en_core_web_md`...")
-    nlp = en_core_web_md.load(*args, **kwargs)
-    logger.info("Loaded spaCy model `en_core_web_md`.")
+def load_spacy_nlp(name, *args, **kwargs) -> Language:
+    logger.info(f"Loading spaCy model `{name}`...")
+    nlp = spacy.load(name, *args, **kwargs)
+    logger.info(f"Loaded spaCy model `{name}`.")
     return nlp
 
 
-@functools.lru_cache(maxsize=None)
-def load_en_core_web_sm(*args, **kwargs) -> Language:
-    """Load and cache in memory a spaCy `Language` object."""
-    logger.info("Loading spaCy model `en_core_web_sm`...")
-    nlp = en_core_web_sm.load(*args, **kwargs)
-    logger.info("Loaded spaCy model `en_core_web_sm`.")
-    return nlp
+def load_en_core_web_sm(*args, **kwargs):
+    return load_spacy_nlp("en_core_web_sm", *args, **kwargs)
 
 
 @functools.lru_cache(maxsize=None)

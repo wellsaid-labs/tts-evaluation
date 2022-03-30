@@ -11,7 +11,6 @@ git+https://github.com/PetrochukM/PyTorch-NLP.git
 git+https://github.com/savoirfairelinux/num2words.git
 # Learn more: https://spacy.io/usage/models#production
 spacy==3.2.3
-https://github.com/explosion/spacy-models/releases/download/en_core_web_md-3.2.0/en_core_web_md-3.2.0.tar.gz#egg=en_core_web_md
 https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.2.0/en_core_web_sm-3.2.0.tar.gz#egg=en_core_web_sm
 unidecode
 normalise

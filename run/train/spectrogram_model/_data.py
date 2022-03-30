@@ -27,7 +27,7 @@ from lib.samplers import BucketBatchSampler
 from lib.utils import Tuple, flatten_2d, lengths_to_mask
 from run._models.spectrogram_model import preprocess_spans
 from run._models.spectrogram_model.model import Inputs
-from run.data._loader import Alignment, Span
+from run.data._loader.structures import Alignment, Span, Speaker, Style
 from run.train import _utils
 
 if typing.TYPE_CHECKING:  # pragma: no cover
@@ -395,3 +395,15 @@ class DataProcessor(typing.Mapping[int, Batch]):
 
     def __getitem__(self, index) -> Batch:
         return make_batch(self.index_to_spans[index])
+
+
+def train_get_weight(speaker: Speaker, dataset_size: float):
+    # TODO: The dictionary datasets are small, making up, roughly 1/17th of the training dataset;
+    # however, they have many new words. In attempt to get the model to better learn pronunciation,
+    # give 5x more weight to that dataset, so, it'll come up 5x more times during training.
+    return dataset_size
+
+
+def dev_get_weight(speaker: Speaker, dataset_size: float):
+    # NOTE: For the dev set, we evaluate each speaker in production, equally.
+    return 1.0

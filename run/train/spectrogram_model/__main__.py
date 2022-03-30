@@ -15,8 +15,8 @@ from run._config import (
     SPECTROGRAM_MODEL_EXPERIMENTS_PATH,
     get_config_label,
 )
-from run._utils import Dataset, SpanGeneratorGetWeight
-from run.data._loader.structures import Style
+from run._utils import Dataset
+from run.data._loader.structures import Language
 from run.train._utils import (
     CometMLExperiment,
     resume_experiment,
@@ -24,7 +24,7 @@ from run.train._utils import (
     set_run_seed,
     start_experiment,
 )
-from run.train.spectrogram_model import _metrics, _worker
+from run.train.spectrogram_model import _data, _metrics, _worker
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +44,7 @@ else:
         logger.info("Ignoring optional `typer` dependency.")
 
 
-TEST_CASES = [
+ENGLISH_TEST_CASES = [
     # NOTE: These statements have a mix of heteronyms, initialisms, hard words (locations,
     # medical terms, technical terms), etc for testing pronunciation.
     "For more updates on covid nineteen, please contact us via the URL at the bottom of the "
@@ -66,9 +66,7 @@ TEST_CASES = [
     "Why do some words sound funny to us?",
     "Can fish see air like we see water?",
 ]
-
-_train_get_weight: SpanGeneratorGetWeight = lambda s, f: f * (5 if s.style == Style.DICT else 1)
-_dev_get_weight: SpanGeneratorGetWeight = lambda *_: 1.0
+TEST_CASES = [(Language.ENGLISH, t) for t in ENGLISH_TEST_CASES]
 
 
 def _make_configuration(train_dataset: Dataset, dev_dataset: Dataset, debug: bool) -> cf.Config:
@@ -85,9 +83,6 @@ def _make_configuration(train_dataset: Dataset, dev_dataset: Dataset, debug: boo
     train_steps_per_epoch = 1 if debug else train_steps_per_epoch
     assert train_batch_size % lib.distributed.get_device_count() == 0
     assert dev_batch_size % lib.distributed.get_device_count() == 0
-    # NOTE: The dictionary datasets are small, making up, roughly 1/17th of the training dataset;
-    # however, they have many new words. In attempt to get the model to better learn pronunciation,
-    # this gives 5x more weight to that dataset, so, it'll come up 5x more times during training.
 
     return {
         set_run_seed: cf.Args(seed=RANDOM_SEED),
@@ -122,8 +117,8 @@ def _make_configuration(train_dataset: Dataset, dev_dataset: Dataset, debug: boo
             dev_batch_size=dev_batch_size,
             train_steps_per_epoch=train_steps_per_epoch,
             dev_steps_per_epoch=int(dev_steps_per_epoch),
-            train_get_weight=_train_get_weight,
-            dev_get_weight=_dev_get_weight,
+            train_get_weight=_data.train_get_weight,
+            dev_get_weight=_data.dev_get_weight,
             num_workers=2,
             prefetch_factor=2 if debug else 10,
         ),

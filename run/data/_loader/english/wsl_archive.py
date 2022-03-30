@@ -37,7 +37,7 @@ _deprecated_metadata = {
     # NOTE: This dataset was decommissioned due to poor quality.
     (
         "Nadine Nagamatsu",
-        struc.Speaker("Nadine Nagamatsu", struc.Style.NARR, None),  # type: ignore
+        struc.Speaker("Nadine Nagamatsu", struc.Style.OG_NARR, None),  # type: ignore
         "https://drive.google.com/uc?export=download&id=1fwW6oV7x3QYImSfG811vhfjp8jKXVMGZ",
         "Nadine Nagamatsu.tar.gz",
         False,

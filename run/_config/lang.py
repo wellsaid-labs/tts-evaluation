@@ -161,6 +161,19 @@ def is_sound_alike(a: str, b: str, language: Language) -> bool:
     return _is_sound_alike(a, b, language)
 
 
+_LANGUAGE_TO_SPACY = {
+    Language.ENGLISH: "en_core_web_md",
+    Language.GERMAN: "de_core_news_md",
+    Language.SPANISH: "es_core_news_md",
+    Language.PORTUGUESE: "pt_core_news_md",
+}
+
+
+def load_spacy_nlp(language: Language):
+    disable = ("ner", "tagger", "lemmatizer")
+    return lib.text.load_spacy_nlp(_LANGUAGE_TO_SPACY[language], disable=disable)
+
+
 def configure(overwrite: bool = False):
     """Configure modules involved in processing text."""
     config = {

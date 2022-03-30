@@ -37,6 +37,7 @@ logger = logging.getLogger(__name__)
 Dataset = typing.Dict[_loader.Speaker, typing.List[_loader.Passage]]
 
 
+@lib.utils.log_runtime
 def get_dataset(
     datasets: typing.Dict[_loader.Speaker, _loader.DataLoader],
     path: pathlib.Path,
@@ -55,18 +56,21 @@ def get_dataset(
         ...
     """
     logger.info("Loading dataset...")
-    datasets = {s: f for s, f in datasets.items() if language is None or s.language == language}
+    prepared = {s: f for s, f in datasets.items() if language is None or s.language == language}
+
     load = lambda s, d, **k: (s, [handle_psge(p) for p in d(path, **k) if include_psge(p)])
     if max_workers > 0:
-        with multiprocessing.pool.ThreadPool(processes=min(max_workers, len(datasets))) as pool:
-            items = list(pool.starmap(load, datasets.items()))
+        with multiprocessing.pool.ThreadPool(processes=min(max_workers, len(prepared))) as pool:
+            items = list(pool.starmap(load, prepared.items()))
     else:
-        items = [load(s, d, add_tqdm=True) for s, d in datasets.items()]
+        items = [load(s, d, add_tqdm=True) for s, d in prepared.items()]
 
-    prepared_dataset = {k: v for k, v in items if len(v) > 0}
-    _omitted = datasets.keys() - prepared_dataset.keys()
-    logger.warning("Omitted %d Speakers: %s", len(_omitted), _omitted)
-    return prepared_dataset
+    prepared = {k: v for k, v in items if len(v) > 0}
+    _omitted = datasets.keys() - prepared.keys()
+    if len(_omitted) > 0:
+        logger.info("Omitted %d Speakers: %s", len(_omitted), _omitted)
+
+    return prepared
 
 
 @functools.lru_cache(maxsize=None)

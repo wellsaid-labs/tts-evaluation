@@ -7,6 +7,7 @@ import pytest
 from run._config import Cadence, DatasetType
 from run._models.spectrogram_model import SpectrogramModel
 from run.data._loader.english.m_ailabs import JUDY_BIEBER
+from run.data._loader.structures import Language
 from run.train._utils import Context, Timer, set_context
 from run.train.spectrogram_model.__main__ import _make_configuration
 from run.train.spectrogram_model._metrics import Metrics, MetricsKey
@@ -121,7 +122,9 @@ def test_integration():
         metrics.log(lambda l: l[-1:], type_=DatasetType.TRAIN, cadence=Cadence.STEP)
         metrics.log(is_verbose=True, type_=DatasetType.TRAIN, cadence=Cadence.MULTI_STEP)
 
-        _visualize_select_cases(state, DatasetType.TEST, Cadence.MULTI_STEP, ["Hi There"])
+        _visualize_select_cases(
+            state, DatasetType.TEST, Cadence.MULTI_STEP, [(Language.ENGLISH, "Hi There")]
+        )
 
     # Test loading and saving a checkpoint
     with mock.patch("torch.nn.parallel.DistributedDataParallel") as module:

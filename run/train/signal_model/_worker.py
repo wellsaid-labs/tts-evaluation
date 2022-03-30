@@ -105,7 +105,7 @@ class Checkpoint(_utils.Checkpoint):
             stack.enter_context(set_train_mode(self.model, False, self.ema))
             self.model.del_weight_norm_temp_tensor_()
             model = copy.deepcopy(self.model)
-            model.set_inference_mode(True)
+            model.set_grad_enabled(False)
             model.remove_weight_norm_()
         self.check_invariants()
         assert model is not None
