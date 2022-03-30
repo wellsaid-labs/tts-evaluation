@@ -11,7 +11,7 @@ import torch
 from lib.utils import NumeralizePadEmbed
 from run._models.spectrogram_model.containers import Inputs, Preds
 from run._models.spectrogram_model.model import Generator, Mode, SpectrogramModel
-from run.data._loader import Session, Span, Speaker
+from run.data._loader import structures as struc
 
 
 class _Casing(enum.Enum):
@@ -66,16 +66,28 @@ def _append_tokens_and_metadata(
         inputs.token_metadata[1][-1][i] = _Context.SCRIPT
 
 
+def _append_seq_metadata(seq_metadata: typing.List, session: struc.Session):
+    """Add metadata about the sequence to the model."""
+    seq_metadata[0].append(session[0].label)
+    seq_metadata[1].append(session)
+    seq_metadata[2].append(session[0].dialect)
+    seq_metadata[3].append(session[0].style)
+    seq_metadata[4].append(session[0].language)
+
+
+def _make_inputs(device: torch.device):
+    return Inputs([], [[], [], [], [], []], [[], []], [], [], device)
+
+
 def preprocess_spans(
-    spans: typing.List[Span], device: torch.device = torch.device("cpu")
+    spans: typing.List[struc.Span], device: torch.device = torch.device("cpu")
 ) -> Inputs:
     """Preprocess inputs to inputs by including casing, context, and embeddings."""
-    return_ = Inputs([], [[], []], [[], []], [], [], device)
+    return_ = _make_inputs(device)
     for span in spans:
         context = span.spacy_with_context(**cf.get())
         start_char = span.spacy.start_char - context.start_char
-        return_.seq_metadata[0].append(span.speaker)
-        return_.seq_metadata[1].append(span.session)
+        _append_seq_metadata(return_.seq_metadata, span.session)
         _append_tokens_and_metadata(return_, context, start_char, start_char + len(str(span.spacy)))
         typing.cast(list, return_.token_embeddings).append(_make_token_embeddings(context, device))
     token_embeddings = torch.nn.utils.rnn.pad_sequence(return_.token_embeddings, batch_first=True)
@@ -86,7 +98,7 @@ class InputsWrapper(typing.NamedTuple):
     """The model inputs."""
 
     # Batch of recording sessions per speaker
-    session: typing.List[Session]
+    session: typing.List[struc.Session]
 
     # Batch of sequences of `Span` which include `Doc` context
     doc: typing.List[spacy.tokens.doc.Doc]
@@ -94,17 +106,16 @@ class InputsWrapper(typing.NamedTuple):
 
 def preprocess_inputs(inputs: InputsWrapper, device: torch.device = torch.device("cpu")) -> Inputs:
     """Preprocess inputs to inputs by including casing, context, and embeddings."""
-    return_ = Inputs([], [[], []], [[], []], [], [], device)
+    return_ = _make_inputs(device)
     for doc, sesh in zip(inputs.doc, inputs.session):
-        return_.seq_metadata[0].append(sesh[0])
-        return_.seq_metadata[1].append(sesh)
+        _append_seq_metadata(return_.seq_metadata, sesh)
         _append_tokens_and_metadata(return_, doc, 0, len(str(doc)))
         typing.cast(list, return_.token_embeddings).append(_make_token_embeddings(doc, device))
     token_embeddings = torch.nn.utils.rnn.pad_sequence(return_.token_embeddings, batch_first=True)
     return dataclasses.replace(return_, token_embeddings=token_embeddings)
 
 
-InputsTyping = typing.Union[InputsWrapper, typing.List[Span], Inputs]
+InputsTyping = typing.Union[InputsWrapper, typing.List[struc.Span], Inputs]
 
 
 class SpectrogramModelWrapper(SpectrogramModel):
@@ -115,6 +126,9 @@ class SpectrogramModelWrapper(SpectrogramModel):
         max_tokens: int,
         max_speakers: int,
         max_sessions: int,
+        max_dialects: int,
+        max_styles: int,
+        max_languages: int,
         max_token_embed_size: int,
         *args,
         **kwargs,
@@ -122,62 +136,43 @@ class SpectrogramModelWrapper(SpectrogramModel):
         super().__init__(
             *args,
             max_tokens=max_tokens,
-            max_seq_meta_values=(max_speakers, max_sessions),
+            max_seq_meta_values=(
+                max_speakers,
+                max_sessions,
+                max_dialects,
+                max_styles,
+                max_languages,
+            ),
             max_token_meta_values=(len(_Casing), len(_Context)),
             max_token_embed_size=max_token_embed_size,
             **kwargs,
         )
 
     @property
-    def token_embed(self) -> NumeralizePadEmbed:
+    def token_embed(self) -> NumeralizePadEmbed[str]:
         # NOTE: `torch.nn.Module` has special hooks for attributes which we avoid by setting this
-        # as a property, instead.
-        return self.encoder.embed_token
+        # as a `@property`, instead.
+        return typing.cast(NumeralizePadEmbed[str], self.encoder.embed_token)
 
     @property
-    def speaker_embed(self) -> NumeralizePadEmbed:
-        return typing.cast(NumeralizePadEmbed, self.encoder.embed_seq_metadata[0])
+    def speaker_embed(self) -> NumeralizePadEmbed[str]:
+        return typing.cast(NumeralizePadEmbed[str], self.encoder.embed_seq_metadata[0])
 
     @property
-    def session_embed(self) -> NumeralizePadEmbed:
-        return typing.cast(NumeralizePadEmbed, self.encoder.embed_seq_metadata[1])
+    def session_embed(self) -> NumeralizePadEmbed[struc.Session]:
+        return typing.cast(NumeralizePadEmbed[struc.Session], self.encoder.embed_seq_metadata[1])
 
     @property
-    def token_vocab(self):
-        return typing.cast(
-            typing.Dict[typing.Union[str, NumeralizePadEmbed._Tokens], int], self.token_embed.vocab
-        )
+    def dialect_embed(self) -> NumeralizePadEmbed[struc.Dialect]:
+        return typing.cast(NumeralizePadEmbed[struc.Dialect], self.encoder.embed_seq_metadata[2])
 
     @property
-    def speaker_vocab(self):
-        return typing.cast(
-            typing.Dict[typing.Union[Speaker, NumeralizePadEmbed._Tokens], int],
-            self.speaker_embed.vocab,
-        )
+    def style_embed(self) -> NumeralizePadEmbed[struc.Style]:
+        return typing.cast(NumeralizePadEmbed[struc.Style], self.encoder.embed_seq_metadata[3])
 
     @property
-    def session_vocab(self):
-        return typing.cast(
-            typing.Dict[typing.Union[Session, NumeralizePadEmbed._Tokens], int],
-            self.session_embed.vocab,
-        )
-
-    def update_token_vocab(
-        self, tokens: typing.List[str], embeddings: typing.Optional[torch.Tensor] = None
-    ):
-        self.token_embed.update_tokens(tokens, embeddings)
-
-    def update_speaker_vocab(
-        self, speakers: typing.List[Speaker], embeddings: typing.Optional[torch.Tensor] = None
-    ):
-        return self.speaker_embed.update_tokens(speakers, embeddings)
-
-    def update_session_vocab(
-        self,
-        sessions: typing.List[Session],
-        embeddings: typing.Optional[torch.Tensor] = None,
-    ):
-        return self.session_embed.update_tokens(sessions, embeddings)
+    def language_embed(self) -> NumeralizePadEmbed[struc.Language]:
+        return typing.cast(NumeralizePadEmbed[struc.Language], self.encoder.embed_seq_metadata[4])
 
     @typing.overload
     def __call__(

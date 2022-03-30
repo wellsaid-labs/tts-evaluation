@@ -382,12 +382,10 @@ class LSTMCell(torch.nn.LSTMCell):
         return super().forward(input, hx=hx)
 
 
-Hashable1d2dList = typing.Union[
-    typing.List[typing.Hashable], typing.List[typing.List[typing.Hashable]]
-]
+_NumeralizePadEmbedVar = typing.TypeVar("_NumeralizePadEmbedVar", bound=typing.Hashable)
 
 
-class NumeralizePadEmbed(torch.nn.Module):
+class NumeralizePadEmbed(torch.nn.Module, typing.Generic[_NumeralizePadEmbedVar]):
     """An `Embedding` layer with `max_embeddings` that progressively maps new tokens to embeddings.
 
     NOTE: This layer is intended to simplify the boilerplate code required to numeralize, pad,
@@ -439,7 +437,8 @@ class NumeralizePadEmbed(torch.nn.Module):
         self.pad_token = self._Tokens.PAD_TOKEN
         self.unk_token = self._Tokens.UNK_TOKEN
 
-        self.vocab: typing.Dict[typing.Hashable, int]
+        VocabKey = typing.Union[_NumeralizePadEmbedVar, NumeralizePadEmbed._Tokens]
+        self.vocab: typing.Dict[VocabKey, int]
         self.vocab = {self.pad_token: self.pad_idx, self.unk_token: self.unk_idx}
 
         max_embeddings = len(self.vocab) + max_embeddings
@@ -452,7 +451,7 @@ class NumeralizePadEmbed(torch.nn.Module):
         self._new_tokens = set()
         self._unk_tokens = set()  # NOTE: Track unknown tokens seen during evaluation
 
-    def _queue_new_tokens(self, sequences: typing.List[typing.List[typing.Hashable]]):
+    def _queue_new_tokens(self, sequences: typing.List[typing.List[_NumeralizePadEmbedVar]]):
         """Queue up tokens for a vocab update."""
         self._new_tokens.update([t for s in sequences for t in s if t not in self.vocab])
         if len(self._unk_tokens) > 0:
@@ -466,7 +465,7 @@ class NumeralizePadEmbed(torch.nn.Module):
 
     def update_tokens(
         self,
-        tokens: typing.List[typing.Hashable],
+        tokens: typing.List[_NumeralizePadEmbedVar],
         embeddings: typing.Optional[torch.Tensor] = None,
     ):
         """Add or update tokens in `self.vocab`.
@@ -491,6 +490,10 @@ class NumeralizePadEmbed(torch.nn.Module):
             with torch.no_grad():
                 self.weight[[self.vocab[t] for t in tokens]] = embeddings
 
+    def tokens(self) -> typing.List[_NumeralizePadEmbedVar]:
+        """Get all the tokens in the vocabulary excluding the default tokens."""
+        return [t for t in self.vocab.keys() if not isinstance(t, NumeralizePadEmbed._Tokens)]
+
     def _update_vocab(self):
         """Update `self.vocab` with `self._new_tokens`."""
         new_tokens = list(self._new_tokens)
@@ -498,8 +501,8 @@ class NumeralizePadEmbed(torch.nn.Module):
         if lib.distributed.is_initialized():
             outputs = [None for _ in range(lib.distributed.get_world_size())]
             torch.distributed.all_gather_object(outputs, new_tokens)
-            outputs = typing.cast(typing.List[typing.List[typing.Hashable]], outputs)
-            new_tokens = [t for l in outputs for t in l]
+            outputs = typing.cast(typing.List[typing.List[_NumeralizePadEmbedVar]], outputs)
+            new_tokens: typing.List[_NumeralizePadEmbedVar] = [t for l in outputs for t in l]
             if len(new_tokens) > 0:
                 try:
                     # NOTE: Ensure that the order `new_tokens` are added in is consistent for
@@ -524,7 +527,7 @@ class NumeralizePadEmbed(torch.nn.Module):
         for token in self._new_tokens:
             assert token not in self.vocab, "Invariant failure."
 
-    def _tok_to_idx(self, token: typing.Hashable) -> int:
+    def _tok_to_idx(self, token: _NumeralizePadEmbedVar) -> int:
         """Get the index of `token` and return `unk_token` if `token` is not found.
 
         Raises:
@@ -555,12 +558,20 @@ class NumeralizePadEmbed(torch.nn.Module):
         )
 
     def __call__(
-        self, tokens: Hashable1d2dList, **kwargs
+        self,
+        tokens: typing.Union[
+            typing.List[_NumeralizePadEmbedVar], typing.List[typing.List[_NumeralizePadEmbedVar]]
+        ],
+        **kwargs,
     ) -> typing.Tuple[torch.Tensor, torch.Tensor]:
         return super().__call__(tokens, **kwargs)
 
     def forward(
-        self, tokens: Hashable1d2dList, batch_first: bool = False, **kwargs
+        self,
+        tokens: typing.Union[
+            typing.List[_NumeralizePadEmbedVar], typing.List[typing.List[_NumeralizePadEmbedVar]]
+        ],
+        batch_first: bool = False,
     ) -> typing.Tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
@@ -577,7 +588,8 @@ class NumeralizePadEmbed(torch.nn.Module):
         is_one_dim = not isinstance(tokens[0], list)
         get, pad_idx = self._tok_to_idx, self.pad_idx
         sequences = typing.cast(
-            typing.List[typing.List[typing.Hashable]], [[s] if is_one_dim else s for s in tokens]
+            typing.List[typing.List[_NumeralizePadEmbedVar]],
+            [[s] if is_one_dim else s for s in tokens],
         )
 
         if self.training:
