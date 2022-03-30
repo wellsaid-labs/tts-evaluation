@@ -27,7 +27,7 @@ from lib.samplers import BucketBatchSampler
 from lib.utils import Tuple, flatten_2d, lengths_to_mask
 from run._models.spectrogram_model import preprocess_spans
 from run._models.spectrogram_model.model import Inputs
-from run.data._loader.structures import Alignment, Span, Speaker, Style
+from run.data._loader.structures import Alignment, Span, Speaker
 from run.train import _utils
 
 if typing.TYPE_CHECKING:  # pragma: no cover
