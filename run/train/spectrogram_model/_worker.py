@@ -486,8 +486,7 @@ def _visualize_inferred(args: _HandleBatchArgs, preds: Preds, pick: _Pick = _ran
         audio=audio,
         context=args.state.comet.context,
         text=args.batch.spans[item].script,
-        text_context="".join(typing.cast(typing.List[str], args.batch.inputs.tokens[item])),
-        passage=args.batch.spans[item].passage.script,
+        text_context=args.batch.inputs.reconstruct_text(item),
         speaker=args.batch.spans[item].speaker,
         session=args.batch.spans[item].session,
         predicted_loudness=get_average_db_rms_level(predicted_spectrogram.unsqueeze(1)).item(),
@@ -565,7 +564,7 @@ def _visualize_select_cases(
     state.comet.log_html_audio(
         audio={"predicted_griffin_lim_audio": audio},
         context=state.comet.context,
-        text=cases[item],
+        text=cases[item][1],
         speaker=sessions[item][0],
         session=sessions[item][1],
         predicted_loudness=get_average_db_rms_level(predicted_spectrogram.unsqueeze(1)).item(),

@@ -65,6 +65,13 @@ ENGLISH_TEST_CASES = [
     "What led to the two of you having a disagreement?",
     "Why do some words sound funny to us?",
     "Can fish see air like we see water?",
+    # NOTE: All these questions should have an upward inflection at the end.
+    "Are you a messy person?",
+    "Did you have cats growing up?",
+    "Do you consider yourself an adventurous person?",
+    "Do you have any weird food combos?",
+    "Do you respond to texts fast?",
+    "Have you ever been stalked by an animal that later became your pet?",
 ]
 TEST_CASES = [(Language.ENGLISH, t) for t in ENGLISH_TEST_CASES]
 

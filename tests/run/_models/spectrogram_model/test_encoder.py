@@ -8,7 +8,7 @@ import torch.nn
 from torchnlp.random import fork_rng
 
 from run._models import spectrogram_model
-from run._models.spectrogram_model.containers import Inputs
+from run._models.spectrogram_model.wrapper import Inputs
 from tests import _utils
 
 assert_almost_equal = partial(_utils.assert_almost_equal, decimal=5)
