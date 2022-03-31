@@ -1002,7 +1002,11 @@ def _normalize_scripts(
             message = f"[{label}] Skipping, passage ({name}) it doesn't have lower case characters."
             logger.warn(message)
             continue
-        if passage.alignments is None and TWO_UPPER_CHAR.search(passage.script):
+        if (
+            passage.alignments is None
+            and passage.speaker.style is not Style.DICT
+            and TWO_UPPER_CHAR.search(passage.script)
+        ):
             logger.warn(f"[{label}] Skipping, passage ({name}) it may have ambigious casing.")
             continue
 
