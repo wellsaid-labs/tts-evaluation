@@ -113,7 +113,7 @@ def _append_tokens_and_metadata(
 def _append_seq_metadata(seq_metadata: typing.List, session: struc.Session):
     """Add metadata about the sequence to the model.
 
-    TODO: Create a named tuple to organize each of these?
+    TODO: Create a named tuple to organize `seq_metadata` instead of referencing indicies.
     """
     seq_metadata[0].append(session[0].label)
     seq_metadata[1].append(session)
