@@ -59,6 +59,9 @@ ENGLISH_TEST_CASES = [
     "web interface.",
     "Live from Seattle, it's AIQTV, with the governor's special address on the coronavirus. Don't "
     "forget to record this broadcast for viewing later.",
+    "Let’s add a row on our assay tracking sheet so we can build out the proper egress "
+    "measurements.",
+    "Hello! Can you put this contractor into a supervisory role?",
     # NOTE: These questions each have a different expected inflection.
     "Have you ever hidden a snack so that nobody else would find it and eat it first?",
     "If you can instantly become an expert in something, what would it be?",

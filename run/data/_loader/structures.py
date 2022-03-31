@@ -194,8 +194,9 @@ class Speaker:
     # This is a human-readable name for the voice.
     name: typing.Optional[str] = None
 
-    # For some voices, this is where this speakers data is stored in Google Cloud Storage.
-    gcs_dir: typing.Optional[str] = None
+    # For some voices, this is where this speakers data is stored in Google Cloud Storage. This
+    # is excluded from the `repr` to hide the real identity of the voice actors.
+    gcs_dir: typing.Optional[str] = field(default=None, repr=False)
 
     # There are some voices which are a post-processed version of an original voice.
     post: bool = False
