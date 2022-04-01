@@ -361,7 +361,6 @@ def _run_step(
     stop_token_loss *= args.batch.spectrogram_mask.tensor
 
     if args.state.model.training:
-
         # NOTE: We sum over the `num_frames` dimension to ensure that we don't bias based on
         # `num_frames`. For example, a larger `num_frames` means that the denominator is larger;
         # therefore, the loss value for each element is smaller.
@@ -635,7 +634,7 @@ def _run_steps(
             if item is None:
                 break
 
-            index, batch = item
+            index, batch = typing.cast(typing.Tuple[int, Batch], item)
             handle_batch(make_args(metrics, timer, batch, index == 0))
 
             if Context.TRAIN == context:
