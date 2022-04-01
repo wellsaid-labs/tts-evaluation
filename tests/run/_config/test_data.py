@@ -17,8 +17,9 @@ def run_around_test():
 def test__include_passage():
     # Exclude upper case scripts
     assert not _include_passage(make_passage(script="THIS IS"))
-    # Include single word scripts
-    assert _include_passage(make_passage(script="THIS"))
+    # Include single word scripts only from dictionary datasets
+    speaker = make_speaker("", style=struc.Style.DICT)
+    assert _include_passage(make_passage(script="THIS", speaker=speaker))
 
 
 def test__include_span():
@@ -53,7 +54,7 @@ def test__include_span():
     assert _include_span(span)
 
     # Exclude questions based on context
-    speaker = make_speaker("", style=struc.Style.NARR)
+    speaker = make_speaker("", style=struc.Style.OG_NARR)
     passage = make_passage(script="Am I asking a question?", speaker=speaker)
     span = passage[2:3]
     assert span.script == "asking"

@@ -194,8 +194,9 @@ class Speaker:
     # This is a human-readable name for the voice.
     name: typing.Optional[str] = None
 
-    # For some voices, this is where this speakers data is stored in Google Cloud Storage.
-    gcs_dir: typing.Optional[str] = None
+    # For some voices, this is where this speakers data is stored in Google Cloud Storage. This
+    # is excluded from the `repr` to hide the real identity of the voice actors.
+    gcs_dir: typing.Optional[str] = field(default=None, repr=False)
 
     # There are some voices which are a post-processed version of an original voice.
     post: bool = False
@@ -831,6 +832,9 @@ def _check_updated_script(
             lib.utils.call_once(_check_updated_script_helper, label, attr, original, updated)
 
 
+TWO_UPPER_CHAR = re.compile(r"[A-Z]{2}")
+
+
 def _is_stand_casing(phrase: str):
     """Check if `phrase` casing is standard.
 
@@ -841,7 +845,7 @@ def _is_stand_casing(phrase: str):
     split = phrase.split()
     if len(split) > 1 and all(len(w) == 1 for w in split):
         return False
-    return all(re.search(r"[A-Z]{2}", w) is None for w in split)
+    return all(TWO_UPPER_CHAR.search(w) is None for w in split)
 
 
 def _is_casing_ambiguous(
@@ -994,9 +998,16 @@ def _normalize_scripts(
         if len(passage.script) == 0 and len(passage.transcript) == 0:
             logger.error(f"[{label}] Skipping, passage ({name}) has no content.")
             continue
-        if passage.script.isupper() and len(passage.script.split()) > 1:
+        if passage.speaker.style is not Style.DICT and passage.script.isupper():
             message = f"[{label}] Skipping, passage ({name}) it doesn't have lower case characters."
             logger.warn(message)
+            continue
+        if (
+            passage.alignments is None
+            and passage.speaker.style is not Style.DICT
+            and TWO_UPPER_CHAR.search(passage.script)
+        ):
+            logger.warn(f"[{label}] Skipping, passage ({name}) it may have ambigious casing.")
             continue
 
         script = new_scripts[(passage.script, passage.speaker.language)]

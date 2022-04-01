@@ -6,8 +6,8 @@ import torch
 import run
 from run._config import load_spacy_nlp
 from run._models.spectrogram_model.wrapper import (
+    Casing,
     InputsWrapper,
-    _Casing,
     preprocess_inputs,
     preprocess_spans,
 )
@@ -30,30 +30,31 @@ def test_preprocess_spans():
     doc = nlp(script)
     passage = make_passage(script=script)
     processed = preprocess_spans([passage[:-1]])
+    assert processed.reconstruct_text(0) == script
     assert processed.tokens == [list(script.lower())]
     assert processed.seq_metadata == [[passage.speaker], [passage.session]]
     casing = [
-        _Casing.UPPER,  # I
-        _Casing.LOWER,  # n
-        _Casing.NO_CASING,
-        _Casing.NO_CASING,  # 1
-        _Casing.NO_CASING,  # 9
-        _Casing.NO_CASING,  # 6
-        _Casing.NO_CASING,  # 8
-        _Casing.NO_CASING,
-        _Casing.LOWER,  # t
-        _Casing.LOWER,  # h
-        _Casing.LOWER,  # e
-        _Casing.NO_CASING,
-        _Casing.UPPER,  # u
-        _Casing.NO_CASING,  # .
-        _Casing.UPPER,  # s
-        _Casing.NO_CASING,  # .
-        _Casing.NO_CASING,
-        _Casing.UPPER,  # A
-        _Casing.LOWER,  # r
-        _Casing.LOWER,  # m
-        _Casing.LOWER,  # y
+        Casing.UPPER,  # I
+        Casing.LOWER,  # n
+        Casing.NO_CASING,
+        Casing.NO_CASING,  # 1
+        Casing.NO_CASING,  # 9
+        Casing.NO_CASING,  # 6
+        Casing.NO_CASING,  # 8
+        Casing.NO_CASING,
+        Casing.LOWER,  # t
+        Casing.LOWER,  # h
+        Casing.LOWER,  # e
+        Casing.NO_CASING,
+        Casing.UPPER,  # u
+        Casing.NO_CASING,  # .
+        Casing.UPPER,  # s
+        Casing.NO_CASING,  # .
+        Casing.NO_CASING,
+        Casing.UPPER,  # A
+        Casing.LOWER,  # r
+        Casing.LOWER,  # m
+        Casing.LOWER,  # y
     ]
     assert processed.token_metadata == [[(c,) for c in casing]]
     vocab: spacy.vocab.Vocab = nlp.vocab
