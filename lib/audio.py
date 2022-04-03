@@ -621,9 +621,8 @@ def iso226_weighting(frequencies: np.ndarray, *_) -> np.ndarray:
     interpolator = iso226_spl_itpl(hfe=True)
     # SOURCE: https://en.wikipedia.org/wiki/A-weighting
     # The offsets ensure the normalisation to 0 dB at 1000 Hz.
-    return -typing.cast(np.ndarray, interpolator(frequencies)) + interpolator(
-        np.array([REFERENCE_FREQUENCY])
-    )
+    weighting = -typing.cast(np.ndarray, interpolator(frequencies))
+    return weighting + interpolator(np.array([REFERENCE_FREQUENCY]))
 
 
 def identity_weighting(frequencies: np.ndarray, *_) -> np.ndarray:
@@ -1038,7 +1037,7 @@ def _db_mel_spectrogram_to_spectrogram(
     db_mel_spectrogram: npt.NDArray[np.float_],
     sample_rate: int,
     fft_length: int,
-    get_weighting: typing.Callable[[npt.NDArray[np.float_]], npt.NDArray[np.float_]],
+    get_weighting: typing.Callable[[npt.NDArray[np.float_], int], npt.NDArray[np.float_]],
     **kwargs,
 ) -> np.ndarray:
     """Transform dB mel spectrogram to spectrogram (lossy).
@@ -1056,7 +1055,7 @@ def _db_mel_spectrogram_to_spectrogram(
     num_mel_bins = db_mel_spectrogram.shape[1]
     mel_basis = _mel_filters(sample_rate, num_mel_bins, fft_length=fft_length, **kwargs)
     frequencies = librosa.fft_frequencies(sr=sample_rate, n_fft=fft_length)  # type: ignore
-    weighting = get_weighting(frequencies)
+    weighting = get_weighting(frequencies, sample_rate)
     weighting = db_to_power(weighting)
     inverse_mel_basis = np.linalg.pinv(mel_basis)  # NOTE: Approximate inverse matrix of `mel_basis`
     power_mel_spectrogram = db_to_power(db_mel_spectrogram)
