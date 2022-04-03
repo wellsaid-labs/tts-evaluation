@@ -134,6 +134,9 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
             # https://www.iso.org/standard/34222.html. It does have some issues though:
             # http://www.lindos.co.uk/cgi-bin/FlexiData.cgi?SOURCE=Articles&VIEW=full&id=2
             get_weighting=lib.audio.iso226_weighting,
+            # NOTE: Ensure that the weighting isn't below -30 decibels; otherwise, the value may go
+            # to zero which and it'll go to infinity when applying the operations in inverse.
+            min_weight=-30,
             **hertz_bounds,
         ),
         lib.audio.griffin_lim: Args(
@@ -146,8 +149,9 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
             # SOURCE (Tacotron 1):
             # We observed that Griffin-Lim converges after 50 iterations (in fact, about 30
             # iterations seems to be enough), which is reasonably fast.
-            iterations=30,
+            iterations=60,
             get_weighting=lib.audio.iso226_weighting,
+            min_weight=-30,
             **hertz_bounds,
         ),
         # NOTE: The `DeMan` loudness implementation of ITU-R BS.1770 is sample rate independent.
