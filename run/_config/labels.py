@@ -51,7 +51,7 @@ def _speaker(speaker: Speaker) -> str:
     TODO: For bilingual speakers, consider adding additional parameters, or annotating the
     text instead.
     """
-    name = f"{speaker.label}/{speaker.style.value.lower()}"
+    name = f"{speaker.label}/{speaker.style.value.lower().replace(' ', '_')}"
     name += "/post" if speaker.post else ""
     return name
 

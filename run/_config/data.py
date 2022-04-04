@@ -20,6 +20,12 @@ DATASETS = copy.copy(_loader.DATASETS)
 # NOTE: Elliot and Elizabeth has unannotated character portrayals.
 del DATASETS[_loader.english.m_ailabs.ELLIOT_MILLER]
 del DATASETS[_loader.english.m_ailabs.ELIZABETH_KLETT]
+# NOTE: Filter out Mary Ann from the dataset because of her two books, which include:
+# - Midnight Passenger because it has an inconsistent acoustic setup compared to other samples from
+# the same speaker.
+# - North & South book because it uses English in a way that's not consistent with editor usage,
+# for example: "To-morrow, you will-- Come back to-night, John!"
+del DATASETS[_loader.english.m_ailabs.MARY_ANN]
 # NOTE: The alignments don't sound-a-like, in these datasets.
 del DATASETS[_loader.portuguese.librivox.RND__LIBRIVOX__FELIPE_PT]
 del DATASETS[_loader.portuguese.librivox.RND__LIBRIVOX__LENI_PT]
@@ -78,21 +84,8 @@ def _include_passage(passage: struc.Passage) -> bool:
     # it difficult to classify initialisms.
     # NOTE: Ensure that single word initialism scripts are preserved such as those in a
     # pronunciation dictionary.
-    if passage.script.isupper() and len(passage.script.split()) > 1:
+    if passage.speaker.style is not struc.Style.DICT and passage.script.isupper():
         logger.warning("%s is all uppercase.", repr_)
-        return False
-
-    # TODO: Filter out Mary Ann from the dataset instead of filtering the related books.
-    # NOTE: Filter out Midnight Passenger because it has an inconsistent acoustic setup compared to
-    # other samples from the same speaker.
-    # NOTE: Filter out the North & South book because it uses English in a way that's not consistent
-    # with editor usage, for example: "To-morrow, you will-- Come back to-night, John!"
-    books = (
-        _loader.english.m_ailabs.MIDNIGHT_PASSENGER,
-        _loader.english.m_ailabs.NORTH_AND_SOUTH,
-    )
-    metadata = passage.other_metadata
-    if metadata is not None and "books" in metadata and (metadata["books"] in books):
         return False
 
     return True

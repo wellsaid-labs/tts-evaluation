@@ -8,6 +8,7 @@ import copy
 import dataclasses
 import enum
 import functools
+import html
 import io
 import itertools
 import logging
@@ -290,11 +291,12 @@ class CometMLExperiment:
             **kwargs: Additional metadata to include.
         """
         items = [f"<p><b>Step:</b> {self.curr_step}</p>"]
-        param_to_label = lambda s: s.title().replace("_", " ") if " " not in s else s
+        param_label = lambda s: s.title().replace("_", " ") if " " not in s else s
+        html_repr = lambda v: v if isinstance(v, str) else html.escape(repr(v))
         kwargs = dict(speaker=speaker, **kwargs)
-        items.extend([f"<p><b>{param_to_label(k)}:</b> {v}</p>" for k, v in kwargs.items()])
+        items.extend([f"<p><b>{param_label(k)}:</b> {html_repr(v)}</p>" for k, v in kwargs.items()])
         for key, data in audio.items():
-            name = param_to_label(key)
+            name = param_label(key)
             file_name = f"step={self.curr_step},speaker={speaker.label},"
             file_name += f"name={name},experiment={self.get_key()}.wav"
             url = self._upload_audio(file_name, data)

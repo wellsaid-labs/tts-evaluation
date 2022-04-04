@@ -59,12 +59,22 @@ ENGLISH_TEST_CASES = [
     "web interface.",
     "Live from Seattle, it's AIQTV, with the governor's special address on the coronavirus. Don't "
     "forget to record this broadcast for viewing later.",
+    "Let’s add a row on our assay tracking sheet so we can build out the proper egress "
+    "measurements.",
+    "Hello! Can you put this contractor into a supervisory role?",
     # NOTE: These questions each have a different expected inflection.
     "Have you ever hidden a snack so that nobody else would find it and eat it first?",
     "If you can instantly become an expert in something, what would it be?",
     "What led to the two of you having a disagreement?",
     "Why do some words sound funny to us?",
     "Can fish see air like we see water?",
+    # NOTE: All these questions should have an upward inflection at the end.
+    "Are you a messy person?",
+    "Did you have cats growing up?",
+    "Do you consider yourself an adventurous person?",
+    "Do you have any weird food combos?",
+    "Do you respond to texts fast?",
+    "Have you ever been stalked by an animal that later became your pet?",
 ]
 TEST_CASES = [(Language.ENGLISH, t) for t in ENGLISH_TEST_CASES]
 

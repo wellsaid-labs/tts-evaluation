@@ -11,7 +11,8 @@ from tqdm import tqdm
 
 from lib.utils import NumeralizePadEmbed, lengths_to_mask
 from run._models.spectrogram_model import decoder, encoder
-from run._models.spectrogram_model.containers import Encoded, Inputs, Preds
+from run._models.spectrogram_model.containers import Encoded, Preds
+from run._models.spectrogram_model.inputs import Inputs
 
 logger = logging.getLogger(__name__)
 

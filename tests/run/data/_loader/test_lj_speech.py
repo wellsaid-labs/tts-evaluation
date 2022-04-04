@@ -12,7 +12,8 @@ from tests import _utils
 from tests.run.data._loader._utils import maybe_normalize_audio_and_cache_side_effect
 
 verbalize_test_cases = {
-    "LJ044-0055": "five four four Camp Street New",  # Test special case
+    # NOTE: This example has ambigious casing, and it is now removed from the dataset.
+    # "LJ044-0055": "five four four Camp Street New",  # Test special case
     "LJ032-0036": "Number two two zero two one three zero four six two",  # Test special case
     # Test time
     "LJ036-0167": "he would have entered the cab at twelve forty-seven or twelve forty-eight p.m.",
@@ -68,8 +69,8 @@ def test_lj_speech_dataset(
         directory = pathlib.Path(path)
         shutil.copy(archive, directory / archive.name)
         data = lj_speech_dataset(directory=directory)
-        assert len(data) == 13100
-        assert sum([len(r.script) for r in data]) == 1310332
+        assert len(data) == 12850
+        assert sum([len(r.script) for r in data]) == 1283806
         assert data[0] == run.data._loader.Passage(
             audio_file=_utils.make_metadata(directory / "LJSpeech-1.1/wavs/LJ001-0001.wav"),
             session=run.data._loader.Session((LINDA_JOHNSON, "LJ001")),

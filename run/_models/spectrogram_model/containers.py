@@ -1,50 +1,6 @@
-import dataclasses
 import typing
 
 import torch
-
-from lib.utils import lengths_to_mask
-
-
-@dataclasses.dataclass(frozen=True)
-class Inputs:
-    """The model inputs.
-
-    TODO: Use `tuple`s so these values cannot be reassigned.
-    """
-
-    # Batch of sequences of tokens
-    tokens: typing.List[typing.List[typing.Hashable]]
-
-    # Metadata associated with each sequence
-    seq_metadata: typing.List[typing.List[typing.Hashable]]
-
-    # Metadata associated with each token in each sequence
-    token_metadata: typing.List[typing.List[typing.List[typing.Hashable]]]
-
-    # Embeddings associated with each token in each sequence
-    # torch.FloatTensor [batch_size, num_tokens, *]
-    token_embeddings: typing.Union[torch.Tensor, typing.List[torch.Tensor]]
-
-    # Slice of tokens in each sequence to be voiced
-    slices: typing.List[slice]
-
-    device: torch.device = torch.device("cpu")
-
-    # Number of tokens after `slices` is applied
-    # torch.LongTensor [batch_size]
-    num_tokens: torch.Tensor = dataclasses.field(init=False)
-
-    # Tokens mask after `slices` is applied
-    # torch.BoolTensor [batch_size, num_tokens]
-    tokens_mask: torch.Tensor = dataclasses.field(init=False)
-
-    def __post_init__(self):
-        indices = [s.indices(len(t)) for s, t in zip(self.slices, self.tokens)]
-        num_tokens = [b - a for a, b, _ in indices]
-        num_tokens_ = torch.tensor(num_tokens, dtype=torch.long, device=self.device)
-        object.__setattr__(self, "num_tokens", num_tokens_)
-        object.__setattr__(self, "tokens_mask", lengths_to_mask(num_tokens, device=self.device))
 
 
 class Preds(typing.NamedTuple):

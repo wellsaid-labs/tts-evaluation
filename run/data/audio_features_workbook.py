@@ -22,10 +22,10 @@ from lib.audio import SignalTodBMelSpectrogram, amp_to_db, framed_rms_to_rms, sa
 from run._streamlit import audio_to_html, st_html
 
 
-def _chart_framed_rms_level(framed_rms_level: np.ndarray, frame_hop: int):
+def _chart_framed_rms_level(framed_rms_level: np.ndarray, frame_hop: int, sample_rate: int):
     rms_level_db = amp_to_db(framed_rms_level)
     samples = [i * frame_hop + frame_hop // 2 for i in range(len(rms_level_db))]
-    seconds = [sample_to_sec(s, **cf.get()) for s in samples]
+    seconds = [sample_to_sec(s, sample_rate) for s in samples]
     return (
         alt.Chart(pd.DataFrame({"Seconds": seconds, "Decibels": rms_level_db}))
         .mark_area()
@@ -39,7 +39,7 @@ def _chart_framed_rms_level(framed_rms_level: np.ndarray, frame_hop: int):
 def main():
     pyplot.style.use("dark_background")
     st.markdown("# Audio Features Workbook")
-    run._config.configure()
+    run._config.configure(overwrite=True)
 
     uploaded_file = st.file_uploader("Audio File", "wav")
     assert not isinstance(uploaded_file, list)
@@ -58,7 +58,9 @@ def main():
         format_func=format_func,  # type: ignore
         index=2,
     )
-    signal_to_spectrogram = SignalTodBMelSpectrogram(get_weighting=get_weighting, **cf.get())
+    signal_to_spectrogram = cf.call(
+        SignalTodBMelSpectrogram, get_weighting=get_weighting, _overwrite=True
+    )
 
     if uploaded_file is None:
         st.stop()
@@ -67,7 +69,7 @@ def main():
     temp.write(uploaded_file.getbuffer())
     path = pathlib.Path(temp.name)
     metadata = lib.audio.get_audio_metadata(path)
-    run._config.audio.configure(metadata.sample_rate)
+    run._config.audio.configure(metadata.sample_rate, overwrite=True)
     audio = lib.audio.read_wave_audio(metadata)
     audio = lib.audio.pad_remainder(audio, **cf.get())
 
@@ -99,20 +101,22 @@ def main():
     )
 
     st.markdown("### Loudness Over Time")
-    chart = _chart_framed_rms_level(framed_rms_level.numpy(), frame_hop)
+    chart = _chart_framed_rms_level(framed_rms_level.numpy(), frame_hop, metadata.sample_rate)
     st.altair_chart(chart.interactive(), use_container_width=True)
 
-    st.markdown("### dB Mel Spectrogram")
+    st.markdown(f"### dB Mel Spectrogram {tuple(specs.db_mel.shape)}")
     st.pyplot(lib.visualize.plot_mel_spectrogram(specs.db_mel, **cf.get()), transparent=True)
-    st.markdown("### dB Spectrogram")
+    st.markdown(f"### dB Spectrogram {tuple(specs.db.shape)}")
     st.pyplot(lib.visualize.plot_spectrogram(specs.db, **cf.get()), transparent=True)
-    st.markdown("### Spectrogram")
+    st.markdown(f"### Spectrogram {tuple(specs.amp.shape)}")
     st.pyplot(lib.visualize.plot_spectrogram(specs.amp, **cf.get()), transparent=True)
 
     st.markdown("### Original Audio")
     st_html(audio_to_html(audio))
     st.markdown("### Griffin-Lim Audio")
-    griffin_lim = lib.audio.griffin_lim(specs.db_mel.numpy(), **cf.get())
+    griffin_lim = cf.call(
+        lib.audio.griffin_lim, specs.db_mel.numpy(), get_weighting=get_weighting, _overwrite=True
+    )
     st_html(audio_to_html(griffin_lim))
 
 
