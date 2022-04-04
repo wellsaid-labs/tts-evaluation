@@ -75,6 +75,33 @@ ENGLISH_TEST_CASES = [
     "Do you have any weird food combos?",
     "Do you respond to texts fast?",
     "Have you ever been stalked by an animal that later became your pet?",
+    # NOTE: Test cases with a variety of lengths, respellings, and punctuation marks.
+    "WellSaid Labs.",
+    "Livingroom",
+    "Ophthalmologist",
+    "ACLA",
+    "NASA",
+    "Why?",
+    'Ready to find out ""more""?',
+    "Thisss isrealy awhsome.",
+    "Topic 2:     Is an N R A right for my rate?.",
+    'Internet Assigned Numbers Authority ("""I-eigh n Eigh""")',
+    '"""G-E-ran""" is an abbreviation for GSM EDGE',
+    "epidermolysis bullosa (ep-ih-dur-MOL-uh-sis buhl-LOE-sah) (epi-dermo-lysiss) is a group of",
+    "Harry lay in his dark cupboard much later, wishing he had a watch. He didn't know what time "
+    "it was and he couldn't be sure the Dursleys were asleep yet. Until they were, he couldn't "
+    "risk sneaking to the kitchen for some food. He'd lived with the Dursleys almost ten years, "
+    "ten miserable years, as long as he could remember, ever since he'd been a baby and his "
+    "parents had died in that car crash. He couldn't remember being in the car when his parents "
+    "had died. Sometimes, when he strained his memory during long hours in his cupboard, he came "
+    "up with a strange vision: a blinding flash of green light and a burning pain on his "
+    "forehead. This, he supposed, was the crash, though he couldn't imagine where all the green "
+    "light came from. He couldn't remember his parents at all. His aunt and uncle never spoke "
+    "about them, and of course he was forbidden to ask questions. There were no photographs of "
+    "them in the house. When he had been younger, Harry had dreamed and dreamed of some unknown "
+    "relation coming to take him away, but it had never happened; the Dursleys were his only "
+    "family. Yet sometimes he thought (or maybe hoped) that strangers in the street seemed to "
+    "know him. Very strange strangers they were, too.",
 ]
 TEST_CASES = [(Language.ENGLISH, t) for t in ENGLISH_TEST_CASES]
 

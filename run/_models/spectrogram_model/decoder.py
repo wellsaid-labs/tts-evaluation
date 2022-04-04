@@ -73,7 +73,7 @@ class Decoder(torch.nn.Module):
 
     def _pad_encoded(
         self, encoded: Encoded, beg_pad_token: torch.Tensor, end_pad_token: torch.Tensor
-    ):
+    ) -> Encoded:
         """Add padding to `encoded` so that the attention module window has space at the beginning
         and end of the sequence.
 
