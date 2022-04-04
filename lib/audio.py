@@ -1045,6 +1045,8 @@ def _db_mel_spectrogram_to_spectrogram(
 ) -> np.ndarray:
     """Transform dB mel spectrogram to spectrogram (lossy).
 
+    NOTE: This is based on `librosa.feature.inverse.mel_to_stft`.
+
     Args:
         db_mel_spectrogram (np.array [frames, num_mel_bins]): Numpy array with the spectrogram.
         sample_rate: Sample rate of the `db_mel_spectrogram`.
