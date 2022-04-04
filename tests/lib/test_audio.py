@@ -55,6 +55,7 @@ def run_around_tests():
             num_mel_bins=num_mel_bins,
             min_decibel=-50.0,
             get_weighting=lib.audio.iso226_weighting,
+            min_weight=-float("inf"),
             **hertz_bounds,
         ),
         lib.audio.griffin_lim: cf.Args(
@@ -65,6 +66,7 @@ def run_around_tests():
             power=1.20,
             iterations=30,
             get_weighting=lib.audio.iso226_weighting,
+            min_weight=-float("inf"),
             **hertz_bounds,
         ),
     }
