@@ -140,8 +140,9 @@ def test_decoder__pad_encoded():
     module = _make_decoder()
     encoded, (batch_size, num_tokens) = _make_encoded(module)
     window_length, encoder_size = module.attention.window_length - 1, module.encoder_out_size
-    pad_token = torch.rand(batch_size, module.encoder_out_size)
-    padded = module._pad_encoded(encoded, pad_token)
+    beg_pad_token = torch.rand(batch_size, module.encoder_out_size)
+    end_pad_token = torch.rand(batch_size, module.encoder_out_size)
+    padded = module._pad_encoded(encoded, beg_pad_token, end_pad_token)
 
     assert padded.tokens.dtype == torch.float
     assert padded.tokens.shape == (num_tokens + window_length, batch_size, encoder_size)
@@ -157,8 +158,8 @@ def test_decoder__pad_encoded():
         arange = torch.arange(batch_size)
         assert padded.tokens_mask[arange, i].all()
         assert padded.tokens_mask[arange, encoded.num_tokens + i + pad].all()
-        assert torch.equal(padded.tokens[i, arange], pad_token)
-        assert torch.equal(padded.tokens[encoded.num_tokens + i + pad, arange], pad_token)
+        assert torch.equal(padded.tokens[i, arange], beg_pad_token)
+        assert torch.equal(padded.tokens[encoded.num_tokens + i + pad, arange], end_pad_token)
 
     assert padded.tokens.masked_select(~padded.tokens_mask.transpose(0, 1).unsqueeze(-1)).sum() == 0
     assert torch.equal(padded.tokens_mask.sum(dim=1), padded.num_tokens)
