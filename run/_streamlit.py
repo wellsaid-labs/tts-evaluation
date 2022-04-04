@@ -194,7 +194,7 @@ def path_to_web_path(path: pathlib.Path) -> WebPath:
 
 def audio_to_web_path(audio: np.ndarray, name: str = "audio.wav", **kwargs) -> WebPath:
     web_path = make_temp_web_dir() / name
-    lib.audio.write_audio(web_path, audio, **kwargs)
+    cf.partial(lib.audio.write_audio)(web_path, audio, **kwargs)
     return web_path
 
 

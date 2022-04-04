@@ -621,9 +621,8 @@ def iso226_weighting(frequencies: np.ndarray, *_) -> np.ndarray:
     interpolator = iso226_spl_itpl(hfe=True)
     # SOURCE: https://en.wikipedia.org/wiki/A-weighting
     # The offsets ensure the normalisation to 0 dB at 1000 Hz.
-    return -typing.cast(np.ndarray, interpolator(frequencies)) + interpolator(
-        np.array([REFERENCE_FREQUENCY])
-    )
+    weighting = -typing.cast(np.ndarray, interpolator(frequencies))
+    return weighting + interpolator(np.array([REFERENCE_FREQUENCY]))
 
 
 def identity_weighting(frequencies: np.ndarray, *_) -> np.ndarray:
@@ -889,6 +888,7 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
         window: torch.Tensor,
         min_decibel: float,
         get_weighting: typing.Callable[[npt.NDArray[np.float_], int], npt.NDArray[np.float_]],
+        min_weight: int,
         eps: float = 1e-10,
         **kwargs,
     ):
@@ -906,7 +906,7 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
         mel_basis = _mel_filters(sample_rate, num_mel_bins, fft_length=self.fft_length, **kwargs)
         frequencies = librosa.fft_frequencies(sr=sample_rate, n_fft=self.fft_length)  # type: ignore
         weighting = torch.tensor(get_weighting(frequencies, sample_rate)).float().view(-1, 1)
-        weighting = db_to_power(weighting)
+        weighting = db_to_power(torch.max(weighting, torch.tensor(min_weight)))
         self.register_buffer("mel_basis", torch.tensor(mel_basis).float())
         self.register_buffer("weighting", weighting)
 
@@ -1038,26 +1038,29 @@ def _db_mel_spectrogram_to_spectrogram(
     db_mel_spectrogram: npt.NDArray[np.float_],
     sample_rate: int,
     fft_length: int,
-    get_weighting: typing.Callable[[npt.NDArray[np.float_]], npt.NDArray[np.float_]],
-    **kwargs,
+    get_weighting: typing.Callable[[npt.NDArray[np.float_], int], npt.NDArray[np.float_]],
+    min_weight: int,
+    lower_hertz: float,
+    upper_hertz: float,
 ) -> np.ndarray:
     """Transform dB mel spectrogram to spectrogram (lossy).
+
+    NOTE: This is based on `librosa.feature.inverse.mel_to_stft`.
 
     Args:
         db_mel_spectrogram (np.array [frames, num_mel_bins]): Numpy array with the spectrogram.
         sample_rate: Sample rate of the `db_mel_spectrogram`.
         fft_length: The size of the FFT to apply.
         get_weighting: Get weighting to weight frequencies.
-        **kwargs: Additional arguments passed to `_mel_filters`.
+        ...
 
     Returns:
         (np.ndarray [frames, fft_length // 2 + 1]): Spectrogram.
     """
     num_mel_bins = db_mel_spectrogram.shape[1]
-    mel_basis = _mel_filters(sample_rate, num_mel_bins, fft_length=fft_length, **kwargs)
+    mel_basis = _mel_filters(sample_rate, num_mel_bins, fft_length, lower_hertz, upper_hertz)
     frequencies = librosa.fft_frequencies(sr=sample_rate, n_fft=fft_length)  # type: ignore
-    weighting = get_weighting(frequencies)
-    weighting = db_to_power(weighting)
+    weighting = db_to_power(np.maximum(get_weighting(frequencies, sample_rate), min_weight))
     inverse_mel_basis = np.linalg.pinv(mel_basis)  # NOTE: Approximate inverse matrix of `mel_basis`
     power_mel_spectrogram = db_to_power(db_mel_spectrogram)
     assert isinstance(power_mel_spectrogram, np.ndarray)
