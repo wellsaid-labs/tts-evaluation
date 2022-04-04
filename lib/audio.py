@@ -888,7 +888,7 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
         window: torch.Tensor,
         min_decibel: float,
         get_weighting: typing.Callable[[npt.NDArray[np.float_], int], npt.NDArray[np.float_]],
-        min_weight: int,
+        min_weight: float,
         eps: float = 1e-10,
         **kwargs,
     ):
