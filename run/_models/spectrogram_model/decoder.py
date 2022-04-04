@@ -54,6 +54,7 @@ class Decoder(torch.nn.Module):
             1,
             self.encoder_out_size,
             self.encoder_out_size,
+            self.encoder_out_size,
         ]
         self.init_state = torch.nn.Sequential(
             torch.nn.Linear(input_size, input_size),
@@ -70,13 +71,17 @@ class Decoder(torch.nn.Module):
             torch.nn.Linear(lstm_hidden_size, 1),
         )
 
-    def _pad_encoded(self, encoded: Encoded, pad_token: torch.Tensor):
+    def _pad_encoded(
+        self, encoded: Encoded, beg_pad_token: torch.Tensor, end_pad_token: torch.Tensor
+    ) -> Encoded:
         """Add padding to `encoded` so that the attention module window has space at the beginning
         and end of the sequence.
 
         Args:
-            pad_token (torch.FloatTensor [batch_size, encoder_out_size]): Pad token to
-                add to the beginning and end of each sequence.
+            beg_pad_token (torch.FloatTensor [batch_size, encoder_out_size]): Pad token to
+                add to the beginning of each sequence.
+            end_pad_token (torch.FloatTensor [batch_size, encoder_out_size]): Pad token to
+                add to the end of each sequence.
         """
         device, pad_length = encoded.tokens.device, self.attention.window_length // 2
         batch_size, encoder_size = encoded.tokens_mask.shape[0], self.encoder_out_size
@@ -94,8 +99,9 @@ class Decoder(torch.nn.Module):
         # [batch_size, num_tokens] → [num_tokens, batch_size]
         indices = tokens_mask.logical_xor(new_mask).transpose(0, 1)
         # [batch_size, encoder_out_size] → [num_frames, batch_size, encoder_out_size]
-        pad_token = pad_token.unsqueeze(0).expand(*tokens.shape)
-        tokens[indices] = pad_token[indices]
+        end_pad_token = end_pad_token.unsqueeze(0).expand(*tokens.shape)
+        tokens[indices] = end_pad_token[indices]
+        tokens[:pad_length] = beg_pad_token.unsqueeze(0).expand(pad_length, *tokens.shape[1:])
 
         return encoded._replace(tokens=tokens, tokens_mask=new_mask, num_tokens=new_num_tokens)
 
@@ -113,9 +119,9 @@ class Decoder(torch.nn.Module):
         #  [batch_size, encoder_out_size])
         first_token = torch.cat([encoded.seq_metadata, encoded.tokens[0]], dim=1)
         state = self.init_state(first_token).split(self.init_state_segments, dim=-1)
-        init_frame, init_cum_alignment, init_attention_context, pad_token = state
+        init_frame, init_cum_alignment, init_attention_context, beg_pad_token, end_pad_token = state
 
-        padded_encoded = self._pad_encoded(encoded, pad_token)
+        padded_encoded = self._pad_encoded(encoded, beg_pad_token, end_pad_token)
 
         # NOTE: The `cum_alignment` or `cum_alignment` vector has a positive value for every
         # token that is has attended to. Assuming the model is attending to tokens from
