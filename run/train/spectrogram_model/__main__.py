@@ -59,7 +59,7 @@ ENGLISH_TEST_CASES = [
     "web interface.",
     "Live from Seattle, it's AIQTV, with the governor's special address on the coronavirus. Don't "
     "forget to record this broadcast for viewing later.",
-    "Let’s add a row on our assay tracking sheet so we can build out the proper egress "
+    "Let's add a row on our assay tracking sheet so we can build out the proper egress "
     "measurements.",
     "Hello! Can you put this contractor into a supervisory role?",
     # NOTE: These questions each have a different expected inflection.
@@ -84,7 +84,7 @@ ENGLISH_TEST_CASES = [
     "Why?",
     'Ready to find out ""more""?',
     "Thisss isrealy awhsome.",
-    "Topic 2:     Is an N R A right for my rate?.",
+    "Topic two:     Is an N R A right for my rate?.",
     'Internet Assigned Numbers Authority ("""I-eigh n Eigh""")',
     '"""G-E-ran""" is an abbreviation for GSM EDGE',
     "epidermolysis bullosa (ep-ih-dur-MOL-uh-sis buhl-LOE-sah) (epi-dermo-lysiss) is a group of",
