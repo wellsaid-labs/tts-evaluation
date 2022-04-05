@@ -690,7 +690,7 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
     NOTE: `DataLoader` isn't compatible with "fork" because NCCL isn't fork safe. There
     are also issues with OMP and CUDA. They have issues with fork, as well. Learn more:
     > Unfortunately Gloo (that uses Infiniband) and NCCL2 are not fork safe, and you will
-    likely experience deadlocks if you don’t change this setting.
+    likely experience deadlocks if you don't change this setting.
     https://github.com/pytorch/pytorch/pull/4766
     > After OpenMP features are utilized, a fork is only allowed if the child process does not
     > use OpenMP features, or it does so as a completely new process (such as after exec()).

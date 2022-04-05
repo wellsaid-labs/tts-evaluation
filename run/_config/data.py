@@ -12,8 +12,8 @@ logger = logging.getLogger(__name__)
 
 # NOTE: This is useful for one-off evaluation.
 DEFAULT_SCRIPT = (
-    "Your creative life will evolve in ways that you can’t possibly imagine. Trust"
-    " your gut. Don’t overthink it. And allow yourself a little room to play."
+    "Your creative life will evolve in ways that you can't possibly imagine. Trust"
+    " your gut. Don't overthink it. And allow yourself a little room to play."
 )
 
 DATASETS = copy.copy(_loader.DATASETS)
