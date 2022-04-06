@@ -123,7 +123,11 @@ def test_integration():
         metrics.log(is_verbose=True, type_=DatasetType.TRAIN, cadence=Cadence.MULTI_STEP)
 
         _visualize_select_cases(
-            state, DatasetType.TEST, Cadence.MULTI_STEP, [(Language.ENGLISH, "Hi There")]
+            state,
+            DatasetType.TEST,
+            Cadence.MULTI_STEP,
+            [(Language.ENGLISH, "Hi There")],
+            {JUDY_BIEBER},
         )
 
     # Test loading and saving a checkpoint

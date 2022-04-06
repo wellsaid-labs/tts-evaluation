@@ -255,8 +255,8 @@ def span_audio(span: run.data._loader.Span) -> np.ndarray:
 
 def passage_audio(passage: run.data._loader.Passage) -> np.ndarray:
     """Get `span` audio using cached `read_wave_audio`."""
-    start = passage.first.audio[0]
-    return read_wave_audio(passage.audio_file, start, passage.aligned_audio_length())
+    length = passage.segmented_audio_length()
+    return read_wave_audio(passage.audio_file, passage.audio_start, length)
 
 
 @session_cache(maxsize=None)

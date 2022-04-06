@@ -1078,6 +1078,7 @@ def griffin_lim(
     window: np.ndarray,
     power: float,
     iterations: int,
+    momentum: float,
     **kwargs,
 ) -> np.ndarray:
     """Transform dB mel spectrogram to waveform with the Griffin-Lim algorithm.
@@ -1110,6 +1111,7 @@ def griffin_lim(
             frame. See the full specification for window at ``librosa.filters.get_window``.
         power: Amplification float used to reduce artifacts.
         iterations: Number of iterations of griffin lim to run.
+        ...
 
     Returns:
         (np.ndarray [num_samples]): Predicted waveform.
@@ -1130,6 +1132,7 @@ def griffin_lim(
             hop_length=frame_hop,
             win_length=window.shape[0],
             window=window,  # type: ignore
+            momentum=momentum,
         )
         # NOTE: Pad to ensure spectrogram and waveform align.
         waveform = np.pad(waveform, int(frame_hop // 2), mode="constant", constant_values=0)

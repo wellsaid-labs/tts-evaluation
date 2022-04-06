@@ -152,6 +152,11 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
             iterations=60,
             get_weighting=lib.audio.iso226_weighting,
             min_weight=-30,
+            # NOTE: Based on a brief analysis in April 2022, we found that "Fast Griffin-lim" clips
+            # with momentum, where more difficult to understand. By setting `momentum` to zero,
+            # we are recovering the original Griffin-lim algorithm which we believe is more
+            # interpretable in a text-to-speech context.
+            momentum=0.0,
             **hertz_bounds,
         ),
         # NOTE: The `DeMan` loudness implementation of ITU-R BS.1770 is sample rate independent.
