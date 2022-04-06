@@ -528,6 +528,7 @@ def _visualize_select_cases(
     dataset_type: DatasetType,
     cadence: Cadence,
     cases: typing.List[typing.Tuple[Language, str]],
+    speakers: typing.Set[Speaker],
 ):
     """Run spectrogram model in inference mode and visualize a test case."""
     if not is_master():
@@ -537,7 +538,10 @@ def _visualize_select_cases(
     session_vocab = [s for s in model.session_embed.vocab.keys() if isinstance(s, tuple)]
     assert state.comet.curr_epoch is not None
     cases = [cases[state.comet.curr_epoch % len(cases)]]
-    sessions = [random.choice([s for s in session_vocab if s[0].language is l]) for (l, _) in cases]
+    sessions = [
+        random.choice([s for s in session_vocab if s[0].language is l and s[0] in speakers])
+        for (l, _) in cases
+    ]
     docs = [load_spacy_nlp(l)(t) for (l, t) in cases]
     item = 0
     preds = model(Inputs(sessions, docs), mode=Mode.INFER)
