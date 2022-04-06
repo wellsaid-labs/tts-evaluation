@@ -463,15 +463,15 @@ def get_pronunciations(
             pos = lib.text.SPACY_TO_AMEPD_POS[token.pos]
             tense = token.morph.get("Tense")
             tense = None if len(tense) == 0 else tense[0].lower()
-            prounciation = lib.text.get_pronunciation(token.text, pos, tense)  # type: ignore
+            pronunciation = lib.text.get_pronunciation(token.text, pos, tense)  # type: ignore
             if is_initialism(token):
                 lib.utils.call_once(
                     logger.warning,
                     "Guessing '%s' is an initialism.",
                     token.text,
                 )
-                prounciation = lib.text.get_initialism_pronunciation(token.text)
-            return_.append(prounciation)
+                pronunciation = lib.text.get_initialism_pronunciation(token.text)
+            return_.append(pronunciation)
     return tuple(return_)
 
 

@@ -270,7 +270,8 @@ def test_encoder__padding_invariance():
     expected_grad = [p.grad for p in module.parameters() if p.grad is not None]
     module.zero_grad()
     for padding_len in range(1, 10):
-        pad_token = [module.embed_token.pad_token] * padding_len
+        pad_token: typing.List[typing.Hashable] = [module.embed_token.pad_token] * padding_len
+        pad_meta: typing.List[typing.Hashable]
         pad_meta = [module.embed_token_metadata[0].pad_token] * padding_len
         inputs = dataclasses.replace(
             arg,

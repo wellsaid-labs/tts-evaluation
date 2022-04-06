@@ -23,7 +23,7 @@ TODO:
 Other resources:
 - https://nakanishi.kobegakuin-gc.jp/uploads/nakanishi/files/nakanishi/200910_Database.pdf
 - https://noriko-nakanishi.com/sounds/
-- 10,000+ prounciations http://shtooka.net/download.php
+- 10,000+ pronunciatios http://shtooka.net/download.php
 - https://opendata.stackexchange.com/questions/840/database-of-english-words-pronunciation
 - https://forvo.com/
 

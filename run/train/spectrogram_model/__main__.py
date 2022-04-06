@@ -10,6 +10,7 @@ import torch.optim
 
 import lib
 from run._config import (
+    DEV_SPEAKERS,
     NUM_FRAME_CHANNELS,
     RANDOM_SEED,
     SPECTROGRAM_MODEL_EXPERIMENTS_PATH,
@@ -141,7 +142,7 @@ def _make_configuration(train_dataset: Dataset, dev_dataset: Dataset, debug: boo
             # TODO: Try increasing the stop token minimum loss because it still overfit.
             stop_token_min_loss=0.027,
             # NOTE: This value is the average spectrogram length in the training dataset.
-            average_spectrogram_length=117.5,
+            average_spectrogram_length=85.215,
         ),
         _worker._get_data_loaders: cf.Args(
             # SOURCE: Tacotron 2
@@ -159,7 +160,7 @@ def _make_configuration(train_dataset: Dataset, dev_dataset: Dataset, debug: boo
             num_workers=2,
             prefetch_factor=2 if debug else 10,
         ),
-        _worker._visualize_select_cases: cf.Args(cases=TEST_CASES),
+        _worker._visualize_select_cases: cf.Args(cases=TEST_CASES, speakers=DEV_SPEAKERS),
         _metrics.Metrics._get_model_metrics: cf.Args(num_frame_channels=NUM_FRAME_CHANNELS),
         # NOTE: Based on the alignment visualizations, if the maximum alignment is less than 30%
         # then a misalignment has likely occured.
