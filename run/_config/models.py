@@ -107,7 +107,7 @@ def configure(overwrite: bool = False):
             # The paper mentions their proposed model uses a 256 dimension embedding.
             # NOTE: See https://github.com/wellsaid-labs/Text-to-Speech/pull/258 to learn more about
             # this parameter.
-            seq_meta_embed_size=300,
+            seq_meta_embed_size=150,
             token_meta_embed_size=128,
         ),
         run._models.signal_model.wrapper.SignalModelWrapper: cf.Args(
