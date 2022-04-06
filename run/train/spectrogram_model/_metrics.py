@@ -512,7 +512,7 @@ class Metrics(_utils.Metrics[MetricsKey]):
         significantly more trimming than other speakers.
         """
         reduce = lambda *a, **k: self._reduce(MetricsKey(*a), select=select, **k)
-        metrics = {
+        metrics: _GetMetrics = {
             self.MAX_NUM_FRAMES: reduce(self.NUM_FRAMES_MAX, op=max),
             self.MIN_DATA_LOADER_QUEUE_SIZE: reduce(self.DATA_QUEUE_SIZE, op=min),
         }
