@@ -39,8 +39,8 @@ NUM_FRAME_CHANNELS = 128
 # https://www.dsprelated.com/freebooks/sasp/Classic_Spectrograms.html
 # https://github.com/pytorch/audio/issues/384#issuecomment-597020705
 # https://pytorch.org/audio/compliance.kaldi.html
-FRAME_SIZE = 4096  # NOTE: Frame size in samples.
-FFT_LENGTH = 4096
+FRAME_SIZE = 6000  # NOTE: Frame size in samples.
+FFT_LENGTH = 6000
 assert FRAME_SIZE % 4 == 0
 FRAME_HOP = FRAME_SIZE // 4
 
@@ -213,10 +213,8 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
             # over 4 - 8 frames in January 2020, on Comet.
             # NOTE: This was rounded up to 10 after the spectrograms length was increased by 17%
             # on average.
-            # TODO: In July 2020, the spectrogram size was decreased by 2x, we should test
-            # decreasing `length` by 2x, also.
             length=10,
-            standard_deviation=2,
+            standard_deviation=0.75,
         ),
     }
     cf.add(config, overwrite)

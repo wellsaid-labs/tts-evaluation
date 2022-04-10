@@ -140,9 +140,9 @@ def _make_configuration(train_dataset: Dataset, dev_dataset: Dataset, debug: boo
             # NOTE: This value is the minimum loss the test set achieves before the model
             # starts overfitting on the train set.
             # TODO: Try increasing the stop token minimum loss because it still overfit.
-            stop_token_min_loss=0.027,
+            stop_token_min_loss=0.019,
             # NOTE: This value is the average spectrogram length in the training dataset.
-            average_spectrogram_length=85.215,
+            average_spectrogram_length=58.699,
         ),
         _worker._get_data_loaders: cf.Args(
             # SOURCE: Tacotron 2

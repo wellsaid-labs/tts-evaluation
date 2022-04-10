@@ -68,7 +68,7 @@ class Decoder(torch.nn.Module):
         self.linear_out = torch.nn.Linear(lstm_hidden_size + input_size, num_frame_channels)
         self.linear_stop_token = torch.nn.Sequential(
             torch.nn.Dropout(stop_net_dropout),
-            torch.nn.Linear(lstm_hidden_size, 1),
+            torch.nn.Linear(lstm_hidden_size + encoder_out_size + seq_meta_embed_size, 1),
         )
 
     def _pad_encoded(
@@ -266,13 +266,14 @@ class Decoder(torch.nn.Module):
         # [num_frames, batch_size, lstm_hidden_size + encoder_out_size + seq_meta_embed_size]
         frames = torch.cat([frames, attention_contexts, seq_metadata], dim=2)
 
+        # [num_frames, batch_size, lstm_hidden_size + encoder_out_size + seq_meta_embed_size] →
+        # [num_frames, batch_size]
+        stop_token = self.linear_stop_token(frames).squeeze(2)
+
         # frames [seq_len (num_frames), batch (batch_size),
         # input_size (lstm_hidden_size + encoder_out_size + seq_meta_embed_size)] →
         # [num_frames, batch_size, lstm_hidden_size]
         frames, lstm_two_hidden_state = self.lstm_layer_two(frames, lstm_two_hidden_state)
-
-        # [num_frames, batch_size, lstm_hidden_size] → [num_frames, batch_size]
-        stop_token = self.linear_stop_token(frames).squeeze(2)
 
         # [num_frames, batch_size,
         #  lstm_hidden_size (concat) encoder_out_size (concat) seq_meta_embed_size] →
