@@ -529,6 +529,7 @@ def _visualize_select_cases(
     cadence: Cadence,
     cases: typing.List[typing.Tuple[Language, str]],
     speakers: typing.Set[Speaker],
+    num_cases: int = 5,
 ):
     """Run spectrogram model in inference mode and visualize a test case."""
     if not is_master():
@@ -537,44 +538,45 @@ def _visualize_select_cases(
     model = typing.cast(SpectrogramModel, state.model.module)
     session_vocab = [s for s in model.session_embed.vocab.keys() if isinstance(s, tuple)]
     assert state.comet.curr_epoch is not None
-    cases = [cases[state.comet.curr_epoch % len(cases)]]
-    sessions = [
+    cases = [random.choice(cases) for _ in range(num_cases)]
+    seshs = [
         random.choice([s for s in session_vocab if s[0].language is l and s[0] in speakers])
         for (l, _) in cases
     ]
     docs = [load_spacy_nlp(l)(t) for (l, t) in cases]
-    item = 0
-    preds = model(Inputs(sessions, docs), mode=Mode.INFER)
+    preds = model(Inputs(seshs, docs), mode=Mode.INFER)
 
-    text_length = int(preds.num_tokens[item].item())
-    num_frames_predicted = int(preds.num_frames[item].item())
-    # spectrogram [num_frames, frame_channels]
-    predicted_spectrogram = preds.frames[:num_frames_predicted, item]
-    predicted_alignments = preds.alignments[:num_frames_predicted, item, :text_length]
-    predicted_stop_token = preds.stop_tokens[:num_frames_predicted, item]
+    for item in range(num_cases):
+        text_length = int(preds.num_tokens[item].item())
+        num_frames_predicted = int(preds.num_frames[item].item())
+        # spectrogram [num_frames, frame_channels]
+        predicted_spectrogram = preds.frames[:num_frames_predicted, item]
+        predicted_alignments = preds.alignments[:num_frames_predicted, item, :text_length]
+        predicted_stop_token = preds.stop_tokens[:num_frames_predicted, item]
 
-    model = partial(get_model_label, cadence=cadence)
-    _plot_mel_spectrogram = cf.partial(plot_mel_spectrogram)
-    figures = (
-        (model("predicted_spectrogram"), _plot_mel_spectrogram, predicted_spectrogram),
-        (model("alignment"), plot_alignments, predicted_alignments),
-        (model("stop_token"), plot_logits, predicted_stop_token),
-    )
-    assets = state.comet.log_figures({l: v(n) for l, v, n in figures})
-    audio = cf.partial(griffin_lim)(predicted_spectrogram.cpu().numpy())
-    npy_urls = {f"{l} Array": state.comet.log_npy(l, sessions[item][0], a) for l, _, a in figures}
-    link = lambda h: "Failed to upload." if h is None else f'<a href="{h}">{h}</a>'
-    state.comet.log_html_audio(
-        audio={"predicted_griffin_lim_audio": audio},
-        context=state.comet.context,
-        text=cases[item][1],
-        speaker=sessions[item][0],
-        session=sessions[item][1],
-        predicted_loudness=get_average_db_rms_level(predicted_spectrogram.unsqueeze(1)).item(),
-        dataset_type=dataset_type,
-        **{f"{k} Figure": link(v) for k, v in assets.items()},
-        **{k: link(v) for k, v in npy_urls.items()},
-    )
+        model = partial(get_model_label, cadence=cadence)
+        _plot_mel_spectrogram = cf.partial(plot_mel_spectrogram)
+        figures = (
+            (model("predicted_spectrogram"), _plot_mel_spectrogram, predicted_spectrogram),
+            (model("alignment"), plot_alignments, predicted_alignments),
+            (model("stop_token"), plot_logits, predicted_stop_token),
+        )
+        assets = state.comet.log_figures({l: v(n) for l, v, n in figures})
+        audio = cf.partial(griffin_lim)(predicted_spectrogram.cpu().numpy())
+        npy_urls = {f"{l} Array": state.comet.log_npy(l, seshs[item][0], a) for l, _, a in figures}
+        link = lambda h: "Failed to upload." if h is None else f'<a href="{h}">{h}</a>'
+        state.comet.log_html_audio(
+            item=item,
+            audio={"predicted_griffin_lim_audio": audio},
+            context=state.comet.context,
+            text=cases[item][1],
+            speaker=seshs[item][0],
+            session=seshs[item][1],
+            predicted_loudness=get_average_db_rms_level(predicted_spectrogram.unsqueeze(1)).item(),
+            dataset_type=dataset_type,
+            **{f"{k} Figure": link(v) for k, v in assets.items()},
+            **{k: link(v) for k, v in npy_urls.items()},
+        )
 
 
 _HandleBatch = typing.Callable[[_HandleBatchArgs], None]
