@@ -324,7 +324,7 @@ AMEPD_ARPABET = typing.Literal[
     "AE1", "IH1", "G", "F", "NG", "V", "IY1", "OW0", "EY1", "HH", "SH", "OW1", "W", "AO1", "AH1",
     "AY1", "UW1", "JH", "Y", "CH", "AA0", "ER1", "EH2", "AY2", "AE2", "EY2", "AA2", "TH", "IH2",
     "EH0", "AW1", "UW0", "AE0", "AO2", "UH1", "IY2", "OW2", "AO0", "AY0", "UW2", "AH2", "EY0",
-    "OY1", "AH0", "AW2", "DH", "ZH", "ER2", "UH2", "AW0", "UH0", "OY2", "OY0", "ER0",
+    "OY1", "AH0", "AW2", "DH", "ZH", "ER2", "UH2", "AW0", "UH0", "OY2", "OY0", "ER0"
 ]
 # fmt: on
 
@@ -399,6 +399,7 @@ def _assert_valid_amepd_word(word: str):
 def _load_amepd(
     path: pathlib.Path = lib.environment.ROOT_PATH / "third_party" / "amepd" / "cmudict",
     comment_delimiter: str = ";;;",
+    syllabify: bool = False,
 ) -> typing.Dict[str, typing.List[AmEPDPronunciation]]:
     """Load the American English Pronunciation Dictionary.
 
@@ -410,6 +411,7 @@ def _load_amepd(
     dictionary: typing.Dict[str, typing.List[AmEPDPronunciation]] = defaultdict(list)
     entries = [l.split(comment_delimiter, 1)[0].strip() for l in path.read_text().split("\n")]
     ignored_words = []
+    ignored_plural_words = []
     for entry in entries:
         if len(entry) == 0:
             continue
@@ -420,7 +422,7 @@ def _load_amepd(
         # NOTE: Handle cases like: `word = "BATHED(verb@past)"``
         if "(" in word:
             word, other = tuple(word.split("(", 1))
-            assert other[-1] == ")", "Closing parentheses not found."
+            assert other[-1] == ")", f"Closing parentheses not found: {word}"
             other = other[:-1]
             if not other.isnumeric():
                 coarse = other
@@ -458,21 +460,37 @@ def _load_amepd(
             else:
                 kwargs["note"] = rest
 
-        arpabet = typing.cast(typing.Tuple[AMEPD_ARPABET, ...], tuple(pronunciation.split()))
-        assert all(
-            c in get_args(AMEPD_ARPABET) for c in arpabet
-        ), "The pronunciation may only use ARPABET characters."
+        _return = []
+        if syllabify:
+            syllables: typing.List[typing.Tuple[AMEPD_ARPABET, ...]] = []
+            for s in pronunciation.split(" - "):
+                arpabet = typing.cast(typing.Tuple[AMEPD_ARPABET, ...], tuple(s.split()))
+                assert all(
+                    c in get_args(AMEPD_ARPABET) or c == "-" for c in arpabet
+                ), f"The pronunciation may only use ARPABET characters: {word}"
+                syllables.append(arpabet)
+            _return = syllables
+        else:
+            arpabet = typing.cast(typing.Tuple[AMEPD_ARPABET, ...], tuple(pronunciation.split()))
+            _return = arpabet
 
         assert word.isupper(), "A word in this dictionary must be uppercase."
         _assert_valid_amepd_word(word)
-        assert word[-1] != "'", (
+        if word[-1] == "'":
+            ignored_plural_words.append(word)
+
+        dictionary[word].append(AmEPDPronunciation(_return, **kwargs))  # type: ignore
+    logger.warning("Non-ascii word(s) in AmEPD dictionary ignored: %s", ", ".join(ignored_words))
+    if len(ignored_plural_words) > 1:
+        logger.warning(
             "This dictionary does not include apostrophe's at the end of a word because they do not"
             "change the pronunciation of the word. Learn more here: "
             "https://github.com/rhdunn/amepd/commit/5fcd23a4424807e8b1c3f8736f19b38cd7e5abaf"
         )
-
-        dictionary[word].append(AmEPDPronunciation(arpabet, **kwargs))  # type: ignore
-    logger.warning("Non-ascii word(s) in AmEPD dictionary ignored: %s", ", ".join(ignored_words))
+        logger.warning(
+            "Plural words ending in apostrophe in AmEPD dictionary ignored: %s",
+            ", ".join(ignored_plural_words),
+        )
     return dictionary
 
 
@@ -493,7 +511,10 @@ def get_pronunciation(
     word: str,
     pos_coarse: typing.Optional[typing.Literal[AMEPD_PART_OF_SPEECH_COARSE]] = None,
     pos_fine: typing.Optional[typing.Literal["past", "pres"]] = None,
-) -> typing.Optional[typing.Tuple[AMEPD_ARPABET, ...]]:
+    dictionary: typing.Dict[str, typing.List[AmEPDPronunciation]] = _load_amepd(),
+) -> typing.Optional[
+    typing.Union[typing.Tuple[AMEPD_ARPABET, ...], typing.List[typing.Tuple[AMEPD_ARPABET, ...]]]
+]:
     """Get the ARABET pronunciation for `word`, unless it's ambigious or not available.
 
     Args:
@@ -502,7 +523,6 @@ def get_pronunciation(
         pos_fine: Fine-grained part-of-speech tags, like the part-of-speech tense.
     """
     _assert_valid_amepd_word(word)
-    dictionary = _load_amepd()
 
     # NOTE: This dictionary does not include apostrophe's at the end of a word because they do not
     # change the pronunciation of the word. Learn more here:
@@ -541,6 +561,68 @@ def get_pronunciation(
         )
 
     return pronunciations[0].pronunciation if len(pronunciations) == 1 else None
+
+
+def get_syllabic_pronunciation(
+    word: str,
+    pos_coarse: typing.Optional[typing.Literal[AMEPD_PART_OF_SPEECH_COARSE]] = None,
+    pos_fine: typing.Optional[typing.Literal["past", "pres"]] = None,
+) -> typing.Optional[
+    typing.Union[typing.Tuple[AMEPD_ARPABET, ...], typing.List[typing.Tuple[AMEPD_ARPABET, ...]]]
+]:
+    syll_dict = lib.environment.ROOT_PATH / "third_party" / "amepd" / "cmudict_syllabified"
+    return get_pronunciation(
+        word,
+        pos_coarse,
+        pos_fine,
+        dictionary=_load_amepd(path=syll_dict, comment_delimiter="##", syllabify=True),
+    )
+
+
+# fmt: off
+RESPELLER = {
+    'AA': 'ah', 'AE': 'a', 'AH': 'uh', 'AO': 'aw', 'AW': 'ow', 'AX': 'ə', 'AXR': 'ər', 'AY': 'y',
+    'EH': 'eh', 'ER': 'ər', 'EY': 'ay', 'IH': 'ih', 'IY': 'ee', 'OW': 'oh', 'OY': 'oy', 'UH': 'uu',
+    'UW': 'oo', 'B': 'b', 'CH': 'tch', 'D': 'd', 'DH': 'dh', 'F': 'f', 'G': 'g', 'H': 'h',
+    'JH': 'j', 'K': 'k', 'L': 'l', 'M': 'm', 'N': 'n', 'NG': 'ng', 'P': 'p', 'R': 'r', 'S': 's',
+    'SH': 'sh', 'T': 't', 'TH': 'th', 'V': 'v', 'W': 'w', 'Y': 'y', 'Z': 'z', 'ZH': 'zh'
+}
+# fmt: on
+
+
+def get_respelling(text: str) -> str:
+    """
+    A function for converting syllabic arpabet pronunciation keys into simple wikipedia respellings.
+    More info: https://en.wikipedia.org/wiki/Help:Pronunciation_respelling_key
+    NOTE: See note on syllables and stress:
+    https://en.wikipedia.org/wiki/Help:Pronunciation_respelling_key#Syllables_and_stress
+    """
+
+    return_ = []
+    for word in text.split(" "):
+        word = word.replace(",", "").replace(".", "").strip()
+        pronunciation = get_syllabic_pronunciation(word)
+        print(f"{word} | {pronunciation}")
+        syllables = []
+        has_upper = False
+        assert pronunciation, f"Could not find a pronunciation for {word}"
+        for syl in pronunciation:
+            re_syl = []
+            upper = False
+            for phoneme in syl:
+                key = phoneme.replace("0", "").replace("1", "").replace("2", "")
+                if "1" in phoneme:  # Primary stress
+                    upper = True
+                    has_upper = True
+                if "2" in phoneme and has_upper is False:  # Secondary stress
+                    upper = True
+                re_syl.append(RESPELLER[key])
+            syllable = "".join(re_syl)
+            if upper:
+                syllable = syllable.upper()
+            syllables.append(syllable)
+        return_.append("-".join(syllables))
+    return " ".join(return_)
 
 
 _is_initialism_default = lambda t: len(_load_amepd()[t.text.upper()]) == 0 and t.text.isupper()

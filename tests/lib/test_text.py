@@ -418,6 +418,26 @@ def test_get_pronunciation__disambiguate():
     _check_pronunciation("feb", "noun", expected=None)
 
 
+def test_get_syllabic_pronunciation():
+    expectations = {
+        "zebra": [("Z", "IY1"), ("B", "R", "AH0")],
+        "motorcycle": [("M", "OW1"), ("T", "ER0"), ("S", "AY2"), ("K", "AH0", "L")],
+        "suspicious": [("S", "AH0"), ("S", "P", "IH1"), ("SH", "AH0", "S")],
+    }
+    for word, pronunciation in expectations.items():
+        assert pronunciation == lib.text.get_syllabic_pronunciation(word)
+
+
+def test_get_respelling():
+    expectations = {
+        "zebra": "ZEE-bruh",
+        "motorcycle": "MOH-tər-sy-kuhl",
+        "suspicious": "suh-SPIH-shuhs",
+    }
+    for word, pronunciation in expectations.items():
+        assert pronunciation == lib.text.get_respelling(word)
+
+
 def test_get_initialism_pronunciation():
     """Test `lib.text.get_initialism_pronunciation` handles initialisms with various letters and
     cases."""
