@@ -81,6 +81,7 @@ ENGLISH_TEST_CASES = [
     "Livingroom",
     "Ophthalmologist",
     "ACLA",
+    "ACLA.",  # NOTE: `ACLA` sometimes gets cut-off, this is a test to see how a period affects it.
     "NASA",
     "Why?",
     'Ready to find out ""more""?',
