@@ -9,16 +9,15 @@ import random
 import typing
 from functools import partial
 
+import config as cf
 import torch
 import torch.nn
-from hparams import HParam, configurable
 from third_party import LazyLoader
 from torchnlp.random import fork_rng
 from tqdm import tqdm
 
 import lib
 from lib.utils import split
-from run._config import Dataset
 from run.data import _loader
 
 if typing.TYPE_CHECKING:  # pragma: no cover
@@ -35,14 +34,17 @@ else:
 
 logger = logging.getLogger(__name__)
 
+Dataset = typing.Dict[_loader.Speaker, typing.List[_loader.Passage]]
 
-@configurable
+
+@lib.utils.log_runtime
 def get_dataset(
-    datasets: typing.Dict[_loader.Speaker, _loader.DataLoader] = HParam(),
-    path: pathlib.Path = HParam(),
-    include_passage: typing.Callable[[_loader.Passage], bool] = HParam(),
-    handle_passage: typing.Callable[[_loader.Passage], _loader.Passage] = HParam(),
+    datasets: typing.Dict[_loader.Speaker, _loader.DataLoader],
+    path: pathlib.Path,
+    include_psge: typing.Callable[[_loader.Passage], bool],
+    handle_psge: typing.Callable[[_loader.Passage], _loader.Passage],
     max_workers: int = 0,
+    language: typing.Optional[_loader.Language] = None,
 ) -> Dataset:
     """Define a TTS dataset.
 
@@ -54,17 +56,21 @@ def get_dataset(
         ...
     """
     logger.info("Loading dataset...")
-    load = lambda s, d, **k: (s, [handle_passage(p) for p in d(path, **k) if include_passage(p)])
-    if max_workers > 0:
-        with multiprocessing.pool.ThreadPool(processes=min(max_workers, len(datasets))) as pool:
-            items = list(pool.starmap(load, datasets.items()))
-    else:
-        items = [load(s, d, add_tqdm=True) for s, d in datasets.items()]
+    prepared = {s: f for s, f in datasets.items() if language is None or s.language == language}
 
-    prepared_dataset = {k: v for k, v in items if len(v) > 0}
-    _omitted = datasets.keys() - prepared_dataset.keys()
-    logger.warning("Omitted %d Speakers: %s", len(_omitted), _omitted)
-    return prepared_dataset
+    load = lambda s, d, **k: (s, [handle_psge(p) for p in d(path, **k) if include_psge(p)])
+    if max_workers > 0:
+        with multiprocessing.pool.ThreadPool(processes=min(max_workers, len(prepared))) as pool:
+            items = list(pool.starmap(load, prepared.items()))
+    else:
+        items = [load(s, d, add_tqdm=True) for s, d in prepared.items()]
+
+    prepared = {k: v for k, v in items if len(v) > 0}
+    _omitted = datasets.keys() - prepared.keys()
+    if len(_omitted) > 0:
+        logger.info("Omitted %d Speakers: %s", len(_omitted), _omitted)
+
+    return prepared
 
 
 @functools.lru_cache(maxsize=None)
@@ -137,7 +143,7 @@ def _split_dataset(dataset: Dataset, dev_len: int, min_sim: float) -> TrainDev:
     dev: Dataset = collections.defaultdict(list)
     train: Dataset = collections.defaultdict(list)
     dev_scripts: typing.Set[str] = set()
-    items = sorted(dataset.items(), key=lambda i: i[0])
+    items = sorted(dataset.items(), key=lambda i: i[0].label)
     random.shuffle(items)
     logger.info("Creating initial split...")
     for speaker, passages in tqdm(items):
@@ -164,13 +170,12 @@ def _split_dataset(dataset: Dataset, dev_len: int, min_sim: float) -> TrainDev:
 
 
 @lib.utils.log_runtime
-@configurable
 def split_dataset(
     dataset: Dataset,
-    dev_speakers: typing.Set[_loader.Speaker] = HParam(),
-    approx_dev_len: int = HParam(),
-    min_sim: float = HParam(),
-    groups: typing.List[typing.Set[_loader.Speaker]] = HParam(),
+    dev_speakers: typing.Set[_loader.Speaker],
+    approx_dev_len: int,
+    min_sim: float,
+    groups: typing.List[typing.Set[_loader.Speaker]],
     seed: int = 123,
 ) -> TrainDev:
     """Split `dataset` into a train and development dataset. Ensures that `dev` and `train` share
@@ -232,6 +237,9 @@ def split_dataset(
     return train, dev
 
 
+SpanGeneratorGetWeight = typing.Callable[[_loader.Speaker, float], float]
+
+
 class SpanGenerator(typing.Iterator[_loader.Span]):
     """Define the dataset generator to train and evaluate the TTS models on.
 
@@ -247,17 +255,20 @@ class SpanGenerator(typing.Iterator[_loader.Span]):
         ...
         dataset
         max_seconds: The maximum seconds delimited by an `Span`.
-        balanced: Generate a similar amount of `Span`s per speaker.
+        ...
+        get_weight: Given the `Speaker` and the size of it's dataset, get it's weight relative
+            to other speakers. The weight is used to determine how many spans to generate from
+            it's dataset. If all the speakers have the same weight, then they'll be sampled
+            from equally.
     """
 
     @lib.utils.log_runtime
-    @configurable
     def __init__(
         self,
         dataset: Dataset,
-        max_seconds: int = HParam(),
-        include_span: typing.Callable[[_loader.Span], bool] = HParam(),
-        balanced: bool = True,
+        max_seconds: int,
+        include_span: typing.Callable[[_loader.Span], bool],
+        get_weight: SpanGeneratorGetWeight = lambda *_: 1.0,
         **kwargs,
     ):
         self.max_seconds = max_seconds
@@ -266,10 +277,12 @@ class SpanGenerator(typing.Iterator[_loader.Span]):
         for speaker, passages in dataset.items():
             is_singles = all([len(p.alignments) == 1 for p in passages])
             max_seconds_ = math.inf if is_singles else max_seconds
-            self.generators[speaker] = _loader.SpanGenerator(passages, max_seconds_, **kwargs)
+            self.generators[speaker] = cf.partial(_loader.SpanGenerator)(
+                passages, max_seconds_, **kwargs
+            )
         self.counter = {s: 0.0 for s in dataset.keys()}
         self.expected = {
-            s: 1.0 if balanced else float(sum(p.segmented_audio_length() for p in d))
+            s: get_weight(s, float(sum(p.segmented_audio_length() for p in d)))
             for s, d in dataset.items()
         }
         self.include_span = include_span
@@ -293,9 +306,9 @@ def get_window(window: str, window_length: int, window_hop: int) -> torch.Tensor
     NOTE: `torch.hann_window` does not pass `scipy.signal.check_COLA`, for example. Learn more:
     https://github.com/pytorch/audio/issues/452
     """
-    window = librosa.filters.get_window(window, window_length)
-    assert scipy.signal.check_COLA(window, window_length, window_length - window_hop)
-    return torch.tensor(window).float()
+    numpy_window = librosa.filters.get_window(window, window_length)
+    assert scipy.signal.check_COLA(numpy_window, window_length, window_length - window_hop)
+    return torch.tensor(numpy_window).float()
 
 
 @functools.lru_cache(maxsize=1)

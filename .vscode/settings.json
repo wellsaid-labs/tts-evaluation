@@ -39,5 +39,8 @@
   "reflow.preferredLineLength": 100,
   "git.autofetch": true,
   "eslint.run": "onSave",
-  "python.analysis.autoImportCompletions": false
+  "python.analysis.autoImportCompletions": false,
+  "editor.bracketPairColorization.enabled": true,
+  "editor.guides.bracketPairs": true,
+  "python.analysis.diagnosticMode": "workspace"
 }

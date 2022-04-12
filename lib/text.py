@@ -1,5 +1,4 @@
 import functools
-import itertools
 import json
 import logging
 import pathlib
@@ -12,31 +11,25 @@ from collections import defaultdict
 from typing import get_args
 
 import ftfy
-import hparams
+import spacy
+import spacy.tokens
 import unidecode
+from spacy.lang import en as spacy_en
+from spacy.language import Language
 from third_party import LazyLoader
 from tqdm import tqdm
 
 import lib
-from lib.utils import flatten, flatten_2d
+from lib.utils import flatten_2d
 
 if typing.TYPE_CHECKING:  # pragma: no cover
-    import en_core_web_md
-    import en_core_web_sm
     import Levenshtein
     import nltk
     import normalise
-    import spacy
-    import spacy.tokens
-    from spacy.lang import en as spacy_en
 else:
-    en_core_web_sm = LazyLoader("en_core_web_sm", globals(), "en_core_web_sm")
-    en_core_web_md = LazyLoader("en_core_web_md", globals(), "en_core_web_md")
     Levenshtein = LazyLoader("Levenshtein", globals(), "Levenshtein")
     nltk = LazyLoader("nltk", globals(), "nltk")
     normalise = LazyLoader("normalise", globals(), "normalise")
-    spacy = LazyLoader("spacy", globals(), "spacy")
-    spacy_en = LazyLoader("spacy_en", globals(), "spacy.lang.en")
 
 
 logger = logging.getLogger(__name__)
@@ -44,7 +37,7 @@ logger = logging.getLogger(__name__)
 GRAPHEME_TO_PHONEME_RESTRICTED = ("[[", "]]", "<", ">")
 
 
-def _line_grapheme_to_phoneme(
+def grapheme_to_phoneme(
     graphemes: typing.List[str],
     service: typing.Literal["espeak"] = "espeak",
     flags: typing.List[str] = ["--ipa=3", "-q", "-ven-us", "--stdin", "-m"],
@@ -126,105 +119,6 @@ def _line_grapheme_to_phoneme(
 
         return_.append(phoneme.strip(separator))
     return return_
-
-
-def _multiline_grapheme_to_phoneme(
-    graphemes: typing.List[str], separator: str = "", **kwargs
-) -> typing.List[str]:
-    # NOTE: `grapheme` is split on new lines because `espeak` is inconsistent in it's handling of
-    # new lines.
-    splits = [g.split("\n") for g in graphemes]
-    phonemes = _line_grapheme_to_phoneme(flatten_2d(splits), separator=separator, **kwargs)
-    return_ = []
-    for split in splits:
-        concat = (separator + "\n" + separator).join(phonemes[: len(split)])
-        phonemes = phonemes[len(split) :]
-        # NOTE: We need to remove double separators from when there are consecutive new lines like
-        # "\n\n\n", for example.
-        if len(separator) > 0:
-            concat = re.sub(r"%s+" % re.escape(separator), separator, concat).strip(separator)
-        return_.append(concat)
-    return return_
-
-
-def _grapheme_to_phoneme_with_punctuation(
-    *graphemes: typing.Union[str, spacy.tokens.Doc, spacy.tokens.span.Span],
-    separator: str = "",
-    **kwargs,
-) -> typing.List[str]:
-    """Convert grapheme to phoneme while preserving punctuation.
-
-    Args:
-        doc
-        separator: The separator used to separate phonemes, stress, and punctuation.
-        **kwargs: Key-word arguments passed to `_multiline_grapheme_to_phoneme`.
-
-    Returns: Phonemes with the original punctuation (as defined by spaCy).
-    """
-    # NOTE: Create a `spacy.tokens.Doc` for every `str`.
-    docs = list(graphemes)
-    if any(isinstance(d, str) for d in docs):
-        nlp = load_en_core_web_md(disable=("parser", "ner"))
-        items = list(nlp.pipe([d for d in docs if isinstance(d, str)]))
-        docs = [(items.pop(0) if isinstance(d, str) else d) for d in docs]
-    docs = typing.cast(typing.Union[spacy.tokens.Doc, spacy.tokens.span.Span], docs)
-
-    splits: typing.List[typing.List[typing.Union[typing.Tuple[str], str]]] = []
-    for doc in docs:
-        message = "The separator is not unique."
-        assert not separator or all(separator not in t.text for t in doc), message
-
-        # NOTE: `is_punct` is not contextual while `pos == spacy.symbols.PUNCT` is, see:
-        # https://github.com/explosion/spaCy/issues/998. This enables us to phonemize cases like:
-        # - "form of non-linguistic representations"  (ADJ)
-        # - "The psychopaths' empathic reaction"  (PART)
-        # - "judgement, name & face memory" (CCONJ)
-        # - "to public interest/national security" (SYM)
-        # - "spectacular, grand // desco da" (SYM)
-        items: typing.List[typing.Union[typing.Tuple[str], str]] = []
-        iterator = itertools.groupby(doc, lambda t: t.pos == spacy.symbols.PUNCT)  # type: ignore
-        for is_punct, group in iterator:
-            phrase = "".join([t.text_with_ws for t in group])
-            is_alpha_numeric = any(c.isalpha() or c.isdigit() for c in phrase)
-            if is_punct and is_alpha_numeric:
-                logger.debug("Punctuation contains alphanumeric characters: %s" % phrase)
-            items.append(tuple(phrase) if is_punct and not is_alpha_numeric else phrase)
-        splits.append(items)
-
-    inputs = [i for i in flatten_2d(splits) if isinstance(i, str)]
-    phonemes = _multiline_grapheme_to_phoneme(inputs, separator=separator, **kwargs)
-    return_ = []
-    for items in splits:
-        items_ = [(phonemes.pop(0) if isinstance(i, str) else list(i)) for i in items]
-        return_.append(separator.join([t for t in flatten(items_) if len(t) > 0]))
-    return return_
-
-
-@hparams.configurable
-def grapheme_to_phoneme(graphemes, **kwargs):
-    """Convert graphemes into phonemes and preserve punctuation.
-
-    NOTE: `espeak` can give different results for the same argument, sometimes. For example,
-    "Fitness that's invigorating, not intimidating!" sometimes returns...
-    1. "f|ˈ|ɪ|t|n|ə|s| |ð|æ|t|s| |ɪ|n|v|ˈ|ɪ|ɡ|ɚ|ɹ|ˌ|eɪ|ɾ|ɪ|ŋ|,| "...
-    2. "f|ˈ|ɪ|t|n|ə|s| |ð|æ|t|s| |ɪ|n|v|ˈ|ɪ|ɡ|oː|ɹ|ˌ|eɪ|ɾ|ɪ|ŋ|,| "...
-    NOTE: Since eSpeak, unfortunately, doesn't take extra context to determining the pronunciation.
-    This means it'll sometimes be wrong in ambigious cases on the text edges.
-
-    TODO: Replace the eSpeak with a in-house solution including:
-    - `lib.text.normalize_non_standard_words`
-    - CMU dictionary or https://github.com/kylebgorman/wikipron for most words
-    - spaCy for homographs similar to https://github.com/Kyubyong/g2p
-    - A neural network trained on CMU dictionary for words not in the dictionaries.
-    TODO: Type this function once spaCy supports typing.
-
-    Args:
-        graphemes: The graphemes to convert to phonemes.
-        **kwargs: Key-word arguments passed to `_grapheme_to_phoneme_with_punctuation`.
-    """
-    if isinstance(graphemes, (list, tuple)):
-        return _grapheme_to_phoneme_with_punctuation(*tuple(graphemes), **kwargs)
-    return tuple(_grapheme_to_phoneme_with_punctuation(graphemes, **kwargs))[0]
 
 
 """ Learn more about pronunciation dictionarys:
@@ -649,16 +543,17 @@ def get_pronunciations(
             return_.append(None)
         else:
             pos = lib.text.SPACY_TO_AMEPD_POS[token.pos]
-            tense = spacy_en.TAG_MAP[token.tag_].get("Tense", None)
-            prounciation = lib.text.get_pronunciation(token.text, pos, tense)
+            tense = token.morph.get("Tense")
+            tense = None if len(tense) == 0 else tense[0].lower()
+            pronunciation = lib.text.get_pronunciation(token.text, pos, tense)  # type: ignore
             if is_initialism(token):
                 lib.utils.call_once(
-                    logger.warning,  # type: ignore
+                    logger.warning,
                     "Guessing '%s' is an initialism.",
                     token.text,
                 )
-                prounciation = lib.text.get_initialism_pronunciation(token.text)
-            return_.append(prounciation)
+                pronunciation = lib.text.get_initialism_pronunciation(token.text)
+            return_.append(pronunciation)
     return tuple(return_)
 
 
@@ -726,7 +621,8 @@ def normalize_vo_script(text: str, non_ascii: frozenset, strip: bool = True) -> 
     """Normalize a voice-over script such that only readable characters remain.
 
     TODO: Use `unidecode.unidecode` in "strict" mode so that data isn't lost.
-    TODO: Clarify that some characters like `«` will be normalized regardless of being in the `non_ascii` set.
+    TODO: Clarify that some characters like `«` will be normalized regardless of being in the
+          `non_ascii` set.
     NOTE: `non_ascii` needs to be explicitly set so that text isn't processed incorrecly accidently.
 
     References:
@@ -822,7 +718,7 @@ def add_space_between_sentences(doc: spacy.tokens.Doc) -> str:
     for prev, curr, next in zip(doc, doc[1:], doc[2:]):
         # NOTE: Add a whitespace after `curr` if it's wedged in between two words with no
         # white space following it.
-        # NOTE: This approach avois tricky cases involving multiple sequential punctuation marks.
+        # NOTE: This approach avoids tricky cases involving multiple sequential punctuation marks.
         if (
             next.is_sent_start
             and len(curr.whitespace_) == 0
@@ -845,20 +741,20 @@ def _nltk_download(dependency):
 
 
 @functools.lru_cache(maxsize=None)
-def load_en_core_web_md(*args, **kwargs) -> spacy_en.English:
-    """Load and cache in memory a spaCy `spacy_en.English` object."""
-    return en_core_web_md.load(*args, **kwargs)
+def load_spacy_nlp(name, *args, **kwargs) -> Language:
+    logger.info(f"Loading spaCy model `{name}`...")
+    nlp = spacy.load(name, *args, **kwargs)
+    logger.info(f"Loaded spaCy model `{name}`.")
+    return nlp
+
+
+def load_en_core_web_sm(*args, **kwargs):
+    return load_spacy_nlp("en_core_web_sm", *args, **kwargs)
 
 
 @functools.lru_cache(maxsize=None)
-def load_en_core_web_sm(*args, **kwargs) -> spacy_en.English:
-    """Load and cache in memory a spaCy `spacy_en.English` object."""
-    return en_core_web_sm.load(*args, **kwargs)
-
-
-@functools.lru_cache(maxsize=None)
-def load_en_english(*args, **kwargs) -> spacy_en.English:
-    """Load and cache in memory a spaCy `spacy_en.English` object."""
+def load_en_english(*args, **kwargs) -> Language:
+    """Load and cache in memory a spaCy `Language` object."""
     return spacy_en.English(*args, **kwargs)
 
 

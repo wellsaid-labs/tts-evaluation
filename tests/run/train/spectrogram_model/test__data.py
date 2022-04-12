@@ -2,7 +2,7 @@ import collections
 import math
 import typing
 
-import hparams
+import config as cf
 import librosa
 import numpy as np
 import pytest
@@ -12,44 +12,17 @@ from torchnlp.encoders.text import SequenceBatch
 
 import lib
 import run
-from run.data._loader import Alignment, Session
-from run.data._loader.english import MARK_ATHERLAY, MARY_ANN
+from run.data._loader import Alignment
 from run.train.spectrogram_model import _data
 from tests._utils import assert_almost_equal, assert_uniform_distribution
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(autouse=True, scope="module")
 def run_around_tests():
     """Set a basic configuration."""
     run._config.configure()
     yield
-    hparams.clear_config()
-
-
-def test_input_encoder():
-    """Test `_data.InputEncoder` handles a basic case."""
-    graphemes = ["aBc", "deF"]
-    phonemes = ["ˈ|eɪ|b|ˌ|iː|s|ˈ|iː|", "d|ˈ|ɛ|f"]
-    phoneme_separator = "|"
-    speakers = [MARK_ATHERLAY, MARY_ANN]
-    sessions = [(MARK_ATHERLAY, Session("mark")), (MARY_ANN, Session("mary"))]
-    encoder = _data.InputEncoder(graphemes, phonemes, speakers, sessions, phoneme_separator)
-    input_ = _data.DecodedInput("a", "ˈ|eɪ", MARK_ATHERLAY, sessions[0])
-    assert encoder._get_case("A") == encoder._CASE_LABELS[0]
-    assert encoder._get_case("a") == encoder._CASE_LABELS[1]
-    assert encoder._get_case("1") == encoder._CASE_LABELS[2]
-    encoded = encoder.encode(input_)
-
-    assert torch.equal(encoded.graphemes, torch.tensor([5]))
-    assert torch.equal(encoded.letter_cases, torch.tensor([1]))
-    assert torch.equal(encoded.tokens, torch.tensor([5, 6]))
-    assert torch.equal(encoded.speaker, torch.tensor([0]))
-    assert torch.equal(encoded.session, torch.tensor([0]))
-    assert encoder.decode(encoded) == input_
-
-    input_ = _data.DecodedInput("B", "|b|ˌ|iː", MARK_ATHERLAY, sessions[0])
-    encoded = encoder.encode(input_)
-    assert encoder.decode(encoded) == input_
+    cf.purge()
 
 
 def test__random_nonoverlapping_alignments():
@@ -108,36 +81,6 @@ def test__get_loudness():
         assert round(meter.integrated_loudness(audio), precision) == loundess
 
 
-def test__get_char_to_word():
-    """Test `_data._get_char_to_word` maps characters to words correctly."""
-    nlp = lib.text.load_en_english()
-    doc = nlp("It was time to present the present abcdefghi.")
-    char_to_word = _data._get_char_to_word(doc)
-    expected = [0, 0, -1, 1, 1, 1, -1, 2, 2, 2, 2, -1, 3, 3, -1, 4, 4, 4, 4, 4, 4, 4, -1, 5, 5, 5]
-    expected += [-1, 6, 6, 6, 6, 6, 6, 6, -1, 7, 7, 7, 7, 7, 7, 7, 7, 7, 8]
-    assert char_to_word == expected
-
-
-def test__get_word_vectors():
-    """Test `_data._get_word_vectors` maps word vectors onto characters."""
-    text = "It was time to present the present abcdefghi."
-    doc = lib.text.load_en_core_web_md()(text)
-    char_to_word = _data._get_char_to_word(doc)
-    word_vectors = _data._get_word_vectors(char_to_word, doc)
-
-    assert word_vectors.shape == (len(text), 300)
-    assert word_vectors[0].sum() != 0
-
-    # NOTE: `-1`/`7` and "present"/"present" have the same word vector.
-    expected = (len(set(char_to_word)) - 2, 300)
-    assert np.unique(word_vectors, axis=0).shape == expected  # type: ignore
-
-    # NOTE: OOV words and non-word characters should have a zero vectors.
-    slice_ = slice(-11, -1)
-    assert char_to_word[slice_] == [-1, 7, 7, 7, 7, 7, 7, 7, 7, 7]
-    assert word_vectors[slice_].sum() == 0
-
-
 def test__signals_to_spectrograms():
     """Test `_data._signals_to_spectrograms` is invariant to the batch size."""
     fft_length = 2048
@@ -151,7 +94,9 @@ def test__signals_to_spectrograms():
     spectrogram, spectrogram_mask = _data._signals_to_spectrograms(
         signals, fft_length=fft_length, frame_hop=hop_length, window=window
     )
-    module = lib.audio.SignalTodBMelSpectrogram(fft_length, hop_length, window=window)
+    module = cf.partial(lib.audio.SignalTodBMelSpectrogram)(
+        fft_length=fft_length, frame_hop=hop_length, window=window
+    )
     for i in range(batch_size):
         result = module(signals[i], aligned=True)
         expected = spectrogram.tensor[:, i][: spectrogram.lengths[:, i]]

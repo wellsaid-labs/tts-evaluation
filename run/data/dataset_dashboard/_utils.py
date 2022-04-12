@@ -7,6 +7,7 @@ import time
 import typing
 
 import altair as alt
+import config as cf
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -16,7 +17,6 @@ from torchnlp.random import fork_rng
 import lib
 from lib.audio import amp_to_db, signal_to_rms
 from lib.utils import clamp, flatten_2d, seconds_to_str
-from run._config import Dataset
 from run._streamlit import (
     dataset_passages,
     fast_grapheme_to_phoneme,
@@ -25,6 +25,7 @@ from run._streamlit import (
     read_wave_audio,
     span_audio,
 )
+from run._utils import Dataset
 from run.data._loader import Passage, Span, voiced_nonalignment_spans
 
 logger = logging.getLogger(__name__)
@@ -70,7 +71,9 @@ def _signal_to_db_rms_level(signal: np.ndarray) -> float:
 
 def _signal_to_loudness(signal: np.ndarray, sample_rate: int, block_size: float = 0.4) -> float:
     """Get the loudness in LUFS of `signal`."""
-    meter = lib.audio.get_pyloudnorm_meter(block_size=block_size, sample_rate=sample_rate)
+    meter = lib.audio.get_pyloudnorm_meter(
+        block_size=block_size, sample_rate=sample_rate, filter_class=cf.get()
+    )
     if signal.shape[0] >= lib.audio.sec_to_sample(block_size, sample_rate):
         return round(meter.integrated_loudness(signal), 1)
     return math.nan
@@ -108,7 +111,7 @@ def bucket_and_chart(
     #  function ("sum")."
     return (
         alt.Chart(df)
-        .mark_bar(opacity=opacity)
+        .mark_bar(opacity=opacity)  # type: ignore
         .encode(
             x=alt.X("bucket", type="quantitative", title=x + " (binned)"),
             y=alt.Y(field="count", type="quantitative", title=y, stack=stack),

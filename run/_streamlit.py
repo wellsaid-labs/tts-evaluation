@@ -1,6 +1,7 @@
 import functools
 import logging
 import multiprocessing
+import multiprocessing.pool
 import os
 import pathlib
 import pickle
@@ -9,6 +10,7 @@ import tempfile
 import typing
 import zipfile
 
+import config as cf
 import numpy as np
 import tqdm
 from streamlit.server.server import Server
@@ -16,8 +18,8 @@ from third_party import LazyLoader, session_state
 
 import lib
 import run
-from run._config import Dataset
 from run._tts import CHECKPOINTS_LOADERS, Checkpoints, package_tts
+from run._utils import Dataset
 from run.data._loader import Passage
 
 if typing.TYPE_CHECKING:  # pragma: no cover
@@ -45,12 +47,6 @@ STREAMLIT_STATIC_PATH = STREAMLIT_WEB_ROOT_PATH / "static"
 STREAMLIT_STATIC_PRIVATE_PATH = STREAMLIT_STATIC_PATH / "_wsl_tts"
 STREAMLIT_STATIC_TEMP_PATH = STREAMLIT_STATIC_PRIVATE_PATH / "temp"
 STREAMLIT_STATIC_SYMLINK_PATH = STREAMLIT_STATIC_PRIVATE_PATH / "symlink"
-
-# NOTE: This is a default script that can be used with Streamlit apps, if need be.
-DEFAULT_SCRIPT = (
-    "Your creative life will evolve in ways that you can’t possibly imagine. Trust"
-    " your gut. Don’t overthink it. And allow yourself a little room to play."
-)
 
 
 def is_streamlit_running() -> bool:
@@ -124,6 +120,8 @@ def session_cache(func: None = None, **kwargs) -> SessionCache:
 def session_cache(func: typing.Optional[typing.Callable] = None, **kwargs):
     """`lru_cache` wrapper for `streamlit` that caches accross reruns.
 
+    NOTE: `session_cache` will trigger an import of `streamlit`.
+
     Learn more: https://github.com/streamlit/streamlit/issues/2382
     """
     if not func:
@@ -196,7 +194,7 @@ def path_to_web_path(path: pathlib.Path) -> WebPath:
 
 def audio_to_web_path(audio: np.ndarray, name: str = "audio.wav", **kwargs) -> WebPath:
     web_path = make_temp_web_dir() / name
-    lib.audio.write_audio(web_path, audio, **kwargs)
+    cf.partial(lib.audio.write_audio)(web_path, audio, **kwargs)
     return web_path
 
 
@@ -225,13 +223,15 @@ def paths_to_html_download_link(
 
 _MapInputVar = typing.TypeVar("_MapInputVar")
 _MapReturnVar = typing.TypeVar("_MapReturnVar")
+_cpu_count = os.cpu_count()
+assert _cpu_count is not None
 
 
 def map_(
     list_: typing.List[_MapInputVar],
     func: typing.Callable[[_MapInputVar], _MapReturnVar],
     chunk_size: int = 8,
-    max_parallel: int = os.cpu_count() * 3,
+    max_parallel: int = _cpu_count * 3,
     progress_bar: bool = True,
 ) -> typing.List[_MapReturnVar]:
     """Apply `func` to `list_` in parallel."""
@@ -255,33 +255,34 @@ def span_audio(span: run.data._loader.Span) -> np.ndarray:
 
 def passage_audio(passage: run.data._loader.Passage) -> np.ndarray:
     """Get `span` audio using cached `read_wave_audio`."""
-    start = passage.first.audio[0]
-    return read_wave_audio(passage.audio_file, start, passage.aligned_audio_length())
+    length = passage.segmented_audio_length()
+    return read_wave_audio(passage.audio_file, passage.audio_start, length)
 
 
 @session_cache(maxsize=None)
-def get_dataset(speaker_labels: typing.FrozenSet[str]) -> run._config.Dataset:
+def get_dataset(speaker_labels: typing.FrozenSet[str]) -> Dataset:
     """Load dataset subset, and cache."""
     logger.info("Loading dataset...")
     with st.spinner(f"Loading dataset(s): {','.join(list(speaker_labels))}"):
         datasets = {k: v for k, v in run._config.DATASETS.items() if k.label in speaker_labels}
-        dataset = run._utils.get_dataset(datasets)
+        dataset = cf.call(run._utils.get_dataset, datasets=datasets, _overwrite=True)
         logger.info(f"Finished loading {set(speaker_labels)} dataset(s)! {lib.utils.mazel_tov()}")
     return dataset
 
 
 @session_cache(maxsize=None)
-def get_dev_dataset() -> run._config.Dataset:
+def get_dev_dataset() -> Dataset:
     """Load dev dataset, and cache."""
     with st.spinner("Loading dataset..."):
-        _, dev_dataset = run._utils.split_dataset(run._utils.get_dataset())
+        dataset = run._utils.get_dataset(**cf.get())
+        _, dev_dataset = run._utils.split_dataset(dataset, **cf.get())
     return dev_dataset
 
 
 @session_cache(maxsize=None)
 def fast_grapheme_to_phoneme(text: str):
     """Fast grapheme to phoneme, cached."""
-    return lib.text._line_grapheme_to_phoneme([text], separator="|")[0]
+    return lib.text.grapheme_to_phoneme([text], separator="|")[0]
 
 
 def make_signal_chart(
@@ -326,11 +327,11 @@ def make_interval_chart(
     return (
         alt.Chart(pd.DataFrame(source))
         .mark_rect(
-            fillOpacity=fillOpacity,
-            color=color,
-            stroke=stroke,
-            strokeWidth=strokeWidth,
-            strokeOpacity=strokeOpacity,
+            fillOpacity=fillOpacity,  # type: ignore
+            color=color,  # type: ignore
+            stroke=stroke,  # type: ignore
+            strokeWidth=strokeWidth,  # type: ignore
+            strokeOpacity=strokeOpacity,  # type: ignore
             **kwargs,
         )
         .encode(x=alt.X("x_min", type="quantitative"), x2=alt.X2("x_max"))

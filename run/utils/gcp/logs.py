@@ -18,7 +18,7 @@ from run._streamlit import get_session_state
 
 st.set_page_config(layout="wide")
 
-OPTIONS = (
+OPTIONS: typing.Tuple[typing.Tuple[str, timedelta], ...] = (
     ("Last 90 Days", timedelta(days=90)),
     ("Last 31 Days", timedelta(days=31)),
     ("Last 7 Days", timedelta(days=7)),
@@ -105,7 +105,12 @@ def main():
     state["query"] = query
 
     label = "Select Time Range"
-    option = st.selectbox(label, OPTIONS, index=state.get("index", 3), format_func=lambda k: k[0])
+    option: typing.Tuple[str, timedelta] = st.selectbox(
+        label,
+        OPTIONS,
+        index=state.get("index", 3),
+        format_func=lambda k: k[0],  # type: ignore
+    )
     state["index"] = OPTIONS.index(option)
     end = datetime.utcnow()
     start = end - option[1]

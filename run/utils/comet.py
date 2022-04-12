@@ -19,7 +19,8 @@ app = typer.Typer(context_settings=dict(max_content_width=math.inf))
 def checkout(context: typer.Context, experiment: str, overwrite: bool = False):
     """Updates the files in the working directory to reproduce a EXPERIMENT."""
     api = comet_ml.api.API()
-    experiment_ = api.get_experiment_by_id(experiment)
+    experiment_ = api.get_experiment_by_key(experiment)
+    assert experiment_ is not None
     git = experiment_.get_git_metadata()
     typer.secho(f"Checking out experiment {experiment_.get_name()}...", fg=typer.colors.MAGENTA)
     subprocess.run(f"git checkout {git['branch']}", shell=True, check=True)
@@ -41,14 +42,15 @@ def patch(
     $ python -m run.utils.comet patch XXXXXXXX --overwrite --include="*.py"
 
     $ python -m run.utils.comet patch XXXXXXXX --overwrite --ignore-space-change \
---ignore-whitespace --3way
+--ignore-whitespace --3way --include="*.py"
 
     $ python -m run.utils.comet patch XXXXXXXX --overwrite --ignore-space-change \
---ignore-whitespace --reject
+--ignore-whitespace --reject --include="*.py"
     """
     api = comet_ml.api.API()
     patch_file_name = "git_diff.patch"
-    experiment_ = api.get_experiment_by_id(experiment)
+    experiment_ = api.get_experiment_by_key(experiment)
+    assert experiment_ is not None
     patch = typing.cast(bytes, experiment_.get_git_patch())
     zip_file_path = pathlib.Path(zip_file_name)
     if zip_file_path.exists() and not overwrite:
@@ -73,7 +75,8 @@ def samples(
 ):
     """Download all samples for an EXPERIMENT."""
     api = comet_ml.api.API()
-    experiment_ = api.get_experiment_by_id(experiment)
+    experiment_ = api.get_experiment_by_key(experiment)
+    assert experiment_ is not None
     asset_list = experiment_.get_asset_list(asset_type="audio")
     asset_list = typing.cast(typing.List, asset_list)
     asset_list = sorted(asset_list, key=lambda a: a["createdAt"], reverse=True)[:max_samples]

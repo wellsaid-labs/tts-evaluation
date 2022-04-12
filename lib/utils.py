@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import dataclasses
+import enum
 import functools
 import itertools
 import logging
 import math
 import multiprocessing.pool
+import pathlib
+import pickle
 import random
 import statistics
 import time
@@ -16,12 +19,18 @@ from abc import abstractmethod
 from contextlib import contextmanager
 
 import numpy as np
+import numpy.typing as npt
 import torch
+import torch.distributed
 import torch.multiprocessing
 import torch.nn
 import torch.nn.functional
 import torch.utils.data
+from torch.nn import functional
+from torch.nn.parameter import Parameter
 from tqdm import tqdm
+
+import lib.distributed
 
 logger = logging.getLogger(__name__)
 
@@ -78,9 +87,9 @@ def get_weighted_std(tensor: torch.Tensor, dim: int = 0) -> torch.Tensor:
         dim: Compute standard deviation along `dim` in `tensor`.
     """
     # Expects normalized weightes total of 0, 1 to ensure correct variance decisions
-    assert all(
-        math.isclose(value, 1, abs_tol=1e-3) for value in tensor.sum(dim=dim).view(-1).tolist()
-    )
+    # assert all(
+    #     math.isclose(value, 1, abs_tol=1e-3) for value in tensor.sum(dim=dim).view(-1).tolist()
+    # )
 
     # Create position matrix where the index is the position and the value is the weight
     indicies = torch.arange(0, tensor.shape[dim], dtype=tensor.dtype, device=tensor.device)
@@ -103,9 +112,6 @@ def get_weighted_std(tensor: torch.Tensor, dim: int = 0) -> torch.Tensor:
 # NOTE: Learn more about this typing:
 # https://github.com/microsoft/pyright/issues/1147
 _FlattenReturnType = typing.TypeVar("_FlattenReturnType")
-_FlattenInputType = typing.Union[
-    _FlattenReturnType, typing.Sequence[typing.Union[_FlattenReturnType, "_FlattenInputType"]]
-]
 
 
 def flatten_2d(
@@ -126,13 +132,6 @@ def flatten_3d(
     return [item for sublist in l for subsublist in sublist for item in subsublist]
 
 
-def flatten(l: _FlattenInputType) -> typing.List[_FlattenReturnType]:
-    """Flatten a list of lists into a list."""
-    if isinstance(l, list):
-        return sum(map(flatten, l), [])
-    return [l]
-
-
 def flatten_parameters(model: torch.nn.Module) -> torch.nn.Module:
     """Apply `flatten_parameters` to `model`."""
     lambda_ = lambda m: m.flatten_parameters() if hasattr(m, "flatten_parameters") else None
@@ -147,12 +146,13 @@ def identity(x: _IdentityReturnType) -> _IdentityReturnType:
 
 
 _SplitReturnType = typing.TypeVar("_SplitReturnType")
+_SplitIdentityFunc = typing.cast(typing.Callable[[float], float], identity)
 
 
 def split(
     list_: typing.List[_SplitReturnType],
     splits: typing.List[float],
-    value: typing.Callable[[_SplitReturnType], float] = identity,
+    value: typing.Callable[[_SplitReturnType], float] = _SplitIdentityFunc,
 ) -> typing.Iterator[typing.List[_SplitReturnType]]:
     """Split `list_` when the accumulated sum passes a threshold.
 
@@ -209,7 +209,9 @@ def seconds_to_str(seconds: float) -> str:
         return "%dms" % (milliseconds)
 
 
-_LogRuntimeFunction = typing.TypeVar("_LogRuntimeFunction", bound=typing.Callable[..., typing.Any])
+AnyCallable = typing.Callable[..., typing.Any]
+
+_LogRuntimeFunction = typing.TypeVar("_LogRuntimeFunction", bound=AnyCallable)
 
 
 def log_runtime(function: _LogRuntimeFunction) -> _LogRuntimeFunction:
@@ -224,6 +226,38 @@ def log_runtime(function: _LogRuntimeFunction) -> _LogRuntimeFunction:
         return result
 
     return typing.cast(_LogRuntimeFunction, decorator)
+
+
+_CacheReturnDecoratorFunction = typing.TypeVar("_CacheReturnDecoratorFunction", bound=AnyCallable)
+
+
+def disk_cache(path: pathlib.Path):
+    """Decorator for caching the return value in a file regardless of the arguments."""
+
+    def decorator(function: _CacheReturnDecoratorFunction) -> _CacheReturnDecoratorFunction:
+        @functools.wraps(function)
+        def wrapper(*args, **kwargs):
+            if path.exists():
+                logger.warn(
+                    f"Loading cache for `{function.__qualname__}` from `{path}`. "
+                    f"Please delete `{path}` and rerun if you'd like to not use the "
+                    "cache."
+                )
+                with path.open("rb") as f:
+                    return pickle.load(f)
+
+            result = function(*args, **kwargs)
+            with path.open("wb") as f:
+                logger.info(f"Caching return value for `{function.__qualname__}` to `{path}`.")
+                pickle.dump(result, f)
+
+            return result
+
+        wrapper.clear_cache = lambda: path.unlink() if path.exists() else None
+
+        return typing.cast(_CacheReturnDecoratorFunction, wrapper)
+
+    return decorator
 
 
 _SortTogetherItem = typing.TypeVar("_SortTogetherItem")
@@ -278,9 +312,9 @@ def pad_tensor(
     """
     padding = [[0, 0] for _ in range(input_.dim())]
     padding[dim] = list(pad)
-    # NOTE: `torch.nn.functional.pad` accepts the last dimension first.
+    # NOTE: `functional.pad` accepts the last dimension first.
     flat: typing.List[int] = flatten_2d(list(reversed(padding)))
-    return torch.nn.functional.pad(input_, flat, **kwargs)
+    return functional.pad(input_, flat, **kwargs)
 
 
 def trim_tensors(*args: torch.Tensor, dim: int = 2) -> typing.Iterable[torch.Tensor]:
@@ -305,12 +339,10 @@ class LSTM(torch.nn.LSTM):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         num_directions = 2 if self.bidirectional else 1
-        self.initial_hidden_state = torch.nn.Parameter(
-            torch.randn(self.num_layers * num_directions, 1, self.hidden_size)
-        )
-        self.initial_cell_state = torch.nn.Parameter(
-            torch.randn(self.num_layers * num_directions, 1, self.hidden_size)
-        )
+        init_hidden_state = torch.randn(self.num_layers * num_directions, 1, self.hidden_size)
+        self.init_hidden_state = Parameter(init_hidden_state)
+        init_cell_state = torch.randn(self.num_layers * num_directions, 1, self.hidden_size)
+        self.init_cell_state = Parameter(init_cell_state)
 
     def forward(  # type: ignore
         self,
@@ -320,8 +352,8 @@ class LSTM(torch.nn.LSTM):
         if hx is None:
             batch_size = input.shape[0] if self.batch_first else input.shape[1]
             hx = (
-                self.initial_hidden_state.expand(-1, batch_size, -1).contiguous(),
-                self.initial_cell_state.expand(-1, batch_size, -1).contiguous(),
+                self.init_hidden_state.expand(-1, batch_size, -1).contiguous(),
+                self.init_cell_state.expand(-1, batch_size, -1).contiguous(),
             )
         return super().forward(input, hx=hx)
 
@@ -334,8 +366,8 @@ class LSTMCell(torch.nn.LSTMCell):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.initial_hidden_state = torch.nn.Parameter(torch.randn(1, self.hidden_size))
-        self.initial_cell_state = torch.nn.Parameter(torch.randn(1, self.hidden_size))
+        self.init_hidden_state = Parameter(torch.randn(1, self.hidden_size))
+        self.init_cell_state = Parameter(torch.randn(1, self.hidden_size))
 
     def forward(
         self,
@@ -344,17 +376,256 @@ class LSTMCell(torch.nn.LSTMCell):
     ) -> typing.Tuple[torch.Tensor, torch.Tensor]:
         if hx is None:
             hx = (
-                self.initial_hidden_state.expand(input.shape[0], -1).contiguous(),
-                self.initial_cell_state.expand(input.shape[0], -1).contiguous(),
+                self.init_hidden_state.expand(input.shape[0], -1).contiguous(),
+                self.init_cell_state.expand(input.shape[0], -1).contiguous(),
             )
         return super().forward(input, hx=hx)
 
 
-_ClampReturnType = typing.TypeVar("_ClampReturnType")
+_NumeralizePadEmbedVar = typing.TypeVar("_NumeralizePadEmbedVar", bound=typing.Hashable)
 
 
-def clamp(a: _ClampReturnType, min_: float = -math.inf, max_: float = math.inf) -> _ClampReturnType:
-    return max(min(a, max_), min_)
+class NumeralizePadEmbed(torch.nn.Module, typing.Generic[_NumeralizePadEmbedVar]):
+    """An `Embedding` layer with `max_embeddings` that progressively maps new tokens to embeddings.
+
+    NOTE: This layer is intended to simplify the boilerplate code required to numeralize, pad,
+          and embed a simple sequence. In order to support this end-to-end, this embedding layer
+          only works with inputs in the form of [batch_size] or [batch_size, num_tokens].
+
+    NOTE: In a former version of this, we tried to track the `unk_token` embedding to see if it
+          had changed, in order to trigger a vocab update. This turned out to be difficult due
+          to the fancy optimizers with various second order and ema optimization techniques.
+
+          With that in mind, it's theoritically possible, that we could have a fancy update
+          detection mechanism based on changes in `unk_token`.
+
+    Args:
+        max_embeddings: The maximum number of embeddings needed, in addition to the standard unknown
+            and padding embedding.
+        allow_unk_on_eval: Iff then the "unknown token" may be used during evaluation, otherwise
+            this will error if a new token is encountered during evaluation.
+        *args: Arguments passed to `torch.nn.Embedding`.
+        **kwargs: Keyword arguments passed to `torch.nn.Embedding`.
+    """
+
+    class _Tokens(enum.Enum):
+        """
+        Unique hashtable objects for `pad_token` and `unk_token`, that's unique from any object
+        that could be inputted to `forward`.
+
+        NOTE: It's standard to use 0 for padding.
+        """
+
+        PAD_TOKEN: typing.Final = 0
+        UNK_TOKEN: typing.Final = 1
+
+    def __init__(
+        self,
+        max_embeddings: int,
+        *args,
+        allow_unk_on_eval: bool = True,
+        **kwargs,
+    ):
+        super().__init__()
+
+        self.allow_unk_on_eval = allow_unk_on_eval
+        self._training_forward_pass_counter = 0
+        self.reset()
+
+        self.pad_idx = self._Tokens.PAD_TOKEN.value
+        self.unk_idx = self._Tokens.UNK_TOKEN.value
+        self.pad_token = self._Tokens.PAD_TOKEN
+        self.unk_token = self._Tokens.UNK_TOKEN
+
+        VocabKey = typing.Union[_NumeralizePadEmbedVar, NumeralizePadEmbed._Tokens]
+        self.vocab: typing.Dict[VocabKey, int]
+        self.vocab = {self.pad_token: self.pad_idx, self.unk_token: self.unk_idx}
+
+        max_embeddings = len(self.vocab) + max_embeddings
+        self.embed = torch.nn.Embedding(max_embeddings, *args, padding_idx=self.pad_idx, **kwargs)
+        self.weight = self.embed.weight
+        self.num_embeddings = self.embed.num_embeddings
+        self.embedding_dim = self.embed.embedding_dim
+        self.padding_idx = self.embed.padding_idx
+
+        self._new_tokens = set()
+        self._unk_tokens = set()  # NOTE: Track unknown tokens seen during evaluation
+
+    def _queue_new_tokens(self, sequences: typing.List[typing.List[_NumeralizePadEmbedVar]]):
+        """Queue up tokens for a vocab update."""
+        self._new_tokens.update([t for s in sequences for t in s if t not in self.vocab])
+        if len(self._unk_tokens) > 0:
+            self._unk_tokens = set()
+        if len(self._new_tokens) + len(self.vocab) > self.num_embeddings:
+            raise ValueError(
+                f"The number of tokens exceeds the allocated "
+                f"number of embeddings, {self.num_embeddings}."
+            )
+
+    def reset(self):
+        """Reset the step counter, so that updates happen again."""
+        self.update_every = 1
+
+    def update_tokens(
+        self,
+        tokens: typing.List[_NumeralizePadEmbedVar],
+        embeddings: typing.Optional[torch.Tensor] = None,
+    ):
+        """Add or update tokens in `self.vocab`.
+
+        NOTE: This doesn't support a distributed context, yet.
+
+        Args:
+            tokens: The tokens to add or update.
+            embeddings: The corresponding embeddings for each token.
+        """
+        if lib.distributed.is_initialized():
+            raise ValueError("This doesn't support distributed context.")
+
+        self._queue_new_tokens([tokens])
+        if len(self._new_tokens) > 0:
+            self._update_vocab()
+
+        if embeddings is not None:
+            if embeddings.shape != (len(tokens), self.embed.embedding_dim):
+                raise ValueError("The updated `embeddings` are the wrong shape.")
+
+            with torch.no_grad():
+                self.weight[[self.vocab[t] for t in tokens]] = embeddings
+
+    def tokens(self) -> typing.List[_NumeralizePadEmbedVar]:
+        """Get all the tokens in the vocabulary excluding the default tokens."""
+        return [t for t in self.vocab.keys() if not isinstance(t, NumeralizePadEmbed._Tokens)]
+
+    def _update_vocab(self):
+        """Update `self.vocab` with `self._new_tokens`."""
+        new_tokens = list(self._new_tokens)
+
+        if lib.distributed.is_initialized():
+            outputs = [None for _ in range(lib.distributed.get_world_size())]
+            torch.distributed.all_gather_object(outputs, new_tokens)
+            outputs = typing.cast(typing.List[typing.List[_NumeralizePadEmbedVar]], outputs)
+            new_tokens: typing.List[_NumeralizePadEmbedVar] = [t for l in outputs for t in l]
+            if len(new_tokens) > 0:
+                try:
+                    # NOTE: Ensure that the order `new_tokens` are added in is consistent for
+                    # external observers.
+                    # NOTE: `set` may have a different order between processes, so it must be
+                    # sorted.
+                    new_tokens = sorted(set(new_tokens))  # type: ignore
+                except TypeError:
+                    pass
+
+        for token in new_tokens:
+            if token not in self.vocab:
+                self.vocab[token] = len(self.vocab)
+
+        if len(self.vocab) > self.num_embeddings:
+            raise ValueError(
+                f"The number of tokens exceeds the allocated "
+                f"number of embeddings, {self.num_embeddings}."
+            )
+
+        if len(new_tokens) == 0:
+            self.update_every *= 2
+
+        self._new_tokens = set()
+
+    def _check_invariants(self):
+        """Ensure the data structure invariants hold."""
+        for token in self._new_tokens:
+            assert token not in self.vocab, "Invariant failure."
+
+    def _tok_to_idx(self, token: _NumeralizePadEmbedVar) -> int:
+        """Get the index of `token` and return `unk_token` if `token` is not found.
+
+        Raises:
+            KeyError: Iff the module is in evaluation mode and "unknown token" is disabled this
+                will error iff `token` isn't in `self.vocab`.
+        """
+        unk_idx = self.unk_idx
+        idx = self.vocab.get(token, unk_idx)
+        is_unknown = idx is unk_idx
+
+        if not self.training and is_unknown:
+            if not self.allow_unk_on_eval:
+                raise KeyError(f"Token not found: {token}")
+            if token not in self._unk_tokens:
+                logger.info(f"[Evaluation] Marking '{token}' token as unknown token")
+                # NOTE: Track unknown tokens so that they are not logged over and over.
+                self._unk_tokens.add(token)
+
+        if self.training and is_unknown:
+            logger.info(f"[Training] Using unknown token in-place of '{token}'.")
+
+        return idx
+
+    def _should_update(self):
+        return (
+            self._training_forward_pass_counter % self.update_every == 0
+            or not lib.distributed.is_initialized()
+        )
+
+    def __call__(
+        self,
+        tokens: typing.Union[
+            typing.List[_NumeralizePadEmbedVar], typing.List[typing.List[_NumeralizePadEmbedVar]]
+        ],
+        **kwargs,
+    ) -> typing.Tuple[torch.Tensor, torch.Tensor]:
+        return super().__call__(tokens, **kwargs)
+
+    def forward(
+        self,
+        tokens: typing.Union[
+            typing.List[_NumeralizePadEmbedVar], typing.List[typing.List[_NumeralizePadEmbedVar]]
+        ],
+        batch_first: bool = False,
+    ) -> typing.Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Args:
+            input [batch_size, num_tokens (optional)]: A 1 or 2-dimensional list of tokens.
+            batch_first: In the return tensor, iff `True` the batch dimension is first, otherwise
+                it's second.
+
+        Returns:
+            embedded (torch.FloatTensor [batch_size, num_tokens, embedding_dim] or
+                [num_tokens, batch_size, embedding_dim] or [batch_size, embedding_dim])
+            mask (torch.BoolTensor [batch_size, num_tokens] or [num_tokens, batch_size] or
+                [batch_size])
+        """
+        is_one_dim = not isinstance(tokens[0], list)
+        get, pad_idx = self._tok_to_idx, self.pad_idx
+        sequences = typing.cast(
+            typing.List[typing.List[_NumeralizePadEmbedVar]],
+            [[s] if is_one_dim else s for s in tokens],
+        )
+
+        if self.training:
+            self._training_forward_pass_counter += 1
+            self._queue_new_tokens(sequences)
+            if self._should_update():
+                self._update_vocab()
+
+        max_len = max(len(s) for s in sequences)
+        indices = [[get(t) for t in s] + [pad_idx] * (max_len - len(s)) for s in sequences]
+        indices_ = torch.tensor(indices, device=self.weight.device, dtype=torch.long)
+        indices_ = indices_.squeeze(1) if is_one_dim else indices_
+        indices_ = indices_ if batch_first or is_one_dim else indices_.transpose(0, 1)
+        mask = indices_ != pad_idx
+        return self.embed(indices_), mask
+
+
+_ClampReturnType = typing.TypeVar("_ClampReturnType", float, int)
+
+
+def clamp(
+    a: _ClampReturnType,
+    min_: typing.Optional[_ClampReturnType] = None,
+    max_: typing.Optional[_ClampReturnType] = None,
+) -> _ClampReturnType:
+    a = a if max_ is None else min(a, max_)
+    return a if min_ is None else max(a, min_)
 
 
 _CallOnceReturnType = typing.TypeVar("_CallOnceReturnType")
@@ -390,7 +661,7 @@ class MappedIterator(typing.Mapping[int, _MappedIteratorItem], typing.Generic[_M
     def __iter__(self):
         return [self[i] for i in range(len(self))]
 
-    def __len__(_):
+    def __len__(self):
         raise NotImplementedError()
 
 
@@ -583,11 +854,11 @@ class Timeline:
         self._intervals = np.array(intervals, dtype=self.dtype).T.reshape(2, len(intervals))
         self._intervals = np.ascontiguousarray(self._intervals)
 
-    def start(self, index: int) -> np.ndarray:
+    def start(self, index: int) -> npt.NDArray[np.float_]:
         """Get the start of the interval at `index`."""
         return self._intervals[0, index]
 
-    def stop(self, index: int) -> np.ndarray:
+    def stop(self, index: int) -> npt.NDArray[np.float_]:
         """Get the stop of the interval at `index`."""
         return self._intervals[1, index]
 
@@ -623,7 +894,7 @@ class Timeline:
         """Similar to `make_slice` except this returns an `Iterable` of indicies."""
         return range(*self.make_slice(interval).indices(self._intervals.shape[1]))
 
-    def __getitem__(self, interval: typing.Union[int, float, slice]) -> np.ndarray:
+    def __getitem__(self, interval: typing.Union[int, float, slice]) -> npt.NDArray[np.float_]:
         """Get the intervals overlapping `interval`."""
         return self._intervals[:, self.make_slice(interval)].T
 
@@ -673,3 +944,28 @@ _TqdmVar = typing.TypeVar("_TqdmVar")
 def tqdm_(iterator: typing.Iterable[_TqdmVar], **kwargs) -> typing.Iterable[_TqdmVar]:
     """`tqdm` with typing."""
     return tqdm(iterator, **kwargs)
+
+
+def lengths_to_mask(
+    lengths: typing.Union[typing.List[int], torch.Tensor, int],
+    device: typing.Optional[torch.device] = None,
+) -> torch.Tensor:
+    """Make a tensor mask from `lengths`.
+
+    TODO: It may be faster to create the mask with Python lists first, and then transform it
+    into a tensor, all together.
+
+    Returns:
+        torch.BoolTensor [lengths.numel(), max(lengths)]
+    """
+    lengths = [lengths] if isinstance(lengths, int) else lengths
+    device = lengths.device if device is None and isinstance(lengths, torch.Tensor) else device
+    if isinstance(lengths, torch.Tensor):
+        lengths = lengths.squeeze()
+        assert len(lengths.shape) < 2, "Lengths must be one or zero dimensional"
+        lengths = lengths.view(-1)
+    max_len = 0 if len(lengths) == 0 else int(max(lengths))  # type: ignore
+    tokens_mask = torch.zeros(len(lengths), max_len, device=device, dtype=torch.bool)
+    for i, length in enumerate(lengths):
+        tokens_mask[i, :length] = True
+    return tokens_mask

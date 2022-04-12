@@ -11,15 +11,17 @@ import threading
 import time
 import typing
 
-import hparams.hparams
+import config as cf
 import requests
 import streamlit as st
-from flask import Flask, Response, request
+from flask import Flask, request
+from flask.wrappers import Response
 
 import lib
 import run
 from lib.audio import get_audio_metadata
 from lib.text import natural_keys
+from run._config import DEFAULT_SCRIPT
 from run._streamlit import (
     WebPath,
     get_session_state,
@@ -39,10 +41,6 @@ from run._tts import (
 )
 from run.data._loader import Speaker
 
-DEFAULT_SCRIPT = (
-    "Your creative life will evolve in ways that you can’t possibly imagine. Trust"
-    " your gut. Don’t overthink it. And allow yourself a little room to play."
-)
 STREAMING_SERVICE_PORT = 5000
 STREAMING_SERVICE_ENDPOINT = f"http://localhost:{STREAMING_SERVICE_PORT}"
 
@@ -63,7 +61,7 @@ def _generation_service(
 ):
     """Generate a voice over from `input` using `tts` and store the results in `file_path`."""
     with file_path.open("ab") as file_:
-        for bytes_ in text_to_speech_ffmpeg_generator(tts, input):
+        for bytes_ in text_to_speech_ffmpeg_generator(tts, input, **cf.get()):
             if len(bytes_) > 0:
                 file_.write(bytes_)
     is_streaming.clear()
@@ -83,7 +81,7 @@ def _stream_file_contents(file_path: pathlib.Path, is_streaming: Event):
 
 
 def _streaming_service(
-    config: typing.Dict,
+    configuration: cf.Config,
     file_path: pathlib.Path,
     is_streaming: Event,
     *args,
@@ -94,7 +92,7 @@ def _streaming_service(
     NOTE: This starts a seperate thread for generation, so that, the generator continues to generate
     even if the result isn't being consumed.
     """
-    hparams.hparams._configuration = config
+    cf.add(configuration)
     app = Flask(__name__)
 
     @app.route("/healthy", methods=["GET"])
@@ -103,7 +101,9 @@ def _streaming_service(
 
     @app.route("/shutdown")
     def shutdown():
-        request.environ.get("werkzeug.server.shutdown")()
+        shutdown = request.environ.get("werkzeug.server.shutdown")
+        assert shutdown is not None
+        shutdown()
         return "Server shutting down..."
 
     @app.route("/stream.mp3")
@@ -181,7 +181,7 @@ def main():
     web_path = make_temp_web_dir() / "audio.mp3"
     with st.spinner("Starting streaming service..."):
         is_streaming = (multiprocessing.Event if use_process else threading.Event)()
-        args = (copy.deepcopy(hparams.hparams.get_config()), web_path, is_streaming, inputs, tts)
+        args = (copy.deepcopy(cf.export()), web_path, is_streaming, inputs, tts)
         container = multiprocessing.Process if use_process else threading.Thread
         state["service"] = container(target=_streaming_service, args=args, daemon=True)
         state["service"].start()

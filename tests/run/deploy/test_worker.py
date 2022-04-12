@@ -1,28 +1,18 @@
 import logging
 from functools import partial
 
-import hparams
+import config as cf
 import pytest
 
 import lib
 import run
-from lib.text import _line_grapheme_to_phoneme
+from lib.text import grapheme_to_phoneme
 from run.data._loader import Session
-from run.data._loader.english import JUDY_BIEBER
+from run.data._loader.english.m_ailabs import JUDY_BIEBER
 from run.deploy.worker import FlaskException, validate_and_unpack
 from run.train.spectrogram_model._data import InputEncoder
 
 logger = logging.getLogger(__name__)
-
-
-@pytest.fixture(autouse=True)
-def run_around_tests():
-    config = {
-        lib.text.grapheme_to_phoneme: hparams.HParams(separator=run._lang_config.PHONEME_SEPARATOR),
-    }
-    hparams.add_config(config)
-    yield
-    hparams.clear_config()
 
 
 def test_flask_exception():
@@ -36,9 +26,9 @@ def test_validate_and_unpack():
     speaker = JUDY_BIEBER
     session = Session("sesh")
     script = "This is a exposé. ABC."
-    phonemes = _line_grapheme_to_phoneme([script], separator=run._lang_config.PHONEME_SEPARATOR)[0]
+    phonemes = _line_grapheme_to_phoneme([script], separator=run._config.PHONEME_SEPARATOR)[0]
     input_encoder = InputEncoder(
-        [script], [phonemes], [speaker], [(speaker, session)], run._lang_config.PHONEME_SEPARATOR
+        [script], [phonemes], [speaker], [(speaker, session)], run._config.PHONEME_SEPARATOR
     )
     speaker_id = input_encoder.speaker_encoder.token_to_index[speaker]
     speaker_id_to_speaker = {0: (speaker, session)}

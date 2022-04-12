@@ -14,13 +14,12 @@ import pathlib
 import re
 import shlex
 import subprocess
-import sys
 import tempfile
 import time
 import typing
 import unicodedata
 
-import hparams
+import config as cf
 import numpy as np
 import tabulate
 import tqdm
@@ -29,17 +28,18 @@ from third_party import LazyLoader
 
 import lib
 import run
+from run._config import load_spacy_nlp
 from run._utils import gcs_uri_to_blob
 from run.data import _loader
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import Levenshtein
     import pandas
-    from spacy.lang import en as spacy_en
+    import spacy.language as language
 else:
     Levenshtein = LazyLoader("Levenshtein", globals(), "Levenshtein")
     pandas = LazyLoader("pandas", globals(), "pandas")
-    spacy_en = LazyLoader("spacy_en", globals(), "spacy.lang.en")
+    language = LazyLoader("language", globals(), "spacy.language")
 
 
 lib.environment.set_basic_logging_config()
@@ -49,7 +49,6 @@ audio_app = typer.Typer()
 app.add_typer(audio_app, name="audio")
 csv_app = typer.Typer()
 app.add_typer(csv_app, name="csv")
-run._config.configure()
 
 
 def _get_total_length(paths: typing.List[pathlib.Path]) -> float:
@@ -179,7 +178,8 @@ def rename(
 def _download(gcs_uri: str) -> typing.Tuple[typing.IO[bytes], str]:
     """Helper function for `diff`."""
     blob = gcs_uri_to_blob(gcs_uri)
-    file_ = tempfile.NamedTemporaryFile(prefix=blob.name.split(".")[0].split("/")[-1])
+    name = typing.cast(str, blob.name)
+    file_ = tempfile.NamedTemporaryFile(prefix=name.split(".")[0].split("/")[-1])
     path = pathlib.Path(file_.name)
     blob.download_to_filename(str(path))
     return file_, shlex.quote(str(path.absolute()))
@@ -240,17 +240,17 @@ def audio_normalize(
 ):
     """Normalize audio file format(s) in PATHS and save to directory DEST."""
     if bits is not None:
-        hparams.add_config({_loader.normalize_audio: hparams.HParams(bits=bits)})
+        cf.add({_loader.normalize_audio: cf.Args(bits=bits)})
     if data_type is not None:
-        hparams.add_config({_loader.normalize_audio: hparams.HParams(data_type=data_type)})
+        cf.add({_loader.normalize_audio: cf.Args(data_type=data_type)})
 
     progress_bar = tqdm.tqdm(total=round(_get_total_length(paths)))
     for path in paths:
-        dest_path = _loader.normalize_audio_suffix(dest / path.name)
+        dest_path = _loader.normalize_audio_suffix(dest / path.name, **cf.get())
         if dest_path.exists():
             logger.error(f"Skipping, file already exists: {dest_path}")
         else:
-            _loader.normalize_audio(path, dest_path)
+            _loader.normalize_audio(path, dest_path, **cf.get())
             progress_bar.update(round(lib.audio.get_audio_metadata(path).length))
 
 
@@ -273,7 +273,7 @@ def text(
 
 
 def _csv_normalize(
-    text: str, nlp: typing.Optional[spacy_en.English], language: _loader.Language
+    text: str, nlp: typing.Optional[language.Language], language: _loader.Language
 ) -> str:
     """Helper for the `csv_normalize` command.
 
@@ -286,7 +286,7 @@ def _csv_normalize(
     - Visualize any text changes for quality assurance
     - Visualize any strange words that may need to be normalized
     """
-    text = run._lang_config.normalize_vo_script(text, language)
+    text = run._config.normalize_vo_script(text, language)
     text = text.replace("®", "")
     text = text.replace("™", "")
     # NOTE: Remove HTML tags
@@ -309,10 +309,6 @@ def _read_csv(
 
     TODO: Improve the TSV vs CSV logic so that it is more precise.
     """
-    # NOTE: There is a bug with `setprofile` and `read_csv`:
-    # https://github.com/pandas-dev/pandas/issues/41069
-    sys.setprofile(None)
-
     read_csv = lambda *a, **k: typing.cast(pandas.DataFrame, pandas.read_csv(*a, **k))
     all_columns = list(optional_columns) + [required_column]
 
@@ -372,7 +368,7 @@ def csv_normalize(
     """Normalize csv file(s) in PATHS and save to directory DEST."""
     # TODO: It may be worthwhile to process text with SpaCy in non-English languages.
     is_en = language is _loader.Language.ENGLISH
-    nlp = lib.text.load_en_core_web_md(disable=("tagger", "ner")) if is_en else None
+    nlp = load_spacy_nlp(language) if is_en else None
 
     results = []
     for path in tqdm.tqdm(paths):
@@ -444,4 +440,5 @@ def prefix(
 
 
 if __name__ == "__main__":
+    run._config.configure()
     app()
