@@ -202,60 +202,38 @@ _ _ɹ_ˌ_oʊ_m_ə_n_ _f_ˈ_oːɹ_ _ɪ_l_ˌ_uː_m_ᵻ_n_ˈ_eɪ_ʃ_ə_n""",
             assert i.strip("_") == o.strip("_")
 
 
-def test__load_amepd():
-    """Test `lib.text._load_amepd` loads the dictionary, and the dictionary includes all the
-    part-of-speech, phonemes, fields, etc."""
-    dictionary = lib.text._load_amepd()
-    part_of_speech_coarse = set()
-    part_of_speech_fine = set()
-    arpabet: typing.Set[lib.text.AMEPD_ARPABET] = set()
-    fields = set()
-    unique = set()
+def test_load_cmudict_syl():
+    """Test `lib.text.load_cmudict_syl` loads the dictionary."""
+    dictionary = lib.text.load_cmudict_syl()
+    arpabet: typing.Set[lib.text.ARPABET] = set()
     characters = set()
     for word, pronunciations in dictionary.items():
         for pronunciation in pronunciations:
             assert len(word) == len(word.strip())
             assert len(word) > 0
-            if pronunciation.pos is not None:
-                part_of_speech_coarse.add(pronunciation.pos.coarse)
-                part_of_speech_fine.add(pronunciation.pos.fine)
-            arpabet.update(pronunciation.pronunciation)
+            arpabet.update([code for syllable in pronunciation for code in syllable])
             characters.update(list(word))
-            signature = (
-                word,
-                pronunciation.pronunciation,
-                pronunciation.pos,
-                pronunciation.metadata.usage,
-            )
-            assert signature not in unique
-            unique.add(signature)
-            for field in lib.text.AmEPDMetadata._fields:
-                value = getattr(pronunciation.metadata, field)
-                if value is not None:
-                    fields.add(field)
-                    for subvalue in value if isinstance(value, tuple) else [value]:
-                        assert len(subvalue) == len(subvalue.strip())
-                        assert len(subvalue) > 0
-    assert len(fields) == len(lib.text.AmEPDMetadata._fields)
-    assert part_of_speech_coarse == set(get_args(lib.text.AMEPD_PART_OF_SPEECH_COARSE))
-    assert part_of_speech_fine == set(list(get_args(lib.text.AMEPD_PART_OF_SPEECH_FINE)) + [None])
-    assert arpabet == set(get_args(lib.text.AMEPD_ARPABET))
+    assert arpabet == set(get_args(lib.text.ARPABET))
     assert characters == set(list(string.ascii_uppercase) + ["'"])
 
 
-def _check_pronunciation(
-    word: str,
-    part_of_speech_coarse: typing.Optional[
-        typing.Literal[lib.text.AMEPD_PART_OF_SPEECH_COARSE]
-    ] = None,
-    part_of_speech_fine: typing.Optional[typing.Literal["past", "pres"]] = None,
-    expected: typing.Optional[str] = None,
-):
-    result = lib.text.get_pronunciation(word, part_of_speech_coarse, part_of_speech_fine)
+def _check_pronunciation(word: str, expected: typing.Optional[str] = None):
+    result = lib.text.get_pronunciation(word, lib.text.load_cmudict_syl())
     if expected is None:
         assert result is expected
     else:
-        assert result == tuple(expected.split())
+        assert result == tuple(tuple(s.split()) for s in expected.split(" - "))
+
+
+def test_get_pronunciation():
+    """Test `lib.text.get_pronunciation` on basic scenarios."""
+    expectations = {
+        "zebra": (("Z", "IY1"), ("B", "R", "AH0")),
+        "motorcycle": (("M", "OW1"), ("T", "ER0"), ("S", "AY2"), ("K", "AH0", "L")),
+        "suspicious": (("S", "AH0"), ("S", "P", "IH1"), ("SH", "AH0", "S")),
+    }
+    for word, pronunciation in expectations.items():
+        assert pronunciation == lib.text.get_pronunciation(word, lib.text.load_cmudict_syl())
 
 
 def test_get_pronunciation__out_of_vocabulary():
@@ -265,156 +243,52 @@ def test_get_pronunciation__out_of_vocabulary():
 
 def test_get_pronunciation__apostrophes():
     """Test `lib.text.get_pronunciation` handles apostrophes at the end and beginning of a word."""
-    _check_pronunciation("accountants'", "verb", "past", expected="AX K AW1 N T AX N T S")
-    _check_pronunciation("'bout", expected="B AW1 T")
+    _check_pronunciation("accountants'", expected="AH0 - K AW1 N - T AH0 N T S")
+    _check_pronunciation("'bout", expected=None)
 
 
-def test_get_pronunciation__disambiguate():
-    """Test `lib.text.get_pronunciation` attempts to disambiguate tricky cases, and returns `None`
-    when it can't."""
+def test_get_pronunciation__variations():
+    """Test `lib.text.get_pronunciation` doesn't return if the pronunciation is ambigious."""
     # NOTE: Base case with no variations to choose from.
-    _check_pronunciation("fly", "verb", "pres", expected="F L AY1")
-    _check_pronunciation("fly", "verb", "past", expected="F L AY1")
-    _check_pronunciation("fly", "verb", expected="F L AY1")
-    _check_pronunciation("fly", "noun", expected="F L AY1")
-    _check_pronunciation("fly", expected="F L AY1")
     _check_pronunciation("fly", expected="F L AY1")
 
-    _check_pronunciation("read", expected=None)  # Options: verb@past, verb
-    _check_pronunciation("read", "verb", expected=None)
-    _check_pronunciation("beloved", expected=None)  # Options: noun, adj@attr, adj@pred, verb
-    _check_pronunciation("beloved", "adj", expected=None)
-    # NOTE: Multiple variations that cannot be disambiguated with part-of-speech.
-    _check_pronunciation("reasonable", expected=None)  # Options: 1, 2
-    _check_pronunciation("reasonable", "adj", expected=None)
-
-    # NOTE: This should be disambiguated correctly.
-    _check_pronunciation("read", "verb", "past", expected="R EH1 D")
-    _check_pronunciation("read", "verb", "pres", expected="R IY1 D")
-    _check_pronunciation("beloved", "verb", expected="B IH0 L AH1 V D")
-    _check_pronunciation("beloved", "noun", expected="B IH0 L AH1 V D")
+    # NOTE: Multiple variations that can only be disambiguated with part-of-speech.
+    _check_pronunciation("read", expected=None)
+    _check_pronunciation("beloved", expected=None)
 
     # NOTE: Abbreviations that are sometimes expanded during voice-over are not disambiguated.
-    _check_pronunciation("feb", "noun", expected=None)
-
-
-def test_get_syllabic_pronunciation():
-    expectations = {
-        "zebra": [("Z", "IY1"), ("B", "R", "AH0")],
-        "motorcycle": [("M", "OW1"), ("T", "ER0"), ("S", "AY2"), ("K", "AH0", "L")],
-        "suspicious": [("S", "AH0"), ("S", "P", "IH1"), ("SH", "AH0", "S")],
-    }
-    for word, pronunciation in expectations.items():
-        assert pronunciation == lib.text.get_syllabic_pronunciation(word)
-
-
-def test_get_respelling():
-    expectations = {
-        "zebra": "ZEE-bruh",
-        "motorcycle": "MOH-tər-sy-kuhl",
-        "suspicious": "suh-SPIH-shuhs",
-    }
-    for word, pronunciation in expectations.items():
-        assert pronunciation == lib.text.get_respelling(word)
-
-
-def test_get_initialism_pronunciation():
-    """Test `lib.text.get_initialism_pronunciation` handles initialisms with various letters and
-    cases."""
-    assert lib.text.get_initialism_pronunciation("ibm") == tuple("AY1 B IY1 EH1 M".split())
-    assert lib.text.get_initialism_pronunciation("IBM") == tuple("AY1 B IY1 EH1 M".split())
-    assert lib.text.get_initialism_pronunciation("CACLD") == tuple(
-        "S IY1 EY1 S IY1 EH1 L D IY1".split()
-    )
-    assert lib.text.get_initialism_pronunciation("FOIA") == tuple("EH1 F OW1 AY1 EY1".split())
-    assert lib.text.get_initialism_pronunciation("GENEGO") == tuple(
-        "JH IY1 IY1 EH1 N IY1 JH IY1 OW1".split()
-    )
-    assert lib.text.get_initialism_pronunciation("SRI") == tuple("EH1 S AA1 R AY1".split())
-    assert lib.text.get_initialism_pronunciation("USA") == tuple("Y UW1 EH1 S EY1".split())
+    _check_pronunciation("feb", expected=None)
 
 
 def test_get_pronunciation__non_standard_words():
     """Test `lib.text.get_pronunciation` errors given non-standard words."""
     with pytest.raises(AssertionError):
-        lib.text.get_pronunciation("I B M")
+        lib.text.get_pronunciation("I B M", lib.text.load_cmudict_syl())
     with pytest.raises(AssertionError):
-        lib.text.get_pronunciation("I.B.M.")
+        lib.text.get_pronunciation("I.B.M.", lib.text.load_cmudict_syl())
     with pytest.raises(AssertionError):
-        lib.text.get_pronunciation("able-bodied")
+        lib.text.get_pronunciation("able-bodied", lib.text.load_cmudict_syl())
     with pytest.raises(AssertionError):
-        lib.text.get_pronunciation("ABC123")
+        lib.text.get_pronunciation("ABC123", lib.text.load_cmudict_syl())
 
 
-def test_get_pronunciations():
-    """Test `lib.text.get_pronunciations` against basic cases: non-standard words, initialisms,
-    appostrophes, and abbreviations."""
-    nlp = lib.text.load_en_core_web_sm()
-    get_pronunciations = lambda s: lib.text.get_pronunciations(nlp(s))
-    assert get_pronunciations("In 1968 the U.S. Army") == (
-        ("IH1", "N"),
-        None,  # Non-standard word ignored
-        None,
-        None,  # Non-standard word ignored
-        ("AA1", "R", "M", "IY0"),
-    )
-    assert get_pronunciations("Individual-Based Model (IBM)") == (
-        ("IH2", "N", "D", "IH0", "V", "IH1", "JH", "UW0", "AX", "L"),
-        None,
-        ("B", "EY1", "S", "T"),
-        ("M", "AA1", "D", "AX", "L"),
-        None,
-        ("AY1", "B", "IY1", "EH1", "M"),  # Initialism handled
-        None,
-    )
-    assert get_pronunciations("NASA's TV mission is to pioneer.") == (
-        ("N", "AE1", "S", "AX"),
-        None,  # NOTE: spaCy splits up apostrophes
-        None,  # Ambigious abbreviation is ignored
-        ("M", "IH1", "SH", "AX", "N"),
-        ("IH1", "Z"),
-        None,
-        ("P", "AY2", "AX", "N", "IH1", "R"),
-        None,
-    )
-    assert get_pronunciations("Youssou N'Dour is a Senegalese singer") == (
-        None,
-        ("N", "D", "AW1", "AXR"),  # Apostrophes handled
-        ("IH1", "Z"),
-        None,
-        ("S", "EH2", "N", "AX", "G", "AX", "L", "IY1", "Z"),
-        ("S", "IH1", "NG", "G", "AXR"),
-    )
-
-
-def test_get_pronunciations__part_of_speech():
-    """Test `lib.text.get_pronunciations` with ambigious part of speech cases."""
-    nlp = lib.text.load_en_core_web_sm()
-    get_pronunciations = lambda s: lib.text.get_pronunciations(nlp(s))
-    assert get_pronunciations("It was time to present the present.") == (
-        ("IH1", "T"),
-        None,
-        ("T", "AY1", "M"),
-        None,
-        ("P", "R", "IH0", "Z", "EH1", "N", "T"),  # Verb
-        None,
-        ("P", "R", "EH1", "Z", "AX", "N", "T"),  # Noun
-        None,
-    )
-    assert get_pronunciations("He has read the whole thing.") == (
-        ("HH", "IY1"),
-        None,
-        ("R", "EH1", "D"),  # Verb, Past Tense
-        None,
-        ("HH", "OW1", "L"),
-        ("TH", "IH1", "NG"),
-        None,
-    )
-    assert get_pronunciations("We read.") == (
-        ("W", "IY1"),
-        ("R", "IY1", "D"),  # Verb, Present Tense
-        None,
-    )
+def test_get_respelling():
+    """Test `lib.text.get_respelling` on basic scenarios."""
+    expectations = {
+        "zebra": "ZEE-bruh",
+        "motorcycle": "MOH-tər-sy-kuhl",  # NOTE: Secondary is lowercase if primary is uppercase.
+        "suspicious": "suh-SPIH-shuhs",
+        "maui": "MOW-ee",
+        "cobalt": "KOH-bawlt",  # NOTE: Wikipedia recommends "KOH-bolt"
+        "father": "FAH-dhər",
+        "farther": "FAHR-dhər",  # NOTE: Wikipedia recommends "FAR-dhər"
+        "ceres": "SIH-reez",  # NOTE: Wikipedia recommends "SEER-eez"
+        "algorithm": "AL-gər-ih-dhuhm",  # NOTE: Wikipedia recommends "AL-gə-ridh-əm"
+        "pan": "PAN",
+        "machine": "muh-SHEEN",  # NOTE: Wikipedia recommends "mə-SHEEN",
+    }
+    for word, pronunciation in expectations.items():
+        assert pronunciation == lib.text.get_respelling(word, lib.text.load_cmudict_syl())
 
 
 def test_natural_keys():

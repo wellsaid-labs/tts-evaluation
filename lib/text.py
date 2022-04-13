@@ -1,5 +1,4 @@
 import functools
-import json
 import logging
 import pathlib
 import re
@@ -7,6 +6,7 @@ import string
 import subprocess
 import typing
 import unicodedata
+import urllib.request
 from collections import defaultdict
 from typing import get_args
 
@@ -162,260 +162,141 @@ Partial Dictionaries:
   - https://github.com/rhdunn/cmudict/blob/master/acronym
   - https://github.com/allenai/scispacy#abbreviationdetector (Automatic)
 
+Phonetic Syllabification:
+- State-of-the-art
+  - https://aclanthology.org/N09-1035.pdf
+  - http://web.archive.org/web/20220121090130/https://webdocs.cs.ualberta.ca/~kondrak/cmudict.html
+  -
+  http://web.archive.org/web/20170120191217/https://webdocs.cs.ualberta.ca/~kondrak/cmudict/cmudict.rep
+- Rule-based Approach:
+  - https://en.wikipedia.org/wiki/Phonotactics
+  - https://github.com/myorm00000000/syllabify-1
+- Syllabificiation Dictionaries:
+  - https://catalog.ldc.upenn.edu/LDC96L14
+  - https://github.com/oliverbrehm/LinguisticTextAnnotation/tree/master/backend/celex2db/celex2
+  - https://www.merriam-webster.com/dictionary/pronunciation
+  -
+  https://en.wikipedia.org/w/index.php?search=hastemplate%3Arespell&title=Special:Search&go=Go&ns0=1
+
 Notable People:
 - github.com/nshmyrev: Contributor to cmudict, pocketsphinx, kaldi, cmusphinx, alphacep
 - github.com/rhdunn: Contributor to espeak-ng, cmudict-tools, amepd, cainteoir text-to-speech
+- en.wikipedia.org/wiki/User:Nardog: Contributor to wikipedia respellings, and wikipedia
+    pronunciations
 """
 
-# NOTE: AmEPD based their POS tags off this:
-# https://github.com/rhdunn/pos-tags/blob/master/cainteoir.ttl
-AMEPD_PART_OF_SPEECH_COARSE = typing.Literal[
-    "adj",  # adjective
-    "adv",  # adverb
-    "conj",  # conjunction
-    "det",  # determiner
-    "intj",  # interjection
-    "noun",
-    "num",  # number
-    "prep",  # preposition
-    "pron",  # pronoun
-    "verb",
-]
-
-SPACY_TO_AMEPD_POS: typing.Dict[int, typing.Optional[AMEPD_PART_OF_SPEECH_COARSE]] = {
-    spacy.symbols.ADJ: "adj",  # type: ignore # adjective -> adjective
-    spacy.symbols.ADP: None,  # type: ignore # adposition
-    spacy.symbols.ADV: "adv",  # type: ignore # adverb -> adverb
-    spacy.symbols.AUX: "verb",  # type: ignore # auxiliary -> verb
-    spacy.symbols.CONJ: "conj",  # type: ignore # conjunction -> conjunction
-    spacy.symbols.CCONJ: "conj",  # type: ignore # coordinating conjunction -> conjunction
-    spacy.symbols.DET: "det",  # type: ignore # determiner -> determiner
-    spacy.symbols.INTJ: "intj",  # type: ignore # interjection -> interjection
-    spacy.symbols.NOUN: "noun",  # type: ignore # noun -> noun
-    spacy.symbols.NUM: "num",  # type: ignore # numeral -> numeral
-    spacy.symbols.PART: None,  # type: ignore # particle
-    spacy.symbols.PRON: "noun",  # type: ignore # pronoun -> noun
-    spacy.symbols.PROPN: "noun",  # type: ignore # proper noun -> noun
-    spacy.symbols.PUNCT: None,  # type: ignore # punctuation
-    spacy.symbols.SCONJ: "conj",  # type: ignore # subordinating conjunction -> conjunction
-    spacy.symbols.SYM: None,  # type: ignore # symbol
-    spacy.symbols.VERB: "verb",  # type: ignore # verb -> verb
-    spacy.symbols.X: None,  # type: ignore # other
-    spacy.symbols.SPACE: None,  # type: ignore
-}
-
-
-# NOTE: AmEPD has only one word that uses "attr" or "pred", as October 2020.
-AMEPD_PART_OF_SPEECH_FINE = typing.Literal[
-    "attr",  # NOTE: Stands for: "attributive"
-    "pred",  # NOTE: Stands for: "predicative"
-    "past",  # NOTE: "past" tense
-]
-
 # fmt: off
-AMEPD_ARPABET = typing.Literal[
-    "N", "AX", "L", "S", "T", "R", "K", "IH0", "D", "M", "Z", "AXR", "IY0", "B", "EH1", "P", "AA1",
+ARPABET = typing.Literal[
+    "N", "L", "S", "T", "R", "K", "IH0", "D", "M", "Z", "IY0", "B", "EH1", "P", "AA1",
     "AE1", "IH1", "G", "F", "NG", "V", "IY1", "OW0", "EY1", "HH", "SH", "OW1", "W", "AO1", "AH1",
     "AY1", "UW1", "JH", "Y", "CH", "AA0", "ER1", "EH2", "AY2", "AE2", "EY2", "AA2", "TH", "IH2",
     "EH0", "AW1", "UW0", "AE0", "AO2", "UH1", "IY2", "OW2", "AO0", "AY0", "UW2", "AH2", "EY0",
-    "OY1", "AH0", "AW2", "DH", "ZH", "ER2", "UH2", "AW0", "UH0", "OY2", "OY0", "ER0"
+    "OY1", "AH0", "AW2", "DH", "ZH", "ER2", "UH2", "AW0", "UH0", "OY2", "OY0", "ER0",
+    # NOTE: These codes have been removed in further iterations of the dictionary...
+    "IH", "ER"
+    # NOTE: These codes were added in later iterations of the dictionary...
+    # "AXR", "AX"
 ]
 # fmt: on
 
 
-class AmEPDPartOfSpeech(typing.NamedTuple):
-    """
-    Learn more about a two-step representation of part-of-speech:
-    https://spacy.io/api/annotation#pos-tagging
-    https://hpi.de/fileadmin/user_upload/fachgebiete/plattner/teaching/NaturalLanguageProcessing/NLP2017/NLP04_PartOfSpeechTagging.pdf
-
-    Args:
-        coarse: Coarse-grained part-of-speech tags (e.g. "verb" and "adv").
-        fine: Fine-grained part-of-speech tags, like the tense.
-    """
-
-    coarse: typing.Literal[AMEPD_PART_OF_SPEECH_COARSE]
-    fine: typing.Optional[typing.List[typing.Literal[AMEPD_PART_OF_SPEECH_FINE]]]
-
-
-class AmEPDMetadata(typing.NamedTuple):
-    """
-    Args:
-        name: For nouns, this provides an additional descriptor (e.g. "family" for "REILLY" or
-            "place/palace" for "VERSAILLES").
-        lang: The BCP 47 (RFC 5646) language tag for the pronunciation, representing the origin
-            language (e.g. "fr" for "VERSAILLES").
-        usage: This tag clarifies how this pronunciations meaning
-            (e.g. "sound" or "fish" for "BASS").
-        misspelling: The pronunciation is a misspelling of this (e.g. "THOU" for "THOUGH").
-        root: The root word which this pronunciation is derived (e.g. "AXE" for "AXES").
-        group: A tag used to group related pronunciations (e.g. "Harry Potter" for "HORCRUX").
-        expanded: This pronunciation is an expansion of this word
-            (e.g. "MPG" is pronounced like "MILES PER GALLON").
-        disable_warnings: This metadata field is used by `cmudict-tools` for reviewing the
-            pronunciation dictionary.
-    """
-
-    name: typing.Optional[typing.Union[typing.Tuple[str, ...], str]] = None
-    lang: typing.Optional[typing.Union[typing.Tuple[str, ...], str]] = None
-    usage: typing.Optional[typing.Union[typing.Tuple[str, ...], str]] = None
-    misspelling: typing.Optional[typing.Union[typing.Tuple[str, ...], str]] = None
-    root: typing.Optional[typing.Union[typing.Tuple[str, ...], str]] = None
-    group: typing.Optional[typing.Union[typing.Tuple[str, ...], str]] = None
-    expanded: typing.Optional[typing.Union[typing.Tuple[str, ...], str]] = None
-    disable_warnings: typing.Optional[typing.Union[typing.Tuple[str, ...], str]] = None
-
-
-class AmEPDPronunciation(typing.NamedTuple):
-    """
-    Args:
-        pronunciation: List of ARPABET characters representing a pronunciation
-            (e.g. "R EH1 D" for "READ").
-        pos: This pronunciation has this part-of-speech
-            (e.g. "noun" or "verb" or "adj" or "adv" for "WICKED").
-        metadata: Additional structured metadata about the pronunciation.
-        note: Additional unstructured information about the pronunciation.
-    """
-
-    pronunciation: typing.Tuple[AMEPD_ARPABET, ...]
-    pos: typing.Optional[AmEPDPartOfSpeech] = None
-    metadata: AmEPDMetadata = AmEPDMetadata()
-    note: typing.Optional[str] = None
-
-
 def _assert_valid_amepd_word(word: str):
-    assert all(
-        c.isalpha() or c == "'" for c in word
-    ), "Words may only be defined with letter(s) or apostrophe(s)."
+    message = "Words may only be defined with letter(s) or apostrophe(s)."
+    assert all(c.isalpha() or c == "'" for c in word), message
+
+
+Pronunciation = typing.Tuple[typing.Tuple[ARPABET, ...], ...]
+CMUDictSyl = typing.Dict[str, typing.List[typing.Tuple[typing.Tuple[ARPABET, ...], ...]]]
 
 
 @functools.lru_cache(maxsize=None)
-def _load_amepd(
-    path: pathlib.Path = lib.environment.ROOT_PATH / "third_party" / "amepd" / "cmudict",
-    comment_delimiter: str = ";;;",
-    syllabify: bool = False,
-) -> typing.Dict[str, typing.List[AmEPDPronunciation]]:
-    """Load the American English Pronunciation Dictionary.
+def load_cmudict_syl(
+    path: pathlib.Path = lib.environment.ROOT_PATH / "lib" / "cmudict.0.6d.syl",
+    url: str = (
+        "http://web.archive.org/web/20170120191217if_/"
+        "http://webdocs.cs.ualberta.ca:80/~kondrak/cmudict/cmudict.rep"
+    ),
+    comment_delimiter: str = "##",
+) -> CMUDictSyl:
+    """Load the CMU Pronouncing Dictionary version 0.6 augmented with syllable boundaries
+    (syllabified CMU). This was created for: https://aclanthology.org/N09-1035.pdf.
 
     TODO: Use `pydantic` for type checking the loaded data. Learn more:
     https://pydantic-docs.helpmanual.io/
 
     NOTE: Loanwords from other languages are ignored to ensure ASCII compatibility.
     """
-    dictionary: typing.Dict[str, typing.List[AmEPDPronunciation]] = defaultdict(list)
+    if not path.exists():
+        urllib.request.urlretrieve(url, filename=path)
+
+    dictionary: CMUDictSyl = defaultdict(list)
     entries = [l.split(comment_delimiter, 1)[0].strip() for l in path.read_text().split("\n")]
-    ignored_words = []
-    ignored_plural_words = []
+    invalid_chars = set()
+    too_many_syl = set()
+
     for entry in entries:
         if len(entry) == 0:
             continue
 
-        kwargs: typing.Dict[str, typing.Union[None, AmEPDPartOfSpeech, AmEPDMetadata, str]] = {}
         word, rest = tuple(entry.split("  ", 1))
 
-        # NOTE: Handle cases like: `word = "BATHED(verb@past)"``
-        if "(" in word:
+        # NOTE: Handle cases like: `word = "ZEPA(2)"``
+        if "(" in word and ")" in word:
             word, other = tuple(word.split("(", 1))
             assert other[-1] == ")", f"Closing parentheses not found: {word}"
-            other = other[:-1]
-            if not other.isnumeric():
-                coarse = other
-                fine: typing.Optional[str] = None
-                if "@" in other:
-                    coarse, fine = tuple(other.split("@", 1))
-                    assert fine in get_args(AMEPD_PART_OF_SPEECH_FINE), "Invalid part-of-speech."
-                assert coarse in get_args(AMEPD_PART_OF_SPEECH_COARSE), "Invalid part-of-speech."
-                kwargs["pos"] = AmEPDPartOfSpeech(coarse, fine)  # type: ignore
+            assert other[:-1].isnumeric()
 
-        if any(c not in string.ascii_uppercase and c != "'" for c in word):
-            ignored_words.append(word)
+        # NOTE: Remove apostrophe's at the end of a word because they do not
+        # change the pronunciation of the word. Learn more here:
+        # https://github.com/rhdunn/amepd/commit/5fcd23a4424807e8b1c3f8736f19b38cd7e5abaf
+        if (
+            any(c not in string.ascii_uppercase and c != "'" for c in word)
+            or word[-1] == "'"
+            or word[0] == "'"
+        ):
+            invalid_chars.add(word)
+            continue
+
+        if word in too_many_syl:
             continue
 
         pronunciation = rest
-        # NOTE: Handle cases like:
-        # `rest = "B EY1 L AXR #@@{ "name": "family" }@@ Terence Bayler"``
-        # `rest = "OW1 L # ol' = old"`
-        if "#" in rest:
-            pronunciation, rest = tuple([s.strip() for s in rest.split("#", 1)])
-            if "@@" in rest:
-                split = tuple([s for s in rest.split("@@") if len(s) > 0])
-                assert len(split) == 1 or len(split) == 2
-                if len(split) == 1:
-                    (structured,) = split
-                else:
-                    structured, unstructured = split
-                    kwargs["note"] = unstructured
-                metadata = json.loads(structured)
-                metadata = {
-                    k.replace("-", "_"): (tuple(v) if isinstance(v, list) else v)
-                    for k, v in metadata.items()
-                }
-                kwargs["metadata"] = AmEPDMetadata(**metadata)
-            else:
-                kwargs["note"] = rest
 
-        _return = []
-        if syllabify:
-            syllables: typing.List[typing.Tuple[AMEPD_ARPABET, ...]] = []
-            for s in pronunciation.split(" - "):
-                arpabet = typing.cast(typing.Tuple[AMEPD_ARPABET, ...], tuple(s.split()))
-                assert all(
-                    c in get_args(AMEPD_ARPABET) or c == "-" for c in arpabet
-                ), f"The pronunciation may only use ARPABET characters: {word}"
-                syllables.append(arpabet)
-            _return = syllables
-        else:
-            arpabet = typing.cast(typing.Tuple[AMEPD_ARPABET, ...], tuple(pronunciation.split()))
-            _return = arpabet
+        syllables: typing.List[typing.Tuple[ARPABET, ...]] = []
+        for syllable in pronunciation.split(" - "):
+            arpabet = typing.cast(typing.Tuple[ARPABET, ...], tuple(syllable.split()))
+            message = f"The pronunciation may only use ARPABET characters: {word}"
+            assert all(c in get_args(ARPABET) for c in arpabet), message
+            syllables.append(arpabet)
+
+        # NOTE: Handle abbreviations like:
+        # "AOL(2)  AH0 - M ER1 - IH0 - K AH0 - AA1 N - L AY2 N"
+        if len(syllables) > len(word):
+            too_many_syl.add(word)
+            continue
 
         assert word.isupper(), "A word in this dictionary must be uppercase."
-        _assert_valid_amepd_word(word)
-        if word[-1] == "'":
-            ignored_plural_words.append(word)
 
-        dictionary[word].append(AmEPDPronunciation(_return, **kwargs))  # type: ignore
-    logger.warning("Non-ascii word(s) in AmEPD dictionary ignored: %s", ", ".join(ignored_words))
-    if len(ignored_plural_words) > 1:
-        logger.warning(
-            "This dictionary does not include apostrophe's at the end of a word because they do not"
-            "change the pronunciation of the word. Learn more here: "
-            "https://github.com/rhdunn/amepd/commit/5fcd23a4424807e8b1c3f8736f19b38cd7e5abaf"
-        )
-        logger.warning(
-            "Plural words ending in apostrophe in AmEPD dictionary ignored: %s",
-            ", ".join(ignored_plural_words),
-        )
+        _assert_valid_amepd_word(word)
+
+        dictionary[word].append(tuple(syllables))
+
+    format = lambda s: ", ".join(sorted(list(s)))
+    logger.warning(f"CMUDict word(s) ignored (invalid characters): {format(invalid_chars)}")
+    logger.warning(f"CMUDict word(s) ignored (too many syllabels): {format(too_many_syl)}")
+
     return dictionary
 
 
-def get_initialism_pronunciation(word: str) -> typing.Tuple[AMEPD_ARPABET, ...]:
-    """Get the ARABET pronunciation for an initialism."""
-    _assert_valid_amepd_word(word)
-    dictionary = _load_amepd()
-    pronunciation: typing.List[AMEPD_ARPABET] = []
-    for character in word:
-        lambda_ = lambda p: p.metadata.usage == "stressed" or p.metadata.usage is None
-        character_pronunciations = list(filter(lambda_, dictionary[character.upper()]))
-        assert len(set(p.pronunciation for p in character_pronunciations)) == 1
-        pronunciation.extend(character_pronunciations[0].pronunciation)
-    return tuple(pronunciation)
-
-
-def get_pronunciation(
-    word: str,
-    pos_coarse: typing.Optional[typing.Literal[AMEPD_PART_OF_SPEECH_COARSE]] = None,
-    pos_fine: typing.Optional[typing.Literal["past", "pres"]] = None,
-    dictionary: typing.Dict[str, typing.List[AmEPDPronunciation]] = _load_amepd(),
-) -> typing.Optional[
-    typing.Union[typing.Tuple[AMEPD_ARPABET, ...], typing.List[typing.Tuple[AMEPD_ARPABET, ...]]]
-]:
-    """Get the ARABET pronunciation for `word`, unless it's ambigious or not available.
+def get_pronunciation(word: str, dictionary: CMUDictSyl) -> typing.Optional[Pronunciation]:
+    """Get the syllabified CMU pronunciation for `word`, unless it's ambigious or not available.
 
     Args:
         word: English word spelled with only English letter(s) or apostrophe(s).
-        pos_coarse: Coarse-grained part-of-speech tags (e.g. "verb" and "adv")
-        pos_fine: Fine-grained part-of-speech tags, like the part-of-speech tense.
+        ...
     """
+    word = word.strip()
+
     _assert_valid_amepd_word(word)
 
     # NOTE: This dictionary does not include apostrophe's at the end of a word because they do not
@@ -425,136 +306,70 @@ def get_pronunciation(
 
     pronunciations = dictionary[word.upper()]
 
-    # NOTE: An abbreviation is not necessarily always expanded when voiced, and due to this
-    # ambigiuty we do not return a pronunciation.
-    is_maybe_an_abbreviation = any(p.metadata.expanded is not None for p in pronunciations)
-    pronunciations = [] if is_maybe_an_abbreviation else pronunciations
-
-    # NOTE: In descending order of part-of-speech specificity, look for pronunciations.
-    pos = AmEPDPartOfSpeech(pos_coarse, pos_fine)  # type: ignore
-    for rule in (
-        lambda p: pos.fine and p.pos == pos,
-        lambda p: pos.fine and p.pos and p.pos.coarse == pos.coarse and not p.pos.fine,
-        lambda p: pos.coarse and p.pos and p.pos.coarse == pos.coarse,
-    ):
-        if any(rule(p) for p in pronunciations):
-            pronunciations = list(filter(rule, pronunciations))
-            break
-
     if len(pronunciations) > 1:
-        lib.utils.call_once(
-            logger.warning,  # type: ignore
-            "Unable to disamgiuate pronunciation of '%s'.",
-            word,
-        )
+        message = "Unable to disamgiuate pronunciation of '%s'."
+        lib.utils.call_once(logger.warning, message, word)  # type: ignore
     elif len(pronunciations) == 0:
-        lib.utils.call_once(
-            logger.warning,  # type: ignore
-            "Unable to find pronunciation of '%s'.",
-            word,
-        )
+        message = "Unable to find pronunciation of '%s'."
+        lib.utils.call_once(logger.warning, message, word)  # type: ignore
 
-    return pronunciations[0].pronunciation if len(pronunciations) == 1 else None
-
-
-def get_syllabic_pronunciation(
-    word: str,
-    pos_coarse: typing.Optional[typing.Literal[AMEPD_PART_OF_SPEECH_COARSE]] = None,
-    pos_fine: typing.Optional[typing.Literal["past", "pres"]] = None,
-) -> typing.Optional[
-    typing.Union[typing.Tuple[AMEPD_ARPABET, ...], typing.List[typing.Tuple[AMEPD_ARPABET, ...]]]
-]:
-    syll_dict = lib.environment.ROOT_PATH / "third_party" / "amepd" / "cmudict_syllabified"
-    return get_pronunciation(
-        word,
-        pos_coarse,
-        pos_fine,
-        dictionary=_load_amepd(path=syll_dict, comment_delimiter="##", syllabify=True),
-    )
+    return pronunciations[0] if len(pronunciations) == 1 else None
 
 
 # fmt: off
-RESPELLER = {
+# TODO: @Rhyan, can you document the differences between these table and the wikipedia table?
+RESPELLINGS: typing.Dict[str, str] = {
     'AA': 'ah', 'AE': 'a', 'AH': 'uh', 'AO': 'aw', 'AW': 'ow', 'AX': 'ə', 'AXR': 'ər', 'AY': 'y',
     'EH': 'eh', 'ER': 'ər', 'EY': 'ay', 'IH': 'ih', 'IY': 'ee', 'OW': 'oh', 'OY': 'oy', 'UH': 'uu',
     'UW': 'oo', 'B': 'b', 'CH': 'tch', 'D': 'd', 'DH': 'dh', 'F': 'f', 'G': 'g', 'H': 'h',
     'JH': 'j', 'K': 'k', 'L': 'l', 'M': 'm', 'N': 'n', 'NG': 'ng', 'P': 'p', 'R': 'r', 'S': 's',
     'SH': 'sh', 'T': 't', 'TH': 'th', 'V': 'v', 'W': 'w', 'Y': 'y', 'Z': 'z', 'ZH': 'zh'
 }
+ARPABET_NO_STRESS = "0"
+ARPABET_PRIMARY_STRESS = "1"
+ARPABET_SECONDARY_STRESS = "2"
+ARPABET_MARKINGS = (ARPABET_NO_STRESS, ARPABET_PRIMARY_STRESS, ARPABET_SECONDARY_STRESS)
+_REMOVE_ARPABET_MARKINGS = {ord(m): None for m in ARPABET_MARKINGS}
 # fmt: on
 
 
-def get_respelling(text: str) -> str:
-    """
-    A function for converting syllabic arpabet pronunciation keys into simple wikipedia respellings.
-    More info: https://en.wikipedia.org/wiki/Help:Pronunciation_respelling_key
-    NOTE: See note on syllables and stress:
-    https://en.wikipedia.org/wiki/Help:Pronunciation_respelling_key#Syllables_and_stress
-    """
-
-    return_ = []
-    for word in text.split(" "):
-        word = word.replace(",", "").replace(".", "").strip()
-        pronunciation = get_syllabic_pronunciation(word)
-        print(f"{word} | {pronunciation}")
-        syllables = []
-        has_upper = False
-        assert pronunciation, f"Could not find a pronunciation for {word}"
-        for syl in pronunciation:
-            re_syl = []
-            upper = False
-            for phoneme in syl:
-                key = phoneme.replace("0", "").replace("1", "").replace("2", "")
-                if "1" in phoneme:  # Primary stress
-                    upper = True
-                    has_upper = True
-                if "2" in phoneme and has_upper is False:  # Secondary stress
-                    upper = True
-                re_syl.append(RESPELLER[key])
-            syllable = "".join(re_syl)
-            if upper:
-                syllable = syllable.upper()
-            syllables.append(syllable)
-        return_.append("-".join(syllables))
-    return " ".join(return_)
+def _remove_arpabet_markings(code: ARPABET):
+    return code.translate(_REMOVE_ARPABET_MARKINGS)
 
 
-_is_initialism_default = lambda t: len(_load_amepd()[t.text.upper()]) == 0 and t.text.isupper()
-
-
-def get_pronunciations(
-    doc: spacy.tokens.Doc,
-    is_initialism: typing.Callable[[spacy.tokens.token.Token], bool] = _is_initialism_default,
-) -> typing.Tuple[typing.Optional[typing.Tuple[AMEPD_ARPABET, ...]], ...]:
-    """Get the ARABET pronunciation for each token in `doc`.
+def get_respelling(word: str, dictionary: CMUDictSyl, delim: str = "-") -> typing.Optional[str]:
+    """Get the respelling for `word` using the syllabified CMU pronunciation, learn more about
+    respellings: https://en.wikipedia.org/wiki/Help:Pronunciation_respelling_key
 
     Args:
-        doc
-        is_initialism: This callable disambiguates a normal word from an initialism.
+        word: English word spelled with only English letter(s) or apostrophe(s).
+        ...
     """
-    return_: typing.List[typing.Optional[typing.Tuple[AMEPD_ARPABET, ...]]] = []
-    for token in doc:
-        if not all(c.isalpha() or c == "'" for c in token.text):
-            lib.utils.call_once(
-                logger.warning,  # type: ignore
-                "Words may only have letter(s) or apostrophe(s): '%s'",
-                token.text,
-            )
-            return_.append(None)
-        else:
-            pos = lib.text.SPACY_TO_AMEPD_POS[token.pos]
-            tense = token.morph.get("Tense")
-            tense = None if len(tense) == 0 else tense[0].lower()
-            pronunciation = lib.text.get_pronunciation(token.text, pos, tense)  # type: ignore
-            if is_initialism(token):
-                lib.utils.call_once(
-                    logger.warning,
-                    "Guessing '%s' is an initialism.",
-                    token.text,
-                )
-                pronunciation = lib.text.get_initialism_pronunciation(token.text)
-            return_.append(pronunciation)
-    return tuple(return_)
+    pronunciation = get_pronunciation(word, dictionary)
+    if pronunciation is None:
+        return None
+
+    syllables = []
+    # NOTE: In words where primary stress precedes secondary stress, however, the secondary stress
+    # should not be differentiated from unstressed syllables; for example, "motorcycle"
+    # (/ˈmoʊtərˌsaɪkəl/) should be respelled as MOH-tər-sy-kəl because MOH-tər-SY-kəl would
+    # incorrectly suggest the pronunciation /ˌmoʊtərˈsaɪkəl/.
+    # Learn more:
+    # https://en.wikipedia.org/wiki/Help:Pronunciation_respelling_key#Syllables_and_stress
+    has_primary = False
+    for syl in pronunciation:
+        respellings = []
+        upper = False
+        for phoneme in syl:
+            if ARPABET_PRIMARY_STRESS in phoneme:
+                upper, has_primary = True, True
+            if ARPABET_SECONDARY_STRESS in phoneme and has_primary is False:
+                upper = True
+            respellings.append(RESPELLINGS[_remove_arpabet_markings(phoneme)])
+        syllable = "".join(respellings)
+        syllables.append(syllable.upper() if upper else syllable)
+
+    return delim.join(syllables)
 
 
 def natural_keys(text: str) -> typing.List[typing.Union[str, int]]:
