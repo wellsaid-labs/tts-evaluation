@@ -324,7 +324,7 @@ def get_pronunciation(word: str, dictionary: CMUDictSyl) -> typing.Optional[Pron
 RESPELLINGS: typing.Dict[str, str] = {
     'AA': 'ah', 'AE': 'a', 'AH': 'uh', 'AO': 'aw', 'AW': 'ow', 'AX': 'ə', 'AXR': 'ər', 'AY': 'y',
     'EH': 'eh', 'ER': 'ər', 'EY': 'ay', 'IH': 'ih', 'IY': 'ee', 'OW': 'oh', 'OY': 'oy', 'UH': 'uu',
-    'UW': 'oo', 'B': 'b', 'CH': 'tch', 'D': 'd', 'DH': 'dh', 'F': 'f', 'G': 'g', 'H': 'h',
+    'UW': 'oo', 'B': 'b', 'CH': 'tch', 'D': 'd', 'DH': 'dh', 'F': 'f', 'G': 'g', 'HH': 'h',
     'JH': 'j', 'K': 'k', 'L': 'l', 'M': 'm', 'N': 'n', 'NG': 'ng', 'P': 'p', 'R': 'r', 'S': 's',
     'SH': 'sh', 'T': 't', 'TH': 'th', 'V': 'v', 'W': 'w', 'Y': 'y', 'Z': 'z', 'ZH': 'zh'
 }

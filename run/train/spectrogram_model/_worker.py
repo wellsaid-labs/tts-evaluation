@@ -374,8 +374,8 @@ def _run_step(
 
         # stop_token_loss [num_frames, batch_size] → [1]
         multiplier = stop_token_loss_multiplier(int(args.state.step.item()))
-        dilim = average_spectrogram_length
-        stop_token_loss_ = ((stop_token_loss.sum(dim=0) * multiplier) / dilim).mean()
+        delim = average_spectrogram_length
+        stop_token_loss_ = ((stop_token_loss.sum(dim=0) * multiplier) / delim).mean()
 
         args.timer.record_event(args.timer.MODEL_BACKWARD)
         params = [p for g in args.state.optimizer.param_groups for p in g["params"]]

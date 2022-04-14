@@ -7,7 +7,13 @@ from unittest import mock
 import pytest
 
 import lib
-from lib.text import grapheme_to_phoneme, is_normalized_vo_script, normalize_vo_script
+from lib.text import (
+    RESPELLINGS,
+    _remove_arpabet_markings,
+    grapheme_to_phoneme,
+    is_normalized_vo_script,
+    normalize_vo_script,
+)
 
 
 def test_grapheme_to_phoneme():
@@ -287,6 +293,11 @@ def test_get_respelling():
     }
     for word, pronunciation in expectations.items():
         assert pronunciation == lib.text.get_respelling(word, lib.text.load_cmudict_syl())
+
+
+def test_respellings():
+    """Test to ensure `RESPELLINGS` covers all of `ARPAbet`."""
+    assert all(_remove_arpabet_markings(a) in RESPELLINGS for a in get_args(lib.text.ARPAbet))
 
 
 def test_natural_keys():
