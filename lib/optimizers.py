@@ -151,9 +151,37 @@ def warmup_lr_multiplier_schedule(step: int, warmup: int) -> float:
         step: The current step.
         warmup: The number of warmup steps.
 
-    Returns:
-        Base learning rate multiplier.
+    Returns: Learning rate multiplier.
     """
     if step < warmup:
         return step / warmup
+    return 1.0
+
+
+def exponential_decay_lr_multiplier_schedule(
+    step: int,
+    warmup: int,
+    start_decay: int,
+    end_decay: int,
+    multiplier: float,
+) -> float:
+    """An exponential decay learning rate multiplier schedule.
+
+    Args:
+        step: The current step.
+        warmup: The number of warmup steps.
+        start_decay: The step to start the exponential decay.
+        end_decay: The step to end the exponential decay.
+        multiplier: The `multiplier` returned at the end of the decay.
+
+    Returns: Learning rate multiplier.
+    """
+    assert warmup <= start_decay, "Warmup must finish before the decay starts."
+    assert start_decay < end_decay, "End decay step must be bigger than start decay."
+    if step < warmup:
+        return step / warmup
+    elif step >= start_decay and step < end_decay:
+        return (multiplier ** (1 / (end_decay - start_decay))) ** (step - start_decay)
+    elif step >= end_decay:
+        return multiplier
     return 1.0

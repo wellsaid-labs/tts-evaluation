@@ -188,13 +188,18 @@ def _make_configuration(train_dataset: Dataset, dev_dataset: Dataset, debug: boo
         _worker._run_step: cf.Args(
             # NOTE: This scalar calibrates the loss so that it's scale is similar to Tacotron-2.
             spectrogram_loss_scalar=1 / 100,
-            # NOTE: Learn more about this parameter here: https://arxiv.org/abs/2002.08709
-            # NOTE: This value is the minimum loss the test set achieves before the model
-            # starts overfitting on the train set.
-            # TODO: Try increasing the stop token minimum loss because it still overfit.
-            stop_token_min_loss=0.019,
             # NOTE: This value is the average spectrogram length in the training dataset.
             average_spectrogram_length=58.699,
+            # NOTE: This starts to decay the stop token loss as soon as it converges so it doesn't
+            # overfit. Also, this ensures that the model doesn't unnecessarily prioritize the stop
+            # token loss when it has already converged.
+            stop_token_loss_multiplier=partial(
+                lib.optimizers.exponential_decay_lr_multiplier_schedule,
+                warmup=0,
+                start_decay=10_000,
+                end_decay=50_000,
+                multiplier=0.001,
+            ),
         ),
         _worker._get_data_loaders: cf.Args(
             # SOURCE: Tacotron 2

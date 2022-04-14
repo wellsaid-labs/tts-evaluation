@@ -312,8 +312,8 @@ def _visualize_source_vs_target(args: _HandleBatchArgs, preds: Preds):
 def _run_step(
     args: _HandleBatchArgs,
     spectrogram_loss_scalar: float,
-    stop_token_min_loss: float,
     average_spectrogram_length: float,
+    stop_token_loss_multiplier: typing.Callable[[int], float],
 ):
     """Run the `model` on the next batch from `data_loader`, and maybe update it.
 
@@ -335,9 +335,10 @@ def _run_step(
         ...
         visualize: If `True` visualize the results with `comet`.
         spectrogram_loss_scalar: This scales the spectrogram loss by some value.
-        stop_token_min_loss: This thresholds the stop token loss to prevent overfitting.
         average_spectrogram_length: The training dataset average spectrogram length. It is used
             to normalize the loss magnitude.
+        stop_token_loss_multiplier: A callable to determine the stop token multiplier based on the
+            step.
     """
     args.timer.record_event(args.timer.MODEL_FORWARD)
     preds = args.state.model(
@@ -372,8 +373,9 @@ def _run_step(
         spectrogram_loss_ *= spectrogram_loss_scalar
 
         # stop_token_loss [num_frames, batch_size] → [1]
-        stop_token_loss_ = (stop_token_loss.sum(dim=0) / average_spectrogram_length).mean()
-        stop_token_loss_ = (stop_token_loss_ - stop_token_min_loss).abs() + stop_token_min_loss
+        multiplier = stop_token_loss_multiplier(int(args.state.step.item()))
+        dilim = average_spectrogram_length
+        stop_token_loss_ = ((stop_token_loss.sum(dim=0) * multiplier) / dilim).mean()
 
         args.timer.record_event(args.timer.MODEL_BACKWARD)
         params = [p for g in args.state.optimizer.param_groups for p in g["params"]]
