@@ -205,7 +205,7 @@ _ _ɹ_ˌ_oʊ_m_ə_n_ _f_ˈ_oːɹ_ _ɪ_l_ˌ_uː_m_ᵻ_n_ˈ_eɪ_ʃ_ə_n""",
 def test_load_cmudict_syl():
     """Test `lib.text.load_cmudict_syl` loads the dictionary."""
     dictionary = lib.text.load_cmudict_syl()
-    arpabet: typing.Set[lib.text.ARPABET] = set()
+    arpabet: typing.Set[lib.text.ARPAbet] = set()
     characters = set()
     for word, pronunciations in dictionary.items():
         for pronunciation in pronunciations:
@@ -213,7 +213,7 @@ def test_load_cmudict_syl():
             assert len(word) > 0
             arpabet.update([code for syllable in pronunciation for code in syllable])
             characters.update(list(word))
-    assert arpabet == set(get_args(lib.text.ARPABET))
+    assert arpabet == set(get_args(lib.text.ARPAbet))
     assert characters == set(list(string.ascii_uppercase) + ["'"])
 
 
@@ -239,6 +239,8 @@ def test_get_pronunciation():
 def test_get_pronunciation__out_of_vocabulary():
     """Test `lib.text.get_pronunciation` doesn't handle words outside it's vocabulary."""
     _check_pronunciation("abcdefg", expected=None)
+    _check_pronunciation(" ", expected=None)
+    _check_pronunciation("\t", expected=None)
 
 
 def test_get_pronunciation__apostrophes():
@@ -261,15 +263,11 @@ def test_get_pronunciation__variations():
 
 
 def test_get_pronunciation__non_standard_words():
-    """Test `lib.text.get_pronunciation` errors given non-standard words."""
-    with pytest.raises(AssertionError):
-        lib.text.get_pronunciation("I B M", lib.text.load_cmudict_syl())
-    with pytest.raises(AssertionError):
-        lib.text.get_pronunciation("I.B.M.", lib.text.load_cmudict_syl())
-    with pytest.raises(AssertionError):
-        lib.text.get_pronunciation("able-bodied", lib.text.load_cmudict_syl())
-    with pytest.raises(AssertionError):
-        lib.text.get_pronunciation("ABC123", lib.text.load_cmudict_syl())
+    """Test `lib.text.get_pronunciation` returns `None` given non-standard words."""
+    _check_pronunciation("I B M", expected=None)
+    _check_pronunciation("I.B.M.", expected=None)
+    _check_pronunciation("able-bodied", expected=None)
+    _check_pronunciation("ABC123", expected=None)
 
 
 def test_get_respelling():
@@ -303,11 +301,7 @@ def test_strip():
     assert lib.text.strip("Hello World  ") == ("Hello World", "", "  ")
     assert lib.text.strip("  Hello World") == ("Hello World", "  ", "")
     assert lib.text.strip(" \n Hello World \n ") == ("Hello World", " \n ", " \n ")
-    assert lib.text.strip(" \n\n Hello World \n\n ") == (
-        "Hello World",
-        " \n\n ",
-        " \n\n ",
-    )
+    assert lib.text.strip(" \n\n Hello World \n\n ") == ("Hello World", " \n\n ", " \n\n ")
 
 
 def test_normalize_vo_script():

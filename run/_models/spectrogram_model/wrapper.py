@@ -10,6 +10,7 @@ from run._models.spectrogram_model.inputs import (
     Context,
     Inputs,
     InputsWrapper,
+    Pronunciation,
     preprocess_inputs,
     preprocess_spans,
 )
@@ -44,7 +45,7 @@ class SpectrogramModelWrapper(SpectrogramModel):
                 max_styles,
                 max_languages,
             ),
-            max_token_meta_values=(len(Casing), len(Context)),
+            max_token_meta_values=(len(Casing) * len(Pronunciation), len(Context)),
             max_token_embed_size=max_token_embed_size,
             **kwargs,
         )
@@ -114,8 +115,8 @@ class SpectrogramModelWrapper(SpectrogramModel):
         **kwargs,
     ) -> typing.Union[Generator, Preds]:
         if isinstance(inputs, InputsWrapper):
-            inputs = preprocess_inputs(inputs, self.encoder.embed_token.weight.device)
+            inputs = preprocess_inputs(inputs, device=self.encoder.embed_token.weight.device)
         elif isinstance(inputs, list):
-            inputs = preprocess_spans(inputs, self.encoder.embed_token.weight.device)
+            inputs = preprocess_spans(inputs, device=self.encoder.embed_token.weight.device)
 
         return super().__call__(inputs, *args, mode=mode, **kwargs)

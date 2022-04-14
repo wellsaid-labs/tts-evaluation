@@ -1,3 +1,4 @@
+import enum
 import functools
 import logging
 import pathlib
@@ -186,7 +187,7 @@ Notable People:
 """
 
 # fmt: off
-ARPABET = typing.Literal[
+ARPAbet = typing.Literal[
     "N", "L", "S", "T", "R", "K", "IH0", "D", "M", "Z", "IY0", "B", "EH1", "P", "AA1",
     "AE1", "IH1", "G", "F", "NG", "V", "IY1", "OW0", "EY1", "HH", "SH", "OW1", "W", "AO1", "AH1",
     "AY1", "UW1", "JH", "Y", "CH", "AA0", "ER1", "EH2", "AY2", "AE2", "EY2", "AA2", "TH", "IH2",
@@ -200,13 +201,12 @@ ARPABET = typing.Literal[
 # fmt: on
 
 
-def _assert_valid_amepd_word(word: str):
-    message = "Words may only be defined with letter(s) or apostrophe(s)."
-    assert all(c.isalpha() or c == "'" for c in word), message
+def _is_valid_amepd_word(word: str):
+    return len(word) > 0 and all(c.isalpha() or c == "'" for c in word)
 
 
-Pronunciation = typing.Tuple[typing.Tuple[ARPABET, ...], ...]
-CMUDictSyl = typing.Dict[str, typing.List[typing.Tuple[typing.Tuple[ARPABET, ...], ...]]]
+Pronunciation = typing.Tuple[typing.Tuple[ARPAbet, ...], ...]
+CMUDictSyl = typing.Dict[str, typing.List[typing.Tuple[typing.Tuple[ARPAbet, ...], ...]]]
 
 
 @functools.lru_cache(maxsize=None)
@@ -262,11 +262,11 @@ def load_cmudict_syl(
 
         pronunciation = rest
 
-        syllables: typing.List[typing.Tuple[ARPABET, ...]] = []
+        syllables: typing.List[typing.Tuple[ARPAbet, ...]] = []
         for syllable in pronunciation.split(" - "):
-            arpabet = typing.cast(typing.Tuple[ARPABET, ...], tuple(syllable.split()))
+            arpabet = typing.cast(typing.Tuple[ARPAbet, ...], tuple(syllable.split()))
             message = f"The pronunciation may only use ARPABET characters: {word}"
-            assert all(c in get_args(ARPABET) for c in arpabet), message
+            assert all(c in get_args(ARPAbet) for c in arpabet), message
             syllables.append(arpabet)
 
         # NOTE: Handle abbreviations like:
@@ -276,8 +276,7 @@ def load_cmudict_syl(
             continue
 
         assert word.isupper(), "A word in this dictionary must be uppercase."
-
-        _assert_valid_amepd_word(word)
+        assert _is_valid_amepd_word(word)
 
         dictionary[word].append(tuple(syllables))
 
@@ -297,7 +296,11 @@ def get_pronunciation(word: str, dictionary: CMUDictSyl) -> typing.Optional[Pron
     """
     word = word.strip()
 
-    _assert_valid_amepd_word(word)
+    if len(word) > 1 and word.isupper():  # NOTE: Acronyms are not supported.
+        return None
+
+    if not _is_valid_amepd_word(word):
+        return None
 
     # NOTE: This dictionary does not include apostrophe's at the end of a word because they do not
     # change the pronunciation of the word. Learn more here:
@@ -325,15 +328,20 @@ RESPELLINGS: typing.Dict[str, str] = {
     'JH': 'j', 'K': 'k', 'L': 'l', 'M': 'm', 'N': 'n', 'NG': 'ng', 'P': 'p', 'R': 'r', 'S': 's',
     'SH': 'sh', 'T': 't', 'TH': 'th', 'V': 'v', 'W': 'w', 'Y': 'y', 'Z': 'z', 'ZH': 'zh'
 }
-ARPABET_NO_STRESS = "0"
-ARPABET_PRIMARY_STRESS = "1"
-ARPABET_SECONDARY_STRESS = "2"
-ARPABET_MARKINGS = (ARPABET_NO_STRESS, ARPABET_PRIMARY_STRESS, ARPABET_SECONDARY_STRESS)
-_REMOVE_ARPABET_MARKINGS = {ord(m): None for m in ARPABET_MARKINGS}
 # fmt: on
 
 
-def _remove_arpabet_markings(code: ARPABET):
+class ARPAbetStress(enum.Enum):
+
+    NONE: typing.Final = "0"
+    PRIMARY: typing.Final = "1"
+    SECONDARY: typing.Final = "2"
+
+
+_REMOVE_ARPABET_MARKINGS = {ord(m.value): None for m in ARPAbetStress}
+
+
+def _remove_arpabet_markings(code: ARPAbet):
     return code.translate(_REMOVE_ARPABET_MARKINGS)
 
 
@@ -361,9 +369,9 @@ def get_respelling(word: str, dictionary: CMUDictSyl, delim: str = "-") -> typin
         respellings = []
         upper = False
         for phoneme in syl:
-            if ARPABET_PRIMARY_STRESS in phoneme:
+            if ARPAbetStress.PRIMARY.value in phoneme:
                 upper, has_primary = True, True
-            if ARPABET_SECONDARY_STRESS in phoneme and has_primary is False:
+            if ARPAbetStress.SECONDARY.value in phoneme and has_primary is False:
                 upper = True
             respellings.append(RESPELLINGS[_remove_arpabet_markings(phoneme)])
         syllable = "".join(respellings)

@@ -21,9 +21,15 @@ from tests._utils import make_metadata
 
 
 def make_speaker(
-    label: str, style: struc.Style = struc.Style.LIBRI, dialect: struc.Dialect = struc.Dialect.EN_US
+    label: str = "",
+    style: struc.Style = struc.Style.LIBRI,
+    dialect: struc.Dialect = struc.Dialect.EN_US,
 ):
     return struc.Speaker(label, style, dialect, label, label)
+
+
+def make_session(*args, name: str = "", **kwargs):
+    return struc.Session((make_speaker(*args, **kwargs), name))
 
 
 def make_alignment(script=(0, 0), transcript=(0, 0), audio=(0.0, 0.0)):

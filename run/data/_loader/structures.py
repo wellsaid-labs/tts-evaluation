@@ -622,7 +622,7 @@ class Span:
         assert span is not None, "Invalid `spacy.tokens.Span` selected."
         return span
 
-    def spacy_with_context(self, max_words: int) -> spacy.tokens.span.Span:
+    def spacy_context(self, max_words: int) -> spacy.tokens.span.Span:
         """Get a `spacy.tokens.span.Span` with the required context for voicing `self`.
 
         NOTE: `self.spacy.sents` is buggy.

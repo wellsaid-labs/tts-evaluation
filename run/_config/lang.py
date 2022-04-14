@@ -28,10 +28,13 @@ _NON_ASCII_CHARS: typing.Dict[Language, frozenset] = {
     # Resources:
     # https://en.wikipedia.org/wiki/English_terms_with_diacritical_marks
     # https://en-academic.com/dic.nsf/enwiki/3894487
+    # NOTE: "ə" and "Ə" was added to support English respellings.
+    # TODO: Should "ə" be allowed through generally or just inside a respelling? This might have
+    # bigger implictions for bilingual voices where the language can change mid-sentence.
     Language.ENGLISH: frozenset([
         "â", "Â", "à", "À", "á", "Á", "ê", "Ê", "é", "É", "è", "È", "ë", "Ë", "î", "Î", "ï", "Ï",
-        "ô", "Ô", "ù", "Ù", "û", "Û", "ç", "Ç", "ä", "ö", "ü", "Ä", "Ö", "Ü", "ñ", "Ñ",
-    ]),
+        "ô", "Ô", "ù", "Ù", "û", "Û", "ç", "Ç", "ä", "ö", "ü", "Ä", "Ö", "Ü", "ñ", "Ñ"
+    ] + ["ə", "Ə"]),
     Language.GERMAN: frozenset(["ß", "ä", "ö", "ü", "Ä", "Ö", "Ü"]),
     # Portuguese makes use of five diacritics: the cedilla (ç), acute accent (á, é, í, ó, ú),
     # circumflex accent (â, ê, ô), tilde (ã, õ), and grave accent (à, and rarely è, ì, ò, and ù).
