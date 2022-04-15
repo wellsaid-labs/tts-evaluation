@@ -172,7 +172,9 @@ def _token_to_tokens(
     token: spacy.tokens.token.Token, span: SpanDoc, respell_prob: float
 ) -> typing.Tuple[Token, Token]:
     """Convert `token` into `Token`s."""
-    try_to_respell = random.random() < respell_prob
+    is_context = token not in span
+    is_whitespace_context = True if token == span[-1] else is_context
+    try_to_respell = not is_context and random.random() < respell_prob
 
     last_token = None if token.i == 0 else token.doc[token.i - 1]
     if last_token is not None and len(last_token.whitespace_) == 0 and not last_token.is_punct:
@@ -182,8 +184,6 @@ def _token_to_tokens(
     if next_token is not None and len(token.whitespace_) == 0 and not next_token.is_punct:
         try_to_respell = False
 
-    is_context = token not in span
-    is_whitespace_context = True if token == span[-1] else is_context
     return (
         Token(token, is_context, False, try_to_respell),
         Token(token, is_whitespace_context, True, False),

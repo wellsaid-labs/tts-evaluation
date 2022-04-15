@@ -306,16 +306,7 @@ def get_pronunciation(word: str, dictionary: CMUDictSyl) -> typing.Optional[Pron
     # change the pronunciation of the word. Learn more here:
     # https://github.com/rhdunn/amepd/commit/5fcd23a4424807e8b1c3f8736f19b38cd7e5abaf
     word = word[:-1] if word[-1] == "'" else word
-
     pronunciations = dictionary[word.upper()]
-
-    if len(pronunciations) > 1:
-        message = "Unable to disamgiuate pronunciation of '%s'."
-        lib.utils.call_once(logger.warning, message, word)  # type: ignore
-    elif len(pronunciations) == 0:
-        message = "Unable to find pronunciation of '%s'."
-        lib.utils.call_once(logger.warning, message, word)  # type: ignore
-
     return pronunciations[0] if len(pronunciations) == 1 else None
 
 
