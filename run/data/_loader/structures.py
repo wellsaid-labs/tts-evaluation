@@ -208,6 +208,12 @@ class Speaker:
     def language(self) -> Language:
         return self.dialect.value[0]
 
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__name__}({self.label}, {self.dialect.value[1]}, "
+            f"{self.style.value}, post={self.post})"
+        )
+
 
 # TODO: Implement `__str__` so that we have a more succinct string representation for logging
 Session = typing.NewType("Session", typing.Tuple[Speaker, str])

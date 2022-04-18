@@ -17,7 +17,8 @@ from torchnlp.random import fork_rng
 from tqdm import tqdm
 
 import lib
-from lib.utils import split
+from lib.utils import disk_cache, split
+from run import _config
 from run.data import _loader
 
 if typing.TYPE_CHECKING:  # pragma: no cover
@@ -235,6 +236,29 @@ def split_dataset(
 
     _is_duplicate.cache_clear()
     return train, dev
+
+
+@disk_cache(_config.DATASET_CACHE_PATH)
+def _get_datasets():
+    """Get a `train` and `dev` dataset."""
+    dataset = cf.partial(get_dataset)()
+    return cf.partial(split_dataset)(dataset)
+
+
+def _get_debug_datasets(speakers: typing.Set[_loader.Speaker]):
+    """Get small `train` and `dev` datasets for debugging."""
+    speaker = next(iter(speakers), None)
+    assert speaker is not None
+    kwargs = {"datasets": {speaker: _config.DATASETS[speaker]}}
+    dataset = cf.call(get_dataset, **kwargs, _overwrite=True)
+    return cf.partial(split_dataset)(dataset)
+
+
+def get_datasets(debug: bool):
+    """Get a `train` and `dev` dataset."""
+    if debug:
+        return cf.partial(_get_debug_datasets)()
+    return _get_datasets()
 
 
 SpanGeneratorGetWeight = typing.Callable[[_loader.Speaker, float], float]

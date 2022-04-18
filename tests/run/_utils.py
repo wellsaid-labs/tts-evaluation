@@ -11,6 +11,7 @@ import torch
 import lib
 import run
 from run import train
+from run._config import make_signal_model_train_config, make_spectrogram_model_train_config
 from run._tts import TTSPackage, package_tts
 from run.data._loader import structures as struc
 from run.data._loader.english import M_AILABS_DATASETS, lj_speech, m_ailabs
@@ -172,7 +173,7 @@ def make_spec_and_sig_worker_state(
     with mock.patch("run.train.signal_model._worker.DistributedDataParallel") as module:
         module.side_effect = mock_distributed_data_parallel
         sig_state = train.signal_model._worker._State.make(checkpoint_path, comet, device)
-    sig_state.spectrogram_model_.allow_unk_on_eval(True)
+    sig_state.spec_model.allow_unk_on_eval(True)
     return spec_state, sig_state, temp_dir
 
 
@@ -185,7 +186,7 @@ def make_mock_tts_package() -> typing.Tuple[run._utils.Dataset, TTSPackage]:
     comet = train._utils.CometMLExperiment(disabled=True, project_name="project name")
     device = torch.device("cpu")
     dataset = make_small_dataset()
-    cf.add(train.spectrogram_model.__main__._make_configuration(dataset, dataset, False))
-    cf.add(train.signal_model.__main__._make_configuration(dataset, dataset, False))
+    cf.add(make_spectrogram_model_train_config(dataset, dataset, False))
+    cf.add(make_signal_model_train_config(dataset, dataset, False))
     spec_state, sig_state, _ = make_spec_and_sig_worker_state(comet, device)
     return dataset, package_tts(spec_state.to_checkpoint(), sig_state.to_checkpoint())

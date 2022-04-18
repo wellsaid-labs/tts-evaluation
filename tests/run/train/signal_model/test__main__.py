@@ -6,17 +6,22 @@ import config as cf
 import pytest
 
 import lib
-from run._config import Cadence, DatasetType
-from run.train import spectrogram_model
+from run._config import (
+    Cadence,
+    DatasetType,
+    make_signal_model_train_config,
+    make_spectrogram_model_train_config,
+)
+from run.data._loader.english.m_ailabs import JUDY_BIEBER
+from run.data._loader.structures import Language
 from run.train._utils import Context, Timer, save_checkpoint, set_context
-from run.train.signal_model.__main__ import _make_configuration
 from run.train.signal_model._metrics import Metrics
 from run.train.signal_model._worker import (
     _get_data_loaders,
     _HandleBatchArgs,
     _run_step,
     _visualize_inferred,
-    _visualize_inferred_end_to_end,
+    _visualize_select_cases,
 )
 from tests.run._utils import make_spec_and_sig_worker_state, mock_distributed_data_parallel
 from tests.run.train._utils import setup_experiment
@@ -31,13 +36,25 @@ def run_around_tests():
 
 def test_integration():
     train_dataset, dev_dataset, comet, device = setup_experiment()
-    cf.add(spectrogram_model.__main__._make_configuration(train_dataset, dev_dataset, True))
-    cf.add(_make_configuration(train_dataset, dev_dataset, True))
+    cf.add(make_spectrogram_model_train_config(train_dataset, dev_dataset, True))
+    cf.add(make_signal_model_train_config(train_dataset, dev_dataset, True))
     _, state, __ = make_spec_and_sig_worker_state(comet, device)
 
     batch_size = 1
     train_loader, dev_loader = _get_data_loaders(
-        state, train_dataset, dev_dataset, batch_size, batch_size, 4, 4, 1, 1, 1, 1, 0, 2
+        state=state,
+        train_dataset=train_dataset,
+        dev_dataset=dev_dataset,
+        train_batch_size=batch_size,
+        dev_batch_size=batch_size,
+        train_slice_size=4,
+        dev_slice_size=4,
+        train_span_bucket_size=1,
+        dev_span_bucket_size=1,
+        train_steps_per_epoch=1,
+        dev_steps_per_epoch=1,
+        num_workers=0,
+        prefetch_factor=2,
     )
 
     # Test `_run_step` with `Metrics` and `_State`
@@ -57,7 +74,14 @@ def test_integration():
     # Test inference visualizations
     with set_context(Context.EVALUATE_INFERENCE, comet, *state.models, ema=state.ema):
         _visualize_inferred(state, dev_loader, DatasetType.DEV)
-        _visualize_inferred_end_to_end(state, dev_loader, DatasetType.DEV)
+        _visualize_select_cases(
+            state,
+            DatasetType.TEST,
+            Cadence.MULTI_STEP,
+            cases=[(Language.ENGLISH, "Hi There")],
+            speakers={JUDY_BIEBER},
+            num_cases=1,
+        )
 
     # Test loading and saving a checkpoint
     with mock.patch("run.train.signal_model._worker.DistributedDataParallel") as module:

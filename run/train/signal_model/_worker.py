@@ -29,6 +29,7 @@ from run._config import (
     RANDOM_SEED,
     Cadence,
     DatasetType,
+    Label,
     get_config_label,
     get_dataset_label,
     get_model_label,
@@ -63,7 +64,7 @@ class Checkpoint(_utils.Checkpoint):
     scheduler: torch.optim.lr_scheduler.LambdaLR
     discrims: typing.List[SpectrogramDiscriminator]
     discrim_optimizers: typing.List[torch.optim.Adam]
-    spectrogram_model_checkpoint_path: pathlib.Path
+    spec_model_checkpoint_path: pathlib.Path
 
     def check_invariants(self):
         """Check datastructure invariants.
@@ -122,9 +123,8 @@ class _State:
     signal_to_spectrogram_modules: typing.List[SignalTodBMelSpectrogram]
     discrims: typing.List[DistributedDataParallel]
     discrim_optimizers: typing.List[torch.optim.Adam]
-    # NOTE: An additional underscore was added because Pylance had issues with the former naming.
-    spectrogram_model_: spectrogram_model.SpectrogramModel
-    spectrogram_model_checkpoint_path: pathlib.Path
+    spec_model: spectrogram_model.SpectrogramModel
+    spec_model_checkpoint_path: pathlib.Path
     comet: CometMLExperiment
     device: torch.device
     step: torch.Tensor = torch.tensor(0, dtype=torch.long)
@@ -207,7 +207,7 @@ class _State:
             scheduler=self.scheduler,
             discrims=[typing.cast(SpectrogramDiscriminator, d.module) for d in self.discrims],
             discrim_optimizers=self.discrim_optimizers,
-            spectrogram_model_checkpoint_path=self.spectrogram_model_checkpoint_path,
+            spec_model_checkpoint_path=self.spec_model_checkpoint_path,
             step=int(self.step.item()),
         )
 
@@ -217,10 +217,10 @@ class _State:
 
     @staticmethod
     def load_spectrogram_model(
-        comet: CometMLExperiment, spectrogram_model_checkpoint_path: pathlib.Path
+        comet: CometMLExperiment, spec_model_checkpoint_path: pathlib.Path
     ) -> spectrogram_model.SpectrogramModel:
-        checkpoint = lib.environment.load(spectrogram_model_checkpoint_path)
-        label = get_config_label("spectrogram_model_experiment_key")
+        checkpoint = lib.environment.load(spec_model_checkpoint_path)
+        label = get_config_label("spec_model_experiment_key")
         comet.log_other(label, checkpoint.comet_experiment_key)
         return checkpoint.export()
 
@@ -237,9 +237,7 @@ class _State:
         https://github.com/pytorch/pytorch/issues/52127
         """
         discrims = [DistributedDataParallel(d, [device], device) for d in checkpoint.discrims]
-        spectrogram_model = cls.load_spectrogram_model(
-            comet, checkpoint.spectrogram_model_checkpoint_path
-        )
+        spectrogram_model = cls.load_spectrogram_model(comet, checkpoint.spec_model_checkpoint_path)
         return cls(
             DistributedDataParallel(checkpoint.model, [device], device),
             checkpoint.optimizer,
@@ -250,7 +248,7 @@ class _State:
             discrims,
             checkpoint.discrim_optimizers,
             spectrogram_model,
-            checkpoint.spectrogram_model_checkpoint_path,
+            checkpoint.spec_model_checkpoint_path,
             comet,
             device,
             torch.tensor(checkpoint.step),
@@ -259,13 +257,13 @@ class _State:
     @classmethod
     def make(
         cls,
-        spectrogram_model_checkpoint_path: pathlib.Path,
+        spec_model_checkpoint_path: pathlib.Path,
         comet: CometMLExperiment,
         device: torch.device,
     ):
         """Initialize signal model training state."""
         distribute = partial(DistributedDataParallel, device_ids=[device], output_device=device)
-        spectrogram_model = cls.load_spectrogram_model(comet, spectrogram_model_checkpoint_path)
+        spectrogram_model = cls.load_spectrogram_model(comet, spec_model_checkpoint_path)
         model = distribute(cls._get_model(device, comet))
         discrims = [distribute(d) for d in cls._get_discrims(device, **cf.get())]
         return cls(
@@ -275,7 +273,7 @@ class _State:
             discrims,
             cls._get_discrim_optimizers(discrims, **cf.get()),
             spectrogram_model,
-            spectrogram_model_checkpoint_path,
+            spec_model_checkpoint_path,
             comet,
             device,
         )
@@ -315,9 +313,7 @@ def _get_data_loaders(
     model = state.model.module if isinstance(state.model, DistributedDataParallel) else state.model
     step, device = int(state.step.item()), state.device
     padding = typing.cast(int, model.padding)
-    processor = partial(
-        DataProcessor, slice_padding=padding, spectrogram_model=state.spectrogram_model_
-    )
+    processor = partial(DataProcessor, slice_padding=padding, spectrogram_model=state.spec_model)
     train = processor(train_dataset, train_slice_size, train_batch_size, train_span_bucket_size)
     dev = processor(dev_dataset, dev_slice_size, dev_batch_size, dev_span_bucket_size)
     init_fn = partial(_worker_init_fn, step=step, rank=get_rank(), world_size=get_world_size())
@@ -369,7 +365,7 @@ def _run_discriminator(
         ...
     """
     args.timer.record_event(args.timer.MODEL_FORWARD)
-    discriminator = args.state.discrims[i]
+    discriminator = typing.cast(SpectrogramDiscriminator, args.state.discrims[i])
     discriminator_optimizer = args.state.discrim_optimizers[i]
     batch_size = fake_specs.amp.shape[0]
     device = fake_specs.amp.device
@@ -382,9 +378,8 @@ def _run_discriminator(
     db_mel = torch.cat([real_specs.db_mel, fake_specs.db_mel.detach()])
     db = torch.cat([real_specs.db, fake_specs.db.detach()])
     amp = torch.cat([real_specs.amp, fake_specs.amp.detach()])
-    speaker = args.batch.speaker + args.batch.speaker
     session = args.batch.session + args.batch.session
-    predictions = discriminator(amp, db, db_mel, speaker, session)
+    predictions = discriminator(amp, db, db_mel, session)
     predictions = typing.cast(torch.Tensor, predictions)
     discriminator_loss = binary_cross_entropy_with_logits(predictions, labels, reduction="none")
     get_discrim_values = partial(
@@ -407,11 +402,7 @@ def _run_discriminator(
     args.timer.record_event(args.timer.MODEL_FORWARD)
     # NOTE: Use real labels instead of fake to flip the gradient for the generator.
     predictions = discriminator(
-        fake_specs.amp,
-        fake_specs.db,
-        fake_specs.db_mel,
-        args.batch.speaker,
-        args.batch.session,
+        fake_specs.amp, fake_specs.db, fake_specs.db_mel, args.batch.session
     )
     predictions = typing.cast(torch.Tensor, predictions)
     generator_loss = binary_cross_entropy_with_logits(predictions, real_labels, reduction="none")
@@ -447,7 +438,6 @@ def _run_step(args: _HandleBatchArgs):
     args.timer.record_event(args.timer.MODEL_FORWARD)
     signal = args.state.model(
         spectrogram=args.batch.spectrogram.tensor,
-        speaker=args.batch.speaker,
         session=args.batch.session,
         spectrogram_mask=args.batch.spectrogram_mask.tensor,
         pad_input=False,
@@ -513,15 +503,16 @@ def _run_step(args: _HandleBatchArgs):
     args.metrics.update(values)
 
 
-def _log_specs(state: _State, gold: torch.Tensor, pred: torch.Tensor, **kwargs):
+def _log_specs(
+    state: _State, *args: typing.Tuple[typing.Callable[..., Label], torch.Tensor], **kwargs
+):
     """Log the various spectrograms produced by `state.signal_to_spectrogram_modules`."""
-    get_labels = (partial(get_dataset_label, **kwargs), partial(get_model_label, **kwargs))
-    signals = (gold, pred)
     for signal_to_spectrogram in state.signal_to_spectrogram_modules:
-        for get_label, signal in zip(get_labels, signals):
+        for get_label, signal in args:
             for key, spec in signal_to_spectrogram(signal, intermediate=True)._asdict().items():
                 fft_length = signal_to_spectrogram.fft_length
-                label = get_label(f"{key}_{fft_length}_spectrogram", fft_length=fft_length)
+                name = f"{key}_{fft_length}_spectrogram"
+                label = get_label(name, fft_length=fft_length, **kwargs)
                 plot = plot_mel_spectrogram if "_mel" in key else plot_spectrogram
                 state.comet.log_figure(label, cf.partial(plot)(spec))
 
@@ -536,14 +527,13 @@ def _visualize_inferred(
 
     batch = typing.cast(Batch, next(iter(data_loader)))
     item = random.randint(0, len(batch.batch) - 1)
-    length = batch.batch.predicted_spectrogram.lengths[:, item]
-    spectrogram = batch.batch.predicted_spectrogram.tensor[:length, item : item + 1]
+    length = batch.preds.num_frames[:, item]
+    spectrogram = batch.preds.frames[:length, item : item + 1]
     spectrogram = spectrogram.transpose(0, 1).to(state.device)
-    speaker = batch.batch.inputs.speaker[item : item + 1]
-    session = batch.batch.inputs.session[item : item + 1]
+    session = [s.session for s in batch.batch.spans][item : item + 1]
     splits = spectrogram.split(split_size)
     model = typing.cast(SignalModel, state.model.module)
-    predicted = generate_waveform(model, splits, speaker, session)
+    predicted = generate_waveform(model, splits, session)
     predicted = list(predicted)
     predicted = typing.cast(torch.Tensor, torch.cat(predicted, dim=-1)).squeeze(0)
     target = batch.batch.audio[item]
@@ -551,61 +541,58 @@ def _visualize_inferred(
         audio={"gold_audio": target.numpy(), "predicted_audio": predicted.cpu().numpy()},
         context=state.comet.context,
         text=batch.batch.spans[item].script,
-        speaker=batch.batch.spans[item].speaker,
+        session=batch.batch.spans[item].session,
     )
     get_label = partial(get_dataset_label, cadence=Cadence.STEP, type_=dataset_type)
     plot = plot_mel_spectrogram(spectrogram.squeeze(0), **cf.get())
     state.comet.log_figure(get_label("input_spectrogram"), plot)
-    _log_specs(state, target.to(state.device), predicted, cadence=Cadence.STEP, type_=dataset_type)
+    _log_specs(
+        state,
+        (get_dataset_label, target.to(state.device)),
+        (get_model_label, predicted),
+        cadence=Cadence.STEP,
+        type_=dataset_type,
+    )
 
 
 @lib.utils.log_runtime
-def _visualize_inferred_end_to_end(
-    state: _State, data_loader: DataLoader, dataset_type: DatasetType, split_size: int = 32
+def _visualize_select_cases(
+    state: _State, dataset_type: DatasetType, cadence: Cadence, split_size: int = 32, **kw
 ):
     """Run spectrogram and signal model in inference mode and visualize results."""
     if not is_master():
         return
 
-    batch = typing.cast(Batch, next(iter(data_loader)))
-    item = random.randint(0, len(batch.batch) - 1)
-    inputs = spectrogram_model.Inputs(
-        tokens=batch.batch.inputs.tokens[item : item + 1],
-        speaker=batch.batch.inputs.speaker[item : item + 1],
-        session=batch.batch.inputs.session[item : item + 1],
-    )
     # NOTE: The `spectrogram_model` runs on CPU to conserve GPU memory.
-    preds = state.spectrogram_model_(inputs=inputs, mode=run._models.spectrogram_model.Mode.INFER)
-    preds = typing.cast(spectrogram_model.Preds, preds)
-    splits = preds.frames.transpose(0, 1).to(state.device).split(split_size)
-    signal_model = typing.cast(SignalModel, state.model.module)
-    predicted = list(generate_waveform(signal_model, splits, inputs.speaker, inputs.session))
-    predicted = typing.cast(torch.Tensor, torch.cat(predicted, dim=-1)).squeeze(0)
-    target = batch.batch.audio[item]
-    model_label_ = partial(get_model_label, cadence=Cadence.STEP)
-    dataset_label_ = partial(get_dataset_label, cadence=Cadence.STEP, type_=dataset_type)
-    num_frames = batch.batch.spectrogram.lengths[:, item]
-    gold_spectrogram = batch.batch.spectrogram.tensor[:num_frames, item]
-    figures = {
-        dataset_label_("gold_spectrogram"): plot_mel_spectrogram(gold_spectrogram, **cf.get()),
-        model_label_("predicted_spectrogram"): plot_mel_spectrogram(
-            preds.frames.squeeze(1), **cf.get()
-        ),
-        model_label_("alignment"): plot_alignments(preds.alignments.squeeze(1)),
-        model_label_("stop_token"): plot_logits(preds.stop_tokens.squeeze(1)),
-    }
-    state.comet.log_figures(figures)
-    audio = {
-        "predicted_griffin_lim_audio": griffin_lim(preds.frames.squeeze(1).numpy(), **cf.get()),
-        "gold_griffin_lim_audio": griffin_lim(gold_spectrogram.numpy(), **cf.get()),
-        "predicted_signal_model_audio": predicted.cpu().numpy(),
-        "gold_audio": target.numpy(),
-    }
-    span = batch.batch.spans[item]
-    state.comet.log_html_audio(
-        audio=audio, context=state.comet.context, text=span.script, speaker=span.speaker
-    )
-    _log_specs(state, target.to(state.device), predicted, cadence=Cadence.STEP, type_=dataset_type)
+    model = typing.cast(SignalModel, state.model.module)
+    sesh_vocab = model.session_embed.vocab
+    inputs, preds = cf.partial(_utils.process_select_cases)(state.spec_model, sesh_vocab, **kw)
+    splits = preds.frames.to(state.device).split(split_size)
+    waves = list(generate_waveform(model, splits, inputs.session))
+    waves = typing.cast(torch.Tensor, torch.cat(waves, dim=-1)).cpu()
+
+    for item in range(len(inputs.doc)):
+        label = partial(get_model_label, cadence=cadence)
+        num_tokens = preds.num_tokens[item]
+        num_frames = preds.num_frames[item]
+        frames = preds.frames[:num_frames, item]
+        figures = {
+            label("predicted_spectrogram"): plot_mel_spectrogram(frames, **cf.get()),
+            label("alignment"): plot_alignments(preds.alignments[:num_frames, item, :num_tokens]),
+            label("stop_token"): plot_logits(preds.stop_tokens[:num_frames, item]),
+        }
+        state.comet.log_figures(figures)
+        audio = {
+            "predicted_griffin_lim_audio": griffin_lim(frames.numpy(), **cf.get()),
+            "predicted_signal_model_audio": waves[item].cpu().numpy(),
+        }
+        state.comet.log_html_audio(
+            audio=audio,
+            context=state.comet.context,
+            text=str(inputs.doc[item]),
+            session=inputs.session[item],
+        )
+        _log_specs(state, (get_model_label, waves), cadence=Cadence.STEP, type_=dataset_type)
 
 
 _HandleBatch = typing.Callable[[_HandleBatchArgs], None]
@@ -650,7 +637,7 @@ def run_worker(
     comet: CometMLExperiment,
     checkpoint: typing.Optional[_utils.Checkpoint],
     checkpoints_directory: pathlib.Path,
-    spectrogram_model_checkpoint: typing.Optional[pathlib.Path],
+    spec_model_checkpoint: typing.Optional[pathlib.Path],
     train_dataset: run._utils.Dataset,
     dev_dataset: run._utils.Dataset,
 ) -> typing.NoReturn:
@@ -661,12 +648,12 @@ def run_worker(
     if is_master():
         atexit.register(cf.purge)
 
-    conditions = [checkpoint is None, spectrogram_model_checkpoint is None]
+    conditions = [checkpoint is None, spec_model_checkpoint is None]
     message = "Either signal model or spectrogram model checkpoint needs to be defined."
     assert any(conditions) and not all(conditions), message
     assert isinstance(checkpoint, Checkpoint) or checkpoint is None
     state = (
-        _State.make(typing.cast(pathlib.Path, spectrogram_model_checkpoint), comet, device)
+        _State.make(typing.cast(pathlib.Path, spec_model_checkpoint), comet, device)
         if checkpoint is None
         else _State.from_checkpoint(checkpoint, comet, device)
     )
@@ -683,7 +670,7 @@ def run_worker(
         with set_context(Context.EVALUATE_INFERENCE, state.comet, *state.models, ema=state.ema):
             _visualize_inferred(state, dev_loader, DatasetType.DEV)
 
-        with set_context(Context.EVALUATE_END_TO_END, state.comet, *state.models, ema=state.ema):
-            _visualize_inferred_end_to_end(state, dev_loader, DatasetType.DEV)
+        with set_context(Context.EVALUATE_INFERENCE, state.comet, *state.models, ema=state.ema):
+            _visualize_select_cases(state, DatasetType.TEST, Cadence.MULTI_STEP)
 
         save_checkpoint(state.to_checkpoint(), checkpoints_directory, f"step_{state.step.item()}")

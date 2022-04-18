@@ -239,18 +239,15 @@ def audio_normalize(
     bits: typing.Optional[int] = typer.Option(None),
 ):
     """Normalize audio file format(s) in PATHS and save to directory DEST."""
-    if bits is not None:
-        cf.add({_loader.normalize_audio: cf.Args(bits=bits)})
-    if data_type is not None:
-        cf.add({_loader.normalize_audio: cf.Args(data_type=data_type)})
-
     progress_bar = tqdm.tqdm(total=round(_get_total_length(paths)))
     for path in paths:
         dest_path = _loader.normalize_audio_suffix(dest / path.name, **cf.get())
         if dest_path.exists():
             logger.error(f"Skipping, file already exists: {dest_path}")
         else:
-            _loader.normalize_audio(path, dest_path, **cf.get())
+            kwargs = dict(bits=bits, data_type=data_type)
+            kwargs = {k: v for k, v in kwargs.items() if v is not None}
+            cf.call(_loader.normalize_audio, path, dest_path, **kwargs)
             progress_bar.update(round(lib.audio.get_audio_metadata(path).length))
 
 

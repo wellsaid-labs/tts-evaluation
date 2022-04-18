@@ -256,7 +256,7 @@ class Metrics(_utils.Metrics[MetricsKey]):
     def _get_dataset_metrics(self, select: _utils.MetricsSelect, is_verbose: bool) -> _GetMetrics:
         reduce = lambda *a, **k: self._reduce(MetricsKey(*a), select=select, **k)
 
-        metrics = {
+        metrics: _GetMetrics = {
             self.MIN_DATA_LOADER_QUEUE_SIZE: reduce(self.DATA_QUEUE_SIZE, op=min),
             self.MIN_NUM_SAMPLES: reduce(self.NUM_SAMPLES_MIN_, op=min),
             self.AVERAGE_NUM_SAMPLES: self._div(
@@ -272,6 +272,7 @@ class Metrics(_utils.Metrics[MetricsKey]):
                 self.FREQUENCY_NUM_SECONDS: _reduce(self.NUM_SAMPLES) / total_seconds,
             }
             metrics.update({partial(k, **kwargs): v for k, v in update.items()})
+
         return metrics
 
     def log(

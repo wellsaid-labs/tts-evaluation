@@ -106,7 +106,8 @@ class _Config(typing.NamedTuple):
     padding: int = 0
 
 
-_ModelInputs = typing.Tuple[torch.Tensor, typing.List[typing.Tuple[int, int]], torch.Tensor]
+_SeqMetadata = typing.List[typing.Tuple[typing.Hashable, typing.Hashable]]
+_ModelInputs = typing.Tuple[torch.Tensor, _SeqMetadata, torch.Tensor]
 
 
 def _make_small_signal_model(config: _Config) -> typing.Tuple[SignalModel, _ModelInputs]:
@@ -123,7 +124,7 @@ def _make_small_signal_model(config: _Config) -> typing.Tuple[SignalModel, _Mode
     )
     speaker = torch.randint(0, config.max_seq_meta_values[0], (config.batch_size,)).tolist()
     session = torch.randint(0, config.max_seq_meta_values[1], (config.batch_size,)).tolist()
-    seq_metadata = list(zip(speaker, session))
+    seq_metadata = typing.cast(_SeqMetadata, list(zip(speaker, session)))
     num_frames = config.num_frames + config.padding * 2
     spectrogram = torch.randn([config.batch_size, num_frames, config.frame_size])
     mask = [
@@ -167,7 +168,7 @@ def test_signal_model__batch_invariance():
     """Test `SignalModel` output doesn't vary with batch size."""
     model, inputs = _make_small_signal_model(_Config())
     first = tuple(i[0:1] for i in inputs)
-    first = typing.cast(typing.Tuple[torch.Tensor, typing.List[typing.Tuple[int, int]]], first)
+    first = typing.cast(typing.Tuple[torch.Tensor, _SeqMetadata], first)
     assert_almost_equal(model(*inputs)[0:1], model(*first))
 
 

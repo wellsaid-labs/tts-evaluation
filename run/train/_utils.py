@@ -18,6 +18,7 @@ import os
 import pathlib
 import platform
 import pprint
+import random
 import resource
 import sys
 import time
@@ -43,7 +44,7 @@ import lib
 import run
 from lib.distributed import is_master
 from lib.environment import load, load_most_recent_file
-from lib.utils import dataclass_as_dict, disk_cache, flatten_2d, seconds_to_str
+from lib.utils import dataclass_as_dict, flatten_2d, seconds_to_str
 from run._config import (
     Cadence,
     DatasetType,
@@ -52,9 +53,11 @@ from run._config import (
     get_dataset_label,
     get_model_label,
     get_timer_label,
+    load_spacy_nlp,
 )
-from run._utils import Dataset
-from run.data._loader.structures import Language
+from run._models.spectrogram_model import Inputs, Mode, Preds, SpectrogramModel
+from run._utils import Dataset, get_datasets
+from run.data._loader.structures import Language, Session, Speaker
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import comet_ml
@@ -79,7 +82,6 @@ class Context(enum.Enum):
     TRAIN: typing.Final = "train"
     EVALUATE: typing.Final = "evaluate"
     EVALUATE_INFERENCE: typing.Final = "evaluate_inference"
-    EVALUATE_END_TO_END: typing.Final = "evaluate_end_to_end"
 
 
 class CometMLExperiment:
@@ -280,7 +282,7 @@ class CometMLExperiment:
 
     def log_html_audio(
         self,
-        speaker: run.data._loader.Speaker,
+        session: run.data._loader.Session,
         audio: typing.Dict[str, typing.Union[numpy.ndarray, torch.Tensor]] = {},
         **kwargs,
     ):
@@ -293,11 +295,11 @@ class CometMLExperiment:
         items = [f"<p><b>Step:</b> {self.curr_step}</p>"]
         param_label = lambda s: s.title().replace("_", " ") if " " not in s else s
         html_repr = lambda v: v if isinstance(v, str) else html.escape(repr(v))
-        kwargs = dict(speaker=speaker, **kwargs)
+        kwargs = dict(session=session, **kwargs)
         items.extend([f"<p><b>{param_label(k)}:</b> {html_repr(v)}</p>" for k, v in kwargs.items()])
         for key, data in audio.items():
             name = param_label(key)
-            file_name = f"step={self.curr_step},speaker={speaker.label},"
+            file_name = f"step={self.curr_step},speaker={session[0].label},"
             file_name += f"name={name},experiment={self.get_key()}.wav"
             url = self._upload_audio(file_name, data)
             items.append(f"<p><b>{name}:</b></p>")
@@ -384,29 +386,12 @@ def _get_dataset_stats(
     return stats
 
 
-@disk_cache(run._config.DATASET_CACHE_PATH)
-def _get_dataset(debug: bool, debug_lang: typing.Optional[Language] = None):
-    """Helper function for `_run_experiment` to get the train and dev datasets."""
-    kwargs = {}
-    if debug:
-        speakers = run._config.DEV_SPEAKERS
-        iter_ = (s for s in speakers if s.language is debug_lang or debug_lang is None)
-        speaker = next(iter_, None)
-        assert speaker is not None
-        kwargs = {"datasets": {speaker: run._config.DATASETS[speaker]}}
-    dataset = cf.call(run._utils.get_dataset, **kwargs, _overwrite=True)
-    return cf.partial(run._utils.split_dataset)(dataset)
-
-
 def _run_experiment(
     comet: CometMLExperiment, debug: bool = False
 ) -> typing.Tuple[Dataset, Dataset]:
     """Helper function for `start_experiment` and  `resume_experiment`."""
     lib.environment.check_module_versions()
-    if debug:
-        train_dataset, dev_dataset = cf.partial(_get_dataset.__wrapped__)(debug)
-    else:
-        train_dataset, dev_dataset = cf.partial(_get_dataset)(debug)
+    train_dataset, dev_dataset = get_datasets(debug)
     comet.log_parameters(_get_dataset_stats(train_dataset, dev_dataset))
     return train_dataset, dev_dataset
 
@@ -1005,3 +990,21 @@ class Timer:
                 label = get_timer_label(name, device=Device.CUDA, **kwargs)
                 times[label] += prev.cuda.elapsed_time(next.cuda) / 1000
         return dict(times)
+
+
+def process_select_cases(
+    model: SpectrogramModel,
+    avail_sessions: typing.Dict[Session, int],
+    cases: typing.List[typing.Tuple[Language, str]],
+    speakers: typing.Set[Speaker],
+    num_cases: int = 5,
+) -> typing.Tuple[Inputs, Preds]:
+    """Get the spectrogram model prediction for `num_cases` sampled from `cases` limited to
+    `speakers`."""
+    cases = [random.choice(cases) for _ in range(num_cases)]
+    docs = [load_spacy_nlp(l)(t) for (l, t) in cases]
+    vocab = [s for s in avail_sessions.keys() if isinstance(s, tuple)]
+    seshs = [[s for s in vocab if s[0].language is l and s[0] in speakers] for l, _ in cases]
+    seshs = [random.choice(choices) for choices in seshs]
+    inputs_ = Inputs(seshs, docs)
+    return inputs_, model(inputs_, mode=Mode.INFER)

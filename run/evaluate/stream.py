@@ -6,6 +6,7 @@ Usage:
 import copy
 import logging
 import multiprocessing
+import multiprocessing.synchronize
 import pathlib
 import threading
 import time
@@ -34,12 +35,13 @@ from run._streamlit import (
 from run._tts import (
     CHECKPOINTS_LOADERS,
     Checkpoints,
-    EncodedInput,
+    Inputs,
+    PreprocessedInputs,
     TTSPackage,
-    encode_tts_inputs,
+    process_tts_inputs,
     text_to_speech_ffmpeg_generator,
 )
-from run.data._loader import Speaker
+from run.data._loader import Session, Speaker
 
 STREAMING_SERVICE_PORT = 5000
 STREAMING_SERVICE_ENDPOINT = f"http://localhost:{STREAMING_SERVICE_PORT}"
@@ -57,11 +59,15 @@ class _State(typing.TypedDict, total=False):
 
 
 def _generation_service(
-    input: EncodedInput, tts: TTSPackage, file_path: pathlib.Path, is_streaming: Event
+    input: Inputs,
+    preprocessed: PreprocessedInputs,
+    tts: TTSPackage,
+    file_path: pathlib.Path,
+    is_streaming: Event,
 ):
     """Generate a voice over from `input` using `tts` and store the results in `file_path`."""
     with file_path.open("ab") as file_:
-        for bytes_ in text_to_speech_ffmpeg_generator(tts, input, **cf.get()):
+        for bytes_ in text_to_speech_ffmpeg_generator(tts, input, preprocessed, **cf.get()):
             if len(bytes_) > 0:
                 file_.write(bytes_)
     is_streaming.clear()
@@ -144,18 +150,21 @@ def main():
 
     options = list(CHECKPOINTS_LOADERS.keys())
     format_: typing.Callable[[Checkpoints], str] = lambda s: s.value
-    checkpoints_key: Checkpoints = st.selectbox("Checkpoints", options=options, format_func=format_)
+    checkpoint = st.selectbox("Checkpoints", options=options, format_func=format_)  # type: ignore
+    checkpoint = typing.cast(Checkpoints, checkpoint)
 
-    with st.spinner(f"Loading `{checkpoints_key.value}` checkpoint(s)..."):
-        tts = load_tts(checkpoints_key)
+    with st.spinner(f"Loading `{checkpoint.value}` checkpoint(s)..."):
+        tts = load_tts(checkpoint)
 
-    format_speaker: typing.Callable[[Speaker], str] = lambda s: s.label
-    speakers = sorted(tts.input_encoder.speaker_encoder.index_to_token)
-    speaker = st.selectbox("Speaker", options=speakers, format_func=format_speaker)
+    format_speaker: typing.Callable[[Speaker], str] = lambda s: str(s)
+    speakers = sorted((s[0] for s in tts.session_vocab()), key=lambda k: str(k))
+    speaker = st.selectbox("Speaker", options=speakers, format_func=format_speaker)  # type: ignore
 
-    sessions = tts.input_encoder.session_encoder.index_to_token
-    sessions = sorted([sesh for spk, sesh in sessions if spk == speaker], key=natural_keys)
-    session = st.selectbox("Session", options=sessions)
+    sessions = tts.session_vocab()
+    format_session: typing.Callable[[Session], str] = lambda s: s[1]
+    sessions = sorted((s for s in sessions if s[0] == speaker), key=lambda s: natural_keys(s[1]))
+    session = st.selectbox("Session", options=sessions, format_func=format_session)  # type: ignore
+    session = typing.cast(Session, session)
     script = st.text_area("Script", value=DEFAULT_SCRIPT, height=300)
     use_process = st.checkbox("Multiprocessing")
     st.info(f"The script has {len(script):,} character(s).")
@@ -169,8 +178,8 @@ def main():
         nlp = load_en_core_web_md(disable=("parser", "ner"))
 
     with st.spinner("Processing inputs..."):
-        inputs = encode_tts_inputs(nlp, tts.input_encoder, script, speaker, session)
-        st.info(f"{inputs.tokens.shape[0]:,} token(s) were inputted.")
+        inputs = process_tts_inputs(nlp, tts, script, session)
+        st.info(f"{len(inputs[1].tokens[0]):,} token(s) were inputted.")
 
     if "service" in state and state["service"].is_alive():
         logger.info("Shutting down streaming service...")
@@ -181,7 +190,7 @@ def main():
     web_path = make_temp_web_dir() / "audio.mp3"
     with st.spinner("Starting streaming service..."):
         is_streaming = (multiprocessing.Event if use_process else threading.Event)()
-        args = (copy.deepcopy(cf.export()), web_path, is_streaming, inputs, tts)
+        args = (copy.deepcopy(cf.export()), web_path, is_streaming, *inputs, tts)
         container = multiprocessing.Process if use_process else threading.Thread
         state["service"] = container(target=_streaming_service, args=args, daemon=True)
         state["service"].start()

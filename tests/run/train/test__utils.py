@@ -14,7 +14,7 @@ import run
 from run._config import Cadence, DatasetType, Label, get_dataset_label
 from run.data._loader import Alignment
 from tests._utils import TEST_DATA_PATH
-from tests.run._utils import make_passage, make_speaker
+from tests.run._utils import make_passage, make_session, make_speaker
 
 TEST_DATA_PATH = TEST_DATA_PATH / "audio"
 TEST_DATA_LJ = TEST_DATA_PATH / "bit(rate(lj_speech,24000),32).wav"
@@ -124,7 +124,7 @@ def test_comet_ml_experiment():
         comet.log_html_audio(
             metadata="random metadata",
             audio={"predicted_audio": torch.rand(100), "gold_audio": torch.rand(100)},
-            speaker=make_speaker(""),
+            session=make_session(""),
         )
         comet.log_npy("random", make_speaker(""), torch.rand(100))
         figure = pyplot.figure()

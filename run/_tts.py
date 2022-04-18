@@ -2,6 +2,7 @@
 TODO: Add tests for every function.
 """
 
+import dataclasses
 import enum
 import functools
 import logging
@@ -14,15 +15,25 @@ from queue import SimpleQueue
 from subprocess import PIPE
 
 import numpy
+import spacy
+import spacy.language
+import spacy.tokens
 import torch
 
 from lib.environment import PT_EXTENSION, load
 from lib.utils import get_chunks, tqdm_
 from run import train
-from run._config import CHECKPOINTS_PATH, normalize_vo_script
+from run._config import CHECKPOINTS_PATH, load_spacy_nlp, normalize_vo_script
 from run._models.signal_model import SignalModel, generate_waveform
-from run._models.spectrogram_model import Inputs, Mode, Preds, SpectrogramModel
-from run.data._loader import Session, Span, Speaker
+from run._models.spectrogram_model import (
+    Inputs,
+    Mode,
+    Preds,
+    PreprocessedInputs,
+    SpectrogramModel,
+    preprocess_inputs,
+)
+from run.data._loader import Session, Span
 
 logger = logging.getLogger(__name__)
 
@@ -253,24 +264,31 @@ CHECKPOINTS_LOADERS = {
 }
 
 
-class TTSPackage(typing.NamedTuple):
+@dataclasses.dataclass(frozen=True)
+class TTSPackage:
     """A package of Python objects required to run TTS in inference mode.
 
     Args:
         ...
-        spectrogram_model_comet_experiment_key: In order to identify the model origin, the
+        spec_model_comet_experiment_key: In order to identify the model origin, the
             comet ml experiment key is required.
-        spectrogram_model_step: In order to identify the model origin, the checkpoint step which
+        spec_model_step: In order to identify the model origin, the checkpoint step which
             corresponds to the comet ml experiment is required.
         ...
     """
 
-    spectrogram_model: SpectrogramModel
+    spec_model: SpectrogramModel
     signal_model: SignalModel
-    spectrogram_model_comet_experiment_key: typing.Optional[str] = None
-    spectrogram_model_step: typing.Optional[int] = None
+    spec_model_comet_experiment_key: typing.Optional[str] = None
+    spec_model_step: typing.Optional[int] = None
     signal_model_comet_experiment_key: typing.Optional[str] = None
     signal_model_step: typing.Optional[int] = None
+
+    def session_vocab(self) -> typing.Tuple[Session]:
+        """Get the sessions these models are familiar with."""
+        sesh = set(self.signal_model.session_embed.vocab.keys())
+        inter = set(self.spec_model.session_embed.vocab.keys()).intersection(sesh)
+        return tuple(s for s in inter if isinstance(s, Session))
 
 
 def package_tts(
@@ -281,8 +299,8 @@ def package_tts(
     return TTSPackage(
         spectrogram_checkpoint.export(),
         signal_checkpoint.export(),
-        spectrogram_model_comet_experiment_key=spectrogram_checkpoint.comet_experiment_key,
-        spectrogram_model_step=spectrogram_checkpoint.step,
+        spec_model_comet_experiment_key=spectrogram_checkpoint.comet_experiment_key,
+        spec_model_step=spectrogram_checkpoint.step,
         signal_model_comet_experiment_key=signal_checkpoint.comet_experiment_key,
         signal_model_step=signal_checkpoint.step,
     )
@@ -296,63 +314,45 @@ class PublicSpeakerValueError(ValueError):
     pass
 
 
-# TODO: Remove
-encode_tts_inputs = None
-
-
 def process_tts_inputs(
-    script: str, speaker: Speaker, session: Session
-) -> typing.Tuple[typing.List[str], Speaker, Session]:
+    nlp: spacy.language.Language, package: TTSPackage, script: str, session: Session
+) -> typing.Tuple[Inputs, PreprocessedInputs]:
     """Process TTS `script`, `speaker` and `session` for use with the model(s)."""
-    normalized = normalize_vo_script(script, speaker.language)
+    normalized = normalize_vo_script(script, session[0].language)
     if len(normalized) == 0:
         raise PublicTextValueError("Text cannot be empty.")
 
-    tokens = list(normalized)
+    inputs = Inputs([session], [nlp(script)])
+    preprocessed = preprocess_inputs(inputs)
 
-    if len(tokens) == 0:
-        raise PublicTextValueError(f'Invalid text: "{script}"')
-
-    return tokens, speaker, session
-
-
-def make_tts_inputs(
-    package: TTSPackage, tokens: typing.List[str], speaker: Speaker, session: Session
-) -> Inputs:
-    """Create TTS `Inputs` and check compatibility."""
-    excluded = [t for t in tokens if t not in package.spectrogram_model.token_vocab]
+    tokens = typing.cast(typing.List[str], set(preprocessed.tokens[0]))
+    excluded = [t for t in tokens if t not in package.spec_model.token_embed.vocab]
     if len(excluded) > 0:
         difference = ", ".join([repr(c)[1:-1] for c in sorted(set(excluded))])
         raise PublicTextValueError("Text cannot contain these characters: %s" % difference)
 
-    if (
-        speaker not in package.spectrogram_model.speaker_vocab
-        or speaker not in package.signal_model.speaker_vocab
-        or session not in package.spectrogram_model.session_vocab
-        or session not in package.signal_model.session_vocab
-    ):
+    if session not in package.session_vocab():
         # NOTE: We do not expose speaker information in the `ValueError` because this error
         # is passed on to the public via the API.
         raise PublicSpeakerValueError("Speaker is not available.")
 
-    return Inputs(speaker=[speaker], session=[session], tokens=[tokens])
+    return inputs, preprocessed
 
 
 def text_to_speech(
     package: TTSPackage,
     script: str,
-    speaker: Speaker,
     session: Session,
     split_size: int = 32,
 ) -> numpy.ndarray:
     """Run TTS end-to-end with friendly errors."""
-    tokens, speaker, session = process_tts_inputs(script, speaker, session)
-    inputs = make_tts_inputs(package, tokens, speaker, session)
-    preds = typing.cast(Preds, package.spectrogram_model(inputs=inputs, mode=Mode.INFER))
+    nlp = load_spacy_nlp(session[0].language)
+    inputs, preprocessed_inputs = process_tts_inputs(nlp, package, script, session)
+    preds = package.spec_model(inputs=preprocessed_inputs, mode=Mode.INFER)
     splits = preds.frames.split(split_size)
-    generator = generate_waveform(package.signal_model, splits, inputs.speaker, inputs.session)
-    predicted = typing.cast(torch.Tensor, torch.cat(list(generator), dim=-1))
-    return predicted.squeeze(0).detach().numpy()
+    generator = generate_waveform(package.signal_model, splits, inputs.session)
+    wave = typing.cast(torch.Tensor, torch.cat(list(generator), dim=-1))
+    return wave.squeeze(0).detach().numpy()
 
 
 class TTSInputOutput(typing.NamedTuple):
@@ -369,40 +369,46 @@ def batch_span_to_speech(
     """
     NOTE: This method doesn't consider `Span` context for TTS generation.
     """
-    inputs = [(s.script, s.speaker, s.session) for s in spans]
+    inputs = [(s.script, s.session) for s in spans]
     return batch_text_to_speech(package, inputs, **kwargs)
+
+
+def _multilingual_spacy_pipe(
+    inputs: typing.List[typing.Tuple[str, Session]]
+) -> typing.List[typing.Tuple[spacy.tokens.doc.Doc, Session]]:
+    """Efficiently pipe `inputs` through spaCy with batching per language."""
+    seshs = [s for _, s in inputs]
+    langs = set(s[0].language for s in seshs)
+    result: typing.List[typing.Optional[spacy.tokens.doc.Doc]] = [None] * len(inputs)
+    for lang in langs:
+        nlp = load_spacy_nlp(lang)
+        scripts = [(i, s) for i, (s, sesh) in enumerate(inputs) if sesh[0].language is lang]
+        docs = nlp.pipe(s for _, s in scripts)
+        for (i, _), doc in zip(scripts, docs):
+            result[i] = doc
+    return list(zip(typing.cast(typing.List[spacy.tokens.doc.Doc], result), seshs))
 
 
 def batch_text_to_speech(
     package: TTSPackage,
-    inputs: typing.List[typing.Tuple[str, Speaker, Session]],
+    inputs: typing.List[typing.Tuple[str, Session]],
     batch_size: int = 8,
 ) -> typing.List[TTSInputOutput]:
     """Run TTS end-to-end quickly with a verbose output."""
-    inputs = [(normalize_vo_script(sc, sp.language), sp, se) for sc, sp, se in inputs]
-    inputs_ = [(i, (list(t), sp, sh)) for i, (t, sp, sh) in enumerate(inputs)]
-    inputs_ = sorted(inputs_, key=lambda i: len(i[1][0]))
+    inputs = [(normalize_vo_script(script, sesh[0].language), sesh) for script, sesh in inputs]
+    inputs_ = list(enumerate(_multilingual_spacy_pipe(inputs)))
+    inputs_ = sorted(inputs_, key=lambda i: len(str(i[1][0])))
     results: typing.Dict[int, TTSInputOutput] = {}
     for batch in tqdm_(list(get_chunks(inputs_, batch_size))):
-        model_inputs = Inputs(
-            speaker=[i[1][1] for i in batch],
-            session=[i[1][2] for i in batch],
-            tokens=[i[1][0] for i in batch],
-        )
-        preds = typing.cast(Preds, package.spectrogram_model(inputs=model_inputs, mode=Mode.INFER))
+        batch_input = Inputs(doc=[i[1][0] for i in batch], session=[i[1][1] for i in batch])
+        preds = package.spec_model(inputs=batch_input, mode=Mode.INFER)
         spectrogram = preds.frames.transpose(0, 1)
-        signals = package.signal_model(
-            spectrogram, model_inputs.speaker, model_inputs.session, preds.frames_mask
-        )
-        lengths = preds.num_frames * package.signal_model.upscale_factor
+        signals = package.signal_model(spectrogram, batch_input.session, preds.frames_mask)
+        num_samples = preds.num_frames * package.signal_model.upscale_factor
         more_results = {
             j: TTSInputOutput(
-                Inputs(
-                    tokens=[model_inputs.tokens[i]],
-                    speaker=[model_inputs.speaker[i]],
-                    session=[model_inputs.session[i]],
-                ),
-                Preds(
+                inputs=Inputs(doc=[batch_input.doc[i]], session=[batch_input.session[i]]),
+                spec_model=Preds(
                     frames=preds.frames[: preds.num_frames[i], i],
                     stop_tokens=preds.stop_tokens[: preds.num_frames[i], i],
                     alignments=preds.alignments[: preds.num_frames[i], i, : preds.num_tokens[i]],
@@ -412,7 +418,7 @@ def batch_text_to_speech(
                     tokens_mask=preds.tokens_mask[i, : preds.num_tokens[i]],
                     reached_max=preds.reached_max[i],
                 ),
-                signals[i][: lengths[:, i]].detach().numpy(),
+                sig_model=signals[i][: num_samples[:, i]].detach().numpy(),
             )
             for i, (j, _) in zip(range(len(batch)), batch)
         }
@@ -435,6 +441,7 @@ def _dequeue(queue: SimpleQueue) -> typing.Generator[bytes, None, None]:
 def text_to_speech_ffmpeg_generator(
     package: TTSPackage,
     inputs: Inputs,
+    preprocessed_inputs: PreprocessedInputs,
     sample_rate: int,
     logger: logging.Logger = logger,
     input_flags: typing.Tuple[str, ...] = ("-f", "f32le", "-acodec", "pcm_f32le", "-ac", "1"),
@@ -456,7 +463,7 @@ def text_to_speech_ffmpeg_generator(
     """
 
     def get_spectrogram():
-        for pred in package.spectrogram_model(inputs=inputs, mode=Mode.GENERATE):
+        for pred in package.spec_model(preprocessed_inputs, mode=Mode.GENERATE):
             # [num_frames, batch_size, num_frame_channels] →
             # [batch_size, num_frames, num_frame_channels]
             yield pred.frames.transpose(0, 1)
@@ -483,9 +490,7 @@ def text_to_speech_ffmpeg_generator(
         thread.start()
         logger.info("Generating waveform...")
         generator = get_spectrogram()
-        for waveform in generate_waveform(
-            package.signal_model, generator, inputs.speaker, inputs.session
-        ):
+        for waveform in generate_waveform(package.signal_model, generator, inputs.session):
             assert pipe.stdin is not None
             pipe.stdin.write(waveform.squeeze(0).cpu().numpy().tobytes())
             yield from _dequeue(queue)
