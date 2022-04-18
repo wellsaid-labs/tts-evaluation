@@ -222,7 +222,11 @@ class _State:
         checkpoint = lib.environment.load(spec_model_checkpoint_path)
         label = get_config_label("spec_model_experiment_key")
         comet.log_other(label, checkpoint.comet_experiment_key)
-        return checkpoint.export()
+        model = checkpoint.export()
+        # NOTE: During evaluation, this model may be exposed to data it hasn't seen in the
+        # training set.
+        model.allow_unk_on_eval(True)
+        return model
 
     @classmethod
     def from_checkpoint(
@@ -566,7 +570,11 @@ def _visualize_inferred(
 def _visualize_select_cases(
     state: _State, dataset_type: DatasetType, cadence: Cadence, split_size: int = 32, **kw
 ):
-    """Run spectrogram and signal model in inference mode and visualize results."""
+    """Run spectrogram and signal model in inference mode and visualize results.
+
+    TODO: Generate spectrograms individually is slow(ish), for now, the user can download the audio
+    and generate them manuallym, in the future they could be generated in a batch.
+    """
     if not is_master():
         return
 
@@ -576,7 +584,7 @@ def _visualize_select_cases(
     inputs, preds = cf.partial(_utils.process_select_cases)(state.spec_model, sesh_vocab, **kw)
     splits = preds.frames.to(state.device).transpose(0, 1).split(split_size, dim=1)
     waves = list(generate_waveform(model, splits, inputs.session))
-    waves = typing.cast(torch.Tensor, torch.cat(waves, dim=-1)).cpu()
+    waves = typing.cast(torch.Tensor, torch.cat(waves, dim=-1))
 
     for item in range(len(inputs.doc)):
         label = partial(get_model_label, cadence=cadence)
@@ -601,7 +609,6 @@ def _visualize_select_cases(
             session=inputs.session[item],
             dataset_type=dataset_type,
         )
-        _log_specs(state, (get_model_label, waves[item]), cadence=Cadence.STEP, type_=dataset_type)
 
 
 _HandleBatch = typing.Callable[[_HandleBatchArgs], None]

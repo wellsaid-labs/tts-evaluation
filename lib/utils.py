@@ -559,7 +559,7 @@ class NumeralizePadEmbed(torch.nn.Module, typing.Generic[_NumeralizePadEmbedVar]
                 self._unk_tokens.add(token)
 
         if self.training and is_unknown:
-            logger.info(f"[Training] Using unknown token in-place of '{token}'.")
+            logger.debug(f"[Training] Using unknown token in-place of '{token}'.")
 
         return idx
 

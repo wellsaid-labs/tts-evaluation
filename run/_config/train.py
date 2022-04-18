@@ -167,7 +167,7 @@ def make_signal_model_train_config(
             dev_span_bucket_size=32,
             train_steps_per_epoch=train_steps_per_epoch,
             dev_steps_per_epoch=dev_steps_per_epoch,
-            num_workers=2 if debug else 4,
+            num_workers=2,
             prefetch_factor=2 if debug else 16,
         ),
         _State._get_optimizers: cf.Args(
