@@ -582,7 +582,6 @@ def _visualize_select_cases(
         label = partial(get_model_label, cadence=cadence)
         num_tokens = preds.num_tokens[item]
         num_frames = preds.num_frames[item]
-        print("num_frames", num_frames)
         frames = preds.frames[:num_frames, item]
         figures = {
             label("predicted_spectrogram"): plot_mel_spectrogram(frames, **cf.get()),
@@ -590,7 +589,6 @@ def _visualize_select_cases(
             label("stop_token"): plot_logits(preds.stop_tokens[:num_frames, item]),
         }
         state.comet.log_figures(figures)
-        print("frames", frames.shape)
         audio = {
             "predicted_griffin_lim_audio": griffin_lim(frames.numpy(), **cf.get()),
             "predicted_signal_model_audio": waves[item].cpu().numpy(),
@@ -603,7 +601,6 @@ def _visualize_select_cases(
             session=inputs.session[item],
             dataset_type=dataset_type,
         )
-        print("waves[item].shape", waves[item].shape)
         _log_specs(state, (get_model_label, waves[item]), cadence=Cadence.STEP, type_=dataset_type)
 
 
