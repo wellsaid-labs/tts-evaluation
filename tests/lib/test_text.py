@@ -555,51 +555,6 @@ def test_add_space_between_sentences__regression():
         assert lib.text.add_space_between_sentences(nlp(script)) == script
 
 
-def test_normalize_non_standard_words():
-    cases = [
-        ("Mr. Gurney", "Mr. Gurney"),
-        ("San Antonio at 1:30 p.m.,", "San Antonio at one thirty P M,"),
-        ("between May 1st, 1827,", "between May first, eighteen twenty seven,"),
-        (
-            "inch BBL, unquote, cost $29.95.",
-            "inch B B L, unquote, cost twenty nine point nine five dollars.",
-        ),
-        (
-            "Post Office Box 2915, Dallas, Texas",
-            "Post Office B O X two thousand, nine hundred and fifteen, Dallas, Texas",
-        ),
-        (
-            "serial No. C2766, which was also found",
-            "serial No. century two thousand, seven hundred and sixty six, which was also found",
-        ),
-        ("Newgate down to 1818,", "Newgate down to eighteen eighteen,"),
-        (
-            "It was about 250 B.C., when the great",
-            "It was about two hundred and fifty B C, when the great",
-        ),
-        ("In 606, Nineveh", "In six hundred and six, Nineveh"),
-        ("Exhibit No. 143 as the", "Exhibit No. one hundred and forty three as the"),
-        ("William IV. was also the victim", "William the fourth. was also the victim"),
-        ("Chapter 4. The Assassin:", "Chapter four. The Assassin:"),
-        ("was shipped on March 20, and the", "was shipped on March twentieth, and the"),
-        ("4 March 2014", "the fourth of March twenty fourteen"),
-        (
-            "distance of 265.3 feet was, quote",
-            "distance of two hundred and sixty five point three feet was, quote",
-        ),
-        (
-            "information on some 50,000 cases",
-            "information on some fifty thousand cases",
-        ),
-        (
-            "PRS received items in 8,709 cases",
-            "P R S received items in eight thousand, seven hundred and nine cases",
-        ),
-    ]
-    for input_, output in cases:
-        assert lib.text.normalize_non_standard_words(input_) == output
-
-
 def _align_and_format(tokens, other, **kwargs):
     cost, alignment = lib.text.align_tokens(tokens, other, **kwargs)
     return lib.text.format_alignment(tokens, other, alignment)

@@ -527,7 +527,7 @@ def _visualize_inferred(
 
     batch = typing.cast(Batch, next(iter(data_loader)))
     item = random.randint(0, len(batch.batch) - 1)
-    length = batch.preds.num_frames[:, item]
+    length = batch.preds.num_frames[item]
     spectrogram = batch.preds.frames[:length, item : item + 1]
     spectrogram = spectrogram.transpose(0, 1).to(state.device)
     session = [s.session for s in batch.batch.spans][item : item + 1]
@@ -567,7 +567,7 @@ def _visualize_select_cases(
     model = typing.cast(SignalModel, state.model.module)
     sesh_vocab = model.session_embed.vocab
     inputs, preds = cf.partial(_utils.process_select_cases)(state.spec_model, sesh_vocab, **kw)
-    splits = preds.frames.to(state.device).split(split_size)
+    splits = preds.frames.to(state.device).transpose(0, 1).split(split_size, dim=1)
     waves = list(generate_waveform(model, splits, inputs.session))
     waves = typing.cast(torch.Tensor, torch.cat(waves, dim=-1)).cpu()
 
@@ -592,7 +592,7 @@ def _visualize_select_cases(
             text=str(inputs.doc[item]),
             session=inputs.session[item],
         )
-        _log_specs(state, (get_model_label, waves), cadence=Cadence.STEP, type_=dataset_type)
+        _log_specs(state, (get_model_label, waves[item]), cadence=Cadence.STEP, type_=dataset_type)
 
 
 _HandleBatch = typing.Callable[[_HandleBatchArgs], None]

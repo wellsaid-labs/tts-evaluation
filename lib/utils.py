@@ -69,11 +69,12 @@ def get_chunks(
         yield list_[i : i + n]
 
 
-def get_weighted_std(tensor: torch.Tensor, dim: int = 0) -> torch.Tensor:
+def get_weighted_std(tensor: torch.Tensor, dim: int = 0, strict: bool = False) -> torch.Tensor:
     """Computed the weighted standard deviation accross a dimension in `tensor`.
 
+    TODO: Document `strict` and it's importance.
+
     NOTE:
-    - `tensor` must sum up to 1.0 on `dim`.
     - The value of an element in a `tensor` corresponds to it's weight.
     - The index of an element in a `tensor` corresponds to it's position.
 
@@ -85,11 +86,13 @@ def get_weighted_std(tensor: torch.Tensor, dim: int = 0) -> torch.Tensor:
     Args:
         tensor (torch.FloatTensor [*, dim, *])
         dim: Compute standard deviation along `dim` in `tensor`.
+        strict: Iff then `tensor` must sum up to 1.0 on `dim`.
     """
-    # Expects normalized weightes total of 0, 1 to ensure correct variance decisions
-    # assert all(
-    #     math.isclose(value, 1, abs_tol=1e-3) for value in tensor.sum(dim=dim).view(-1).tolist()
-    # )
+    if strict:
+        # Expects normalized weightes total of 0, 1 to ensure correct variance decisions
+        assert all(
+            math.isclose(value, 1, abs_tol=1e-3) for value in tensor.sum(dim=dim).view(-1).tolist()
+        )
 
     # Create position matrix where the index is the position and the value is the weight
     indicies = torch.arange(0, tensor.shape[dim], dtype=tensor.dtype, device=tensor.device)

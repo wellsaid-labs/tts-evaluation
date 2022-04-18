@@ -13,6 +13,7 @@ import torch
 import torch.nn
 from torch.nn import functional
 from torch.nn.utils.weight_norm import WeightNorm, remove_weight_norm, weight_norm
+from torchaudio.transforms import Resample
 
 from lib.utils import NumeralizePadEmbed, log_runtime, pad_tensor, trim_tensors
 
@@ -344,6 +345,8 @@ class SignalModel(torch.nn.Module):
             `np.prod(ratios)` longer than the input.
         max_channel_size: The maximum convolution channel dimension size.
         mu: Mu-law scaling parameter. Learn more: https://en.wikipedia.org/wiki/%CE%9C-law_algorithm
+        pred_sample_rate: After upsampling by `np.prod(ratios)`, this is the model's sample rate.
+        out_sample_rate: The desired sample rate of the output.
     """
 
     def __init__(
@@ -355,14 +358,24 @@ class SignalModel(torch.nn.Module):
         ratios: typing.List[int],
         max_channel_size: int,
         mu: int,
+        pred_sample_rate: int,
+        out_sample_rate: int,
     ):
         super().__init__()
         self.ratios = ratios
         self.hidden_size = hidden_size
         self.max_channel_size = max_channel_size
         self.mu = mu
-        self.upscale_factor = int(np.prod(ratios))
         self.grad_enabled = None
+
+        self._upscale_factor = int(np.prod(ratios))
+        self._downsample_ratio = out_sample_rate / pred_sample_rate
+        upscale_factor = self._upscale_factor * self._downsample_ratio
+        message = "`pred_sample_rate` must be a product of `int(np.prod(ratios))`."
+        assert pred_sample_rate % self._upscale_factor == 0, message
+        assert pred_sample_rate >= out_sample_rate, "For quality, this model should oversample."
+        assert upscale_factor.is_integer(), "The upscale factor must be an integer."
+        self.upscale_factor = int(upscale_factor)
 
         self.encoder = _Encoder(max_seq_meta_values, seq_meta_embed_size, frame_size)
         self.pre_net = _Sequential(
@@ -391,21 +404,35 @@ class SignalModel(torch.nn.Module):
         _network += [
             torch.nn.Conv1d(hidden_size, hidden_size, kernel_size=1),
             torch.nn.GELU(),
-            _InterpolateAndMask(self.upscale_factor),
+            _InterpolateAndMask(self._upscale_factor),
             torch.nn.Conv1d(hidden_size, 2, kernel_size=3, padding=0),
-            _InterpolateAndMask(self.upscale_factor),
+            _InterpolateAndMask(self._upscale_factor),
         ]
         self.network = _Sequential(*tuple(_network))
 
         max_size = max([m.size for m in self.modules() if isinstance(m, _InterpolateAndConcat)])
         self.condition = torch.nn.Conv1d(self.get_layer_size(0), max_size, kernel_size=1)
 
+        self.resample, self.resample_padding = None, 0
+        if pred_sample_rate != out_sample_rate:
+            # TODO: Add a parameter to `resample` to not pad the signal.
+            self.resample = Resample(pred_sample_rate, out_sample_rate)
+            # NOTE: `resample.width` isn't  guarenteed to be divisable by `self._downsample_ratio`;
+            # however, `orig_freq` will be.
+            orig_freq = self.resample.orig_freq // self.resample.gcd
+            self.resample_padding = self.resample.width + orig_freq
+            self.resample_padding = round(math.ceil(self.resample_padding / orig_freq) * orig_freq)
+
         padding: float = typing.cast(torch.nn.Conv1d, self.pre_net[1]).kernel_size[0] // 2
         post_net_padding = typing.cast(torch.nn.Conv1d, self.network[-2]).kernel_size[0] // 2
-        padding += post_net_padding / self.upscale_factor
+        padding += post_net_padding / self._upscale_factor
         padding += sum([m.padding_required for m in self.modules() if isinstance(m, _Block)])
-        self.excess_padding: int = round((math.ceil(padding) - padding) * self.upscale_factor)
-        self.padding: int = math.ceil(padding)
+        self.padding: int = math.ceil(padding + self.resample_padding / self._upscale_factor)
+        self.excess_padding: int = round((self.padding - padding) * self._upscale_factor)
+        self.excess_padding -= self.resample_padding
+        # NOTE: The resampler doesn't allow us to turn off it's padding, so it pads our padding,
+        # which creates excess.
+        self.excess_resample_padding: int = round(self.resample_padding * self._downsample_ratio)
 
         # NOTE: We initialize the convolution parameters before weight norm factorizes them.
         self.reset_parameters()
@@ -574,7 +601,14 @@ class SignalModel(torch.nn.Module):
 
         if self.excess_padding > 0:  # [batch_size, num_frames * self.upscale_factor]
             signal = signal[:, self.excess_padding : -self.excess_padding]
-        assert signal.shape == (batch_size, self.upscale_factor * num_frames), signal.shape
+
+        expected_num_samples = self._upscale_factor * num_frames + self.resample_padding * 2
+        assert signal.shape == (batch_size, expected_num_samples)
+
+        if self.resample is not None:
+            signal = self.resample(signal)
+            signal = signal[:, self.excess_resample_padding : -self.excess_resample_padding]
+        assert signal.shape == (batch_size, self.upscale_factor * num_frames)
 
         # Remove clipped samples
         num_clipped_samples = ((signal > 1.0) | (signal < -1.0)).sum().item()
@@ -665,7 +699,7 @@ class SpectrogramDiscriminator(torch.nn.Module):
 def generate_waveform(
     model: SignalModel,
     spectrogram: typing.Iterable[torch.Tensor],
-    seq_metadata: typing.List[typing.Tuple[typing.Hashable, ...]],
+    *args,
     spectrogram_mask: typing.Optional[typing.Iterable[torch.Tensor]] = None,
 ) -> typing.Iterator[torch.Tensor]:
     """
@@ -706,5 +740,5 @@ def generate_waveform(
         mask = ([last_item[1][:, -padding * 2 :]] if last_item else []) + [i[1] for i in items]
         mask_ = pad_tensor(torch.cat(mask, dim=1), pad=padding_tuple, dim=1)
 
-        yield model(frames_, seq_metadata, mask_, pad_input=False)
+        yield model(frames_, *args, spectrogram_mask=mask_, pad_input=False)
         last_item = (frames_, mask_)

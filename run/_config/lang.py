@@ -11,7 +11,6 @@ import lib
 import run
 from lib.text import grapheme_to_phoneme
 from lib.utils import identity
-from run._config import DEV_SPEAKERS
 from run.data._loader import Language
 
 if typing.TYPE_CHECKING:  # pragma: no cover
@@ -182,7 +181,9 @@ def load_spacy_nlp(language: Language) -> spacy.language.Language:
 def configure(overwrite: bool = False):
     """Configure modules involved in processing text."""
     # NOTE: These are speakers with small and reliable datasets, in the right language.
-    debug_speakers = set(s for s in DEV_SPEAKERS if LANGUAGE is None or s.language == LANGUAGE)
+    debug_speakers = set(
+        s for s in run._config.DEV_SPEAKERS if LANGUAGE is None or s.language == LANGUAGE
+    )
     config = {
         run._utils._get_debug_datasets: cf.Args(speakers=debug_speakers),
         run._utils.get_dataset: cf.Args(language=LANGUAGE),

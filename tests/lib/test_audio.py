@@ -67,6 +67,7 @@ def run_around_tests():
             iterations=30,
             get_weighting=lib.audio.iso226_weighting,
             min_weight=float("-inf"),
+            momentum=0.99,
             **hertz_bounds,
         ),
     }

@@ -4,6 +4,7 @@ import typing
 from unittest import mock
 
 import config as cf
+import numpy as np
 import pytest
 import torch
 import torch.nn
@@ -104,6 +105,8 @@ class _Config(typing.NamedTuple):
     seq_meta_embed_size: int = 8
     mu: int = 255
     padding: int = 0
+    pred_sample_rate: int = 16
+    out_sample_rate: int = 16
 
 
 _SeqMetadata = typing.List[typing.Tuple[typing.Hashable, typing.Hashable]]
@@ -121,6 +124,8 @@ def _make_small_signal_model(config: _Config) -> typing.Tuple[SignalModel, _Mode
         ratios=config.ratios,
         max_channel_size=config.max_channel_size,
         mu=config.mu,
+        pred_sample_rate=config.pred_sample_rate,
+        out_sample_rate=config.out_sample_rate,
     )
     speaker = torch.randint(0, config.max_seq_meta_values[0], (config.batch_size,)).tolist()
     session = torch.randint(0, config.max_seq_meta_values[1], (config.batch_size,)).tolist()
@@ -151,6 +156,19 @@ def test_signal_model():
     assert out.max() <= 1.0
     assert out.min() >= -1.0
     out.sum().backward()
+
+
+def test_signal_model__oversample():
+    """Test `SignalModel` can downsample various ratios."""
+    config = _Config(pred_sample_rate=16, ratios=[4, 4])
+    for i in range(1, 16):
+        config = config._replace(out_sample_rate=i)
+        model, inputs = _make_small_signal_model(config)
+        out = model(*inputs)
+        assert out.shape == (config.batch_size, model.upscale_factor * config.num_frames)
+        assert out.max() <= 1.0
+        assert out.min() >= -1.0
+        out.sum().backward()
 
 
 def test_signal_model__odd():
@@ -200,6 +218,8 @@ def test_signal_model__shape():
             max_channel_size=4,
             seq_meta_embed_size=16,
             num_frames=num_frames,
+            pred_sample_rate=np.prod([i] * j),
+            out_sample_rate=np.prod([i] * j),
         )
         model, inputs = _make_small_signal_model(config)
         assert model(*inputs).shape == (config.batch_size, model.upscale_factor * config.num_frames)
@@ -260,7 +280,9 @@ def test_generate_waveform__padding_invariance():
 
     immediate = model(spectrogram[:, config.padding : -config.padding], seq_metadata)
     splits = spectrogram.split(split_size, dim=1)
-    generator = generate_waveform(model, splits, seq_metadata, mask.split(split_size, dim=1))
+    generator = generate_waveform(
+        model, splits, seq_metadata, spectrogram_mask=mask.split(split_size, dim=1)
+    )
     generated = torch.cat(list(generator), dim=1)
     padding_len = model.upscale_factor * config.padding
 

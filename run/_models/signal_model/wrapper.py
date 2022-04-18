@@ -63,5 +63,4 @@ def generate_waveform_wrapper(
     session: typing.List[Session],
     spectrogram_mask: typing.Optional[typing.Iterable[torch.Tensor]] = None,
 ) -> typing.Iterator[torch.Tensor]:
-    seq_metadata = [(typing.cast(typing.Hashable, sesh[0].label), sesh) for sesh in session]
-    return generate_waveform(model, spectrogram, seq_metadata, spectrogram_mask)
+    return generate_waveform(model, spectrogram, session, spectrogram_mask=spectrogram_mask)

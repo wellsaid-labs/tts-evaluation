@@ -86,7 +86,7 @@ def test_get_weighted_std__bias():
 def test_get_weighted_std__error():
     """Test `lib.utils.get_weighted_std` errors if the distribution is not normalized."""
     with pytest.raises(AssertionError):
-        lib.utils.get_weighted_std(torch.tensor([0, 0.25, 0.25, 0.25]), dim=0)
+        lib.utils.get_weighted_std(torch.tensor([0, 0.25, 0.25, 0.25]), dim=0, strict=True)
 
 
 def test_flatten_2d():

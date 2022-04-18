@@ -9,10 +9,9 @@ import torch.utils
 import torch.utils.data
 
 import lib
+import run
 from run._config import FRAME_HOP, NUM_FRAME_CHANNELS, RANDOM_SEED
-from run._utils import Dataset, get_window
-from run.train import signal_model, spectrogram_model
-from run.train._utils import set_run_seed
+from run._utils import Dataset
 
 logger = logging.getLogger(__name__)
 
@@ -40,8 +39,10 @@ def make_spectrogram_model_train_config(
     assert train_batch_size % lib.distributed.get_device_count() == 0
     assert dev_batch_size % lib.distributed.get_device_count() == 0
 
+    spectrogram_model = run.train.spectrogram_model
+
     return {
-        set_run_seed: cf.Args(seed=RANDOM_SEED),
+        run.train._utils.set_run_seed: cf.Args(seed=RANDOM_SEED),
         # NOTE: We expect users to respell approx 5 - 10% of words.
         spectrogram_model._data.make_batch: cf.Args(respell_prob=0.1),
         spectrogram_model._worker._State._get_optimizers: cf.Args(
@@ -128,7 +129,7 @@ def make_signal_model_train_config(
         dict(
             fft_length=length,
             frame_hop=length // 4,
-            window=get_window("hann", length, length // 4),
+            window=run._utils.get_window("hann", length, length // 4),
             num_mel_bins=length // 8,
         )
         for length in (256, 1024, 4096)
@@ -138,10 +139,11 @@ def make_signal_model_train_config(
     fake_label = False
     threshold = 0.5
 
+    signal_model = run.train.signal_model
     _State, _worker = signal_model._worker._State, signal_model._worker
 
     return {
-        set_run_seed: cf.Args(seed=RANDOM_SEED),
+        run.train._utils.set_run_seed: cf.Args(seed=RANDOM_SEED),
         signal_model._worker._get_data_loaders: cf.Args(
             # SOURCE (Tacotron 2):
             # We train with a batch size of 128 distributed across 32 GPUs with

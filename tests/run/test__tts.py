@@ -30,6 +30,8 @@ def _make_args():
     script = " ".join([script] * 3)
     inputs = Inputs([session], [nlp(script)])
     preprocessed = preprocess_inputs(inputs)
+    package.spec_model.allow_unk_on_eval(True)
+    package.signal_model.allow_unk_on_eval(True)
     return package, inputs, preprocessed
 
 
@@ -43,7 +45,7 @@ def test_text_to_speech_ffmpeg_generator():
         generator = text_to_speech_ffmpeg_generator(
             package, inputs, preprocessed_inputs, **cf.get()
         )
-        assert len(b"".join([s for s in generator])) == 353805
+        assert len(b"".join([s for s in generator])) == 416205
 
 
 def test_text_to_speech_ffmpeg_generator__thread_leak():
