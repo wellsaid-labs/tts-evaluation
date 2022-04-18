@@ -509,6 +509,13 @@ def _log_specs(
     """Log the various spectrograms produced by `state.signal_to_spectrogram_modules`."""
     for signal_to_spectrogram in state.signal_to_spectrogram_modules:
         for get_label, signal in args:
+            if signal.shape[0] < signal_to_spectrogram.fft_length:
+                logger.warning(
+                    f"Signal ({signal.shape[0]}) is too small to make a "
+                    f"spectrogram ({signal_to_spectrogram.fft_length})."
+                )
+                continue
+
             for key, spec in signal_to_spectrogram(signal, intermediate=True)._asdict().items():
                 fft_length = signal_to_spectrogram.fft_length
                 name = f"{key}_{fft_length}_spectrogram"
@@ -575,6 +582,7 @@ def _visualize_select_cases(
         label = partial(get_model_label, cadence=cadence)
         num_tokens = preds.num_tokens[item]
         num_frames = preds.num_frames[item]
+        print("num_frames", num_frames)
         frames = preds.frames[:num_frames, item]
         figures = {
             label("predicted_spectrogram"): plot_mel_spectrogram(frames, **cf.get()),
@@ -582,6 +590,7 @@ def _visualize_select_cases(
             label("stop_token"): plot_logits(preds.stop_tokens[:num_frames, item]),
         }
         state.comet.log_figures(figures)
+        print("frames", frames.shape)
         audio = {
             "predicted_griffin_lim_audio": griffin_lim(frames.numpy(), **cf.get()),
             "predicted_signal_model_audio": waves[item].cpu().numpy(),
@@ -592,6 +601,7 @@ def _visualize_select_cases(
             text=str(inputs.doc[item]),
             session=inputs.session[item],
         )
+        print("waves[item].shape", waves[item].shape)
         _log_specs(state, (get_model_label, waves[item]), cadence=Cadence.STEP, type_=dataset_type)
 
 

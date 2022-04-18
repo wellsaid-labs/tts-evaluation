@@ -6,6 +6,7 @@ import pytest
 
 from run._config import Cadence, DatasetType, make_spectrogram_model_train_config
 from run._models.spectrogram_model import SpectrogramModel
+from run.data._loader.english.lj_speech import LINDA_JOHNSON
 from run.data._loader.english.m_ailabs import JUDY_BIEBER
 from run.data._loader.structures import Language
 from run.train._utils import Context, Timer, set_context
@@ -126,7 +127,7 @@ def test_integration():
             DatasetType.TEST,
             Cadence.MULTI_STEP,
             cases=[(Language.ENGLISH, "Hi There")],
-            speakers={JUDY_BIEBER},
+            speakers={JUDY_BIEBER, LINDA_JOHNSON},
             num_cases=1,
         )
 

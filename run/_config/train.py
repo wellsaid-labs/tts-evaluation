@@ -113,8 +113,8 @@ def make_signal_model_train_config(
     ratio = _get_ratio(train_dataset, dev_dataset)
 
     train_batch_size = int((32 if debug else 128) / lib.distributed.get_device_count())
-    train_slice_size = 8192
-    dev_slice_size = 32768
+    train_slice_size = FRAME_HOP * 4
+    dev_slice_size = train_slice_size * 4
     batch_size_ratio = 1 / 2
     dev_batch_size = int(train_batch_size * train_slice_size / dev_slice_size / 2)
     oversample = 2
