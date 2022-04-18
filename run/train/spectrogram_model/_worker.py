@@ -554,7 +554,7 @@ def _visualize_select_cases(state: _State, dataset_type: DatasetType, cadence: C
         npy_urls = {f"{l} Array": log_npy(l, inputs.session[item][0], a) for l, _, a in figures}
         link = lambda h: "Failed to upload." if h is None else f'<a href="{h}">{h}</a>'
         state.comet.log_html_audio(
-            item=item,
+            randomly_sampled_case=item,
             audio={"predicted_griffin_lim_audio": audio},
             context=state.comet.context,
             text=str(inputs.doc[item][1]),

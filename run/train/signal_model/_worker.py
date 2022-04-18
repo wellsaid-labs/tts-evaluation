@@ -596,10 +596,12 @@ def _visualize_select_cases(
             "predicted_signal_model_audio": waves[item].cpu().numpy(),
         }
         state.comet.log_html_audio(
+            randomly_sampled_case=item,
             audio=audio,
             context=state.comet.context,
             text=str(inputs.doc[item]),
             session=inputs.session[item],
+            dataset_type=dataset_type,
         )
         print("waves[item].shape", waves[item].shape)
         _log_specs(state, (get_model_label, waves[item]), cadence=Cadence.STEP, type_=dataset_type)
