@@ -20,9 +20,9 @@ Setup your local development environment by following [these instructions](LOCAL
    Also set these environment variables...
 
    ```zsh
-   TRAIN_SCRIPT_PATH='run/train/signal_model' # EXAMPLE: run/train/spectrogram_model
-   NAME=$USER"-v10-5-2" # EXAMPLE: michaelp-baseline
-   GCP_USER='michaelp' # Example: michaelp
+   TRAIN_SCRIPT_PATH='path/to/train' # EXAMPLE: run/train/spectrogram_model
+   NAME=$USER"-your-instance-name" # EXAMPLE: michaelp-baseline
+   GCP_USER='your-gcp-user-name' # Example: michaelp
    TYPE='preemptible' # Either 'preemptible' or 'persistent'
    ```
 
@@ -46,7 +46,7 @@ Setup your local development environment by following [these instructions](LOCAL
 
    ```zsh
    IMAGE_PROJECT='voice-research-255602'
-   IMAGE_FAMILY='v10'    # Example: $IMAGE_FAMILY used to image your machine
+   IMAGE_FAMILY='your-image-family-name'    # Example: $IMAGE_FAMILY used to image your machine
    ```
 
 1. Create an instance for training...
@@ -97,12 +97,11 @@ Setup your local development environment by following [these instructions](LOCAL
 1. Use `run.utils.lsyncd` to live sync your repository to your VM instance...
 
    ```bash
-
+   VM_NAME=$(python -m run.utils.gcp $TYPE most-recent --name $NAME)
+   echo "VM_NAME=$VM_NAME"
    ```
 
    ```bash
-   VM_NAME=$(python -m run.utils.gcp $TYPE most-recent --name $NAME)
-   echo "VM_NAME=$VM_NAME"
    VM_ZONE=$(python -m run.utils.gcp zone --name $VM_NAME)
    VM_IP=$(python -m run.utils.gcp ip --name $VM_NAME --zone=$VM_ZONE)
    VM_USER=$(python -m run.utils.gcp user --name $VM_NAME --zone=$VM_ZONE)
@@ -119,7 +118,7 @@ Setup your local development environment by following [these instructions](LOCAL
 
    💡 TIP: The `VM_NAME` filter can be `$NAME` or any relevant substring in the `$VM_NAME`.
 
-2. Leave this process running until you've started training. This will allow you to make any
+1. Leave this process running until you've started training. This will allow you to make any
    hot-fixes to your code in case you run into an error.
 
 ### On the instance
@@ -127,19 +126,32 @@ Setup your local development environment by following [these instructions](LOCAL
 1. Navigate to the repository, activate a virtual environment, and install package requirements...
 
    ```bash
+   cd /opt/wellsaid-labs/Text-to-Speech
 
+   . run/utils/gcp/install_drivers.sh
+   . run/utils/apt_install.sh
    ```
 
    **NOTE:** You will always want to be in an active `venv` whenever you want to work with python.
 
    ```bash
+   python3.8 -m venv venv
+   . venv/bin/activate
+
+   python -m pip install wheel pip --upgrade
+   python -m pip install -r requirements.txt --upgrade
+
+   # NOTE: Set a flag to restart training if the instance is rebooted
+   # NOTE: Learn more about this command:
+   # https://askubuntu.com/questions/21556/how-to-create-an-empty-file-from-command-line
+   :>> /opt/wellsaid-labs/AUTO_START_FROM_CHECKPOINT
    ```
 
    💡 TIP: After setting up your VM, you may want to
    [create a Google Machine Image](https://cloud.google.com/compute/docs/machine-images/create-machine-images)
    so you don't need to setup your VM from scratch again.
 
-2. Download any spaCy models that you may need, potentially including...
+1. Download any spaCy models that you may need, potentially including...
 
    ```bash
    python -m spacy download en_core_web_md
@@ -148,39 +160,36 @@ Setup your local development environment by following [these instructions](LOCAL
    python -m spacy download pt_core_news_md
    ```
 
-3. Start a `screen` session with a new virtual environment...
+1. Start a `screen` session with a new virtual environment...
 
    ```bash
    screen
    ```
 
    ```bash
-   cd /opt/wellsaid-labs/Text-to-Speech
    . venv/bin/activate
-   python -m pip install -r requirements.txt --upgrade
    ```
 
-4. For [comet](https://www.comet.ml/wellsaid-labs), name your experiment and pick a project...
+1. For [comet](https://www.comet.ml/wellsaid-labs), name your experiment and pick a project...
 
    ```bash
-   :>> /opt/wellsaid-labs/AUTO_START_FROM_CHECKPOINT
-   COMET_PROJECT='michael-signal-model-2022-04'
-   EXPERIMENT_NAME='v10: baseline'
-   pkill -9 python; sleep 5s; nvidia-smi; \
-   PYTHONPATH=. python $TRAIN_SCRIPT_PATH start $COMET_PROJECT "$EXPERIMENT_NAME";
+   COMET_PROJECT='your-comet-project'
+   EXPERIMENT_NAME='Your experiment name'
    ```
 
-5. Start training...
+1. Start training...
 
    For example, run this command to train a spectrogram model:
 
    ```bash
+   pkill -9 python; sleep 5s; nvidia-smi; \
+   PYTHONPATH=. python $TRAIN_SCRIPT_PATH start $COMET_PROJECT "$EXPERIMENT_NAME";
    ```
 
    Or select a `SPECTROGRAM_CHECKPOINT` and run the following command to train a signal model...
 
    ```bash
-   SPECTROGRAM_CHECKPOINT="/opt/wellsaid-labs/Text-to-Speech/disk/experiments/spectrogram_model/DATE-2022y04m15d-03h56m18s_PID-5757/RUN_DATE-2022y04m18d-18h24m38s/checkpoints/step_654810.pt"
+   SPECTROGRAM_CHECKPOINT="/opt/wellsaid-labs/Text-to-Speech/path/to/spectrogram/checkpoint"
    ```
 
    ```bash
@@ -191,9 +200,9 @@ Setup your local development environment by following [these instructions](LOCAL
    ❓ LEARN MORE: PyTorch leaves zombie processes that must be killed, check out:
    https://leimao.github.io/blog/Kill-PyTorch-Distributed-Training-Processes/
 
-6. Detach from your screen session by typing `Ctrl-A` then `D`.
+1. Detach from your screen session by typing `Ctrl-A` then `D`.
 
-7. You can now exit your VM with the `exit` command.
+1. You can now exit your VM with the `exit` command.
 
 ### From your local repository
 
@@ -237,7 +246,7 @@ Setup your local development environment by following [these instructions](LOCAL
 1. Delete your instance...
 
    ```zsh
-   python -m run.utils.gcp $TYPE delete-instance --name=$NAME --zone=$VM_ZONE
+   python -m run.utils.gcp $TYPE delete-instance --name=$VM_NAME --zone=$VM_ZONE
    ```
 
    You may need to run the above a couple of times.
@@ -245,8 +254,8 @@ Setup your local development environment by following [these instructions](LOCAL
    💡 TIP: The instance can be imaged and deleted. For example:
 
    ```zsh
-   IMAGE_FAMILY="v10" # EXAMPLE: michaelp-baseline
-   IMAGE_NAME="$IMAGE_FAMILY-v3" # EXAMPLE: michaelp-baseline-v1
+   IMAGE_FAMILY=$NAME # EXAMPLE: michaelp-baseline
+   IMAGE_NAME="$IMAGE_FAMILY-v1" # EXAMPLE: michaelp-baseline-v1
    gcloud compute ssh --zone=$VM_ZONE $VM_NAME \
       --command="rm /opt/wellsaid-labs/AUTO_START_FROM_CHECKPOINT"
    python -m run.utils.gcp $TYPE image-and-delete \
@@ -259,4 +268,3 @@ Setup your local development environment by following [these instructions](LOCAL
 
    When you're ready to begin signal model training, start from the top of these instructions and
    use your `$IMAGE_FAMILY` envrionment variable to build your new instance!
-
