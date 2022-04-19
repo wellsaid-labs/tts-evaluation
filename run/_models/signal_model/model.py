@@ -278,58 +278,37 @@ def _has_weight_norm(module: torch.nn.Module, name: str = "weight") -> bool:
 
 
 class _Encoder(torch.nn.Module):
-    """Encode inputs including the spectrogram and it's metadata.
+    """Encode the model inputs.
 
     Args:
         max_seq_meta_values: The maximum number of metadata values the model will be trained on.
-        frame_size: The size of each spectrogram frame.
         seq_meta_embed_size: The size of the sequence metadata embedding.
     """
 
-    def __init__(
-        self, max_seq_meta_values: typing.Tuple[int, ...], seq_meta_embed_size: int, frame_size: int
-    ):
+    def __init__(self, max_seq_meta_values: typing.Tuple[int, ...], seq_meta_embed_size: int):
         super().__init__()
-
         message = "`seq_meta_embed_size` must be divisable by the number of metadata attributes."
         assert seq_meta_embed_size % len(max_seq_meta_values) == 0, message
         self.embed_metadata = torch.nn.ModuleList(
             NumeralizePadEmbed(n, seq_meta_embed_size // len(max_seq_meta_values))
             for n in max_seq_meta_values
         )
-        self.out_size = seq_meta_embed_size + frame_size
+        self.out_size = seq_meta_embed_size
 
-    def __call__(
-        self,
-        spectrogram: torch.Tensor,
-        seq_metadata: typing.List[typing.Tuple[typing.Hashable, ...]],
-    ) -> torch.Tensor:
-        return super().__call__(spectrogram, seq_metadata)
+    def __call__(self, seq_metadata: typing.List[typing.List[typing.Hashable]]) -> torch.Tensor:
+        return super().__call__(seq_metadata)
 
-    def forward(
-        self,
-        spectrogram: torch.Tensor,
-        seq_metadata: typing.List[typing.Tuple[typing.Hashable, ...]],
-    ):
+    def forward(self, seq_metadata: typing.List[typing.List[typing.Hashable]]) -> torch.Tensor:
         """
         Args:
-            spectrogram (torch.FloatTensor [batch_size, num_frames, frame_size])
             seq_metadata: Metadata associated with each sequence
 
-        Returns: torch.FloatTensor [batch_size, num_frames, out_size]
+        Returns: torch.FloatTensor [batch_size, seq_meta_embed_size]
         """
         # [batch_size] → [batch_size, seq_meta_embed_size]
-        seq_metadata_ = [
-            embed([metadata[i] for metadata in seq_metadata], batch_first=True)[0]
-            for i, embed in enumerate(self.embed_metadata)
-        ]
-        seq_metadata_ = torch.cat(seq_metadata_, dim=1)
-        # [batch_size, seq_meta_embed_size] → [batch_size, num_frames, seq_meta_embed_size]
-        seq_metadata_ = seq_metadata_.unsqueeze(1).expand(-1, spectrogram.shape[1], -1)
-        # [batch_size, num_frames, seq_meta_embed_size] (cat)
-        # [batch_size, num_frames, frame_size] →
-        # [batch_size, num_frames, frame_size + seq_meta_embed_size]
-        return torch.cat([spectrogram, seq_metadata_], dim=2)
+        iter_ = enumerate(self.embed_metadata)
+        seq_metadata_ = [embed(seq_metadata[i], batch_first=True)[0] for i, embed in iter_]
+        return torch.cat(seq_metadata_, dim=1)
 
 
 class SignalModel(torch.nn.Module):
@@ -377,11 +356,11 @@ class SignalModel(torch.nn.Module):
         assert upscale_factor.is_integer(), "The upscale factor must be an integer."
         self.upscale_factor = int(upscale_factor)
 
-        self.encoder = _Encoder(max_seq_meta_values, seq_meta_embed_size, frame_size)
+        self.encoder = _Encoder(max_seq_meta_values, seq_meta_embed_size)
         self.pre_net = _Sequential(
             _InterpolateAndMask(1),
             torch.nn.Conv1d(
-                self.encoder.out_size,
+                frame_size + seq_meta_embed_size,
                 self.get_layer_size(0),
                 kernel_size=3,
                 padding=0,
@@ -533,13 +512,13 @@ class SignalModel(torch.nn.Module):
     def __call__(
         self,
         spectrogram: torch.Tensor,
-        seq_metadata: typing.List[typing.Tuple[typing.Hashable, ...]],
+        seq_metadata: typing.List[typing.List[typing.Hashable]],
         spectrogram_mask: typing.Optional[torch.Tensor] = None,
         pad_input: bool = True,
-    ) -> torch.Tensor:
+    ) -> typing.Tuple[torch.Tensor, torch.Tensor]:
         return super().__call__(spectrogram, seq_metadata, spectrogram_mask, pad_input)
 
-    def forward(self, *args, **kwargs) -> torch.Tensor:
+    def forward(self, *args, **kwargs) -> typing.Tuple[torch.Tensor, torch.Tensor]:
         grad_enabled = self.grad_enabled
         with nullcontext() if grad_enabled is None else torch.set_grad_enabled(grad_enabled):
             return self._forward(*args, **kwargs)
@@ -547,10 +526,10 @@ class SignalModel(torch.nn.Module):
     def _forward(
         self,
         spectrogram: torch.Tensor,
-        seq_metadata: typing.List[typing.Tuple[typing.Hashable, ...]],
+        seq_metadata: typing.List[typing.List[typing.Hashable]],
         spectrogram_mask: typing.Optional[torch.Tensor] = None,
         pad_input: bool = True,
-    ) -> torch.Tensor:
+    ) -> typing.Tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
             spectrogram (torch.FloatTensor [batch_size, num_frames, frame_channels])
@@ -562,6 +541,8 @@ class SignalModel(torch.nn.Module):
 
         Returns:
             signal (torch.FloatTensor [batch_size, signal_length] or [signal_length])
+            seq_metadata (torch.FloatTensor [batch_size, seq_meta_embed_size] or
+                [seq_meta_embed_size]): The encoded sequence metadata.
         """
         has_batch_dim = len(spectrogram.shape) == 3
 
@@ -572,24 +553,33 @@ class SignalModel(torch.nn.Module):
         batch_size, num_frames, _ = spectrogram.shape
         num_frames = num_frames - self.padding * 2
 
-        # [batch_size, num_frames, frame_channels] → [batch_size, num_frames, encoder.out_size]
-        encoded = self.encoder(spectrogram, seq_metadata)
+        # [batch_size, seq_meta_embed_size]
+        seq_metadata_ = self.encoder(seq_metadata)
 
-        # [batch_size, num_frames, encoder.out_size] → [batch_size, encoder.out_size, num_frames]
-        encoded = encoded.transpose(1, 2)
+        # [batch_size, seq_meta_embed_size] → [batch_size, num_frames, seq_meta_embed_size]
+        features = seq_metadata_.unsqueeze(1).expand(-1, spectrogram.shape[1], -1)
+
+        # [batch_size, num_frames, seq_meta_embed_size] (cat)
+        # [batch_size, num_frames, frame_size] →
+        # [batch_size, num_frames, frame_size + seq_meta_embed_size]
+        features = torch.cat([spectrogram, features], dim=2)
+
+        # [batch_size, num_frames, frame_size + seq_meta_embed_size] →
+        # [batch_size, frame_size + seq_meta_embed_size, num_frames]
+        features = features.transpose(1, 2)
 
         # [batch_size, num_frames] → [batch_size, 1, num_frames]
         spectrogram_mask = spectrogram_mask.unsqueeze(1)
 
-        # [batch_size, encoder.out_size, num_frames] →
+        # [batch_size, frame_size + seq_meta_embed_size, num_frames] →
         # [batch_size, self.get_layer_size(0), num_frames]
-        encoded = self.pre_net(encoded, spectrogram_mask)
+        features = self.pre_net(features, spectrogram_mask)
 
-        conditioning = self.condition(encoded)  # [batch_size, *, num_frames]
+        conditioning = self.condition(features)  # [batch_size, *, num_frames]
 
         # [batch_size, self.get_layer_size(0), num_frames] →
         # [batch_size, 2, signal_length + excess_padding]
-        signal = self.network(encoded, spectrogram_mask, conditioning)
+        signal = self.network(features, spectrogram_mask, conditioning)
 
         # [batch_size, 2, signal_length + excess_padding] →
         # [batch_size, signal_length + excess_padding]
@@ -616,7 +606,7 @@ class SignalModel(torch.nn.Module):
             logger.warning("%d samples clipped.", num_clipped_samples)
         signal = torch.clamp(signal, -1.0, 1.0)
 
-        return signal if has_batch_dim else signal.squeeze(0)
+        return tuple(t if has_batch_dim else t.squeeze(0) for t in (signal, seq_metadata_))
 
 
 class SpectrogramDiscriminator(torch.nn.Module):
@@ -630,19 +620,13 @@ class SpectrogramDiscriminator(torch.nn.Module):
     """
 
     def __init__(
-        self,
-        fft_length: int,
-        num_mel_bins: int,
-        max_seq_meta_values: typing.Tuple[int, ...],
-        seq_meta_embed_size: int,
-        hidden_size: int,
+        self, fft_length: int, num_mel_bins: int, seq_meta_embed_size: int, hidden_size: int
     ):
         super().__init__()
         self.fft_length = fft_length
-        frame_size = fft_length + num_mel_bins + 2
-        self.encoder = _Encoder(max_seq_meta_values, seq_meta_embed_size, frame_size)
+        input_size = fft_length + num_mel_bins + 2 + seq_meta_embed_size
         self.layers = _Sequential(
-            torch.nn.Conv1d(self.encoder.out_size, hidden_size, kernel_size=3, padding=1),
+            torch.nn.Conv1d(input_size, hidden_size, kernel_size=3, padding=1),
             _LayerNorm(hidden_size),
             torch.nn.Conv1d(hidden_size, hidden_size, kernel_size=3, padding=1),
             torch.nn.GELU(),
@@ -668,7 +652,7 @@ class SpectrogramDiscriminator(torch.nn.Module):
         spectrogram: torch.Tensor,
         db_spectrogram: torch.Tensor,
         db_mel_spectrogram: torch.Tensor,
-        seq_metadata: typing.List[typing.Tuple[typing.Hashable, ...]],
+        seq_metadata: torch.Tensor,
     ) -> torch.Tensor:
         return super().__call__(spectrogram, db_spectrogram, db_mel_spectrogram, seq_metadata)
 
@@ -677,23 +661,22 @@ class SpectrogramDiscriminator(torch.nn.Module):
         spectrogram: torch.Tensor,
         db_spectrogram: torch.Tensor,
         db_mel_spectrogram: torch.Tensor,
-        seq_metadata: typing.List[typing.Tuple[typing.Hashable, ...]],
+        seq_metadata: torch.Tensor,
     ) -> torch.Tensor:
         """
         Args:
             spectrogram (torch.FloatTensor [batch_size, num_frames, fft_length // 2 + 1])
             db_spectrogram (torch.FloatTensor [batch_size, num_frames, fft_length // 2 + 1])
             db_mel_spectrogram (torch.FloatTensor [batch_size, num_frames, num_mel_bins])
-            ...
+            seq_metadata (torch.FloatTensor [batch_size, seq_meta_embed_size])
 
         Returns:
             (torch.FloatTensor [batch_size]): A score that discriminates between predicted and
                 real spectrogram.
         """
-        spectrogram = torch.cat([spectrogram, db_spectrogram, db_mel_spectrogram], dim=2)
-        encoded = self.encoder(spectrogram, seq_metadata)
-        encoded = encoded.transpose(-1, -2)
-        return self.layers(encoded).squeeze(1).mean(dim=-1)
+        seq_metadata = seq_metadata.unsqueeze(1).expand(-1, spectrogram.shape[1], -1)
+        input_ = torch.cat([spectrogram, db_spectrogram, db_mel_spectrogram, seq_metadata], dim=2)
+        return self.layers(input_.transpose(-1, -2)).squeeze(1).mean(dim=-1)
 
 
 def generate_waveform(
@@ -740,5 +723,5 @@ def generate_waveform(
         mask = ([last_item[1][:, -padding * 2 :]] if last_item else []) + [i[1] for i in items]
         mask_ = pad_tensor(torch.cat(mask, dim=1), pad=padding_tuple, dim=1)
 
-        yield model(frames_, *args, spectrogram_mask=mask_, pad_input=False)
+        yield model(frames_, *args, spectrogram_mask=mask_, pad_input=False)[0]
         last_item = (frames_, mask_)

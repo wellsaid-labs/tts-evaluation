@@ -120,12 +120,8 @@ def configure(overwrite: bool = False):
             max_channel_size=512,
         ),
         # NOTE: We found this hidden size to be effective on Comet in April 2020.
-        run._models.signal_model.wrapper.SpectrogramDiscriminatorWrapper: cf.Args(
-            # TODO: Add support for dialects, styles, etc.
-            max_speakers=max_speakers,
-            max_sessions=max_sessions,
-            seq_meta_embed_size=128,
-            hidden_size=512,
+        run._models.signal_model.model.SpectrogramDiscriminator: cf.Args(
+            seq_meta_embed_size=128, hidden_size=512
         ),
     }
     cf.add(config, overwrite)

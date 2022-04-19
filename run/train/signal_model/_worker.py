@@ -347,6 +347,7 @@ class _HandleBatchArgs(typing.NamedTuple):
 def _run_discriminator(
     args: _HandleBatchArgs,
     i: int,
+    seq_metadata: torch.Tensor,
     fake_specs: Spectrograms,
     real_specs: Spectrograms,
     real_label: bool,
@@ -362,6 +363,7 @@ def _run_discriminator(
     Args:
         ...
         i: The index of the discriminator and discriminator optimizer to use.
+        seq_metadata: (torch.FloatTensor [batch_size, seq_meta_embed_size])
         ...
 
     Returns:
@@ -382,8 +384,8 @@ def _run_discriminator(
     db_mel = torch.cat([real_specs.db_mel, fake_specs.db_mel.detach()])
     db = torch.cat([real_specs.db, fake_specs.db.detach()])
     amp = torch.cat([real_specs.amp, fake_specs.amp.detach()])
-    session = args.batch.session + args.batch.session
-    predictions = discriminator(amp, db, db_mel, session)
+    seq_metadata_ = torch.cat([seq_metadata, seq_metadata])
+    predictions = discriminator(amp, db, db_mel, seq_metadata_)
     predictions = typing.cast(torch.Tensor, predictions)
     discriminator_loss = binary_cross_entropy_with_logits(predictions, labels, reduction="none")
     get_discrim_values = partial(
@@ -405,15 +407,11 @@ def _run_discriminator(
 
     args.timer.record_event(args.timer.MODEL_FORWARD)
     # NOTE: Use real labels instead of fake to flip the gradient for the generator.
-    predictions = discriminator(
-        fake_specs.amp, fake_specs.db, fake_specs.db_mel, args.batch.session
-    )
+    predictions = discriminator(fake_specs.amp, fake_specs.db, fake_specs.db_mel, seq_metadata)
     predictions = typing.cast(torch.Tensor, predictions)
     generator_loss = binary_cross_entropy_with_logits(predictions, real_labels, reduction="none")
     get_discrim_values = partial(
-        get_discrim_values,
-        generator_logits=predictions,
-        generator_losses=generator_loss,
+        get_discrim_values, generator_logits=predictions, generator_losses=generator_loss
     )
     return generator_loss, get_discrim_values
 
@@ -440,7 +438,7 @@ def _run_step(args: _HandleBatchArgs):
     convolutions, in order, to process the spectrograms seperately.
     """
     args.timer.record_event(args.timer.MODEL_FORWARD)
-    signal = args.state.model(
+    signal, seq_metadata = args.state.model(
         spectrogram=args.batch.spectrogram.tensor,
         session=args.batch.session,
         spectrogram_mask=args.batch.spectrogram_mask.tensor,
@@ -451,11 +449,13 @@ def _run_step(args: _HandleBatchArgs):
 
     loss = torch.tensor(0.0, device=signal.device)
     get_values = []
+    # TODO: Instead of training on all three discriminators, consider picking a random discriminator
+    # each time, instead.
     for i, signal_to_spectrogram in enumerate(args.state.signal_to_spectrogram_modules):
         pred_specs = signal_to_spectrogram(signal, intermediate=True)
         gold_specs = signal_to_spectrogram(target_signal, intermediate=True)
         generator_loss, get_discrim_values = _run_discriminator(
-            args, i, pred_specs, gold_specs, **cf.get()
+            args, i, seq_metadata.detach(), pred_specs, gold_specs, **cf.get()
         )
         l1 = l1_loss(pred_specs.db_mel, gold_specs.db_mel, reduction="none").mean(dim=[1, 2])
         mse = mse_loss(pred_specs.db_mel, gold_specs.db_mel, reduction="none").mean(dim=[1, 2])
@@ -591,6 +591,7 @@ def _visualize_select_cases(
         num_tokens = preds.num_tokens[item]
         num_frames = preds.num_frames[item]
         frames = preds.frames[:num_frames, item]
+        wave = waves[item, : num_frames * model.upscale_factor]
         figures = {
             label("predicted_spectrogram"): plot_mel_spectrogram(frames, **cf.get()),
             label("alignment"): plot_alignments(preds.alignments[:num_frames, item, :num_tokens]),
@@ -599,7 +600,7 @@ def _visualize_select_cases(
         state.comet.log_figures(figures)
         audio = {
             "predicted_griffin_lim_audio": griffin_lim(frames.numpy(), **cf.get()),
-            "predicted_signal_model_audio": waves[item].cpu().numpy(),
+            "predicted_signal_model_audio": wave.cpu().numpy(),
         }
         state.comet.log_html_audio(
             randomly_sampled_case=item,
