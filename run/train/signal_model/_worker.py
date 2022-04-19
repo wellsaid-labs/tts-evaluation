@@ -173,8 +173,7 @@ class _State:
 
     @staticmethod
     def _get_signal_to_spectrogram_modules(
-        device: torch.device,
-        kwargs: typing.List[typing.Dict],
+        device: torch.device, kwargs: typing.List[typing.Dict]
     ) -> typing.List[SignalTodBMelSpectrogram]:
         modules = [cf.call(SignalTodBMelSpectrogram, **k, _overwrite=True) for k in kwargs]
         return [m.to(device, non_blocking=True) for m in modules]
@@ -230,10 +229,7 @@ class _State:
 
     @classmethod
     def from_checkpoint(
-        cls,
-        checkpoint: Checkpoint,
-        comet: CometMLExperiment,
-        device: torch.device,
+        cls, checkpoint: Checkpoint, comet: CometMLExperiment, device: torch.device
     ):
         """Recreate the signal model training state from a `checkpoint`.
 

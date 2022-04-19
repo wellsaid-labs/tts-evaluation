@@ -111,7 +111,6 @@ def configure(overwrite: bool = False):
             token_meta_embed_size=128,
         ),
         run._models.signal_model.wrapper.SignalModelWrapper: cf.Args(
-            # TODO: Add support for dialects, styles, etc.
             max_speakers=max_speakers,
             max_sessions=max_sessions,
             seq_meta_embed_size=128,
