@@ -311,13 +311,67 @@ def get_pronunciation(word: str, dictionary: CMUDictSyl) -> typing.Optional[Pron
 
 
 # fmt: off
-# TODO: @Rhyan, can you document the differences between these table and the wikipedia table?
+"""
+This `RESPELLINGS` dictionary is a consolidation of ARPAbet:IPA and IPA:Wikipedia respellings.
+Note the CMU-provided ARPAbet differs from the one in the table linked below because it does not use
+any of the following: "AX", "AXR", "IX", "UX", "DX", "EL", "EM", "EN", "NX", "Q", "WH".
+This means `ARPAbet` defined herein is comprised of 17 vowel sounds and 24 consonant sounds.
+Wikipedia, on the other hand, uses a system comprised of 40 vowel sounds and 28 consonant sounds,
+including some sounds containing multiple phonemes, some sounds having multiple respellings AND
+the respelling 'y' being used for both the long i vowel sound and the y consonant sound.
+Because of this and because the mapping of sounds is not one-to-one between the systems, some
+decisions had to be made:
+    Set of 39 IPA phonemes represented in ARPAbet:
+      {'ɑ', 'æ', 'ʌ', 'ɔ', 'aʊ', 'aɪ', 'ɛ', 'ɝ', 'eɪ', 'ɪ', 'i', 'oʊ', 'ɔɪ', 'ʊ', 'u', 'b', 'tʃ',
+      'd', 'ð', 'f', 'ɡ', 'h', 'dʒ', 'k', 'l', 'm', 'n', 'ŋ', 'p', 'ɹ', 's', 'ʃ', 't', 'θ', 'v',
+      'w', 'j', 'z', 'ʒ'}
+    Set of 63 IPA phoneme and phoneme combinations represented in Wikipedia Respellings:
+      {'ɪər', 'æ', 'ɜːr', 'juː', 'ʒ', 'aʊ', 'θ', 'ɪ', 'z', 'f', 'l', 'ʃ', 'ŋ', 'h', 'ɡ', 'd', 'ə',
+      'u', 'ær', 'ɒ', 'r', 's', 'ɔːr', 'uː', 'ʌ', 'p', 'hw', 'n', 'v', 'ər', 'ʊər', 'ʌr', 'ɔː',
+      'ʊr', 'ɪr', 'ɛər', 'ŋk', 'ɛr', 'm', 'x', 'jʊər', 't', 'eɪ', 'ð', 'iː', 'tʃ', 'aʊər', 'aɪər',
+      'b', 'w', 'j', 'ɔɪ', 'i', 'ɛ', 'oʊ', 'ɔɪər', 'aɪ', 'ɑːr', 'ɑː', 'ɒr', 'k', 'dʒ', 'ʊ'}
+    4 ARPAbet IPA phonemes missing from Wikipedia Respelling phonemes:
+      {'ɹ', 'ɝ', 'ɔ', 'ɑ'}
+    28 Wikipedia Respelling phonemes missing from ARPAbet phonemes:
+      {'ɒ', 'ər', 'ɔː', 'juː', 'ɪr', 'ŋk', 'ə', 'r', 'ʊər', 'hw', 'aʊər', 'ɑː', 'ɛər', 'iː', 'ɔːr',
+      'ɑːr', 'ʌr', 'ɒr', 'x', 'ɔɪər', 'ɜːr', 'ɪər', 'ʊr', 'uː', 'aɪər', 'jʊər', 'ɛr', 'ær'}
+
+    We first worked toward ARPAbet coverage:
+      'ɹ' is nearly equivalent to 'r', so we use the respelling of 'r' for 'R' [see "rye"]
+      'ɝ' is nearly equivalent to 'ɜːr', so we use the respelling of 'ur' for 'ER' [see "bird"]
+      'ɔ' is nearly equivalent to 'ɔː', so we use the respelling of 'aw' for 'AO' [see "bought"]**
+      'ɑ' is nearly equivalent to 'ɑː', so we use the respelling of 'ah' for 'AA' [see "father"]
+      ** ARPAbet is inconsistent with their use of 'AO':
+            sometimes used as a long O [see "BOARD]
+            sometimes as a short O [see "BALL"], but uses 'AA' for "FATHER"
+
+    TODO: Work toward Wikipedia coverage [much trickier to simulate with ARPAbet]
+
+ARPAbet Wiki: https://en.wikipedia.org/wiki/ARPABET
+Wiki Respelling Key: https://en.wikipedia.org/wiki/Help:Pronunciation_respelling_key
+"""
+ARPABET_IPA: typing.Dict[str, str] = {
+    'AA': 'ɑ', 'AE': 'æ', 'AH': 'ʌ', 'AO': 'ɔ', 'AW': 'aʊ', 'AY': 'aɪ',
+    'EH': 'ɛ', 'ER': 'ɝ', 'EY': 'eɪ', 'IH': 'ɪ', 'IY': 'i', 'OW': 'oʊ', 'OY': 'ɔɪ', 'UH': 'ʊ',
+    'UW': 'u', 'B': 'b', 'CH': 'tʃ', 'D': 'd', 'DH': 'ð', 'F': 'f', 'G': 'ɡ', 'H': 'h', 'JH': 'dʒ',
+    'K': 'k', 'L': 'l', 'M': 'm', 'N': 'n', 'NG': 'ŋ', 'P': 'p', 'R': 'ɹ', 'S': 's', 'SH': 'ʃ',
+    'T': 't', 'TH': 'θ', 'V': 'v', 'W': 'w', 'Y': 'j', 'Z': 'z', 'ZH': 'ʒ',
+    # NOTE: These codes were added in later iterations of the dictionary...
+    # 'AXR': 'ɚ', 'AX': 'ə'
+}
+IPA_WIKIPEDIA: typing.Dict[str, str] = {
+
+}
 RESPELLINGS: typing.Dict[str, str] = {
-    'AA': 'ah', 'AE': 'a', 'AH': 'uh', 'AO': 'aw', 'AW': 'ow', 'AX': 'ə', 'AXR': 'ər', 'AY': 'y',
-    'EH': 'eh', 'ER': 'ər', 'EY': 'ay', 'IH': 'ih', 'IY': 'ee', 'OW': 'oh', 'OY': 'oy', 'UH': 'uu',
-    'UW': 'oo', 'B': 'b', 'CH': 'tch', 'D': 'd', 'DH': 'dh', 'F': 'f', 'G': 'g', 'HH': 'h',
-    'JH': 'j', 'K': 'k', 'L': 'l', 'M': 'm', 'N': 'n', 'NG': 'ng', 'P': 'p', 'R': 'r', 'S': 's',
-    'SH': 'sh', 'T': 't', 'TH': 'th', 'V': 'v', 'W': 'w', 'Y': 'y', 'Z': 'z', 'ZH': 'zh'
+    'AA': 'ah', 'AE': 'a', 'AH': 'uh', 'AO': 'aw', 'AW': 'ow', 'AY': 'y', 'EH': 'eh', 'EY': 'ay',
+    'IY': 'ee', 'OW': 'oh', 'OY': 'oy', 'UH': 'uu', 'UW': 'oo', 'B': 'b', 'CH': 'tch', 'D': 'd',
+    'DH': 'dh', 'F': 'f', 'G': 'g', 'HH': 'h', 'JH': 'j', 'K': 'k', 'L': 'l', 'M': 'm', 'N': 'n',
+    'NG': 'ng', 'P': 'p', 'R': 'r', 'S': 's', 'SH': 'sh', 'T': 't', 'TH': 'th', 'V': 'v', 'W': 'w',
+    'Y': 'y', 'Z': 'z', 'ZH': 'zh',
+    # NOTE: These codes have been removed in further iterations of the dictionary...
+    'IH': 'ih', 'ER': 'ur',
+    # NOTE: These codes were added in later iterations of the dictionary...
+    # 'AXR': 'ər', 'AX': 'ə'
 }
 # fmt: on
 
