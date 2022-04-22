@@ -212,6 +212,7 @@ class Metrics(_utils.Metrics[MetricsKey]):
         """
         speakers = set(key.speaker for key in self.data.keys()) if is_verbose else [None]
         fft_lengths = set(key.fft_length for key in self.data.keys())
+        num_lengths = sum(1 for l in fft_lengths if isinstance(l, int))
         for args in itertools.product(speakers, fft_lengths):
             reduce_: typing.Callable[[str], float]
             reduce_ = lambda a, **k: self._reduce(MetricsKey(a, *args), select=select, **k)
@@ -220,7 +221,7 @@ class Metrics(_utils.Metrics[MetricsKey]):
             div: typing.Callable[[typing.Union[float, str], typing.Union[float, str]], float]
             div = lambda n, d, **k: self._div(process(n), process(d), select=select, **k)
             num_slices = self._reduce(MetricsKey(self.NUM_SLICES, args[0]), select=select)
-            num_slices = len(fft_lengths) * num_slices if args[1] is None else num_slices
+            num_slices = num_lengths * num_slices if args[1] is None else num_slices
             yield dict(speaker=args[0], fft_length=args[1]), num_slices, reduce_, div
 
     def _get_discrim_metrics(self, select: _utils.MetricsSelect, is_verbose: bool) -> _GetMetrics:
