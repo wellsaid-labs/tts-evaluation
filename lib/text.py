@@ -359,8 +359,17 @@ ARPABET_IPA: typing.Dict[str, str] = {
     # NOTE: These codes were added in later iterations of the dictionary...
     # 'AXR': 'ɚ', 'AX': 'ə'
 }
+# TODO: This does not account for duplicate phonemes or duplicate respellings, as Wikipedia allows.
+# Fix to more closely align with the Wikipedia Respelling key.
 IPA_WIKIPEDIA: typing.Dict[str, str] = {
-
+    'æ': 'a', 'ɑː': 'ah', 'ɛər': 'air', 'ɑːr': 'ar', 'ær': 'arr', 'ɔː': 'aw', 'eɪ': 'ay', 'ɛ': 'eh',
+    'iː': 'ee', 'i': 'ee', 'ɪər': 'eer', 'ɛr': 'err', 'juː': 'ew', 'aɪ': 'y', 'ɪ': 'ih',
+    'aɪər': 'ire', 'ɪr': 'irr', 'ɒ': 'o', 'oʊ': 'oh', 'ɔɪər': 'oir', 'uː': 'oo', 'u': 'oo',
+    'ʊər': 'oor', 'ɔːr': 'or', 'ɒr': 'orr', 'aʊər': 'our', 'aʊ': 'ow', 'ɔɪ': 'oy', 'ʌ': 'uh',
+    'ɜːr': 'ur', 'jʊər': 'ure', 'ʌr': 'urr', 'ʊ': 'uu', 'ʊr': 'uurr', 'ə': 'ə', 'ər': 'ər',
+    'b': 'b', 'tʃ': 'tch', 'd': 'd', 'ð': 'dh', 'f': 'f', 'ɡ': 'gh', 'h': 'h', 'dʒ': 'j', 'k': 'k',
+    'x': 'kh', 'l': 'l', 'm': 'm', 'n': 'n', 'ŋ': 'ng', 'ŋk': 'nk', 'p': 'p', 'r': 'r', 's': 'ss',
+    'ʃ': 'sh', 't': 't', 'θ': 'th', 'v': 'v', 'w': 'w', 'hw': 'wh', 'j': 'y', 'z': 'z', 'ʒ': 'zh'
 }
 RESPELLINGS: typing.Dict[str, str] = {
     'AA': 'ah', 'AE': 'a', 'AH': 'uh', 'AO': 'aw', 'AW': 'ow', 'AY': 'y', 'EH': 'eh', 'EY': 'ay',
