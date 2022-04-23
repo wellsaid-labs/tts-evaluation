@@ -166,12 +166,12 @@ class DictStore:
         self._world_size = get_world_size()
         self._is_master = is_master()
 
-    def _all_gather_cuda(self, data: GatherVar) -> typing.List[GatherVar]:
+    def _all_gather(self, data: GatherVar) -> typing.List[GatherVar]:
         outputs = [None for _ in range(self._world_size)]
         torch.distributed.all_gather_object(outputs, data)
         return typing.cast(typing.List[GatherVar], outputs)
 
-    def _gather_cuda(self, data: GatherVar) -> typing.Optional[typing.List[GatherVar]]:
+    def _gather(self, data: GatherVar) -> typing.Optional[typing.List[GatherVar]]:
         outputs = [None for _ in range(self._world_size)] if self._is_master else None
         torch.distributed.gather_object(data, outputs)
         return typing.cast(typing.Optional[typing.List[GatherVar]], outputs)
@@ -226,9 +226,9 @@ class DictStore:
         """Shallow update the master process `self.data` with `data`."""
         gc.disable()
         self._operation += 1
-        gathered = self._gather_cuda(self._encode(data))
+        gathered = self._gather(self._encode(data))
         if self._operation > 0 and self._operation % DictStore.sync_every == 0:
-            self._update_vocab(self._all_gather_cuda(DictStore.new_keys))
+            self._update_vocab(self._all_gather(DictStore.new_keys))
         if self._is_master and gathered is not None:
             self.data.append([self._decode(d) for d in gathered])
         gc.enable()
