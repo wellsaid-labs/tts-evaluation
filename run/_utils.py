@@ -136,6 +136,9 @@ TrainDev = typing.Tuple[Dataset, Dataset]
 def _split_dataset(dataset: Dataset, dev_len: int, min_sim: float) -> TrainDev:
     """Split `dataset` into `train` and `dev` such that they contain no duplicates.
 
+    TODO: Refactor this function to be more generic, and easier to test, without needing to load
+    an entire dataset.
+
     Args
         ...
         dev_len: The approximate number of seconds to include for each speaker split.
@@ -152,6 +155,7 @@ def _split_dataset(dataset: Dataset, dev_len: int, min_sim: float) -> TrainDev:
         random.shuffle(rest)
         split_lens = [max(dev_len - _passages_len(duplicates), 0), math.inf]
         val = partial(_len_of_dups, passages=rest, min_sim=min_sim)
+        # NOTE: `split` ensures that the length doesn't exceed `dev_len`.
         splits = [[p for _, p in s] for s in split(list(enumerate(rest)), split_lens, val)]
         dev[speaker].extend(duplicates + splits[0])
         train[speaker].extend(splits[1])

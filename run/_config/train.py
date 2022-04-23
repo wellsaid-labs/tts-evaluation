@@ -35,7 +35,8 @@ def make_spectrogram_model_train_config(
     batch_size_ratio = 4
     dev_batch_size = train_batch_size * batch_size_ratio
     dev_steps_per_epoch = 1 if debug else 64
-    train_steps_per_epoch = int(round(dev_steps_per_epoch * batch_size_ratio * ratio))
+    oversample = 3
+    train_steps_per_epoch = int(round(dev_steps_per_epoch * batch_size_ratio * ratio * oversample))
     train_steps_per_epoch = 1 if debug else train_steps_per_epoch
     assert train_batch_size % lib.distributed.get_device_count() == 0
     assert dev_batch_size % lib.distributed.get_device_count() == 0
@@ -121,7 +122,7 @@ def make_signal_model_train_config(
     dev_slice_size = train_slice_size * 4 + 2
     batch_size_ratio = 1 / 2
     dev_batch_size = int(train_batch_size * train_slice_size / dev_slice_size / 2)
-    oversample = 2
+    oversample = 6
     dev_steps_per_epoch = 1 if debug else 256
     train_steps_per_epoch = int(round(dev_steps_per_epoch * batch_size_ratio * ratio * oversample))
     train_steps_per_epoch = 1 if debug else train_steps_per_epoch
