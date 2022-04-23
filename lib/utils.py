@@ -29,8 +29,8 @@ from torch.nn import functional
 from torch.nn.parameter import Parameter
 from tqdm import tqdm
 
-# TODO: Remove
-from lib.distributed import NumeralizePadEmbed
+# TODO: Added for backwards compatibility with checkpoints.
+from lib.distributed import NumeralizePadEmbed  # noqa
 
 logger = logging.getLogger(__name__)
 
