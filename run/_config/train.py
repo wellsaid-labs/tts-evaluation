@@ -10,7 +10,8 @@ import torch.utils.data
 
 import lib
 import run
-from run._config import FRAME_HOP, NUM_FRAME_CHANNELS, RANDOM_SEED
+from run._config.audio import FRAME_HOP, FRAME_SIZE, NUM_FRAME_CHANNELS
+from run._config.environment import RANDOM_SEED
 from run._utils import Dataset
 
 logger = logging.getLogger(__name__)
@@ -58,7 +59,9 @@ def make_spectrogram_model_train_config(
             # NOTE: This scalar calibrates the loss so that it's scale is similar to Tacotron-2.
             spectrogram_loss_scalar=1 / 100,
             # NOTE: This value is the average spectrogram length in the training dataset.
-            average_spectrogram_length=85.215,
+            # NOTE: This value was computed with a reference frame size of 4096, and it scales
+            # linearly with frame size.
+            average_spectrogram_length=85.215 * (4096 / FRAME_SIZE),
             # NOTE: This starts to decay the stop token loss as soon as it converges so it doesn't
             # overfit. Also, this ensures that the model doesn't unnecessarily prioritize the stop
             # token loss when it has already converged.

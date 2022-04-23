@@ -6,7 +6,7 @@ import torch.nn
 
 import lib
 import run
-from run._config.audio import NUM_FRAME_CHANNELS
+from run._config.audio import FRAME_SIZE, NUM_FRAME_CHANNELS
 from run._config.data import DATASETS
 
 logger = logging.getLogger(__name__)
@@ -74,7 +74,9 @@ def configure(overwrite: bool = False):
             # number of characters the model is attending too at a time. That metric can be used
             # to set the `window_length`.
             window_length=9,
-            avg_frames_per_token=1.472,
+            # NOTE: This value was computed with a reference frame size of 4096, and it scales
+            # linearly with frame size.
+            avg_frames_per_token=1.472 * (4096 / FRAME_SIZE),
         ),
         run._models.spectrogram_model.decoder.Decoder: cf.Args(
             encoder_out_size=encoder_out_size,

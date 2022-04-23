@@ -177,8 +177,8 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
         ),
         run._models.signal_model.wrapper.SignalModelWrapper: Args(
             ratios=[2] * math.ceil(math.log2(FRAME_HOP)),
-            pred_sample_rate=(sample_rate * (2 ** math.ceil(math.log2(FRAME_HOP)) / FRAME_HOP)),
-            out_sample_rate=sample_rate,
+            pred_sample_rate=2 ** math.ceil(math.log2(FRAME_HOP)),
+            out_sample_rate=FRAME_HOP,
         ),
         run.data._loader.utils.normalize_audio_suffix: Args(suffix=suffix),
         run.data._loader.utils.normalize_audio: Args(
