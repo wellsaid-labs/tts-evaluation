@@ -280,14 +280,14 @@ def test_get_respelling():
     """Test `lib.text.get_respelling` on basic scenarios."""
     expectations = {
         "zebra": "ZEE-bruh",
-        "motorcycle": "MOH-tər-sy-kuhl",  # NOTE: Secondary is lowercase if primary is uppercase.
+        "motorcycle": "MOH-tur-sy-kuhl",  # NOTE: Secondary is lowercase if primary is uppercase.
         "suspicious": "suh-SPIH-shuhs",
         "maui": "MOW-ee",
         "cobalt": "KOH-bawlt",  # NOTE: Wikipedia recommends "KOH-bolt"
-        "father": "FAH-dhər",
-        "farther": "FAHR-dhər",  # NOTE: Wikipedia recommends "FAR-dhər"
+        "father": "FAH-dhur",
+        "farther": "FAHR-dhur",  # NOTE: Wikipedia recommends "FAR-dhər"
         "ceres": "SIH-reez",  # NOTE: Wikipedia recommends "SEER-eez"
-        "algorithm": "AL-gər-ih-dhuhm",  # NOTE: Wikipedia recommends "AL-gə-ridh-əm"
+        "algorithm": "AL-gur-ih-dhuhm",  # NOTE: Wikipedia recommends "AL-gə-ridh-əm"
         "pan": "PAN",
         "machine": "muh-SHEEN",  # NOTE: Wikipedia recommends "mə-SHEEN",
     }
