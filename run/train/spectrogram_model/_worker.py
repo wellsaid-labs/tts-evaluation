@@ -557,7 +557,7 @@ def _visualize_select_cases(state: _State, dataset_type: DatasetType, cadence: C
             randomly_sampled_case=item,
             audio={"predicted_griffin_lim_audio": audio},
             context=state.comet.context,
-            text=str(inputs.doc[item][1]),
+            text=str(inputs.doc[item]),
             session=inputs.session[item],
             predicted_loudness=get_average_db_rms_level(predicted_spectrogram.unsqueeze(1)).item(),
             dataset_type=dataset_type,
