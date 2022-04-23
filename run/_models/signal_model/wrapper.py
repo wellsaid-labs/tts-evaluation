@@ -2,7 +2,7 @@ import typing
 
 import torch
 
-from lib.utils import NumeralizePadEmbed
+from lib.distributed import NumeralizePadEmbed
 from run._models.signal_model.model import SignalModel, generate_waveform
 from run.data._loader import Session
 

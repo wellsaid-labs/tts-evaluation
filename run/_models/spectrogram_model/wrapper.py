@@ -3,7 +3,7 @@ import typing
 
 import torch
 
-from lib.utils import NumeralizePadEmbed
+from lib.distributed import NumeralizePadEmbed
 from run._models.spectrogram_model.containers import Preds
 from run._models.spectrogram_model.inputs import (
     Casing,

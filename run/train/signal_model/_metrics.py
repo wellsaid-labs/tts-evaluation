@@ -1,4 +1,5 @@
 import collections
+import dataclasses
 import itertools
 import math
 import typing
@@ -19,8 +20,8 @@ from run.train.signal_model._data import Batch
 _GetMetrics = typing.Dict[GetLabel, float]
 
 
-class MetricsKey(typing.NamedTuple):
-    label: str
+@dataclasses.dataclass(frozen=True)
+class MetricsKey(_utils.MetricsKey):
     speaker: typing.Optional[Speaker] = None
     fft_length: typing.Optional[int] = None
 

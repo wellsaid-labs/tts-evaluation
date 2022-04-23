@@ -42,7 +42,7 @@ from torchnlp.encoders.text import SequenceBatch
 
 import lib
 import run
-from lib.distributed import is_master
+from lib.distributed import DictStoreData, is_master
 from lib.environment import load, load_most_recent_file
 from lib.utils import dataclass_as_dict, flatten_2d, seconds_to_str
 from run._config import (
@@ -845,19 +845,18 @@ def run_workers(
     return lib.distributed.spawn(_run_workers_helper, args=args)  # type: ignore
 
 
-class MetricsKey(typing.NamedTuple):
-    # NOTE: This is intended be "subclassed". Originally, we used `dataclasses`
-    # but found them to be slower than `typing.NamedTuple` when dealing with large amounts of
-    # metrics. `lib/test_distributed#test_dict_store__speed` was used for benchmarking.
+@dataclasses.dataclass(frozen=True)
+class MetricsKey:
 
     label: str
 
 
-MetricsKeyTypeVar = typing.TypeVar("MetricsKeyTypeVar", bound=tuple)
-MetricsStoreValues = typing.List[typing.Tuple[float]]
+MetricsKeyTypeVar = typing.TypeVar("MetricsKeyTypeVar", bound=MetricsKey)
 MetricsReduceOp = typing.Callable[[typing.List[float]], float]
-# NOTE: `MetricsSelect` selects a subset of `MetricsStoreValues`.
-MetricsSelect = typing.Callable[[MetricsStoreValues], MetricsStoreValues]
+# NOTE: `MetricsSelect` selects a subset of `DictStoreData` values.
+MetricsSelect = typing.Callable[
+    [DictStoreData[MetricsKeyTypeVar, float]], DictStoreData[MetricsKeyTypeVar, float]
+]
 
 
 class Metrics(lib.distributed.DictStore, typing.Generic[MetricsKeyTypeVar]):
@@ -872,9 +871,9 @@ class Metrics(lib.distributed.DictStore, typing.Generic[MetricsKeyTypeVar]):
     GRADIENT_NORM = partial(get_model_label, "grad_norm")
     LR = partial(get_model_label, "lr")
 
-    def __init__(self, comet: CometMLExperiment, **kwargs):
-        self.data: typing.Dict[MetricsKeyTypeVar, MetricsStoreValues]
-        super().__init__(**kwargs)
+    def __init__(self, comet: CometMLExperiment, *args, **kwargs):
+        self.data: DictStoreData[MetricsKeyTypeVar, float]
+        super().__init__(*args, **kwargs, cache_keys=True)
         self.comet = comet
 
     def update(self, data: typing.Dict[MetricsKeyTypeVar, float]):
@@ -903,7 +902,7 @@ class Metrics(lib.distributed.DictStore, typing.Generic[MetricsKeyTypeVar]):
         self, key: MetricsKeyTypeVar, select: MetricsSelect, op: MetricsReduceOp = sum
     ) -> float:
         """Reduce `self.data[key]` measurements to a float."""
-        flat = flatten_2d(select(self.data[key] if key in self.data else []))
+        flat = flatten_2d(select(self.data)[key] if key in self.data else [])
         assert all(not math.isnan(val) for val in flat), f"Encountered NaN value for metric {key}."
         return math.nan if len(flat) == 0 else op(flat)
 

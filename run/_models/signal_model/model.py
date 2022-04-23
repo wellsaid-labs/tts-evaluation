@@ -15,7 +15,8 @@ from torch.nn import functional
 from torch.nn.utils.weight_norm import WeightNorm, remove_weight_norm, weight_norm
 from torchaudio.transforms import Resample
 
-from lib.utils import NumeralizePadEmbed, log_runtime, pad_tensor, trim_tensors
+from lib.distributed import NumeralizePadEmbed
+from lib.utils import log_runtime, pad_tensor, trim_tensors
 
 logger = logging.getLogger(__name__)
 
