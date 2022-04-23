@@ -262,11 +262,27 @@ def test_generate_waveform():
     model, inputs = _make_small_signal_model(config)
     output = model(*inputs)[0]
     assert output.shape == (config.batch_size, model.upscale_factor * config.num_frames)
-    for i in itertools.chain([1, 26, 27, 53]):
+    for i in [1, 26, 27, 53]:
         generator = generate_waveform(model, inputs[0].split(i, dim=1), inputs[1])
         generated = torch.cat(list(generator), dim=1)
         assert generated.shape == (config.batch_size, model.upscale_factor * config.num_frames)
         assert_almost_equal(output, generated)
+
+
+def test_generate_waveform__resample():
+    """Test `run._models.signal_model.model.generate_waveform` is consistent with `SignalModel`
+    after resampling incrementally.
+    """
+    config = _Config(
+        num_frames=64, batch_size=2, pred_sample_rate=32, out_sample_rate=24, ratios=[32]
+    )
+    model, inputs = _make_small_signal_model(config)
+    output = model(*inputs)[0]
+    assert output.shape == (config.batch_size, model.upscale_factor * config.num_frames)
+    generator = list(generate_waveform(model, inputs[0].split(1, dim=1), inputs[1]))
+    generated = torch.cat(list(generator), dim=1)
+    assert generated.shape == (config.batch_size, model.upscale_factor * config.num_frames)
+    assert_almost_equal(output, generated)
 
 
 def test_generate_waveform__padding_invariance():

@@ -39,8 +39,8 @@ NUM_FRAME_CHANNELS = 128
 # https://www.dsprelated.com/freebooks/sasp/Classic_Spectrograms.html
 # https://github.com/pytorch/audio/issues/384#issuecomment-597020705
 # https://pytorch.org/audio/compliance.kaldi.html
-FRAME_SIZE = 6000  # NOTE: Frame size in samples.
-FFT_LENGTH = 6000
+FRAME_SIZE = 4096  # NOTE: Frame size in samples.
+FFT_LENGTH = 4096
 assert FRAME_SIZE % 4 == 0
 FRAME_HOP = FRAME_SIZE // 4
 

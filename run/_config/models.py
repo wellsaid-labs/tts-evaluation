@@ -74,7 +74,7 @@ def configure(overwrite: bool = False):
             # number of characters the model is attending too at a time. That metric can be used
             # to set the `window_length`.
             window_length=9,
-            avg_frames_per_token=1.011,
+            avg_frames_per_token=1.472,
         ),
         run._models.spectrogram_model.decoder.Decoder: cf.Args(
             encoder_out_size=encoder_out_size,
