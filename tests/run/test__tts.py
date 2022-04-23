@@ -45,7 +45,7 @@ def test_text_to_speech_ffmpeg_generator():
         generator = text_to_speech_ffmpeg_generator(
             package, inputs, preprocessed_inputs, **cf.get()
         )
-        assert len(b"".join([s for s in generator])) == 416205
+        assert len(b"".join([s for s in generator])) == 416685
 
 
 def test_text_to_speech_ffmpeg_generator__thread_leak():
