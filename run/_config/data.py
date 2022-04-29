@@ -56,6 +56,9 @@ for dataset in [DEV_SPEAKERS, DATASETS]:
     del dataset[_loader.spanish.wsl.FIVE_NINE__CUSTOM_VOICE__ES_CO]
 
 DEV_SPEAKERS = set(DEV_SPEAKERS.keys())
+# NOTE: It's generally useful to evaluate the model on a dictionary dataset, that has a variety
+# of words and acronyms.
+DEV_SPEAKERS.add(_loader.english.dictionary.GCP_SPEAKER)
 
 
 def _include_passage(passage: struc.Passage) -> bool:
