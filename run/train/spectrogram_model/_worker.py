@@ -89,6 +89,7 @@ class Checkpoint(_utils.Checkpoint):
 
     def export(self) -> SpectrogramModel:
         """Export inference ready `SpectrogramModel` without needing additional context managers."""
+        logger.info("Exporting spectrogram model...")
         self.check_invariants()
         model = None
         with contextlib.ExitStack() as stack:

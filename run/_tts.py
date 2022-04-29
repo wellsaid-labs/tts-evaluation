@@ -418,7 +418,7 @@ def batch_text_to_speech(
                     tokens_mask=preds.tokens_mask[i, : preds.num_tokens[i]],
                     reached_max=preds.reached_max[i],
                 ),
-                sig_model=signals[i][: num_samples[:, i]].detach().numpy(),
+                sig_model=signals[0][i][: num_samples[:, i]].detach().numpy(),
             )
             for i, (j, _) in zip(range(len(batch)), batch)
         }

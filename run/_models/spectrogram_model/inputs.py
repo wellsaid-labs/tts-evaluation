@@ -201,12 +201,14 @@ def _preprocess(
 
     TODO: Instead of using `zero` embeddings, what if we tried training a vector, instead?
     """
-    inputs = Inputs([], [[], [], [], [], []], [[], []], [], [], device)
+    inputs = Inputs([], [], [[], []], [], [], device)
     for sesh, context_span, span in batch:
         tokens = [t for token in context_span for t in _token_to_tokens(token, span, respell_prob)]
 
-        seq_metadata = (sesh[0].label, sesh, sesh[0].dialect, sesh[0].style, sesh[0].language)
+        seq_metadata = [sesh[0].label, sesh, sesh[0].dialect, sesh[0].style, sesh[0].language]
         for i, data in enumerate(seq_metadata):
+            if len(inputs.seq_metadata) == i:
+                inputs.seq_metadata.append([])
             inputs.seq_metadata[i].append(data)
 
         if len(tokens) > 0:
