@@ -96,6 +96,9 @@ def _cache_path(
 ) -> pathlib.Path:
     """Make `Path` for caching results given the `original` file.
 
+    TODO: Factor this out into `_config` so we have guarentees that there is no collisions in the
+    disk.
+
     Args:
         ...
         suffix: Cache path suffix, starting with a dot.

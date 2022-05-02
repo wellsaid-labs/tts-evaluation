@@ -10,7 +10,8 @@ from hparams import HParams, add_config, parse_hparam_args
 from third_party import LazyLoader
 
 import lib
-from run._config import NUM_FRAME_CHANNELS, RANDOM_SEED, SPECTROGRAM_MODEL_EXPERIMENTS_PATH, Dataset
+from run._config import NUM_FRAME_CHANNELS, RANDOM_SEED, SPECTROGRAM_MODEL_EXPERIMENTS_PATH
+from run._utils import Dataset
 from run.train._utils import (
     CometMLExperiment,
     get_config_parameters,
@@ -20,7 +21,6 @@ from run.train._utils import (
     start_experiment,
 )
 from run.train.spectrogram_model import _metrics, _worker
-from run.train.spectrogram_model._data import InputEncoder
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import typer

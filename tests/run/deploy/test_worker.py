@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 @pytest.fixture(autouse=True)
 def run_around_tests():
     config = {
-        lib.text.grapheme_to_phoneme: hparams.HParams(separator=run._lang_config.PHONEME_SEPARATOR),
+        lib.text.grapheme_to_phoneme: hparams.HParams(separator=run._config.PHONEME_SEPARATOR),
     }
     hparams.add_config(config)
     yield
@@ -36,9 +36,9 @@ def test_validate_and_unpack():
     speaker = JUDY_BIEBER
     session = Session("sesh")
     script = "This is a exposé. ABC."
-    phonemes = _line_grapheme_to_phoneme([script], separator=run._lang_config.PHONEME_SEPARATOR)[0]
+    phonemes = _line_grapheme_to_phoneme([script], separator=run._config.PHONEME_SEPARATOR)[0]
     input_encoder = InputEncoder(
-        [script], [phonemes], [speaker], [(speaker, session)], run._lang_config.PHONEME_SEPARATOR
+        [script], [phonemes], [speaker], [(speaker, session)], run._config.PHONEME_SEPARATOR
     )
     speaker_id = input_encoder.speaker_encoder.token_to_index[speaker]
     speaker_id_to_speaker = {0: (speaker, session)}

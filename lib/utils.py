@@ -8,6 +8,8 @@ import itertools
 import logging
 import math
 import multiprocessing.pool
+import pathlib
+import pickle
 import random
 import statistics
 import time
@@ -209,7 +211,9 @@ def seconds_to_str(seconds: float) -> str:
         return "%dms" % (milliseconds)
 
 
-_LogRuntimeFunction = typing.TypeVar("_LogRuntimeFunction", bound=typing.Callable[..., typing.Any])
+AnyCallable = typing.Callable[..., typing.Any]
+
+_LogRuntimeFunction = typing.TypeVar("_LogRuntimeFunction", bound=AnyCallable)
 
 
 def log_runtime(function: _LogRuntimeFunction) -> _LogRuntimeFunction:
@@ -224,6 +228,38 @@ def log_runtime(function: _LogRuntimeFunction) -> _LogRuntimeFunction:
         return result
 
     return typing.cast(_LogRuntimeFunction, decorator)
+
+
+_CacheReturnDecoratorFunction = typing.TypeVar("_CacheReturnDecoratorFunction", bound=AnyCallable)
+
+
+def disk_cache(path: pathlib.Path):
+    """Decorator for caching the return value in a file regardless of the arguments."""
+
+    def decorator(function: _CacheReturnDecoratorFunction) -> _CacheReturnDecoratorFunction:
+        @functools.wraps(function)
+        def wrapper(*args, **kwargs):
+            if path.exists():
+                logger.warn(
+                    f"Loading cache for `{function.__qualname__}` from `{path}`. "
+                    f"Please delete `{path}` and rerun if you'd like to not use the "
+                    "cache."
+                )
+                with path.open("rb") as f:
+                    return pickle.load(f)
+
+            result = function(*args, **kwargs)
+            with path.open("wb") as f:
+                logger.info(f"Caching return value for `{function.__qualname__}` to `{path}`.")
+                pickle.dump(result, f)
+
+            return result
+
+        wrapper.clear_cache = lambda: path.unlink()
+
+        return typing.cast(_CacheReturnDecoratorFunction, wrapper)
+
+    return decorator
 
 
 _SortTogetherItem = typing.TypeVar("_SortTogetherItem")
@@ -305,12 +341,10 @@ class LSTM(torch.nn.LSTM):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         num_directions = 2 if self.bidirectional else 1
-        self.initial_hidden_state = torch.nn.Parameter(
-            torch.randn(self.num_layers * num_directions, 1, self.hidden_size)
-        )
-        self.initial_cell_state = torch.nn.Parameter(
-            torch.randn(self.num_layers * num_directions, 1, self.hidden_size)
-        )
+        init_hidden_state = torch.randn(self.num_layers * num_directions, 1, self.hidden_size)
+        self.init_hidden_state = torch.nn.parameter.Parameter(init_hidden_state)
+        init_cell_state = torch.randn(self.num_layers * num_directions, 1, self.hidden_size)
+        self.init_cell_state = torch.nn.parameter.Parameter(init_cell_state)
 
     def forward(  # type: ignore
         self,
@@ -320,8 +354,8 @@ class LSTM(torch.nn.LSTM):
         if hx is None:
             batch_size = input.shape[0] if self.batch_first else input.shape[1]
             hx = (
-                self.initial_hidden_state.expand(-1, batch_size, -1).contiguous(),
-                self.initial_cell_state.expand(-1, batch_size, -1).contiguous(),
+                self.init_hidden_state.expand(-1, batch_size, -1).contiguous(),
+                self.init_cell_state.expand(-1, batch_size, -1).contiguous(),
             )
         return super().forward(input, hx=hx)
 
@@ -334,8 +368,8 @@ class LSTMCell(torch.nn.LSTMCell):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.initial_hidden_state = torch.nn.Parameter(torch.randn(1, self.hidden_size))
-        self.initial_cell_state = torch.nn.Parameter(torch.randn(1, self.hidden_size))
+        self.init_hidden_state = torch.nn.Parameter(torch.randn(1, self.hidden_size))
+        self.init_cell_state = torch.nn.Parameter(torch.randn(1, self.hidden_size))
 
     def forward(
         self,
@@ -344,8 +378,8 @@ class LSTMCell(torch.nn.LSTMCell):
     ) -> typing.Tuple[torch.Tensor, torch.Tensor]:
         if hx is None:
             hx = (
-                self.initial_hidden_state.expand(input.shape[0], -1).contiguous(),
-                self.initial_cell_state.expand(input.shape[0], -1).contiguous(),
+                self.init_hidden_state.expand(input.shape[0], -1).contiguous(),
+                self.init_cell_state.expand(input.shape[0], -1).contiguous(),
             )
         return super().forward(input, hx=hx)
 
@@ -673,3 +707,28 @@ _TqdmVar = typing.TypeVar("_TqdmVar")
 def tqdm_(iterator: typing.Iterable[_TqdmVar], **kwargs) -> typing.Iterable[_TqdmVar]:
     """`tqdm` with typing."""
     return tqdm(iterator, **kwargs)
+
+
+def lengths_to_mask(
+    lengths: typing.Union[typing.List[int], torch.Tensor, int],
+    device: typing.Optional[torch.device] = None,
+) -> torch.Tensor:
+    """Make a tensor mask from `lengths`.
+
+    TODO: It may be faster to create the mask with Python lists first, and then transform it
+    into a tensor, all together.
+
+    Returns:
+        torch.BoolTensor [lengths.numel(), max(lengths)]
+    """
+    lengths = [lengths] if isinstance(lengths, int) else lengths
+    device = lengths.device if device is None and isinstance(lengths, torch.Tensor) else device
+    if isinstance(lengths, torch.Tensor):
+        lengths = lengths.squeeze()
+        assert len(lengths.shape) < 2, "Lengths must be one or zero dimensional"
+        lengths = lengths.view(-1)
+    max_len = 0 if len(lengths) == 0 else int(max(lengths))
+    tokens_mask = torch.zeros(len(lengths), max_len, device=device, dtype=torch.bool)
+    for i, length in enumerate(lengths):
+        tokens_mask[i, :length] = True
+    return tokens_mask

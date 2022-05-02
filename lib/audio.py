@@ -963,6 +963,8 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
             )
             # NOTE: Check ``notebooks/Signal_to_Spectrogram_Consistency.ipynb`` for the correctness
             # of this padding algorithm.
+            # NOTE: Notebooks were deprecated here:
+            # https://github.com/wellsaid-labs/Text-to-Speech/pull/389
             # NOTE: Center the signal such that the resulting spectrogram and audio are aligned.
             # Learn more here:
             # https://librosa.github.io/librosa/_modules/librosa/core/spectrum.html#stft

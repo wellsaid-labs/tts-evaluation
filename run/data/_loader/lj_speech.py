@@ -125,7 +125,7 @@ def _process_text(passage: UnprocessedPassage, verbalize: bool) -> UnprocessedPa
         script = _verbalize_roman_number(script)
 
     # NOTE: Messes up pound sign (£); therefore, this is after `_verbalize_currency`
-    script = run._lang_config.normalize_vo_script(script, Language.ENGLISH)
+    script = run._config.normalize_vo_script(script, Language.ENGLISH)
     return dataclasses.replace(passage, script=script, transcript=script)
 
 

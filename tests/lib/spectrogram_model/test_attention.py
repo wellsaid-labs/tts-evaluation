@@ -89,7 +89,7 @@ def _make_attention(
     attention_hidden_size=8,
     batch_size=3,
     max_num_tokens=12,
-    convolution_filter_size=5,
+    conv_filter_size=5,
     dropout=0.5,
     window_length=7,
     avg_frames_per_token=1.0,
@@ -102,7 +102,7 @@ def _make_attention(
     module = Attention(
         query_hidden_size=query_hidden_size,
         hidden_size=attention_hidden_size,
-        convolution_filter_size=convolution_filter_size,
+        conv_filter_size=conv_filter_size,
         dropout=dropout,
         window_length=window_length,
         avg_frames_per_token=avg_frames_per_token,
@@ -149,7 +149,7 @@ def _add_padding(
 assert_almost_equal = partial(_utils.assert_almost_equal, decimal=5)
 
 
-def test_location_relative_attention():
+def test_attention():
     """Test `attention.Attention` handles a basic case."""
     (
         module,
@@ -206,7 +206,7 @@ def test_location_relative_attention():
     (context.sum() + hidden_state.cumulative_alignment.sum() + alignment.sum()).backward()
 
 
-def test_location_relative_attention__batch_invariance():
+def test_attention__batch_invariance():
     """Test `attention.Attention` is consistent regardless of the batch size."""
     (
         module,
@@ -242,7 +242,7 @@ def test_location_relative_attention__batch_invariance():
     assert_almost_equal(batch_new_hidden_state.window_start[slice_], new_hidden_state.window_start)
 
 
-def test_location_relative_attention__padding_invariance():
+def test_attention__padding_invariance():
     """Test `attention.Attention` is consistent regardless of the padding."""
     (module, (tokens, tokens_mask, query, hidden_state), _) = _make_attention(dropout=0)
     num_tokens = _make_num_tokens(tokens_mask)
@@ -271,7 +271,7 @@ def test_location_relative_attention__padding_invariance():
     assert_almost_equal(padded_hidden_state.window_start, hidden_state.window_start)
 
 
-def test_location_relative_attention__zero():
+def test_attention__zero():
     """Test `attention.Attention` doesn't have a discontinuity at zero."""
     (module, (tokens, _, query, hidden_state), (batch_size, max_num_tokens)) = _make_attention()
     tokens_mask = torch.randn(batch_size, max_num_tokens) < 0.5
@@ -283,7 +283,7 @@ def test_location_relative_attention__zero():
     (context.sum() + hidden_state.cumulative_alignment.sum() + alignment.sum()).backward()
 
 
-def test_location_relative_attention__window_invariance():
+def test_attention__window_invariance():
     """Test `attention.Attention` is consistent regardless of the window size, if
     the window size is larger than the number of tokens."""
     max_num_tokens = 6

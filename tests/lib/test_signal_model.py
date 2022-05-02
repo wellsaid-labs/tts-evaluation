@@ -5,10 +5,10 @@ import typing
 import torch
 import torch.nn
 from torchnlp.random import fork_rng
-from torchnlp.utils import lengths_to_mask
 
 import lib
 from lib.signal_model import generate_waveform
+from lib.utils import lengths_to_mask
 from tests import _utils
 
 assert_almost_equal = lambda *a, **k: _utils.assert_almost_equal(*a, **k, decimal=4)

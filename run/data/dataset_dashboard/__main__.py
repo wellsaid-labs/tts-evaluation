@@ -41,9 +41,9 @@ from torchnlp.random import fork_rng
 import lib
 import run
 from lib.utils import flatten_2d, mazel_tov, round_, seconds_to_str
-from run._config import Dataset
-from run._lang_config import is_voiced
+from run._config import is_voiced
 from run._streamlit import audio_to_html, clear_session_cache, get_dataset, map_, st_data_frame
+from run._utils import Dataset
 from run.data._loader import DATASETS, Passage, Span, has_a_mistranscription
 from run.data.dataset_dashboard import _utils as utils
 

@@ -16,8 +16,8 @@ from third_party import LazyLoader, session_state
 
 import lib
 import run
-from run._config import Dataset
 from run._tts import CHECKPOINTS_LOADERS, Checkpoints, package_tts
+from run._utils import Dataset
 from run.data._loader import Passage
 
 if typing.TYPE_CHECKING:  # pragma: no cover
@@ -45,12 +45,6 @@ STREAMLIT_STATIC_PATH = STREAMLIT_WEB_ROOT_PATH / "static"
 STREAMLIT_STATIC_PRIVATE_PATH = STREAMLIT_STATIC_PATH / "_wsl_tts"
 STREAMLIT_STATIC_TEMP_PATH = STREAMLIT_STATIC_PRIVATE_PATH / "temp"
 STREAMLIT_STATIC_SYMLINK_PATH = STREAMLIT_STATIC_PRIVATE_PATH / "symlink"
-
-# NOTE: This is a default script that can be used with Streamlit apps, if need be.
-DEFAULT_SCRIPT = (
-    "Your creative life will evolve in ways that you can’t possibly imagine. Trust"
-    " your gut. Don’t overthink it. And allow yourself a little room to play."
-)
 
 
 def is_streamlit_running() -> bool:
@@ -123,6 +117,8 @@ def session_cache(func: None = None, **kwargs) -> SessionCache:
 
 def session_cache(func: typing.Optional[typing.Callable] = None, **kwargs):
     """`lru_cache` wrapper for `streamlit` that caches accross reruns.
+
+    NOTE: `session_cache` will trigger an import of `streamlit`.
 
     Learn more: https://github.com/streamlit/streamlit/issues/2382
     """
@@ -260,7 +256,7 @@ def passage_audio(passage: run.data._loader.Passage) -> np.ndarray:
 
 
 @session_cache(maxsize=None)
-def get_dataset(speaker_labels: typing.FrozenSet[str]) -> run._config.Dataset:
+def get_dataset(speaker_labels: typing.FrozenSet[str]) -> Dataset:
     """Load dataset subset, and cache."""
     logger.info("Loading dataset...")
     with st.spinner(f"Loading dataset(s): {','.join(list(speaker_labels))}"):
@@ -271,7 +267,7 @@ def get_dataset(speaker_labels: typing.FrozenSet[str]) -> run._config.Dataset:
 
 
 @session_cache(maxsize=None)
-def get_dev_dataset() -> run._config.Dataset:
+def get_dev_dataset() -> Dataset:
     """Load dev dataset, and cache."""
     with st.spinner("Loading dataset..."):
         _, dev_dataset = run._utils.split_dataset(run._utils.get_dataset())

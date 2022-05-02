@@ -10,9 +10,9 @@ from contextlib import nullcontext
 import numpy as np
 import torch
 import torch.nn
-import torch.nn.functional
 from hparams import HParam, configurable
-from torch.nn.utils.weight_norm import WeightNorm
+from torch.nn import functional
+from torch.nn.utils.weight_norm import WeightNorm, remove_weight_norm, weight_norm
 
 import lib
 
@@ -44,7 +44,7 @@ class _InterpolateAndConcat(torch.nn.Module):
         Returns:
             torch.FloatTensor [batch_size, frame_channels + self.size, num_frames]
         """
-        concat = torch.nn.functional.interpolate(concat, scale_factor=self.scale_factor)
+        concat = functional.interpolate(concat, scale_factor=self.scale_factor)
         assert concat.shape[1] == self.size
         assert concat.shape[2] >= tensor.shape[2], "Scale factor is too small."
         return torch.cat(list(lib.utils.trim_tensors(tensor, concat)), dim=1)
@@ -73,7 +73,7 @@ class _InterpolateAndMask(torch.nn.Module):
         Returns:
             torch.FloatTensor [batch_size, frame_channels, num_frames]
         """
-        mask = torch.nn.functional.interpolate(mask.float(), scale_factor=self.scale_factor).bool()
+        mask = functional.interpolate(mask.float(), scale_factor=self.scale_factor).bool()
         assert mask.shape[2] >= tensor.shape[2], "Scale factor is too small."
         tensor, mask = lib.utils.trim_tensors(tensor, mask)
         return tensor.masked_fill(~mask, 0.0)
@@ -364,8 +364,7 @@ class SignalModel(torch.nn.Module):
 
         # NOTE: Learn more about `weight_norm` compatibility with DDP:
         # https://github.com/pytorch/pytorch/issues/35191
-        for module in self._get_weight_norm_modules():
-            torch.nn.utils.weight_norm(module)
+        [weight_norm(module) for module in self._get_weight_norm_modules()]
 
     def del_weight_norm_temp_tensor_(self):
         """Delete the temporary "weight" tensor created every forward pass by `weight_norm`.
@@ -393,9 +392,7 @@ class SignalModel(torch.nn.Module):
         """
         # NOTE: `remove_weight_norm` requires that the temporary tensor exists.
         self.set_weight_norm_temp_tensor_()
-        for module in self._get_weight_norm_modules():
-            if _has_weight_norm(module):
-                torch.nn.utils.remove_weight_norm(module)
+        [remove_weight_norm(m) for m in self._get_weight_norm_modules() if _has_weight_norm(m)]
 
     def _get_weight_norm_modules(self) -> typing.Iterator[torch.nn.Module]:
         """Get all modules that should have their weight(s) normalized."""
@@ -592,9 +589,7 @@ class SpectrogramDiscriminator(torch.nn.Module):
         # NOTE: We initialize the convolution parameters before weight norm factorizes them.
         self.reset_parameters()
 
-        for module in self.modules():
-            if isinstance(module, torch.nn.Conv1d):
-                torch.nn.utils.weight_norm(module)
+        [weight_norm(m) for m in self.modules() if isinstance(m, torch.nn.Conv1d)]
 
     def reset_parameters(self):
         for module in self.modules():
@@ -650,10 +645,10 @@ class SpectrogramDiscriminator(torch.nn.Module):
 
 def generate_waveform(
     model: SignalModel,
-    spectrogram: typing.Iterator[torch.Tensor],
+    spectrogram: typing.Iterable[torch.Tensor],
     speaker: torch.Tensor,
     session: torch.Tensor,
-    spectrogram_mask: typing.Optional[typing.Iterator[torch.Tensor]] = None,
+    spectrogram_mask: typing.Optional[typing.Iterable[torch.Tensor]] = None,
 ) -> typing.Iterator[torch.Tensor]:
     """
     TODO: Similar to WaveNet, we could incorperate a "Fast WaveNet" approach. This basically means

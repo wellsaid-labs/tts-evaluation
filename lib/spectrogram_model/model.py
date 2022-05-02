@@ -7,10 +7,10 @@ import typing
 import torch
 import torch.nn
 from hparams import HParam, configurable
-from torchnlp.utils import lengths_to_mask
 from tqdm import tqdm
 
 from lib.spectrogram_model import decoder, encoder
+from lib.utils import lengths_to_mask
 
 logger = logging.getLogger(__name__)
 
@@ -324,7 +324,7 @@ class SpectrogramModel(torch.nn.Module):
         if params.tokens_mask is None:
             # NOTE: `lengths_to_mask` may cause a gpu-cpu synchronization, which may take sometime.
             # [batch_size, num_tokens]
-            tokens_mask = lengths_to_mask(num_tokens, device=tokens.device)
+            tokens_mask = lengths_to_mask(num_tokens)
         else:
             # [num_tokens] or [num_tokens, batch_size] → [batch_size, num_tokens]
             tokens_mask = params.tokens_mask.view(tokens.shape[1], -1).transpose(0, 1)

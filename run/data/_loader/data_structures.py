@@ -59,14 +59,14 @@ def voiced_nonalignment_spans(
     if spans.passage.is_linked.transcript:
         text[0] += "" if spans.prev is None else spans.prev.script + spans.prev.transcript
         text[-1] += "" if spans.next is None else spans.next.script + spans.next.transcript
-    return spans, [run._lang_config.is_voiced(t, span.speaker.language) for t in text]
+    return spans, [run._config.is_voiced(t, span.speaker.language) for t in text]
 
 
 def _is_alignment_voiced(passage: Passage, alignment: Alignment) -> bool:
     """Return `True` if a `passage` voiced at `alignment`."""
     for attr in ("script", "transcript"):
         interval = getattr(alignment, attr)
-        if interval[0] < interval[-1] and run._lang_config.is_voiced(
+        if interval[0] < interval[-1] and run._config.is_voiced(
             getattr(passage, attr)[interval[0] : interval[-1]], passage.speaker.language
         ):
             return True
@@ -152,14 +152,10 @@ class Speaker(typing.NamedTuple):
     gender: typing.Optional[str] = None
 
 
-make_en_speaker = lambda label, *args, **kwargs: Speaker(label, Language.ENGLISH, *args, **kwargs)
-make_de_speaker = lambda label, *args, **kwargs: Speaker(label, Language.GERMAN, *args, **kwargs)
-make_es_speaker = lambda label, *args, **kwargs: Speaker(
-    label, Language.SPANISH_CO, *args, **kwargs
-)
-make_pt_speaker = lambda label, *args, **kwargs: Speaker(
-    label, Language.PORTUGUESE_BR, *args, **kwargs
-)
+make_en_speaker = lambda label, *a, **kw: Speaker(label, Language.ENGLISH, *a, **kw)
+make_de_speaker = lambda label, *a, **kw: Speaker(label, Language.GERMAN, *a, **kw)
+make_es_speaker = lambda label, *a, **kw: Speaker(label, Language.SPANISH_CO, *a, **kw)
+make_pt_speaker = lambda label, *a, **kw: Speaker(label, Language.PORTUGUESE_BR, *a, **kw)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -705,10 +701,27 @@ def _make_speech_segments_helper(
     return tuple(speech_segments)
 
 
+def _normalize_non_standard_characters(text: str) -> str:
+    """Google STT transcripts occasionally utilizes unexpected symbols that haven't been normalized.
+    If the transcripts are normalized during training, the alignments get out of sync due to the
+    normalization (coming from `unidecode`) using more characters than the nonstandard character.
+        Examples: ° would be normalized to deg
+                  € would be normalized to eur
+
+    TODO: Normalize Google STT transcripts before syncing and aligning.
+    TODO: Remove this function once all datasets have been preprocessed on latest code.
+    """
+    text = text.replace("¹", "'")
+    text = text.replace("°", "d")
+    text = text.replace("€", "e")
+    return text
+
+
 def _maybe_normalize_vo_script(script: str, language: Language) -> str:
     """Normalize a script if it's not normalized."""
-    if not run._lang_config.is_normalized_vo_script(script, language):
-        return run._lang_config.normalize_vo_script(script, language)
+    script = _normalize_non_standard_characters(script)
+    if not run._config.is_normalized_vo_script(script, language):
+        return run._config.normalize_vo_script(script, language)
     return script
 
 
@@ -835,11 +848,8 @@ def _make_speech_segments(passage: Passage) -> typing.List[Span]:
 
 
 def _default_session(passage: UnprocessedPassage) -> Session:
-    """By default, this assumes that each audio file was recorded, individually.
-
-    TODO: Remove suffix from `Session` name.
-    """
-    return Session(passage.audio_path.name)
+    """By default, this assumes that each audio file was recorded, individually."""
+    return Session(passage.audio_path.stem)
 
 
 @lib.utils.log_runtime
@@ -862,6 +872,7 @@ def make_passages(
         **kwargs: Keyword arguments passed to `Passage`.
     """
     no_tqdm = not add_tqdm
+    tqdm = partial(tqdm_, disable=no_tqdm)
 
     logger.info(f"[{label}] Normalizing audio files...")
     normalized_audio_files = _normalize_audio_files(dataset, no_tqdm)
@@ -874,7 +885,7 @@ def make_passages(
 
     logger.info(f"[{label}] Making passages...")
     documents: typing.List[typing.List[Passage]] = [[] for _ in range(len(dataset))]
-    iterator = tqdm_([(i, p) for i, d in enumerate(dataset) for p in d], disable=no_tqdm)
+    iterator = tqdm([(i, p) for i, d in enumerate(dataset) for p in d])
     for i, item in iterator:
         if item.audio_path not in normalized_audio_files:
             logger.warning(f"[{label}] Skipping, audio path ({item.audio_path.name}) isn't a file.")
@@ -887,20 +898,20 @@ def make_passages(
         documents[i].append(Passage(audio_file=audio_file, alignments=alignments, **kwargs))
 
     logger.info(f"[{label}] Linking passages...")
-    for doc in tqdm_(documents, disable=no_tqdm):
+    for doc in tqdm(documents):
         for i, passage in enumerate(doc):
             object.__setattr__(passage, "passages", doc)
             object.__setattr__(passage, "index", i)
 
     flat = flatten_2d(documents)
     logger.info(f"[{label}] Making nonalignments and speech segments...")
-    for passage in tqdm_(flat, disable=no_tqdm):
+    for passage in tqdm(flat):
         object.__setattr__(passage, "nonalignments", _make_nonalignments(passage))
         object.__setattr__(passage, "non_speech_segments", non_speech_segments[passage.audio_file])
         object.__setattr__(passage, "speech_segments", _make_speech_segments(passage))
 
     logger.info(f"[{label}] Checking invariants and packing...")
-    for passage in tqdm_(flat, disable=no_tqdm):
+    for passage in tqdm(flat):
         passage.check_invariants()
         object.__setattr__(passage, "alignments", Alignment.stow(passage.alignments))
         object.__setattr__(passage, "nonalignments", Alignment.stow(passage.nonalignments))

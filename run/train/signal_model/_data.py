@@ -152,7 +152,7 @@ class Batch(_utils.Batch):
 class DataProcessor(torch.utils.data.IterableDataset):
     def __init__(
         self,
-        dataset: run._config.Dataset,
+        dataset: run._utils.Dataset,
         slice_size: int,
         batch_size: int,
         span_bucket_size: int,

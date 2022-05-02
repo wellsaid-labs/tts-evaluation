@@ -13,6 +13,7 @@ import torch
 import torch.nn
 import torch.optim
 import torch.utils.data
+import torch.utils.data._utils.worker
 from hparams import HParam, configurable
 from third_party import get_parameter_norm
 from torch.nn.functional import binary_cross_entropy_with_logits, l1_loss, mse_loss
@@ -27,13 +28,12 @@ from lib.visualize import plot_mel_spectrogram, plot_spectrogram
 from run._config import (
     RANDOM_SEED,
     Cadence,
-    Dataset,
     DatasetType,
-    configurable_,
     get_config_label,
     get_dataset_label,
     get_model_label,
 )
+from run._utils import Dataset, configurable_
 from run.train import _utils, spectrogram_model
 from run.train._utils import (
     CometMLExperiment,
@@ -102,6 +102,7 @@ class Checkpoint(_utils.Checkpoint):
         context managers."""
         self.check_invariants()
         self.model.grad_enabled = None  # NOTE: For backwards compatibility
+        model = None
         with contextlib.ExitStack() as stack:
             stack.enter_context(set_train_mode(self.model, False, self.ema))
             self.model.del_weight_norm_temp_tensor_()
@@ -109,6 +110,7 @@ class Checkpoint(_utils.Checkpoint):
             model.set_grad_enabled(False)
             model.remove_weight_norm_()
         self.check_invariants()
+        assert model is not None
         return model
 
 
@@ -248,10 +250,8 @@ class _State:
         spectrogram_model._worker.InputEncoder, lib.spectrogram_model.SpectrogramModel
     ]:
         checkpoint = lib.environment.load(spectrogram_model_checkpoint_path)
-        comet.log_other(
-            get_config_label("spectrogram_model_experiment_key"),
-            checkpoint.comet_experiment_key,
-        )
+        label = get_config_label("spectrogram_model_experiment_key")
+        comet.log_other(label, checkpoint.comet_experiment_key)
         return checkpoint.export()
 
     @classmethod
@@ -323,6 +323,7 @@ def _worker_init_fn(
 ):
     # NOTE: Each worker needs a different random seed to generate unique data.
     info = torch.utils.data.get_worker_info()
+    assert isinstance(info, torch.utils.data._utils.worker.WorkerInfo)
     seed = RANDOM_SEED
     seed += world_size * info.num_workers * step
     seed += rank * info.num_workers
@@ -348,6 +349,7 @@ def _get_data_loaders(
 ) -> typing.Tuple[DataLoader[Batch], DataLoader[Batch]]:
     """Initialize training and development data loaders."""
     model = state.model.module if isinstance(state.model, DistributedDataParallel) else state.model
+    step, device = int(state.step.item()), state.device
     padding = typing.cast(int, model.padding)
     processor = partial(
         DataProcessor,
@@ -357,16 +359,12 @@ def _get_data_loaders(
     )
     train = processor(train_dataset, train_slice_size, train_batch_size, train_span_bucket_size)
     dev = processor(dev_dataset, dev_slice_size, dev_batch_size, dev_span_bucket_size)
-    kwargs = dict(
+    init_fn = partial(_worker_init_fn, step=step, rank=get_rank(), world_size=get_world_size())
+    kwargs: typing.Dict[str, typing.Any] = dict(
         num_workers=num_workers,
-        device=state.device,
+        device=device,
         prefetch_factor=prefetch_factor,
-        worker_init_fn=partial(
-            _worker_init_fn,
-            step=int(state.step.item()),
-            rank=get_rank(),
-            world_size=get_world_size(),
-        ),
+        worker_init_fn=init_fn,
     )
     return (
         DataLoader(train, num_steps_per_epoch=train_steps_per_epoch, **kwargs),
@@ -431,7 +429,7 @@ def _run_discriminator(
     discriminator_loss = binary_cross_entropy_with_logits(predictions, labels, reduction="none")
     get_discrim_values = partial(
         args.metrics.get_discrim_values,
-        fft_length=discriminator.module.fft_length,
+        fft_length=typing.cast(SpectrogramDiscriminator, discriminator.module).fft_length,
         batch=args.batch,
         real_logits=predictions[:batch_size],
         fake_logits=predictions[batch_size:],
@@ -532,7 +530,7 @@ def _run_step(args: _HandleBatchArgs):
         args.state.ema.update()
         args.state.scheduler.step()
         args.state.step.add_(1)
-        args.state.comet.set_step(typing.cast(int, args.state.step.item()))
+        args.state.comet.set_step(int(args.state.step.item()))
         args.state.model.zero_grad(set_to_none=True)
         [discrim.zero_grad(set_to_none=True) for discrim in args.state.discrims]
 
@@ -581,7 +579,8 @@ def _visualize_inferred(
     speaker = batch.batch.encoded_speaker.tensor[:, item].to(state.device)
     session = batch.batch.encoded_session.tensor[:, item].to(state.device)
     splits = spectrogram.split(split_size)
-    predicted = generate_waveform(state.model.module, splits, speaker, session)
+    model = typing.cast(SignalModel, state.model.module)
+    predicted = generate_waveform(model, splits, speaker, session)
     predicted = list(predicted)
     predicted = typing.cast(torch.Tensor, torch.cat(predicted, dim=-1))
     target = batch.batch.audio[item]
@@ -618,7 +617,8 @@ def _visualize_inferred_end_to_end(
     splits = preds.frames.to(state.device).split(split_size)
     speaker = batch.batch.encoded_speaker.tensor[:, item].to(state.device)
     session = batch.batch.encoded_session.tensor[:, item].to(state.device)
-    predicted = list(generate_waveform(state.model.module, splits, speaker, session))
+    model = typing.cast(SignalModel, state.model.module)
+    predicted = list(generate_waveform(model, splits, speaker, session))
     predicted = typing.cast(torch.Tensor, torch.cat(predicted, dim=-1))
     target = batch.batch.audio[item]
     model_label_ = partial(get_model_label, cadence=Cadence.STEP)
@@ -661,7 +661,7 @@ def _run_steps(
     make_args = partial(_HandleBatchArgs, state, data_loader, context, dataset_type)
     with contextlib.ExitStack() as stack:
         stack.enter_context(set_context(context, state.comet, *state.models, ema=state.ema))
-        stack.enter_context(set_epoch(state.comet, step=state.step.item(), **kwargs))
+        stack.enter_context(set_epoch(state.comet, step=int(state.step.item()), **kwargs))
 
         metrics = Metrics(state.comet, state.spectrogram_model_input_encoder.speaker_encoder.vocab)
         timer = Timer().record_event(Timer.LOAD_DATA)

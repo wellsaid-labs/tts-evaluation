@@ -4,7 +4,6 @@ TODO:
 - Add a script for creating a batch of instances.
 - Add a script for updating a machine's start up script for signal model training, like so:
 https://cloud.google.com/compute/docs/instance-groups/rolling-out-updates-to-managed-instance-groups
-- Support non-preemtible instances for timed jobs.
 """
 import logging
 import math
@@ -24,6 +23,10 @@ import lib
 
 logger = logging.getLogger(__name__)
 app = typer.Typer(context_settings=dict(max_content_width=math.inf))
+persistent_app = typer.Typer()
+app.add_typer(persistent_app, name="persistent")
+preemptible_app = typer.Typer()
+app.add_typer(preemptible_app, name="preemptible")
 credentials, project = google.auth.default()
 # NOTE: The documentation for `compute` is difficult to find, so here is a link:
 # https://googleapis.github.io/google-api-python-client/docs/dyn/compute_v1.html
@@ -50,23 +53,76 @@ def _wait_for_operation(
         time.sleep(poll_interval)
 
 
-@app.command()
-def make_instance(
-    name: str = typer.Option(...),
-    zone: str = typer.Option(...),
-    machine_type: str = typer.Option(...),
-    gpu_type: str = typer.Option(...),
-    gpu_count: int = typer.Option(...),
-    disk_size: int = typer.Option(...),
-    disk_type: str = typer.Option(...),
-    image_project: str = typer.Option(project),
-    image_family: typing.Optional[str] = typer.Option(None),
-    image: typing.Optional[str] = typer.Option(None),
-    metadata: typing.List[str] = typer.Option([]),
-    metadata_from_file: typing.List[str] = typer.Option([]),
-    health_check: str = typer.Option("check-ssh"),
+def _make_instance_group_manager(name: str, zone: str, template_op: typing.Dict, health_check: str):
+    """Make the instance group manager along with a health check for a instance template."""
+    try:
+        body = {
+            "checkIntervalSec": 10,
+            "healthyThreshold": 2,
+            "logConfig": {"enable": False},
+            "name": health_check,
+            "tcpHealthCheck": {"port": 22, "proxyHeader": "NONE", "request": "", "response": ""},
+            "timeoutSec": 5,
+            "type": "TCP",
+            "unhealthyThreshold": 3,
+        }
+        health_check_op = compute.healthChecks().insert(project=project, body=body).execute()
+        health_check_op = _wait_for_operation(health_check_op["name"])
+        logger.info("Created health check: %s", health_check_op["targetLink"])
+    except googleapiclient.errors.HttpError as error:
+        logger.warning(error._get_reason())
+
+    body = {
+        "name": name,
+        "baseInstanceName": name,
+        "instanceTemplate": template_op["targetLink"],
+        "targetSize": 1,
+        "statefulPolicy": {
+            "preservedState": {"disks": {name: {"autoDelete": "ON_PERMANENT_INSTANCE_DELETION"}}}
+        },
+        "autoHealingPolicies": [
+            {
+                "initialDelaySec": 300.0,
+                "healthCheck": f"projects/{project}/global/healthChecks/{health_check}",
+            }
+        ],
+    }
+    client = compute.instanceGroupManagers()
+    manager_op = client.insert(project=project, zone=zone, body=body).execute()
+    manager_op = _wait_for_operation(manager_op["name"], zone=zone, is_global=False)
+    logger.info("Created instance group manager: %s", manager_op["targetLink"])
+
+
+def _get_zones() -> typing.List[str]:
+    """Get a list of available zones."""
+    zones_op = compute.zones().list(project=project).execute()
+    return [z["name"] for z in zones_op["items"]]
+
+
+def _make_instance(
+    name: str,
+    zone: typing.Optional[str],
+    machine_type: str,
+    gpu_type: str,
+    gpu_count: int,
+    disk_size: int,
+    disk_type: str,
+    image_project: str,
+    image_family: typing.Optional[str],
+    image: typing.Optional[str],
+    metadata: typing.List[str],
+    metadata_from_file: typing.List[str],
+    health_check: str,
+    preemptible: bool,
 ):
-    """Create a managed and preemptible instance named NAME in ZONE."""
+    """Create a managed and preemptible instance named NAME in ZONE.
+
+    Args:
+        ...
+        zone: This can be a zone like "us-east1-c". If a zone is not provided, this will try to
+            many different zones until one succeeds.
+        ...
+    """
     lib.environment.set_basic_logging_config()
 
     images = compute.images()
@@ -120,7 +176,11 @@ def make_instance(
                     ],
                 }
             ],
-            "scheduling": {"preemptible": True},
+            "scheduling": {
+                "preemptible": preemptible,
+                "automaticRestart": not preemptible,
+                "onHostMaintenance": "TERMINATE",
+            },
             "serviceAccounts": [
                 {
                     "email": "default",
@@ -133,49 +193,90 @@ def make_instance(
     template_op = _wait_for_operation(template_op["name"])
     logger.info("Created instance template: %s", template_op["targetLink"])
 
-    try:
-        body = {
-            "checkIntervalSec": 10,
-            "healthyThreshold": 2,
-            "logConfig": {"enable": False},
-            "name": health_check,
-            "tcpHealthCheck": {"port": 22, "proxyHeader": "NONE", "request": "", "response": ""},
-            "timeoutSec": 5,
-            "type": "TCP",
-            "unhealthyThreshold": 3,
-        }
-        health_check_op = compute.healthChecks().insert(project=project, body=body).execute()
-        health_check_op = _wait_for_operation(health_check_op["name"])
-        logger.info("Created health check: %s", health_check_op["targetLink"])
-    except googleapiclient.errors.HttpError as error:
-        logger.warning(error._get_reason())
+    if preemptible:
+        assert zone is not None, "Zone selection not supported for preemptible instances."
+        _make_instance_group_manager(name, zone, template_op, health_check)
+        watch_preemptible_instance(name, zone)
 
-    body = {
-        "name": name,
-        "baseInstanceName": name,
-        "instanceTemplate": template_op["targetLink"],
-        "targetSize": 1,
-        "statefulPolicy": {
-            "preservedState": {"disks": {name: {"autoDelete": "ON_PERMANENT_INSTANCE_DELETION"}}}
-        },
-        "autoHealingPolicies": [
-            {
-                "initialDelaySec": 300.0,
-                "healthCheck": f"projects/{project}/global/healthChecks/{health_check}",
-            }
-        ],
-    }
-    client = compute.instanceGroupManagers()
-    manager_op = client.insert(project=project, zone=zone, body=body).execute()
-    manager_op = _wait_for_operation(manager_op["name"], zone=zone, is_global=False)
-    logger.info("Created instance group manager: %s", manager_op["targetLink"])
+    for zone in _get_zones() if zone is None else [zone]:
+        logger.info(f"Attempting zone: '{zone}'")
+        client = compute.instances()
+        # NOTE: An instance template is created and used to create a single instance to simplify the
+        # code.
+        link = template_op["targetLink"]
+        instance_op = client.insert(
+            body={"name": name}, project=project, zone=zone, sourceInstanceTemplate=link
+        )
+        try:
+            instance_op = instance_op.execute()
+            instance_op = _wait_for_operation(instance_op["name"], zone=zone, is_global=False)
+            logger.info("Created instance: %s", instance_op["targetLink"])
+            break
+        except Exception as e:
+            logger.error(f"Failed to create instance on '{zone}':\n{str(e)}")
+
+    if zone is not None:
+        watch_persistent_instance(name, zone)
 
 
-@app.command()
-def watch_instance(
+@persistent_app.command("make-instance")
+def make_persistent_instance(
+    name: str = typer.Option(...),
+    zone: str = typer.Option(None, help="Select a specific zone for training."),
+    machine_type: str = typer.Option(...),
+    gpu_type: str = typer.Option(...),
+    gpu_count: int = typer.Option(...),
+    disk_size: int = typer.Option(...),
+    disk_type: str = typer.Option(...),
+    image_project: str = typer.Option(project),
+    image_family: typing.Optional[str] = typer.Option(None),
+    image: typing.Optional[str] = typer.Option(None),
+    metadata: typing.List[str] = typer.Option([]),
+    metadata_from_file: typing.List[str] = typer.Option([]),
+    health_check: str = typer.Option("check-ssh"),
+):
+    return _make_instance(**locals(), preemptible=False)
+
+
+@preemptible_app.command("make-instance")
+def make_preemptible_instance(
     name: str = typer.Option(...),
     zone: str = typer.Option(...),
-    poll_interval: int = typer.Option(5),
+    machine_type: str = typer.Option(...),
+    gpu_type: str = typer.Option(...),
+    gpu_count: int = typer.Option(...),
+    disk_size: int = typer.Option(...),
+    disk_type: str = typer.Option(...),
+    image_project: str = typer.Option(project),
+    image_family: typing.Optional[str] = typer.Option(None),
+    image: typing.Optional[str] = typer.Option(None),
+    metadata: typing.List[str] = typer.Option([]),
+    metadata_from_file: typing.List[str] = typer.Option([]),
+    health_check: str = typer.Option("check-ssh"),
+):
+    return _make_instance(**locals(), preemptible=True)
+
+
+@persistent_app.command("watch-instance")
+def watch_persistent_instance(
+    name: str = typer.Option(...),
+    zone: str = typer.Option(...),
+    poll_interval: int = 5,
+):
+    """Print the status of instance named NAME in ZONE."""
+    lib.environment.set_basic_logging_config()
+    client = compute.instances()
+    while True:
+        instance = client.get(project=project, zone=zone, instance=name).execute()
+        logger.info("The status of the instance is '%s'.", instance["status"])
+        time.sleep(poll_interval)
+
+
+@preemptible_app.command("watch-instance")
+def watch_preemptible_instance(
+    name: str = typer.Option(...),
+    zone: str = typer.Option(...),
+    poll_interval: int = 5,
 ):
     """Print the status of instance named NAME in ZONE."""
     lib.environment.set_basic_logging_config()
@@ -194,8 +295,34 @@ def watch_instance(
         time.sleep(poll_interval)
 
 
-@app.command()
-def delete_instance(name: str = typer.Option(...), zone: str = typer.Option(...)):
+def _delete_instance_template(name: str, zone: str):
+    try:
+        client = compute.instances()
+        instance_op = client.delete(project=project, zone=zone, instance=name).execute()
+        instance_op = _wait_for_operation(instance_op["name"], zone=zone, is_global=False)
+        logger.info("Deleted instance: %s", instance_op["targetLink"])
+    except googleapiclient.errors.HttpError as error:
+        logger.warning(error._get_reason())
+
+
+@persistent_app.command("delete-instance")
+def delete_persistent_instance(name: str = typer.Option(...), zone: str = typer.Option(...)):
+    """Delete the instance named NAME in ZONE."""
+    lib.environment.set_basic_logging_config()
+
+    try:
+        client = compute.instanceTemplates()
+        template_op = client.delete(project=project, instanceTemplate=name).execute()
+        template_op = _wait_for_operation(template_op["name"])
+        logger.info("Deleted instance template: %s", template_op["targetLink"])
+    except googleapiclient.errors.HttpError as error:
+        logger.warning(error._get_reason())
+
+    _delete_instance_template(name, zone)
+
+
+@preemptible_app.command("delete-instance")
+def delete_preemptible_instance(name: str = typer.Option(...), zone: str = typer.Option(...)):
     """Delete the instance named NAME in ZONE."""
     lib.environment.set_basic_logging_config()
 
@@ -215,27 +342,46 @@ def delete_instance(name: str = typer.Option(...), zone: str = typer.Option(...)
     except googleapiclient.errors.HttpError as error:
         logger.warning(error._get_reason())
 
-    try:
-        client = compute.instanceTemplates()
-        template_op = client.delete(project=project, instanceTemplate=name).execute()
-        template_op = _wait_for_operation(template_op["name"])
-        logger.info("Deleted instance template: %s", template_op["targetLink"])
-    except googleapiclient.errors.HttpError as error:
-        logger.warning(error._get_reason())
+    _delete_instance_template(name, zone)
 
 
-@app.command()
-def most_recent(
+"""
+NOTE: This `most_recent` wasn't implemented with Google's Python SDK because:
+- The client must query all zones, and preferably in parallel.
+- The client must deal with pagination.
+- The client must deal with parsing the json.
+- It isn't typed.
+It's much easier to run the below command...
+"""
+
+
+@persistent_app.command("most-recent")
+def most_recent_persistent(
+    filter: str = "",
+    name: typing.Optional[str] = typer.Option(None, help="Filter by the name of a instance."),
+):
+    """Print the name of the most recent instance created containing the string FILTER."""
+    command = (
+        "gcloud compute instances list --sort-by=creationTimestamp "
+        '--format="value(name,creationTimestamp)"'
+    )
+    lines = subprocess.check_output(command, shell=True).decode().strip().split("\n")
+    machines = [[s.strip() for s in l.split()] for l in lines]
+    if name is not None:
+        machines = [s for s in machines if len(s) == 2 and s[0] == name]
+    machines = [s[0] for s in machines if filter in s[0]]
+    if len(machines) == 0:
+        logger.error("No instance found.")
+    else:
+        typer.echo(machines[-1])
+
+
+@preemptible_app.command("most-recent")
+def most_recent_preemptible(
     filter: str = "",
     name: typing.Optional[str] = typer.Option(None, help="Filter by the name of a instance group."),
 ):
     """Print the name of the most recent instance created containing the string FILTER."""
-    # NOTE: This wasn't implemented with Google's Python SDK because:
-    # - The client must query all zones, and preferably in parallel.
-    # - The client must deal with pagination.
-    # - The client must deal with parsing the json.
-    # - It isn't typed.
-    # It's much easier to run the below command...
     command = (
         "gcloud compute instances list --sort-by=creationTimestamp "
         '--format="value(name,metadata.items.created-by,creationTimestamp)"'
@@ -280,13 +426,8 @@ def ip(zone: str = typer.Option(...), name: str = typer.Option(...)):
     typer.echo(response["networkInterfaces"][0]["accessConfigs"][0]["natIP"])
 
 
-@app.command()
 def image_and_delete(
-    image_family: str = typer.Option(...),
-    image_name: str = typer.Option(...),
-    name: str = typer.Option(...),
-    vm_name: str = typer.Option(...),
-    zone: str = typer.Option(...),
+    image_family: str, image_name: str, name: str, vm_name: str, zone: str, preemptible: bool
 ):
     """Image the underlying managed instance, and delete it afterwards.
 
@@ -303,18 +444,42 @@ def image_and_delete(
     api = "gcloud compute"
     suffix = f"--zone={zone}"
     commands = [
-        f"{api} instance-groups managed abandon-instances {name} --instances={vm_name} {suffix}",
         f"{api} instances stop {vm_name} {suffix}",
         f"{api} images create {image_name} --family={image_family} "
         f"--source-disk={vm_name} --source-disk-zone={zone} --storage-location=us",
     ]
+    cmd = f"{api} instance-groups managed abandon-instances {name} --instances={vm_name} {suffix}"
+    if preemptible:
+        commands.insert(0, cmd)
     for command in commands:
         typer.echo(subprocess.check_output(command, shell=True).decode().strip())
 
     typer.confirm("Are you sure you want to delete the instance?", abort=True)
     command = f"gcloud compute instances delete {vm_name} --zone={zone}"
     typer.echo(subprocess.check_output(command, shell=True).decode().strip())
-    delete_instance(name, zone)
+    (delete_preemptible_instance if preemptible else delete_persistent_instance)(name, zone)
+
+
+@persistent_app.command("image-and-delete")
+def persistent_image_and_delete(
+    image_family: str = typer.Option(...),
+    image_name: str = typer.Option(...),
+    name: str = typer.Option(...),
+    vm_name: str = typer.Option(...),
+    zone: str = typer.Option(...),
+):
+    image_and_delete(**locals(), preemptible=False)
+
+
+@preemptible_app.command("image-and-delete")
+def preemptible_image_and_delete(
+    image_family: str = typer.Option(...),
+    image_name: str = typer.Option(...),
+    name: str = typer.Option(...),
+    vm_name: str = typer.Option(...),
+    zone: str = typer.Option(...),
+):
+    image_and_delete(**locals(), preemptible=True)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,30 @@
+{
+  "env": "prod",
+  "model": "studysync-v2",
+  "version": "1",
+  "image": "gcr.io/voice-service-2-313121/speech-api-worker@sha256:597d054c9911a059611fa01b7f0e5aa38bb0285a87136426b005d6252231e3b7",
+  "imageEntrypoint": "run.deploy.worker:app",
+  "provideApiKeyAuthForLegacyContainerSupport": "true",
+  "stream": {
+    "minScale": 1,
+    "maxScale": 32,
+    "concurrency": 1,
+    "paths": [
+      "/api/text_to_speech/stream"
+    ]
+  },
+  "validate": {
+    "minScale": 1,
+    "maxScale": 8,
+    "concurrency": 4,
+    "paths": [
+      "/api/text_to_speech/input_validated"
+    ]
+  },
+  "traffic": [
+    {
+      "tag": "1",
+      "percent": 100
+    }
+  ]
+}

@@ -15,6 +15,7 @@ import math
 import os
 import pathlib
 import platform
+import pprint
 import resource
 import sys
 import time
@@ -30,6 +31,7 @@ import torch.distributed
 import torch.nn
 import torch.optim
 import torch.utils.data
+import torch.utils.data._utils.worker
 from hparams import HParam, HParams, configurable, get_config
 from third_party import LazyLoader
 from torch.utils.data.dataloader import _BaseDataLoaderIter, _MultiProcessingDataLoaderIter
@@ -39,10 +41,9 @@ import lib
 import run
 from lib.distributed import is_master
 from lib.environment import load, load_most_recent_file
-from lib.utils import dataclass_as_dict, flatten_2d, seconds_to_str
+from lib.utils import dataclass_as_dict, disk_cache, flatten_2d, seconds_to_str
 from run._config import (
     Cadence,
-    Dataset,
     DatasetType,
     Device,
     Label,
@@ -50,6 +51,7 @@ from run._config import (
     get_model_label,
     get_timer_label,
 )
+from run._utils import Dataset
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import comet_ml
@@ -63,6 +65,7 @@ else:
 
 lib.environment.enable_fault_handler()
 logger = logging.getLogger(__name__)
+pprinter = pprint.PrettyPrinter(indent=2)
 
 
 def _nested_to_flat_config_helper(
@@ -99,6 +102,8 @@ def get_config_parameters() -> typing.Dict[run._config.Label, typing.Any]:
 class Context(enum.Enum):
     """Constants and labels for contextualizing the use-case."""
 
+    # NOTE: This includes the entirety of the running script.
+    SCRIPT: typing.Final = "script"
     TRAIN: typing.Final = "train"
     EVALUATE: typing.Final = "evaluate"
     EVALUATE_INFERENCE: typing.Final = "evaluate_inference"
@@ -237,7 +242,7 @@ class CometMLExperiment:
 
     @contextlib.contextmanager
     def context_manager(self, context: Context):
-        with self._experiment.context_manager(str(context)):
+        with self._experiment.context_manager(str(context.value)):
             yield self
 
     def log_current_epoch(self, epoch: int):
@@ -260,7 +265,7 @@ class CometMLExperiment:
             self.log_metric(label, steps_per_second)
 
         # NOTE: Logs an average `steps_per_second` since the training started.
-        with self.context_manager(None):
+        with self.context_manager(Context.SCRIPT):
             label = get_timer_label("steps_per_second", cadence=Cadence.RUN)
             num_seconds = time.time() - self._first_epoch_time
             steps_per_second = (self.curr_step - self._first_epoch_step) / num_seconds
@@ -322,15 +327,25 @@ class CometMLExperiment:
                 items.append(f'<audio controls preload="none" src="{url}"></audio>')
         self.log_html("<section>{}</section>".format("\n".join(items)))
 
+    def _handle_param(self, key: run._config.Label, value: typing.Any, max_len: int = 50) -> str:
+        """Format and log complex objects in standard out."""
+        if isinstance(value, (list, tuple, dict, set)) and len(repr(value)) > max_len:
+            message = f"Comet parameter `{key}` is:\n{pprinter.pformat(value)}"
+            lib.utils.call_once(logger.info, message)
+            return "<<<Printed in standard out.>>>"
+        if hasattr(value, "__qualname__"):
+            return f"<function {value.__qualname__}>"  # type: ignore
+        return repr(value)
+
     def log_parameter(self, key: run._config.Label, value: typing.Any):
-        self._experiment.log_parameter(key, repr(value))
+        self._experiment.log_parameter(key, self._handle_param(key, value))
 
     def log_parameters(self, dict_: typing.Dict[run._config.Label, typing.Any]):
         """
         NOTE: Comet doesn't support `typing.Any` so we need to convert to a string representation.
         For example, Comet will silently fail and not log parameters with `numpy` or `torch` values.
         """
-        self._experiment.log_parameters({k: repr(v) for k, v in dict_.items()})
+        self._experiment.log_parameters({k: self._handle_param(k, v) for k, v in dict_.items()})
 
     def log_other(self, key: run._config.Label, value: typing.Union[str, int, float]):
         self._experiment.log_other(key, value)
@@ -388,18 +403,23 @@ def _get_dataset_stats(
     return stats
 
 
-def _run_experiment(
-    comet: CometMLExperiment, debug: bool = False
-) -> typing.Tuple[run._config.Dataset, run._config.Dataset]:
-    """Helper function for `start_experiment` and  `resume_experiment`."""
-    lib.environment.check_module_versions()
-
-    # NOTE: Load, preprocess, and cache dataset values.
+@disk_cache(run._config.DATASET_CACHE_PATH)
+def _get_dataset(debug: bool):
+    """Helper function for `_run_experiment` to get the train and dev datasets."""
     _datasets = {k: v for k, v in list(run._config.DATASETS.items())[:1]}
     dataset = run._utils.get_dataset(**({"datasets": _datasets} if debug else {}))
-    train_dataset, dev_dataset = run._utils.split_dataset(dataset)
-    comet.log_parameters(_get_dataset_stats(train_dataset, dev_dataset))
+    return run._utils.split_dataset(dataset)
 
+
+def _run_experiment(
+    comet: CometMLExperiment, debug: bool = False
+) -> typing.Tuple[Dataset, Dataset]:
+    """Helper function for `start_experiment` and  `resume_experiment`."""
+    lib.environment.check_module_versions()
+    if debug:
+        _get_dataset.clear_cache()
+    train_dataset, dev_dataset = _get_dataset(debug)
+    comet.log_parameters(_get_dataset_stats(train_dataset, dev_dataset))
     return train_dataset, dev_dataset
 
 
@@ -487,7 +507,7 @@ def start_experiment(
     tags: typing.List[str] = [],
     min_disk_space: float = 0.2,
     **kwargs,
-) -> typing.Tuple[pathlib.Path, run._config.Dataset, run._config.Dataset, CometMLExperiment]:
+) -> typing.Tuple[pathlib.Path, Dataset, Dataset, CometMLExperiment]:
     """Start a training run in a comet `project` named `name` with `tags`. The training run
     results are saved in `directory`."""
     lib.environment.assert_enough_disk_space(min_disk_space)
@@ -504,9 +524,7 @@ def start_experiment(
 
 def resume_experiment(
     directory: pathlib.Path, checkpoint: typing.Optional[pathlib.Path], **kwargs
-) -> typing.Tuple[
-    pathlib.Path, run._config.Dataset, run._config.Dataset, CometMLExperiment, pathlib.Path
-]:
+) -> typing.Tuple[pathlib.Path, Dataset, Dataset, CometMLExperiment, pathlib.Path]:
     """Resume training from `checkpoint`. If `checkpoint` is not given, the most recent checkpoint
     file is loaded from `directory`."""
     lib.environment.set_basic_logging_config()
@@ -544,7 +562,7 @@ def set_context(
     ema: typing.Optional[lib.optimizers.ExponentialMovingParameterAverage] = None,
 ):
     with contextlib.ExitStack() as stack:
-        stack.enter_context(comet.context_manager(context.value))
+        stack.enter_context(comet.context_manager(context))
         logger.info("Setting context to '%s'.", context.value)
         is_training = context == Context.TRAIN
         for model in models:
@@ -565,7 +583,7 @@ def set_epoch(comet: CometMLExperiment, step: int, steps_per_epoch: int):
 
 
 @configurable
-def set_run_seed(seed=HParam()):
+def set_run_seed(seed: int = HParam()):
     lib.environment.set_seed(seed)
 
 
@@ -603,20 +621,18 @@ def apply_to_tensors(
         [apply(value) for value in dict_.values()]
 
 
+BatchType = typing.TypeVar("BatchType", bound="Batch")
+
+
 @dataclasses.dataclass(frozen=True)
 class Batch:
-    def apply(self, call: typing.Callable[[torch.Tensor], torch.Tensor]) -> Batch:
+    def apply(self: BatchType, call: typing.Callable[[torch.Tensor], torch.Tensor]) -> BatchType:
         """Apply `call` to `SequenceBatch` in `Batch`."""
         apply = lambda o: apply_to_tensors(o, call, True) if isinstance(o, SequenceBatch) else o
         dict_ = lib.utils.dataclass_as_dict(self)
         return dataclasses.replace(self, **{k: apply(v) for k, v in dict_.items()})
 
-    def apply_(self, call: typing.Callable[[torch.Tensor], torch.Tensor]) -> None:
-        """Apply `call` to `SequenceBatch` in `Batch`, in-place."""
-        apply = lambda o: apply_to_tensors(o, call, False) if isinstance(o, SequenceBatch) else o
-        [apply(value) for value in lib.utils.dataclass_as_dict(self).values()]
-
-    def pin_memory(self) -> Batch:
+    def pin_memory(self: BatchType) -> BatchType:
         """Learn more about this special function:
         https://pytorch.org/docs/stable/data.html#memory-pinning
 
@@ -660,6 +676,7 @@ def _worker_init_fn(
     """
     hparams.hparams._configuration = config
     info = torch.utils.data.get_worker_info()
+    assert isinstance(info, torch.utils.data._utils.worker.WorkerInfo)
     lib.environment.set_basic_logging_config()
     set_num_threads(num_threads)
     logger.info("Worker %d/%d started for rank %d.", info.id + 1, info.num_workers, rank)
@@ -707,7 +724,7 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
     ):
         self._set_r_limit()
         self.device = device
-        self.stream = torch.cuda.Stream() if torch.cuda.is_available() else None
+        self.stream = torch.cuda.streams.Stream() if torch.cuda.is_available() else None
         self.loader = torch.utils.data.dataloader.DataLoader(
             dataset,
             pin_memory=True,
@@ -761,7 +778,8 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
         """
         assert self.iter is not None
         for _ in range(self.cuda_prefetch - len(self.prefetched)):
-            self.prefetched.append(next(self.iter).apply(self.process_tensor))
+            next_: Batch = next(self.iter)
+            self.prefetched.append(next_.apply(self.process_tensor))
 
     def __iter__(self) -> typing.Iterator[DataLoaderVar]:
         if self.iter is None:
@@ -854,16 +872,14 @@ def run_workers(
 MetricsValues = typing.Dict[str, float]
 MetricsStoreValues = typing.List[typing.Tuple[float]]
 MetricsReduceOp = typing.Callable[[typing.List[float]], float]
-# Select a subset of `MetricsStoreValues`.
+# NOTE: `MetricsSelect` selects a subset of `MetricsStoreValues`.
 MetricsSelect = typing.Callable[[MetricsStoreValues], MetricsStoreValues]
 
 
 class Metrics(lib.distributed.DictStore):
+    """Metrics collated accross different processes."""
 
-    (
-        DATA_QUEUE_SIZE,
-        *_,
-    ) = tuple([str(i) for i in range(100)])
+    DATA_QUEUE_SIZE, *_ = tuple([str(i) for i in range(100)])
 
     MIN_DATA_LOADER_QUEUE_SIZE = partial(get_dataset_label, "min_data_loader_queue_size")
 
@@ -940,7 +956,7 @@ class Metrics(lib.distributed.DictStore):
 class _TimerEvent(typing.NamedTuple):
     name: str
     cpu: float
-    cuda: typing.Optional[torch.cuda.Event]
+    cuda: typing.Optional[torch.cuda.streams.Event]
 
 
 class Timer:
@@ -964,7 +980,7 @@ class Timer:
     def record_event(self, name: str):
         event = None
         if torch.cuda.is_available():
-            event = torch.cuda.Event(enable_timing=True)
+            event = torch.cuda.streams.Event(enable_timing=True)
             event.record()
         self.events.append(_TimerEvent(name, time.perf_counter(), event))
         return self
@@ -976,6 +992,8 @@ class Timer:
             name = f"{self.prefix}{prev.name}"
             times[get_timer_label(name, **kwargs)] += next.cpu - prev.cpu
             if torch.cuda.is_available():
+                assert prev.cuda is not None
+                assert next.cuda is not None
                 prev.cuda.synchronize()
                 next.cuda.synchronize()
                 label = get_timer_label(name, device=Device.CUDA, **kwargs)
