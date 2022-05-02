@@ -179,7 +179,17 @@ Setup your local development environment by following [these instructions](LOCAL
    PYTHONPATH=. python $TRAIN_SCRIPT_PATH start $COMET_PROJECT "$EXPERIMENT_NAME";
    ```
 
-   Or select a `SPECTROGRAM_CHECKPOINT` and run the following command to train a signal model...
+   ---
+   Or select a `SPECTROGRAM_CHECKPOINT`...
+   ```
+   find /opt/wellsaid-labs/Text-to-Speech/disk/experiments/spectrogram_model/ -name <step_######.pt>
+   ```
+   And store it...
+   ```
+   SPECTROGRAM_CHECKPOINT="<paste>"
+   ```
+
+   Then run the following command to train a signal model...
 
    ```bash
    SPECTROGRAM_CHECKPOINT="/opt/wellsaid-labs/Text-to-Speech/path/to/spectrogram/checkpoint"
