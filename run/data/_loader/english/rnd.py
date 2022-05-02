@@ -13,7 +13,7 @@ def make(
     label: str,
     name: str,
     dialect: struc.Dialect = Dia.EN_US,
-    style: struc.Style = struc.Style.OTHER,
+    style: struc.Style = struc.Style.RND,
 ) -> struc.Speaker:
     return struc.Speaker(label, style, dialect, name, label)
 
