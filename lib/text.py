@@ -345,7 +345,23 @@ decisions had to be made:
             sometimes used as a long O [see "BOARD]
             sometimes as a short O [see "BALL"], but uses 'AA' for "FATHER"
 
-    TODO: Work toward Wikipedia coverage [much trickier to simulate with ARPAbet]
+    Working toward Wikipedia coverage:
+      'ɒ' and 'ɑː' can be approximated with 'AA' [see "father"]
+      'ər',
+      'juː' can be separated into 'Y' 'UW' = 'yoo' as in 'beauty' = "BYOO-tee"
+      'ɪr' can be separated into 'IH' and 'R' = ihr as in 'mirror' = 'MIHR-ur'
+      'ŋk' can be seaparated into 'NG' and 'K', but for users' sake we'll add an exception **
+      'ə' can be approximated with 'AH' = 'uh' as in 'about' = 'uh-BOWT'
+      'r' is nearly equivalent to 'ɹ', so we use the respelling of 'r' for 'R' [see "rye"]
+      'ʊər' can be separated into 'UH' and 'R' = 'uur' as in 'premature' = "pree-muh-CHUUR"
+      'hw' is rarely used, but can be approximated with 'W' anyway
+      'aʊər' can be separated into 'AW' and 'ER' = 'owur' as in 'flower' = "FLOW-ur"
+      'ɛər' and 'ɛr' can be approximated with 'EH' and 'R' = 'ehr' as in 'merry' = "MEH-ree"
+      'iː' can be approximated with 'IY' = 'ee'
+      'ɔːr' can be approximated with 'AO' and 'R'
+
+
+
 
 ARPAbet Wiki: https://en.wikipedia.org/wiki/ARPABET
 Wiki Respelling Key: https://en.wikipedia.org/wiki/Help:Pronunciation_respelling_key
@@ -373,7 +389,7 @@ IPA_WIKIPEDIA: typing.Dict[str, str] = {
 }
 RESPELLINGS: typing.Dict[str, str] = {
     'AA': 'ah', 'AE': 'a', 'AH': 'uh', 'AO': 'aw', 'AW': 'ow', 'AY': 'y', 'EH': 'eh', 'EY': 'ay',
-    'IY': 'ee', 'OW': 'oh', 'OY': 'oy', 'UH': 'uu', 'UW': 'oo', 'B': 'b', 'CH': 'tch', 'D': 'd',
+    'IY': 'ee', 'OW': 'oh', 'OY': 'oy', 'UH': 'uu', 'UW': 'oo', 'B': 'b', 'CH': 'ch', 'D': 'd',
     'DH': 'dh', 'F': 'f', 'G': 'g', 'HH': 'h', 'JH': 'j', 'K': 'k', 'L': 'l', 'M': 'm', 'N': 'n',
     'NG': 'ng', 'P': 'p', 'R': 'r', 'S': 's', 'SH': 'sh', 'T': 't', 'TH': 'th', 'V': 'v', 'W': 'w',
     'Y': 'y', 'Z': 'z', 'ZH': 'zh',
