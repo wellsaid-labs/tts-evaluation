@@ -10,7 +10,11 @@ from run._models.spectrogram_model import (
 from run._models.spectrogram_model.containers import Preds
 from run._models.spectrogram_model.inputs import Inputs as PreprocessedInputs
 from run._models.spectrogram_model.inputs import InputsWrapper as Inputs
-from run._models.spectrogram_model.inputs import preprocess_inputs, preprocess_spans
+from run._models.spectrogram_model.inputs import (
+    norm_respellings,
+    preprocess_inputs,
+    preprocess_spans,
+)
 from run._models.spectrogram_model.model import Generator, Mode
 from run._models.spectrogram_model.wrapper import SpectrogramModelWrapper as SpectrogramModel
 
@@ -30,4 +34,5 @@ __all__ = [
     "SpectrogramModel",
     "preprocess_inputs",
     "preprocess_spans",
+    "norm_respellings",
 ]

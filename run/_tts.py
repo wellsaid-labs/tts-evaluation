@@ -31,6 +31,7 @@ from run._models.spectrogram_model import (
     Preds,
     PreprocessedInputs,
     SpectrogramModel,
+    norm_respellings,
     preprocess_inputs,
 )
 from run.data._loader import Session, Span
@@ -284,11 +285,11 @@ class TTSPackage:
     signal_model_comet_experiment_key: typing.Optional[str] = None
     signal_model_step: typing.Optional[int] = None
 
-    def session_vocab(self) -> typing.Tuple[Session]:
+    def session_vocab(self) -> typing.Set[Session]:
         """Get the sessions these models are familiar with."""
         sesh = set(self.signal_model.session_embed.vocab.keys())
         inter = set(self.spec_model.session_embed.vocab.keys()).intersection(sesh)
-        return tuple(s for s in inter if isinstance(s, Session))
+        return set(s for s in inter if isinstance(s, tuple))
 
 
 def package_tts(
@@ -322,7 +323,7 @@ def process_tts_inputs(
     if len(normalized) == 0:
         raise PublicTextValueError("Text cannot be empty.")
 
-    inputs = Inputs([session], [nlp(script)])
+    inputs = Inputs([session], [nlp(norm_respellings(normalized))])
     preprocessed = preprocess_inputs(inputs)
 
     tokens = typing.cast(typing.List[str], set(preprocessed.tokens[0]))

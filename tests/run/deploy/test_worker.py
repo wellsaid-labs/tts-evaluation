@@ -1,16 +1,14 @@
 import logging
 from functools import partial
 
-import config as cf
 import pytest
 
 import lib
-import run
-from lib.text import grapheme_to_phoneme
-from run.data._loader import Session
+from run._models.spectrogram_model.inputs import Token
+from run.data._loader import Language, Session
 from run.data._loader.english.m_ailabs import JUDY_BIEBER
 from run.deploy.worker import FlaskException, validate_and_unpack
-from run.train.spectrogram_model._data import InputEncoder
+from tests.run._utils import make_mock_tts_package
 
 logger = logging.getLogger(__name__)
 
@@ -23,18 +21,35 @@ def test_flask_exception():
 
 def test_validate_and_unpack():
     """Test `validate_and_unpack` handles all sorts of arguments."""
-    speaker = JUDY_BIEBER
-    session = Session("sesh")
+    sesh = Session((JUDY_BIEBER, "sesh"))
     script = "This is a exposé. ABC."
-    phonemes = _line_grapheme_to_phoneme([script], separator=run._config.PHONEME_SEPARATOR)[0]
-    input_encoder = InputEncoder(
-        [script], [phonemes], [speaker], [(speaker, session)], run._config.PHONEME_SEPARATOR
-    )
-    speaker_id = input_encoder.speaker_encoder.token_to_index[speaker]
-    speaker_id_to_speaker = {0: (speaker, session)}
+    _, package = make_mock_tts_package()
+
+    # TODO: Refactor this, so, it's a bit easier to create a `package` with a preset vocabulary.
+    # Or the vocabulary is based off a dataset which can be used, also? That handles special
+    # characters, also.
+    package.spec_model.token_embed.update_tokens(list(script.lower()) + [Token.delim])
+    package.spec_model.speaker_embed.update_tokens([sesh[0].label])
+    package.spec_model.session_embed.update_tokens([sesh])
+    package.spec_model.dialect_embed.update_tokens([sesh[0].dialect])
+    package.spec_model.style_embed.update_tokens([sesh[0].style])
+    package.spec_model.language_embed.update_tokens([sesh[0].language])
+    package.signal_model.speaker_embed.update_tokens([sesh[0].label])
+    package.signal_model.session_embed.update_tokens([sesh])
+
+    language_to_spacy = {Language.ENGLISH: lib.text.load_en_core_web_sm()}
+    speaker_id = 0
+    speaker_id_to_session = {speaker_id: sesh}
     args = {"speaker_id": speaker_id, "text": script}
-    nlp = lib.text.load_en_core_web_sm(disable=("parser", "ner"))
-    validate_ = partial(validate_and_unpack, nlp=nlp, input_encoder=input_encoder)
+    validate_ = partial(
+        validate_and_unpack,
+        tts=package,
+        language_to_spacy=language_to_spacy,
+        speaker_id_to_session=speaker_id_to_session,
+    )
+
+    # TODO: Ensure the right message is printed.
+
     with pytest.raises(FlaskException):
         validate_({})  # type: ignore
 
@@ -60,22 +75,19 @@ def test_validate_and_unpack():
     with pytest.raises(FlaskException):  # `text` must be not empty
         validate_({**args, "text": ""})  # type: ignore
 
-    with pytest.raises(FlaskException):  # `speaker_id` must be in `input_encoder`
+    with pytest.raises(FlaskException):  # `speaker_id` must be in `speaker_id_to_session`
         validate_({**args, "speaker_id": 2 ** 31})  # type: ignore
 
     with pytest.raises(FlaskException):  # `speaker_id` must be positive
         validate_({**args, "speaker_id": -1})  # type: ignore
 
-    with pytest.raises(FlaskException, match=r".*cannot contain these characters: i, j,*"):
-        # NOTE: "wɛɹɹˈɛvɚ kˌoːɹzənjˈuːski" should contain phonemes that are not already in
-        # mock `input_encoder`.
-        validate_({**args, "text": "wherever korzeniewski"})  # type: ignore
+    with pytest.raises(FlaskException, match=r".*cannot contain these characters: r, v, w*"):
+        # NOTE: Should contain graphemes that are not already in mock `package.spec_model`.
+        validate_({**args, "text": "wherever"})  # type: ignore
 
     # `text` gets normalized and `speaker` is dereferenced
-    request_args = {**args, "text": "exposé😁"}
-    encoded = validate_(request_args, speaker_id_to_speaker=speaker_id_to_speaker)  # type: ignore
-    decoded = input_encoder.decode(encoded)
+    request_args = {**args, "text": "exposé😁 [[a-B]]"}
+    encoded = validate_(request_args)  # type: ignore
     # NOTE: The emoji is removed because there is no unicode equivilent.
-    assert decoded.graphemes == "exposé"
-    assert decoded.speaker == speaker
-    assert decoded.session == (speaker, session)
+    # TODO: Should this special notation be configured?
+    assert str(encoded[0].doc[0]) == "exposé |\\a\\B\\|"

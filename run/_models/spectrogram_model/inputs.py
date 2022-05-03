@@ -1,6 +1,7 @@
 import dataclasses
 import enum
 import random
+import re
 import string
 import typing
 
@@ -42,14 +43,14 @@ class Token:
     is_context: bool
     is_whitespace: bool
     try_to_respell: bool
+    text: str = dataclasses.field(init=False, repr=False)
+    pronun: Pronunciation = dataclasses.field(init=False, repr=False)
     # TODO: Should these be added to configuration?
     # NOTE: These prefixes and suffixes are choosen based on spaCy's tokenizer. This ensures that
     # |\\mother\\in\\law\\|" is treated as one token instead of being tokenized.
-    prefix: str = dataclasses.field(default="|\\", init=False, repr=False)
-    suffix: str = dataclasses.field(default="\\|", init=False, repr=False)
-    delim: str = dataclasses.field(default="\\", init=False, repr=False)
-    text: str = dataclasses.field(init=False, repr=False)
-    pronun: Pronunciation = dataclasses.field(init=False, repr=False)
+    prefix: typing.ClassVar[str] = "|\\"
+    suffix: typing.ClassVar[str] = "\\|"
+    delim: typing.ClassVar[str] = "\\"
 
     def __post_init__(self):
         if not self._is_respelled():
@@ -65,6 +66,8 @@ class Token:
         is_respelled = text.startswith(self.prefix) and text.endswith(self.suffix)
         text = text[len(self.prefix) : -len(self.suffix)]
         if is_respelled:
+            # TODO: Remove schwa, when it's deprecated from respellings.
+            # TODO: Configure the allowable letters.
             valid_letters = string.ascii_lowercase + "ə"
             message = "Invalid respelling."
             assert len(text) > 0, message
@@ -114,6 +117,19 @@ class Token:
 
     def __len__(self):
         return len(self.text)
+
+    @classmethod
+    def norm_respellings(
+        cls, script: str, prefix: str = "[[", suffix: str = "]]", delim: str = "-"
+    ):
+        """Preprocess respellings from one prefix, suffix, delim to the another."""
+        for match in re.findall(
+            f"{re.escape(prefix)}[A-zə{re.escape(delim)}]+{re.escape(suffix)}", script
+        ):
+            updated = match[len(prefix) : -len(suffix)].replace(delim, cls.delim)
+            updated = f"{cls.prefix}{updated}{cls.suffix}"
+            script = script.replace(match, updated)
+        return script
 
 
 @dataclasses.dataclass(frozen=True)
@@ -236,6 +252,10 @@ def _preprocess(
 
     token_embeddings = torch.nn.utils.rnn.pad_sequence(inputs.token_embeddings, batch_first=True)
     return dataclasses.replace(inputs, token_embeddings=token_embeddings)
+
+
+def norm_respellings(script: str) -> str:
+    return Token.norm_respellings(script)
 
 
 def preprocess_spans(spans: typing.List[struc.Span], **kw) -> Inputs:

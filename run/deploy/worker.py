@@ -45,7 +45,7 @@ import os
 import typing
 
 import config as cf
-import en_core_web_sm
+import spacy
 import torch
 import torch.backends.mkl
 from flask import Flask, jsonify, request
@@ -53,7 +53,8 @@ from flask.wrappers import Response
 from spacy.lang.en import English
 
 from lib.environment import load, set_basic_logging_config
-from run._config import TTS_PACKAGE_PATH, configure
+from run._config import TTS_PACKAGE_PATH, configure, load_spacy_nlp
+from run._models.spectrogram_model import Inputs, PreprocessedInputs
 from run._tts import (
     PublicSpeakerValueError,
     PublicTextValueError,
@@ -61,8 +62,7 @@ from run._tts import (
     process_tts_inputs,
     text_to_speech_ffmpeg_generator,
 )
-from run.data._loader import Session, Speaker, english
-from run.train.spectrogram_model._data import EncodedInput, InputEncoder
+from run.data._loader import Language, Session, Speaker, english
 
 if "NUM_CPU_THREADS" in os.environ:
     torch.set_num_threads(int(os.environ["NUM_CPU_THREADS"]))
@@ -77,6 +77,7 @@ app = Flask(__name__)
 DEVICE = torch.device("cpu")
 MAX_CHARS = 10000
 TTS_PACKAGE: TTSPackage
+LANGUAGE_TO_SPACY: typing.Dict[Language, spacy.language.Language]
 SPACY: English
 # NOTE: The keys need to stay the same for backwards compatibility.
 _SESSIONS = [
@@ -143,7 +144,7 @@ _SESSIONS = [
     (english.wsl.THEO_K, "narration_script_8_kohnke"),
     (english.wsl.JAMES_B, "newman_final_page_13"),
 ]
-_SPEAKER_ID_TO_SPEAKER: typing.Dict[int, typing.Tuple[Speaker, str]] = {
+_SPEAKER_ID_TO_SESSION: typing.Dict[int, typing.Tuple[Speaker, str]] = {
     **{i: s for i, s in enumerate(_SESSIONS)},
     # NOTE: As a weak security measure, we assign random large numbers to custom voices, so
     # that they are hard to discover by querying the API.
@@ -166,12 +167,15 @@ _SPEAKER_ID_TO_SPEAKER: typing.Dict[int, typing.Tuple[Speaker, str]] = {
     77552139: (english.wsl.STUDY_SYNC__CUSTOM_VOICE, "fernandes_audio_5"),
     25502195: (english.wsl.FIVE_NINE__CUSTOM_VOICE, "wsl_five9_audio_3"),
 }
-SPEAKER_ID_TO_SPEAKER = {k: (spk, sesh) for k, (spk, sesh) in _SPEAKER_ID_TO_SPEAKER.items()}
+SPEAKER_ID_TO_SESSION: typing.Dict[int, Session]
+SPEAKER_ID_TO_SESSION = {k: Session(args) for k, args in _SPEAKER_ID_TO_SESSION.items()}
 
 
 class FlaskException(Exception):
     """
     Inspired by http://flask.pocoo.org/docs/1.0/patterns/apierrors/
+
+    TODO: Create an `enum` with all the error codes
 
     Args:
         message
@@ -216,11 +220,11 @@ class RequestArgs(typing.TypedDict):
 
 def validate_and_unpack(
     request_args: RequestArgs,
-    input_encoder: InputEncoder,
-    nlp: English,
+    tts: TTSPackage,
+    language_to_spacy: typing.Dict[Language, spacy.language.Language],
     max_chars: int = MAX_CHARS,
-    speaker_id_to_speaker: typing.Dict[int, typing.Tuple[Speaker, Session]] = SPEAKER_ID_TO_SPEAKER,
-) -> EncodedInput:
+    speaker_id_to_session: typing.Dict[int, Session] = SPEAKER_ID_TO_SESSION,
+) -> typing.Tuple[Inputs, PreprocessedInputs]:
     """Validate and unpack the request object."""
 
     if not ("speaker_id" in request_args and "text" in request_args):
@@ -244,21 +248,21 @@ def validate_and_unpack(
         message = f"Text must be a string under {max_chars} characters and more than 0 characters."
         raise FlaskException(message, code="INVALID_TEXT_LENGTH_EXCEEDED")
 
-    min_speaker_id = min(speaker_id_to_speaker.keys())
-    max_speaker_id = max(speaker_id_to_speaker.keys())
+    min_speaker_id = min(speaker_id_to_session.keys())
+    max_speaker_id = max(speaker_id_to_session.keys())
 
     if not (
         (speaker_id >= min_speaker_id and speaker_id <= max_speaker_id)
-        and speaker_id in speaker_id_to_speaker
+        and speaker_id in speaker_id_to_session
     ):
         raise FlaskException("Speaker ID is invalid.", code="INVALID_SPEAKER_ID")
 
-    speaker, session = speaker_id_to_speaker[speaker_id]
+    session = speaker_id_to_session[speaker_id]
 
     gc.collect()
 
     try:
-        return encode_tts_inputs(nlp, input_encoder, text, speaker, session)
+        return process_tts_inputs(language_to_spacy[session[0].language], tts, text, session)
     except PublicSpeakerValueError as error:
         app.logger.exception("Invalid speaker: %r", text)
         raise FlaskException(str(error), code="INVALID_SPEAKER_ID")
@@ -287,7 +291,7 @@ def get_input_validated():
     """
     request_args = request.get_json() if request.method == "POST" else request.args
     request_args = typing.cast(RequestArgs, request_args)
-    validate_and_unpack(request_args, TTS_PACKAGE.input_encoder, SPACY)
+    validate_and_unpack(request_args, TTS_PACKAGE, LANGUAGE_TO_SPACY)
     return jsonify({"message": "OK"})
 
 
@@ -302,7 +306,7 @@ def get_stream():
     """
     request_args = request.get_json() if request.method == "POST" else request.args
     request_args = typing.cast(RequestArgs, request_args)
-    input = validate_and_unpack(request_args, TTS_PACKAGE.input_encoder, SPACY)
+    input = validate_and_unpack(request_args, TTS_PACKAGE, LANGUAGE_TO_SPACY)
     headers = {
         "Cache-Control": "no-cache, no-store, must-revalidate",
         "Pragma": "no-cache",
@@ -310,7 +314,7 @@ def get_stream():
     }
     output_flags = ("-f", "mp3", "-b:a", "192k")
     generator = text_to_speech_ffmpeg_generator(
-        TTS_PACKAGE, input, **cf.get(), logger=app.logger, output_flags=output_flags
+        TTS_PACKAGE, *input, **cf.get(), logger=app.logger, output_flags=output_flags
     )
     return Response(generator, headers=headers, mimetype="audio/mpeg")
 
@@ -325,15 +329,16 @@ if __name__ == "__main__" or "GUNICORN" in os.environ:
     # NOTE: These models are cached globally to enable sharing between processes, learn more:
     # https://github.com/benoitc/gunicorn/issues/2007
     TTS_PACKAGE = typing.cast(TTSPackage, load(TTS_PACKAGE_PATH, DEVICE))
-    app.logger.info("Loaded speakers: %s", TTS_PACKAGE.input_encoder.speaker_encoder.vocab)
 
-    for (speaker, session) in SPEAKER_ID_TO_SPEAKER.values():
-        if speaker in TTS_PACKAGE.input_encoder.speaker_encoder.token_to_index:
-            message = "Speaker recording session not found."
-            lookup = TTS_PACKAGE.input_encoder.session_encoder.token_to_index
-            assert (speaker, session) in lookup, message
+    vocab = set(TTS_PACKAGE.session_vocab())
+    app.logger.info("Loaded speakers: %s", set(s for s, _ in vocab))
 
-    SPACY = en_core_web_sm.load(disable=("parser", "ner"))
+    for session in SPEAKER_ID_TO_SESSION.values():
+        if session not in vocab:
+            app.logger.warning(f"Session not found in model vocab: {session}")
+
+    languages = set(s[0].language for s in vocab)
+    LANGUAGE_TO_SPACY = {l: load_spacy_nlp(l) for l in languages}
     app.logger.info("Loaded spaCy.")
 
     # NOTE: In order to support copy-on-write, we freeze all the objects tracked by `gc`, learn
