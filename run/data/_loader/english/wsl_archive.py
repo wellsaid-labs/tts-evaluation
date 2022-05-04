@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 LINCOLN__CUSTOM = struc.Speaker(
     "Lincoln_custom_ma",
     struc.Style.OTHER,
-    None,  # type: ignore
+    struc.Dialect.EN_UNKNOWNN,
     "Lincoln (Custom)",
     "Lincoln_custom_ma",
 )

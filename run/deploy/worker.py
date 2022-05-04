@@ -42,6 +42,7 @@ Example (Gunicorn):
 """
 import gc
 import os
+import pprint
 import typing
 
 import config as cf
@@ -73,6 +74,7 @@ if __name__ == "__main__":
     set_basic_logging_config()
 
 app = Flask(__name__)
+pprinter = pprint.PrettyPrinter(indent=2)
 
 DEVICE = torch.device("cpu")
 MAX_CHARS = 10000
@@ -302,6 +304,9 @@ def get_stream():
     NOTE: Consider the scenario where the requester isn't consuming the stream quickly, the
     worker would need to wait for the requester.
 
+    Usage:
+        http://192.168.50.19:8000/api/text_to_speech/stream?speaker_id=46&text="Hello there"
+
     Returns: `audio/mpeg` streamed in chunks given that the arguments are valid.
     """
     request_args = request.get_json() if request.method == "POST" else request.args
@@ -323,6 +328,7 @@ if __name__ == "__main__" or "GUNICORN" in os.environ:
     app.logger.info("PyTorch version: %s", torch.__version__)
     app.logger.info("Found MKL: %s", torch.backends.mkl.is_available())
     app.logger.info("Threads: %s", torch.get_num_threads())
+    app.logger.info("Speaker Ids: %s", pprinter.pformat(SPEAKER_ID_TO_SESSION))
 
     configure()
 
@@ -336,6 +342,9 @@ if __name__ == "__main__" or "GUNICORN" in os.environ:
     for session in SPEAKER_ID_TO_SESSION.values():
         if session not in vocab:
             app.logger.warning(f"Session not found in model vocab: {session}")
+            avail_sessions = [s[1] for s in vocab if s[0] == session[0]]
+            if len(avail_sessions) > 0:
+                app.logger.warning(f"Sessions available: {avail_sessions}")
 
     languages = set(s[0].language for s in vocab)
     LANGUAGE_TO_SPACY = {l: load_spacy_nlp(l) for l in languages}
