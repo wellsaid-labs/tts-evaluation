@@ -352,13 +352,26 @@ decisions had to be made:
       'ɪr' can be separated into 'IH' and 'R' = ihr as in 'mirror' = 'MIHR-ur'
       'ŋk' can be seaparated into 'NG' and 'K', but for users' sake we'll add an exception **
       'ə' can be approximated with 'AH' = 'uh' as in 'about' = 'uh-BOWT'
-      'r' is nearly equivalent to 'ɹ', so we use the respelling of 'r' for 'R' [see "rye"]
+      'r' is nearly equivalent to 'ɹ', so we use the respelling of 'r' for 'R' [see "rye"], above
       'ʊər' can be separated into 'UH' and 'R' = 'uur' as in 'premature' = "pree-muh-CHUUR"
       'hw' is rarely used, but can be approximated with 'W' anyway
       'aʊər' can be separated into 'AW' and 'ER' = 'owur' as in 'flower' = "FLOW-ur"
-      'ɛər' and 'ɛr' can be approximated with 'EH' and 'R' = 'ehr' as in 'merry' = "MEH-ree"
+      'ɛər', 'ɛr', and 'ær' can be approximated with 'EH' and 'R' = 'ehr' as in 'merry' = "MEHR-ee" ** is 'ehr' too confusing?
       'iː' can be approximated with 'IY' = 'ee'
       'ɔːr' can be approximated with 'AO' and 'R'
+      'ɑːr' can be approximated with 'AA' and 'R' = 'ahr' as in "far" = "FAHR" ** candidate
+      'ʌr' can be approximated with 'ER' = 'ur' as in "hurry" = "HUR-ee"
+      'ɒr' can be approximated with 'AO' and 'R' = 'awr' as in "moral" = "MAWR-uhl" ** candidate?
+      'x' is rarely used, but can be approximated with 'K' anyway
+      'ɔɪər' can be approximated with 'OY' and 'ER' = 'oyur' as in "hoyer" = "HOY-ur"
+      'ɜːr' is nearly equivalent to 'ɝ', so we use the respelling of 'ur' for 'ER' [see "bird"], above
+      'ɪər' can be approximated with 'IH' and 'R' = 'ihr' which will be converted to 'eer'
+              ** NOTE: sometimes CMU uses 'IH R' (PEER) and sometimes 'IY R' (PEERING) for the same sound
+      'ʊr' can be approximated with 'ER'
+      'uː' can be approximated with 'UW'
+      'aɪər' can be approximated with 'AY' and 'ER' = 'yur' as in 'higher' = 'HY-ur'
+      'jʊər' can be approximated with 'Y' and 'ER' = 'yur'
+              ** NOTE: Wikipedia suggests 'y' for both the 'iy' vowel sound and the 'y' consonant sound
 
 
 
@@ -394,6 +407,7 @@ RESPELLINGS: typing.Dict[str, str] = {
     'NG': 'ng', 'P': 'p', 'R': 'r', 'S': 's', 'SH': 'sh', 'T': 't', 'TH': 'th', 'V': 'v', 'W': 'w',
     'Y': 'y', 'Z': 'z', 'ZH': 'zh',
     # NOTE: These codes have been removed in further iterations of the dictionary...
+    # # Do we want to change to 'i' and 'er' for user simplicity?
     'IH': 'ih', 'ER': 'ur',
     # NOTE: These codes were added in later iterations of the dictionary...
     # 'AXR': 'ər', 'AX': 'ə'
