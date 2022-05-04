@@ -86,7 +86,8 @@ def replace_punc(text: str, replace: str, language: Language) -> str:
     return _PUNCT_REGEXES[language].sub(replace, text)
 
 
-SST_CONFIGS = None
+STT_CONFIGS = None
+LanguageCode = typing.Literal["en-US", "de-DE", "pt-BR", "es-CO"]
 
 try:
     # TODO: Integrate this with the new `Dialect`s data structure.
@@ -103,7 +104,6 @@ try:
         Language.PORTUGUESE: _make_config(language_code="pt-BR"),
         Language.SPANISH: _make_config(language_code="es-CO"),
     }
-    LanguageCode = typing.Literal["en-US", "de-DE", "pt-BR", "es-CO"]
 except ImportError:
     logger.info("Ignoring optional `google` import.")
 

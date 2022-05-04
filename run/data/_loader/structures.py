@@ -17,7 +17,7 @@ import config as cf
 import numpy as np
 import spacy.tokens.doc
 import spacy.tokens.span
-from Levenshtein import distance  # type: ignore
+from third_party import LazyLoader
 
 import lib
 import run
@@ -26,6 +26,11 @@ from lib.text import has_digit
 from lib.utils import Timeline, Tuple, flatten_2d, tqdm_
 from run import _config
 from run.data import _loader
+
+if typing.TYPE_CHECKING:  # pragma: no cover
+    import Levenshtein
+else:
+    Levenshtein = LazyLoader("Levenshtein", globals(), "Levenshtein")
 
 logger = logging.getLogger(__name__)
 
@@ -918,6 +923,7 @@ def _check_alignments(label: str, passage: UnprocessedPassage):
 
     if len(pairs) > 0:
         num_pairs = len(pairs)
+        distance = Levenshtein.distance  # type: ignore
         pairs = sorted(((distance(*p), p) for p in set(pairs)), reverse=True, key=lambda k: k[0])
         pairs = ", ".join([str(p) for _, p in pairs][:25])
         prefix = f"[{label}][{passage.audio_path.name}]"

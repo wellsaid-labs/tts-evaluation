@@ -11,12 +11,17 @@ import config as cf
 import numpy as np
 import torch
 import torch.nn
+from third_party import LazyLoader
 from torch.nn import functional
 from torch.nn.utils.weight_norm import WeightNorm, remove_weight_norm, weight_norm
-from torchaudio.transforms import Resample
 
 from lib.distributed import NumeralizePadEmbed
 from lib.utils import log_runtime, pad_tensor, trim_tensors
+
+if typing.TYPE_CHECKING:  # pragma: no cover
+    import torchaudio
+else:
+    torchaudio = LazyLoader("torchaudio", globals(), "torchaudio")
 
 logger = logging.getLogger(__name__)
 
@@ -396,7 +401,7 @@ class SignalModel(torch.nn.Module):
         self.resample, self.resample_padding = None, 0
         if pred_sample_rate != out_sample_rate:
             # TODO: Add a parameter to `resample` to not pad the signal.
-            self.resample = Resample(pred_sample_rate, out_sample_rate)
+            self.resample = torchaudio.transforms.Resample(pred_sample_rate, out_sample_rate)
             # NOTE: `resample.width` isn't  guarenteed to be divisable by `self._downsample_ratio`;
             # however, `orig_freq` will be.
             orig_freq = self.resample.orig_freq // self.resample.gcd
