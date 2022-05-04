@@ -93,169 +93,21 @@ class Checkpoints(enum.Enum):
 
     You can upload a new checkpoint, for example, like so:
 
-        $ gsutil -m cp -r disk/checkpoints/2021_7_30_custom_voices \
-                        gs://wellsaid_labs_checkpoints/v9_2021_6_30_custom_voices
+        $ gsutil -m cp -r disk/checkpoints/v10 \
+                        gs://wellsaid_labs_checkpoints/v10_2022_05_03_staging
     """
 
     """
-    These checkpoints were deployed into production as Version 9.
+    These checkpoints were deployed into staging as Version "10.beta.1".
 
-    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/302
-    Spectrogram Model Experiment (Step: 569,580):
-    https://www.comet.ml/wellsaid-labs/1-stft-mike-2020-12/f52cc3ca9a394367a13bd06f26d78832
-    Signal Model Experiment (Step: 770,733):
-    https://www.comet.ml/wellsaid-labs/1-wav-mike-2021-03/0f4a4de9937c445bb7292d2a8f719fe1
+    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/409
+    Spectrogram Model Experiment (Step: 527,553):
+    https://www.comet.ml/wellsaid-labs/michael-spectrogram-model-03-2022/669e69f9a8db4dd3aa20386a4b195150
+    Signal Model Experiment (Step: 827,151):
+    https://www.comet.ml/wellsaid-labs/michael-signal-model-2022-04/a2d2e4b313e7490098ca2f3b4935f6d6
     """
 
-    V9: typing.Final = "v9"
-
-    """
-    These checkpoints include the Energy Industry Academy and The Explanation Company custom voices.
-
-    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/334
-    Spectrogram Model Experiment (Step: 649,128):
-    https://www.comet.ml/wellsaid-labs/1-stft-mike-2020-12/881cea24682e470480786d1b2e20596b
-    Signal Model Experiment (Step: 1,030,968):
-    https://www.comet.ml/wellsaid-labs/1-wav-mike-2021-03/07a194f3bb99489d83061d3f2331536d
-    """
-
-    V9_2021_6_30_CUSTOM_VOICES: typing.Final = "v9_2021_6_30_custom_voices"
-
-    """
-    These checkpoints include V9 versions of the following custom voices:
-    Energy Industry Academy, Happify, Super HiFi, The Explanation Company, US Pharmacopeia, Veritone
-
-    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/356
-    Spectrogram Model Experiment (Step: 597,312):
-    https://www.comet.ml/wellsaid-labs/v9-custom-voices/17289f19e0294d919bad9267cab4d5a0
-    Signal Model Experiment (Step: 1,054,080):
-    https://www.comet.ml/wellsaid-labs/v9-custom-voices/03ca7b7191c84fc7bd6bd348343e3d9e
-    """
-
-    V9_2021_8_03_CUSTOM_VOICES: typing.Final = "v9_2021_8_03_custom_voices"
-
-    """
-    These checkpoints include the Viacom custom voice.
-
-    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/357
-    Spectrogram Model Experiment (Step: 722,352):
-    https://www.comet.ml/wellsaid-labs/v9-custom-voices/abf7e103ef824b7ab45bdfb35d07d6b3
-    Signal Model Experiment (Step: 722,352):
-    https://www.comet.ml/wellsaid-labs/v9-custom-voices/b8f3a52f181f4d67b245a85476fe5b0c
-    """
-
-    V9_2021_8_09_UPDATE_EIA_TEC_CUSTOM_VOICES: typing.Final = (
-        "v9_2021_8_09_update_eia_tec_custom_voices"
-    )
-
-    """
-    These checkpoints include the Viacom custom voice.
-
-    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/355
-    Spectrogram Model Experiment (Step: 590,423):
-    https://www.comet.ml/wellsaid-labs/train-v9-viacom/eb24e3fb70f74f9c9a9490aa96d96f55
-    Signal Model Experiment (Step: 734,542):
-    https://www.comet.ml/wellsaid-labs/train-v9-viacom/df670689773b48608dd1ebb3dd6d7ea0
-    """
-
-    V9_2021_8_05_VIACOM_CUSTOM_VOICE: typing.Final = "v9_2021_8_05_viacom_custom_voice"
-
-    """
-    These checkpoints include the Hour One X NBC custom voice.
-
-    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/358
-    Spectrogram Model Experiment (Step: 901,518):
-    https://www.comet.ml/wellsaid-labs/v9-custom-voices/17289f19e0294d919bad9267cab4d5a0
-    Signal Model Experiment (Step: 868,989):
-    https://www.comet.ml/wellsaid-labs/v9-custom-voices/e016a01e44904fe083401e0bf83eaf36
-    """
-
-    V9_2021_8_11_HOUR_ONE_X_NBC_CUSTOM_VOICE: typing.Final = (
-        "v9_2021_8_11_hour_one_x_nbc_custom_voice"
-    )
-
-    """
-    These checkpoints include the UneeQ X ASB [updated] custom voice.
-    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/386
-    Spectrogram Model Experiment (Step: 163,722):
-    https://www.comet.ml/wellsaid-labs/v9-custom-voices/c9b857ba7d2f4cce9545bec429bd52be
-    Signal Model Experiment (Step: 944,550):
-    https://www.comet.ml/wellsaid-labs/v9-custom-voices/a9261ebef9d04f85b069365a049123e6
-    """
-
-    V9_2021_10_06_UNEEQ_X_ASB_CUSTOM_VOICE: typing.Final = "v9_2021_10_06_uneeq_x_asb_custom_voice"
-
-    """
-    These checkpoints include the StudySync custom voice.
-    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/386
-    Spectrogram Model Experiment (Step: 681, 340):
-    https://www.comet.ml/wellsaid-labs/v9-custom-voices/db8d706b02e14d47be79d9966c57b959
-    Signal Model Experiment (Step: 1,191,300):
-    https://www.comet.ml/wellsaid-labs/v9-custom-voices/fbb56cfd643e416699047c7383eee9cf
-    """
-
-    V9_2021_11_04_STUDYSYNC_CUSTOM_VOICE: typing.Final = "v9_2021_11_04_studysync_custom_voice"
-
-    """
-    These checkpoints include the Five9 custom voice.
-    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/386
-    Spectrogram Model Experiment (Step: 830,467):
-    https://www.comet.ml/wellsaid-labs/v9-custom-voices/d38734aa992a414db482f36fb5e8a961
-    Signal Model Experiment (Step: 1,114,691):
-    https://www.comet.ml/wellsaid-labs/v9-custom-voices/86c687102eba456da504a11093ee7366
-    """
-
-    V9_2021_11_09_FIVENINE_CUSTOM_VOICE: typing.Final = "v9_2021_11_09_fivenine_custom_voice"
-
-    """
-    These checkpoints include the StudySync custom voice (version 2).
-    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/386
-    Spectrogram Model Experiment (Step: 681, 340):
-    https://www.comet.ml/wellsaid-labs/v9-custom-voices/db8d706b02e14d47be79d9966c57b959
-    Signal Model Experiment (Step: 748,220):
-    https://www.comet.ml/wellsaid-labs/v9-custom-voices/7e5aef579ce54539aff1668bfb4a9022
-    """
-
-    V9_2021_12_01_STUDYSYNC_CUSTOM_VOICE: typing.Final = "v9_2021_12_01_studysync_custom_voice"
-
-    """
-    These checkpoints include the UneeQ X ASB (V3) final custom voice.
-    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/386
-    Spectrogram Model Experiment (Step: 861,875):
-    https://www.comet.ml/wellsaid-labs/uneeq-asb-experiments/360480297ec9416dbefec838c508c139
-    Signal Model Experiment (Step: 796,250):
-    https://www.comet.ml/wellsaid-labs/uneeq-asb-experiments/cf02f0011fcb44438be5a363721a991e
-    """
-
-    V9_2021_12_16_UNEEQ_X_ASB_CUSTOM_VOICE: typing.Final = "v9_2021_12_16_uneeq_x_asb_custom_voice"
-
-    """
-    These checkpoints include the 2021 Q4 Marketplace Expansion voices:
-    Steve B, Paul B, Eric S, Marcus G, Chase J, Jude D, Charlie Z, Bella B, Tilda C
-
-    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/374
-    Spectrogram Model Experiment (Step: 703,927):
-    https://www.comet.ml/wellsaid-labs/v9-marketplace-voices/011893b50e4947ba9480cd0bc6d4dd1e
-    Signal Model Experiment (Step: 958,209):
-    https://www.comet.ml/wellsaid-labs/v9-marketplace-voices/90a55cdfc1174a9d8399e014fcee5fc8
-    """
-
-    V9_2021_Q4_MARKETPLACE_EXPANSION: typing.Final = "v9_2021_q4_marketplace_expansion"
-
-    """
-    These checkpoints include the 2022 Q1 Marketplace Expansion voices:
-    Conversational: Patrick K, Kai M, Nicole L, Ava M, Vanessa N, Wade C, Sofia H
-    Narration:      Jodi P, Gia V, Antony A, Raine B, Owen C, Genevieve M, Jarvis H, Theo K, James B
-    Promo:          Zach E
-
-    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/386
-    Spectrogram Model Experiment (Step: 736,392):
-    https://www.comet.ml/wellsaid-labs/v9-marketplace-voices/d17cdb86c9314b678468d20921e5f4f2
-    Signal Model Experiment (Step: 746,452):
-    https://www.comet.ml/wellsaid-labs/v9-marketplace-voices/4d87bd1990c648baa9ba9d9340ca41dc
-    """
-
-    V9_2022_Q1_MARKETPLACE_EXPANSION: typing.Final = "v9_2022_q1_marketplace_expansion"
+    V10_2022_05_03_STAGING: typing.Final = "v10_2022_05_03_staging"
 
 
 _GCS_PATH = "gs://wellsaid_labs_checkpoints/"

@@ -62,7 +62,7 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
         bit_rate="768k",
         precision="25-bit",
     )
-    non_speech_segment_frame_length = 50
+    non_speech_segment_frame_length = 100
     max_frames_per_token = 0.2 / (FRAME_HOP / format_.sample_rate)
     # NOTE: Today pauses longer than one second are not used for emphasis or meaning; however,
     # Otis does tend to use long pauses for emphasis; however, he rarely pauses for longer than
