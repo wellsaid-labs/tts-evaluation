@@ -100,10 +100,12 @@ def make_spectrogram_model_train_config(
         # We use the Adam optimizer with β1 = 0.9, β2 = 0.999, eps = 10−6 learning rate of 10−3
         # We also apply L2 regularization with weight 10−6
         # NOTE: No L2 regularization performed better based on Comet experiments in March 2020.
+        # NOTE: In May 2022, we found that halfing the learning rate had a significant performance
+        # improvement on the loudness and pausing of the model.
         torch.optim.AdamW: cf.Args(
             eps=10 ** -6,
             weight_decay=0.01,
-            lr=10 ** -3,
+            lr=5e-4,
             amsgrad=False,
             betas=(0.9, 0.999),
         ),
