@@ -3,9 +3,6 @@ from functools import partial
 from run.data._loader import structures as struc
 from run.data._loader.utils import wsl_gcs_dataset_loader
 
-# TODO: Consider not using the actors realnames in the codebase in an effort to protect their
-# privacy.
-
 Dia = struc.Dialect
 
 

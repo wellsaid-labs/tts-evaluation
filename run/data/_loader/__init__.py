@@ -44,9 +44,7 @@ LIBRIVOX_DATASETS: DataLoaders = {
     **english.M_AILABS_DATASETS,
 }
 LIBRIVOX_DATASETS[english.lj_speech.LINDA_JOHNSON] = english.lj_speech.lj_speech_dataset
-RND_DATASETS: DataLoaders = {
-    **english.RND_DATASETS,
-}
+RND_DATASETS: DataLoaders = {**english.RND_DATASETS}
 
 __all__ = [
     "english",
