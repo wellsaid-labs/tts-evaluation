@@ -116,7 +116,7 @@ def _find_duplicate_passages(
     return duplicates, rest
 
 
-def _passages_len(passages: typing.List[_loader.Passage]):
+def _passages_len(passages: typing.List[_loader.Passage]) -> float:
     """Get the cumulative length of all `passages`."""
     return sum(p.segmented_audio_length() for p in passages)
 
@@ -124,7 +124,9 @@ def _passages_len(passages: typing.List[_loader.Passage]):
 def _len_of_dups(
     item: typing.Tuple[int, _loader.Passage], passages: typing.List[_loader.Passage], min_sim: float
 ) -> float:
-    """Get the length of the duplicate passages to `item`."""
+    """Get the cumulative length of passage and it's duplicates."""
+    # TODO: Document this function better, for example, how come this only find duplicates after
+    # the first item.
     assert passages[item[0]] is item[1]
     dups = _find_duplicate_passages((item[1].script,), passages[item[0] :], min_sim)[0]
     return _passages_len(dups)
@@ -138,6 +140,9 @@ def _split_dataset(dataset: Dataset, dev_len: int, min_sim: float) -> TrainDev:
 
     TODO: Refactor this function to be more generic, and easier to test, without needing to load
     an entire dataset.
+    NOTE: If there is only one dataset, this function makes no attempt to deduplicate inside
+    a single dataset. This assumes there is no meaningful duplicate content within the same dataset.
+    TODO: In dataset preprocessing, ensure there are no duplicates within a single dataset.
 
     Args
         ...
@@ -147,9 +152,17 @@ def _split_dataset(dataset: Dataset, dev_len: int, min_sim: float) -> TrainDev:
     dev: Dataset = collections.defaultdict(list)
     train: Dataset = collections.defaultdict(list)
     dev_scripts: typing.Set[str] = set()
+    if len(dataset) == 1:
+        ((speaker, passages),) = tuple(dataset.items())
+        logger.info(f"Splitting `{speaker}` without deduplication.")
+        splits = list(split(passages, [dev_len, math.inf], lambda p: _passages_len([p])))
+        dev[speaker].extend(splits[0])
+        train[speaker].extend(splits[1])
+        return dict(train), dict(dev)
+
+    logger.info("Creating initial split...")
     items = sorted(dataset.items(), key=lambda i: i[0].label)
     random.shuffle(items)
-    logger.info("Creating initial split...")
     for speaker, passages in tqdm(items):
         duplicates, rest = _find_duplicate_passages(dev_scripts, passages, min_sim)
         random.shuffle(rest)

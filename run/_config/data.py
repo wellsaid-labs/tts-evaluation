@@ -1,4 +1,5 @@
 import copy
+import itertools
 import logging
 
 import config as cf
@@ -254,10 +255,10 @@ def configure(overwrite: bool = False):
     """Configure modules that process data, other than audio."""
     # TODO: Remove `BETH_CAMERON__CUSTOM` from the `WSL_DATASETS` groups because it has it's own
     # custom script.
-    groups = [set(_loader.WSL_DATASETS.keys())]
+    groups = [set(itertools.chain(_loader.WSL_DATASETS.keys(), _loader.RND_DATASETS.keys()))]
     # NOTE: For other datasets like M-AILABS and LJ, this assumes that there is no duplication
     # between different speakers.
-    groups += [{s} for s in _loader.DATASETS.keys() if s not in _loader.WSL_DATASETS]
+    groups += [{s} for s in _loader.DATASETS.keys() if s not in groups[0]]
     config = {
         run._utils.get_dataset: cf.Args(
             datasets=DATASETS,
