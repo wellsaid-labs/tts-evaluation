@@ -164,6 +164,7 @@ class Style(Enum):
     PROMO: typing.Final = "Promotional"
     CONVO: typing.Final = "Conversational"
     DICT: typing.Final = "Dictionary"
+    RND: typing.Final = "Research"
     OTHER: typing.Final = "Other"
 
 
