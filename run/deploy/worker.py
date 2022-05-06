@@ -271,6 +271,10 @@ def validate_and_unpack(
     except PublicTextValueError as error:
         app.logger.exception("Invalid text: %r", text)
         raise FlaskException(str(error), code="INVALID_TEXT")
+    except BaseException:
+        # TODO: Create public facing errors for respelling mistakes.
+        app.logger.exception("Invalid text: %r", text)
+        raise FlaskException("Unable to parse text.", code="INVALID_TEXT")
 
 
 @app.route("/healthy", methods=["GET"])

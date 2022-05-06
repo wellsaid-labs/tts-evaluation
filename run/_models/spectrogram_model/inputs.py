@@ -69,7 +69,7 @@ class Token:
             # TODO: Remove schwa, when it's deprecated from respellings.
             # TODO: Configure the allowable letters.
             valid_letters = string.ascii_lowercase + "ə"
-            message = "Invalid respelling."
+            message = f"Invalid respelling: {text}"
             assert len(text) > 0, message
             assert text[0].lower() in valid_letters, message
             assert text[-1].lower() in valid_letters, message
@@ -124,7 +124,7 @@ class Token:
     ):
         """Preprocess respellings from one prefix, suffix, delim to the another."""
         for match in re.findall(
-            f"{re.escape(prefix)}[A-zə{re.escape(delim)}]+{re.escape(suffix)}", script
+            f"{re.escape(prefix)}[A-zəƏ{re.escape(delim)}]+{re.escape(suffix)}", script
         ):
             updated = match[len(prefix) : -len(suffix)].replace(delim, cls.delim)
             updated = f"{cls.prefix}{updated}{cls.suffix}"
