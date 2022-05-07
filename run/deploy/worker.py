@@ -126,7 +126,7 @@ _SESSIONS = [
     (english.wsl.BELLA_B__PROMO, "promo_script_5_tugman"),
     (english.wsl.TILDA_C__PROMO, "promo_script_6_mckell"),
     # Do not release till paid # TODO: Remove comment?
-    (english.wsl.SHARON_GAULD_ALEXANDER__PROMO, "promo_script_5_alexander"),
+    (english.wsl.CHARLIE_Z__PROMO, "promo_script_5_alexander"),
     (english.wsl.PAUL_B__PROMO, "promo_script_9_williams"),
     (english.wsl.SOFIA_H__CONVO, "conversational_script_5_walker"),
     (english.wsl.AVA_M__CONVO, "conversational_script_6_harris"),
