@@ -210,6 +210,11 @@ class Speaker:
     # For some voices, this is the gender of the voice, usually required for finding those voices.
     gender: typing.Optional[str] = None
 
+    def __post_init__(self):
+        message = "GCS Directory shouldn't have spaces"
+        assert self.gcs_dir is None or " " not in self.gcs_dir, message
+        assert " " not in self.label, "Label shouldn't have spaces"
+
     @property
     def language(self) -> Language:
         return self.dialect.value[0]

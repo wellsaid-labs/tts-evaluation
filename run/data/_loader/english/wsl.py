@@ -88,7 +88,7 @@ ROXY_T = narr("roxy_t", "Emma Topping (en_UK)", "emma_topping", Dia.EN_UK)
 KARI_N = narr("kari_n", "Kara Noble (en_UK)", "kara_noble", Dia.EN_UK)
 DIARMID_C = narr("diarmid_c", "Kevin Cherry (en_UK, Scottish)", "kevin_cherry", Dia.EN_UK)
 ELIZABETH_U = narr("elizabeth_u", "Suzi Stringer (en_UK)", "suzi_stringer")
-ALAN_T = narr("alan_t", "tomas_frazer", "Tomas Frazer (en_UK)", Dia.EN_UK)
+ALAN_T = narr("alan_t", "Tomas Frazer (en_UK)", "tomas_frazer", Dia.EN_UK)
 
 ###############
 # PROMOTIONAL #
@@ -123,7 +123,7 @@ CHARLIE_Z__PROMO = promo(
 convo = partial(make, style=struc.Style.CONVO)
 SOFIA_H__CONVO = convo(SOFIA_H.label, "Sofia H (Convo)", "adrienne_walker__convo")
 AVA_M__CONVO = convo(AVA_M.label, "Ava M (Convo)", "alicia_harris__convo")
-TOBIN_A__CONVO = convo(TOBIN_A.label, "hanuman_welch__convo", "Hanuman Welch (Convo)")
+TOBIN_A__CONVO = convo(TOBIN_A.label, "Hanuman Welch (Convo)", "hanuman_welch__convo")
 KAI_M__CONVO = convo(KAI_M.label, "Kai M (Convo)", "jack_rutkowski__convo")
 NICOLE_L__CONVO = convo(NICOLE_L.label, "Nicole L (Convo)", "megan_sinclair__convo")
 WADE_C__CONVO = convo(WADE_C.label, "Wade C (Convo)", "sam_scholl__convo")
