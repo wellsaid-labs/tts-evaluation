@@ -337,41 +337,47 @@ decisions had to be made:
       'ɑːr', 'ʌr', 'ɒr', 'x', 'ɔɪər', 'ɜːr', 'ɪər', 'ʊr', 'uː', 'aɪər', 'jʊər', 'ɛr', 'ær'}
 
     We first worked toward ARPAbet coverage:
-      'ɹ' is nearly equivalent to 'r', so we use the respelling of 'r' for 'R' [see "rye"]
-      'ɝ' is nearly equivalent to 'ɜːr', so we use the respelling of 'ur' for 'ER' [see "bird"]
-      'ɔ' is nearly equivalent to 'ɔː', so we use the respelling of 'aw' for 'AO' [see "bought"]**
-      'ɑ' is nearly equivalent to 'ɑː', so we use the respelling of 'ah' for 'AA' [see "father"]
+      'ɹ' is nearly equivalent to 'r', so we use the respelling of 'r' for 'R' ["rye"]
+      'ɝ' is nearly equivalent to 'ɜːr', so we use the respelling of 'ur' for 'ER' ["bird"]
+      'ɔ' is nearly equivalent to 'ɔː', so we use the respelling of 'aw' for 'AO' ["bought"]**
+      'ɑ' is nearly equivalent to 'ɑː', so we use the respelling of 'ah' for 'AA' ["father"]
       ** ARPAbet is inconsistent with their use of 'AO':
-            sometimes used as a long O [see "BOARD]
-            sometimes as a short O [see "BALL"], but uses 'AA' for "FATHER"
+            sometimes used as a long O (oh) ["BOARD"]
+            sometimes used as a short O (ah) ["BALL"], but uses 'AA' for "FATHER"
+            "WATER" uses "AO" but "SEAWATER" uses "AA"
 
     Working toward Wikipedia coverage:
-      'ɒ' and 'ɑː' can be approximated with 'AA' [see "father"]
-      'ər',
-      'juː' can be separated into 'Y' 'UW' = 'yoo' as in 'beauty' = "BYOO-tee"
-      'ɪr' can be separated into 'IH' and 'R' = ihr as in 'mirror' = 'MIHR-ur'
-      'ŋk' can be seaparated into 'NG' and 'K', but for users' sake we'll add an exception **
-      'ə' can be approximated with 'AH' = 'uh' as in 'about' = 'uh-BOWT'
-      'r' is nearly equivalent to 'ɹ', so we use the respelling of 'r' for 'R' [see "rye"], above
-      'ʊər' can be separated into 'UH' and 'R' = 'uur' as in 'premature' = "pree-muh-CHUUR"
-      'hw' is rarely used, but can be approximated with 'W' anyway
-      'aʊər' can be separated into 'AW' and 'ER' = 'owur' as in 'flower' = "FLOW-ur"
-      'ɛər', 'ɛr', and 'ær' can be approximated with 'EH' and 'R' = 'ehr' as in 'merry' = "MEHR-ee" ** is 'ehr' too confusing?
-      'iː' can be approximated with 'IY' = 'ee'
-      'ɔːr' can be approximated with 'AO' and 'R'
-      'ɑːr' can be approximated with 'AA' and 'R' = 'ahr' as in "far" = "FAHR" ** candidate
-      'ʌr' can be approximated with 'ER' = 'ur' as in "hurry" = "HUR-ee"
-      'ɒr' can be approximated with 'AO' and 'R' = 'awr' as in "moral" = "MAWR-uhl" ** candidate?
-      'x' is rarely used, but can be approximated with 'K' anyway
+      'ɒ', 'ɑː' can be approximated with 'AA':'ah'
+      'iː' can be approximated with 'IY':'ee'
+      'ə' can be approximated with 'AH':'uh'
+      'uː' can be approximated with 'UW':'oo'
+      'ʊr', 'ər', 'ʌr', 'ɜːr' can be approximated with 'ER':'ur'
+      'r' can be approximated with'R':'r'
+      'x' can be approximated with 'K':'k', very rare
+      'hw' can be approximated with 'W':'w', very rare
+      'juː' can be approximated with 'Y' 'UW' = 'yoo' as in 'beauty' = "BYOO-tee"
+      'ɪr' can be approximated with 'IH' and 'R' = ihr as in 'mirror' = "MIHR-ur"
+      'ʊər' can be approximated with 'UH' and 'R' = 'uur' as in 'premature' = "pree-muh-CHUUR"
       'ɔɪər' can be approximated with 'OY' and 'ER' = 'oyur' as in "hoyer" = "HOY-ur"
-      'ɜːr' is nearly equivalent to 'ɝ', so we use the respelling of 'ur' for 'ER' [see "bird"], above
-      'ɪər' can be approximated with 'IH' and 'R' = 'ihr' which will be converted to 'eer'
-              ** NOTE: sometimes CMU uses 'IH R' (PEER) and sometimes 'IY R' (PEERING) for the same sound
-      'ʊr' can be approximated with 'ER'
-      'uː' can be approximated with 'UW'
-      'aɪər' can be approximated with 'AY' and 'ER' = 'yur' as in 'higher' = 'HY-ur'
-      'jʊər' can be approximated with 'Y' and 'ER' = 'yur'
-              ** NOTE: Wikipedia suggests 'y' for both the 'iy' vowel sound and the 'y' consonant sound
+      'aʊər' can be approximated with 'AW' and 'ER' = 'owur' as in 'flower' = "FLOW-ur"
+      'aɪər' can be approximated with 'AY' and 'ER' = 'y-ur' as in 'higher' = "HY-ur"
+      'jʊər' can be approximated with 'Y'+'UH'+'R' = 'yuur' as in 'cure' = "KYUUR"
+              ** NOTE: Wikipedia uses 'y' for both the 'iy' vowel sound and the 'y' consonant sound
+              ** We've chosen to do the same, as preliminary testing showed good results
+
+    Sound combinations for user-friendliness:
+      'ŋk' can be approximated with 'NG':'ng' and 'K':'k', combination = 'nk'
+      'ɛər', 'ɛr', and 'ær' can be approximated with 'EH':'eh' and 'R':'r', combination = 'err'
+      'ɑːr' can be approximated with 'AA':'ah' and 'R':'r', combination = 'ar'
+      'ɔːr' can be approximated with 'AO':'aw' and 'R':'r', combination = 'or' ["STORY", "BOARD"]
+              ** NOTE: if separated by a hyphen, the combination becomes 'oh-r'
+      'ɪər' can be approximated with 'IH':'ih' or 'IY':'ee' and 'R', combination = 'eer'
+              ** NOTE: ARPAbet uses 'IH R' (PEER) and 'IY R' (PEERING) for the same sound
+
+      Short vowel considerations:
+      * for simplicity, short vowels mid-syllable should be plain: a e i o u
+      * for short vowels ending a syllable: [no aa], eh, ih, ah, uh
+      * for long vowels: ay, ee, (i?)y, oh, oo
 
 
 
@@ -411,6 +417,9 @@ RESPELLINGS: typing.Dict[str, str] = {
     'IH': 'ih', 'ER': 'ur',
     # NOTE: These codes were added in later iterations of the dictionary...
     # 'AXR': 'ər', 'AX': 'ə'
+}
+RESPELLING_COMBOS: typing.Dict[str, str] = {
+    'ngk': 'nk', 'ehr': 'err', 'ahr': 'ar', 'awr': 'or', 'ihr': 'eer',
 }
 # fmt: on
 
@@ -459,8 +468,19 @@ def get_respelling(word: str, dictionary: CMUDictSyl, delim: str = "-") -> typin
                 upper = True
             respellings.append(RESPELLINGS[_remove_arpabet_markings(phoneme)])
         syllable = "".join(respellings)
+        # Combination sounds
+        for combo in RESPELLING_COMBOS.keys():
+            if combo in syllable:
+                syllable = syllable.replace(combo, RESPELLING_COMBOS[combo])
         syllables.append(syllable.upper() if upper else syllable)
 
+    # If a syllable ends in 'aw' and the next syllable starts with 'r', pronunciation should be 'oh'
+    AW_OH = {"AW": "OH", "aw": "oh"}
+    R = ["R", "r"]
+    for i, syl in enumerate(syllables):
+        for aw in AW_OH.keys():
+            if syl.endswith(aw) and any(syllables[i + 1].startswith(r) for r in R):
+                syllables[i] = syl.replace(aw, AW_OH[aw])
     return delim.join(syllables)
 
 
