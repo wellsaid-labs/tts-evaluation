@@ -430,6 +430,12 @@ RESPELLING_COMBOS: typing.Dict[str, str] = {
 RESPELLING_COMBOS__SYLLABIC_SPLIT: typing.Dict[str, str] = {
     "AW": "OH", "aw": "oh", "IH": "EE", "ih": "ee"
 }
+RESPELLING_ALPHABET: typing.Dict[str, str] = {
+    "A": "ay", "B": "bee", "C": "see", "D": "dee", "E": "ee", "F": "ehf", "G": "jee", "H": "aych",
+    "I": "y", "J": "jay", "K": "kay", "L": "ehl", "M": "ehm", "N": "ehn", "O": "oh", "P": "pee",
+    "Q": "kyoo", "R": "ar", "S": "ehs", "T": "tee", "U": "yoo", "V": "vee", "W": "DUH-buhl-yoo",
+    "X": "ehks", "Y": "wy", "Z": "zee",
+}
 # fmt: on
 
 
@@ -489,6 +495,23 @@ def get_respelling(word: str, dictionary: CMUDictSyl, delim: str = "-") -> typin
         for vowel in RESPELLING_COMBOS__SYLLABIC_SPLIT.keys():
             if syl.endswith(vowel) and any(syllables[i + 1].startswith(r) for r in ["R", "r"]):
                 syllables[i] = syl.replace(vowel, RESPELLING_COMBOS__SYLLABIC_SPLIT[vowel])
+    return delim.join(syllables)
+
+
+def get_respelling_for_initialism(initialism: str, delim: str = "-") -> typing.Optional[str]:
+    """Returns a respelling for an initialism, with emphasis on the final character by default.
+    Sources indicating final syllable is most commonly stressed:
+    - https://www.confidentvoice.com/blog/2-tips-for-pronouncing-abbreviations
+    - https://english.stackexchange.com/questions/88040/why-are-all-acronyms-accented-on-the-last-syllable
+    """
+    message = f"This acronym is typically pronounced as a word: {initialism}"
+    assert get_respelling(initialism.lower(), dictionary=load_cmudict_syl()) is None, message
+
+    letters = list(initialism.upper())
+    syllables = [RESPELLING_ALPHABET[l] for l in letters]
+    # "W" is multisyllabic alread and should maintain emphasis on only the first syllable
+    if letters[-1] != "W":
+        syllables[-1] = syllables[-1].upper()
     return delim.join(syllables)
 
 

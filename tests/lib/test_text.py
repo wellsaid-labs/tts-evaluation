@@ -302,6 +302,25 @@ def test_get_respelling():
         assert pronunciation == lib.text.get_respelling(word, lib.text.load_cmudict_syl())
 
 
+def test_get_respelling_for_initialism():
+    """Test `lib.text.get_respelling_for_initialism` on initialisms and acronyms."""
+    expectations = {
+        "FBI": "ehf-bee-Y",
+        "RSVP": "ar-ehs-vee-PEE",
+        "FAQ": "ehf-ay-KYOO",
+        "UN": "yoo-EHN",
+        "LGBTQIA": "ehl-jee-bee-tee-kyoo-y-AY",
+        "FSW": "ehf-ehs-DUH-buhl-yoo",  # Test final W does not have all capitalized syllables
+    }
+    for initialism, pronunciation in expectations.items():
+        assert pronunciation == lib.text.get_respelling_for_initialism(initialism)
+
+    with pytest.raises(AssertionError):
+        lib.text.get_respelling_for_initialism("CDROM")
+    with pytest.raises(AssertionError):
+        lib.text.get_respelling_for_initialism("NASA")
+
+
 def test_respellings():
     """Test to ensure `RESPELLINGS` covers all of `ARPAbet`."""
     assert all(_remove_arpabet_markings(a) in RESPELLINGS for a in get_args(lib.text.ARPAbet))
