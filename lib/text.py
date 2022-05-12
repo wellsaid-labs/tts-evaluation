@@ -365,19 +365,25 @@ decisions had to be made:
               ** NOTE: Wikipedia uses 'y' for both the 'iy' vowel sound and the 'y' consonant sound
               ** We've chosen to do the same, as preliminary testing showed good results
 
-    Sound combinations for user-friendliness:
+    Sound combinations for user-friendliness & corrections to ARPAbet errors:
       'ŋk' can be approximated with 'NG':'ng' and 'K':'k', combination = 'nk'
       'ɛər', 'ɛr', and 'ær' can be approximated with 'EH':'eh' and 'R':'r', combination = 'err'
       'ɑːr' can be approximated with 'AA':'ah' and 'R':'r', combination = 'ar'
       'ɔːr' can be approximated with 'AO':'aw' and 'R':'r', combination = 'or' ["STORY", "BOARD"]
+              ** NOTE: ARPAbet misuses 'AO':'aw' in these cases, when the sound should be 'OW':'oh'
               ** NOTE: if separated by a hyphen, the combination becomes 'oh-r'
       'ɪər' can be approximated with 'IH':'ih' or 'IY':'ee' and 'R', combination = 'eer'
               ** NOTE: ARPAbet uses 'IH R' (PEER) and 'IY R' (PEERING) for the same sound
+              ** NOTE: if separated by a hyphen, the combination becomes 'ee-r'
+      'æŋ' or 'æŋk'sounds are misassigned in ARPAbet and will be re-combined to 'ang' or 'ank'
+              ** NOTE: When offering pronunciations for words ending in 'ang' and 'ank', ARPAbet
+              uses 'AE' (as in bat) when they mean 'EY' (as in bank). In fact, it is nearly
+              impossible to make a short A sound when an NG sound is followng it.
 
       Short vowel considerations:
-      * for simplicity, short vowels mid-syllable should be plain: a e i o u
-      * for short vowels ending a syllable: [no aa], eh, ih, ah, uh
-      * for long vowels: ay, ee, (i?)y, oh, oo
+      * for simplicity, short vowels mid-syllable should be plain: a e i o u ✓
+      * for short vowels ending a syllable: [no aa], eh, ih, ah, uh ✓
+      * for long vowels: ay, ee, (i?)y, oh, oo ✓
 
 
 
@@ -419,7 +425,10 @@ RESPELLINGS: typing.Dict[str, str] = {
     # 'AXR': 'ər', 'AX': 'ə'
 }
 RESPELLING_COMBOS: typing.Dict[str, str] = {
-    'ngk': 'nk', 'ehr': 'err', 'ahr': 'ar', 'awr': 'or', 'ihr': 'eer',
+    'ang': 'ayng', 'angk': 'aynk', 'ngk': 'nk', 'ehr': 'err', 'ahr': 'ar', 'awr': 'or', 'ihr': 'eer'
+}
+RESPELLING_COMBOS__SYLLABIC_SPLIT: typing.Dict[str, str] = {
+    "AW": "OH", "aw": "oh", "IH": "EE", "ih": "ee"
 }
 # fmt: on
 
@@ -475,12 +484,11 @@ def get_respelling(word: str, dictionary: CMUDictSyl, delim: str = "-") -> typin
         syllables.append(syllable.upper() if upper else syllable)
 
     # If a syllable ends in 'aw' and the next syllable starts with 'r', pronunciation should be 'oh'
-    AW_OH = {"AW": "OH", "aw": "oh"}
-    R = ["R", "r"]
+    # If a syllable ends in 'ih' and the next syllable starts with 'r', pronunciation should be 'ee'
     for i, syl in enumerate(syllables):
-        for aw in AW_OH.keys():
-            if syl.endswith(aw) and any(syllables[i + 1].startswith(r) for r in R):
-                syllables[i] = syl.replace(aw, AW_OH[aw])
+        for vowel in RESPELLING_COMBOS__SYLLABIC_SPLIT.keys():
+            if syl.endswith(vowel) and any(syllables[i + 1].startswith(r) for r in ["R", "r"]):
+                syllables[i] = syl.replace(vowel, RESPELLING_COMBOS__SYLLABIC_SPLIT[vowel])
     return delim.join(syllables)
 
 

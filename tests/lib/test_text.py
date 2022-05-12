@@ -285,11 +285,18 @@ def test_get_respelling():
         "maui": "MOW-ee",
         "cobalt": "KOH-bawlt",  # NOTE: Wikipedia recommends "KOH-bolt"
         "father": "FAH-dhur",
-        "farther": "FAHR-dhur",  # NOTE: Wikipedia recommends "FAR-dhər"
-        "ceres": "SIH-reez",  # NOTE: Wikipedia recommends "SEER-eez"
+        "farther": "FAR-dhur",  # NOTE: Wikipedia recommends "FAR-dhər", testing AA R : ahr -> ar
+        "ceres": "SEE-reez",  # NOTE: Wikipedia recommends "SEER-eez"
         "algorithm": "AL-gur-ih-dhuhm",  # NOTE: Wikipedia recommends "AL-gə-ridh-əm"
         "pan": "PAN",
         "machine": "muh-SHEEN",  # NOTE: Wikipedia recommends "mə-SHEEN",
+        "blank": "BLAYNK",  # Testing AE NG K : angk -> aynk
+        "blanketed": "BLAYNG-kuh-tihd",  # Testing AE NG : ang -> ayng
+        "ink": "IHNK",  # Testing NG K : ngk -> nk
+        "millionaire": "MIH-lyuh-NERR",  # Testing EH R : ehr -> err
+        "engineer": "EHN-juh-NEER",  # Testing IH R : ihr -> eer
+        "mirror": "MEE-rur",  # Testing IH - R : ih-r -> ee-r
+        "storyboard": "STOH-ree-bord",  # Testing AO - r : AW-r -> OH-r and AO R : awr -> or
     }
     for word, pronunciation in expectations.items():
         assert pronunciation == lib.text.get_respelling(word, lib.text.load_cmudict_syl())
