@@ -6,6 +6,7 @@ import config as cf
 
 import lib
 import run
+from run._models.spectrogram_model.inputs import norm_respellings
 from run.data import _loader
 from run.data._loader import structures as struc
 
@@ -240,21 +241,19 @@ ENGLISH_TEST_CASES = [
     "family. Yet sometimes he thought (or maybe hoped) that strangers in the street seemed to "
     "know him. Very strange strangers they were, too.",
     # NOTE: Test respellings
-    "I see in “Happening at |\\se\\FOHR\\u\\|” I have two new brands requesting store-led events "
+    "I see in “Happening at ::se-FOHR-u::” I have two new brands requesting store-led events "
     "for the same day.",
-    "Welcome to the |\\su\\LAHR\\es\\| Injury and Illness Prevention Program Training.",
-    "The |\\pur\\AY\\toh\\| principle was named after Italian economist Vilfredo "
-    "|\\pu\\RAY\\toh\\|.",
-    "We would like to nominate |\\AY\\vu\\| for her phenomenal recordings.",
-    "To use your self-help AI, please enable the Affirmations feature on the |\\KAHN\\səl\\| so "
-    "that you can |\\kun\\SOHL\\| yourself.",
-    "Too much sand? Tired of cacti? |\\dee\\ZURT\\| the |\\DEZ\\urt\\| now, with caravan "
-    "adventures!",
-    "If you want to get the good food at the |\\bu\\FAY\\|, you have to be willing to "
-    "|\\BUF\\et\\| and punch your way to the front of the line.",
-    "Does |\\BEE\\ə\\loh\\ZHEEK\\| |\\ru\\SHƏRSH\\| really work?",
+    "Welcome to the ::su-LAHR-es:: Injury and Illness Prevention Program Training.",
+    "The ::pur-AY-toh:: principle was named after Italian economist Vilfredo ::pu-RAY-toh::.",
+    "We would like to nominate ::AY-vu:: for her phenomenal recordings.",
+    "To use your self-help AI, please enable the Affirmations feature on the ::KAHN-səl:: so "
+    "that you can ::kun-SOHL:: yourself.",
+    "Too much sand? Tired of cacti? ::dee-ZURT:: the ::DEZ-urt:: now, with caravan adventures!",
+    "If you want to get the good food at the ::bu-FAY::, you have to be willing to "
+    "::BUF-et:: and punch your way to the front of the line.",
+    "Does ::BEE-ə-loh-ZHEEK:: ::ru-SHƏRSH:: really work?",
 ]
-TEST_CASES = [(struc.Language.ENGLISH, t) for t in ENGLISH_TEST_CASES]
+TEST_CASES = [(struc.Language.ENGLISH, norm_respellings(t)) for t in ENGLISH_TEST_CASES]
 
 
 def configure(overwrite: bool = False):

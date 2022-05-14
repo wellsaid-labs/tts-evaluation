@@ -120,7 +120,7 @@ class Token:
 
     @classmethod
     def norm_respellings(
-        cls, script: str, prefix: str = "[[", suffix: str = "]]", delim: str = "-"
+        cls, script: str, prefix: str = "::", suffix: str = "::", delim: str = "-"
     ):
         """Preprocess respellings from one prefix, suffix, delim to the another."""
         for match in re.findall(
