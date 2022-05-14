@@ -301,6 +301,58 @@ def test_get_respelling():
     for word, pronunciation in expectations.items():
         assert pronunciation == lib.text.get_respelling(word, lib.text.load_cmudict_syl())
 
+    # Test Vowel Sounds
+    vowel_expectations = {
+        "bat": "BAT",
+        "father": "FAH-dhur",
+        "oddball": "AHD-bawl",
+        "straighten": "STRAY-tuhn",
+        "happy": "HA-pee",
+        "prestige": "preh-STEEZH",
+        "about": "uh-BOWT",
+        "letter": "LEH-tur",
+        "historic": "hih-STOH-rihk",
+        "boat": "BOHT",
+        "boot": "BOOT",
+        "flower": "FLOW-ur",
+        "joy": "JOY",
+        "jump": "JUHMP",
+        "nook": "NUUK",
+        "site": "SYT",
+    }
+    for word, pronunciation in vowel_expectations.items():
+        assert pronunciation == lib.text.get_respelling(word, lib.text.load_cmudict_syl())
+
+    # Test Consonant Sounds
+    consonant_expectations = {
+        "bunk": "BUHNK",
+        "dusters": "DUH-sturz",
+        "although": "AWL-DHOH",
+        "firstly": "FURST-lee",
+        "global": "GLOH-buhl",
+        "horse": "HORS",
+        "jealous": "JEH-luhs",
+        "kite": "KYT",
+        "believe": "bih-LEEV",
+        "flammable": "FLA-muh-buhl",
+        "friend": "FREHND",
+        "singing": "SIH-ngihng",
+        "people": "PEE-puhl",
+        "rascal": "RAS-kuhl",
+        "slice": "SLYS",
+        "shy": "SHY",
+        "turtle": "TUR-tuhl",
+        "nature": "NAY-chur",
+        "thinks": "THIHNKS",
+        "save": "SAYV",
+        "win": "WIHN",
+        "yesteryear": "YEH-stur-yeer",
+        "please": "PLEEZ",
+        "measure": "MEH-zhur",
+    }
+    for word, pronunciation in consonant_expectations.items():
+        assert pronunciation == lib.text.get_respelling(word, lib.text.load_cmudict_syl())
+
 
 def test_get_respelling_for_initialism():
     """Test `lib.text.get_respelling_for_initialism` on initialisms and acronyms."""
