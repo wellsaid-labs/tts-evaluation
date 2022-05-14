@@ -155,6 +155,7 @@ def _split_dataset(dataset: Dataset, dev_len: int, min_sim: float) -> TrainDev:
     if len(dataset) == 1:
         ((speaker, passages),) = tuple(dataset.items())
         logger.info(f"Splitting `{speaker}` without deduplication.")
+        random.shuffle(passages)
         splits = list(split(passages, [dev_len, math.inf], lambda p: _passages_len([p])))
         dev[speaker].extend(splits[0])
         train[speaker].extend(splits[1])
