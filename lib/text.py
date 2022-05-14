@@ -310,119 +310,106 @@ def get_pronunciation(word: str, dictionary: CMUDictSyl) -> typing.Optional[Pron
     return pronunciations[0] if len(pronunciations) == 1 else None
 
 
-# fmt: off
 """
 This `RESPELLINGS` dictionary is a consolidation of ARPAbet:IPA and IPA:Wikipedia respellings.
-Note the CMU-provided ARPAbet differs from the one in the table linked below because it does not use
-any of the following: "AX", "AXR", "IX", "UX", "DX", "EL", "EM", "EN", "NX", "Q", "WH".
-This means `ARPAbet` defined herein is comprised of 17 vowel sounds and 24 consonant sounds.
-Wikipedia, on the other hand, uses a system comprised of 40 vowel sounds and 28 consonant sounds,
-including some sounds containing multiple phonemes, some sounds having multiple respellings AND
-the respelling 'y' being used for both the long i vowel sound and the y consonant sound.
-Because of this and because the mapping of sounds is not one-to-one between the systems, some
-decisions had to be made:
-    Set of 39 IPA phonemes represented in ARPAbet:
-      {'ɑ', 'æ', 'ʌ', 'ɔ', 'aʊ', 'aɪ', 'ɛ', 'ɝ', 'eɪ', 'ɪ', 'i', 'oʊ', 'ɔɪ', 'ʊ', 'u', 'b', 'tʃ',
-      'd', 'ð', 'f', 'ɡ', 'h', 'dʒ', 'k', 'l', 'm', 'n', 'ŋ', 'p', 'ɹ', 's', 'ʃ', 't', 'θ', 'v',
-      'w', 'j', 'z', 'ʒ'}
-    Set of 63 IPA phoneme and phoneme combinations represented in Wikipedia Respellings:
-      {'ɪər', 'æ', 'ɜːr', 'juː', 'ʒ', 'aʊ', 'θ', 'ɪ', 'z', 'f', 'l', 'ʃ', 'ŋ', 'h', 'ɡ', 'd', 'ə',
-      'u', 'ær', 'ɒ', 'r', 's', 'ɔːr', 'uː', 'ʌ', 'p', 'hw', 'n', 'v', 'ər', 'ʊər', 'ʌr', 'ɔː',
-      'ʊr', 'ɪr', 'ɛər', 'ŋk', 'ɛr', 'm', 'x', 'jʊər', 't', 'eɪ', 'ð', 'iː', 'tʃ', 'aʊər', 'aɪər',
-      'b', 'w', 'j', 'ɔɪ', 'i', 'ɛ', 'oʊ', 'ɔɪər', 'aɪ', 'ɑːr', 'ɑː', 'ɒr', 'k', 'dʒ', 'ʊ'}
-    4 ARPAbet IPA phonemes missing from Wikipedia Respelling phonemes:
-      {'ɹ', 'ɝ', 'ɔ', 'ɑ'}
-    28 Wikipedia Respelling phonemes missing from ARPAbet phonemes:
-      {'ɒ', 'ər', 'ɔː', 'juː', 'ɪr', 'ŋk', 'ə', 'r', 'ʊər', 'hw', 'aʊər', 'ɑː', 'ɛər', 'iː', 'ɔːr',
-      'ɑːr', 'ʌr', 'ɒr', 'x', 'ɔɪər', 'ɜːr', 'ɪər', 'ʊr', 'uː', 'aɪər', 'jʊər', 'ɛr', 'ær'}
 
-    We first worked toward ARPAbet coverage:
-      'ɹ' is nearly equivalent to 'r', so we use the respelling of 'r' for 'R' ["rye"]
-      'ɝ' is nearly equivalent to 'ɜːr', so we use the respelling of 'ur' for 'ER' ["bird"]
-      'ɔ' is nearly equivalent to 'ɔː', so we use the respelling of 'aw' for 'AO' ["bought"]**
-      'ɑ' is nearly equivalent to 'ɑː', so we use the respelling of 'ah' for 'AA' ["father"]
-      ** ARPAbet is inconsistent with their use of 'AO':
-            sometimes used as a long O (oh) ["BOARD"]
-            sometimes used as a short O (ah) ["BALL"], but uses 'AA' for "FATHER"
-            "WATER" uses "AO" but "SEAWATER" uses "AA"
+Note the CMU-provided ARPAbet differs from "ARPAbet Wiki" (see link below) because it does not use
+any of the following: "AX", "AXR", "IX", "UX", "DX", "EL", "EM", "EN", "NX", "Q", "WH". This means
+ARPAbet defined herein is comprised of 17 vowel sounds and 24 consonant sounds. Wikipedia, on the
+other hand, uses a system comprised of 40 vowel sounds and 28 consonant sounds, including some
+sounds containing multiple phonemes, some sounds having multiple respellings AND the respelling
+'y' being used for both the long i vowel sound and the y consonant sound. Because of this and
+because the mapping of sounds is not one-to-one between the systems, some decisions had to be
+made...
 
-    Working toward Wikipedia coverage:
-      'ɒ', 'ɑː' can be approximated with 'AA':'ah'
-      'iː' can be approximated with 'IY':'ee'
-      'ə' can be approximated with 'AH':'uh'
-      'uː' can be approximated with 'UW':'oo'
-      'ʊr', 'ər', 'ʌr', 'ɜːr' can be approximated with 'ER':'ur'
-      'r' can be approximated with'R':'r'
-      'x' can be approximated with 'K':'k', very rare
-      'hw' can be approximated with 'W':'w', very rare
-      'juː' can be approximated with 'Y' 'UW' = 'yoo' as in 'beauty' = "BYOO-tee"
-      'ɪr' can be approximated with 'IH' and 'R' = ihr as in 'mirror' = "MIHR-ur"
-      'ʊər' can be approximated with 'UH' and 'R' = 'uur' as in 'premature' = "pree-muh-CHUUR"
-      'ɔɪər' can be approximated with 'OY' and 'ER' = 'oyur' as in "hoyer" = "HOY-ur"
-      'aʊər' can be approximated with 'AW' and 'ER' = 'owur' as in 'flower' = "FLOW-ur"
-      'aɪər' can be approximated with 'AY' and 'ER' = 'y-ur' as in 'higher' = "HY-ur"
-      'jʊər' can be approximated with 'Y'+'UH'+'R' = 'yuur' as in 'cure' = "KYUUR"
-              ** NOTE: Wikipedia uses 'y' for both the 'iy' vowel sound and the 'y' consonant sound
-              ** We've chosen to do the same, as preliminary testing showed good results
+This is the set of 39 IPA phonemes represented in ARPAbet:
+{'ɑ', 'æ', 'ʌ', 'ɔ', 'aʊ', 'aɪ', 'ɛ', 'ɝ', 'eɪ', 'ɪ', 'i', 'oʊ', 'ɔɪ', 'ʊ', 'u', 'b', 'tʃ',
+'d', 'ð', 'f', 'ɡ', 'h', 'dʒ', 'k', 'l', 'm', 'n', 'ŋ', 'p', 'ɹ', 's', 'ʃ', 't', 'θ', 'v',
+'w', 'j', 'z', 'ʒ'}
 
-    Sound combinations for user-friendliness & corrections to ARPAbet errors:
-      'ŋk' can be approximated with 'NG':'ng' and 'K':'k', combination = 'nk'
-      'ɛər', 'ɛr', and 'ær' can be approximated with 'EH':'eh' and 'R':'r', combination = 'err'
-      'ɑːr' can be approximated with 'AA':'ah' and 'R':'r', combination = 'ar'
-      'ɔːr' can be approximated with 'AO':'aw' and 'R':'r', combination = 'or' ["STORY", "BOARD"]
-              ** NOTE: ARPAbet misuses 'AO':'aw' in these cases, when the sound should be 'OW':'oh'
-              ** NOTE: if separated by a hyphen, the combination becomes 'oh-r'
-      'ɪər' can be approximated with 'IH':'ih' or 'IY':'ee' and 'R', combination = 'eer'
-              ** NOTE: ARPAbet uses 'IH R' (PEER) and 'IY R' (PEERING) for the same sound
-              ** NOTE: if separated by a hyphen, the combination becomes 'ee-r'
-      'æŋ' or 'æŋk'sounds are misassigned in ARPAbet and will be re-combined to 'ang' or 'ank'
-              ** NOTE: When offering pronunciations for words ending in 'ang' and 'ank', ARPAbet
-              uses 'AE' (as in bat) when they mean 'EY' (as in bank). In fact, it is nearly
-              impossible to make a short A sound when an NG sound is followng it.
+This is the set of 63 IPA phoneme and phoneme combinations represented in Wikipedia Respellings:
+{'ɪər', 'æ', 'ɜːr', 'juː', 'ʒ', 'aʊ', 'θ', 'ɪ', 'z', 'f', 'l', 'ʃ', 'ŋ', 'h', 'ɡ', 'd', 'ə',
+'u', 'ær', 'ɒ', 'r', 's', 'ɔːr', 'uː', 'ʌ', 'p', 'hw', 'n', 'v', 'ər', 'ʊər', 'ʌr', 'ɔː',
+'ʊr', 'ɪr', 'ɛər', 'ŋk', 'ɛr', 'm', 'x', 'jʊər', 't', 'eɪ', 'ð', 'iː', 'tʃ', 'aʊər', 'aɪər',
+'b', 'w', 'j', 'ɔɪ', 'i', 'ɛ', 'oʊ', 'ɔɪər', 'aɪ', 'ɑːr', 'ɑː', 'ɒr', 'k', 'dʒ', 'ʊ'}
 
-      Short vowel considerations:
-      * for simplicity, short vowels mid-syllable should be plain: a e i o u ✓
-      * for short vowels ending a syllable: [no aa], eh, ih, ah, uh ✓
-      * for long vowels: ay, ee, (i?)y, oh, oo ✓
+These are the 4 ARPAbet IPA phonemes missing from Wikipedia Respelling phonemes:
+{'ɹ', 'ɝ', 'ɔ', 'ɑ'}
 
+These 28 Wikipedia Respelling phonemes missing from ARPAbet phonemes:
+{'ɒ', 'ər', 'ɔː', 'juː', 'ɪr', 'ŋk', 'ə', 'r', 'ʊər', 'hw', 'aʊər', 'ɑː', 'ɛər', 'iː', 'ɔːr',
+'ɑːr', 'ʌr', 'ɒr', 'x', 'ɔɪər', 'ɜːr', 'ɪər', 'ʊr', 'uː', 'aɪər', 'jʊər', 'ɛr', 'ær'}
 
+We first worked toward ARPAbet coverage, of the 4 mentioned missing phonemes:
+  - For 'R' (as in 'rye'),     we use 'r' because 'ɹ'  is nearly equivalent to 'r'
+  - For 'ER' (as in 'bird'),   we use 'ur' because 'ɝ' is nearly equivalent to 'ɜːr'
+  - For 'AO' (as in 'bought'), we use 'aw' because 'ɔ' is nearly equivalent to 'ɔː' **
+  - For 'AA' (as in 'father'), we use 'ah' because 'ɑ' is nearly equivalent to 'ɑː'
 
+** Keep in mind, ARPAbet is inconsistent with their use of 'AO':
+  - sometimes used as a long O (oh) ['BOARD']
+  - sometimes used as a short O (ah) ['BALL'], but uses 'AA' for 'FATHER'
+  - 'WATER' uses 'AO' but 'SEAWATER' uses 'AA'
 
-ARPAbet Wiki: https://en.wikipedia.org/wiki/ARPABET
-Wiki Respelling Key: https://en.wikipedia.org/wiki/Help:Pronunciation_respelling_key
+Next, we considered the missing Wikipedia phonemes and phoneme combinations:
+  - 'iː'   can be approximated with 'IY':'ee'
+  - 'ə'    can be approximated with 'AH':'uh'
+  - 'uː'   can be approximated with 'UW':'oo'
+  - 'r'    can be approximated with 'R':'r'
+  - 'x'    can be approximated with 'K':'k', very rare
+  - 'hw'   can be approximated with 'W':'w', very rare
+  - 'juː'  can be approximated with 'Y UW':'yoo' as in 'beauty':'BYOO-tee'
+  - 'ɪr'   can be approximated with 'IH R':'ihr' as in 'mirror':'MIHR-ur'
+  - 'ʊər'  can be approximated with 'UH R':'uur' as in 'premature':'pree-muh-CHUUR'
+  - 'ɔɪər' can be approximated with 'OY ER':'oyur' as in 'hoyer':'HOY-ur'
+  - 'aʊər' can be approximated with 'AW ER':'owur' as in 'flower':'FLOW-ur'
+  - 'aɪər' can be approximated with 'AY ER':'y-ur' as in 'higher':'HY-ur'
+  - 'jʊər' can be approximated with 'Y UH R':'yuur' as in 'cure':'KYUUR'
+  - 'ɒ', 'ɑː' can be approximated with 'AA':'ah'
+  - 'ʊr', 'ər', 'ʌr', 'ɜːr' can be approximated with 'ER':'ur'
+
+NOTE: Wikipedia uses 'y' for both the 'iy' vowel sound and the 'y' consonant sound. We've chosen to
+do the same, as preliminary testing showed good results
+
+Next, we considered some final phoneme combinations for user-friendliness and to correct for
+some ARPAbet errors:
+  - 'ŋk'  without a special exception would be 'NG K':'ngk', we instead use 'nk'
+  - 'ɑːr' without a special exception would be 'AA R':'ahr', we instead use 'ar'
+  - 'ɔːr' without a special exception would be 'AO R':'awr', we instead use 'or', like in 'STORY'
+    and 'BOARD'.
+      - NOTE: ARPAbet misuses 'AO':'aw' in these cases, when the sound should be 'OW':'oh'.
+      - NOTE: If separated by a hyphen, we use 'oh-r'.
+  - 'ɪər' without a special exception would be 'IH IY R':'eeihr', we instead use 'ar'
+      - NOTE: ARPAbet uses 'IH R' in 'peer' and 'IY R' in 'peering' for the same sound.
+      - NOTE: If separated by a hyphen, the combination becomes 'ee-r'.
+  - 'æŋ' or 'æŋk' sounds are misassigned in ARPAbet and will be re-combined to 'ang' or 'ank',
+    unfortunately.
+      - NOTE: When offering pronunciations for words ending in 'ang' and 'ank', ARPAbet uses 'AE'
+        (as in 'bat') when they mean 'EY' (as in 'bank'). In fact, it is nearly impossible to make a
+        short A sound when an NG sound is followng it.
+  - 'ɛər', 'ɛr', and 'ær' without a special exception would be 'EH R':'ehr', we instead use 'err'
+
+Lastly, we considered short and long vowels:
+- For simplicity, short vowels mid-syllable should be plain: a e i o u ✓
+- For short vowels ending a syllable: [no aa], eh, ih, ah, uh ✓
+- For long vowels: ay, ee, (i?)y, oh, oo ✓
+
+Resources:
+- CMUDict has a number of inconsistencies:
+    - This documents how CMUDict is put together,
+      http://www.cs.cmu.edu/~archan/presentation/new_cmudict.pdf
+    - Many of these commits are fixes for CMUDict issues,
+      https://github.com/rhdunn/amepd/commits/master
+- ARPAbet Wiki: https://en.wikipedia.org/wiki/ARPABET
+- Wiki Respelling Key: https://en.wikipedia.org/wiki/Help:Pronunciation_respelling_key
 """
-ARPABET_IPA: typing.Dict[str, str] = {
-    'AA': 'ɑ', 'AE': 'æ', 'AH': 'ʌ', 'AO': 'ɔ', 'AW': 'aʊ', 'AY': 'aɪ',
-    'EH': 'ɛ', 'ER': 'ɝ', 'EY': 'eɪ', 'IH': 'ɪ', 'IY': 'i', 'OW': 'oʊ', 'OY': 'ɔɪ', 'UH': 'ʊ',
-    'UW': 'u', 'B': 'b', 'CH': 'tʃ', 'D': 'd', 'DH': 'ð', 'F': 'f', 'G': 'ɡ', 'H': 'h', 'JH': 'dʒ',
-    'K': 'k', 'L': 'l', 'M': 'm', 'N': 'n', 'NG': 'ŋ', 'P': 'p', 'R': 'ɹ', 'S': 's', 'SH': 'ʃ',
-    'T': 't', 'TH': 'θ', 'V': 'v', 'W': 'w', 'Y': 'j', 'Z': 'z', 'ZH': 'ʒ',
-    # NOTE: These codes were added in later iterations of the dictionary...
-    # 'AXR': 'ɚ', 'AX': 'ə'
-}
-# TODO: This does not account for duplicate phonemes or duplicate respellings, as Wikipedia allows.
-# Fix to more closely align with the Wikipedia Respelling key.
-IPA_WIKIPEDIA: typing.Dict[str, str] = {
-    'æ': 'a', 'ɑː': 'ah', 'ɛər': 'air', 'ɑːr': 'ar', 'ær': 'arr', 'ɔː': 'aw', 'eɪ': 'ay', 'ɛ': 'eh',
-    'iː': 'ee', 'i': 'ee', 'ɪər': 'eer', 'ɛr': 'err', 'juː': 'ew', 'aɪ': 'y', 'ɪ': 'ih',
-    'aɪər': 'ire', 'ɪr': 'irr', 'ɒ': 'o', 'oʊ': 'oh', 'ɔɪər': 'oir', 'uː': 'oo', 'u': 'oo',
-    'ʊər': 'oor', 'ɔːr': 'or', 'ɒr': 'orr', 'aʊər': 'our', 'aʊ': 'ow', 'ɔɪ': 'oy', 'ʌ': 'uh',
-    'ɜːr': 'ur', 'jʊər': 'ure', 'ʌr': 'urr', 'ʊ': 'uu', 'ʊr': 'uurr', 'ə': 'ə', 'ər': 'ər',
-    'b': 'b', 'tʃ': 'tch', 'd': 'd', 'ð': 'dh', 'f': 'f', 'ɡ': 'gh', 'h': 'h', 'dʒ': 'j', 'k': 'k',
-    'x': 'kh', 'l': 'l', 'm': 'm', 'n': 'n', 'ŋ': 'ng', 'ŋk': 'nk', 'p': 'p', 'r': 'r', 's': 'ss',
-    'ʃ': 'sh', 't': 't', 'θ': 'th', 'v': 'v', 'w': 'w', 'hw': 'wh', 'j': 'y', 'z': 'z', 'ʒ': 'zh'
-}
+# fmt: off
 RESPELLINGS: typing.Dict[str, str] = {
     'AA': 'ah', 'AE': 'a', 'AH': 'uh', 'AO': 'aw', 'AW': 'ow', 'AY': 'y', 'EH': 'eh', 'EY': 'ay',
     'IY': 'ee', 'OW': 'oh', 'OY': 'oy', 'UH': 'uu', 'UW': 'oo', 'B': 'b', 'CH': 'ch', 'D': 'd',
     'DH': 'dh', 'F': 'f', 'G': 'g', 'HH': 'h', 'JH': 'j', 'K': 'k', 'L': 'l', 'M': 'm', 'N': 'n',
     'NG': 'ng', 'P': 'p', 'R': 'r', 'S': 's', 'SH': 'sh', 'T': 't', 'TH': 'th', 'V': 'v', 'W': 'w',
-    'Y': 'y', 'Z': 'z', 'ZH': 'zh',
-    # NOTE: These codes have been removed in further iterations of the dictionary...
-    # # Do we want to change to 'i' and 'er' for user simplicity?
-    'IH': 'ih', 'ER': 'ur',
-    # NOTE: These codes were added in later iterations of the dictionary...
-    # 'AXR': 'ər', 'AX': 'ə'
+    'Y': 'y', 'Z': 'z', 'ZH': 'zh', 'IH': 'ih', 'ER': 'ur'
 }
 RESPELLING_COMBOS: typing.Dict[str, str] = {
     'ang': 'ayng', 'angk': 'aynk', 'ngk': 'nk', 'ehr': 'err', 'ahr': 'ar', 'awr': 'or', 'ihr': 'eer'
