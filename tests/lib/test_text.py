@@ -8,6 +8,7 @@ import pytest
 
 import lib
 from lib.text import (
+    RESPELLING_ALPHABET,
     RESPELLINGS,
     _remove_arpabet_markings,
     grapheme_to_phoneme,
@@ -276,8 +277,8 @@ def test_get_pronunciation__non_standard_words():
     _check_pronunciation("ABC123", expected=None)
 
 
-def test_get_respelling():
-    """Test `lib.text.get_respelling` on basic scenarios."""
+def test_respell():
+    """Test `lib.text.respell` on basic scenarios."""
     expectations = {
         "zebra": "ZEE-bruh",
         "motorcycle": "MOH-tur-sy-kuhl",  # NOTE: Secondary is lowercase if primary is uppercase.
@@ -299,9 +300,11 @@ def test_get_respelling():
         "storyboard": "STOH-ree-bord",  # Testing AO - r : AW-r -> OH-r and AO R : awr -> or
     }
     for word, pronunciation in expectations.items():
-        assert pronunciation == lib.text.get_respelling(word, lib.text.load_cmudict_syl())
+        assert pronunciation == lib.text.respell(word, lib.text.load_cmudict_syl())
 
-    # Test Vowel Sounds
+
+def test_respell__vowels():
+    """Test `lib.text.respell` on various vowels."""
     vowel_expectations = {
         "bat": "BAT",
         "father": "FAH-dhur",
@@ -321,9 +324,11 @@ def test_get_respelling():
         "site": "SYT",
     }
     for word, pronunciation in vowel_expectations.items():
-        assert pronunciation == lib.text.get_respelling(word, lib.text.load_cmudict_syl())
+        assert pronunciation == lib.text.respell(word, lib.text.load_cmudict_syl())
 
-    # Test Consonant Sounds
+
+def test_respell__consonant():
+    """Test `lib.text.respell` on various consonant."""
     consonant_expectations = {
         "bunk": "BUHNK",
         "dusters": "DUH-sturz",
@@ -351,11 +356,11 @@ def test_get_respelling():
         "measure": "MEH-zhur",
     }
     for word, pronunciation in consonant_expectations.items():
-        assert pronunciation == lib.text.get_respelling(word, lib.text.load_cmudict_syl())
+        assert pronunciation == lib.text.respell(word, lib.text.load_cmudict_syl())
 
 
-def test_get_respelling_for_initialism():
-    """Test `lib.text.get_respelling_for_initialism` on initialisms and acronyms."""
+def test_respell_initialism():
+    """Test `lib.text.respell_initialism` on initialisms and acronyms."""
     expectations = {
         "FBI": "ehf-bee-Y",
         "RSVP": "ar-ehs-vee-PEE",
@@ -365,17 +370,17 @@ def test_get_respelling_for_initialism():
         "FSW": "ehf-ehs-DUH-buhl-yoo",  # Test final W does not have all capitalized syllables
     }
     for initialism, pronunciation in expectations.items():
-        assert pronunciation == lib.text.get_respelling_for_initialism(initialism)
-
-    with pytest.raises(AssertionError):
-        lib.text.get_respelling_for_initialism("CDROM")
-    with pytest.raises(AssertionError):
-        lib.text.get_respelling_for_initialism("NASA")
+        assert pronunciation == lib.text.respell_initialism(initialism)
 
 
 def test_respellings():
     """Test to ensure `RESPELLINGS` covers all of `ARPAbet`."""
     assert all(_remove_arpabet_markings(a) in RESPELLINGS for a in get_args(lib.text.ARPAbet))
+
+
+def test_respellings_alphabet():
+    """Test to ensure `RESPELLING_ALPHABET` covers the entire alphabet."""
+    assert all(a in RESPELLING_ALPHABET for a in string.ascii_uppercase)
 
 
 def test_natural_keys():

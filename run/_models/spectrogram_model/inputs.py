@@ -10,7 +10,7 @@ import spacy
 import spacy.tokens
 import torch
 
-from lib.text import get_respelling, load_cmudict_syl
+from lib.text import load_cmudict_syl, respell
 from lib.utils import lengths_to_mask
 from run.data._loader import structures as struc
 
@@ -75,8 +75,8 @@ class Token:
 
     def _try_respelling(self) -> typing.Optional[str]:
         """Get a respelling of `self.token.text` if possible."""
-        respell = get_respelling(self.token.text, load_cmudict_syl(), self.delim)
-        return None if respell is None else respell
+        respelling = respell(self.token.text, load_cmudict_syl(), self.delim)
+        return None if respelling is None else respelling
 
     def _get_text(self) -> typing.Tuple[Pronunciation, str]:
         """Get the text that represents `token` which maybe respelled."""

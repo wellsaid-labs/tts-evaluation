@@ -414,8 +414,8 @@ RESPELLINGS: typing.Dict[str, str] = {
 RESPELLING_COMBOS: typing.Dict[str, str] = {
     'ang': 'ayng', 'angk': 'aynk', 'ngk': 'nk', 'ehr': 'err', 'ahr': 'ar', 'awr': 'or', 'ihr': 'eer'
 }
-RESPELLING_COMBOS__SYLLABIC_SPLIT: typing.Dict[str, str] = {
-    "AW": "OH", "aw": "oh", "IH": "EE", "ih": "ee"
+RESPELLING_COMBOS__SYLLABIC_SPLIT: typing.Dict[typing.Tuple[str, str], str] = {
+    ("aw", "r"): "oh", ("ih", "r"): "ee"
 }
 RESPELLING_ALPHABET: typing.Dict[str, str] = {
     "A": "ay", "B": "bee", "C": "see", "D": "dee", "E": "ee", "F": "ehf", "G": "jee", "H": "aych",
@@ -440,7 +440,7 @@ def _remove_arpabet_markings(code: ARPAbet):
     return code.translate(_REMOVE_ARPABET_MARKINGS)
 
 
-def get_respelling(word: str, dictionary: CMUDictSyl, delim: str = "-") -> typing.Optional[str]:
+def respell(word: str, dictionary: CMUDictSyl, delim: str = "-") -> typing.Optional[str]:
     """Get the respelling for `word` using the syllabified CMU pronunciation, learn more about
     respellings: https://en.wikipedia.org/wiki/Help:Pronunciation_respelling_key
 
@@ -460,6 +460,7 @@ def get_respelling(word: str, dictionary: CMUDictSyl, delim: str = "-") -> typin
     # Learn more:
     # https://en.wikipedia.org/wiki/Help:Pronunciation_respelling_key#Syllables_and_stress
     has_primary = False
+    is_upper = []
     for syl in pronunciation:
         respellings = []
         upper = False
@@ -470,36 +471,35 @@ def get_respelling(word: str, dictionary: CMUDictSyl, delim: str = "-") -> typin
                 upper = True
             respellings.append(RESPELLINGS[_remove_arpabet_markings(phoneme)])
         syllable = "".join(respellings)
-        # Combination sounds
+
+        # NOTE: Handle phoneme combinations
         for combo in RESPELLING_COMBOS.keys():
             if combo in syllable:
                 syllable = syllable.replace(combo, RESPELLING_COMBOS[combo])
-        syllables.append(syllable.upper() if upper else syllable)
 
-    # If a syllable ends in 'aw' and the next syllable starts with 'r', pronunciation should be 'oh'
-    # If a syllable ends in 'ih' and the next syllable starts with 'r', pronunciation should be 'ee'
-    for i, syl in enumerate(syllables):
-        for vowel in RESPELLING_COMBOS__SYLLABIC_SPLIT.keys():
-            if syl.endswith(vowel) and any(syllables[i + 1].startswith(r) for r in ["R", "r"]):
-                syllables[i] = syl.replace(vowel, RESPELLING_COMBOS__SYLLABIC_SPLIT[vowel])
+        is_upper.append(upper)
+        syllables.append(syllable)
+
+    # NOTE: Handle phoneme combinations across two syllables.
+    for i, (curr, next) in enumerate(zip(syllables, syllables[1:])):
+        for (vowel, cons), replacement in RESPELLING_COMBOS__SYLLABIC_SPLIT.items():
+            if curr.endswith(vowel) and next.lower().startswith(cons):
+                syllables[i] = curr.replace(vowel, replacement)
+
+    syllables = [s.upper() if u else s for s, u in zip(syllables, is_upper)]
     return delim.join(syllables)
 
 
-def get_respelling_for_initialism(initialism: str, delim: str = "-") -> typing.Optional[str]:
-    """Returns a respelling for an initialism, with emphasis on the final character by default.
-    Sources indicating final syllable is most commonly stressed:
+def respell_initialism(initialism: str, delim: str = "-") -> typing.Optional[str]:
+    """Get an initialism respelling, with emphasis on the final character.
+
+    NOTE: Final syllable is most commonly stressed, learn more:
     - https://www.confidentvoice.com/blog/2-tips-for-pronouncing-abbreviations
     -
     https://english.stackexchange.com/questions/88040/why-are-all-acronyms-accented-on-the-last-syllable
     """
-    message = f"This acronym is typically pronounced as a word: {initialism}"
-    assert get_respelling(initialism.lower(), dictionary=load_cmudict_syl()) is None, message
-
-    letters = list(initialism.upper())
-    syllables = [RESPELLING_ALPHABET[l] for l in letters]
-    # "W" is multisyllabic alread and should maintain emphasis on only the first syllable
-    if letters[-1] != "W":
-        syllables[-1] = syllables[-1].upper()
+    syllables = [RESPELLING_ALPHABET[l] for l in list(initialism.upper())]
+    syllables[-1] = syllables[-1] if delim in syllables[-1] else syllables[-1].upper()
     return delim.join(syllables)
 
 
