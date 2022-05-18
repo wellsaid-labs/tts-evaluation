@@ -51,6 +51,7 @@ class Token:
     prefix: typing.ClassVar[str] = "|\\"
     suffix: typing.ClassVar[str] = "\\|"
     delim: typing.ClassVar[str] = "\\"
+    valid_chars: typing.ClassVar[str] = string.ascii_lowercase
 
     def __post_init__(self):
         if not self._is_respelled():
@@ -61,19 +62,19 @@ class Token:
         object.__setattr__(self, "pronun", pronun)
 
     def _is_respelled(self):
-        """Is the `self.token.text` already respelled?"""
+        """Is the `self.token.text` already respelled?
+
+        TODO: Configure the allowable characters based on language.
+        """
         text = self.token.text
         is_respelled = text.startswith(self.prefix) and text.endswith(self.suffix)
         text = text[len(self.prefix) : -len(self.suffix)]
         if is_respelled:
-            # TODO: Remove schwa, when it's deprecated from respellings.
-            # TODO: Configure the allowable letters.
-            valid_letters = string.ascii_lowercase + "ə"
             message = f"Invalid respelling: {text}"
             assert len(text) > 0, message
-            assert text[0].lower() in valid_letters, message
-            assert text[-1].lower() in valid_letters, message
-            assert len(set(text.lower()) - set(list(valid_letters + self.delim))) == 0, message
+            assert text[0].lower() in self.valid_chars, message
+            assert text[-1].lower() in self.valid_chars, message
+            assert len(set(text.lower()) - set(list(self.valid_chars + self.delim))) == 0, message
         return is_respelled
 
     def _try_respelling(self) -> typing.Optional[str]:
@@ -123,9 +124,8 @@ class Token:
         cls, script: str, prefix: str = "::", suffix: str = "::", delim: str = "-"
     ):
         """Preprocess respellings from one prefix, suffix, delim to the another."""
-        for match in re.findall(
-            f"{re.escape(prefix)}[A-zəƏ{re.escape(delim)}]+{re.escape(suffix)}", script
-        ):
+        valid_chars = re.escape(f"{cls.valid_chars}{cls.valid_chars.upper()}{delim}")
+        for match in re.findall(f"{re.escape(prefix)}[{valid_chars}]+{re.escape(suffix)}", script):
             updated = match[len(prefix) : -len(suffix)].replace(delim, cls.delim)
             updated = f"{cls.prefix}{updated}{cls.suffix}"
             script = script.replace(match, updated)

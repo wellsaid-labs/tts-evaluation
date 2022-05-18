@@ -1,6 +1,7 @@
 import logging
 from functools import partial
 
+import config as cf
 import pytest
 
 import lib
@@ -11,6 +12,13 @@ from run.deploy.worker import FlaskException, validate_and_unpack
 from tests.run._utils import make_mock_tts_package
 
 logger = logging.getLogger(__name__)
+
+
+@pytest.fixture(autouse=True, scope="module")
+def run_around_tests():
+    """Set a basic configuration."""
+    yield
+    cf.purge()
 
 
 def test_flask_exception():
@@ -86,7 +94,7 @@ def test_validate_and_unpack():
         validate_({**args, "text": "wherever"})  # type: ignore
 
     # `text` gets normalized and `speaker` is dereferenced
-    request_args = {**args, "text": "exposé😁 [[a-B]]"}
+    request_args = {**args, "text": "exposé😁 ::a-B::"}
     encoded = validate_(request_args)  # type: ignore
     # NOTE: The emoji is removed because there is no unicode equivilent.
     # TODO: Should this special notation be configured?

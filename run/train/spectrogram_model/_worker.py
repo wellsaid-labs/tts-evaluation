@@ -20,6 +20,7 @@ import torch.utils
 import torch.utils.data
 from third_party import get_parameter_norm
 from torch.nn.functional import binary_cross_entropy_with_logits, mse_loss
+from torchnlp.random import fork_rng
 from torchnlp.utils import get_total_parameters
 
 import lib
@@ -693,6 +694,8 @@ def run_worker(
         [_run_steps(state, *args, steps_per_epoch=steps_per_epoch) for args in contexts]
 
         with set_context(Context.EVALUATE_INFERENCE, state.comet, state.model, ema=state.ema):
-            _visualize_select_cases(state, DatasetType.TEST, Cadence.MULTI_STEP)
+            assert comet.curr_epoch is not None
+            with fork_rng(comet.curr_epoch):
+                _visualize_select_cases(state, DatasetType.TEST, Cadence.MULTI_STEP)
 
         save_checkpoint(state.to_checkpoint(), checkpoints_directory, f"step_{state.step.item()}")

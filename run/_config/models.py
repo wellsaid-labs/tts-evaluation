@@ -76,7 +76,7 @@ def configure(overwrite: bool = False):
             window_length=9,
             # NOTE: This value was computed with a reference frame size of 4096, and it scales
             # linearly with frame size.
-            avg_frames_per_token=1.472 * (4096 / FRAME_SIZE),
+            avg_frames_per_token=1.45 * (4096 / FRAME_SIZE),
         ),
         run._models.spectrogram_model.decoder.Decoder: cf.Args(
             encoder_out_size=encoder_out_size,

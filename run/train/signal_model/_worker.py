@@ -18,6 +18,7 @@ import torch.utils.data._utils.worker
 from third_party import get_parameter_norm
 from torch.nn.functional import binary_cross_entropy_with_logits, l1_loss, mse_loss
 from torch.nn.parallel import DistributedDataParallel
+from torchnlp.random import fork_rng
 from torchnlp.utils import get_total_parameters
 
 import lib
@@ -685,6 +686,8 @@ def run_worker(
             _visualize_inferred(state, dev_loader, DatasetType.DEV)
 
         with set_context(Context.EVALUATE_INFERENCE, state.comet, *state.models, ema=state.ema):
-            _visualize_select_cases(state, DatasetType.TEST, Cadence.MULTI_STEP)
+            assert comet.curr_epoch is not None
+            with fork_rng(comet.curr_epoch):
+                _visualize_select_cases(state, DatasetType.TEST, Cadence.MULTI_STEP)
 
         save_checkpoint(state.to_checkpoint(), checkpoints_directory, f"step_{state.step.item()}")
