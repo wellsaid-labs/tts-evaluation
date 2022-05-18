@@ -305,14 +305,118 @@ def get_pronunciation(word: str, dictionary: CMUDictSyl) -> typing.Optional[Pron
     return pronunciations[0] if len(pronunciations) == 1 else None
 
 
+"""
+This `RESPELLINGS` dictionary is a consolidation of ARPAbet:IPA and IPA:Wikipedia respellings.
+
+Note the CMU-provided ARPAbet differs from "ARPAbet Wiki" (see link below) because it does not use
+any of the following: "AX", "AXR", "IX", "UX", "DX", "EL", "EM", "EN", "NX", "Q", "WH". This means
+ARPAbet defined herein is comprised of 17 vowel sounds and 24 consonant sounds. Wikipedia, on the
+other hand, uses a system comprised of 40 vowel sounds and 28 consonant sounds, including some
+sounds containing multiple phonemes, some sounds having multiple respellings AND the respelling
+'y' being used for both the long i vowel sound and the y consonant sound. Because of this and
+because the mapping of sounds is not one-to-one between the systems, some decisions had to be
+made...
+
+This is the set of 39 IPA phonemes represented in ARPAbet:
+{'ɑ', 'æ', 'ʌ', 'ɔ', 'aʊ', 'aɪ', 'ɛ', 'ɝ', 'eɪ', 'ɪ', 'i', 'oʊ', 'ɔɪ', 'ʊ', 'u', 'b', 'tʃ',
+'d', 'ð', 'f', 'ɡ', 'h', 'dʒ', 'k', 'l', 'm', 'n', 'ŋ', 'p', 'ɹ', 's', 'ʃ', 't', 'θ', 'v',
+'w', 'j', 'z', 'ʒ'}
+
+This is the set of 63 IPA phoneme and phoneme combinations represented in Wikipedia Respellings:
+{'ɪər', 'æ', 'ɜːr', 'juː', 'ʒ', 'aʊ', 'θ', 'ɪ', 'z', 'f', 'l', 'ʃ', 'ŋ', 'h', 'ɡ', 'd', 'ə',
+'u', 'ær', 'ɒ', 'r', 's', 'ɔːr', 'uː', 'ʌ', 'p', 'hw', 'n', 'v', 'ər', 'ʊər', 'ʌr', 'ɔː',
+'ʊr', 'ɪr', 'ɛər', 'ŋk', 'ɛr', 'm', 'x', 'jʊər', 't', 'eɪ', 'ð', 'iː', 'tʃ', 'aʊər', 'aɪər',
+'b', 'w', 'j', 'ɔɪ', 'i', 'ɛ', 'oʊ', 'ɔɪər', 'aɪ', 'ɑːr', 'ɑː', 'ɒr', 'k', 'dʒ', 'ʊ'}
+
+These are the 4 ARPAbet IPA phonemes missing from Wikipedia Respelling phonemes:
+{'ɹ', 'ɝ', 'ɔ', 'ɑ'}
+
+These 28 Wikipedia Respelling phonemes missing from ARPAbet phonemes:
+{'ɒ', 'ər', 'ɔː', 'juː', 'ɪr', 'ŋk', 'ə', 'r', 'ʊər', 'hw', 'aʊər', 'ɑː', 'ɛər', 'iː', 'ɔːr',
+'ɑːr', 'ʌr', 'ɒr', 'x', 'ɔɪər', 'ɜːr', 'ɪər', 'ʊr', 'uː', 'aɪər', 'jʊər', 'ɛr', 'ær'}
+
+We first worked toward ARPAbet coverage, of the 4 mentioned missing phonemes:
+  - For 'R' (as in 'rye'),     we use 'r' because 'ɹ'  is nearly equivalent to 'r'
+  - For 'ER' (as in 'bird'),   we use 'ur' because 'ɝ' is nearly equivalent to 'ɜːr'
+  - For 'AO' (as in 'bought'), we use 'aw' because 'ɔ' is nearly equivalent to 'ɔː' **
+  - For 'AA' (as in 'father'), we use 'ah' because 'ɑ' is nearly equivalent to 'ɑː'
+
+** Keep in mind, ARPAbet is inconsistent with their use of 'AO':
+  - sometimes used as a long O (oh) ['BOARD']
+  - sometimes used as a short O (ah) ['BALL'], but uses 'AA' for 'FATHER'
+  - 'WATER' uses 'AO' but 'SEAWATER' uses 'AA'
+
+Next, we considered the missing Wikipedia phonemes and phoneme combinations:
+  - 'iː'   can be approximated with 'IY':'ee'
+  - 'ə'    can be approximated with 'AH':'uh'
+  - 'uː'   can be approximated with 'UW':'oo'
+  - 'r'    can be approximated with 'R':'r'
+  - 'x'    can be approximated with 'K':'k', very rare
+  - 'hw'   can be approximated with 'W':'w', very rare
+  - 'juː'  can be approximated with 'Y UW':'yoo' as in 'beauty':'BYOO-tee'
+  - 'ɪr'   can be approximated with 'IH R':'ihr' as in 'mirror':'MIHR-ur'
+  - 'ʊər'  can be approximated with 'UH R':'uur' as in 'premature':'pree-muh-CHUUR'
+  - 'ɔɪər' can be approximated with 'OY ER':'oyur' as in 'hoyer':'HOY-ur'
+  - 'aʊər' can be approximated with 'AW ER':'owur' as in 'flower':'FLOW-ur'
+  - 'aɪər' can be approximated with 'AY ER':'y-ur' as in 'higher':'HY-ur'
+  - 'jʊər' can be approximated with 'Y UH R':'yuur' as in 'cure':'KYUUR'
+  - 'ɒ', 'ɑː' can be approximated with 'AA':'ah'
+  - 'ʊr', 'ər', 'ʌr', 'ɜːr' can be approximated with 'ER':'ur'
+
+NOTE: Wikipedia uses 'y' for both the 'iy' vowel sound and the 'y' consonant sound. We've chosen to
+do the same, as preliminary testing showed good results.
+
+Next, we considered some final phoneme combinations for user-friendliness and to correct for
+some ARPAbet errors:
+  - 'ŋk'  without a special exception would be 'NG K':'ngk', we instead use 'nk'
+  - 'ɑːr' without a special exception would be 'AA R':'ahr', we instead use 'ar'
+  - 'ɔːr' without a special exception would be 'AO R':'awr', we instead use 'or'
+      - NOTE: ARPAbet misuses 'AO':'aw' in these cases, when the sound should be 'OW':'oh', like in
+        'STORY' and 'BOARD'.
+      - NOTE: If separated by a hyphen, we use 'oh-r'.
+  - 'ɪər' without a special exception would be 'IH IY R':'iheer', we instead use 'ar'
+      - NOTE: ARPAbet uses 'IH R' in 'peer' and 'IY R' in 'peering' for the same sound.
+      - NOTE: If separated by a hyphen, the combination becomes 'ee-r'.
+  - 'æŋ' or 'æŋk' sounds are misassigned in ARPAbet and will be re-combined to 'ang' or 'ank',
+    unfortunately.
+      - NOTE: When offering pronunciations for words ending in 'ang' and 'ank', ARPAbet uses 'AE'
+        (as in 'bat') when they mean 'EY' (as in 'bank'). In fact, it is nearly impossible to make a
+        short A sound when an NG sound is followng it.
+  - 'ɛər', 'ɛr', and 'ær' without a special exception would be 'EH R':'ehr', we instead use 'err'
+
+Lastly, we considered short and long vowels:
+- For simplicity, short vowels mid-syllable should be plain: a e i o u ✓
+- For short vowels ending a syllable: [no aa], eh, ih, ah, uh ✓
+- For long vowels: ay, ee, (i?)y, oh, oo ✓
+
+Resources:
+- CMUDict has a number of inconsistencies:
+    - This documents how CMUDict is put together,
+      http://www.cs.cmu.edu/~archan/presentation/new_cmudict.pdf
+    - Many of these commits are fixes for CMUDict issues,
+      https://github.com/rhdunn/amepd/commits/master
+- ARPAbet Wiki: https://en.wikipedia.org/wiki/ARPABET
+- Wiki Respelling Key: https://en.wikipedia.org/wiki/Help:Pronunciation_respelling_key
+"""
 # fmt: off
-# TODO: @Rhyan, can you document the differences between these table and the wikipedia table?
 RESPELLINGS: typing.Dict[str, str] = {
-    'AA': 'ah', 'AE': 'a', 'AH': 'uh', 'AO': 'aw', 'AW': 'ow', 'AX': 'ə', 'AXR': 'ər', 'AY': 'y',
-    'EH': 'eh', 'ER': 'ər', 'EY': 'ay', 'IH': 'ih', 'IY': 'ee', 'OW': 'oh', 'OY': 'oy', 'UH': 'uu',
-    'UW': 'oo', 'B': 'b', 'CH': 'tch', 'D': 'd', 'DH': 'dh', 'F': 'f', 'G': 'g', 'HH': 'h',
-    'JH': 'j', 'K': 'k', 'L': 'l', 'M': 'm', 'N': 'n', 'NG': 'ng', 'P': 'p', 'R': 'r', 'S': 's',
-    'SH': 'sh', 'T': 't', 'TH': 'th', 'V': 'v', 'W': 'w', 'Y': 'y', 'Z': 'z', 'ZH': 'zh'
+    'AA': 'ah', 'AE': 'a', 'AH': 'uh', 'AO': 'aw', 'AW': 'ow', 'AY': 'y', 'EH': 'eh', 'EY': 'ay',
+    'IY': 'ee', 'OW': 'oh', 'OY': 'oy', 'UH': 'uu', 'UW': 'oo', 'B': 'b', 'CH': 'ch', 'D': 'd',
+    'DH': 'dh', 'F': 'f', 'G': 'g', 'HH': 'h', 'JH': 'j', 'K': 'k', 'L': 'l', 'M': 'm', 'N': 'n',
+    'NG': 'ng', 'P': 'p', 'R': 'r', 'S': 's', 'SH': 'sh', 'T': 't', 'TH': 'th', 'V': 'v', 'W': 'w',
+    'Y': 'y', 'Z': 'z', 'ZH': 'zh', 'IH': 'ih', 'ER': 'ur'
+}
+RESPELLING_COMBOS: typing.Dict[str, str] = {
+    'ang': 'ayng', 'angk': 'aynk', 'ngk': 'nk', 'ehr': 'err', 'ahr': 'ar', 'awr': 'or', 'ihr': 'eer'
+}
+RESPELLING_COMBOS__SYLLABIC_SPLIT: typing.Dict[typing.Tuple[str, str], str] = {
+    ("aw", "r"): "oh", ("ih", "r"): "ee"
+}
+RESPELLING_ALPHABET: typing.Dict[str, str] = {
+    "A": "ay", "B": "bee", "C": "see", "D": "dee", "E": "ee", "F": "ehf", "G": "jee", "H": "aych",
+    "I": "y", "J": "jay", "K": "kay", "L": "ehl", "M": "ehm", "N": "ehn", "O": "oh", "P": "pee",
+    "Q": "kyoo", "R": "ar", "S": "ehs", "T": "tee", "U": "yoo", "V": "vee", "W": "DUH-buhl-yoo",
+    "X": "ehks", "Y": "wy", "Z": "zee",
 }
 # fmt: on
 
@@ -331,7 +435,7 @@ def _remove_arpabet_markings(code: ARPAbet):
     return code.translate(_REMOVE_ARPABET_MARKINGS)
 
 
-def get_respelling(word: str, dictionary: CMUDictSyl, delim: str = "-") -> typing.Optional[str]:
+def respell(word: str, dictionary: CMUDictSyl, delim: str = "-") -> typing.Optional[str]:
     """Get the respelling for `word` using the syllabified CMU pronunciation, learn more about
     respellings: https://en.wikipedia.org/wiki/Help:Pronunciation_respelling_key
 
@@ -351,6 +455,7 @@ def get_respelling(word: str, dictionary: CMUDictSyl, delim: str = "-") -> typin
     # Learn more:
     # https://en.wikipedia.org/wiki/Help:Pronunciation_respelling_key#Syllables_and_stress
     has_primary = False
+    is_upper = []
     for syl in pronunciation:
         respellings = []
         upper = False
@@ -361,8 +466,35 @@ def get_respelling(word: str, dictionary: CMUDictSyl, delim: str = "-") -> typin
                 upper = True
             respellings.append(RESPELLINGS[_remove_arpabet_markings(phoneme)])
         syllable = "".join(respellings)
-        syllables.append(syllable.upper() if upper else syllable)
 
+        # NOTE: Handle phoneme combinations
+        for combo in RESPELLING_COMBOS.keys():
+            if combo in syllable:
+                syllable = syllable.replace(combo, RESPELLING_COMBOS[combo])
+
+        is_upper.append(upper)
+        syllables.append(syllable)
+
+    # NOTE: Handle phoneme combinations across two syllables.
+    for i, (curr, next) in enumerate(zip(syllables, syllables[1:])):
+        for (vowel, cons), replacement in RESPELLING_COMBOS__SYLLABIC_SPLIT.items():
+            if curr.endswith(vowel) and next.lower().startswith(cons):
+                syllables[i] = curr.replace(vowel, replacement)
+
+    syllables = [s.upper() if u else s for s, u in zip(syllables, is_upper)]
+    return delim.join(syllables)
+
+
+def respell_initialism(initialism: str, delim: str = "-") -> typing.Optional[str]:
+    """Get an initialism respelling, with emphasis on the final character.
+
+    NOTE: Final syllable is most commonly stressed, learn more:
+    - https://www.confidentvoice.com/blog/2-tips-for-pronouncing-abbreviations
+    -
+    https://english.stackexchange.com/questions/88040/why-are-all-acronyms-accented-on-the-last-syllable
+    """
+    syllables = [RESPELLING_ALPHABET[l] for l in list(initialism.upper())]
+    syllables[-1] = syllables[-1] if delim in syllables[-1] else syllables[-1].upper()
     return delim.join(syllables)
 
 

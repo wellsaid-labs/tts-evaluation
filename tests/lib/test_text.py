@@ -8,6 +8,7 @@ import pytest
 
 import lib
 from lib.text import (
+    RESPELLING_ALPHABET,
     RESPELLINGS,
     _remove_arpabet_markings,
     grapheme_to_phoneme,
@@ -276,28 +277,110 @@ def test_get_pronunciation__non_standard_words():
     _check_pronunciation("ABC123", expected=None)
 
 
-def test_get_respelling():
-    """Test `lib.text.get_respelling` on basic scenarios."""
+def test_respell():
+    """Test `lib.text.respell` on basic scenarios."""
     expectations = {
         "zebra": "ZEE-bruh",
-        "motorcycle": "MOH-tər-sy-kuhl",  # NOTE: Secondary is lowercase if primary is uppercase.
+        "motorcycle": "MOH-tur-sy-kuhl",  # NOTE: Secondary is lowercase if primary is uppercase.
         "suspicious": "suh-SPIH-shuhs",
         "maui": "MOW-ee",
         "cobalt": "KOH-bawlt",  # NOTE: Wikipedia recommends "KOH-bolt"
-        "father": "FAH-dhər",
-        "farther": "FAHR-dhər",  # NOTE: Wikipedia recommends "FAR-dhər"
-        "ceres": "SIH-reez",  # NOTE: Wikipedia recommends "SEER-eez"
-        "algorithm": "AL-gər-ih-dhuhm",  # NOTE: Wikipedia recommends "AL-gə-ridh-əm"
+        "father": "FAH-dhur",
+        "farther": "FAR-dhur",  # NOTE: Wikipedia recommends "FAR-dhər", testing AA R : ahr -> ar
+        "ceres": "SEE-reez",  # NOTE: Wikipedia recommends "SEER-eez"
+        "algorithm": "AL-gur-ih-dhuhm",  # NOTE: Wikipedia recommends "AL-gə-ridh-əm"
         "pan": "PAN",
         "machine": "muh-SHEEN",  # NOTE: Wikipedia recommends "mə-SHEEN",
+        "blank": "BLAYNK",  # Testing AE NG K : angk -> aynk
+        "blanketed": "BLAYNG-kuh-tihd",  # Testing AE NG : ang -> ayng
+        "ink": "IHNK",  # Testing NG K : ngk -> nk
+        "millionaire": "MIH-lyuh-NERR",  # Testing EH R : ehr -> err
+        "engineer": "EHN-juh-NEER",  # Testing IH R : ihr -> eer
+        "mirror": "MEE-rur",  # Testing IH - R : ih-r -> ee-r
+        "storyboard": "STOH-ree-bord",  # Testing AO - r : AW-r -> OH-r and AO R : awr -> or
     }
     for word, pronunciation in expectations.items():
-        assert pronunciation == lib.text.get_respelling(word, lib.text.load_cmudict_syl())
+        assert pronunciation == lib.text.respell(word, lib.text.load_cmudict_syl())
+
+
+def test_respell__vowels():
+    """Test `lib.text.respell` on various vowels."""
+    vowel_expectations = {
+        "bat": "BAT",
+        "father": "FAH-dhur",
+        "oddball": "AHD-bawl",
+        "straighten": "STRAY-tuhn",
+        "happy": "HA-pee",
+        "prestige": "preh-STEEZH",
+        "about": "uh-BOWT",
+        "letter": "LEH-tur",
+        "historic": "hih-STOH-rihk",
+        "boat": "BOHT",
+        "boot": "BOOT",
+        "flower": "FLOW-ur",
+        "joy": "JOY",
+        "jump": "JUHMP",
+        "nook": "NUUK",
+        "site": "SYT",
+    }
+    for word, pronunciation in vowel_expectations.items():
+        assert pronunciation == lib.text.respell(word, lib.text.load_cmudict_syl())
+
+
+def test_respell__consonant():
+    """Test `lib.text.respell` on various consonant."""
+    consonant_expectations = {
+        "bunk": "BUHNK",
+        "dusters": "DUH-sturz",
+        "although": "AWL-DHOH",
+        "firstly": "FURST-lee",
+        "global": "GLOH-buhl",
+        "horse": "HORS",
+        "jealous": "JEH-luhs",
+        "kite": "KYT",
+        "believe": "bih-LEEV",
+        "flammable": "FLA-muh-buhl",
+        "friend": "FREHND",
+        "singing": "SIH-ngihng",
+        "people": "PEE-puhl",
+        "rascal": "RAS-kuhl",
+        "slice": "SLYS",
+        "shy": "SHY",
+        "turtle": "TUR-tuhl",
+        "nature": "NAY-chur",
+        "thinks": "THIHNKS",
+        "save": "SAYV",
+        "win": "WIHN",
+        "yesteryear": "YEH-stur-yeer",
+        "please": "PLEEZ",
+        "measure": "MEH-zhur",
+    }
+    for word, pronunciation in consonant_expectations.items():
+        assert pronunciation == lib.text.respell(word, lib.text.load_cmudict_syl())
+
+
+def test_respell_initialism():
+    """Test `lib.text.respell_initialism` on initialisms and acronyms."""
+    expectations = {
+        "FBI": "ehf-bee-Y",
+        "RSVP": "ar-ehs-vee-PEE",
+        "FAQ": "ehf-ay-KYOO",
+        "UN": "yoo-EHN",
+        "LGBTQIA": "ehl-jee-bee-tee-kyoo-y-AY",
+        "FSW": "ehf-ehs-DUH-buhl-yoo",  # Test final W does not have all capitalized syllables
+    }
+    for initialism, pronunciation in expectations.items():
+        assert pronunciation == lib.text.respell_initialism(initialism)
 
 
 def test_respellings():
     """Test to ensure `RESPELLINGS` covers all of `ARPAbet`."""
     assert all(_remove_arpabet_markings(a) in RESPELLINGS for a in get_args(lib.text.ARPAbet))
+
+
+def test_respellings_alphabet():
+    """Test to ensure `RESPELLING_ALPHABET` covers the entire alphabet."""
+    assert all(a in RESPELLING_ALPHABET for a in string.ascii_uppercase)
 
 
 def test_natural_keys():
