@@ -369,17 +369,17 @@ Next, we considered the missing Wikipedia phonemes and phoneme combinations:
   - 'ʊr', 'ər', 'ʌr', 'ɜːr' can be approximated with 'ER':'ur'
 
 NOTE: Wikipedia uses 'y' for both the 'iy' vowel sound and the 'y' consonant sound. We've chosen to
-do the same, as preliminary testing showed good results
+do the same, as preliminary testing showed good results.
 
 Next, we considered some final phoneme combinations for user-friendliness and to correct for
 some ARPAbet errors:
   - 'ŋk'  without a special exception would be 'NG K':'ngk', we instead use 'nk'
   - 'ɑːr' without a special exception would be 'AA R':'ahr', we instead use 'ar'
-  - 'ɔːr' without a special exception would be 'AO R':'awr', we instead use 'or', like in 'STORY'
-    and 'BOARD'.
-      - NOTE: ARPAbet misuses 'AO':'aw' in these cases, when the sound should be 'OW':'oh'.
+  - 'ɔːr' without a special exception would be 'AO R':'awr', we instead use 'or'
+      - NOTE: ARPAbet misuses 'AO':'aw' in these cases, when the sound should be 'OW':'oh', like in
+        'STORY' and 'BOARD'.
       - NOTE: If separated by a hyphen, we use 'oh-r'.
-  - 'ɪər' without a special exception would be 'IH IY R':'eeihr', we instead use 'ar'
+  - 'ɪər' without a special exception would be 'IH IY R':'iheer', we instead use 'ar'
       - NOTE: ARPAbet uses 'IH R' in 'peer' and 'IY R' in 'peering' for the same sound.
       - NOTE: If separated by a hyphen, the combination becomes 'ee-r'.
   - 'æŋ' or 'æŋk' sounds are misassigned in ARPAbet and will be re-combined to 'ang' or 'ank',
@@ -489,7 +489,8 @@ def get_respelling_for_initialism(initialism: str, delim: str = "-") -> typing.O
     """Returns a respelling for an initialism, with emphasis on the final character by default.
     Sources indicating final syllable is most commonly stressed:
     - https://www.confidentvoice.com/blog/2-tips-for-pronouncing-abbreviations
-    - https://english.stackexchange.com/questions/88040/why-are-all-acronyms-accented-on-the-last-syllable
+    -
+    https://english.stackexchange.com/questions/88040/why-are-all-acronyms-accented-on-the-last-syllable
     """
     message = f"This acronym is typically pronounced as a word: {initialism}"
     assert get_respelling(initialism.lower(), dictionary=load_cmudict_syl()) is None, message
