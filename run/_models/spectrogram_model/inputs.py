@@ -79,8 +79,7 @@ class Token:
 
     def _try_respelling(self) -> typing.Optional[str]:
         """Get a respelling of `self.token.text` if possible."""
-        respelling = respell(self.token.text, load_cmudict_syl(), self.delim)
-        return None if respelling is None else respelling
+        return respell(self.token.text, load_cmudict_syl(), self.delim)
 
     def _get_text(self) -> typing.Tuple[Pronunciation, str]:
         """Get the text that represents `token` which maybe respelled."""
