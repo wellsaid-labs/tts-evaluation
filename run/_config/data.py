@@ -247,12 +247,12 @@ ENGLISH_TEST_CASES = [
     "Welcome to the ::su-LAHR-es:: Injury and Illness Prevention Program Training.",
     "The ::pur-AY-toh:: principle was named after Italian economist Vilfredo ::pu-RAY-toh::.",
     "We would like to nominate ::AY-vu:: for her phenomenal recordings.",
-    "To use your self-help AI, please enable the Affirmations feature on the ::KAHN-səl:: so "
-    "that you can ::kun-SOHL:: yourself.",
+    "To use your self-help AI, please enable the Affirmations feature on the ::KAHN-sohl:: so "
+    "that you can ::kuhn-SOHL:: yourself.",
     "Too much sand? Tired of cacti? ::dee-ZURT:: the ::DEZ-urt:: now, with caravan adventures!",
     "If you want to get the good food at the ::bu-FAY::, you have to be willing to "
     "::BUF-et:: and punch your way to the front of the line.",
-    "Does ::BEE-ə-loh-ZHEEK:: ::ru-SHƏRSH:: really work?",
+    "Does ::BEE-u-loh-ZHEEK:: ::ru-SHURSH:: really work?",
 ]
 TEST_CASES = [(struc.Language.ENGLISH, norm_respellings(t)) for t in ENGLISH_TEST_CASES]
 

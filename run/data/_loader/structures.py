@@ -220,6 +220,11 @@ class Speaker:
         assert all(isinstance(t, (str, bool)) for t in sort_index)
         object.__setattr__(self, "sort_index", sort_index)
 
+    def __setstate__(self, state):
+        """TODO: Remove, this is for backward compatibility."""
+        object.__setattr__(self, "__dict__", state)
+        self.__post_init__()
+
     @property
     def language(self) -> Language:
         return self.dialect.value[0]
