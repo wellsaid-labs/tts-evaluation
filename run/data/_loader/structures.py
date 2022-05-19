@@ -182,8 +182,10 @@ class Dialect(Enum):
     PT_BR: typing.Final = (Language.PORTUGUESE, "Portuguese (Brazilian)")
 
 
-@dataclasses.dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True, order=True)
 class Speaker:
+    sort_index: typing.Tuple = field(init=False, repr=False)
+
     # TODO: Handle multiple dialects or bilingual speakers.
     # TODO: The `Style` isn't named well because a `Speaker` doesn't have a single style. In the
     # future, maybe rename `Speaker` to something else like `Persona`.
@@ -214,6 +216,9 @@ class Speaker:
         message = "GCS Directory shouldn't have spaces"
         assert self.gcs_dir is None or " " not in self.gcs_dir, message
         assert " " not in self.label, "Label shouldn't have spaces"
+        sort_index = (self.label, self.dialect.value[1], self.style.value, self.post)
+        assert all(isinstance(t, (str, bool)) for t in sort_index)
+        object.__setattr__(self, "sort_index", sort_index)
 
     @property
     def language(self) -> Language:

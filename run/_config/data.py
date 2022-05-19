@@ -241,6 +241,7 @@ ENGLISH_TEST_CASES = [
     "family. Yet sometimes he thought (or maybe hoped) that strangers in the street seemed to "
     "know him. Very strange strangers they were, too.",
     # NOTE: Test respellings
+    # TODO: Adjust respellings based on latest conventions.
     "I see in “Happening at ::se-FOHR-u::” I have two new brands requesting store-led events "
     "for the same day.",
     "Welcome to the ::su-LAHR-es:: Injury and Illness Prevention Program Training.",

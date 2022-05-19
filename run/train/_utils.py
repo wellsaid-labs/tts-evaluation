@@ -1002,7 +1002,8 @@ def process_select_cases(
     `speakers`."""
     cases = [random.choice(cases) for _ in range(num_cases)]
     docs = [load_spacy_nlp(l)(t) for (l, t) in cases]
-    vocab = [s for s in avail_sessions.keys() if isinstance(s, tuple)]
+    # NOTE: `seshs` is sorted so `random.choice` produces consistent results.
+    vocab = sorted([s for s in avail_sessions.keys() if isinstance(s, tuple)])
     seshs = [[s for s in vocab if s[0].language is l and s[0] in speakers] for l, _ in cases]
     seshs = [random.choice(choices) for choices in seshs]
     inputs_ = Inputs(seshs, docs)
