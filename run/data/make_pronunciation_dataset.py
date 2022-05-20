@@ -19,6 +19,8 @@ TODO:
   from the Unilex pronunciation lexicon [5], as it has wider word type coverage (167,000 entries)
   and better consistency than open source lexica such as CMUdict"
 - Run diacritics through Google's TTS.
+- Consider, randomly, repeating some words, several times in a list, to teach the model to be
+  consistent.
 
 Other resources:
 - https://nakanishi.kobegakuin-gc.jp/uploads/nakanishi/files/nakanishi/200910_Database.pdf
@@ -61,7 +63,7 @@ from tqdm import tqdm
 
 import run
 from lib.environment import set_basic_logging_config
-from lib.text import _load_amepd
+from lib.text import load_cmudict_syl
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import google.auth as google_auth
@@ -119,10 +121,8 @@ def _make_words(
     """Get a list of words with unambiguous pronunciations."""
     words = [
         word.lower()
-        for word, pronunciations in _load_amepd().items()
+        for word, pronunciations in load_cmudict_syl().items()
         if len(pronunciations) == 1
-        and pronunciations[0].pos is None
-        and pronunciations[0].metadata.expanded is None
     ]
     logger.info(f"Found unambiguous {len(words)} words... and limiting to {max_words} words.")
     if max_words is not None:

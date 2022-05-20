@@ -84,3 +84,6 @@ gcs_credentials.json
 
 # Comet.ml Config
 .comet.config
+
+# Dictionary
+*.syl

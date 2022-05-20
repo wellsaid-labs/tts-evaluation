@@ -76,7 +76,11 @@ def _get_zones() -> typing.List[str]:
 
 
 def _make_preemptible_instance(
-    name: str, zone: typing.Optional[str], template_op: typing.Dict, health_check: str
+    name: str,
+    zone: typing.Optional[str],
+    template_op: typing.Dict,
+    health_check: str,
+    exclude_zone: typing.List[str],
 ):
     """Create a preemptible instance."""
     try:
@@ -97,6 +101,9 @@ def _make_preemptible_instance(
         logger.warning(error._get_reason())
 
     for zone in _get_zones() if zone is None else [zone]:
+        if zone in exclude_zone:
+            continue
+
         logger.info(f"Attempting zone: '{zone}'")
         body = {
             "name": name,
@@ -131,10 +138,16 @@ def _make_preemptible_instance(
 
 
 def _make_and_watch_persistent_instance(
-    name: str, zone: typing.Optional[str], template_op: typing.Dict
+    name: str,
+    zone: typing.Optional[str],
+    template_op: typing.Dict,
+    exclude_zone: typing.List[str],
 ):
     """Create and then watch a presistent instance."""
     for zone in _get_zones() if zone is None else [zone]:
+        if zone in exclude_zone:
+            continue
+
         logger.info(f"Attempting zone: '{zone}'")
         client = compute.instances()
         # NOTE: An instance template is created and used to create a single instance to simplify the
@@ -169,6 +182,7 @@ def _make_instance(
     metadata: typing.List[str],
     metadata_from_file: typing.List[str],
     health_check: typing.Optional[str],
+    exclude_zone: typing.List[str],
     preemptible: bool,
 ):
     """Create a managed and preemptible instance named NAME in ZONE.
@@ -251,9 +265,9 @@ def _make_instance(
 
     if preemptible:
         assert health_check is not None
-        _make_preemptible_instance(name, zone, template_op, health_check)
+        _make_preemptible_instance(name, zone, template_op, health_check, exclude_zone)
     else:
-        _make_and_watch_persistent_instance(name, zone, template_op)
+        _make_and_watch_persistent_instance(name, zone, template_op, exclude_zone)
 
 
 @persistent_app.command("make-instance")
@@ -271,6 +285,7 @@ def make_persistent_instance(
     metadata: typing.List[str] = typer.Option([]),
     metadata_from_file: typing.List[str] = typer.Option([]),
     health_check: str = typer.Option(None),
+    exclude_zone: typing.List[str] = typer.Option([]),
 ):
     return _make_instance(**locals(), preemptible=False)
 
@@ -290,6 +305,7 @@ def make_preemptible_instance(
     metadata: typing.List[str] = typer.Option([]),
     metadata_from_file: typing.List[str] = typer.Option([]),
     health_check: str = typer.Option("check-ssh"),
+    exclude_zone: typing.List[str] = typer.Option([]),
 ):
     return _make_instance(**locals(), preemptible=True)
 

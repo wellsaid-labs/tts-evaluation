@@ -13,8 +13,8 @@ from torch.nn import Embedding
 from torch.nn.functional import binary_cross_entropy_with_logits, mse_loss
 from torchnlp.random import fork_rng
 
-import lib
 import run
+from lib.distributed import NumeralizePadEmbed
 from lib.utils import lengths_to_mask
 from run._models.spectrogram_model.attention import Attention
 from run._models.spectrogram_model.containers import (
@@ -376,7 +376,7 @@ def _set_embedding_vocab(model: SpectrogramModel, params: Params):
     """Update `model` vocab so it can be run in inference mode."""
     model.encoder.embed_token.update_tokens(list(range(params.max_tokens)))
     for i, max_values in enumerate(params.max_seq_meta_values):
-        embedding = typing.cast(lib.utils.NumeralizePadEmbed, model.encoder.embed_seq_metadata[i])
+        embedding = typing.cast(NumeralizePadEmbed, model.encoder.embed_seq_metadata[i])
         embedding.update_tokens(list(range(max_values)))
 
 
@@ -670,7 +670,7 @@ def _side_effect(params: Params, num_embeddings: int, *args, padding_idx=None, *
     TODO: Remove and update `test_spectrogram_model__version` values.
     """
     assert all(params.max_tokens != n for n in params.max_seq_meta_values)
-    default_tokens = len(lib.utils.NumeralizePadEmbed._Tokens)
+    default_tokens = len(NumeralizePadEmbed._Tokens)
     padding_idx = padding_idx if num_embeddings == (params.max_tokens + default_tokens) else None
     return Embedding(num_embeddings - default_tokens, *args, padding_idx=padding_idx, **kwargs)
 
@@ -688,7 +688,7 @@ def _make_backward_compatible_model(params: Params, stop_threshold=0.5):
     model.encoder.embed_token.vocab.update({i: i for i in range(params.max_tokens)})
     model.encoder.embed_token.num_embeddings = len(model.encoder.embed_token.vocab)
     for embed, max_values in zip(model.encoder.embed_seq_metadata, params.max_seq_meta_values):
-        embed = typing.cast(lib.utils.NumeralizePadEmbed, embed)
+        embed = typing.cast(NumeralizePadEmbed, embed)
         embed.vocab.update({i: i for i in range(max_values)})
         embed.num_embeddings = len(embed.vocab)
 

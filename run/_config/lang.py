@@ -4,6 +4,7 @@ import typing
 from functools import lru_cache, partial
 
 import config as cf
+import spacy.language
 from third_party import LazyLoader
 
 import lib
@@ -30,7 +31,7 @@ _NON_ASCII_CHARS: typing.Dict[Language, frozenset] = {
     # https://en-academic.com/dic.nsf/enwiki/3894487
     Language.ENGLISH: frozenset([
         "â", "Â", "à", "À", "á", "Á", "ê", "Ê", "é", "É", "è", "È", "ë", "Ë", "î", "Î", "ï", "Ï",
-        "ô", "Ô", "ù", "Ù", "û", "Û", "ç", "Ç", "ä", "ö", "ü", "Ä", "Ö", "Ü", "ñ", "Ñ",
+        "ô", "Ô", "ù", "Ù", "û", "Û", "ç", "Ç", "ä", "ö", "ü", "Ä", "Ö", "Ü", "ñ", "Ñ"
     ]),
     Language.GERMAN: frozenset(["ß", "ä", "ö", "ü", "Ä", "Ö", "Ü"]),
     # Portuguese makes use of five diacritics: the cedilla (ç), acute accent (á, é, í, ó, ú),
@@ -82,7 +83,8 @@ def replace_punc(text: str, replace: str, language: Language) -> str:
     return _PUNCT_REGEXES[language].sub(replace, text)
 
 
-SST_CONFIGS = None
+STT_CONFIGS = None
+LanguageCode = typing.Literal["en-US", "de-DE", "pt-BR", "es-CO"]
 
 try:
     # TODO: Integrate this with the new `Dialect`s data structure.
@@ -99,7 +101,6 @@ try:
         Language.PORTUGUESE: _make_config(language_code="pt-BR"),
         Language.SPANISH: _make_config(language_code="es-CO"),
     }
-    LanguageCode = typing.Literal["en-US", "de-DE", "pt-BR", "es-CO"]
 except ImportError:
     logger.info("Ignoring optional `google` import.")
 
@@ -169,15 +170,19 @@ _LANGUAGE_TO_SPACY = {
 }
 
 
-def load_spacy_nlp(language: Language):
+def load_spacy_nlp(language: Language) -> spacy.language.Language:
     disable = ("ner", "tagger", "lemmatizer")
     return lib.text.load_spacy_nlp(_LANGUAGE_TO_SPACY[language], disable=disable)
 
 
 def configure(overwrite: bool = False):
     """Configure modules involved in processing text."""
+    # NOTE: These are speakers with small and reliable datasets, in the right language.
+    debug_speakers = set(
+        s for s in run._config.DEV_SPEAKERS if LANGUAGE is None or s.language == LANGUAGE
+    )
     config = {
-        run.train._utils._get_dataset: cf.Args(debug_lang=LANGUAGE),
+        run._utils._get_debug_datasets: cf.Args(speakers=debug_speakers),
         run._utils.get_dataset: cf.Args(language=LANGUAGE),
     }
     cf.add(config, overwrite)

@@ -519,7 +519,7 @@ def wsl_gcs_dataset_loader(
         data_directory
         **kwargs
     """
-    suffix = post_suffix if post_suffix in speaker.label else ""
+    suffix = post_suffix if speaker.post else ""
     assert speaker.gcs_dir is not None
     label = speaker.gcs_dir.replace(post_suffix, "")
     gcs_path = "/".join([s for s in [gcs_path, prefix, label, data_directory] if len(s) > 0])

@@ -8,7 +8,8 @@ from torch.nn import ModuleList
 from torch.nn.utils.rnn import pad_sequence
 from torchnlp.nn import LockedDropout
 
-from lib.utils import LSTM, NumeralizePadEmbed
+from lib.distributed import NumeralizePadEmbed
+from lib.utils import LSTM
 from run._models.spectrogram_model.containers import Encoded
 from run._models.spectrogram_model.inputs import Inputs
 
@@ -227,7 +228,7 @@ class Encoder(torch.nn.Module):
             torch.nn.Sequential(
                 _Conv1dLockedDropout(dropout),
                 torch.nn.Conv1d(
-                    in_channels=hidden_size * 2,
+                    in_channels=hidden_size,
                     out_channels=hidden_size,
                     kernel_size=conv_filter_size,
                     padding=int((conv_filter_size - 1) / 2),
@@ -326,8 +327,7 @@ class Encoder(torch.nn.Module):
 
         for conv, norm in zip(self.conv_layers, self.norm_layers):
             tokens = tokens.masked_fill(~tokens_mask, 0)
-            conv_input = torch.cat((tokens, conditional), dim=1)
-            tokens = norm(tokens + conv(conv_input))
+            tokens = norm(tokens + conv(tokens))
 
         # Our input is expected to have shape `[batch_size, hidden_size, num_tokens]`.
         # The lstm layers expect input of shape
