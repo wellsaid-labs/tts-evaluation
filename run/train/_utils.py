@@ -42,7 +42,7 @@ from torchnlp.encoders.text import SequenceBatch
 
 import lib
 import run
-from lib.distributed import DictStoreData, is_master
+from lib.distributed import ListedDict, is_master
 from lib.environment import load, load_most_recent_file
 from lib.utils import dataclass_as_dict, flatten_2d, seconds_to_str
 from run._config import (
@@ -853,9 +853,9 @@ class MetricsKey:
 
 MetricsKeyTypeVar = typing.TypeVar("MetricsKeyTypeVar", bound=MetricsKey)
 MetricsReduceOp = typing.Callable[[typing.List[float]], float]
-# NOTE: `MetricsSelect` selects a subset of `DictStoreData` values.
+# NOTE: `MetricsSelect` selects a subset of `ListedDict` values.
 MetricsSelect = typing.Callable[
-    [DictStoreData[MetricsKeyTypeVar, float]], DictStoreData[MetricsKeyTypeVar, float]
+    [ListedDict[MetricsKeyTypeVar, float]], ListedDict[MetricsKeyTypeVar, float]
 ]
 
 
@@ -872,7 +872,7 @@ class Metrics(lib.distributed.DictStore, typing.Generic[MetricsKeyTypeVar]):
     LR = partial(get_model_label, "lr")
 
     def __init__(self, comet: CometMLExperiment, *args, **kwargs):
-        self.data: DictStoreData[MetricsKeyTypeVar, float]
+        self.data: ListedDict[MetricsKeyTypeVar, float]
         super().__init__(*args, **kwargs, cache_keys=True)
         self.comet = comet
 

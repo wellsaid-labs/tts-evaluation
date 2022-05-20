@@ -71,37 +71,37 @@ def spawn(*args, nprocs=None, **kwargs):
     return torch.multiprocessing.spawn(*args, nprocs=nprocs, **kwargs)  # type: ignore
 
 
-DictStoreDataKey = typing.TypeVar("DictStoreDataKey")
-DictStoreDataValue = typing.TypeVar("DictStoreDataValue")
+ListedDictKey = typing.TypeVar("ListedDictKey")
+ListedDictValue = typing.TypeVar("ListedDictValue")
 
 
-class DictStoreData(typing.Generic[DictStoreDataKey, DictStoreDataValue]):
-    """An ordered dictionary to store data for each `DictStore` sync."""
+class ListedDict(typing.Generic[ListedDictKey, ListedDictValue]):
+    """Store lists of dictionaries efficiently."""
 
     def __init__(self):
         super().__init__()
-        self._data: typing.List[typing.List[typing.Dict[DictStoreDataKey, DictStoreDataValue]]] = []
+        self._data: typing.List[typing.List[typing.Dict[ListedDictKey, ListedDictValue]]] = []
         self._keys = set()
 
-    def append(self, data: typing.List[typing.Dict[DictStoreDataKey, DictStoreDataValue]]):
-        """Append new data from the most recent store sync."""
+    def append(self, data: typing.List[typing.Dict[ListedDictKey, ListedDictValue]]):
+        """Append an additional list of dictionaries."""
         self._data.append(data)
         for dict_ in data:
             self._keys.update(dict_.keys())
 
     @typing.overload
-    def __getitem__(self, key: slice) -> DictStoreData[DictStoreDataKey, DictStoreDataValue]:
-        """Get a `DictStoreData` that accesses a slice of sync."""
+    def __getitem__(self, key: slice) -> ListedDict[ListedDictKey, ListedDictValue]:
+        """Get a `slice` of dictionaries."""
         ...
 
     @typing.overload
-    def __getitem__(self, key: DictStoreDataKey) -> typing.List[typing.List[DictStoreDataValue]]:
-        """Get all the values for `key` in `DictStoreData` for each sync."""
+    def __getitem__(self, key: ListedDictKey) -> typing.List[typing.List[ListedDictValue]]:
+        """Get all the values for `key` in `ListedDict` in each dictionary."""
         ...
 
     def __getitem__(self, key):
         if isinstance(key, slice):
-            data = DictStoreData()
+            data = ListedDict()
             data._data = self._data[key]
             data._keys = self._keys
             return data
@@ -111,10 +111,10 @@ class DictStoreData(typing.Generic[DictStoreDataKey, DictStoreDataValue]):
 
         return [[d[key] for d in r if key in d] for r in self._data]
 
-    def keys(self) -> typing.Iterator[DictStoreDataKey]:
+    def keys(self) -> typing.Iterator[ListedDictKey]:
         return iter(self._keys)
 
-    def __iter__(self) -> typing.Iterator[DictStoreDataKey]:
+    def __iter__(self) -> typing.Iterator[ListedDictKey]:
         return iter(self._keys)
 
     def __len__(self) -> int:
@@ -160,7 +160,7 @@ class DictStore:
     key_cache_prefix = "__"
 
     def __init__(self, cache_keys: bool = False):
-        self.data = DictStoreData()
+        self.data = ListedDict()
         self.cache_keys = cache_keys
         self._operation = -1
         self._world_size = get_world_size()
