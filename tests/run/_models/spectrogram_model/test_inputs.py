@@ -109,6 +109,7 @@ def test__preprocess_respelling():
     script, sesh = "Don't |\\PEE\\puhl\\| from EDGE catch-the-flu?", make_session()
     doc = nlp(script)
     processed = _preprocess([(sesh, doc, doc[1:-1])], respell_prob=1.0)
+    assert processed.reconstruct_text(0) == "Don't PEE\\puhl from EDGE KACH-the-FLOO?"
     casing = [
         (Pronunciation.NORMAL, Casing.UPPER),  # D
         (Pronunciation.NORMAL, Casing.LOWER),  # o
@@ -137,7 +138,6 @@ def test__preprocess_respelling():
         (Pronunciation.NORMAL, Casing.NO_CASING),
         (Pronunciation.RESPELLING, Casing.UPPER),  # K
         (Pronunciation.RESPELLING, Casing.UPPER),  # A
-        (Pronunciation.RESPELLING, Casing.UPPER),  # T
         (Pronunciation.RESPELLING, Casing.UPPER),  # C
         (Pronunciation.RESPELLING, Casing.UPPER),  # H
         (Pronunciation.NORMAL, Casing.NO_CASING),
@@ -152,8 +152,7 @@ def test__preprocess_respelling():
         (Pronunciation.NORMAL, Casing.NO_CASING),  # ?
     ]
     assert processed.token_metadata[0] == [casing]
-    assert processed.reconstruct_text(0) == "Don't PEE\\puhl from EDGE KATCH-the-FLOO?"
-    tokens = "n't pee\\puhl from edge katch-the-floo"
+    tokens = "n't pee\\puhl from edge kach-the-floo"
     assert "".join(processed.tokens[0][processed.slices[0]]) == tokens  # type: ignore
     context = [
         Context.CONTEXT,  # D
@@ -183,7 +182,6 @@ def test__preprocess_respelling():
         Context.SCRIPT,
         Context.SCRIPT,  # K
         Context.SCRIPT,  # A
-        Context.SCRIPT,  # T
         Context.SCRIPT,  # C
         Context.SCRIPT,  # H
         Context.SCRIPT,
@@ -222,7 +220,7 @@ def test__preprocess_schwa():
     script, sesh = "motorcycle", make_session()
     doc = nlp(script)
     processed = _preprocess([(sesh, doc, doc)], respell_prob=1.0)
-    assert processed.reconstruct_text(0) == "MOH\\tər\\sy\\kuhl"
+    assert processed.reconstruct_text(0) == "MOH\\tur\\sy\\kuhl"
 
 
 def test__preprocess_invalid_respelling():

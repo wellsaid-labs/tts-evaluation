@@ -117,6 +117,7 @@ class ExponentialMovingParameterAverage:
 
     def apply(self):
         """Replace the parameters with their averaged counterpart."""
+        logger.info("Applying EMA...")
         self.backup = [param.clone().detach() for param in self.parameters]
         for param, shadow in zip(self.parameters, self.shadow):
             # The initial 0.0 average values introduce bias that is corrected, learn more:
@@ -126,6 +127,7 @@ class ExponentialMovingParameterAverage:
 
     def restore(self):
         """Restore the parameter values after `self.apply`."""
+        logger.info("Restoring original parameters...")
         for param, backup in zip(self.parameters, self.backup):
             with torch.no_grad():
                 param.copy_(backup)

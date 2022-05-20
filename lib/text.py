@@ -21,16 +21,11 @@ from third_party import LazyLoader
 from tqdm import tqdm
 
 import lib
-from lib.utils import flatten_2d
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import Levenshtein
-    import nltk
-    import normalise
 else:
     Levenshtein = LazyLoader("Levenshtein", globals(), "Levenshtein")
-    nltk = LazyLoader("nltk", globals(), "nltk")
-    normalise = LazyLoader("normalise", globals(), "normalise")
 
 
 logger = logging.getLogger(__name__)
@@ -681,12 +676,6 @@ def add_space_between_sentences(doc: spacy.tokens.Doc) -> str:
 
 
 @functools.lru_cache(maxsize=None)
-def _nltk_download(dependency):
-    """Run `nltk.download` but only once per process."""
-    nltk.download(dependency)
-
-
-@functools.lru_cache(maxsize=None)
 def load_spacy_nlp(name, *args, **kwargs) -> Language:
     logger.info(f"Loading spaCy model `{name}`...")
     nlp = spacy.load(name, *args, **kwargs)
@@ -704,93 +693,68 @@ def load_en_english(*args, **kwargs) -> Language:
     return spacy_en.English(*args, **kwargs)
 
 
-def normalize_non_standard_words(text: str, variety: str = "AmE", **kwargs) -> str:
-    """Noramlize non-standard words (NSWs) into standard words.
+"""TODO: Noramlize non-standard words (NSWs) into standard words.
 
-    References:
-      - Text Normalization Researcher, Richard Sproat:
-        https://scholar.google.com/citations?hl=en&user=LNDGglkAAAAJ&view_op=list_works&sortby=pubdate
-        https://rws.xoba.com/
-      - Timeline:
-        - Sproat & Jaitly Dataset (2020):
-          https://www.kaggle.com/richardwilliamsproat/text-normalization-for-english-russian-and-polish
-        - Zhang & Sproat Paper (2019):
-          https://www.mitpressjournals.org/doi/full/10.1162/COLI_a_00349
-        - Wu & Gorman & Sproat Code (2016):
-            https://github.com/google/TextNormalizationCoveringGrammars
-        - Ford & Flint `normalise` Paper (2017): https://www.aclweb.org/anthology/W17-4414.pdf
-        - Ford & Flint `normalise` Code (2017): https://github.com/EFord36/normalise
-        - Sproat & Jaitly Dataset (2017): https://github.com/rwsproat/text-normalization-data
-        - Siri (2017): https://machinelearning.apple.com/research/inverse-text-normal
-        - Sproat Kaggle Challenge (2017):
-          https://www.kaggle.com/c/text-normalization-challenge-english-language/overview
-        - Sproat Kaggle Dataset (2017): https://www.kaggle.com/google-nlu/text-normalization
-        - Sproat TTS Tutorial (2016): https://github.com/rwsproat/tts-tutorial
-        - Sproat & Jaitly Paper (2016): https://arxiv.org/pdf/1611.00068.pdf
-        - Wu & Gorman & Sproat Paper (2016): https://arxiv.org/abs/1609.06649
-        - Gorman & Sproat Paper (2016): https://transacl.org/ojs/index.php/tacl/article/view/897/213
-        - Ebden and Sproat (2014) Code:
-          https://github.com/google/sparrowhawk
-          https://opensource.google/projects/sparrowhawk
-          https://www.kaggle.com/c/text-normalization-challenge-english-language/discussion/39061#219939
-        - Sproat Course (2011):
-          https://web.archive.org/web/20181029032542/http://www.csee.ogi.edu/~sproatr/Courses/TextNorm/
-      - Other:
-        - MaryTTS text normalization:
-          https://github.com/marytts/marytts/blob/master/marytts-languages/marytts-lang-en/src/main/java/marytts/language/en/Preprocess.java
-        - ESPnet text normalization:
-          https://github.com/espnet/espnet_tts_frontend/tree/master/tacotron_cleaner
-        - Quora question on text normalization:
-          https://www.quora.com/Is-it-possible-to-use-festival-toolkit-for-text-normalization
-        - spaCy entity classification:
-          https://explosion.ai/demos/displacy-ent
-          https://prodi.gy/docs/named-entity-recognition#manual-model
-          https://spacy.io/usage/examples#training
-        - Dockerized installation of festival by Google:
-          https://github.com/google/voice-builder
+References:
+  - Text Normalization Researcher, Richard Sproat:
+    https://scholar.google.com/citations?hl=en&user=LNDGglkAAAAJ&view_op=list_works&sortby=pubdate
+    https://rws.xoba.com/
+  - Timeline:
+    - Sproat & Jaitly Dataset (2020):
+      https://www.kaggle.com/richardwilliamsproat/text-normalization-for-english-russian-and-polish
+    - Zhang & Sproat Paper (2019):
+      https://www.mitpressjournals.org/doi/full/10.1162/COLI_a_00349
+    - Wu & Gorman & Sproat Code (2016):
+        https://github.com/google/TextNormalizationCoveringGrammars
+    - Ford & Flint `normalise` Paper (2017): https://www.aclweb.org/anthology/W17-4414.pdf
+    - Ford & Flint `normalise` Code (2017): https://github.com/EFord36/normalise
+    - Sproat & Jaitly Dataset (2017): https://github.com/rwsproat/text-normalization-data
+    - Siri (2017): https://machinelearning.apple.com/research/inverse-text-normal
+    - Sproat Kaggle Challenge (2017):
+      https://www.kaggle.com/c/text-normalization-challenge-english-language/overview
+    - Sproat Kaggle Dataset (2017): https://www.kaggle.com/google-nlu/text-normalization
+    - Sproat TTS Tutorial (2016): https://github.com/rwsproat/tts-tutorial
+    - Sproat & Jaitly Paper (2016): https://arxiv.org/pdf/1611.00068.pdf
+    - Wu & Gorman & Sproat Paper (2016): https://arxiv.org/abs/1609.06649
+    - Gorman & Sproat Paper (2016): https://transacl.org/ojs/index.php/tacl/article/view/897/213
+    - Ebden and Sproat (2014) Code:
+      https://github.com/google/sparrowhawk
+      https://opensource.google/projects/sparrowhawk
+      https://www.kaggle.com/c/text-normalization-challenge-english-language/discussion/39061#219939
+    - Sproat Course (2011):
+      https://web.archive.org/web/20181029032542/http://www.csee.ogi.edu/~sproatr/Courses/TextNorm/
+  - Other:
+    - MaryTTS text normalization:
+      https://github.com/marytts/marytts/blob/master/marytts-languages/marytts-lang-en/src/main/java/marytts/language/en/Preprocess.java
+    - ESPnet text normalization:
+      https://github.com/espnet/espnet_tts_frontend/tree/master/tacotron_cleaner
+    - Quora question on text normalization:
+      https://www.quora.com/Is-it-possible-to-use-festival-toolkit-for-text-normalization
+    - spaCy entity classification:
+      https://explosion.ai/demos/displacy-ent
+      https://prodi.gy/docs/named-entity-recognition#manual-model
+      https://spacy.io/usage/examples#training
+    - Dockerized installation of festival by Google:
+      https://github.com/google/voice-builder
 
-    TODO:
-       - Following the state-of-the-art approach presented here:
-         https://www.kaggle.com/c/text-normalization-challenge-english-language/discussion/43963
-         Use spaCy to classify entities, and then use a formatter to clean up the strings. The
-         dataset was open-sourced here:
-         https://www.kaggle.com/richardwilliamsproat/text-normalization-for-english-russian-and-polish
-         A formatter can be found here:
-         https://www.kaggle.com/neerjad/class-wise-regex-functions-l-b-0-995
-         We may need to train spaCy to detect new entities, if the ones already supported are not
-         enough via prodi.gy:
-         https://prodi.gy/docs/named-entity-recognition#manual-model
-       - Adopt Google's commercial "sparrowhawk" or the latest grammar
-         "TextNormalizationCoveringGrammars" for text normalization.
-       - Look into NVIDIA's recent text normalization and denormalization:
-         https://arxiv.org/abs/2104.05055
-         https://docs.nvidia.com/deeplearning/nemo/user-guide/docs/en/stable/tools/text_normalization.html
-         https://github.com/NVIDIA/NeMo/pull/1797/files
-    """
-    for dependency in (
-        "brown",
-        "names",
-        "wordnet",
-        "averaged_perceptron_tagger",
-        "universal_tagset",
-    ):
-        _nltk_download(dependency)
-
-    tokens = [[t.text, t.whitespace_] for t in load_en_english()(text)]
-    merged: typing.List[typing.List[str]] = [tokens[0]]
-    # TODO: Use https://spacy.io/usage/linguistic-features#retokenization
-    for token, whitespace in tokens[1:]:
-        # NOTE: For example, spaCy tokenizes "$29.95" as two tokens, and this undos that.
-        if (merged[-1][0] == "$" or token == "$") and merged[-1][1] == "":
-            merged[-1][0] += token
-            merged[-1][1] = whitespace
-        else:
-            merged.append([token, whitespace])
-
-    assert "".join(flatten_2d(merged)) == text
-    arg = [t[0] for t in merged]
-    normalized = typing.cast(typing.List[str], normalise.normalise(arg, variety=variety, **kwargs))
-    return "".join(flatten_2d([[n.strip(), m[1]] for n, m in zip(normalized, merged)]))
+TODO:
+  - Following the state-of-the-art approach presented here:
+    https://www.kaggle.com/c/text-normalization-challenge-english-language/discussion/43963
+    Use spaCy to classify entities, and then use a formatter to clean up the strings. The
+    dataset was open-sourced here:
+    https://www.kaggle.com/richardwilliamsproat/text-normalization-for-english-russian-and-polish
+    A formatter can be found here:
+    https://www.kaggle.com/neerjad/class-wise-regex-functions-l-b-0-995
+    We may need to train spaCy to detect new entities, if the ones already supported are not
+    enough via prodi.gy:
+    https://prodi.gy/docs/named-entity-recognition#manual-model
+  - Adopt Google's commercial "sparrowhawk" or the latest grammar
+    "TextNormalizationCoveringGrammars" for text normalization.
+  - Look into NVIDIA's recent text normalization and denormalization:
+    https://arxiv.org/abs/2104.05055
+    https://docs.nvidia.com/deeplearning/nemo/user-guide/docs/en/stable/tools/text_normalization.html
+    https://github.com/NVIDIA/NeMo/pull/1797/files
+"""
 
 
 def format_alignment(

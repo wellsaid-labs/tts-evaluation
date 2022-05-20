@@ -19,6 +19,8 @@ TODO:
   from the Unilex pronunciation lexicon [5], as it has wider word type coverage (167,000 entries)
   and better consistency than open source lexica such as CMUdict"
 - Run diacritics through Google's TTS.
+- Consider, randomly, repeating some words, several times in a list, to teach the model to be
+  consistent.
 
 Other resources:
 - https://nakanishi.kobegakuin-gc.jp/uploads/nakanishi/files/nakanishi/200910_Database.pdf

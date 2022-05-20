@@ -8,7 +8,8 @@ from torch.nn import ModuleList
 from torch.nn.utils.rnn import pad_sequence
 from torchnlp.nn import LockedDropout
 
-from lib.utils import LSTM, NumeralizePadEmbed
+from lib.distributed import NumeralizePadEmbed
+from lib.utils import LSTM
 from run._models.spectrogram_model.containers import Encoded
 from run._models.spectrogram_model.inputs import Inputs
 

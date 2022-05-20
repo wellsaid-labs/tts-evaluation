@@ -1,6 +1,7 @@
 import dataclasses
 import enum
 import random
+import re
 import string
 import typing
 
@@ -42,14 +43,15 @@ class Token:
     is_context: bool
     is_whitespace: bool
     try_to_respell: bool
+    text: str = dataclasses.field(init=False, repr=False)
+    pronun: Pronunciation = dataclasses.field(init=False, repr=False)
     # TODO: Should these be added to configuration?
     # NOTE: These prefixes and suffixes are choosen based on spaCy's tokenizer. This ensures that
     # |\\mother\\in\\law\\|" is treated as one token instead of being tokenized.
-    prefix: str = dataclasses.field(default="|\\", init=False, repr=False)
-    suffix: str = dataclasses.field(default="\\|", init=False, repr=False)
-    delim: str = dataclasses.field(default="\\", init=False, repr=False)
-    text: str = dataclasses.field(init=False, repr=False)
-    pronun: Pronunciation = dataclasses.field(init=False, repr=False)
+    prefix: typing.ClassVar[str] = "|\\"
+    suffix: typing.ClassVar[str] = "\\|"
+    delim: typing.ClassVar[str] = "\\"
+    valid_chars: typing.ClassVar[str] = string.ascii_lowercase
 
     def __post_init__(self):
         if not self._is_respelled():
@@ -60,23 +62,24 @@ class Token:
         object.__setattr__(self, "pronun", pronun)
 
     def _is_respelled(self):
-        """Is the `self.token.text` already respelled?"""
+        """Is the `self.token.text` already respelled?
+
+        TODO: Configure the allowable characters based on language.
+        """
         text = self.token.text
         is_respelled = text.startswith(self.prefix) and text.endswith(self.suffix)
         text = text[len(self.prefix) : -len(self.suffix)]
         if is_respelled:
-            valid_letters = string.ascii_lowercase + "ə"
-            message = "Invalid respelling."
+            message = f"Invalid respelling: {text}"
             assert len(text) > 0, message
-            assert text[0].lower() in valid_letters, message
-            assert text[-1].lower() in valid_letters, message
-            assert len(set(text.lower()) - set(list(valid_letters + self.delim))) == 0, message
+            assert text[0].lower() in self.valid_chars, message
+            assert text[-1].lower() in self.valid_chars, message
+            assert len(set(text.lower()) - set(list(self.valid_chars + self.delim))) == 0, message
         return is_respelled
 
     def _try_respelling(self) -> typing.Optional[str]:
         """Get a respelling of `self.token.text` if possible."""
-        respelling = respell(self.token.text, load_cmudict_syl(), self.delim)
-        return None if respelling is None else respelling
+        return respell(self.token.text, load_cmudict_syl(), self.delim)
 
     def _get_text(self) -> typing.Tuple[Pronunciation, str]:
         """Get the text that represents `token` which maybe respelled."""
@@ -114,6 +117,18 @@ class Token:
 
     def __len__(self):
         return len(self.text)
+
+    @classmethod
+    def norm_respellings(
+        cls, script: str, prefix: str = "::", suffix: str = "::", delim: str = "-"
+    ):
+        """Preprocess respellings from one prefix, suffix, delim to the another."""
+        valid_chars = re.escape(f"{cls.valid_chars}{cls.valid_chars.upper()}{delim}")
+        for match in re.findall(f"{re.escape(prefix)}[{valid_chars}]+{re.escape(suffix)}", script):
+            updated = match[len(prefix) : -len(suffix)].replace(delim, cls.delim)
+            updated = f"{cls.prefix}{updated}{cls.suffix}"
+            script = script.replace(match, updated)
+        return script
 
 
 @dataclasses.dataclass(frozen=True)
@@ -201,12 +216,14 @@ def _preprocess(
 
     TODO: Instead of using `zero` embeddings, what if we tried training a vector, instead?
     """
-    inputs = Inputs([], [[], [], [], [], []], [[], []], [], [], device)
+    inputs = Inputs([], [], [[], []], [], [], device)
     for sesh, context_span, span in batch:
         tokens = [t for token in context_span for t in _token_to_tokens(token, span, respell_prob)]
 
-        seq_metadata = (sesh[0].label, sesh, sesh[0].dialect, sesh[0].style, sesh[0].language)
+        seq_metadata = [sesh[0].label, sesh, sesh[0].dialect, sesh[0].style, sesh[0].language]
         for i, data in enumerate(seq_metadata):
+            if len(inputs.seq_metadata) == i:
+                inputs.seq_metadata.append([])
             inputs.seq_metadata[i].append(data)
 
         if len(tokens) > 0:
@@ -234,6 +251,10 @@ def _preprocess(
 
     token_embeddings = torch.nn.utils.rnn.pad_sequence(inputs.token_embeddings, batch_first=True)
     return dataclasses.replace(inputs, token_embeddings=token_embeddings)
+
+
+def norm_respellings(script: str) -> str:
+    return Token.norm_respellings(script)
 
 
 def preprocess_spans(spans: typing.List[struc.Span], **kw) -> Inputs:

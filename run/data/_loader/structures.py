@@ -17,7 +17,7 @@ import config as cf
 import numpy as np
 import spacy.tokens.doc
 import spacy.tokens.span
-from Levenshtein import distance  # type: ignore
+from third_party import LazyLoader
 
 import lib
 import run
@@ -26,6 +26,11 @@ from lib.text import has_digit
 from lib.utils import Timeline, Tuple, flatten_2d, tqdm_
 from run import _config
 from run.data import _loader
+
+if typing.TYPE_CHECKING:  # pragma: no cover
+    import Levenshtein
+else:
+    Levenshtein = LazyLoader("Levenshtein", globals(), "Levenshtein")
 
 logger = logging.getLogger(__name__)
 
@@ -159,6 +164,7 @@ class Style(Enum):
     PROMO: typing.Final = "Promotional"
     CONVO: typing.Final = "Conversational"
     DICT: typing.Final = "Dictionary"
+    RND: typing.Final = "Research"
     OTHER: typing.Final = "Other"
 
 
@@ -176,8 +182,10 @@ class Dialect(Enum):
     PT_BR: typing.Final = (Language.PORTUGUESE, "Portuguese (Brazilian)")
 
 
-@dataclasses.dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True, order=True)
 class Speaker:
+    sort_index: typing.Tuple = field(init=False, repr=False)
+
     # TODO: Handle multiple dialects or bilingual speakers.
     # TODO: The `Style` isn't named well because a `Speaker` doesn't have a single style. In the
     # future, maybe rename `Speaker` to something else like `Persona`.
@@ -204,9 +212,28 @@ class Speaker:
     # For some voices, this is the gender of the voice, usually required for finding those voices.
     gender: typing.Optional[str] = None
 
+    def __post_init__(self):
+        message = "GCS Directory shouldn't have spaces"
+        assert self.gcs_dir is None or " " not in self.gcs_dir, message
+        assert " " not in self.label, "Label shouldn't have spaces"
+        sort_index = (self.label, self.dialect.value[1], self.style.value, self.post)
+        assert all(isinstance(t, (str, bool)) for t in sort_index)
+        object.__setattr__(self, "sort_index", sort_index)
+
+    def __setstate__(self, state):
+        """TODO: Remove, this is for backward compatibility."""
+        object.__setattr__(self, "__dict__", state)
+        self.__post_init__()
+
     @property
     def language(self) -> Language:
         return self.dialect.value[0]
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__name__}({self.label}, {self.dialect.value[1]}, "
+            f"{self.style.value}, post={self.post})"
+        )
 
 
 # TODO: Implement `__str__` so that we have a more succinct string representation for logging
@@ -912,6 +939,7 @@ def _check_alignments(label: str, passage: UnprocessedPassage):
 
     if len(pairs) > 0:
         num_pairs = len(pairs)
+        distance = Levenshtein.distance  # type: ignore
         pairs = sorted(((distance(*p), p) for p in set(pairs)), reverse=True, key=lambda k: k[0])
         pairs = ", ".join([str(p) for _, p in pairs][:25])
         prefix = f"[{label}][{passage.audio_path.name}]"
