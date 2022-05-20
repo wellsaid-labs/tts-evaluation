@@ -3,26 +3,6 @@ import typing
 import torch
 
 
-class Inputs(typing.NamedTuple):
-    """The model inputs."""
-
-    # Batch of sequences of tokens
-    tokens: typing.List[typing.List[typing.Hashable]]
-
-    # Metadata associated with each sequence
-    seq_metadata: typing.List[typing.Tuple[typing.Hashable, ...]]
-
-    # Metadata associated with each token in each sequence
-    token_metadata: typing.List[typing.List[typing.List[typing.Hashable]]]
-
-    # Embeddings associated with each token in each sequence
-    # torch.FloatTensor [batch_size, num_tokens, *]
-    token_embeddings: typing.Union[torch.Tensor, typing.List[torch.Tensor]]
-
-    # Slice of tokens in each sequence to be voiced
-    slices: typing.List[slice]
-
-
 class Preds(typing.NamedTuple):
     """The model predictions and related metadata."""
 
@@ -102,6 +82,9 @@ class DecoderHiddenState(typing.NamedTuple):
 
     # `Decoder.attention` hidden state.
     attention_hidden_state: AttentionHiddenState
+
+    # Padded encoding with space for the `attention` window.
+    padded_encoded: Encoded
 
     # `Decoder.lstm_layer_one` hidden state.
     lstm_one_hidden_state: typing.Optional[typing.Tuple[torch.Tensor, torch.Tensor]] = None

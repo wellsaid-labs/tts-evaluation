@@ -28,17 +28,18 @@ from third_party import LazyLoader
 
 import lib
 import run
+from run._config import load_spacy_nlp
 from run._utils import gcs_uri_to_blob
 from run.data import _loader
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import Levenshtein
     import pandas
-    from spacy.lang import en as spacy_en
+    import spacy.language as language
 else:
     Levenshtein = LazyLoader("Levenshtein", globals(), "Levenshtein")
     pandas = LazyLoader("pandas", globals(), "pandas")
-    spacy_en = LazyLoader("spacy_en", globals(), "spacy.lang.en")
+    language = LazyLoader("language", globals(), "spacy.language")
 
 
 lib.environment.set_basic_logging_config()
@@ -238,18 +239,15 @@ def audio_normalize(
     bits: typing.Optional[int] = typer.Option(None),
 ):
     """Normalize audio file format(s) in PATHS and save to directory DEST."""
-    if bits is not None:
-        cf.add({_loader.normalize_audio: cf.Args(bits=bits)})
-    if data_type is not None:
-        cf.add({_loader.normalize_audio: cf.Args(data_type=data_type)})
-
     progress_bar = tqdm.tqdm(total=round(_get_total_length(paths)))
     for path in paths:
         dest_path = _loader.normalize_audio_suffix(dest / path.name, **cf.get())
         if dest_path.exists():
             logger.error(f"Skipping, file already exists: {dest_path}")
         else:
-            _loader.normalize_audio(path, dest_path, **cf.get())
+            kwargs = dict(bits=bits, data_type=data_type)
+            kwargs = {k: v for k, v in kwargs.items() if v is not None}
+            cf.call(_loader.normalize_audio, path, dest_path, **kwargs)
             progress_bar.update(round(lib.audio.get_audio_metadata(path).length))
 
 
@@ -272,7 +270,7 @@ def text(
 
 
 def _csv_normalize(
-    text: str, nlp: typing.Optional[spacy_en.English], language: _loader.Language
+    text: str, nlp: typing.Optional[language.Language], language: _loader.Language
 ) -> str:
     """Helper for the `csv_normalize` command.
 
@@ -367,7 +365,7 @@ def csv_normalize(
     """Normalize csv file(s) in PATHS and save to directory DEST."""
     # TODO: It may be worthwhile to process text with SpaCy in non-English languages.
     is_en = language is _loader.Language.ENGLISH
-    nlp = lib.text.load_en_core_web_md(disable=("tagger", "ner")) if is_en else None
+    nlp = load_spacy_nlp(language) if is_en else None
 
     results = []
     for path in tqdm.tqdm(paths):

@@ -1,24 +1,18 @@
 import logging
 import pathlib
 import typing
-from functools import partial
 from unittest.mock import MagicMock
 
 import config as cf
-import torch
-import torch.optim
 
-import lib
-from run._config import NUM_FRAME_CHANNELS, RANDOM_SEED, SPECTROGRAM_MODEL_EXPERIMENTS_PATH, Label
-from run._utils import Dataset
-from run.train._utils import (
-    CometMLExperiment,
-    resume_experiment,
-    run_workers,
-    set_run_seed,
-    start_experiment,
+from run._config import (
+    SPECTROGRAM_MODEL_EXPERIMENTS_PATH,
+    get_config_label,
+    make_spectrogram_model_train_config,
 )
-from run.train.spectrogram_model import _metrics, _worker
+from run._utils import Dataset
+from run.train._utils import CometMLExperiment, resume_experiment, run_workers, start_experiment
+from run.train.spectrogram_model import _worker
 
 logger = logging.getLogger(__name__)
 
@@ -36,76 +30,6 @@ else:
         app = MagicMock()
         typer = MagicMock()
         logger.info("Ignoring optional `typer` dependency.")
-
-
-def _make_configuration(train_dataset: Dataset, dev_dataset: Dataset, debug: bool) -> cf.Config:
-    """Make additional configuration for spectrogram model training."""
-    train_size = sum(sum(p.segmented_audio_length() for p in d) for d in train_dataset.values())
-    dev_size = sum(sum(p.segmented_audio_length() for p in d) for d in dev_dataset.values())
-    ratio = train_size / dev_size
-    logger.info("The training dataset is approx %fx bigger than the development dataset.", ratio)
-    train_batch_size = 28 if debug else 56
-    batch_size_ratio = 4
-    dev_batch_size = train_batch_size * batch_size_ratio
-    dev_steps_per_epoch = 1 if debug else 64
-    train_steps_per_epoch = int(round(dev_steps_per_epoch * batch_size_ratio * ratio))
-    train_steps_per_epoch = 1 if debug else train_steps_per_epoch
-    assert train_batch_size % lib.distributed.get_device_count() == 0
-    assert dev_batch_size % lib.distributed.get_device_count() == 0
-    return {
-        set_run_seed: cf.Args(seed=RANDOM_SEED),
-        _worker._State._get_optimizers: cf.Args(
-            lr_multiplier_schedule=partial(
-                lib.optimizers.warmup_lr_multiplier_schedule, warmup=500
-            ),
-            # SOURCE (Tacotron 2):
-            # We use the Adam optimizer [29] with β1 = 0.9, β2 = 0.999
-            optimizer=torch.optim.AdamW,
-            exclude_from_decay=_worker.exclude_from_decay,
-        ),
-        _worker._run_step: cf.Args(
-            # NOTE: This scalar calibrates the loss so that it's scale is similar to Tacotron-2.
-            spectrogram_loss_scalar=1 / 100,
-            # NOTE: Learn more about this parameter here: https://arxiv.org/abs/2002.08709
-            # NOTE: This value is the minimum loss the test set achieves before the model
-            # starts overfitting on the train set.
-            # TODO: Try increasing the stop token minimum loss because it still overfit.
-            stop_token_min_loss=0.027,
-            # NOTE: This value is the average spectrogram length in the training dataset.
-            average_spectrogram_length=117.5,
-        ),
-        _worker._get_data_loaders: cf.Args(
-            # SOURCE: Tacotron 2
-            # To train the feature prediction network, we apply the standard maximum-likelihood
-            # training procedure (feeding in the correct output instead of the predicted output on
-            # the decoder side, also referred to as teacher-forcing) with a batch size of 64 on a
-            # single GPU.
-            # NOTE: Batch size parameters set after experimentation on a 2 Px100 GPU.
-            train_batch_size=train_batch_size,
-            dev_batch_size=dev_batch_size,
-            train_steps_per_epoch=train_steps_per_epoch,
-            dev_steps_per_epoch=int(dev_steps_per_epoch),
-            is_train_balanced=False,
-            is_dev_balanced=True,
-            num_workers=2,
-            prefetch_factor=2 if debug else 10,
-        ),
-        _metrics.Metrics._get_model_metrics: cf.Args(num_frame_channels=NUM_FRAME_CHANNELS),
-        # NOTE: Based on the alignment visualizations, if the maximum alignment is less than 30%
-        # then a misalignment has likely occured.
-        _metrics.get_num_small_max: cf.Args(threshold=0.3),
-        # SOURCE (Tacotron 2):
-        # We use the Adam optimizer with β1 = 0.9, β2 = 0.999, eps = 10−6 learning rate of 10−3
-        # We also apply L2 regularization with weight 10−6
-        # NOTE: No L2 regularization performed better based on Comet experiments in March 2020.
-        torch.optim.AdamW: cf.Args(
-            eps=10 ** -6,
-            weight_decay=0.01,
-            lr=10 ** -3,
-            amsgrad=False,
-            betas=(0.9, 0.999),
-        ),
-    }
 
 
 def _run_app(
@@ -128,9 +52,9 @@ def _run_app(
     TODO: Should we consider setting OMP num threads similarly:
     https://github.com/pytorch/pytorch/issues/22260
     """
-    cf.add(_make_configuration(train_dataset, dev_dataset, debug))
+    cf.add(make_spectrogram_model_train_config(train_dataset, dev_dataset, debug))
     cf.add(cli_config)
-    comet.log_parameters({Label(k): v for k, v in cf.log().items()})
+    comet.log_parameters({get_config_label(k): v for k, v in cf.log(lambda x: x).items()})
     return run_workers(
         _worker.run_worker, comet, checkpoint, checkpoints_directory, train_dataset, dev_dataset
     )

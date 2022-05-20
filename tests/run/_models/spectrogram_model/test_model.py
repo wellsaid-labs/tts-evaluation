@@ -1,3 +1,4 @@
+import dataclasses
 import itertools
 import math
 import random
@@ -12,8 +13,8 @@ from torch.nn import Embedding
 from torch.nn.functional import binary_cross_entropy_with_logits, mse_loss
 from torchnlp.random import fork_rng
 
-import lib
 import run
+from lib.distributed import NumeralizePadEmbed
 from lib.utils import lengths_to_mask
 from run._models.spectrogram_model.attention import Attention
 from run._models.spectrogram_model.containers import (
@@ -122,8 +123,8 @@ def _make_inputs(
 
     inputs = Inputs(
         tokens=tokens,
-        seq_metadata=list(zip(speakers, sessions)),
-        token_metadata=[[[] for _ in s] for s in tokens],
+        seq_metadata=[speakers, sessions],
+        token_metadata=[[[] for _ in tokens]],
         token_embeddings=[torch.empty(int(n), 0) for n in num_tokens],
         slices=[slice(0, int(n)) for n in num_tokens],
     )
@@ -318,10 +319,10 @@ def test_spectrogram_model__is_stop():
     _is_stop = lambda a, b, c, d: model._is_stop(_logit(tensor(a)), tensor(b), tensor(c), tensor(d))
     # NOTE: For example, test that this handles a scenario where the window intersects the boundary
     # and `stop_token` is above threshold.
-    assert _is_stop(1.0, 8, 5, False)[0]
-    assert not _is_stop(1.0, 8, 4, False)[0]
-    assert not _is_stop(0.25, 8, 5, False)[0]
-    assert _is_stop(0.25, 8, 4, True)[0]
+    assert _is_stop(1.0, 8, 6, False)[0]
+    assert not _is_stop(1.0, 8, 5, False)[0]
+    assert not _is_stop(0.25, 8, 6, False)[0]
+    assert _is_stop(0.25, 8, 5, True)[0]
 
 
 def test_spectrogram_model__stop():
@@ -375,7 +376,7 @@ def _set_embedding_vocab(model: SpectrogramModel, params: Params):
     """Update `model` vocab so it can be run in inference mode."""
     model.encoder.embed_token.update_tokens(list(range(params.max_tokens)))
     for i, max_values in enumerate(params.max_seq_meta_values):
-        embedding = typing.cast(lib.utils.NumeralizePadEmbed, model.encoder.embed_seq_metadata[i])
+        embedding = typing.cast(NumeralizePadEmbed, model.encoder.embed_seq_metadata[i])
         embedding.update_tokens(list(range(max_values)))
 
 
@@ -430,10 +431,11 @@ def test_spectrogram_model__infer_batch_padding_invariance():
         set_stop_token_rand_offset(i)
         num_tokens_ = typing.cast(int, num_tokens[i].item())
         with fork_rng(seed=123):
-            inputs_ = inputs._replace(
+            inputs_ = dataclasses.replace(
+                inputs,
                 tokens=[t[:num_tokens_] for t in inputs.tokens][i : i + 1],
-                seq_metadata=inputs.seq_metadata[i : i + 1],
-                token_metadata=inputs.token_metadata[i : i + 1],
+                seq_metadata=[m[i : i + 1] for m in inputs.seq_metadata],
+                token_metadata=[m[i : i + 1] for m in inputs.seq_metadata],
                 token_embeddings=inputs.token_embeddings[i : i + 1],
                 slices=inputs.slices[i : i + 1],
             )
@@ -463,6 +465,7 @@ def test_spectrogram_model__train_batch_padding_invariance():
     batch_inputs.token_embeddings[i] = batch_inputs.token_embeddings[i][:num_tokens]
     slice_ = batch_inputs.slices[i]
     batch_inputs.slices[i] = slice(slice_.start, min(num_tokens, slice_.stop))
+    batch_inputs = dataclasses.replace(batch_inputs)
     target_lengths[i] = params.max_frames - padding
 
     with fork_rng(seed=123):
@@ -473,10 +476,13 @@ def test_spectrogram_model__train_batch_padding_invariance():
         model.zero_grad()
 
     length = typing.cast(int, target_lengths[i].item())
-    inputs = batch_inputs._replace(
+    inputs = dataclasses.replace(
+        batch_inputs,
         tokens=[t[:num_tokens] for t in batch_inputs.tokens][i : i + 1],
-        seq_metadata=batch_inputs.seq_metadata[i : i + 1],
-        token_metadata=[t[:num_tokens] for t in batch_inputs.token_metadata[i : i + 1]],
+        seq_metadata=[m[i : i + 1] for m in batch_inputs.seq_metadata],
+        token_metadata=[
+            [s[:num_tokens] for s in m[i : i + 1]] for m in batch_inputs.token_metadata
+        ],
         token_embeddings=[t[:num_tokens] for t in batch_inputs.token_embeddings[i : i + 1]],
         slices=[slice(s.start, min(s.stop, num_tokens)) for s in batch_inputs.slices[i : i + 1]],
     )
@@ -664,7 +670,7 @@ def _side_effect(params: Params, num_embeddings: int, *args, padding_idx=None, *
     TODO: Remove and update `test_spectrogram_model__version` values.
     """
     assert all(params.max_tokens != n for n in params.max_seq_meta_values)
-    default_tokens = len(lib.utils.NumeralizePadEmbed._Tokens)
+    default_tokens = len(NumeralizePadEmbed._Tokens)
     padding_idx = padding_idx if num_embeddings == (params.max_tokens + default_tokens) else None
     return Embedding(num_embeddings - default_tokens, *args, padding_idx=padding_idx, **kwargs)
 
@@ -682,7 +688,7 @@ def _make_backward_compatible_model(params: Params, stop_threshold=0.5):
     model.encoder.embed_token.vocab.update({i: i for i in range(params.max_tokens)})
     model.encoder.embed_token.num_embeddings = len(model.encoder.embed_token.vocab)
     for embed, max_values in zip(model.encoder.embed_seq_metadata, params.max_seq_meta_values):
-        embed = typing.cast(lib.utils.NumeralizePadEmbed, embed)
+        embed = typing.cast(NumeralizePadEmbed, embed)
         embed.vocab.update({i: i for i in range(max_values)})
         embed.num_embeddings = len(embed.vocab)
 

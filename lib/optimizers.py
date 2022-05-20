@@ -74,9 +74,9 @@ class AdaptiveGradientNormClipper:
         """Clips gradient norm of an iterable of `self.parameters`, and update gradient norm
         history."""
         assert all([p.grad is not None for p in self.parameters]), "`None` gradients found."
-        norm = clip_grad_norm_(self.parameters, self.max_norm, self.norm_type)
-        if not torch.isfinite(norm):  # type: ignore
-            raise ValueError(f"Gradient is not finite: {norm}")
+        norm = clip_grad_norm_(
+            self.parameters, self.max_norm, self.norm_type, error_if_nonfinite=True
+        )
         item = typing.cast(float, norm.item())
         self._insert(item)
         self.max_norm = self._get_median()
@@ -117,6 +117,7 @@ class ExponentialMovingParameterAverage:
 
     def apply(self):
         """Replace the parameters with their averaged counterpart."""
+        logger.info("Applying EMA...")
         self.backup = [param.clone().detach() for param in self.parameters]
         for param, shadow in zip(self.parameters, self.shadow):
             # The initial 0.0 average values introduce bias that is corrected, learn more:
@@ -126,6 +127,7 @@ class ExponentialMovingParameterAverage:
 
     def restore(self):
         """Restore the parameter values after `self.apply`."""
+        logger.info("Restoring original parameters...")
         for param, backup in zip(self.parameters, self.backup):
             with torch.no_grad():
                 param.copy_(backup)
@@ -151,9 +153,37 @@ def warmup_lr_multiplier_schedule(step: int, warmup: int) -> float:
         step: The current step.
         warmup: The number of warmup steps.
 
-    Returns:
-        Base learning rate multiplier.
+    Returns: Learning rate multiplier.
     """
     if step < warmup:
         return step / warmup
+    return 1.0
+
+
+def exponential_decay_lr_multiplier_schedule(
+    step: int,
+    warmup: int,
+    start_decay: int,
+    end_decay: int,
+    multiplier: float,
+) -> float:
+    """An exponential decay learning rate multiplier schedule.
+
+    Args:
+        step: The current step.
+        warmup: The number of warmup steps.
+        start_decay: The step to start the exponential decay.
+        end_decay: The step to end the exponential decay.
+        multiplier: The `multiplier` returned at the end of the decay.
+
+    Returns: Learning rate multiplier.
+    """
+    assert warmup <= start_decay, "Warmup must finish before the decay starts."
+    assert start_decay < end_decay, "End decay step must be bigger than start decay."
+    if step < warmup:
+        return step / warmup
+    elif step >= start_decay and step < end_decay:
+        return (multiplier ** (1 / (end_decay - start_decay))) ** (step - start_decay)
+    elif step >= end_decay:
+        return multiplier
     return 1.0

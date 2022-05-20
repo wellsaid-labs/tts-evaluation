@@ -9,9 +9,11 @@ import torch
 import torch.nn
 from tqdm import tqdm
 
-from lib.utils import NumeralizePadEmbed, lengths_to_mask
+from lib.distributed import NumeralizePadEmbed
+from lib.utils import lengths_to_mask
 from run._models.spectrogram_model import decoder, encoder
-from run._models.spectrogram_model.containers import Encoded, Inputs, Preds
+from run._models.spectrogram_model.containers import Encoded, Preds
+from run._models.spectrogram_model.inputs import Inputs
 
 logger = logging.getLogger(__name__)
 
@@ -122,7 +124,7 @@ class SpectrogramModel(torch.nn.Module):
         Returns:
             stop_token (torch.FloatTensor [num_frames (optional), batch_size])
         """
-        at_the_end = window_start >= num_tokens - self.decoder.attention.window_length
+        at_the_end = window_start >= num_tokens - self.decoder.attention.window_length // 2 - 1
         return stop_token.masked_fill(~at_the_end, self.stop_token_eps)
 
     def _is_stop(
@@ -166,6 +168,8 @@ class SpectrogramModel(torch.nn.Module):
     ) -> Generator:
         """Generate frames from the decoder until a stop is predicted or `max_lengths` is reached.
 
+        TODO: Should we consider masking `alignments`, `stop_token`, also?
+
         Args:
             ...
             tokens (torch.FloatTensor [num_tokens, batch_size, encoder_hidden_size])
@@ -198,7 +202,8 @@ class SpectrogramModel(torch.nn.Module):
             )
 
             lengths[~stopped] += 1
-            frame[:, stopped] *= 0
+            frame = frame.masked_fill(stopped.view(1, -1, 1), 0)
+            hidden_state = hidden_state._replace(last_frame=frame)  # type: ignore
             reached_max = lengths == max_lengths
             window_start = hidden_state.attention_hidden_state.window_start
             is_stop, stop_token = self._is_stop(stop_token, num_tokens, window_start, reached_max)
@@ -223,12 +228,7 @@ class SpectrogramModel(torch.nn.Module):
 
             if use_tqdm:
                 assert progress_bar is not None
-                half_window_length = self.decoder.attention.window_length // 2
-                # NOTE: The `tqdm` will start at `half_window_length` and it'll end at negative
-                # `half_window_length`; otherwise, it's an accurate representation of the
-                # character progress.
-                window_start_int = int(window_start.cpu().item())
-                progress_bar.update(window_start_int + half_window_length - progress_bar.n)
+                progress_bar.update(int(window_start.cpu().item()) - progress_bar.n)
 
         if use_tqdm:
             assert progress_bar is not None

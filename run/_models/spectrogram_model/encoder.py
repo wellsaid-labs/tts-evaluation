@@ -8,8 +8,10 @@ from torch.nn import ModuleList
 from torch.nn.utils.rnn import pad_sequence
 from torchnlp.nn import LockedDropout
 
-from lib.utils import LSTM, NumeralizePadEmbed, lengths_to_mask
-from run._models.spectrogram_model.containers import Encoded, Inputs
+from lib.distributed import NumeralizePadEmbed
+from lib.utils import LSTM
+from run._models.spectrogram_model.containers import Encoded
+from run._models.spectrogram_model.inputs import Inputs
 
 
 @lru_cache(maxsize=8)
@@ -211,6 +213,7 @@ class Encoder(torch.nn.Module):
         self.embed_seq_metadata = self._make_embeds(seq_meta_embed_size, max_seq_meta_values)
         self.seq_meta_embed_dropout = torch.nn.Dropout(seq_meta_embed_dropout)
         self.embed_token_metadata = self._make_embeds(token_meta_embed_size, max_token_meta_values)
+        self.embed_token: NumeralizePadEmbed[typing.Hashable]
         self.embed_token = NumeralizePadEmbed(max_tokens, hidden_size)
         self.embed = torch.nn.Sequential(
             torch.nn.Linear(
@@ -239,7 +242,7 @@ class Encoder(torch.nn.Module):
 
         self.lstm = _RightMaskedBiRNN(
             rnn_class=LSTM,
-            input_size=hidden_size,
+            input_size=hidden_size * 2,
             hidden_size=hidden_size // 2,
             num_layers=lstm_layers,
         )
@@ -248,7 +251,7 @@ class Encoder(torch.nn.Module):
 
         self.project_out = torch.nn.Sequential(
             LockedDropout(dropout),
-            torch.nn.Linear(hidden_size, out_size),
+            torch.nn.Linear(hidden_size * 2, out_size),
             layer_norm(out_size),
         )
 
@@ -277,20 +280,15 @@ class Encoder(torch.nn.Module):
         device = tokens.device
 
         # [batch_size] → [batch_size, seq_meta_embed_size]
-        seq_metadata = [
-            embed([metadata[i] for metadata in inputs.seq_metadata], batch_first=True)[0]
-            for i, embed in enumerate(self.embed_seq_metadata)
-        ]
+        iter_ = zip(self.embed_seq_metadata, inputs.seq_metadata)
+        seq_metadata = [embed(meta, batch_first=True)[0] for embed, meta in iter_]
         seq_metadata = self.seq_meta_embed_dropout(torch.cat(seq_metadata, dim=1))
         # [batch_size, seq_meta_embed_size] → [batch_size, num_tokens, seq_meta_embed_size]
         seq_metadata_expanded = seq_metadata.unsqueeze(1).expand(-1, tokens.shape[1], -1)
 
         # [batch_size, num_tokens] → [batch_size, num_tokens, token_meta_embed_size]
-        token_metadata = [
-            embed([[m[i] for m in seq] for seq in inputs.token_metadata], batch_first=True)[0]
-            for i, embed in enumerate(self.embed_token_metadata)
-        ]
-        token_metadata = tuple(token_metadata)
+        iter_ = zip(self.embed_token_metadata, inputs.token_metadata)
+        token_metadata = tuple([embed(meta, batch_first=True)[0] for embed, meta in iter_])
 
         if isinstance(inputs.token_embeddings, list):
             token_embed: torch.Tensor = pad_sequence(inputs.token_embeddings, batch_first=True)
@@ -324,6 +322,9 @@ class Encoder(torch.nn.Module):
         # [batch_size, num_tokens] → [batch_size, 1, num_tokens]
         tokens_mask = tokens_mask.unsqueeze(1)
 
+        tokens = tokens.masked_fill(~tokens_mask, 0)
+        conditional = tokens.clone()
+
         for conv, norm in zip(self.conv_layers, self.norm_layers):
             tokens = tokens.masked_fill(~tokens_mask, 0)
             tokens = norm(tokens + conv(tokens))
@@ -334,11 +335,14 @@ class Encoder(torch.nn.Module):
         # to permute the tensor first.
         tokens = tokens.permute(2, 0, 1)
         tokens_mask = tokens_mask.permute(2, 0, 1)
-        tokens = self.lstm_norm(
-            tokens + self.lstm(self.lstm_dropout(tokens), tokens_mask, num_tokens)
-        )
+        conditional = conditional.permute(2, 0, 1)
+        lstm_input = self.lstm_dropout(torch.cat((tokens, conditional), dim=2))
+        tokens = self.lstm_norm(tokens + self.lstm(lstm_input, tokens_mask, num_tokens))
 
-        # [num_tokens, batch_size, hidden_size] →
+        # [num_tokens, batch_size, hidden_size] (cat) [num_tokens, batch_size, hidden_size] →
+        # [num_tokens, batch_size, hidden_size * 2]
+        tokens = torch.cat((tokens, conditional), dim=2)
+        # [num_tokens, batch_size, hidden_size * 2] →
         # [num_tokens, batch_size, out_dim]
         tokens = self.project_out(tokens).masked_fill(~tokens_mask, 0)
 
@@ -349,9 +353,5 @@ class Encoder(torch.nn.Module):
 
         tokens = [tokens[i][s] for i, s in enumerate(inputs.slices)]
         tokens = torch.nn.utils.rnn.pad_sequence(tokens)
-        indices = [s.indices(len(t)) for s, t in zip(inputs.slices, inputs.tokens)]
-        num_tokens = [b - a for a, b, _ in indices]
-        num_tokens = torch.tensor(num_tokens, dtype=torch.long, device=tokens.device)
-        tokens_mask = lengths_to_mask(num_tokens)
 
-        return Encoded(tokens, tokens_mask, num_tokens, seq_metadata)
+        return Encoded(tokens, inputs.tokens_mask, inputs.num_tokens, seq_metadata)

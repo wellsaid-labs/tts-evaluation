@@ -1,5 +1,6 @@
 import collections
 import collections.abc
+import dataclasses
 import math
 import typing
 from functools import partial
@@ -244,8 +245,8 @@ def get_alignment_std(preds: Preds) -> torch.Tensor:
 _GetMetrics = typing.Dict[GetLabel, float]
 
 
-class MetricsKey(typing.NamedTuple):
-    label: str
+@dataclasses.dataclass(frozen=True)
+class MetricsKey(_utils.MetricsKey):
     speaker: typing.Optional[Speaker] = None
     text_length_bucket: typing.Optional[int] = None
 
@@ -372,12 +373,14 @@ class Metrics(_utils.Metrics[MetricsKey]):
         """
         values, _reduce = self._make_values()
 
-        for span, num_frames, tokens, has_reached_max in zip(
+        for span, num_frames, slice, has_reached_max in zip(
             batch.spans,
             self._to_list(batch.spectrogram.lengths),
-            batch.inputs.tokens,
+            batch.inputs.slices,
             self._to_list(preds.reached_max),
         ):
+            num_tokens = slice.stop - slice.start
+
             # NOTE: Create a key for `self.NUM_SPANS` so a value exists, even if zero.
             _reduce(self.NUM_SPANS, v=float(not has_reached_max))
             _reduce(self.NUM_SPANS, span.speaker, v=float(not has_reached_max))
@@ -392,8 +395,8 @@ class Metrics(_utils.Metrics[MetricsKey]):
                 for speaker in [None, span.speaker]:
                     _reduce(self.NUM_FRAMES, speaker, v=num_frames)
                     _reduce(self.NUM_SECONDS, speaker, v=span.audio_length)
-                    _reduce(self.NUM_TOKENS, speaker, v=len(tokens))
-                    _reduce(self.MAX_FRAMES_PER_TOKEN, speaker, v=num_frames / len(tokens), op=max)
+                    _reduce(self.NUM_TOKENS, speaker, v=num_tokens)
+                    _reduce(self.MAX_FRAMES_PER_TOKEN, speaker, v=num_frames / num_tokens, op=max)
 
         return dict(values)
 
@@ -510,7 +513,7 @@ class Metrics(_utils.Metrics[MetricsKey]):
         significantly more trimming than other speakers.
         """
         reduce = lambda *a, **k: self._reduce(MetricsKey(*a), select=select, **k)
-        metrics = {
+        metrics: _GetMetrics = {
             self.MAX_NUM_FRAMES: reduce(self.NUM_FRAMES_MAX, op=max),
             self.MIN_DATA_LOADER_QUEUE_SIZE: reduce(self.DATA_QUEUE_SIZE, op=min),
         }

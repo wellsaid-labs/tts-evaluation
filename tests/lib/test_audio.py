@@ -55,6 +55,7 @@ def run_around_tests():
             num_mel_bins=num_mel_bins,
             min_decibel=-50.0,
             get_weighting=lib.audio.iso226_weighting,
+            min_weight=float("-inf"),
             **hertz_bounds,
         ),
         lib.audio.griffin_lim: cf.Args(
@@ -65,6 +66,8 @@ def run_around_tests():
             power=1.20,
             iterations=30,
             get_weighting=lib.audio.iso226_weighting,
+            min_weight=float("-inf"),
+            momentum=0.99,
             **hertz_bounds,
         ),
     }
@@ -935,6 +938,7 @@ def test__loudness():
             # NOTE: Our `k_weighting` implementation predicts a different `offset` than -0.691 which
             # is required by the original guidelines.
             get_weighting=partial(lib.audio.k_weighting, offset=-0.691),
+            min_weight=float("-inf"),
             eps=1e-10,
             lower_hertz=0,
             upper_hertz=20000,

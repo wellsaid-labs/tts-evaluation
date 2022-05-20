@@ -8,14 +8,17 @@ import copy
 import dataclasses
 import enum
 import functools
+import html
 import io
 import itertools
 import logging
 import math
+import numbers
 import os
 import pathlib
 import platform
 import pprint
+import random
 import resource
 import sys
 import time
@@ -39,9 +42,9 @@ from torchnlp.encoders.text import SequenceBatch
 
 import lib
 import run
-from lib.distributed import is_master
+from lib.distributed import DictStoreData, is_master
 from lib.environment import load, load_most_recent_file
-from lib.utils import dataclass_as_dict, disk_cache, flatten_2d, seconds_to_str
+from lib.utils import dataclass_as_dict, flatten_2d, seconds_to_str
 from run._config import (
     Cadence,
     DatasetType,
@@ -50,8 +53,11 @@ from run._config import (
     get_dataset_label,
     get_model_label,
     get_timer_label,
+    load_spacy_nlp,
 )
-from run._utils import Dataset
+from run._models.spectrogram_model import Inputs, Mode, Preds, SpectrogramModel
+from run._utils import Dataset, get_datasets
+from run.data._loader.structures import Language, Session, Speaker
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import comet_ml
@@ -76,7 +82,6 @@ class Context(enum.Enum):
     TRAIN: typing.Final = "train"
     EVALUATE: typing.Final = "evaluate"
     EVALUATE_INFERENCE: typing.Final = "evaluate_inference"
-    EVALUATE_END_TO_END: typing.Final = "evaluate_end_to_end"
 
 
 class CometMLExperiment:
@@ -165,6 +170,10 @@ class CometMLExperiment:
         return typing.cast(typing.Optional[int], self._experiment.curr_step)
 
     @property
+    def curr_epoch(self) -> typing.Optional[int]:
+        return typing.cast(typing.Optional[int], self._experiment.curr_epoch)
+
+    @property
     def context(self) -> typing.Optional[str]:
         return typing.cast(typing.Optional[str], self._experiment.context)
 
@@ -222,6 +231,9 @@ class CometMLExperiment:
             self._first_epoch_step = self.curr_step
             self._first_epoch_time = time.time()
         self._experiment.log_current_epoch(epoch)
+        self._experiment.set_epoch(epoch)
+        if not self._experiment.alive:
+            self._experiment.curr_epoch = typing.cast(numbers.Number, epoch)
 
     def log_epoch_end(self, epoch: int):
         assert self.curr_step is not None
@@ -270,7 +282,7 @@ class CometMLExperiment:
 
     def log_html_audio(
         self,
-        speaker: run.data._loader.Speaker,
+        session: run.data._loader.Session,
         audio: typing.Dict[str, typing.Union[numpy.ndarray, torch.Tensor]] = {},
         **kwargs,
     ):
@@ -281,12 +293,13 @@ class CometMLExperiment:
             **kwargs: Additional metadata to include.
         """
         items = [f"<p><b>Step:</b> {self.curr_step}</p>"]
-        param_to_label = lambda s: s.title().replace("_", " ") if " " not in s else s
-        kwargs = dict(speaker=speaker, **kwargs)
-        items.extend([f"<p><b>{param_to_label(k)}:</b> {v}</p>" for k, v in kwargs.items()])
+        param_label = lambda s: s.title().replace("_", " ") if " " not in s else s
+        html_repr = lambda v: v if isinstance(v, str) else html.escape(repr(v))
+        kwargs = dict(session=session, **kwargs)
+        items.extend([f"<p><b>{param_label(k)}:</b> {html_repr(v)}</p>" for k, v in kwargs.items()])
         for key, data in audio.items():
-            name = param_to_label(key)
-            file_name = f"step={self.curr_step},speaker={speaker.label},"
+            name = param_label(key)
+            file_name = f"step={self.curr_step},speaker={session[0].label},"
             file_name += f"name={name},experiment={self.get_key()}.wav"
             url = self._upload_audio(file_name, data)
             items.append(f"<p><b>{name}:</b></p>")
@@ -343,7 +356,8 @@ class CometMLExperiment:
 
     def add_tags(self, tags: typing.List[str]):
         logger.info("Added tags to experiment: %s", tags)
-        self._experiment.add_tags(tags)
+        if len(tags) != 0:
+            self._experiment.add_tags(tags)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -372,22 +386,12 @@ def _get_dataset_stats(
     return stats
 
 
-@disk_cache(run._config.DATASET_CACHE_PATH)
-def _get_dataset(debug: bool):
-    """Helper function for `_run_experiment` to get the train and dev datasets."""
-    _datasets = {k: v for k, v in list(run._config.DATASETS.items())[:1]}
-    dataset = run._utils.get_dataset(**({"datasets": _datasets} if debug else {}), **cf.get())
-    return run._utils.split_dataset(dataset, **cf.get())
-
-
 def _run_experiment(
     comet: CometMLExperiment, debug: bool = False
 ) -> typing.Tuple[Dataset, Dataset]:
     """Helper function for `start_experiment` and  `resume_experiment`."""
     lib.environment.check_module_versions()
-    if debug:
-        _get_dataset.clear_cache()
-    train_dataset, dev_dataset = _get_dataset(debug)
+    train_dataset, dev_dataset = get_datasets(debug)
     comet.log_parameters(_get_dataset_stats(train_dataset, dev_dataset))
     return train_dataset, dev_dataset
 
@@ -671,7 +675,7 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
     NOTE: `DataLoader` isn't compatible with "fork" because NCCL isn't fork safe. There
     are also issues with OMP and CUDA. They have issues with fork, as well. Learn more:
     > Unfortunately Gloo (that uses Infiniband) and NCCL2 are not fork safe, and you will
-    likely experience deadlocks if you don’t change this setting.
+    likely experience deadlocks if you don't change this setting.
     https://github.com/pytorch/pytorch/pull/4766
     > After OpenMP features are utilized, a fork is only allowed if the child process does not
     > use OpenMP features, or it does so as a completely new process (such as after exec()).
@@ -696,7 +700,7 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
         self._set_r_limit()
         self.device = device
         self.stream = torch.cuda.streams.Stream() if torch.cuda.is_available() else None
-        self.loader = torch.utils.data.dataloader.DataLoader(
+        self.loader = torch.utils.data.DataLoader(
             dataset,
             pin_memory=True,
             batch_size=typing.cast(int, None),
@@ -841,19 +845,18 @@ def run_workers(
     return lib.distributed.spawn(_run_workers_helper, args=args)  # type: ignore
 
 
-class MetricsKey(typing.NamedTuple):
-    # NOTE: This is intended be "subclassed". Originally, we used `dataclasses`
-    # but found them to be slower than `typing.NamedTuple` when dealing with large amounts of
-    # metrics. `lib/test_distributed#test_dict_store__speed` was used for benchmarking.
+@dataclasses.dataclass(frozen=True)
+class MetricsKey:
 
     label: str
 
 
-MetricsKeyTypeVar = typing.TypeVar("MetricsKeyTypeVar", bound=tuple)
-MetricsStoreValues = typing.List[typing.Tuple[float]]
+MetricsKeyTypeVar = typing.TypeVar("MetricsKeyTypeVar", bound=MetricsKey)
 MetricsReduceOp = typing.Callable[[typing.List[float]], float]
-# NOTE: `MetricsSelect` selects a subset of `MetricsStoreValues`.
-MetricsSelect = typing.Callable[[MetricsStoreValues], MetricsStoreValues]
+# NOTE: `MetricsSelect` selects a subset of `DictStoreData` values.
+MetricsSelect = typing.Callable[
+    [DictStoreData[MetricsKeyTypeVar, float]], DictStoreData[MetricsKeyTypeVar, float]
+]
 
 
 class Metrics(lib.distributed.DictStore, typing.Generic[MetricsKeyTypeVar]):
@@ -868,9 +871,9 @@ class Metrics(lib.distributed.DictStore, typing.Generic[MetricsKeyTypeVar]):
     GRADIENT_NORM = partial(get_model_label, "grad_norm")
     LR = partial(get_model_label, "lr")
 
-    def __init__(self, comet: CometMLExperiment, **kwargs):
-        self.data: typing.Dict[MetricsKeyTypeVar, MetricsStoreValues]
-        super().__init__(**kwargs)
+    def __init__(self, comet: CometMLExperiment, *args, **kwargs):
+        self.data: DictStoreData[MetricsKeyTypeVar, float]
+        super().__init__(*args, **kwargs, cache_keys=True)
         self.comet = comet
 
     def update(self, data: typing.Dict[MetricsKeyTypeVar, float]):
@@ -899,7 +902,7 @@ class Metrics(lib.distributed.DictStore, typing.Generic[MetricsKeyTypeVar]):
         self, key: MetricsKeyTypeVar, select: MetricsSelect, op: MetricsReduceOp = sum
     ) -> float:
         """Reduce `self.data[key]` measurements to a float."""
-        flat = flatten_2d(select(self.data[key] if key in self.data else []))
+        flat = flatten_2d(select(self.data)[key] if key in self.data else [])
         assert all(not math.isnan(val) for val in flat), f"Encountered NaN value for metric {key}."
         return math.nan if len(flat) == 0 else op(flat)
 
@@ -986,3 +989,22 @@ class Timer:
                 label = get_timer_label(name, device=Device.CUDA, **kwargs)
                 times[label] += prev.cuda.elapsed_time(next.cuda) / 1000
         return dict(times)
+
+
+def process_select_cases(
+    model: SpectrogramModel,
+    avail_sessions: typing.Dict[Session, int],
+    cases: typing.List[typing.Tuple[Language, str]],
+    speakers: typing.Set[Speaker],
+    num_cases: int = 5,
+) -> typing.Tuple[Inputs, Preds]:
+    """Get the spectrogram model prediction for `num_cases` sampled from `cases` limited to
+    `speakers`."""
+    cases = [random.choice(cases) for _ in range(num_cases)]
+    docs = [load_spacy_nlp(l)(t) for (l, t) in cases]
+    # NOTE: `seshs` is sorted so `random.choice` produces consistent results.
+    vocab = sorted([s for s in avail_sessions.keys() if isinstance(s, tuple)])
+    seshs = [[s for s in vocab if s[0].language is l and s[0] in speakers] for l, _ in cases]
+    seshs = [random.choice(choices) for choices in seshs]
+    inputs_ = Inputs(seshs, docs)
+    return inputs_, model(inputs_, mode=Mode.INFER)

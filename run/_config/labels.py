@@ -17,6 +17,7 @@ class Cadence(enum.Enum):
 class DatasetType(enum.Enum):
     TRAIN: typing.Final = "train"
     DEV: typing.Final = "dev"
+    TEST: typing.Final = "test"
 
 
 class Device(enum.Enum):
@@ -44,6 +45,17 @@ def _label(template: str, *args, **kwargs) -> Label:
         template = formatted
 
 
+def _speaker(speaker: Speaker) -> str:
+    """Get a unique label per speaker.
+
+    TODO: For bilingual speakers, consider adding additional parameters, or annotating the
+    text instead.
+    """
+    name = f"{speaker.label}/{speaker.style.value.lower().replace(' ', '_')}"
+    name += "/post" if speaker.post else ""
+    return name
+
+
 def get_dataset_label(
     name: str,
     cadence: Cadence,
@@ -55,7 +67,7 @@ def get_dataset_label(
     kwargs = dict(cadence=cadence.value, type=type_.value, name=name, **kwargs)
     if speaker is None:
         return _label("{cadence}/dataset/{type}/{name}", **kwargs)
-    return _label("{cadence}/dataset/{type}/{speaker}/{name}", speaker=speaker.label, **kwargs)
+    return _label("{cadence}/dataset/{type}/{speaker}/{name}", speaker=_speaker(speaker), **kwargs)
 
 
 def get_model_label(
@@ -65,7 +77,7 @@ def get_model_label(
     kwargs = dict(cadence=cadence.value, name=name, **kwargs)
     if speaker is None:
         return _label("{cadence}/model/{name}", **kwargs)
-    return _label("{cadence}/model/{speaker}/{name}", speaker=speaker.label, **kwargs)
+    return _label("{cadence}/model/{speaker}/{name}", speaker=_speaker(speaker), **kwargs)
 
 
 def get_signal_model_label(

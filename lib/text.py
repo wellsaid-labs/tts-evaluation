@@ -1,5 +1,5 @@
+import enum
 import functools
-import json
 import logging
 import pathlib
 import re
@@ -7,6 +7,7 @@ import string
 import subprocess
 import typing
 import unicodedata
+import urllib.request
 from collections import defaultdict
 from typing import get_args
 
@@ -15,24 +16,16 @@ import spacy
 import spacy.tokens
 import unidecode
 from spacy.lang import en as spacy_en
+from spacy.language import Language
 from third_party import LazyLoader
 from tqdm import tqdm
 
 import lib
-from lib.utils import flatten_2d
 
 if typing.TYPE_CHECKING:  # pragma: no cover
-    import en_core_web_md
-    import en_core_web_sm
     import Levenshtein
-    import nltk
-    import normalise
 else:
-    en_core_web_sm = LazyLoader("en_core_web_sm", globals(), "en_core_web_sm")
-    en_core_web_md = LazyLoader("en_core_web_md", globals(), "en_core_web_md")
     Levenshtein = LazyLoader("Levenshtein", globals(), "Levenshtein")
-    nltk = LazyLoader("nltk", globals(), "nltk")
-    normalise = LazyLoader("normalise", globals(), "normalise")
 
 
 logger = logging.getLogger(__name__)
@@ -165,316 +158,344 @@ Partial Dictionaries:
   - https://github.com/rhdunn/cmudict/blob/master/acronym
   - https://github.com/allenai/scispacy#abbreviationdetector (Automatic)
 
+Phonetic Syllabification:
+- State-of-the-art
+  - https://aclanthology.org/N09-1035.pdf
+  - http://web.archive.org/web/20220121090130/https://webdocs.cs.ualberta.ca/~kondrak/cmudict.html
+  -
+  http://web.archive.org/web/20170120191217/https://webdocs.cs.ualberta.ca/~kondrak/cmudict/cmudict.rep
+- Rule-based Approach:
+  - https://en.wikipedia.org/wiki/Phonotactics
+  - https://github.com/myorm00000000/syllabify-1
+- Syllabificiation Dictionaries:
+  - https://catalog.ldc.upenn.edu/LDC96L14
+  - https://github.com/oliverbrehm/LinguisticTextAnnotation/tree/master/backend/celex2db/celex2
+  - https://www.merriam-webster.com/dictionary/pronunciation
+  -
+  https://en.wikipedia.org/w/index.php?search=hastemplate%3Arespell&title=Special:Search&go=Go&ns0=1
+
 Notable People:
 - github.com/nshmyrev: Contributor to cmudict, pocketsphinx, kaldi, cmusphinx, alphacep
 - github.com/rhdunn: Contributor to espeak-ng, cmudict-tools, amepd, cainteoir text-to-speech
+- en.wikipedia.org/wiki/User:Nardog: Contributor to wikipedia respellings, and wikipedia
+    pronunciations
 """
 
-# NOTE: AmEPD based their POS tags off this:
-# https://github.com/rhdunn/pos-tags/blob/master/cainteoir.ttl
-AMEPD_PART_OF_SPEECH_COARSE = typing.Literal[
-    "adj",  # adjective
-    "adv",  # adverb
-    "conj",  # conjunction
-    "det",  # determiner
-    "intj",  # interjection
-    "noun",
-    "num",  # number
-    "prep",  # preposition
-    "pron",  # pronoun
-    "verb",
-]
-
-SPACY_TO_AMEPD_POS: typing.Dict[int, typing.Optional[AMEPD_PART_OF_SPEECH_COARSE]] = {
-    spacy.symbols.ADJ: "adj",  # type: ignore # adjective -> adjective
-    spacy.symbols.ADP: None,  # type: ignore # adposition
-    spacy.symbols.ADV: "adv",  # type: ignore # adverb -> adverb
-    spacy.symbols.AUX: "verb",  # type: ignore # auxiliary -> verb
-    spacy.symbols.CONJ: "conj",  # type: ignore # conjunction -> conjunction
-    spacy.symbols.CCONJ: "conj",  # type: ignore # coordinating conjunction -> conjunction
-    spacy.symbols.DET: "det",  # type: ignore # determiner -> determiner
-    spacy.symbols.INTJ: "intj",  # type: ignore # interjection -> interjection
-    spacy.symbols.NOUN: "noun",  # type: ignore # noun -> noun
-    spacy.symbols.NUM: "num",  # type: ignore # numeral -> numeral
-    spacy.symbols.PART: None,  # type: ignore # particle
-    spacy.symbols.PRON: "noun",  # type: ignore # pronoun -> noun
-    spacy.symbols.PROPN: "noun",  # type: ignore # proper noun -> noun
-    spacy.symbols.PUNCT: None,  # type: ignore # punctuation
-    spacy.symbols.SCONJ: "conj",  # type: ignore # subordinating conjunction -> conjunction
-    spacy.symbols.SYM: None,  # type: ignore # symbol
-    spacy.symbols.VERB: "verb",  # type: ignore # verb -> verb
-    spacy.symbols.X: None,  # type: ignore # other
-    spacy.symbols.SPACE: None,  # type: ignore
-}
-
-
-# NOTE: AmEPD has only one word that uses "attr" or "pred", as October 2020.
-AMEPD_PART_OF_SPEECH_FINE = typing.Literal[
-    "attr",  # NOTE: Stands for: "attributive"
-    "pred",  # NOTE: Stands for: "predicative"
-    "past",  # NOTE: "past" tense
-]
-
 # fmt: off
-AMEPD_ARPABET = typing.Literal[
-    "N", "AX", "L", "S", "T", "R", "K", "IH0", "D", "M", "Z", "AXR", "IY0", "B", "EH1", "P", "AA1",
+ARPAbet = typing.Literal[
+    "N", "L", "S", "T", "R", "K", "IH0", "D", "M", "Z", "IY0", "B", "EH1", "P", "AA1",
     "AE1", "IH1", "G", "F", "NG", "V", "IY1", "OW0", "EY1", "HH", "SH", "OW1", "W", "AO1", "AH1",
     "AY1", "UW1", "JH", "Y", "CH", "AA0", "ER1", "EH2", "AY2", "AE2", "EY2", "AA2", "TH", "IH2",
     "EH0", "AW1", "UW0", "AE0", "AO2", "UH1", "IY2", "OW2", "AO0", "AY0", "UW2", "AH2", "EY0",
     "OY1", "AH0", "AW2", "DH", "ZH", "ER2", "UH2", "AW0", "UH0", "OY2", "OY0", "ER0",
+    # NOTE: These codes have been removed in further iterations of the dictionary...
+    "IH", "ER"
+    # NOTE: These codes were added in later iterations of the dictionary...
+    # "AXR", "AX"
 ]
 # fmt: on
 
 
-class AmEPDPartOfSpeech(typing.NamedTuple):
-    """
-    Learn more about a two-step representation of part-of-speech:
-    https://spacy.io/api/annotation#pos-tagging
-    https://hpi.de/fileadmin/user_upload/fachgebiete/plattner/teaching/NaturalLanguageProcessing/NLP2017/NLP04_PartOfSpeechTagging.pdf
-
-    Args:
-        coarse: Coarse-grained part-of-speech tags (e.g. "verb" and "adv").
-        fine: Fine-grained part-of-speech tags, like the tense.
-    """
-
-    coarse: typing.Literal[AMEPD_PART_OF_SPEECH_COARSE]
-    fine: typing.Optional[typing.List[typing.Literal[AMEPD_PART_OF_SPEECH_FINE]]]
+def _is_valid_amepd_word(word: str):
+    return len(word) > 0 and all(c.isalpha() or c == "'" for c in word)
 
 
-class AmEPDMetadata(typing.NamedTuple):
-    """
-    Args:
-        name: For nouns, this provides an additional descriptor (e.g. "family" for "REILLY" or
-            "place/palace" for "VERSAILLES").
-        lang: The BCP 47 (RFC 5646) language tag for the pronunciation, representing the origin
-            language (e.g. "fr" for "VERSAILLES").
-        usage: This tag clarifies how this pronunciations meaning
-            (e.g. "sound" or "fish" for "BASS").
-        misspelling: The pronunciation is a misspelling of this (e.g. "THOU" for "THOUGH").
-        root: The root word which this pronunciation is derived (e.g. "AXE" for "AXES").
-        group: A tag used to group related pronunciations (e.g. "Harry Potter" for "HORCRUX").
-        expanded: This pronunciation is an expansion of this word
-            (e.g. "MPG" is pronounced like "MILES PER GALLON").
-        disable_warnings: This metadata field is used by `cmudict-tools` for reviewing the
-            pronunciation dictionary.
-    """
-
-    name: typing.Optional[typing.Union[typing.Tuple[str, ...], str]] = None
-    lang: typing.Optional[typing.Union[typing.Tuple[str, ...], str]] = None
-    usage: typing.Optional[typing.Union[typing.Tuple[str, ...], str]] = None
-    misspelling: typing.Optional[typing.Union[typing.Tuple[str, ...], str]] = None
-    root: typing.Optional[typing.Union[typing.Tuple[str, ...], str]] = None
-    group: typing.Optional[typing.Union[typing.Tuple[str, ...], str]] = None
-    expanded: typing.Optional[typing.Union[typing.Tuple[str, ...], str]] = None
-    disable_warnings: typing.Optional[typing.Union[typing.Tuple[str, ...], str]] = None
-
-
-class AmEPDPronunciation(typing.NamedTuple):
-    """
-    Args:
-        pronunciation: List of ARPABET characters representing a pronunciation
-            (e.g. "R EH1 D" for "READ").
-        pos: This pronunciation has this part-of-speech
-            (e.g. "noun" or "verb" or "adj" or "adv" for "WICKED").
-        metadata: Additional structured metadata about the pronunciation.
-        note: Additional unstructured information about the pronunciation.
-    """
-
-    pronunciation: typing.Tuple[AMEPD_ARPABET, ...]
-    pos: typing.Optional[AmEPDPartOfSpeech] = None
-    metadata: AmEPDMetadata = AmEPDMetadata()
-    note: typing.Optional[str] = None
-
-
-def _assert_valid_amepd_word(word: str):
-    assert all(
-        c.isalpha() or c == "'" for c in word
-    ), "Words may only be defined with letter(s) or apostrophe(s)."
+Pronunciation = typing.Tuple[typing.Tuple[ARPAbet, ...], ...]
+CMUDictSyl = typing.Dict[str, typing.List[typing.Tuple[typing.Tuple[ARPAbet, ...], ...]]]
 
 
 @functools.lru_cache(maxsize=None)
-def _load_amepd(
-    path: pathlib.Path = lib.environment.ROOT_PATH / "third_party" / "amepd" / "cmudict",
-    comment_delimiter: str = ";;;",
-) -> typing.Dict[str, typing.List[AmEPDPronunciation]]:
-    """Load the American English Pronunciation Dictionary.
+def load_cmudict_syl(
+    path: pathlib.Path = lib.environment.ROOT_PATH / "lib" / "cmudict.0.6d.syl",
+    url: str = (
+        "http://web.archive.org/web/20170120191217if_/"
+        "http://webdocs.cs.ualberta.ca:80/~kondrak/cmudict/cmudict.rep"
+    ),
+    comment_delimiter: str = "##",
+) -> CMUDictSyl:
+    """Load the CMU Pronouncing Dictionary version 0.6 augmented with syllable boundaries
+    (syllabified CMU). This was created for: https://aclanthology.org/N09-1035.pdf.
 
     TODO: Use `pydantic` for type checking the loaded data. Learn more:
     https://pydantic-docs.helpmanual.io/
 
     NOTE: Loanwords from other languages are ignored to ensure ASCII compatibility.
     """
-    dictionary: typing.Dict[str, typing.List[AmEPDPronunciation]] = defaultdict(list)
+    if not path.exists():
+        urllib.request.urlretrieve(url, filename=path)
+
+    dictionary: CMUDictSyl = defaultdict(list)
     entries = [l.split(comment_delimiter, 1)[0].strip() for l in path.read_text().split("\n")]
-    ignored_words = []
+    invalid_chars = set()
+    too_many_syl = set()
+
     for entry in entries:
         if len(entry) == 0:
             continue
 
-        kwargs: typing.Dict[str, typing.Union[None, AmEPDPartOfSpeech, AmEPDMetadata, str]] = {}
         word, rest = tuple(entry.split("  ", 1))
 
-        # NOTE: Handle cases like: `word = "BATHED(verb@past)"``
-        if "(" in word:
+        # NOTE: Handle cases like: `word = "ZEPA(2)"``
+        if "(" in word and ")" in word:
             word, other = tuple(word.split("(", 1))
-            assert other[-1] == ")", "Closing parentheses not found."
-            other = other[:-1]
-            if not other.isnumeric():
-                coarse = other
-                fine: typing.Optional[str] = None
-                if "@" in other:
-                    coarse, fine = tuple(other.split("@", 1))
-                    assert fine in get_args(AMEPD_PART_OF_SPEECH_FINE), "Invalid part-of-speech."
-                assert coarse in get_args(AMEPD_PART_OF_SPEECH_COARSE), "Invalid part-of-speech."
-                kwargs["pos"] = AmEPDPartOfSpeech(coarse, fine)  # type: ignore
+            assert other[-1] == ")", f"Closing parentheses not found: {word}"
+            assert other[:-1].isnumeric()
 
-        if any(c not in string.ascii_uppercase and c != "'" for c in word):
-            ignored_words.append(word)
+        # NOTE: Remove apostrophe's at the end of a word because they do not
+        # change the pronunciation of the word. Learn more here:
+        # https://github.com/rhdunn/amepd/commit/5fcd23a4424807e8b1c3f8736f19b38cd7e5abaf
+        if (
+            any(c not in string.ascii_uppercase and c != "'" for c in word)
+            or word[-1] == "'"
+            or word[0] == "'"
+        ):
+            invalid_chars.add(word)
+            continue
+
+        if word in too_many_syl:
             continue
 
         pronunciation = rest
-        # NOTE: Handle cases like:
-        # `rest = "B EY1 L AXR #@@{ "name": "family" }@@ Terence Bayler"``
-        # `rest = "OW1 L # ol' = old"`
-        if "#" in rest:
-            pronunciation, rest = tuple([s.strip() for s in rest.split("#", 1)])
-            if "@@" in rest:
-                split = tuple([s for s in rest.split("@@") if len(s) > 0])
-                assert len(split) == 1 or len(split) == 2
-                if len(split) == 1:
-                    (structured,) = split
-                else:
-                    structured, unstructured = split
-                    kwargs["note"] = unstructured
-                metadata = json.loads(structured)
-                metadata = {
-                    k.replace("-", "_"): (tuple(v) if isinstance(v, list) else v)
-                    for k, v in metadata.items()
-                }
-                kwargs["metadata"] = AmEPDMetadata(**metadata)
-            else:
-                kwargs["note"] = rest
 
-        arpabet = typing.cast(typing.Tuple[AMEPD_ARPABET, ...], tuple(pronunciation.split()))
-        assert all(
-            c in get_args(AMEPD_ARPABET) for c in arpabet
-        ), "The pronunciation may only use ARPABET characters."
+        syllables: typing.List[typing.Tuple[ARPAbet, ...]] = []
+        for syllable in pronunciation.split(" - "):
+            arpabet = typing.cast(typing.Tuple[ARPAbet, ...], tuple(syllable.split()))
+            message = f"The pronunciation may only use ARPABET characters: {word}"
+            assert all(c in get_args(ARPAbet) for c in arpabet), message
+            syllables.append(arpabet)
+
+        # NOTE: Handle abbreviations like:
+        # "AOL(2)  AH0 - M ER1 - IH0 - K AH0 - AA1 N - L AY2 N"
+        if len(syllables) > len(word):
+            too_many_syl.add(word)
+            continue
 
         assert word.isupper(), "A word in this dictionary must be uppercase."
-        _assert_valid_amepd_word(word)
-        assert word[-1] != "'", (
-            "This dictionary does not include apostrophe's at the end of a word because they do not"
-            "change the pronunciation of the word. Learn more here: "
-            "https://github.com/rhdunn/amepd/commit/5fcd23a4424807e8b1c3f8736f19b38cd7e5abaf"
-        )
+        assert _is_valid_amepd_word(word)
 
-        dictionary[word].append(AmEPDPronunciation(arpabet, **kwargs))  # type: ignore
-    logger.warning("Non-ascii word(s) in AmEPD dictionary ignored: %s", ", ".join(ignored_words))
+        dictionary[word].append(tuple(syllables))
+
+    format = lambda s: ", ".join(sorted(list(s)))
+    logger.warning(f"CMUDict word(s) ignored (invalid characters): {format(invalid_chars)}")
+    logger.warning(f"CMUDict word(s) ignored (too many syllabels): {format(too_many_syl)}")
+
     return dictionary
 
 
-def get_initialism_pronunciation(word: str) -> typing.Tuple[AMEPD_ARPABET, ...]:
-    """Get the ARABET pronunciation for an initialism."""
-    _assert_valid_amepd_word(word)
-    dictionary = _load_amepd()
-    pronunciation: typing.List[AMEPD_ARPABET] = []
-    for character in word:
-        lambda_ = lambda p: p.metadata.usage == "stressed" or p.metadata.usage is None
-        character_pronunciations = list(filter(lambda_, dictionary[character.upper()]))
-        assert len(set(p.pronunciation for p in character_pronunciations)) == 1
-        pronunciation.extend(character_pronunciations[0].pronunciation)
-    return tuple(pronunciation)
-
-
-def get_pronunciation(
-    word: str,
-    pos_coarse: typing.Optional[typing.Literal[AMEPD_PART_OF_SPEECH_COARSE]] = None,
-    pos_fine: typing.Optional[typing.Literal["past", "pres"]] = None,
-) -> typing.Optional[typing.Tuple[AMEPD_ARPABET, ...]]:
-    """Get the ARABET pronunciation for `word`, unless it's ambigious or not available.
+def get_pronunciation(word: str, dictionary: CMUDictSyl) -> typing.Optional[Pronunciation]:
+    """Get the syllabified CMU pronunciation for `word`, unless it's ambigious or not available.
 
     Args:
         word: English word spelled with only English letter(s) or apostrophe(s).
-        pos_coarse: Coarse-grained part-of-speech tags (e.g. "verb" and "adv")
-        pos_fine: Fine-grained part-of-speech tags, like the part-of-speech tense.
+        ...
     """
-    _assert_valid_amepd_word(word)
-    dictionary = _load_amepd()
+    word = word.strip()
+
+    if len(word) > 1 and word.isupper():  # NOTE: Acronyms are not supported.
+        return None
+
+    if not _is_valid_amepd_word(word):
+        return None
 
     # NOTE: This dictionary does not include apostrophe's at the end of a word because they do not
     # change the pronunciation of the word. Learn more here:
     # https://github.com/rhdunn/amepd/commit/5fcd23a4424807e8b1c3f8736f19b38cd7e5abaf
     word = word[:-1] if word[-1] == "'" else word
-
     pronunciations = dictionary[word.upper()]
-
-    # NOTE: An abbreviation is not necessarily always expanded when voiced, and due to this
-    # ambigiuty we do not return a pronunciation.
-    is_maybe_an_abbreviation = any(p.metadata.expanded is not None for p in pronunciations)
-    pronunciations = [] if is_maybe_an_abbreviation else pronunciations
-
-    # NOTE: In descending order of part-of-speech specificity, look for pronunciations.
-    pos = AmEPDPartOfSpeech(pos_coarse, pos_fine)  # type: ignore
-    for rule in (
-        lambda p: pos.fine and p.pos == pos,
-        lambda p: pos.fine and p.pos and p.pos.coarse == pos.coarse and not p.pos.fine,
-        lambda p: pos.coarse and p.pos and p.pos.coarse == pos.coarse,
-    ):
-        if any(rule(p) for p in pronunciations):
-            pronunciations = list(filter(rule, pronunciations))
-            break
-
-    if len(pronunciations) > 1:
-        lib.utils.call_once(
-            logger.warning,  # type: ignore
-            "Unable to disamgiuate pronunciation of '%s'.",
-            word,
-        )
-    elif len(pronunciations) == 0:
-        lib.utils.call_once(
-            logger.warning,  # type: ignore
-            "Unable to find pronunciation of '%s'.",
-            word,
-        )
-
-    return pronunciations[0].pronunciation if len(pronunciations) == 1 else None
+    return pronunciations[0] if len(pronunciations) == 1 else None
 
 
-_is_initialism_default = lambda t: len(_load_amepd()[t.text.upper()]) == 0 and t.text.isupper()
+"""
+This `RESPELLINGS` dictionary is a consolidation of ARPAbet:IPA and IPA:Wikipedia respellings.
+
+Note the CMU-provided ARPAbet differs from "ARPAbet Wiki" (see link below) because it does not use
+any of the following: "AX", "AXR", "IX", "UX", "DX", "EL", "EM", "EN", "NX", "Q", "WH". This means
+ARPAbet defined herein is comprised of 17 vowel sounds and 24 consonant sounds. Wikipedia, on the
+other hand, uses a system comprised of 40 vowel sounds and 28 consonant sounds, including some
+sounds containing multiple phonemes, some sounds having multiple respellings AND the respelling
+'y' being used for both the long i vowel sound and the y consonant sound. Because of this and
+because the mapping of sounds is not one-to-one between the systems, some decisions had to be
+made...
+
+This is the set of 39 IPA phonemes represented in ARPAbet:
+{'ɑ', 'æ', 'ʌ', 'ɔ', 'aʊ', 'aɪ', 'ɛ', 'ɝ', 'eɪ', 'ɪ', 'i', 'oʊ', 'ɔɪ', 'ʊ', 'u', 'b', 'tʃ',
+'d', 'ð', 'f', 'ɡ', 'h', 'dʒ', 'k', 'l', 'm', 'n', 'ŋ', 'p', 'ɹ', 's', 'ʃ', 't', 'θ', 'v',
+'w', 'j', 'z', 'ʒ'}
+
+This is the set of 63 IPA phoneme and phoneme combinations represented in Wikipedia Respellings:
+{'ɪər', 'æ', 'ɜːr', 'juː', 'ʒ', 'aʊ', 'θ', 'ɪ', 'z', 'f', 'l', 'ʃ', 'ŋ', 'h', 'ɡ', 'd', 'ə',
+'u', 'ær', 'ɒ', 'r', 's', 'ɔːr', 'uː', 'ʌ', 'p', 'hw', 'n', 'v', 'ər', 'ʊər', 'ʌr', 'ɔː',
+'ʊr', 'ɪr', 'ɛər', 'ŋk', 'ɛr', 'm', 'x', 'jʊər', 't', 'eɪ', 'ð', 'iː', 'tʃ', 'aʊər', 'aɪər',
+'b', 'w', 'j', 'ɔɪ', 'i', 'ɛ', 'oʊ', 'ɔɪər', 'aɪ', 'ɑːr', 'ɑː', 'ɒr', 'k', 'dʒ', 'ʊ'}
+
+These are the 4 ARPAbet IPA phonemes missing from Wikipedia Respelling phonemes:
+{'ɹ', 'ɝ', 'ɔ', 'ɑ'}
+
+These 28 Wikipedia Respelling phonemes missing from ARPAbet phonemes:
+{'ɒ', 'ər', 'ɔː', 'juː', 'ɪr', 'ŋk', 'ə', 'r', 'ʊər', 'hw', 'aʊər', 'ɑː', 'ɛər', 'iː', 'ɔːr',
+'ɑːr', 'ʌr', 'ɒr', 'x', 'ɔɪər', 'ɜːr', 'ɪər', 'ʊr', 'uː', 'aɪər', 'jʊər', 'ɛr', 'ær'}
+
+We first worked toward ARPAbet coverage, of the 4 mentioned missing phonemes:
+  - For 'R' (as in 'rye'),     we use 'r' because 'ɹ'  is nearly equivalent to 'r'
+  - For 'ER' (as in 'bird'),   we use 'ur' because 'ɝ' is nearly equivalent to 'ɜːr'
+  - For 'AO' (as in 'bought'), we use 'aw' because 'ɔ' is nearly equivalent to 'ɔː' **
+  - For 'AA' (as in 'father'), we use 'ah' because 'ɑ' is nearly equivalent to 'ɑː'
+
+** Keep in mind, ARPAbet is inconsistent with their use of 'AO':
+  - sometimes used as a long O (oh) ['BOARD']
+  - sometimes used as a short O (ah) ['BALL'], but uses 'AA' for 'FATHER'
+  - 'WATER' uses 'AO' but 'SEAWATER' uses 'AA'
+
+Next, we considered the missing Wikipedia phonemes and phoneme combinations:
+  - 'iː'   can be approximated with 'IY':'ee'
+  - 'ə'    can be approximated with 'AH':'uh'
+  - 'uː'   can be approximated with 'UW':'oo'
+  - 'r'    can be approximated with 'R':'r'
+  - 'x'    can be approximated with 'K':'k', very rare
+  - 'hw'   can be approximated with 'W':'w', very rare
+  - 'juː'  can be approximated with 'Y UW':'yoo' as in 'beauty':'BYOO-tee'
+  - 'ɪr'   can be approximated with 'IH R':'ihr' as in 'mirror':'MIHR-ur'
+  - 'ʊər'  can be approximated with 'UH R':'uur' as in 'premature':'pree-muh-CHUUR'
+  - 'ɔɪər' can be approximated with 'OY ER':'oyur' as in 'hoyer':'HOY-ur'
+  - 'aʊər' can be approximated with 'AW ER':'owur' as in 'flower':'FLOW-ur'
+  - 'aɪər' can be approximated with 'AY ER':'y-ur' as in 'higher':'HY-ur'
+  - 'jʊər' can be approximated with 'Y UH R':'yuur' as in 'cure':'KYUUR'
+  - 'ɒ', 'ɑː' can be approximated with 'AA':'ah'
+  - 'ʊr', 'ər', 'ʌr', 'ɜːr' can be approximated with 'ER':'ur'
+
+NOTE: Wikipedia uses 'y' for both the 'iy' vowel sound and the 'y' consonant sound. We've chosen to
+do the same, as preliminary testing showed good results.
+
+Next, we considered some final phoneme combinations for user-friendliness and to correct for
+some ARPAbet errors:
+  - 'ŋk'  without a special exception would be 'NG K':'ngk', we instead use 'nk'
+  - 'ɑːr' without a special exception would be 'AA R':'ahr', we instead use 'ar'
+  - 'ɔːr' without a special exception would be 'AO R':'awr', we instead use 'or'
+      - NOTE: ARPAbet misuses 'AO':'aw' in these cases, when the sound should be 'OW':'oh', like in
+        'STORY' and 'BOARD'.
+      - NOTE: If separated by a hyphen, we use 'oh-r'.
+  - 'ɪər' without a special exception would be 'IH IY R':'iheer', we instead use 'ar'
+      - NOTE: ARPAbet uses 'IH R' in 'peer' and 'IY R' in 'peering' for the same sound.
+      - NOTE: If separated by a hyphen, the combination becomes 'ee-r'.
+  - 'æŋ' or 'æŋk' sounds are misassigned in ARPAbet and will be re-combined to 'ang' or 'ank',
+    unfortunately.
+      - NOTE: When offering pronunciations for words ending in 'ang' and 'ank', ARPAbet uses 'AE'
+        (as in 'bat') when they mean 'EY' (as in 'bank'). In fact, it is nearly impossible to make a
+        short A sound when an NG sound is followng it.
+  - 'ɛər', 'ɛr', and 'ær' without a special exception would be 'EH R':'ehr', we instead use 'err'
+
+Lastly, we considered short and long vowels:
+- For simplicity, short vowels mid-syllable should be plain: a e i o u ✓
+- For short vowels ending a syllable: [no aa], eh, ih, ah, uh ✓
+- For long vowels: ay, ee, (i?)y, oh, oo ✓
+
+Resources:
+- CMUDict has a number of inconsistencies:
+    - This documents how CMUDict is put together,
+      http://www.cs.cmu.edu/~archan/presentation/new_cmudict.pdf
+    - Many of these commits are fixes for CMUDict issues,
+      https://github.com/rhdunn/amepd/commits/master
+- ARPAbet Wiki: https://en.wikipedia.org/wiki/ARPABET
+- Wiki Respelling Key: https://en.wikipedia.org/wiki/Help:Pronunciation_respelling_key
+"""
+# fmt: off
+RESPELLINGS: typing.Dict[str, str] = {
+    'AA': 'ah', 'AE': 'a', 'AH': 'uh', 'AO': 'aw', 'AW': 'ow', 'AY': 'y', 'EH': 'eh', 'EY': 'ay',
+    'IY': 'ee', 'OW': 'oh', 'OY': 'oy', 'UH': 'uu', 'UW': 'oo', 'B': 'b', 'CH': 'ch', 'D': 'd',
+    'DH': 'dh', 'F': 'f', 'G': 'g', 'HH': 'h', 'JH': 'j', 'K': 'k', 'L': 'l', 'M': 'm', 'N': 'n',
+    'NG': 'ng', 'P': 'p', 'R': 'r', 'S': 's', 'SH': 'sh', 'T': 't', 'TH': 'th', 'V': 'v', 'W': 'w',
+    'Y': 'y', 'Z': 'z', 'ZH': 'zh', 'IH': 'ih', 'ER': 'ur'
+}
+RESPELLING_COMBOS: typing.Dict[str, str] = {
+    'ang': 'ayng', 'angk': 'aynk', 'ngk': 'nk', 'ehr': 'err', 'ahr': 'ar', 'awr': 'or', 'ihr': 'eer'
+}
+RESPELLING_COMBOS__SYLLABIC_SPLIT: typing.Dict[typing.Tuple[str, str], str] = {
+    ("aw", "r"): "oh", ("ih", "r"): "ee"
+}
+RESPELLING_ALPHABET: typing.Dict[str, str] = {
+    "A": "ay", "B": "bee", "C": "see", "D": "dee", "E": "ee", "F": "ehf", "G": "jee", "H": "aych",
+    "I": "y", "J": "jay", "K": "kay", "L": "ehl", "M": "ehm", "N": "ehn", "O": "oh", "P": "pee",
+    "Q": "kyoo", "R": "ar", "S": "ehs", "T": "tee", "U": "yoo", "V": "vee", "W": "DUH-buhl-yoo",
+    "X": "ehks", "Y": "wy", "Z": "zee",
+}
+# fmt: on
 
 
-def get_pronunciations(
-    doc: spacy.tokens.Doc,
-    is_initialism: typing.Callable[[spacy.tokens.token.Token], bool] = _is_initialism_default,
-) -> typing.Tuple[typing.Optional[typing.Tuple[AMEPD_ARPABET, ...]], ...]:
-    """Get the ARABET pronunciation for each token in `doc`.
+class ARPAbetStress(enum.Enum):
+
+    NONE: typing.Final = "0"
+    PRIMARY: typing.Final = "1"
+    SECONDARY: typing.Final = "2"
+
+
+_REMOVE_ARPABET_MARKINGS = {ord(m.value): None for m in ARPAbetStress}
+
+
+def _remove_arpabet_markings(code: ARPAbet):
+    return code.translate(_REMOVE_ARPABET_MARKINGS)
+
+
+def respell(word: str, dictionary: CMUDictSyl, delim: str = "-") -> typing.Optional[str]:
+    """Get the respelling for `word` using the syllabified CMU pronunciation, learn more about
+    respellings: https://en.wikipedia.org/wiki/Help:Pronunciation_respelling_key
 
     Args:
-        doc
-        is_initialism: This callable disambiguates a normal word from an initialism.
+        word: English word spelled with only English letter(s) or apostrophe(s).
+        ...
     """
-    return_: typing.List[typing.Optional[typing.Tuple[AMEPD_ARPABET, ...]]] = []
-    for token in doc:
-        if not all(c.isalpha() or c == "'" for c in token.text):
-            lib.utils.call_once(
-                logger.warning,  # type: ignore
-                "Words may only have letter(s) or apostrophe(s): '%s'",
-                token.text,
-            )
-            return_.append(None)
-        else:
-            pos = lib.text.SPACY_TO_AMEPD_POS[token.pos]
-            tense = spacy_en.TAG_MAP[token.tag_].get("Tense", None)
-            prounciation = lib.text.get_pronunciation(token.text, pos, tense)
-            if is_initialism(token):
-                lib.utils.call_once(
-                    logger.warning,  # type: ignore
-                    "Guessing '%s' is an initialism.",
-                    token.text,
-                )
-                prounciation = lib.text.get_initialism_pronunciation(token.text)
-            return_.append(prounciation)
-    return tuple(return_)
+    pronunciation = get_pronunciation(word, dictionary)
+    if pronunciation is None:
+        return None
+
+    syllables = []
+    # NOTE: In words where primary stress precedes secondary stress, however, the secondary stress
+    # should not be differentiated from unstressed syllables; for example, "motorcycle"
+    # (/ˈmoʊtərˌsaɪkəl/) should be respelled as MOH-tər-sy-kəl because MOH-tər-SY-kəl would
+    # incorrectly suggest the pronunciation /ˌmoʊtərˈsaɪkəl/.
+    # Learn more:
+    # https://en.wikipedia.org/wiki/Help:Pronunciation_respelling_key#Syllables_and_stress
+    has_primary = False
+    is_upper = []
+    for syl in pronunciation:
+        respellings = []
+        upper = False
+        for phoneme in syl:
+            if ARPAbetStress.PRIMARY.value in phoneme:
+                upper, has_primary = True, True
+            if ARPAbetStress.SECONDARY.value in phoneme and has_primary is False:
+                upper = True
+            respellings.append(RESPELLINGS[_remove_arpabet_markings(phoneme)])
+        syllable = "".join(respellings)
+
+        # NOTE: Handle phoneme combinations
+        for combo in RESPELLING_COMBOS.keys():
+            if combo in syllable:
+                syllable = syllable.replace(combo, RESPELLING_COMBOS[combo])
+
+        is_upper.append(upper)
+        syllables.append(syllable)
+
+    # NOTE: Handle phoneme combinations across two syllables.
+    for i, (curr, next) in enumerate(zip(syllables, syllables[1:])):
+        for (vowel, cons), replacement in RESPELLING_COMBOS__SYLLABIC_SPLIT.items():
+            if curr.endswith(vowel) and next.lower().startswith(cons):
+                syllables[i] = curr.replace(vowel, replacement)
+
+    syllables = [s.upper() if u else s for s, u in zip(syllables, is_upper)]
+    return delim.join(syllables)
+
+
+def respell_initialism(initialism: str, delim: str = "-") -> typing.Optional[str]:
+    """Get an initialism respelling, with emphasis on the final character.
+
+    NOTE: Final syllable is most commonly stressed, learn more:
+    - https://www.confidentvoice.com/blog/2-tips-for-pronouncing-abbreviations
+    -
+    https://english.stackexchange.com/questions/88040/why-are-all-acronyms-accented-on-the-last-syllable
+    """
+    syllables = [RESPELLING_ALPHABET[l] for l in list(initialism.upper())]
+    syllables[-1] = syllables[-1] if delim in syllables[-1] else syllables[-1].upper()
+    return delim.join(syllables)
 
 
 def natural_keys(text: str) -> typing.List[typing.Union[str, int]]:
@@ -638,7 +659,7 @@ def add_space_between_sentences(doc: spacy.tokens.Doc) -> str:
     for prev, curr, next in zip(doc, doc[1:], doc[2:]):
         # NOTE: Add a whitespace after `curr` if it's wedged in between two words with no
         # white space following it.
-        # NOTE: This approach avois tricky cases involving multiple sequential punctuation marks.
+        # NOTE: This approach avoids tricky cases involving multiple sequential punctuation marks.
         if (
             next.is_sent_start
             and len(curr.whitespace_) == 0
@@ -655,122 +676,85 @@ def add_space_between_sentences(doc: spacy.tokens.Doc) -> str:
 
 
 @functools.lru_cache(maxsize=None)
-def _nltk_download(dependency):
-    """Run `nltk.download` but only once per process."""
-    nltk.download(dependency)
-
-
-@functools.lru_cache(maxsize=None)
-def load_en_core_web_md(*args, **kwargs) -> spacy_en.English:
-    """Load and cache in memory a spaCy `spacy_en.English` object."""
-    logger.info("Loading spaCy model `en_core_web_md`...")
-    nlp = en_core_web_md.load(*args, **kwargs)
-    logger.info("Loaded spaCy model `en_core_web_md`.")
+def load_spacy_nlp(name, *args, **kwargs) -> Language:
+    logger.info(f"Loading spaCy model `{name}`...")
+    nlp = spacy.load(name, *args, **kwargs)
+    logger.info(f"Loaded spaCy model `{name}`.")
     return nlp
 
 
-@functools.lru_cache(maxsize=None)
-def load_en_core_web_sm(*args, **kwargs) -> spacy_en.English:
-    """Load and cache in memory a spaCy `spacy_en.English` object."""
-    logger.info("Loading spaCy model `en_core_web_sm`...")
-    nlp = en_core_web_sm.load(*args, **kwargs)
-    logger.info("Loaded spaCy model `en_core_web_sm`.")
-    return nlp
+def load_en_core_web_sm(*args, **kwargs):
+    return load_spacy_nlp("en_core_web_sm", *args, **kwargs)
 
 
 @functools.lru_cache(maxsize=None)
-def load_en_english(*args, **kwargs) -> spacy_en.English:
-    """Load and cache in memory a spaCy `spacy_en.English` object."""
+def load_en_english(*args, **kwargs) -> Language:
+    """Load and cache in memory a spaCy `Language` object."""
     return spacy_en.English(*args, **kwargs)
 
 
-def normalize_non_standard_words(text: str, variety: str = "AmE", **kwargs) -> str:
-    """Noramlize non-standard words (NSWs) into standard words.
+"""TODO: Noramlize non-standard words (NSWs) into standard words.
 
-    References:
-      - Text Normalization Researcher, Richard Sproat:
-        https://scholar.google.com/citations?hl=en&user=LNDGglkAAAAJ&view_op=list_works&sortby=pubdate
-        https://rws.xoba.com/
-      - Timeline:
-        - Sproat & Jaitly Dataset (2020):
-          https://www.kaggle.com/richardwilliamsproat/text-normalization-for-english-russian-and-polish
-        - Zhang & Sproat Paper (2019):
-          https://www.mitpressjournals.org/doi/full/10.1162/COLI_a_00349
-        - Wu & Gorman & Sproat Code (2016):
-            https://github.com/google/TextNormalizationCoveringGrammars
-        - Ford & Flint `normalise` Paper (2017): https://www.aclweb.org/anthology/W17-4414.pdf
-        - Ford & Flint `normalise` Code (2017): https://github.com/EFord36/normalise
-        - Sproat & Jaitly Dataset (2017): https://github.com/rwsproat/text-normalization-data
-        - Siri (2017): https://machinelearning.apple.com/research/inverse-text-normal
-        - Sproat Kaggle Challenge (2017):
-          https://www.kaggle.com/c/text-normalization-challenge-english-language/overview
-        - Sproat Kaggle Dataset (2017): https://www.kaggle.com/google-nlu/text-normalization
-        - Sproat TTS Tutorial (2016): https://github.com/rwsproat/tts-tutorial
-        - Sproat & Jaitly Paper (2016): https://arxiv.org/pdf/1611.00068.pdf
-        - Wu & Gorman & Sproat Paper (2016): https://arxiv.org/abs/1609.06649
-        - Gorman & Sproat Paper (2016): https://transacl.org/ojs/index.php/tacl/article/view/897/213
-        - Ebden and Sproat (2014) Code:
-          https://github.com/google/sparrowhawk
-          https://opensource.google/projects/sparrowhawk
-          https://www.kaggle.com/c/text-normalization-challenge-english-language/discussion/39061#219939
-        - Sproat Course (2011):
-          https://web.archive.org/web/20181029032542/http://www.csee.ogi.edu/~sproatr/Courses/TextNorm/
-      - Other:
-        - MaryTTS text normalization:
-          https://github.com/marytts/marytts/blob/master/marytts-languages/marytts-lang-en/src/main/java/marytts/language/en/Preprocess.java
-        - ESPnet text normalization:
-          https://github.com/espnet/espnet_tts_frontend/tree/master/tacotron_cleaner
-        - Quora question on text normalization:
-          https://www.quora.com/Is-it-possible-to-use-festival-toolkit-for-text-normalization
-        - spaCy entity classification:
-          https://explosion.ai/demos/displacy-ent
-          https://prodi.gy/docs/named-entity-recognition#manual-model
-          https://spacy.io/usage/examples#training
-        - Dockerized installation of festival by Google:
-          https://github.com/google/voice-builder
+References:
+  - Text Normalization Researcher, Richard Sproat:
+    https://scholar.google.com/citations?hl=en&user=LNDGglkAAAAJ&view_op=list_works&sortby=pubdate
+    https://rws.xoba.com/
+  - Timeline:
+    - Sproat & Jaitly Dataset (2020):
+      https://www.kaggle.com/richardwilliamsproat/text-normalization-for-english-russian-and-polish
+    - Zhang & Sproat Paper (2019):
+      https://www.mitpressjournals.org/doi/full/10.1162/COLI_a_00349
+    - Wu & Gorman & Sproat Code (2016):
+        https://github.com/google/TextNormalizationCoveringGrammars
+    - Ford & Flint `normalise` Paper (2017): https://www.aclweb.org/anthology/W17-4414.pdf
+    - Ford & Flint `normalise` Code (2017): https://github.com/EFord36/normalise
+    - Sproat & Jaitly Dataset (2017): https://github.com/rwsproat/text-normalization-data
+    - Siri (2017): https://machinelearning.apple.com/research/inverse-text-normal
+    - Sproat Kaggle Challenge (2017):
+      https://www.kaggle.com/c/text-normalization-challenge-english-language/overview
+    - Sproat Kaggle Dataset (2017): https://www.kaggle.com/google-nlu/text-normalization
+    - Sproat TTS Tutorial (2016): https://github.com/rwsproat/tts-tutorial
+    - Sproat & Jaitly Paper (2016): https://arxiv.org/pdf/1611.00068.pdf
+    - Wu & Gorman & Sproat Paper (2016): https://arxiv.org/abs/1609.06649
+    - Gorman & Sproat Paper (2016): https://transacl.org/ojs/index.php/tacl/article/view/897/213
+    - Ebden and Sproat (2014) Code:
+      https://github.com/google/sparrowhawk
+      https://opensource.google/projects/sparrowhawk
+      https://www.kaggle.com/c/text-normalization-challenge-english-language/discussion/39061#219939
+    - Sproat Course (2011):
+      https://web.archive.org/web/20181029032542/http://www.csee.ogi.edu/~sproatr/Courses/TextNorm/
+  - Other:
+    - MaryTTS text normalization:
+      https://github.com/marytts/marytts/blob/master/marytts-languages/marytts-lang-en/src/main/java/marytts/language/en/Preprocess.java
+    - ESPnet text normalization:
+      https://github.com/espnet/espnet_tts_frontend/tree/master/tacotron_cleaner
+    - Quora question on text normalization:
+      https://www.quora.com/Is-it-possible-to-use-festival-toolkit-for-text-normalization
+    - spaCy entity classification:
+      https://explosion.ai/demos/displacy-ent
+      https://prodi.gy/docs/named-entity-recognition#manual-model
+      https://spacy.io/usage/examples#training
+    - Dockerized installation of festival by Google:
+      https://github.com/google/voice-builder
 
-    TODO:
-       - Following the state-of-the-art approach presented here:
-         https://www.kaggle.com/c/text-normalization-challenge-english-language/discussion/43963
-         Use spaCy to classify entities, and then use a formatter to clean up the strings. The
-         dataset was open-sourced here:
-         https://www.kaggle.com/richardwilliamsproat/text-normalization-for-english-russian-and-polish
-         A formatter can be found here:
-         https://www.kaggle.com/neerjad/class-wise-regex-functions-l-b-0-995
-         We may need to train spaCy to detect new entities, if the ones already supported are not
-         enough via prodi.gy:
-         https://prodi.gy/docs/named-entity-recognition#manual-model
-       - Adopt Google's commercial "sparrowhawk" or the latest grammar
-         "TextNormalizationCoveringGrammars" for text normalization.
-       - Look into NVIDIA's recent text normalization and denormalization:
-         https://arxiv.org/abs/2104.05055
-         https://docs.nvidia.com/deeplearning/nemo/user-guide/docs/en/stable/tools/text_normalization.html
-         https://github.com/NVIDIA/NeMo/pull/1797/files
-    """
-    for dependency in (
-        "brown",
-        "names",
-        "wordnet",
-        "averaged_perceptron_tagger",
-        "universal_tagset",
-    ):
-        _nltk_download(dependency)
-
-    tokens = [[t.text, t.whitespace_] for t in load_en_english()(text)]
-    merged: typing.List[typing.List[str]] = [tokens[0]]
-    # TODO: Use https://spacy.io/usage/linguistic-features#retokenization
-    for token, whitespace in tokens[1:]:
-        # NOTE: For example, spaCy tokenizes "$29.95" as two tokens, and this undos that.
-        if (merged[-1][0] == "$" or token == "$") and merged[-1][1] == "":
-            merged[-1][0] += token
-            merged[-1][1] = whitespace
-        else:
-            merged.append([token, whitespace])
-
-    assert "".join(flatten_2d(merged)) == text
-    arg = [t[0] for t in merged]
-    normalized = typing.cast(typing.List[str], normalise.normalise(arg, variety=variety, **kwargs))
-    return "".join(flatten_2d([[n.strip(), m[1]] for n, m in zip(normalized, merged)]))
+TODO:
+  - Following the state-of-the-art approach presented here:
+    https://www.kaggle.com/c/text-normalization-challenge-english-language/discussion/43963
+    Use spaCy to classify entities, and then use a formatter to clean up the strings. The
+    dataset was open-sourced here:
+    https://www.kaggle.com/richardwilliamsproat/text-normalization-for-english-russian-and-polish
+    A formatter can be found here:
+    https://www.kaggle.com/neerjad/class-wise-regex-functions-l-b-0-995
+    We may need to train spaCy to detect new entities, if the ones already supported are not
+    enough via prodi.gy:
+    https://prodi.gy/docs/named-entity-recognition#manual-model
+  - Adopt Google's commercial "sparrowhawk" or the latest grammar
+    "TextNormalizationCoveringGrammars" for text normalization.
+  - Look into NVIDIA's recent text normalization and denormalization:
+    https://arxiv.org/abs/2104.05055
+    https://docs.nvidia.com/deeplearning/nemo/user-guide/docs/en/stable/tools/text_normalization.html
+    https://github.com/NVIDIA/NeMo/pull/1797/files
+"""
 
 
 def format_alignment(

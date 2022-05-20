@@ -1,6 +1,7 @@
 import functools
 
 import config as cf
+import librosa
 import pytest
 import torch
 
@@ -15,6 +16,29 @@ from tests._utils import TEST_DATA_PATH, assert_almost_equal
 def run_around_tests():
     """Set a basic configuration."""
     run._config.configure()
+    fft_length = 4096
+    sample_rate = 24000
+    num_mel_bins = 128
+    assert fft_length % 4 == 0
+    frame_hop = fft_length // 4
+    window = librosa.filters.get_window("hann", fft_length)
+    config = {
+        lib.audio.power_spectrogram_to_framed_rms: cf.Args(window=torch.tensor(window).float()),
+        lib.audio.signal_to_framed_rms: cf.Args(frame_length=fft_length, hop_length=frame_hop),
+        lib.audio.pad_remainder: cf.Args(multiple=frame_hop),
+        lib.audio.write_audio: cf.Args(sample_rate=sample_rate),
+        lib.audio.SignalTodBMelSpectrogram: cf.Args(
+            sample_rate=sample_rate,
+            frame_hop=frame_hop,
+            window=torch.tensor(window).float(),
+            fft_length=fft_length,
+            num_mel_bins=num_mel_bins,
+        ),
+        lib.audio.griffin_lim: cf.Args(
+            frame_hop=frame_hop, fft_length=fft_length, window=window, sample_rate=sample_rate
+        ),
+    }
+    cf.add(config, overwrite=True)
     yield
     cf.purge()
 
@@ -200,7 +224,7 @@ def test_get_power_rms_level_sum():
     rms = _metrics.get_power_rms_level_sum(
         db_spectrogram, window=window, window_correction_factor=None
     )
-    assert_almost_equal(rms / db_spectrogram.shape[0], torch.Tensor([1.0000001, 0.500006]))
+    assert_almost_equal(rms / db_spectrogram.shape[0], torch.tensor([1.0000001, 0.500006]))
 
 
 def test_get_power_rms_level_sum__precise():
@@ -225,7 +249,7 @@ def test_get_power_rms_level_sum__precise():
     rms = _metrics.get_power_rms_level_sum(
         db_spectrogram, window=window, window_correction_factor=None
     )
-    assert_almost_equal(rms / (sample_rate / frame_hop), torch.Tensor([1.0, 0.49999998418]))
+    assert_almost_equal(rms / (sample_rate / frame_hop), torch.tensor([1.0, 0.49999998418]))
 
 
 def test_get_average_db_rms_level():

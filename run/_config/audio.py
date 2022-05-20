@@ -45,7 +45,7 @@ assert FRAME_SIZE % 4 == 0
 FRAME_HOP = FRAME_SIZE // 4
 
 
-def configure(sample_rate=24000):
+def configure(sample_rate: int = 24000, overwrite: bool = False):
     """Configure modules that process audio.
 
     SOURCE (Tacotron 1): We use 24 kHz sampling rate for all experiments.
@@ -62,8 +62,8 @@ def configure(sample_rate=24000):
         bit_rate="768k",
         precision="25-bit",
     )
-    non_speech_segment_frame_length = 50
-    max_frames_per_token = 0.18 / (FRAME_HOP / format_.sample_rate)
+    non_speech_segment_frame_length = 100
+    max_frames_per_token = 0.2 / (FRAME_HOP / format_.sample_rate)
     # NOTE: Today pauses longer than one second are not used for emphasis or meaning; however,
     # Otis does tend to use long pauses for emphasis; however, he rarely pauses for longer than
     # one second.
@@ -82,7 +82,7 @@ def configure(sample_rate=24000):
             lib.audio.SignalTodBMelSpectrogram: Args(window=window),
             lib.audio.griffin_lim: Args(window=window.numpy()),
         }
-        cf.add(config)
+        cf.add(config, overwrite)
     except ImportError:
         logger.info("Ignoring optional `scipy` and `librosa` configurations.")
 
@@ -94,7 +94,7 @@ def configure(sample_rate=24000):
         config = {
             librosa.effects.trim: Args(frame_length=FRAME_SIZE, hop_length=FRAME_HOP),
         }
-        cf.add(config)
+        cf.add(config, overwrite)
     except ImportError:
         logger.info("Ignoring optional `librosa` configurations.")
 
@@ -111,7 +111,7 @@ def configure(sample_rate=24000):
         run._tts.text_to_speech_ffmpeg_generator: args,
         lib.audio.get_pyloudnorm_meter: args,
     }
-    cf.add(config)
+    cf.add(config, overwrite)
 
     config = {
         lib.visualize.plot_spectrogram: Args(frame_hop=FRAME_HOP),
@@ -134,6 +134,9 @@ def configure(sample_rate=24000):
             # https://www.iso.org/standard/34222.html. It does have some issues though:
             # http://www.lindos.co.uk/cgi-bin/FlexiData.cgi?SOURCE=Articles&VIEW=full&id=2
             get_weighting=lib.audio.iso226_weighting,
+            # NOTE: Ensure that the weighting isn't below -30 decibels; otherwise, the value may go
+            # to zero which and it'll go to infinity when applying the operations in inverse.
+            min_weight=-30,
             **hertz_bounds,
         ),
         lib.audio.griffin_lim: Args(
@@ -146,8 +149,14 @@ def configure(sample_rate=24000):
             # SOURCE (Tacotron 1):
             # We observed that Griffin-Lim converges after 50 iterations (in fact, about 30
             # iterations seems to be enough), which is reasonably fast.
-            iterations=30,
+            iterations=60,
             get_weighting=lib.audio.iso226_weighting,
+            min_weight=-30,
+            # NOTE: Based on a brief analysis in April 2022, we found that "Fast Griffin-lim" clips
+            # with momentum, where more difficult to understand. By setting `momentum` to zero,
+            # we are recovering the original Griffin-lim algorithm which we believe is more
+            # interpretable in a text-to-speech context.
+            momentum=0.0,
             **hertz_bounds,
         ),
         # NOTE: The `DeMan` loudness implementation of ITU-R BS.1770 is sample rate independent.
@@ -167,7 +176,9 @@ def configure(sample_rate=24000):
             max_loudness=-50,
         ),
         run._models.signal_model.wrapper.SignalModelWrapper: Args(
-            ratios=[2] * int(math.log2(FRAME_HOP)),
+            ratios=[2] * math.ceil(math.log2(FRAME_HOP)),
+            pred_sample_rate=2 ** math.ceil(math.log2(FRAME_HOP)),
+            out_sample_rate=FRAME_HOP,
         ),
         run.data._loader.utils.normalize_audio_suffix: Args(suffix=suffix),
         run.data._loader.utils.normalize_audio: Args(
@@ -182,7 +193,7 @@ def configure(sample_rate=24000):
         run.data._loader.utils.get_non_speech_segments_and_cache: Args(
             low_cut=300, frame_length=non_speech_segment_frame_length, hop_length=5, threshold=-60
         ),
-        run.data._loader.data_structures._make_speech_segments_helper: Args(
+        run.data._loader.structures._make_speech_segments_helper: Args(
             pad=lib.audio.milli_to_sec(non_speech_segment_frame_length / 2)
         ),
         run.data._loader.utils.maybe_normalize_audio_and_cache: Args(
@@ -204,10 +215,8 @@ def configure(sample_rate=24000):
             # over 4 - 8 frames in January 2020, on Comet.
             # NOTE: This was rounded up to 10 after the spectrograms length was increased by 17%
             # on average.
-            # TODO: In July 2020, the spectrogram size was decreased by 2x, we should test
-            # decreasing `length` by 2x, also.
             length=10,
-            standard_deviation=2,
+            standard_deviation=0.75,
         ),
     }
-    cf.add(config)
+    cf.add(config, overwrite)

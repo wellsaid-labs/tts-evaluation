@@ -27,7 +27,7 @@ from lib.samplers import BucketBatchSampler
 from lib.utils import Tuple, flatten_2d, lengths_to_mask
 from run._models.spectrogram_model import preprocess_spans
 from run._models.spectrogram_model.model import Inputs
-from run.data._loader import Alignment, Span
+from run.data._loader.structures import Alignment, Span, Speaker
 from run.train import _utils
 
 if typing.TYPE_CHECKING:  # pragma: no cover
@@ -296,14 +296,16 @@ class Batch(_utils.Batch):
     def apply(self, call: typing.Callable[[torch.Tensor], torch.Tensor]) -> "Batch":
         batch: Batch = super().apply(call)
         assert isinstance(batch.inputs.token_embeddings, torch.Tensor)
-        inputs = batch.inputs._replace(token_embeddings=call(batch.inputs.token_embeddings))
-        return dataclasses.replace(batch, inputs=inputs)
+        object.__setattr__(batch.inputs, "token_embeddings", call(batch.inputs.token_embeddings))
+        object.__setattr__(batch.inputs, "num_tokens", call(batch.inputs.num_tokens))
+        object.__setattr__(batch.inputs, "tokens_mask", call(batch.inputs.tokens_mask))
+        return batch
 
     def __len__(self):
         return len(self.spans)
 
 
-def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
+def make_batch(spans: typing.List[Span], max_workers: int = 6, respell_prob: float = 0.0) -> Batch:
     """
     NOTE: spaCy splits some (not all) words on apostrophes while AmEPD does not; therefore,
     those words will not be found in AmEPD. The options are:
@@ -348,8 +350,8 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
         audio=signals,
         spectrogram=spectrogram,
         spectrogram_mask=spectrogram_mask,
-        stop_token=_make_stop_token(spectrogram, **cf.get()),
-        inputs=preprocess_spans(spans),
+        stop_token=cf.partial(_make_stop_token)(spectrogram),
+        inputs=preprocess_spans(spans, respell_prob=respell_prob),
     )
 
 
@@ -392,4 +394,16 @@ class DataProcessor(typing.Mapping[int, Batch]):
         return sys.maxsize
 
     def __getitem__(self, index) -> Batch:
-        return make_batch(self.index_to_spans[index])
+        return cf.partial(make_batch)(self.index_to_spans[index])
+
+
+def train_get_weight(speaker: Speaker, dataset_size: float):
+    # TODO: The dictionary datasets are small, making up, roughly 1/17th of the training dataset;
+    # however, they have many new words. In attempt to get the model to better learn pronunciation,
+    # give 5x more weight to that dataset, so, it'll come up 5x more times during training.
+    return dataset_size
+
+
+def dev_get_weight(speaker: Speaker, dataset_size: float):
+    # NOTE: For the dev set, we evaluate each speaker in production, equally.
+    return 1.0
