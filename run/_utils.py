@@ -17,7 +17,8 @@ from torchnlp.random import fork_rng
 from tqdm import tqdm
 
 import lib
-from lib.utils import split
+from lib.utils import disk_cache, split
+from run import _config
 from run.data import _loader
 
 if typing.TYPE_CHECKING:  # pragma: no cover
@@ -115,7 +116,7 @@ def _find_duplicate_passages(
     return duplicates, rest
 
 
-def _passages_len(passages: typing.List[_loader.Passage]):
+def _passages_len(passages: typing.List[_loader.Passage]) -> float:
     """Get the cumulative length of all `passages`."""
     return sum(p.segmented_audio_length() for p in passages)
 
@@ -123,7 +124,9 @@ def _passages_len(passages: typing.List[_loader.Passage]):
 def _len_of_dups(
     item: typing.Tuple[int, _loader.Passage], passages: typing.List[_loader.Passage], min_sim: float
 ) -> float:
-    """Get the length of the duplicate passages to `item`."""
+    """Get the cumulative length of passage and it's duplicates."""
+    # TODO: Document this function better, for example, how come this only find duplicates after
+    # the first item.
     assert passages[item[0]] is item[1]
     dups = _find_duplicate_passages((item[1].script,), passages[item[0] :], min_sim)[0]
     return _passages_len(dups)
@@ -135,6 +138,12 @@ TrainDev = typing.Tuple[Dataset, Dataset]
 def _split_dataset(dataset: Dataset, dev_len: int, min_sim: float) -> TrainDev:
     """Split `dataset` into `train` and `dev` such that they contain no duplicates.
 
+    TODO: Refactor this function to be more generic, and easier to test, without needing to load
+    an entire dataset.
+    NOTE: If there is only one dataset, this function makes no attempt to deduplicate inside
+    a single dataset. This assumes there is no meaningful duplicate content within the same dataset.
+    TODO: In dataset preprocessing, ensure there are no duplicates within a single dataset.
+
     Args
         ...
         dev_len: The approximate number of seconds to include for each speaker split.
@@ -143,14 +152,24 @@ def _split_dataset(dataset: Dataset, dev_len: int, min_sim: float) -> TrainDev:
     dev: Dataset = collections.defaultdict(list)
     train: Dataset = collections.defaultdict(list)
     dev_scripts: typing.Set[str] = set()
+    if len(dataset) == 1:
+        ((speaker, passages),) = tuple(dataset.items())
+        logger.info(f"Splitting `{speaker}` without deduplication.")
+        random.shuffle(passages)
+        splits = list(split(passages, [dev_len, math.inf], lambda p: _passages_len([p])))
+        dev[speaker].extend(splits[0])
+        train[speaker].extend(splits[1])
+        return dict(train), dict(dev)
+
+    logger.info("Creating initial split...")
     items = sorted(dataset.items(), key=lambda i: i[0].label)
     random.shuffle(items)
-    logger.info("Creating initial split...")
     for speaker, passages in tqdm(items):
         duplicates, rest = _find_duplicate_passages(dev_scripts, passages, min_sim)
         random.shuffle(rest)
         split_lens = [max(dev_len - _passages_len(duplicates), 0), math.inf]
         val = partial(_len_of_dups, passages=rest, min_sim=min_sim)
+        # NOTE: `split` ensures that the length doesn't exceed `dev_len`.
         splits = [[p for _, p in s] for s in split(list(enumerate(rest)), split_lens, val)]
         dev[speaker].extend(duplicates + splits[0])
         train[speaker].extend(splits[1])
@@ -235,6 +254,29 @@ def split_dataset(
 
     _is_duplicate.cache_clear()
     return train, dev
+
+
+@disk_cache(_config.DATASET_CACHE_PATH)
+def _get_datasets():
+    """Get a `train` and `dev` dataset."""
+    dataset = cf.partial(get_dataset)()
+    return cf.partial(split_dataset)(dataset)
+
+
+def _get_debug_datasets(speakers: typing.Set[_loader.Speaker]):
+    """Get small `train` and `dev` datasets for debugging."""
+    speaker = next(iter(speakers), None)
+    assert speaker is not None
+    kwargs = {"datasets": {speaker: _config.DATASETS[speaker]}}
+    dataset = cf.call(get_dataset, **kwargs, _overwrite=True)
+    return cf.partial(split_dataset)(dataset)
+
+
+def get_datasets(debug: bool):
+    """Get a `train` and `dev` dataset."""
+    if debug:
+        return cf.partial(_get_debug_datasets)()
+    return _get_datasets()
 
 
 SpanGeneratorGetWeight = typing.Callable[[_loader.Speaker, float], float]

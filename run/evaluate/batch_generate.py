@@ -116,14 +116,14 @@ def main():
         with st.spinner(f"Generating clips with `{checkpoints_.name}` checkpoints..."):
             in_outs = batch_span_to_speech(package, spans)
 
-        for span, (params, pred, audio) in zip(spans, in_outs):
+        for span, (_, pred, audio) in zip(spans, in_outs):
             image_web_path = make_temp_web_dir() / "alignments.png"
             lib.visualize.plot_alignments(pred.alignments).savefig(image_web_path)
             num_frames = pred.frames.shape[0]
             num_pause_frames = get_num_pause_frames(pred.frames.unsqueeze(1), None, **cf.get())
             result = {
                 "Checkpoints": checkpoints_.name,
-                "Frames Per Token": num_frames / params.tokens.shape[0],
+                "Frames Per Token": num_frames / pred.num_tokens[0].item(),
                 "Num Pause Frames": num_pause_frames[0],
                 "Alignment Norm": (get_alignment_norm(pred)[0] / num_frames).item(),
                 "Alignment STD": (get_alignment_std(pred)[0] / num_frames).item(),

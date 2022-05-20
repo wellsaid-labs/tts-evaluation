@@ -62,7 +62,7 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
         bit_rate="768k",
         precision="25-bit",
     )
-    non_speech_segment_frame_length = 50
+    non_speech_segment_frame_length = 100
     max_frames_per_token = 0.2 / (FRAME_HOP / format_.sample_rate)
     # NOTE: Today pauses longer than one second are not used for emphasis or meaning; however,
     # Otis does tend to use long pauses for emphasis; however, he rarely pauses for longer than
@@ -176,7 +176,9 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
             max_loudness=-50,
         ),
         run._models.signal_model.wrapper.SignalModelWrapper: Args(
-            ratios=[2] * int(math.log2(FRAME_HOP)),
+            ratios=[2] * math.ceil(math.log2(FRAME_HOP)),
+            pred_sample_rate=2 ** math.ceil(math.log2(FRAME_HOP)),
+            out_sample_rate=FRAME_HOP,
         ),
         run.data._loader.utils.normalize_audio_suffix: Args(suffix=suffix),
         run.data._loader.utils.normalize_audio: Args(
@@ -213,10 +215,8 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
             # over 4 - 8 frames in January 2020, on Comet.
             # NOTE: This was rounded up to 10 after the spectrograms length was increased by 17%
             # on average.
-            # TODO: In July 2020, the spectrogram size was decreased by 2x, we should test
-            # decreasing `length` by 2x, also.
             length=10,
-            standard_deviation=2,
+            standard_deviation=0.75,
         ),
     }
     cf.add(config, overwrite)

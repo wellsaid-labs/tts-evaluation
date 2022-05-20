@@ -10,4 +10,4 @@ import sys
 import lib
 
 if __name__ == "__main__":  # pragma: no cover
-    print(lib.text.grapheme_to_phoneme(sys.argv[1], separator="|"))
+    print(lib.text.grapheme_to_phoneme([sys.argv[1]], separator="|")[0])
