@@ -5,6 +5,7 @@ import pytest
 import torch
 
 import lib
+from lib.optimizers import exponential_decay_lr_multiplier_schedule
 from tests._utils import assert_almost_equal
 
 
@@ -117,3 +118,19 @@ def test_warmup_lr_multiplier_schedule():
     assert lib.optimizers.warmup_lr_multiplier_schedule(10, 10) == 1.0
     assert lib.optimizers.warmup_lr_multiplier_schedule(11, 10) == 1.0
     assert lib.optimizers.warmup_lr_multiplier_schedule(20, 10) == 1.0
+
+
+def test_exponential_decay_lr_multiplier_schedule():
+    """Test `exponential_decay_lr_multiplier_schedule` in a basic scenario."""
+    results = [exponential_decay_lr_multiplier_schedule(i, 2, 4, 8, 0.1) for i in range(10)]
+    expected = [0.0, 0.5, 1.0, 1.0, 1.0]
+    expected += [0.5623413251903491, 0.31622776601683794, 0.17782794100389226, 0.1, 0.1]
+    assert results == expected
+
+
+def test_exponential_decay_lr_multiplier_schedule__warmup():
+    """Test `exponential_decay_lr_multiplier_schedule` when `warmup` equals `start_decay`."""
+    results = [exponential_decay_lr_multiplier_schedule(i, 4, 4, 8, 0.1) for i in range(10)]
+    expected = [0.0, 0.25, 0.5, 0.75, 1.0]
+    expected += [0.5623413251903491, 0.31622776601683794, 0.17782794100389226, 0.1, 0.1]
+    assert results == expected

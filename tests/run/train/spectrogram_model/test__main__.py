@@ -4,12 +4,12 @@ from unittest import mock
 import config as cf
 import pytest
 
-from run._config import Cadence, DatasetType
+from run._config import Cadence, DatasetType, make_spectrogram_model_train_config
 from run._models.spectrogram_model import SpectrogramModel
+from run.data._loader.english.lj_speech import LINDA_JOHNSON
 from run.data._loader.english.m_ailabs import JUDY_BIEBER
 from run.data._loader.structures import Language
 from run.train._utils import Context, Timer, set_context
-from run.train.spectrogram_model.__main__ import _make_configuration
 from run.train.spectrogram_model._metrics import Metrics, MetricsKey
 from run.train.spectrogram_model._worker import (
     _get_data_loaders,
@@ -32,7 +32,7 @@ def run_around_tests():
 
 def test_integration():
     train_dataset, dev_dataset, comet, device = setup_experiment()
-    cf.add(_make_configuration(train_dataset, dev_dataset, True))
+    cf.add(make_spectrogram_model_train_config(train_dataset, dev_dataset, True))
     state = make_spec_worker_state(comet, device)
 
     assert state.model.module == state.model  # Ensure the mock worked
@@ -126,8 +126,9 @@ def test_integration():
             state,
             DatasetType.TEST,
             Cadence.MULTI_STEP,
-            [(Language.ENGLISH, "Hi There")],
-            {JUDY_BIEBER},
+            cases=[(Language.ENGLISH, "Hi There")],
+            speakers={JUDY_BIEBER, LINDA_JOHNSON},
+            num_cases=1,
         )
 
     # Test loading and saving a checkpoint

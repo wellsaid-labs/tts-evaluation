@@ -57,7 +57,7 @@ class Decoder(torch.nn.Module):
             self.encoder_out_size,
         ]
         self.init_state = torch.nn.Sequential(
-            torch.nn.Linear(input_size, input_size),
+            torch.nn.Linear(input_size + encoder_out_size, input_size),
             torch.nn.ReLU(),
             torch.nn.Linear(input_size, sum(self.init_state_segments)),
         )
@@ -68,7 +68,7 @@ class Decoder(torch.nn.Module):
         self.linear_out = torch.nn.Linear(lstm_hidden_size + input_size, num_frame_channels)
         self.linear_stop_token = torch.nn.Sequential(
             torch.nn.Dropout(stop_net_dropout),
-            torch.nn.Linear(lstm_hidden_size, 1),
+            torch.nn.Linear(lstm_hidden_size + encoder_out_size + seq_meta_embed_size, 1),
         )
 
     def _pad_encoded(
@@ -117,8 +117,10 @@ class Decoder(torch.nn.Module):
         #  [batch_size, 1],
         #  [batch_size, encoder_out_size],
         #  [batch_size, encoder_out_size])
-        first_token = torch.cat([encoded.seq_metadata, encoded.tokens[0]], dim=1)
-        state = self.init_state(first_token).split(self.init_state_segments, dim=-1)
+        arange = torch.arange(0, batch_size, device=device)
+        last_token = encoded.tokens[encoded.num_tokens - 1, arange]
+        init_features = torch.cat([encoded.seq_metadata, encoded.tokens[0], last_token], dim=1)
+        state = self.init_state(init_features).split(self.init_state_segments, dim=-1)
         init_frame, init_cum_alignment, init_attention_context, beg_pad_token, end_pad_token = state
 
         padded_encoded = self._pad_encoded(encoded, beg_pad_token, end_pad_token)
@@ -266,13 +268,14 @@ class Decoder(torch.nn.Module):
         # [num_frames, batch_size, lstm_hidden_size + encoder_out_size + seq_meta_embed_size]
         frames = torch.cat([frames, attention_contexts, seq_metadata], dim=2)
 
+        # [num_frames, batch_size, lstm_hidden_size + encoder_out_size + seq_meta_embed_size] →
+        # [num_frames, batch_size]
+        stop_token = self.linear_stop_token(frames).squeeze(2)
+
         # frames [seq_len (num_frames), batch (batch_size),
         # input_size (lstm_hidden_size + encoder_out_size + seq_meta_embed_size)] →
         # [num_frames, batch_size, lstm_hidden_size]
         frames, lstm_two_hidden_state = self.lstm_layer_two(frames, lstm_two_hidden_state)
-
-        # [num_frames, batch_size, lstm_hidden_size] → [num_frames, batch_size]
-        stop_token = self.linear_stop_token(frames).squeeze(2)
 
         # [num_frames, batch_size,
         #  lstm_hidden_size (concat) encoder_out_size (concat) seq_meta_embed_size] →
