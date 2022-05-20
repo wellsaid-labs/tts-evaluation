@@ -1,12 +1,14 @@
 from unittest import mock
 
+import config as cf
 import torch
 import torch.distributed
 
 import run
 from run._config import Cadence, DatasetType
 from run._utils import split_dataset
-from run.data._loader.english import JUDY_BIEBER, LINDA_JOHNSON
+from run.data._loader.english.lj_speech import LINDA_JOHNSON
+from run.data._loader.english.m_ailabs import JUDY_BIEBER
 from run.train._utils import CometMLExperiment, _get_dataset_stats
 from tests import _utils
 from tests.run._utils import make_small_dataset
@@ -22,7 +24,9 @@ def setup_experiment(mock_urlretrieve):
     # Test loading and splitting data
     dataset = make_small_dataset()
     dev_speakers = set([JUDY_BIEBER])
-    train_dataset, dev_dataset = split_dataset(dataset, dev_speakers, 3)
+    train_dataset, dev_dataset = cf.partial(split_dataset)(
+        dataset, dev_speakers=dev_speakers, approx_dev_len=3
+    )
 
     # Check dataset statistics are correct
     stats = _get_dataset_stats(train_dataset, dev_dataset)
@@ -54,6 +58,8 @@ def setup_experiment(mock_urlretrieve):
 
     # Create training state
     comet = CometMLExperiment(disabled=True, project_name="project name")
+    comet.set_step(0)
+    comet.log_current_epoch(0)
     device = torch.device("cpu")
     torch.distributed.init_process_group(
         backend="gloo", init_method="tcp://127.0.0.1:23456", world_size=1, rank=0

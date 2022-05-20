@@ -4,14 +4,16 @@ import logging
 import math
 import typing
 
+import config as cf
 import torch
 import torch.nn
-from hparams import HParam, configurable
 from tqdm import tqdm
 
-from lib.spectrogram_model import decoder, encoder
-from lib.spectrogram_model.containers import Encoded, Inputs, Preds
-from lib.utils import NumeralizePadEmbed, lengths_to_mask
+from lib.distributed import NumeralizePadEmbed
+from lib.utils import lengths_to_mask
+from run._models.spectrogram_model import decoder, encoder
+from run._models.spectrogram_model.containers import Encoded, Preds
+from run._models.spectrogram_model.inputs import Inputs
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +54,7 @@ class SpectrogramModel(torch.nn.Module):
     Args:
         max_tokens: The maximum number of tokens the model will be trained on.
         max_seq_meta_values: The maximum number of metadata values the model will be trained on.
+        max_token_embed_size: The maximum size of `inputs.token_embeddings`.
         seq_meta_embed_size: The size of the sequence metadata embedding.
         num_frame_channels: Number of channels in each frame (sometimes refered to as
             "Mel-frequency bins" or "FFT bins" or "FFT bands").
@@ -62,16 +65,18 @@ class SpectrogramModel(torch.nn.Module):
         stop_token_eps: The stop probability assigned to the initial frames.
     """
 
-    @configurable
     def __init__(
         self,
         max_tokens: int,
         max_seq_meta_values: typing.Tuple[int, ...],
-        seq_meta_embed_size: int = HParam(),
-        num_frame_channels: int = HParam(),
-        max_frames_per_token: float = HParam(),
-        output_scalar: float = HParam(),
-        stop_threshold: float = HParam(),
+        max_token_meta_values: typing.Tuple[int, ...],
+        max_token_embed_size: int,
+        token_meta_embed_size: int,
+        seq_meta_embed_size: int,
+        num_frame_channels: int,
+        max_frames_per_token: float,
+        output_scalar: float,
+        stop_threshold: float,
         stop_token_eps: float = 1e-10,
     ):
         super().__init__()
@@ -81,10 +86,18 @@ class SpectrogramModel(torch.nn.Module):
         self.max_tokens = max_tokens
         self.encoder = encoder.Encoder(
             max_tokens=max_tokens,
+            max_token_meta_values=max_token_meta_values,
+            max_token_embed_size=max_token_embed_size,
             max_seq_meta_values=max_seq_meta_values,
+            token_meta_embed_size=token_meta_embed_size,
             seq_meta_embed_size=seq_meta_embed_size,
+            **cf.get(),
         )
-        self.decoder = decoder.Decoder(num_frame_channels, seq_meta_embed_size)
+        self.decoder = decoder.Decoder(
+            num_frame_channels=num_frame_channels,
+            seq_meta_embed_size=seq_meta_embed_size,
+            **cf.get(),
+        )
         self.output_scalar: torch.Tensor
         self.register_buffer("output_scalar", torch.tensor(output_scalar).float())
         self.stop_token_eps: torch.Tensor
@@ -111,7 +124,7 @@ class SpectrogramModel(torch.nn.Module):
         Returns:
             stop_token (torch.FloatTensor [num_frames (optional), batch_size])
         """
-        at_the_end = window_start >= num_tokens - self.decoder.attention.window_length
+        at_the_end = window_start >= num_tokens - self.decoder.attention.window_length // 2 - 1
         return stop_token.masked_fill(~at_the_end, self.stop_token_eps)
 
     def _is_stop(
@@ -155,6 +168,8 @@ class SpectrogramModel(torch.nn.Module):
     ) -> Generator:
         """Generate frames from the decoder until a stop is predicted or `max_lengths` is reached.
 
+        TODO: Should we consider masking `alignments`, `stop_token`, also?
+
         Args:
             ...
             tokens (torch.FloatTensor [num_tokens, batch_size, encoder_hidden_size])
@@ -187,7 +202,8 @@ class SpectrogramModel(torch.nn.Module):
             )
 
             lengths[~stopped] += 1
-            frame[:, stopped] *= 0
+            frame = frame.masked_fill(stopped.view(1, -1, 1), 0)
+            hidden_state = hidden_state._replace(last_frame=frame)  # type: ignore
             reached_max = lengths == max_lengths
             window_start = hidden_state.attention_hidden_state.window_start
             is_stop, stop_token = self._is_stop(stop_token, num_tokens, window_start, reached_max)
@@ -203,7 +219,7 @@ class SpectrogramModel(torch.nn.Module):
                     stop_tokens=torch.stack(stop_tokens, dim=0),
                     alignments=torch.stack(alignments, dim=0),
                     num_frames=lengths,
-                    frames_mask=lengths_to_mask(lengths, device=device),
+                    frames_mask=lengths_to_mask(lengths),
                     num_tokens=encoded.num_tokens,
                     tokens_mask=encoded.tokens_mask,
                     reached_max=reached_max,
@@ -212,11 +228,7 @@ class SpectrogramModel(torch.nn.Module):
 
             if use_tqdm:
                 assert progress_bar is not None
-                half_window_length = self.decoder.attention.window_length // 2
-                # NOTE: The `tqdm` will start at `half_window_length` and it'll end at negative
-                # `half_window_length`; otherwise, it's an accurate representation of the
-                # character progress.
-                progress_bar.update(window_start.cpu().item() + half_window_length - progress_bar.n)
+                progress_bar.update(int(window_start.cpu().item()) - progress_bar.n)
 
         if use_tqdm:
             assert progress_bar is not None

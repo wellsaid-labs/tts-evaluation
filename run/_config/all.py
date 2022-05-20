@@ -1,10 +1,13 @@
+import config as cf
+
 from run._config import audio, data, environment, lang, models
 
 
-def configure():
+def configure(overwrite: bool = False):
     """Configure required modules."""
-    environment.configure()
-    audio.configure()
-    models.configure()
-    data.configure()
-    lang.configure()
+    cf.enable_fast_trace()
+    environment.configure(overwrite=overwrite)
+    audio.configure(overwrite=overwrite)
+    models.configure(overwrite=overwrite)
+    data.configure(overwrite=overwrite)
+    lang.configure(overwrite=overwrite)

@@ -1,16 +1,14 @@
-import dataclasses
 import pathlib
 import tempfile
 
-import hparams
+import config as cf
 import pytest
-from hparams import HParams
 
 import lib
 from run.data import _loader
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(autouse=True, scope="package")
 def run_around_tests():
     """Set a basic configuration."""
     suffix = ".wav"
@@ -27,31 +25,28 @@ def run_around_tests():
     temp_dir = tempfile.TemporaryDirectory()
     temp_dir_path = pathlib.Path(temp_dir.name)
     config = {
-        _loader.utils.normalize_audio_suffix: HParams(suffix=suffix),
-        _loader.utils.normalize_audio: HParams(
+        _loader.utils.normalize_audio_suffix: cf.Args(suffix=suffix),
+        _loader.utils.normalize_audio: cf.Args(
             suffix=suffix,
             data_type=data_type,
             bits=bits,
             sample_rate=format_.sample_rate,
             num_channels=format_.num_channels,
         ),
-        _loader.utils.is_normalized_audio_file: HParams(audio_format=format_, suffix=suffix),
-        _loader.utils._cache_path: HParams(cache_dir=temp_dir_path),
+        _loader.utils.is_normalized_audio_file: cf.Args(audio_format=format_, suffix=suffix),
+        _loader.utils._cache_path: cf.Args(cache_dir=temp_dir_path),
         # NOTE: `get_non_speech_segments` parameters are set based on `vad_workbook.py`. They
         # are applicable to most datasets with little to no noise.
-        _loader.utils.get_non_speech_segments_and_cache: HParams(
+        _loader.utils.get_non_speech_segments_and_cache: cf.Args(
             low_cut=300, frame_length=non_speech_segment_frame_length, hop_length=5, threshold=-60
         ),
-        _loader.data_structures._make_speech_segments_helper: HParams(
+        _loader.structures._make_speech_segments_helper: cf.Args(
             pad=(non_speech_segment_frame_length / 2) / 1000
         ),
-        _loader.utils.maybe_normalize_audio_and_cache: HParams(
-            suffix=suffix,
-            data_type=data_type,
-            bits=bits,
-            **{f.name: getattr(format_, f.name) for f in dataclasses.fields(format_)},
+        _loader.utils.maybe_normalize_audio_and_cache: cf.Args(
+            suffix=suffix, data_type=data_type, bits=bits, format_=format_
         ),
     }
-    hparams.add_config(config)
+    cf.add(config)
     yield
-    hparams.clear_config()
+    cf.purge()

@@ -1,4 +1,4 @@
-from hparams import HParams, add_config
+import config as cf
 
 import lib
 import run
@@ -19,7 +19,7 @@ DATASET_CACHE_PATH = TEMP_PATH / "dataset.pickle"
 RANDOM_SEED = 1212212
 
 
-def configure():
+def configure(overwrite: bool = False):
     """Make disk file structure."""
     for directory in [
         DISK_PATH,
@@ -34,7 +34,7 @@ def configure():
         directory.mkdir(exist_ok=True)
 
     config = {
-        run._utils.get_dataset: HParams(path=DATA_PATH),
-        run.data._loader.utils._cache_path: HParams(cache_dir=TTS_DISK_CACHE_NAME),
+        run._utils.get_dataset: cf.Args(path=DATA_PATH),
+        run.data._loader.utils._cache_path: cf.Args(cache_dir=TTS_DISK_CACHE_NAME),
     }
-    add_config(config)
+    cf.add(config, overwrite=overwrite)

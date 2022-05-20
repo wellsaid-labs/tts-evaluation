@@ -1,29 +1,38 @@
 import typing
 from unittest import mock
 
-from hparams import add_config
+import config as cf
+import pytest
 
-import lib
-from run._config import Cadence, DatasetType
-from run.data._loader.english import JUDY_BIEBER
+from run._config import Cadence, DatasetType, make_spectrogram_model_train_config
+from run._models.spectrogram_model import SpectrogramModel
+from run.data._loader.english.lj_speech import LINDA_JOHNSON
+from run.data._loader.english.m_ailabs import JUDY_BIEBER
+from run.data._loader.structures import Language
 from run.train._utils import Context, Timer, set_context
-from run.train.spectrogram_model.__main__ import _make_configuration
 from run.train.spectrogram_model._metrics import Metrics, MetricsKey
-from run.train.spectrogram_model._model import SpectrogramModel
 from run.train.spectrogram_model._worker import (
     _get_data_loaders,
     _HandleBatchArgs,
     _log_vocab,
     _run_inference,
     _run_step,
+    _visualize_select_cases,
 )
 from tests.run._utils import make_spec_worker_state, mock_distributed_data_parallel
 from tests.run.train._utils import setup_experiment
 
 
+@pytest.fixture(autouse=True, scope="module")
+def run_around_tests():
+    """Set a basic configuration."""
+    yield
+    cf.purge()
+
+
 def test_integration():
     train_dataset, dev_dataset, comet, device = setup_experiment()
-    add_config(_make_configuration(train_dataset, dev_dataset, True))
+    cf.add(make_spectrogram_model_train_config(train_dataset, dev_dataset, True))
     state = make_spec_worker_state(comet, device)
 
     assert state.model.module == state.model  # Ensure the mock worked
@@ -31,7 +40,17 @@ def test_integration():
 
     batch_size = 2
     train_loader, dev_loader = _get_data_loaders(
-        state, train_dataset, dev_dataset, batch_size, batch_size, 1, 1, False, True, 0, 2
+        state=state,
+        train_dataset=train_dataset,
+        dev_dataset=dev_dataset,
+        train_batch_size=batch_size,
+        dev_batch_size=batch_size,
+        train_steps_per_epoch=1,
+        dev_steps_per_epoch=1,
+        train_get_weight=lambda _, f: f,
+        dev_get_weight=lambda *_: 1.0,
+        num_workers=0,
+        prefetch_factor=2,
     )
 
     # Test `_run_step` with `Metrics` and `_State`
@@ -42,13 +61,14 @@ def test_integration():
         assert state.step.item() == 0
 
         args = (state, train_loader, Context.TRAIN, DatasetType.TRAIN, metrics, timer, batch, True)
-        _run_step(_HandleBatchArgs(*args))
+        cf.partial(_run_step)(_HandleBatchArgs(*args))
         assert state.step.item() == 1
 
         is_not_diff = lambda b, v: len(set(b) - set(v.keys())) == 0
-        assert is_not_diff(lib.utils.flatten_2d(batch.inputs.tokens), model.token_vocab)
-        assert is_not_diff((s.speaker for s in batch.spans), model.speaker_vocab)
-        assert is_not_diff((s.session for s in batch.spans), model.session_vocab)
+        characters = [c for s in batch.inputs.tokens for c in s]
+        assert is_not_diff(characters, model.token_embed.vocab)
+        assert is_not_diff((s.speaker.label for s in batch.spans), model.speaker_embed.vocab)
+        assert is_not_diff((s.session for s in batch.spans), model.session_embed.vocab)
 
         # fmt: off
         keys = [
@@ -87,7 +107,7 @@ def test_integration():
         metrics.log(is_verbose=True, type_=DatasetType.TRAIN, cadence=Cadence.MULTI_STEP)
         _log_vocab(state, DatasetType.TRAIN)
 
-    # Test `_run_inference` with `Metrics` and `_State`
+    # Test `_run_inference` with `Metrics` and `_State`, along with `_visualize_select_cases`
     with set_context(Context.EVALUATE_INFERENCE, comet, state.model):
         timer = Timer()
         metrics = Metrics(comet)
@@ -101,6 +121,15 @@ def test_integration():
 
         metrics.log(lambda l: l[-1:], type_=DatasetType.TRAIN, cadence=Cadence.STEP)
         metrics.log(is_verbose=True, type_=DatasetType.TRAIN, cadence=Cadence.MULTI_STEP)
+
+        _visualize_select_cases(
+            state,
+            DatasetType.TEST,
+            Cadence.MULTI_STEP,
+            cases=[(Language.ENGLISH, "Hi There")],
+            speakers={JUDY_BIEBER, LINDA_JOHNSON},
+            num_cases=1,
+        )
 
     # Test loading and saving a checkpoint
     with mock.patch("torch.nn.parallel.DistributedDataParallel") as module:

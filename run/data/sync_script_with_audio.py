@@ -31,6 +31,7 @@ from copy import deepcopy
 from functools import lru_cache, partial
 from io import StringIO
 from itertools import chain, groupby, repeat
+from typing import cast
 
 import pandas
 import tabulate
@@ -247,7 +248,7 @@ def format_differences(
 
     current = groups[0][1]
     for (_, before), (i, current), (_, after) in zip(groups, groups[1:], groups[2:]):
-        i = typing.cast(int, i)
+        i = cast(int, i)
         is_unaligned = zip([before[-1]] + current, current + [after[0]])
         if any([b[0] - a[0] > 1 or b[1] - a[1] > 1 for a, b in is_unaligned]):
             yield from _format_gap(
@@ -299,6 +300,7 @@ def _fix_alignments(
             (stt_tokens[last[1] + 1].slice[0], stt_tokens[next_[1] - 1].slice[-1]),
         )
 
+        assert token.text is not None
         if _config.is_sound_alike(token.text, stt_token.text, language):
             logger.info(f'Fixing alignment between: "{token.text}" and "{stt_token.text}"')
             for j in reversed(range(last[0] + 1, next_[0])):
@@ -384,7 +386,7 @@ def align_stt_with_script(
 
     # Align `script_tokens` and `stt_tokens`.
     args = (
-        [normalize_vo_script(t.text.lower(), language) for t in script_tokens],
+        [normalize_vo_script(cast(str, t.text).lower(), language) for t in script_tokens],
         [normalize_vo_script(t.text.lower(), language) for t in stt_tokens],
         get_window_size(len(script_tokens), len(stt_tokens)),
     )
@@ -412,7 +414,7 @@ def align_stt_with_script(
         stt_token = stt_tokens[alignment[1]]
         script_token = script_tokens[alignment[0]]
         alignment_ = run.data._loader.Alignment(
-            script=typing.cast(typing.Tuple[int, int], script_token.slice),
+            script=cast(typing.Tuple[int, int], script_token.slice),
             audio=stt_token.audio,
             transcript=stt_token.slice,
         )
@@ -593,8 +595,7 @@ def _sync_and_upload(
     logger.info("Downloading voice-over scripts...")
     scripts_ = [s.download_as_bytes().decode("utf-8") for s in script_blobs]
     scripts: typing.List[typing.List[str]] = [
-        typing.cast(pandas.DataFrame, pandas.read_csv(StringIO(s)))[text_column].tolist()
-        for s in scripts_
+        cast(pandas.DataFrame, pandas.read_csv(StringIO(s)))[text_column].tolist() for s in scripts_
     ]
     message = "Some or all script(s) are missing or incorrecly formatted."
     assert all(isinstance(t, str) for t in flatten_2d(scripts)), message
@@ -604,7 +605,7 @@ def _sync_and_upload(
     logger.info("Maybe running speech-to-text and caching results...")
     filtered = list(filter(lambda i: not i[-1].exists(), zip(audio_blobs, scripts, stt_blobs)))
     if len(filtered) > 0:
-        args = typing.cast(
+        args = cast(
             typing.Tuple[typing.List[storage.Blob], typing.List[str], typing.List[storage.Blob]],
             zip(*filtered),
         )
@@ -623,7 +624,7 @@ def _sync_and_upload(
     # NOTE: `storage.Blob` doesn't implement `__hash__`.
     for dest_gcs_uri in set(blob_to_gcs_uri(b) for b in dest_blobs):
         dest_blob = gcs_uri_to_blob(dest_gcs_uri)
-        blob = dest_blob.bucket.blob(dest_blob.name + recorder.log_path.name)
+        blob = dest_blob.bucket.blob(cast(str, dest_blob.name) + recorder.log_path.name)
         logger.info(f"Uploading logs to `{blob}`...")
         # Formerly uploaded from string, but `recorder.log_path.read_text()` fails to read unencoded
         # log file with unicode characters. [See TODO in `recorder` instantiation]
@@ -677,10 +678,10 @@ def main(
         args = tuple([blob_to_gcs_uri(blob) for blob in item])
         logger.info('Processing... \n "%s" \n "%s" \n and saving to... "%s"', *args)
 
-    filenames = [b.name.split("/")[-1].split(".")[0] + ".json" for b in audio_blobs]
-    iterator = list(zip(dest_blobs, filenames))
-    stt_blobs = [b.bucket.blob(b.name + stt_folder + n) for b, n in iterator]
-    alignment_blobs = [b.bucket.blob(b.name + alignments_folder + n) for b, n in iterator]
+    filenames = [cast(str, b.name).split("/")[-1].split(".")[0] + ".json" for b in audio_blobs]
+    iter_ = list(zip(dest_blobs, filenames))
+    stt_blobs = [b.bucket.blob(cast(str, b.name) + stt_folder + n) for b, n in iter_]
+    alignment_blobs = [b.bucket.blob(cast(str, b.name) + alignments_folder + n) for b, n in iter_]
 
     blobs = (audio_blobs, script_blobs, dest_blobs, stt_blobs, alignment_blobs)
     _sync_and_upload(*blobs, text_column, recorder, language)

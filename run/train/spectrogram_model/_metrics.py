@@ -1,28 +1,28 @@
 import collections
 import collections.abc
+import dataclasses
 import math
 import typing
 from functools import partial
 from operator import add
 
+import config as cf
 import torch
 import torch.distributed
 import torch.nn
 import torch.optim
 import torch.utils
 import torch.utils.data
-from hparams import HParam, configurable
 
 import lib
-from lib.audio import power_to_db
+from lib.audio import power_spectrogram_to_framed_rms, power_to_db
 from lib.distributed import is_master
-from lib.spectrogram_model import Preds
 from run._config import GetLabel, get_dataset_label, get_model_label
+from run._models.spectrogram_model import Preds, SpectrogramModel
 from run.data._loader import Speaker
 from run.train import _utils
 from run.train._utils import Timer
 from run.train.spectrogram_model._data import Batch
-from run.train.spectrogram_model._model import SpectrogramModel
 
 
 def get_num_skipped(preds: Preds) -> torch.Tensor:
@@ -71,8 +71,7 @@ def get_num_jumps(preds: Preds) -> torch.Tensor:
     return num_jumps.sum(dim=0)
 
 
-@configurable
-def get_num_small_max(preds: Preds, threshold: float = HParam()) -> torch.Tensor:
+def get_num_small_max(preds: Preds, threshold: float) -> torch.Tensor:
     """Given `alignments` from frames to tokens, this computes the number of alignments where no
     token gets no more than `threshold` focus.
 
@@ -94,8 +93,7 @@ def get_num_small_max(preds: Preds, threshold: float = HParam()) -> torch.Tensor
     return values.sum(dim=0)
 
 
-@configurable
-def get_num_repeated(preds: Preds, threshold: float = HParam()) -> torch.Tensor:
+def get_num_repeated(preds: Preds, threshold: float) -> torch.Tensor:
     """Given `alignments` from frames to tokens, this gets the number of tokens that get more
     focus than `threshold`.
 
@@ -161,12 +159,12 @@ def get_power_rms_level_sum(
     """
     spectrogram = typing.cast(torch.Tensor, lib.audio.db_to_power(db_spectrogram.transpose(0, 1)))
     # [batch_size, num_frames, frame_channels] → [batch_size, num_frames]
-    rms = lib.audio.power_spectrogram_to_framed_rms(spectrogram, **kwargs)
+    rms = cf.partial(power_spectrogram_to_framed_rms)(spectrogram, **kwargs)
     return (rms if mask is None else rms * mask).pow(2).sum(dim=1)
 
 
 def get_average_db_rms_level(
-    db_spectrogram: torch.Tensor, mask: typing.Optional[torch.Tensor] = None, **kwargs
+    db_spectrogram: torch.Tensor, mask: typing.Optional[torch.Tensor] = None
 ) -> torch.Tensor:
     """Get the average, over spectrogram frames, RMS level (dB) for each spectrogram.
 
@@ -179,18 +177,17 @@ def get_average_db_rms_level(
         torch.FloatTensor [batch_size]
     """
     num_elements = db_spectrogram.shape[0] if mask is None else mask.sum(dim=1)
-    cum_power_rms_level = get_power_rms_level_sum(db_spectrogram, mask, **kwargs)
+    cum_power_rms_level = get_power_rms_level_sum(db_spectrogram, mask)
     return power_to_db(cum_power_rms_level / num_elements)
 
 
-@configurable
 def get_num_pause_frames(
     db_spectrogram: torch.Tensor,
     mask: typing.Optional[torch.Tensor],
-    max_loudness: float = HParam(),
-    min_length: float = HParam(),
-    frame_hop: int = HParam(),
-    sample_rate: int = HParam(),
+    max_loudness: float,
+    min_length: float,
+    frame_hop: int,
+    sample_rate: int,
     **kwargs,
 ) -> typing.List[int]:
     """Count the number of frames inside a pause.
@@ -205,7 +202,7 @@ def get_num_pause_frames(
     # [num_frames, batch_size, frame_channels] → [batch_size, num_frames, frame_channels]
     power_spec = lib.audio.db_to_power(db_spectrogram).transpose(0, 1)
     # [batch_size, num_frames, frame_channels] → [batch_size, num_frames]
-    framed_rms_level = lib.audio.power_spectrogram_to_framed_rms(power_spec, **kwargs)
+    framed_rms_level = cf.partial(power_spectrogram_to_framed_rms)(power_spec, **kwargs)
     is_silent = framed_rms_level < lib.audio.db_to_amp(max_loudness)  # [batch_size, num_frames]
     is_silent = is_silent if mask is None else is_silent * mask
     frames_threshold = min_length * sample_rate / frame_hop
@@ -227,7 +224,7 @@ def get_alignment_norm(preds: Preds) -> torch.Tensor:
         torch.FloatTensor [batch_size]
     """
     alignments = preds.alignments.masked_fill(~preds.tokens_mask.unsqueeze(0), 0)
-    alignments = alignments.norm(dim=2, p=math.inf)
+    alignments = alignments.norm(dim=2, p=math.inf)  # type: ignore
     alignments = alignments.masked_fill(~preds.frames_mask.transpose(0, 1), 0)
     return alignments.sum(dim=0)
 
@@ -248,8 +245,8 @@ def get_alignment_std(preds: Preds) -> torch.Tensor:
 _GetMetrics = typing.Dict[GetLabel, float]
 
 
-class MetricsKey(typing.NamedTuple):
-    label: str
+@dataclasses.dataclass(frozen=True)
+class MetricsKey(_utils.MetricsKey):
     speaker: typing.Optional[Speaker] = None
     text_length_bucket: typing.Optional[int] = None
 
@@ -376,12 +373,14 @@ class Metrics(_utils.Metrics[MetricsKey]):
         """
         values, _reduce = self._make_values()
 
-        for span, num_frames, tokens, has_reached_max in zip(
+        for span, num_frames, slice, has_reached_max in zip(
             batch.spans,
             self._to_list(batch.spectrogram.lengths),
-            batch.inputs.tokens,
+            batch.inputs.slices,
             self._to_list(preds.reached_max),
         ):
+            num_tokens = slice.stop - slice.start
+
             # NOTE: Create a key for `self.NUM_SPANS` so a value exists, even if zero.
             _reduce(self.NUM_SPANS, v=float(not has_reached_max))
             _reduce(self.NUM_SPANS, span.speaker, v=float(not has_reached_max))
@@ -396,8 +395,8 @@ class Metrics(_utils.Metrics[MetricsKey]):
                 for speaker in [None, span.speaker]:
                     _reduce(self.NUM_FRAMES, speaker, v=num_frames)
                     _reduce(self.NUM_SECONDS, speaker, v=span.audio_length)
-                    _reduce(self.NUM_TOKENS, speaker, v=len(tokens))
-                    _reduce(self.MAX_FRAMES_PER_TOKEN, speaker, v=num_frames / len(tokens), op=max)
+                    _reduce(self.NUM_TOKENS, speaker, v=num_tokens)
+                    _reduce(self.MAX_FRAMES_PER_TOKEN, speaker, v=num_frames / num_tokens, op=max)
 
         return dict(values)
 
@@ -412,8 +411,8 @@ class Metrics(_utils.Metrics[MetricsKey]):
             self._to_list(get_num_jumps(preds)),
             self._to_list(get_alignment_std(preds)),
             self._to_list(get_alignment_norm(preds)),
-            self._to_list(get_num_small_max(preds)),
-            self._to_list(get_num_repeated(preds)),
+            self._to_list(get_num_small_max(preds, **cf.get())),
+            self._to_list(get_num_repeated(preds, **cf.get())),
             self._to_list(preds.num_frames),
             self._to_list(preds.reached_max),
         ):
@@ -444,8 +443,8 @@ class Metrics(_utils.Metrics[MetricsKey]):
             batch.spans,
             self._to_list(loudness),
             self._to_list(get_power_rms_level_sum(preds.frames, preds.frames_mask)),
-            get_num_pause_frames(batch.spectrogram.tensor, spectrogram_mask),
-            get_num_pause_frames(preds.frames, preds.frames_mask),
+            get_num_pause_frames(batch.spectrogram.tensor, spectrogram_mask, **cf.get()),
+            get_num_pause_frames(preds.frames, preds.frames_mask, **cf.get()),
             self._to_list(preds.reached_max),
         ):
             if model.training or not has_reached_max:
@@ -480,9 +479,8 @@ class Metrics(_utils.Metrics[MetricsKey]):
             div = lambda n, d, **k: self._div(process(n), process(d), select=select, **k)
             yield speaker, reduce_, div
 
-    @configurable
     def _get_model_metrics(
-        self, select: _utils.MetricsSelect, is_verbose: bool, num_frame_channels: int = HParam()
+        self, select: _utils.MetricsSelect, is_verbose: bool, num_frame_channels: int
     ) -> _GetMetrics:
         metrics = {}
         for speaker, reduce, div in self._iter_permutations(select, is_verbose):
@@ -515,7 +513,7 @@ class Metrics(_utils.Metrics[MetricsKey]):
         significantly more trimming than other speakers.
         """
         reduce = lambda *a, **k: self._reduce(MetricsKey(*a), select=select, **k)
-        metrics = {
+        metrics: _GetMetrics = {
             self.MAX_NUM_FRAMES: reduce(self.NUM_FRAMES_MAX, op=max),
             self.MIN_DATA_LOADER_QUEUE_SIZE: reduce(self.DATA_QUEUE_SIZE, op=min),
         }
@@ -583,7 +581,7 @@ class Metrics(_utils.Metrics[MetricsKey]):
             record_event = lambda e: None if timer is None else timer.record_event(e)
             record_event(Timer.REDUCE_METRICS)
             metrics = {
-                **self._get_model_metrics(select=select, is_verbose=is_verbose),
+                **self._get_model_metrics(select=select, is_verbose=is_verbose, **cf.get()),
                 **self._get_dataset_metrics(select=select, is_verbose=is_verbose),
                 **self._get_loudness_metrics(select=select, is_verbose=is_verbose),
             }

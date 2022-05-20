@@ -6,9 +6,8 @@ import pytest
 import torch
 
 import lib
-import lib.spectrogram_model.attention
-from lib.spectrogram_model.attention import Attention, _window
-from lib.spectrogram_model.containers import AttentionHiddenState, Encoded
+from run._models.spectrogram_model.attention import Attention, _window
+from run._models.spectrogram_model.containers import AttentionHiddenState, Encoded
 from tests import _utils
 
 
@@ -255,7 +254,7 @@ def test_attention__window_invariance():
     the window size is larger than the number of tokens."""
     max_num_tokens = 6
     num_padding = 5
-    window_length = max_num_tokens + num_padding // 2
+    window_length = max_num_tokens + num_padding // 2 + 1
     kwargs = dict(window_length=window_length, max_num_tokens=max_num_tokens, dropout=0)
     module, (encoded, query, hidden_state), _ = _make_attention(**kwargs)
     encoded, hidden_state = _add_padding(num_padding, encoded, hidden_state)

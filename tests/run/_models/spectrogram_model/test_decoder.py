@@ -1,19 +1,17 @@
+import random
 import typing
 
-import hparams
-import pytest
+import config as cf
 import torch
-from hparams import HParams
 
-import lib
-from lib.spectrogram_model.containers import AttentionHiddenState, DecoderHiddenState, Encoded
-from lib.spectrogram_model.decoder import Decoder
-
-
-@pytest.fixture(autouse=True)
-def run_around_tests():
-    yield
-    hparams.clear_config()
+import run
+from lib.utils import lengths_to_mask
+from run._models.spectrogram_model.containers import (
+    AttentionHiddenState,
+    DecoderHiddenState,
+    Encoded,
+)
+from run._models.spectrogram_model.decoder import Decoder
 
 
 def _make_decoder(
@@ -25,36 +23,42 @@ def _make_decoder(
     stop_net_dropout=0.5,
 ) -> Decoder:
     """Make `decoder.Decoder` for testing."""
-    config = {
-        lib.spectrogram_model.pre_net.PreNet.__init__: HParams(num_layers=1, dropout=0.5),
-        lib.spectrogram_model.attention.Attention.__init__: HParams(
+    _config = {
+        run._models.spectrogram_model.pre_net.PreNet: cf.Args(num_layers=1, dropout=0.5),
+        run._models.spectrogram_model.attention.Attention: cf.Args(
             hidden_size=4,
             conv_filter_size=3,
             dropout=0.1,
             window_length=5,
             avg_frames_per_token=1.0,
         ),
+        run._models.spectrogram_model.decoder.Decoder: cf.Args(
+            pre_net_size=pre_net_size,
+            lstm_hidden_size=lstm_hidden_size,
+            encoder_out_size=encoder_out_size,
+            stop_net_dropout=stop_net_dropout,
+        ),
     }
-    hparams.add_config(config)
-    return Decoder(
+    cf.add(_config, overwrite=True)
+    return cf.partial(Decoder)(
         num_frame_channels=num_frame_channels,
         seq_meta_embed_size=seq_meta_embed_size,
-        pre_net_size=pre_net_size,
-        lstm_hidden_size=lstm_hidden_size,
-        encoder_out_size=encoder_out_size,
-        stop_net_dropout=stop_net_dropout,
     )
 
 
 def _make_encoded(
-    module: Decoder, batch_size: int = 5, num_tokens: int = 6
+    module: Decoder, batch_size: int = 5, max_num_tokens: int = 6
 ) -> typing.Tuple[Encoded, typing.Tuple[int, int]]:
     """Make `Encoded` for testing."""
-    tokens = torch.rand(num_tokens, batch_size, module.encoder_out_size)
-    tokens_mask = torch.ones(batch_size, num_tokens, dtype=torch.bool)
-    seq_metadata = torch.zeros(batch_size, module.seq_meta_embed_size)
-    encoded = Encoded(tokens, tokens_mask, tokens_mask.sum(dim=1), seq_metadata)
-    return encoded, (batch_size, num_tokens)
+    tokens = torch.randn(max_num_tokens, batch_size, module.encoder_out_size)
+    num_tokens = [random.randint(1, max_num_tokens) for _ in range(batch_size)]
+    num_tokens[-1] = max_num_tokens
+    num_tokens = torch.tensor(num_tokens)
+    tokens_mask = lengths_to_mask(num_tokens)
+    tokens = tokens * tokens_mask.transpose(0, 1).unsqueeze(-1)
+    seq_metadata = torch.randn(batch_size, module.seq_meta_embed_size)
+    encoded = Encoded(tokens, tokens_mask, num_tokens, seq_metadata)
+    return encoded, (batch_size, max_num_tokens)
 
 
 def test_decoder():
@@ -129,3 +133,34 @@ def test_decoder__target():
     assert isinstance(decoded.hidden_state.lstm_two_hidden_state, tuple)
 
     (decoded.frames.sum() + decoded.stop_tokens.sum()).backward()
+
+
+def test_decoder__pad_encoded():
+    """Test `decoder.Decoder` pads encoded correctly."""
+    module = _make_decoder()
+    encoded, (batch_size, num_tokens) = _make_encoded(module)
+    window_length, encoder_size = module.attention.window_length - 1, module.encoder_out_size
+    beg_pad_token = torch.rand(batch_size, module.encoder_out_size)
+    end_pad_token = torch.rand(batch_size, module.encoder_out_size)
+    padded = module._pad_encoded(encoded, beg_pad_token, end_pad_token)
+
+    assert padded.tokens.dtype == torch.float
+    assert padded.tokens.shape == (num_tokens + window_length, batch_size, encoder_size)
+
+    assert padded.tokens_mask.dtype == torch.bool
+    assert padded.tokens_mask.shape == (batch_size, num_tokens + window_length)
+
+    assert padded.num_tokens.dtype == torch.long
+    assert padded.num_tokens.shape == (batch_size,)
+
+    pad = window_length // 2
+    for i in range(pad):
+        arange = torch.arange(batch_size)
+        assert padded.tokens_mask[arange, i].all()
+        assert padded.tokens_mask[arange, encoded.num_tokens + i + pad].all()
+        assert torch.equal(padded.tokens[i, arange], beg_pad_token)
+        assert torch.equal(padded.tokens[encoded.num_tokens + i + pad, arange], end_pad_token)
+
+    assert padded.tokens.masked_select(~padded.tokens_mask.transpose(0, 1).unsqueeze(-1)).sum() == 0
+    assert torch.equal(padded.tokens_mask.sum(dim=1), padded.num_tokens)
+    assert torch.equal(encoded.num_tokens + window_length, padded.num_tokens)

@@ -9,15 +9,16 @@ import random
 import typing
 from functools import partial
 
+import config as cf
 import torch
 import torch.nn
-from hparams import HParam, configurable
 from third_party import LazyLoader
 from torchnlp.random import fork_rng
 from tqdm import tqdm
 
 import lib
-from lib.utils import split
+from lib.utils import disk_cache, split
+from run import _config
 from run.data import _loader
 
 if typing.TYPE_CHECKING:  # pragma: no cover
@@ -37,13 +38,14 @@ logger = logging.getLogger(__name__)
 Dataset = typing.Dict[_loader.Speaker, typing.List[_loader.Passage]]
 
 
-@configurable
+@lib.utils.log_runtime
 def get_dataset(
-    datasets: typing.Dict[_loader.Speaker, _loader.DataLoader] = HParam(),
-    path: pathlib.Path = HParam(),
-    include_psge: typing.Callable[[_loader.Passage, pathlib.Path], bool] = HParam(),
-    handle_psge: typing.Callable[[_loader.Passage], _loader.Passage] = HParam(),
+    datasets: typing.Dict[_loader.Speaker, _loader.DataLoader],
+    path: pathlib.Path,
+    include_psge: typing.Callable[[_loader.Passage], bool],
+    handle_psge: typing.Callable[[_loader.Passage], _loader.Passage],
     max_workers: int = 0,
+    language: typing.Optional[_loader.Language] = None,
 ) -> Dataset:
     """Define a TTS dataset.
 
@@ -55,17 +57,21 @@ def get_dataset(
         ...
     """
     logger.info("Loading dataset...")
-    load = lambda s, d, **k: (s, [handle_psge(p) for p in d(path, **k) if include_psge(p, path)])
-    if max_workers > 0:
-        with multiprocessing.pool.ThreadPool(processes=min(max_workers, len(datasets))) as pool:
-            items = list(pool.starmap(load, datasets.items()))
-    else:
-        items = [load(s, d, add_tqdm=True) for s, d in datasets.items()]
+    prepared = {s: f for s, f in datasets.items() if language is None or s.language == language}
 
-    prepared_dataset = {k: v for k, v in items if len(v) > 0}
-    _omitted = datasets.keys() - prepared_dataset.keys()
-    logger.warning("Omitted %d Speakers: %s", len(_omitted), _omitted)
-    return prepared_dataset
+    load = lambda s, d, **k: (s, [handle_psge(p) for p in d(path, **k) if include_psge(p)])
+    if max_workers > 0:
+        with multiprocessing.pool.ThreadPool(processes=min(max_workers, len(prepared))) as pool:
+            items = list(pool.starmap(load, prepared.items()))
+    else:
+        items = [load(s, d, add_tqdm=True) for s, d in prepared.items()]
+
+    prepared = {k: v for k, v in items if len(v) > 0}
+    _omitted = datasets.keys() - prepared.keys()
+    if len(_omitted) > 0:
+        logger.info("Omitted %d Speakers: %s", len(_omitted), _omitted)
+
+    return prepared
 
 
 @functools.lru_cache(maxsize=None)
@@ -110,7 +116,7 @@ def _find_duplicate_passages(
     return duplicates, rest
 
 
-def _passages_len(passages: typing.List[_loader.Passage]):
+def _passages_len(passages: typing.List[_loader.Passage]) -> float:
     """Get the cumulative length of all `passages`."""
     return sum(p.segmented_audio_length() for p in passages)
 
@@ -118,7 +124,9 @@ def _passages_len(passages: typing.List[_loader.Passage]):
 def _len_of_dups(
     item: typing.Tuple[int, _loader.Passage], passages: typing.List[_loader.Passage], min_sim: float
 ) -> float:
-    """Get the length of the duplicate passages to `item`."""
+    """Get the cumulative length of passage and it's duplicates."""
+    # TODO: Document this function better, for example, how come this only find duplicates after
+    # the first item.
     assert passages[item[0]] is item[1]
     dups = _find_duplicate_passages((item[1].script,), passages[item[0] :], min_sim)[0]
     return _passages_len(dups)
@@ -130,6 +138,12 @@ TrainDev = typing.Tuple[Dataset, Dataset]
 def _split_dataset(dataset: Dataset, dev_len: int, min_sim: float) -> TrainDev:
     """Split `dataset` into `train` and `dev` such that they contain no duplicates.
 
+    TODO: Refactor this function to be more generic, and easier to test, without needing to load
+    an entire dataset.
+    NOTE: If there is only one dataset, this function makes no attempt to deduplicate inside
+    a single dataset. This assumes there is no meaningful duplicate content within the same dataset.
+    TODO: In dataset preprocessing, ensure there are no duplicates within a single dataset.
+
     Args
         ...
         dev_len: The approximate number of seconds to include for each speaker split.
@@ -138,14 +152,24 @@ def _split_dataset(dataset: Dataset, dev_len: int, min_sim: float) -> TrainDev:
     dev: Dataset = collections.defaultdict(list)
     train: Dataset = collections.defaultdict(list)
     dev_scripts: typing.Set[str] = set()
-    items = sorted(dataset.items(), key=lambda i: i[0])
-    random.shuffle(items)
+    if len(dataset) == 1:
+        ((speaker, passages),) = tuple(dataset.items())
+        logger.info(f"Splitting `{speaker}` without deduplication.")
+        random.shuffle(passages)
+        splits = list(split(passages, [dev_len, math.inf], lambda p: _passages_len([p])))
+        dev[speaker].extend(splits[0])
+        train[speaker].extend(splits[1])
+        return dict(train), dict(dev)
+
     logger.info("Creating initial split...")
+    items = sorted(dataset.items(), key=lambda i: i[0].label)
+    random.shuffle(items)
     for speaker, passages in tqdm(items):
         duplicates, rest = _find_duplicate_passages(dev_scripts, passages, min_sim)
         random.shuffle(rest)
         split_lens = [max(dev_len - _passages_len(duplicates), 0), math.inf]
         val = partial(_len_of_dups, passages=rest, min_sim=min_sim)
+        # NOTE: `split` ensures that the length doesn't exceed `dev_len`.
         splits = [[p for _, p in s] for s in split(list(enumerate(rest)), split_lens, val)]
         dev[speaker].extend(duplicates + splits[0])
         train[speaker].extend(splits[1])
@@ -165,13 +189,12 @@ def _split_dataset(dataset: Dataset, dev_len: int, min_sim: float) -> TrainDev:
 
 
 @lib.utils.log_runtime
-@configurable
 def split_dataset(
     dataset: Dataset,
-    dev_speakers: typing.Set[_loader.Speaker] = HParam(),
-    approx_dev_len: int = HParam(),
-    min_sim: float = HParam(),
-    groups: typing.List[typing.Set[_loader.Speaker]] = HParam(),
+    dev_speakers: typing.Set[_loader.Speaker],
+    approx_dev_len: int,
+    min_sim: float,
+    groups: typing.List[typing.Set[_loader.Speaker]],
     seed: int = 123,
 ) -> TrainDev:
     """Split `dataset` into a train and development dataset. Ensures that `dev` and `train` share
@@ -233,6 +256,32 @@ def split_dataset(
     return train, dev
 
 
+@disk_cache(_config.DATASET_CACHE_PATH)
+def _get_datasets():
+    """Get a `train` and `dev` dataset."""
+    dataset = cf.partial(get_dataset)()
+    return cf.partial(split_dataset)(dataset)
+
+
+def _get_debug_datasets(speakers: typing.Set[_loader.Speaker]):
+    """Get small `train` and `dev` datasets for debugging."""
+    speaker = next(iter(speakers), None)
+    assert speaker is not None
+    kwargs = {"datasets": {speaker: _config.DATASETS[speaker]}}
+    dataset = cf.call(get_dataset, **kwargs, _overwrite=True)
+    return cf.partial(split_dataset)(dataset)
+
+
+def get_datasets(debug: bool):
+    """Get a `train` and `dev` dataset."""
+    if debug:
+        return cf.partial(_get_debug_datasets)()
+    return _get_datasets()
+
+
+SpanGeneratorGetWeight = typing.Callable[[_loader.Speaker, float], float]
+
+
 class SpanGenerator(typing.Iterator[_loader.Span]):
     """Define the dataset generator to train and evaluate the TTS models on.
 
@@ -248,17 +297,20 @@ class SpanGenerator(typing.Iterator[_loader.Span]):
         ...
         dataset
         max_seconds: The maximum seconds delimited by an `Span`.
-        balanced: Generate a similar amount of `Span`s per speaker.
+        ...
+        get_weight: Given the `Speaker` and the size of it's dataset, get it's weight relative
+            to other speakers. The weight is used to determine how many spans to generate from
+            it's dataset. If all the speakers have the same weight, then they'll be sampled
+            from equally.
     """
 
     @lib.utils.log_runtime
-    @configurable
     def __init__(
         self,
         dataset: Dataset,
-        max_seconds: int = HParam(),
-        include_span: typing.Callable[[_loader.Span], bool] = HParam(),
-        balanced: bool = True,
+        max_seconds: int,
+        include_span: typing.Callable[[_loader.Span], bool],
+        get_weight: SpanGeneratorGetWeight = lambda *_: 1.0,
         **kwargs,
     ):
         self.max_seconds = max_seconds
@@ -267,10 +319,12 @@ class SpanGenerator(typing.Iterator[_loader.Span]):
         for speaker, passages in dataset.items():
             is_singles = all([len(p.alignments) == 1 for p in passages])
             max_seconds_ = math.inf if is_singles else max_seconds
-            self.generators[speaker] = _loader.SpanGenerator(passages, max_seconds_, **kwargs)
+            self.generators[speaker] = cf.partial(_loader.SpanGenerator)(
+                passages, max_seconds_, **kwargs
+            )
         self.counter = {s: 0.0 for s in dataset.keys()}
         self.expected = {
-            s: 1.0 if balanced else float(sum(p.segmented_audio_length() for p in d))
+            s: get_weight(s, float(sum(p.segmented_audio_length() for p in d)))
             for s, d in dataset.items()
         }
         self.include_span = include_span
@@ -294,9 +348,9 @@ def get_window(window: str, window_length: int, window_hop: int) -> torch.Tensor
     NOTE: `torch.hann_window` does not pass `scipy.signal.check_COLA`, for example. Learn more:
     https://github.com/pytorch/audio/issues/452
     """
-    window = librosa.filters.get_window(window, window_length)
-    assert scipy.signal.check_COLA(window, window_length, window_length - window_hop)
-    return torch.tensor(window).float()
+    numpy_window = librosa.filters.get_window(window, window_length)
+    assert scipy.signal.check_COLA(numpy_window, window_length, window_length - window_hop)
+    return torch.tensor(numpy_window).float()
 
 
 @functools.lru_cache(maxsize=1)
@@ -320,13 +374,3 @@ def gcs_uri_to_blob(gcs_uri: str) -> "storage.Blob":
 def blob_to_gcs_uri(blob: "storage.Blob") -> str:
     """Get GCS URI (e.g. "gs://cloud-samples-tests/speech/brooklyn.flac") from `blob`."""
     return "gs://" + blob.bucket.name + "/" + blob.name
-
-
-def configurable_(func: typing.Callable):
-    """`configurable` has issues if it's run twice, on the same function.
-
-    TODO: Remove this, once, this issue is resolved: https://github.com/PetrochukM/HParams/issues/8
-    """
-    if not hasattr(func, "_configurable"):
-        return configurable(func)
-    return func
