@@ -13,4 +13,3 @@ The `lib` Python package contains WellSaid's TTS functional core:
 - `utils`: This module contains utility functions.
 - `visualize`: This module defines functions for visualization.
 
-The various functions are hooked into `hparams` for configuration.

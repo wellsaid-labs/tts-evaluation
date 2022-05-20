@@ -6,6 +6,7 @@ import sys
 import typing
 from concurrent import futures
 
+import config as cf
 import numpy
 import torch
 import torch.cuda
@@ -14,15 +15,8 @@ import torch.nn
 import torch.optim
 import torch.utils
 import torch.utils.data
-from hparams import HParam, configurable
 from third_party import LazyLoader
-from torchnlp.encoders import Encoder, LabelEncoder
-from torchnlp.encoders.text import (
-    CharacterEncoder,
-    DelimiterEncoder,
-    SequenceBatch,
-    stack_and_pad_tensors,
-)
+from torchnlp.encoders.text import SequenceBatch, stack_and_pad_tensors
 from torchnlp.samplers import DeterministicSampler, DistributedBatchSampler
 
 import lib
@@ -31,117 +25,25 @@ from lib.audio import sec_to_sample
 from lib.distributed import get_rank, get_world_size, is_initialized
 from lib.samplers import BucketBatchSampler
 from lib.utils import Tuple, flatten_2d, lengths_to_mask
-from run.data._loader import Alignment, Language, Session, Span, Speaker
+from run._models.spectrogram_model import preprocess_spans
+from run._models.spectrogram_model.model import Inputs
+from run.data._loader.structures import Alignment, Span, Speaker
 from run.train import _utils
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import librosa
-    import spacy.tokens
     from scipy import ndimage
 else:
     librosa = LazyLoader("librosa", globals(), "librosa")
     ndimage = LazyLoader("ndimage", globals(), "scipy.ndimage")
-    spacy = LazyLoader("spacy", globals(), "spacy")
 
 
 logger = logging.getLogger(__name__)
 
-
-class EncodedInput(typing.NamedTuple):
-    """
-    Args:
-        graphemes (torch.LongTensor [num_graphemes])
-        letter_cases (torch.LongTensor [num_graphemes])
-        tokens (torch.LongTensor [num_tokens])
-        speaker (torch.LongTensor [1])
-        session (torch.LongTensor [1])
-    """
-
-    graphemes: torch.Tensor
-    letter_cases: torch.Tensor
-    tokens: torch.Tensor
-    speaker: torch.Tensor
-    session: torch.Tensor
-
-
-class DecodedInput(typing.NamedTuple):
-
-    graphemes: str
-    tokens: str
-    speaker: Speaker
-    session: typing.Tuple[Speaker, Session]
-
-
-class InputEncoder(Encoder):
-    """Handles encoding and decoding input to the spectrogram model.
-
-    Args:
-        ...
-        tokens: List of token strings that may be encoded.
-        ...
-        token_separator: If provided, tokens will be separated by this delimiter.
-        **args: Additional arguments passed to `super()`.
-        **kwargs: Additional key-word arguments passed to `super()`.
-    """
-
-    _CASE_LABELS_TYPE = typing.Literal["upper", "lower", "other"]
-    _CASE_LABELS: typing.Final[typing.List[_CASE_LABELS_TYPE]] = [
-        "upper",
-        "lower",
-        "other",
-    ]
-
-    def __init__(
-        self,
-        graphemes: typing.List[str],
-        tokens: typing.List[str],
-        speakers: typing.List[Speaker],
-        sessions: typing.List[typing.Tuple[Speaker, Session]],
-        token_separator: typing.Optional[str] = None,
-        *args,
-        **kwargs,
-    ):
-        super().__init__(*args, **kwargs)
-        graphemes = [g.lower() for g in graphemes]
-        self.grapheme_encoder = CharacterEncoder(graphemes, enforce_reversible=True)
-        self.token_separator = token_separator
-        self.token_encoder = (
-            DelimiterEncoder(token_separator, tokens, enforce_reversible=True)
-            if token_separator
-            else CharacterEncoder(tokens, enforce_reversible=True)
-        )
-        self.case_encoder = LabelEncoder(
-            self._CASE_LABELS, reserved_labels=[], enforce_reversible=True
-        )
-        self.speaker_encoder = LabelEncoder(speakers, reserved_labels=[], enforce_reversible=True)
-        self.session_encoder = LabelEncoder(sessions, reserved_labels=[], enforce_reversible=True)
-
-    def _get_case(self, c: str) -> _CASE_LABELS_TYPE:
-        if c.isupper():
-            return self._CASE_LABELS[0]
-        return self._CASE_LABELS[1] if c.islower() else self._CASE_LABELS[2]
-
-    def encode(self, decoded: DecodedInput) -> EncodedInput:
-        assert len(decoded.graphemes) > 0, "Graphemes cannot be empty."
-        assert len(decoded.tokens) > 0, "Tokens cannot be empty."
-        return EncodedInput(
-            self.grapheme_encoder.encode(decoded.graphemes.lower()),
-            self.case_encoder.batch_encode([self._get_case(c) for c in decoded.graphemes]),
-            self.token_encoder.encode(decoded.tokens),
-            self.speaker_encoder.encode(decoded.speaker).view(1),
-            self.session_encoder.encode(decoded.session).view(1),
-        )
-
-    def decode(self, encoded: EncodedInput) -> DecodedInput:
-        graphemes = self.grapheme_encoder.decode(encoded.graphemes)
-        cases = self.case_encoder.batch_decode(encoded.letter_cases)
-        iterator = zip(graphemes, cases)
-        return DecodedInput(
-            "".join([g.upper() if c == self._CASE_LABELS[0] else g for g, c in iterator]),
-            self.token_encoder.decode(encoded.tokens),
-            self.speaker_encoder.decode(encoded.speaker.squeeze()),
-            self.session_encoder.decode(encoded.session.squeeze()),
-        )
+# TODO: Remove
+InputEncoder = None
+DecodedInput = None
+EncodedInput = None
 
 
 def _random_nonoverlapping_alignments(
@@ -182,13 +84,12 @@ def _random_nonoverlapping_alignments(
     return tuple(return_)
 
 
-@configurable
 def _get_loudness(
     audio: numpy.ndarray,
     sample_rate: int,
     alignment: Alignment,
-    block_size: float = HParam(),
-    precision: int = HParam(),
+    block_size: float,
+    precision: int,
     **kwargs,
 ) -> typing.Optional[float]:
     """Get the loudness in LUFS for an `alignment` in `audio`.
@@ -209,9 +110,8 @@ def _get_loudness(
     return None
 
 
-@configurable
 def _random_loudness_annotations(
-    span: Span, signal: numpy.ndarray, max_annotations: int = HParam()
+    span: Span, signal: numpy.ndarray, max_annotations: int
 ) -> typing.Tuple[torch.Tensor, torch.Tensor]:
     """
     Args:
@@ -222,16 +122,15 @@ def _random_loudness_annotations(
     loudness_mask = torch.zeros(len(span.script), dtype=torch.bool)
     for alignment in _random_nonoverlapping_alignments(span.alignments, max_annotations):
         slice_ = slice(alignment.script[0], alignment.script[1])
-        loudness_ = _get_loudness(signal, span.audio_file.sample_rate, alignment)
+        loudness_ = _get_loudness(signal, span.audio_file.sample_rate, alignment, **cf.get())
         if loudness_ is not None:
             loudness[slice_] = loudness_
             loudness_mask[slice_] = True
     return loudness, loudness_mask
 
 
-@configurable
 def _random_speed_annotations(
-    span: Span, max_annotations: int = HParam(), precision: int = HParam()
+    span: Span, max_annotations: int, precision: int
 ) -> typing.Tuple[torch.Tensor, torch.Tensor]:
     """
     Args:
@@ -253,21 +152,6 @@ def _random_speed_annotations(
     return speed, speed_mask
 
 
-def _get_char_to_word(doc: spacy.tokens.Doc) -> typing.List[int]:
-    """Get a mapping from characters to words in `doc`."""
-    char_to_word = [-1] * len(doc.text)
-    for token in doc:
-        char_to_word[token.idx : token.idx + len(token.text)] = [token.i] * len(token.text)
-    return char_to_word
-
-
-def _get_word_vectors(char_to_word: typing.List[int], doc: spacy.tokens.Doc) -> torch.Tensor:
-    """Get word vectors mapped onto a character length vector."""
-    zeros = torch.zeros(doc.vector.size)
-    word_vectors_ = numpy.stack([zeros if w < 0 else doc[w].vector for w in char_to_word])
-    return torch.from_numpy(word_vectors_)
-
-
 def _pad_and_trim_signal(signal: numpy.ndarray) -> torch.Tensor:
     """Pad signal length and trim any extra silence.
 
@@ -286,9 +170,20 @@ def _pad_and_trim_signal(signal: numpy.ndarray) -> torch.Tensor:
     TODO: Instead of padding with zeros, we should consider padding with real-data.
     TODO: Add some randomness to the audio file trimming so that the stop token cannot overfit.
     """
-    signal = lib.audio.pad_remainder(signal)
-    _, trim = librosa.effects.trim(signal)
+    signal = lib.audio.pad_remainder(signal, **cf.get())
+    _, trim = librosa.effects.trim(signal, **cf.get())
     return torch.tensor(signal[trim[0] : trim[1]], requires_grad=False)
+
+
+@functools.lru_cache(maxsize=None)
+def _get_signal_to_db_mel_spectrogram_helper(**kwargs):
+    return lib.audio.SignalTodBMelSpectrogram(**kwargs)
+
+
+def _get_signal_to_db_mel_spectrogram(**kwargs):
+    """Get cached `SignalTodBMelSpectrogram` module."""
+    kwargs = {**cf.get(func=lib.audio.SignalTodBMelSpectrogram), **kwargs}
+    return _get_signal_to_db_mel_spectrogram_helper(**kwargs)
 
 
 def _signals_to_spectrograms(
@@ -302,7 +197,7 @@ def _signals_to_spectrograms(
         spectrogram_mask (SequenceBatch[torch.BoolTensor [num_frames, batch_size],
             torch.LongTensor [1, batch_size]))
     """
-    signal_to_spectrogram = lib.audio.get_signal_to_db_mel_spectrogram(**kwargs)
+    signal_to_spectrogram = _get_signal_to_db_mel_spectrogram(**kwargs)
     signals_ = stack_and_pad_tensors(signals)
     db_mel_spectrogram = signal_to_spectrogram(signals_.tensor, aligned=True)
     lengths = signals_.lengths // signal_to_spectrogram.frame_hop
@@ -334,10 +229,7 @@ def _get_normalized_half_gaussian(length: int, standard_deviation: float) -> tor
     return torch.tensor(kernel).float()
 
 
-@configurable
-def _make_stop_token(
-    spectrogram: SequenceBatch, length: int = HParam(), standard_deviation: float = HParam()
-):
+def _make_stop_token(spectrogram: SequenceBatch, length: int, standard_deviation: float):
     """Create a batch of stop tokens from a spectrogram batch.
 
     NOTE: The exact stop token distribution is uncertain because there are multiple valid
@@ -399,38 +291,21 @@ class Batch(_utils.Batch):
     # SequenceBatch[torch.FloatTensor [num_frames, batch_size], torch.LongTensor [1, batch_size])
     stop_token: SequenceBatch
 
-    # TODO: How come this is a `SequenceBatch`? It's not a sequence.
-    # SequenceBatch[torch.LongTensor [1, batch_size], torch.LongTensor [1, batch_size])
-    encoded_speaker: SequenceBatch
+    inputs: Inputs
 
-    # SequenceBatch[torch.LongTensor [1, batch_size], torch.LongTensor [1, batch_size])
-    encoded_session: SequenceBatch
-
-    # SequenceBatch[torch.LongTensor [num_tokens, batch_size], torch.LongTensor [1, batch_size])
-    encoded_tokens: SequenceBatch
-
-    # SequenceBatch[torch.LongTensor [num_tokens, batch_size], torch.LongTensor [1, batch_size])
-    encoded_tokens_mask: SequenceBatch
+    def apply(self, call: typing.Callable[[torch.Tensor], torch.Tensor]) -> "Batch":
+        batch: Batch = super().apply(call)
+        assert isinstance(batch.inputs.token_embeddings, torch.Tensor)
+        object.__setattr__(batch.inputs, "token_embeddings", call(batch.inputs.token_embeddings))
+        object.__setattr__(batch.inputs, "num_tokens", call(batch.inputs.num_tokens))
+        object.__setattr__(batch.inputs, "tokens_mask", call(batch.inputs.tokens_mask))
+        return batch
 
     def __len__(self):
         return len(self.spans)
 
 
-def _en_span_to_tokens(spans: typing.List[Span]) -> typing.List[str]:
-    """Process English `Span`s of text into a list of tokens."""
-    nlp = lib.text.load_en_core_web_md(disable=("parser", "ner"))
-    en_docs: typing.List[spacy.tokens.Doc] = list(nlp.pipe([s.passage.script for s in spans]))
-    for i in range(len(spans)):
-        script_slice = spans[i].script_slice
-        span = en_docs[i].char_span(script_slice.start, script_slice.stop)  # type: ignore
-        assert span is not None, "Invalid `spacy.tokens.Span` selected."
-        en_docs[i] = span.as_doc()
-    return typing.cast(typing.List[str], lib.text.grapheme_to_phoneme(en_docs))
-
-
-def make_batch(
-    spans: typing.List[Span], input_encoder: InputEncoder, max_workers: int = 6
-) -> Batch:
+def make_batch(spans: typing.List[Span], max_workers: int = 6, respell_prob: float = 0.0) -> Batch:
     """
     NOTE: spaCy splits some (not all) words on apostrophes while AmEPD does not; therefore,
     those words will not be found in AmEPD. The options are:
@@ -447,10 +322,10 @@ def make_batch(
     - 27% for `_signals_to_spectrograms`
     - 25% on `nlp.pipe`
     - 13% on `_random_loudness_annotations`
-    - 13% on `grapheme_to_phoneme`
+    - 13% on `grapheme_to_phoneme` (Removed in March 2022)
     - 6% for `_pad_and_trim_signal`
-    - 5% for `input_encoder.encode`
-    - 4% on `stack_and_pad_tensors`
+    - 5% for `input_encoder.encode` (Removed in Feburary 2022)
+    - 4% on `stack_and_pad_tensors` (Removed in Feburary 2022)
 
     TODO: For `spectrogram_model` training, this function is critical for performance and
     reducing the number of CPUs needed for training. Here are some opportunities for
@@ -460,19 +335,8 @@ def make_batch(
     - Using `multiprocessing` for `grapheme_to_phoneme`.
     - Using the precomputed spectrogram for `_pad_and_trim_signal`.
     """
-    _stack = functools.partial(stack_and_pad_tensors, dim=1)
-    _make_mask = functools.partial(torch.ones, dtype=torch.bool)
-
     assert len(spans) > 0, "Batch must have at least one item."
 
-    en_spans = [(i, s) for i, s in enumerate(spans) if s.speaker.language == Language.ENGLISH]
-    en_tokens = _en_span_to_tokens([s for _, s in en_spans])
-
-    decoded = [DecodedInput(s.script, s.script, s.speaker, (s.speaker, s.session)) for s in spans]
-    for (i, span), token in zip(en_spans, en_tokens):
-        decoded[i] = DecodedInput(span.script, token, span.speaker, (span.speaker, span.session))
-
-    encoded = [input_encoder.encode(d) for d in decoded]
     with futures.ThreadPoolExecutor(max_workers=min(max_workers, len(spans))) as pool:
         signals_ = list(pool.map(lambda s: s.audio(), spans))
         signals_ = typing.cast(typing.List[numpy.ndarray], signals_)
@@ -486,23 +350,13 @@ def make_batch(
         audio=signals,
         spectrogram=spectrogram,
         spectrogram_mask=spectrogram_mask,
-        stop_token=_make_stop_token(spectrogram),
-        encoded_speaker=_stack([s.speaker for s in encoded]),
-        encoded_session=_stack([s.session for s in encoded]),
-        encoded_tokens=_stack([s.tokens for s in encoded]),
-        encoded_tokens_mask=_stack([_make_mask(e.tokens.shape[0]) for e in encoded]),
+        stop_token=cf.partial(_make_stop_token)(spectrogram),
+        inputs=preprocess_spans(spans, respell_prob=respell_prob),
     )
 
 
 class DataProcessor(typing.Mapping[int, Batch]):
-    def __init__(
-        self,
-        dataset: run._utils.Dataset,
-        batch_size: int,
-        input_encoder: InputEncoder,
-        step: int = 0,
-        **kwargs,
-    ):
+    def __init__(self, dataset: run._utils.Dataset, batch_size: int, step: int = 0, **kwargs):
         """Given an index, generate the appropriate batch indefinitely.
 
         NOTE: Our training procedure is similar to BERT, the examples are randomly sampled
@@ -521,14 +375,13 @@ class DataProcessor(typing.Mapping[int, Batch]):
         - Checkpoint the random state of every worker, and use it to restart those workers. We'd
           likely need to setup a communication channel with workers, in order to implement this.
         """
-        iter_ = run._utils.SpanGenerator(dataset, **kwargs)
+        iter_ = cf.partial(run._utils.SpanGenerator)(dataset, **kwargs)
         iter_ = BucketBatchSampler(iter_, batch_size, False, self._data_iterator_sort_key)
         iter_ = DeterministicSampler(iter_, run._config.RANDOM_SEED + step, cuda=False)
         if is_initialized():
             iter_ = DistributedBatchSampler(iter_, num_replicas=get_world_size(), rank=get_rank())
         iter_ = typing.cast(typing.Iterator[typing.List[Span]], iter_)
         self.index_to_spans = lib.utils.MappedIterator(iter_)
-        self.input_encoder = input_encoder
 
     @staticmethod
     def _data_iterator_sort_key(span: Span):
@@ -537,8 +390,20 @@ class DataProcessor(typing.Mapping[int, Batch]):
     def __iter__(self):
         return (self[i] for i in range(len(self)))
 
-    def __len__(_) -> int:
+    def __len__(self) -> int:
         return sys.maxsize
 
     def __getitem__(self, index) -> Batch:
-        return make_batch(self.index_to_spans[index], self.input_encoder)
+        return cf.partial(make_batch)(self.index_to_spans[index])
+
+
+def train_get_weight(speaker: Speaker, dataset_size: float):
+    # TODO: The dictionary datasets are small, making up, roughly 1/17th of the training dataset;
+    # however, they have many new words. In attempt to get the model to better learn pronunciation,
+    # give 5x more weight to that dataset, so, it'll come up 5x more times during training.
+    return dataset_size
+
+
+def dev_get_weight(speaker: Speaker, dataset_size: float):
+    # NOTE: For the dev set, we evaluate each speaker in production, equally.
+    return 1.0

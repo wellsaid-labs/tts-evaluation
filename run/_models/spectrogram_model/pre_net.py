@@ -1,16 +1,14 @@
+import config as cf
 import torch
 import torch.nn
-import torch.nn.functional
-from hparams import HParam, configurable
+from torch.nn import functional
 
 
 class _AlwaysDropout(torch.nn.Dropout):
     """Adaptation of `nn.Dropout` to apply dropout during both evaluation and training."""
 
     def forward(self, input_: torch.Tensor) -> torch.Tensor:
-        return torch.nn.functional.dropout(
-            input=input_, p=self.p, training=True, inplace=self.inplace
-        )
+        return functional.dropout(input=input_, p=self.p, training=True, inplace=self.inplace)
 
 
 class PreNet(torch.nn.Module):
@@ -28,6 +26,7 @@ class PreNet(torch.nn.Module):
     Args:
         num_frame_channels: Number of channels in each frame (sometimes refered to as
             "Mel-frequency bins" or "FFT bins" or "FFT bands").
+        seq_meta_embed_size
         size: The size of the hidden representation and output.
         num_layers: Number of fully connected layers of ReLU units.
         dropout: Probability of an element to be zeroed.
@@ -37,24 +36,23 @@ class PreNet(torch.nn.Module):
           https://arxiv.org/pdf/1712.05884.pdf
     """
 
-    @configurable
     def __init__(
         self,
         num_frame_channels: int,
-        speaker_embedding_size: int,
+        seq_meta_embed_size: int,
         size: int,
-        num_layers: int = HParam(),
-        dropout: float = HParam(),
+        num_layers: int,
+        dropout: float,
     ):
         super().__init__()
         _layers = [
             torch.nn.Sequential(
                 torch.nn.Linear(
-                    in_features=(num_frame_channels if i == 0 else size) + speaker_embedding_size,
+                    in_features=(num_frame_channels if i == 0 else size) + seq_meta_embed_size,
                     out_features=size,
                 ),
                 torch.nn.ReLU(inplace=True),
-                torch.nn.LayerNorm(size),
+                torch.nn.LayerNorm(size, **cf.get()),
                 _AlwaysDropout(p=dropout),
             )
             for i in range(num_layers)
@@ -66,21 +64,21 @@ class PreNet(torch.nn.Module):
                 gain = torch.nn.init.calculate_gain("relu")
                 torch.nn.init.xavier_uniform_(module.weight, gain=gain)
 
-    def __call__(self, frames: torch.Tensor, speaker: torch.Tensor) -> torch.Tensor:
-        return super().__call__(frames, speaker)
+    def __call__(self, frames: torch.Tensor, seq_metadata: torch.Tensor) -> torch.Tensor:
+        return super().__call__(frames, seq_metadata)
 
-    def forward(self, frames: torch.Tensor, speaker: torch.Tensor) -> torch.Tensor:
+    def forward(self, frames: torch.Tensor, seq_metadata: torch.Tensor) -> torch.Tensor:
         """
         Args:
             frames (torch.FloatTensor [num_frames, batch_size, num_frame_channels]): Spectrogram
                 frames.
-            speaker (torch.FloatTensor [batch_size, speaker_embedding_dim])
+            seq_metadata (torch.FloatTensor [batch_size, seq_meta_embed_size])
 
         Returns:
             frames (torch.FloatTensor [num_frames, batch_size, hidden_size])
         """
-        # [batch_size, speaker_embedding_dim] → [num_frames, batch_size, speaker_embedding_dim]
-        speaker = speaker.unsqueeze(0).expand(frames.shape[0], -1, -1)
+        # [batch_size, seq_meta_embed_size] → [num_frames, batch_size, seq_meta_embed_size]
+        seq_metadata = seq_metadata.unsqueeze(0).expand(frames.shape[0], -1, -1)
         for layer in self.layers:
-            frames = layer(torch.cat([speaker, frames], dim=2))
+            frames = layer(torch.cat([seq_metadata, frames], dim=2))
         return frames

@@ -1,4 +1,5 @@
 # fmt: off
+# type: ignore
 import math
 
 import torch

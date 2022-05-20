@@ -4,14 +4,15 @@ import pickle
 import typing
 from unittest import mock
 
+import config as cf
 import numpy as np
 import pytest
 
 import lib
 from lib.utils import Timeline
-from run._lang_config import normalize_vo_script
-from run.data._loader import make_en_speaker
-from run.data._loader.data_structures import (
+from run._config import normalize_vo_script
+from run.data._loader.english.lj_speech import LINDA_JOHNSON
+from run.data._loader.structures import (
     Alignment,
     IntInt,
     IsLinked,
@@ -24,22 +25,23 @@ from run.data._loader.data_structures import (
     _filter_non_speech_segments,
     _make_speech_segments_helper,
     _maybe_normalize_vo_script,
+    _remove_ambiguous_casing,
     has_a_mistranscription,
     make_passages,
 )
-from run.data._loader.english import LINDA_JOHNSON
 from run.data._loader.utils import get_non_speech_segments_and_cache
 from tests._utils import TEST_DATA_PATH
+from tests.run._utils import make_passage, make_speaker, script_to_alignments
 
 TEST_DATA_LJ = TEST_DATA_PATH / "audio" / "bit(rate(lj_speech,24000),32).wav"
 
 
 def make_unprocessed_passage(
     audio_path=pathlib.Path("."),
-    speaker=make_en_speaker(""),
-    script="",
-    transcript="",
-    alignments=None,
+    speaker=make_speaker(""),
+    script: str = "",
+    transcript: str = "",
+    alignments: typing.Optional[typing.Tuple[Alignment, ...]] = None,
 ) -> UnprocessedPassage:
     """Make a `UnprocessedPassage` for testing."""
     return UnprocessedPassage(audio_path, speaker, script, transcript, alignments)
@@ -123,20 +125,21 @@ def test__make_speech_segments_helper():
     audio_file = lib.audio.get_audio_metadata(TEST_DATA_LJ)
     next_alignment = (audio_file.length, audio_file.length)
     args = (audio_alignments, prev_alignment, next_alignment, audio_file.length)
-    make = lambda t: _make_speech_segments_helper(*args, t)
+    make = lambda t: _make_speech_segments_helper(*args, t, **cf.get())
 
     speech_segments = (
         (slice(0, 7), slice(0.0, 2.775)),
         (slice(7, 12), slice(2.9599583333333337, 4.91)),
         (slice(12, len(audio_alignments)), slice(5.264958333333333, 7.405)),
     )
-    timeline = get_non_speech_segments_and_cache(audio_file)
+    get_nss_and_cache = cf.partial(get_non_speech_segments_and_cache)
+    timeline = get_nss_and_cache(audio_file)
     assert make(timeline) == speech_segments
-    timeline = get_non_speech_segments_and_cache(audio_file, threshold=-1000)
+    timeline = get_nss_and_cache(audio_file, threshold=-1000)
     assert make(timeline) == tuple()
-    timeline = get_non_speech_segments_and_cache(audio_file, threshold=0)
+    timeline = get_nss_and_cache(audio_file, threshold=0)
     assert make(timeline) == tuple()
-    timeline = get_non_speech_segments_and_cache(audio_file, threshold=-40)
+    timeline = get_nss_and_cache(audio_file, threshold=-40)
     assert make(timeline) == (
         (slice(0, 5, None), slice(0.009958333333333326, 1.7699999999999998, None)),
         (slice(5, 7, None), slice(1.7949583333333334, 2.62, None)),
@@ -160,6 +163,7 @@ def test__make_speech_segments_helper__partial():
         next_alignment=(2, 2),
         max_length=2,
         nss_timeline=Timeline([(0.0, 0.0), (0.0, 0.0)]),
+        **cf.get(),
     )
     assert speech_segments == tuple()
 
@@ -189,6 +193,7 @@ def test__make_speech_segments_helper__prev_alignment():
         next_alignment=(1.5, 1.5),
         max_length=1.5,
         nss_timeline=Timeline([(0.0, 0.2), (0.3, 0.75), (1.0, 1.5)]),
+        **cf.get(),
     )
     assert speech_segments == tuple()
 
@@ -202,6 +207,7 @@ def test__make_speech_segments_helper__next_alignment():
         next_alignment=(1.5, 1.75),
         max_length=2.0,
         nss_timeline=Timeline([(0.0, 0.2), (1.75, 2.0)]),
+        **cf.get(),
     )
     assert speech_segments == tuple()
 
@@ -219,7 +225,7 @@ def test__make_speech_segments_helper__padding():
     assert speech_segments == ((slice(0, 1, None), slice(0.0, 1.0, None)),)
 
 
-@mock.patch("run.data._loader.data_structures.logger.error")
+@mock.patch("run.data._loader.structures.logger.error")
 def test__check_updated_script(mock_error):
     """Test `_check_updated_script` against some basic cases."""
     passage = make_unprocessed_passage(script="abc", transcript="abc", alignments=tuple())
@@ -239,7 +245,7 @@ def test__check_updated_script(mock_error):
         _check_updated_script("", passage, "ab", "ab")
 
 
-@mock.patch("run.data._loader.data_structures.logger.error")
+@mock.patch("run.data._loader.structures.logger.error")
 def test__check_updated_script__with__maybe_normalize_vo_script(mock_error):
     script = "áƀćde'"
     transcript = "áƀć°€¹"
@@ -269,8 +275,7 @@ def test_passage_span__identity():
     alignment = Alignment((0, len(script)), (0.0, metadata.length), (0, len(script)))
     passage = Passage(
         audio_file=metadata,
-        session=Session(audio_path.name),
-        speaker=LINDA_JOHNSON,
+        session=Session((LINDA_JOHNSON, audio_path.name)),
         script=script,
         transcript=script,
         alignments=Alignment.stow([alignment]),
@@ -319,7 +324,7 @@ def _make_unprocessed_passage_helper(
     found = [(find_script(script, t), find_transcript(transcript, t)) for t in tokens]
     return UnprocessedPassage(
         audio_path=TEST_DATA_LJ,
-        speaker=make_en_speaker(""),
+        speaker=make_speaker(""),
         script=script,
         transcript=transcript,
         alignments=tuple(Alignment(s, (0.0, 0.0), t) for s, t in found),
@@ -540,3 +545,27 @@ def test_has_a_mistranscription__span():
     assert has_a_mistranscription(passages[0][1:])
     assert has_a_mistranscription(passages[1][:])
     assert not has_a_mistranscription(passages[1][1:])
+
+
+def test_spacy_context():
+    """Test that `spacy_context` gets the full context."""
+    script = "Give it back! He pleaded."
+    passage = make_passage(script=script)
+    assert str(passage[2:4].spacy_context(10)) == "Give it back! He pleaded."
+    assert str(passage[2:4].spacy_context(0)) == "back! He"
+    assert str(passage[2:4].spacy) == "back! He"
+
+
+def test__remove_ambiguous_casing():
+    """Test that `_remove_ambiguous_casing` removes any ambiguously cased tokens."""
+    script, transcript, normalized = (
+        "THIS is A test. This. TEST. urls. URLs. 111. Dash-dash. si punc. Dash-Dash. U.S. P-C-I.",
+        "This is a TEST. This. TEST. URLs. urls. one. dash-dash. y p. dash-dash. u.s. PCI.",
+        "     is A       This. TEST.             111. Dash-dash. si punc. Dash-Dash. U.S. P-C-I.",
+    )
+    iter_ = zip(script_to_alignments(script), script_to_alignments(transcript))
+    alignments = tuple([Alignment(s, s, t) for s, t in iter_])
+    passage = make_unprocessed_passage(script=script, transcript=transcript, alignments=alignments)
+    passage = _remove_ambiguous_casing("", passage)
+    assert passage.alignments is not None
+    assert [a.script for a in passage.alignments] == list(script_to_alignments(normalized))

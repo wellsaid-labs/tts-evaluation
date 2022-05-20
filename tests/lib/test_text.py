@@ -8,16 +8,17 @@ import pytest
 
 import lib
 from lib.text import (
-    _line_grapheme_to_phoneme,
-    _multiline_grapheme_to_phoneme,
+    RESPELLING_ALPHABET,
+    RESPELLINGS,
+    _remove_arpabet_markings,
     grapheme_to_phoneme,
     is_normalized_vo_script,
     normalize_vo_script,
 )
 
 
-def test__line_grapheme_to_phoneme():
-    """Test `_line_grapheme_to_phoneme` can handle some basic cases."""
+def test_grapheme_to_phoneme():
+    """Test `grapheme_to_phoneme` can handle some basic cases."""
     in_ = [
         "  Hello World  ",
         "Hello World  ",
@@ -32,12 +33,75 @@ def test__line_grapheme_to_phoneme():
         " _\n_ _h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d_ _\n_ ",
         " _\n\n_ _h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d_ _\n\n_ ",
     ]
-    assert _line_grapheme_to_phoneme(in_, separator="_") == out
+    assert grapheme_to_phoneme(in_, separator="_") == out
 
 
-def test__multiline_grapheme_to_phoneme():
-    """Test `_multiline_grapheme_to_phoneme` against basic cases."""
-    in_ = [
+def test_grapheme_to_phoneme__white_space():
+    """Test `grapheme_to_phoneme` preserves white spaces, SOMETIMES."""
+    # NOTE: Test a number of string literals, see: https://docs.python.org/2.0/ref/strings.html
+    # TODO: Which of these punctuation marks need to be preserved?
+    in_ = " \n test \t test \r test \v test \f test \a test \b "
+    out = " _\n_ _t_ˈ_ɛ_s_t_ _t_ˈ_ɛ_s_t_ _t_ˈ_ɛ_s_t_ _t_ˈ_ɛ_s_t_ _t_ˈ_ɛ_s_t_ _t_ˈ_ɛ_s_t_ "
+    assert grapheme_to_phoneme([in_], separator="_") == [out]
+
+    # TODO: Multiple white-spaces are not preserved.
+    in_ = "résumé résumé  résumé   résumé"
+    out = "ɹ|ˈ|ɛ|z|uː|m|ˌ|eɪ| |ɹ|ˈ|ɛ|z|uː|m|ˌ|eɪ| |ɹ|ˈ|ɛ|z|uː|m|ˌ|eɪ| |ɹ|ˈ|ɛ|z|uː|m|ˌ|eɪ"
+    assert grapheme_to_phoneme([in_], separator="|") == [out]
+
+
+def test_grapheme_to_phoneme__service_separator():
+    """Test `grapheme_to_phoneme` works when `separator == service_separator`."""
+    assert grapheme_to_phoneme(["Hello World"], separator="_") == ["h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d"]
+
+
+def test_grapheme_to_phoneme__unique_separator():
+    """Test `grapheme_to_phoneme` errors if `separator` is not unique."""
+    with pytest.raises(AssertionError):
+        grapheme_to_phoneme(["Hello World"], separator="ə")
+
+
+@mock.patch("lib.text.logger.warning")
+def test_grapheme_to_phoneme__language_switching(mock_warning):
+    """Test `grapheme_to_phoneme` logs a warning if the language is switched."""
+    assert grapheme_to_phoneme(["mon dieu"], separator="|") == ["m|ˈ|ɑː|n| |d|j|ˈ|ø"]
+    assert mock_warning.called == 1
+
+
+def test_grapheme_to_phoneme__special_bash_character():
+    """Test `grapheme_to_phoneme` handles double quotes, a bash special character."""
+    in_ = ['"It is commonly argued that the notion of']
+    out = ["ɪ_t_ _ɪ_z_ _k_ˈ_ɑː_m_ə_n_l_i_ _ˈ_ɑːɹ_ɡ_j_uː_d_ _ð_æ_t_ð_ə_ _n_ˈ_oʊ_ʃ_ə_n_ _ʌ_v"]
+    assert grapheme_to_phoneme(in_, separator="_") == out
+
+
+def test_grapheme_to_phoneme__long_number():
+    """Test `grapheme_to_phoneme` is UNABLE to handle long numbers.
+
+    NOTE: eSpeak stops before outputing "7169399375105820974944592". Feel free to test this, like
+    so: `espeak --ipa=3 -q -ven-us 3.141592653589793238462643383279502884197`.
+
+    Learn more here: https://github.com/wellsaid-labs/Text-to-Speech/issues/299
+    """
+    in_ = "3.141592653589793238462643383279502884197169399375105820974944592"
+    assert grapheme_to_phoneme([in_], separator="|") == [
+        "θ|ɹ|ˈ|iː| |p|ɔɪ|n|t| |w|ˈ|ʌ|n| |f|ˈ|oːɹ| |w|ˈ|ʌ|n| |f|ˈ|aɪ|v| |n|ˈ|aɪ|n| |t|ˈ|uː| "
+        "|s|ˈ|ɪ|k|s| |f|ˈ|aɪ|v| |θ|ɹ|ˈ|iː| |f|ˈ|aɪ|v| |ˈ|eɪ|t| |n|ˈ|aɪ|n| |s|ˈ|ɛ|v|ə|n| "
+        "|n|ˈ|aɪ|n| |θ|ɹ|ˈ|iː| |t|ˈ|uː| |θ|ɹ|ˈ|iː| |ˈ|eɪ|t| |f|ˈ|oːɹ| |s|ˈ|ɪ|k|s| |t|ˈ|uː| "
+        "|s|ˈ|ɪ|k|s| |f|ˈ|oːɹ| |θ|ɹ|ˈ|iː| |θ|ɹ|ˈ|iː| |ˈ|eɪ|t| |θ|ɹ|ˈ|iː| |t|ˈ|uː| "
+        "|s|ˈ|ɛ|v|ə|n| |n|ˈ|aɪ|n| |f|ˈ|aɪ|v| |z|ˈ|iə|ɹ|oʊ| |t|ˈ|uː| |ˈ|eɪ|t| |ˈ|eɪ|t| "
+        "|f|ˈ|oːɹ| |w|ˈ|ʌ|n| |n|ˈ|aɪ"
+    ]
+
+
+def test_grapheme_to_phoneme__empty():
+    """Test `grapheme_to_phoneme` against an empty list."""
+    assert grapheme_to_phoneme([]) == []
+
+
+def test_grapheme_to_phoneme__regressions():
+    """Test `grapheme_to_phoneme` against many real world examples."""
+    inputs = [
         "and Trot fed it a handful of fresh blue clover and smoothed and petted it until the lamb "
         "was eager to follow her wherever she might go.",
         "The habits of mind that characterize a person strongly disposed toward critical thinking "
@@ -79,7 +143,7 @@ He posed the couple, board-stiff in front of a plain house.
 
 The man,""",
     ]
-    out = [
+    outputs = [
         "æ_n_d_ _t_ɹ_ˈ_ɑː_t_ _f_ˈ_ɛ_d_ _ɪ_t_ _ɐ_ _h_ˈ_æ_n_d_f_əl_ _ʌ_v_ _f_ɹ_ˈ_ɛ_ʃ_ _b_l_ˈ_uː_ _"
         "k_l_ˈ_oʊ_v_ɚ_ _æ_n_d_ _s_m_ˈ_uː_ð_d_ _æ_n_d_ _p_ˈ_ɛ_ɾ_ᵻ_d_ _ɪ_t_ _ʌ_n_t_ˈ_ɪ_l_ _ð_ə_ _"
         "l_ˈ_æ_m_ _w_ʌ_z_ _ˈ_iː_ɡ_ɚ_ _t_ə_ _f_ˈ_ɑː_l_oʊ_ _h_ɜː_ _w_ɛɹ_ɹ_ˈ_ɛ_v_ɚ_ _ʃ_iː_ _m_ˌ_aɪ_t_ "
@@ -140,381 +204,183 @@ _ _ɹ_ˌ_oʊ_m_ə_n_ _f_ˈ_oːɹ_ _ɪ_l_ˌ_uː_m_ᵻ_n_ˈ_eɪ_ʃ_ə_n""",
         "h_iː_ _p_ˈ_oʊ_z_d_ _ð_ə_ _k_ˈ_ʌ_p_əl_ _b_ˈ_oːɹ_d_s_t_ˈ_ɪ_f_ _ɪ_n_ _f_ɹ_ˈ_ʌ_n_t_ _ə_v_ə_ "
         "_p_l_ˈ_eɪ_n_ _h_ˈ_aʊ_s_\n_\n_ð_ə_ _m_ˈ_æ_n",
     ]
-    assert _multiline_grapheme_to_phoneme(in_, separator="_") == out
+    for in_, out in zip(inputs, outputs):
+        for i, o in zip(grapheme_to_phoneme(in_.split("\n"), separator="_"), out.split("\n")):
+            assert i.strip("_") == o.strip("_")
 
 
-def test__multiline_grapheme_to_phoneme__special_bash_character():
-    """Test `_multiline_grapheme_to_phoneme` handles double quotes, a bash special character."""
-    in_ = ['"It is commonly argued that the notion of']
-    out = ["ɪ_t_ _ɪ_z_ _k_ˈ_ɑː_m_ə_n_l_i_ _ˈ_ɑːɹ_ɡ_j_uː_d_ _ð_æ_t_ð_ə_ _n_ˈ_oʊ_ʃ_ə_n_ _ʌ_v"]
-    assert _multiline_grapheme_to_phoneme(in_, separator="_") == out
-
-
-def test__multiline_grapheme_to_phoneme__stripping():
-    """Test `_multiline_grapheme_to_phoneme` respects white spaces on the edges."""
-    in_ = [
-        "  Hello World  ",
-        "Hello World  ",
-        "  Hello World",
-        " \n Hello World \n ",
-        " \n\n Hello World \n\n ",
-    ]
-    out = [
-        " _ _h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d_ _ ",
-        "h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d_ _ ",
-        " _ _h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d",
-        " _\n_ _h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d_ _\n_ ",
-        " _\n_\n_ _h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d_ _\n_\n_ ",
-    ]
-    assert _multiline_grapheme_to_phoneme(in_, separator="_") == out
-
-
-def test__multiline_grapheme_to_phoneme__service_separator():
-    """Test `_multiline_grapheme_to_phoneme` works when `separator == service_separator`."""
-    assert _multiline_grapheme_to_phoneme(["Hello World"], separator="_") == [
-        "h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d"
-    ]
-
-
-def test__multiline_grapheme_to_phoneme__unique_separator():
-    """Test `_multiline_grapheme_to_phoneme` errors if `separator` is not unique."""
-    with pytest.raises(AssertionError):
-        _multiline_grapheme_to_phoneme(["Hello World"], separator="ə")
-
-
-@mock.patch("lib.text.logger.warning")
-def test__multiline_grapheme_to_phoneme__language_switching(mock_warning):
-    """Test `_multiline_grapheme_to_phoneme` logs a warning if the language is switched."""
-    assert _multiline_grapheme_to_phoneme(["mon dieu"], separator="|") == ["m|ˈ|ɑː|n| |d|j|ˈ|ø"]
-    assert mock_warning.called == 1
-
-
-def test__multiline_grapheme_to_phoneme__long_number():
-    """Test `_multiline_grapheme_to_phoneme` is UNABLE to handle long numbers.
-
-    NOTE: eSpeak stops before outputing "7169399375105820974944592". Feel free to test this, like
-    so: `espeak --ipa=3 -q -ven-us 3.141592653589793238462643383279502884197`.
-
-    Learn more here: https://github.com/wellsaid-labs/Text-to-Speech/issues/299
-    """
-    in_ = "3.141592653589793238462643383279502884197169399375105820974944592"
-    assert _multiline_grapheme_to_phoneme([in_], separator="|") == [
-        "θ|ɹ|ˈ|iː| |p|ɔɪ|n|t| |w|ˈ|ʌ|n| |f|ˈ|oːɹ| |w|ˈ|ʌ|n| |f|ˈ|aɪ|v| |n|ˈ|aɪ|n| |t|ˈ|uː| "
-        "|s|ˈ|ɪ|k|s| |f|ˈ|aɪ|v| |θ|ɹ|ˈ|iː| |f|ˈ|aɪ|v| |ˈ|eɪ|t| |n|ˈ|aɪ|n| |s|ˈ|ɛ|v|ə|n| "
-        "|n|ˈ|aɪ|n| |θ|ɹ|ˈ|iː| |t|ˈ|uː| |θ|ɹ|ˈ|iː| |ˈ|eɪ|t| |f|ˈ|oːɹ| |s|ˈ|ɪ|k|s| |t|ˈ|uː| "
-        "|s|ˈ|ɪ|k|s| |f|ˈ|oːɹ| |θ|ɹ|ˈ|iː| |θ|ɹ|ˈ|iː| |ˈ|eɪ|t| |θ|ɹ|ˈ|iː| |t|ˈ|uː| "
-        "|s|ˈ|ɛ|v|ə|n| |n|ˈ|aɪ|n| |f|ˈ|aɪ|v| |z|ˈ|iə|ɹ|oʊ| |t|ˈ|uː| |ˈ|eɪ|t| |ˈ|eɪ|t| "
-        "|f|ˈ|oːɹ| |w|ˈ|ʌ|n| |n|ˈ|aɪ"
-    ]
-
-
-def test_grapheme_to_phoneme():
-    """Test `grapheme_to_phoneme` against basic cases."""
-    in_ = """of 5 stages:
-(i) preparation,
-(ii) incubation,
-(iii) intimation,
-(iv) illumination"""
-    out = """ʌ_v_ _f_ˈ_aɪ_v_ _s_t_ˈ_eɪ_dʒ_ᵻ_z_:_
-_(_ˈ_aɪ_)_ _p_ɹ_ˌ_ɛ_p_ɚ_ɹ_ˈ_eɪ_ʃ_ə_n_,_
-_(_ɹ_ˌ_oʊ_m_ə_n_ _t_ˈ_uː_)_ _ˌ_ɪ_n_k_j_uː_b_ˈ_eɪ_ʃ_ə_n_,_
-_(_ɹ_ˌ_oʊ_m_ə_n_ _θ_ɹ_ˈ_iː_)_ _ˌ_ɪ_n_t_ɪ_m_ˈ_eɪ_ʃ_ə_n_,_
-_(_ɹ_ˌ_oʊ_m_ə_n_ _f_ˈ_oːɹ_)_ _ɪ_l_ˌ_uː_m_ᵻ_n_ˈ_eɪ_ʃ_ə_n"""
-    assert grapheme_to_phoneme(in_, separator="_") == out
-    out = "j_uː_ɹ_ˈ_iː_k_ɐ_ _w_ˈ_ɔː_k_s_ _ɑː_n_ð_ɪ_ _ˈ_ɛ_ɹ_ _ˈ_ɔː_l_ _ɹ_ˈ_aɪ_t_."
-    assert grapheme_to_phoneme("Eureka walks on the air all right.", separator="_") == out
-    assert grapheme_to_phoneme("Hello world", separator="_") == "h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d"
-    assert grapheme_to_phoneme("How are you?", separator="_") == "h_ˈ_aʊ_ _ɑːɹ_ _j_uː_?"
-    assert grapheme_to_phoneme("I'm great!", separator="_") == "aɪ_m_ _ɡ_ɹ_ˈ_eɪ_t_!"
-    assert grapheme_to_phoneme("") == ""
-
-
-def test_grapheme_to_phoneme__empty():
-    """Test `grapheme_to_phoneme` against an empty list."""
-    assert grapheme_to_phoneme([]) == []
-
-
-def test_grapheme_to_phoneme__doc_input():
-    """Test `grapheme_to_phoneme` with a spaCy input."""
-    nlp = lib.text.load_en_core_web_sm()
-    assert grapheme_to_phoneme(nlp("Hello world"), separator="_") == "h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d"
-    assert grapheme_to_phoneme([nlp("How are you?")], separator="_") == ["h_ˈ_aʊ_ _ɑːɹ_ _j_uː_?"]
-
-
-def test_grapheme_to_phoneme__white_space():
-    """Test `grapheme_to_phoneme` preserves white spaces, SOMETIMES."""
-    out = " _ _h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d_ _ "
-    assert grapheme_to_phoneme("  Hello World  ", separator="_") == out
-
-    out = " _\n_\n_ _h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d_ _\n_\n_ "
-    assert grapheme_to_phoneme(" \n\n Hello World \n\n ", separator="_") == out
-
-    out = " _\n_\t_ _h_ə_l_ˈ_oʊ_ _w_ˈ_ɜː_l_d_ _\n_\t_ "
-    assert grapheme_to_phoneme(" \n\t Hello World \n\t ", separator="_") == out
-
-    # NOTE: Test a number of string literals, see: https://docs.python.org/2.0/ref/strings.html
-    # TODO: Which of these punctuation marks need to be preserved?
-    in_ = " \n test \t test \r test \v test \f test \a test \b "
-    out = " _\n_ _t_ˈ_ɛ_s_t_ _t_ˈ_ɛ_s_t_ _t_ˈ_ɛ_s_t_ _t_ˈ_ɛ_s_t_ _t_ˈ_ɛ_s_t_ _t_ˈ_ɛ_s_t_ "
-    assert grapheme_to_phoneme(in_, separator="_") == out
-
-    # TODO: Multiple white-spaces are not preserved.
-    in_ = "résumé résumé  résumé   résumé"
-    out = "ɹ|ˈ|ɛ|z|uː|m|ˌ|eɪ| |ɹ|ˈ|ɛ|z|uː|m|ˌ|eɪ| |ɹ|ˈ|ɛ|z|uː|m|ˌ|eɪ| |ɹ|ˈ|ɛ|z|uː|m|ˌ|eɪ"
-    assert grapheme_to_phoneme(in_, separator="|") == out
-
-
-def test_grapheme_to_phoneme__unique_separator():
-    """Test `grapheme_to_phoneme` errors if `separator` is not unique."""
-    with pytest.raises(AssertionError):
-        grapheme_to_phoneme("Hello World!", separator="!")
-
-
-def test_grapheme_to_phoneme__spacy_failure_cases():
-    """Test `grapheme_to_phoneme` with text where spaCy fails."""
-    in_ = [
-        ".Sameer M Babu is a professor who wrote an article about classroom "
-        "climate and social intelligence.",
-        "I ha thought till my brains ached,-Beli me, John, I have. An I say again, theres no "
-        "help for us but having faith i the Union. Theyll win the day, see if they dunnot!",
-        "we're gett'n' a long way from home. And see how the clouds are rolling just above us, "
-        "remarked the boy, who was almost as uneasy as captain Bill.",
-        "I I don't s-s-see any-thing funny 'bout it! he stammered.",
-        "But don't worry, there are plenty of toys that are safe--and fun--for your child.",
-        "Indeed, for the royal body, a rather unusual set of ideal attributes emerges in the "
-        "Mesopotamian lexicon: an accumulation of good form or breeding, auspiciousness, "
-        "vigor/vitality, and, specifically, sexual allure or charm – all of which are not "
-        "only ascribed in text, but equally to be read in imagery.",
-        "This is a test {}:\"?,./;'[]\\q234567890-=!@##$%%^&*()+",
-    ]
-    out = [
-        "d_ˈ_ɑː_t_ _s_æ_m_ˈ_ɪ_ɹ_ _ˈ_ɛ_m_ _b_ˈ_ɑː_b_uː_ _ɪ_z_ _ɐ_ _p_ɹ_ə_f_ˈ_ɛ_s_ɚ_ _h_ˌ_uː_ "
-        "_ɹ_ˈ_oʊ_t_ _ɐ_n_ _ˈ_ɑːɹ_ɾ_ɪ_k_əl_ _ɐ_b_ˌ_aʊ_t_ _k_l_ˈ_æ_s_ɹ_uː_m_ _k_l_ˈ_aɪ_m_ə_t_ "
-        "_æ_n_d_ _s_ˈ_oʊ_ʃ_əl_ _ɪ_n_t_ˈ_ɛ_l_ɪ_dʒ_ə_n_s_.",
-        "aɪ_ _h_ˈ_ɑː_ _θ_ˈ_ɔː_t_ _t_ˈ_ɪ_l_ _m_aɪ_ _b_ɹ_ˈ_eɪ_n_z_ _ˈ_eɪ_k_t_b_ɪ_l_i_ _m_ˌ_iː_,_ _"
-        "dʒ_ˈ_ɑː_n_,_ _aɪ_ _h_ˈ_æ_v_._ _ɐ_n_ _aɪ_ _s_ˈ_eɪ_ _ɐ_ɡ_ˈ_ɛ_n_,_ _ð_ɚ_z_ _n_ˈ_oʊ_ "
-        "_h_ˈ_ɛ_l_p_ _f_ɔː_ɹ_ _ˌ_ʌ_s_ _b_ˌ_ʌ_t_ _h_ˌ_æ_v_ɪ_ŋ_ _f_ˈ_eɪ_θ_ _ˈ_aɪ_ "
-        "_ð_ə_ _j_ˈ_uː_n_iə_n_._ _θ_ˈ_eɪ_l_ _w_ˈ_ɪ_n_ _ð_ə_ _d_ˈ_eɪ_,_ _s_ˈ_iː_ _ɪ_f_ _ð_eɪ_ "
-        "_d_ˈ_ʌ_n_ɑː_t_!",
-        "w_ɪɹ_ _ɡ_ˈ_ɛ_t_n_ _ɐ_ _l_ˈ_ɑː_ŋ_ _w_ˈ_eɪ_ _f_ɹ_ʌ_m_ _h_ˈ_oʊ_m_._ _æ_n_d_ _s_ˈ_iː_ _"
-        "h_ˌ_aʊ_ _ð_ə_ _k_l_ˈ_aʊ_d_z_ _ɑːɹ_ _ɹ_ˈ_oʊ_l_ɪ_ŋ_ _dʒ_ˈ_ʌ_s_t_ _ə_b_ˈ_ʌ_v_ _ˌ_ʌ_s_,_ "
-        "_ɹ_ɪ_m_ˈ_ɑːɹ_k_t_ _ð_ə_ _b_ˈ_ɔɪ_,_ _h_ˌ_uː_ _w_ʌ_z_ _ˈ_ɔː_l_m_oʊ_s_t_ _"
-        "æ_z_ _ʌ_n_ˈ_iː_z_i_ _æ_z_ _k_ˈ_æ_p_t_ɪ_n_ _b_ˈ_ɪ_l_.",
-        "aɪ_ _aɪ_ _d_ˈ_oʊ_n_t_ _ˈ_ɛ_s_-_ˈ_ɛ_s_-_s_ˈ_iː_ _ˌ_ɛ_n_i_-_θ_ˈ_ɪ_ŋ_ _"
-        "f_ˈ_ʌ_n_i_ _b_ˈ_aʊ_t_ _ɪ_t_!_ _h_iː_ _s_t_ˈ_æ_m_ɚ_d_.",
-        "b_ˌ_ʌ_t_ _d_ˈ_oʊ_n_t_ _w_ˈ_ʌ_ɹ_i_,_ _ð_ɛ_ɹ_ˌ_ɑːɹ_ _p_l_ˈ_ɛ_n_t_i_ _ʌ_v_ _"
-        "t_ˈ_ɔɪ_z_ _ð_æ_t_ _ɑːɹ_ _s_ˈ_eɪ_f_-_-_æ_n_d_ _f_ˈ_ʌ_n_-_-_f_ɔːɹ_ _j_ʊɹ_ _tʃ_ˈ_aɪ_l_d_.",
-        "ˌ_ɪ_n_d_ˈ_iː_d_,_ _f_ɚ_ð_ə_ _ɹ_ˈ_ɔɪ_əl_ _b_ˈ_ɑː_d_i_,_ _ɐ_ _ɹ_ˈ_æ_ð_ɚ_ɹ_ "
-        "_ʌ_n_j_ˈ_uː_ʒ_uː_əl_ _s_ˈ_ɛ_t_ _ʌ_v_ _aɪ_d_ˈ_iə_l_ _ˈ_æ_t_ɹ_ɪ_b_j_ˌ_uː_t_s_ "
-        "_ɪ_m_ˈ_ɜː_dʒ_ᵻ_z_ _ɪ_n_ð_ə_ _m_ˌ_ɛ_s_ə_p_ə_t_ˈ_eɪ_m_iə_n_ _l_ˈ_ɛ_k_s_ɪ_k_ə_n_:_ "
-        "_ɐ_n_ _ɐ_k_j_ˌ_uː_m_j_ʊ_l_ˈ_eɪ_ʃ_ə_n_ _ʌ_v_ _ɡ_ˈ_ʊ_d_ _f_ˈ_ɔːɹ_m_ _ɔːɹ_ "
-        "_b_ɹ_ˈ_iː_d_ɪ_ŋ_,_ "
-        "_ɔː_s_p_ˈ_ɪ_ʃ_ə_s_n_ə_s_,_ _v_ˈ_ɪ_ɡ_ɚ_ _s_l_ˈ_æ_ʃ_ _v_aɪ_t_ˈ_æ_l_ɪ_ɾ_i_,_ _æ_n_d_,_ "
-        "_s_p_ə_s_ˈ_ɪ_f_ɪ_k_l_i_,_ _s_ˈ_ɛ_k_ʃ_uː_əl_ _ɐ_l_ˈ_ʊɹ_ _ɔːɹ_ _tʃ_ˈ_ɑːɹ_m_ "
-        "_–_ _ˈ_ɔː_l_ _ʌ_v_w_ˈ_ɪ_tʃ_ _ɑːɹ_ _n_ˌ_ɑː_t_ _ˈ_oʊ_n_l_i_ _ɐ_s_k_ɹ_ˈ_aɪ_b_d_ _ɪ_n_ "
-        "_t_ˈ_ɛ_k_s_t_,_ _b_ˌ_ʌ_t_ _ˈ_iː_k_w_əl_i_ _t_ə_b_i_ _ɹ_ˈ_ɛ_d_ _ɪ_n_ _ˈ_ɪ_m_ɪ_dʒ_ɹ_i_.",
-        'ð_ɪ_s_ _ɪ_z_ _ɐ_ _t_ˈ_ɛ_s_t_ _{_}_:_"_?_,_d_ˈ_ɑː_t_s_l_æ_ʃ_ _b_ˈ_æ_k_s_l_æ_ʃ_ _k_j_ˈ_uː_ '
-        "_t_ˈ_uː_h_ˈ_ʌ_n_d_ɹ_ə_d_ _θ_ˈ_ɜː_ɾ_i_f_ˈ_oːɹ_ _m_ˈ_ɪ_l_iə_n_ _f_ˈ_aɪ_v_h_ˈ_ʌ_n_d_ɹ_ə_d_"
-        " _s_ˈ_ɪ_k_s_t_i_s_ˈ_ɛ_v_ə_n_ _θ_ˈ_aʊ_z_ə_n_d_ _ˈ_eɪ_t_h_ˈ_ʌ_n_d_ɹ_ə_d_ _n_ˈ_aɪ_n_t_i_"
-        " _ˌ_iː_k_w_əl_z_ˌ_ɛ_k_s_k_l_ə_m_ˌ_eɪ_ʃ_ə_n_ˌ_æ_t_h_ɐ_ʃ_h_ˌ_æ_ʃ_d_ə_l_ɚ_p_ɚ_s_ˈ_ɛ_n_t_p"
-        "_ɚ_s_ˈ_ɛ_n_t_ɐ_n_d_ˌ_æ_s_t_ɚ_ɹ_ˌ_ɪ_s_k_p_l_ʌ_s",
-    ]
-    assert grapheme_to_phoneme(in_, separator="_") == out
-
-
-def test__load_amepd():
-    """Test `lib.text._load_amepd` loads the dictionary, and the dictionary includes all the
-    part-of-speech, phonemes, fields, etc."""
-    dictionary = lib.text._load_amepd()
-    part_of_speech_coarse = set()
-    part_of_speech_fine = set()
-    arpabet: typing.Set[lib.text.AMEPD_ARPABET] = set()
-    fields = set()
-    unique = set()
+def test_load_cmudict_syl():
+    """Test `lib.text.load_cmudict_syl` loads the dictionary."""
+    dictionary = lib.text.load_cmudict_syl()
+    arpabet: typing.Set[lib.text.ARPAbet] = set()
     characters = set()
     for word, pronunciations in dictionary.items():
         for pronunciation in pronunciations:
             assert len(word) == len(word.strip())
             assert len(word) > 0
-            if pronunciation.pos is not None:
-                part_of_speech_coarse.add(pronunciation.pos.coarse)
-                part_of_speech_fine.add(pronunciation.pos.fine)
-            arpabet.update(pronunciation.pronunciation)
+            arpabet.update([code for syllable in pronunciation for code in syllable])
             characters.update(list(word))
-            signature = (
-                word,
-                pronunciation.pronunciation,
-                pronunciation.pos,
-                pronunciation.metadata.usage,
-            )
-            assert signature not in unique
-            unique.add(signature)
-            for field in lib.text.AmEPDMetadata._fields:
-                value = getattr(pronunciation.metadata, field)
-                if value is not None:
-                    fields.add(field)
-                    for subvalue in value if isinstance(value, tuple) else [value]:
-                        assert len(subvalue) == len(subvalue.strip())
-                        assert len(subvalue) > 0
-    assert len(fields) == len(lib.text.AmEPDMetadata._fields)
-    assert part_of_speech_coarse == set(get_args(lib.text.AMEPD_PART_OF_SPEECH_COARSE))
-    assert part_of_speech_fine == set(list(get_args(lib.text.AMEPD_PART_OF_SPEECH_FINE)) + [None])
-    assert arpabet == set(get_args(lib.text.AMEPD_ARPABET))
+    assert arpabet == set(get_args(lib.text.ARPAbet))
     assert characters == set(list(string.ascii_uppercase) + ["'"])
 
 
-def _check_pronunciation(
-    word: str,
-    part_of_speech_coarse: typing.Optional[
-        typing.Literal[lib.text.AMEPD_PART_OF_SPEECH_COARSE]
-    ] = None,
-    part_of_speech_fine: typing.Optional[typing.Literal["past", "pres"]] = None,
-    expected: typing.Optional[str] = None,
-):
-    result = lib.text.get_pronunciation(word, part_of_speech_coarse, part_of_speech_fine)
+def _check_pronunciation(word: str, expected: typing.Optional[str] = None):
+    result = lib.text.get_pronunciation(word, lib.text.load_cmudict_syl())
     if expected is None:
         assert result is expected
     else:
-        assert result == tuple(expected.split())
+        assert result == tuple(tuple(s.split()) for s in expected.split(" - "))
+
+
+def test_get_pronunciation():
+    """Test `lib.text.get_pronunciation` on basic scenarios."""
+    expectations = {
+        "zebra": (("Z", "IY1"), ("B", "R", "AH0")),
+        "motorcycle": (("M", "OW1"), ("T", "ER0"), ("S", "AY2"), ("K", "AH0", "L")),
+        "suspicious": (("S", "AH0"), ("S", "P", "IH1"), ("SH", "AH0", "S")),
+    }
+    for word, pronunciation in expectations.items():
+        assert pronunciation == lib.text.get_pronunciation(word, lib.text.load_cmudict_syl())
 
 
 def test_get_pronunciation__out_of_vocabulary():
     """Test `lib.text.get_pronunciation` doesn't handle words outside it's vocabulary."""
     _check_pronunciation("abcdefg", expected=None)
+    _check_pronunciation(" ", expected=None)
+    _check_pronunciation("\t", expected=None)
 
 
 def test_get_pronunciation__apostrophes():
     """Test `lib.text.get_pronunciation` handles apostrophes at the end and beginning of a word."""
-    _check_pronunciation("accountants'", "verb", "past", expected="AX K AW1 N T AX N T S")
-    _check_pronunciation("'bout", expected="B AW1 T")
+    _check_pronunciation("accountants'", expected="AH0 - K AW1 N - T AH0 N T S")
+    _check_pronunciation("'bout", expected=None)
 
 
-def test_get_pronunciation__disambiguate():
-    """Test `lib.text.get_pronunciation` attempts to disambiguate tricky cases, and returns `None`
-    when it can't."""
+def test_get_pronunciation__variations():
+    """Test `lib.text.get_pronunciation` doesn't return if the pronunciation is ambigious."""
     # NOTE: Base case with no variations to choose from.
-    _check_pronunciation("fly", "verb", "pres", expected="F L AY1")
-    _check_pronunciation("fly", "verb", "past", expected="F L AY1")
-    _check_pronunciation("fly", "verb", expected="F L AY1")
-    _check_pronunciation("fly", "noun", expected="F L AY1")
-    _check_pronunciation("fly", expected="F L AY1")
     _check_pronunciation("fly", expected="F L AY1")
 
-    _check_pronunciation("read", expected=None)  # Options: verb@past, verb
-    _check_pronunciation("read", "verb", expected=None)
-    _check_pronunciation("beloved", expected=None)  # Options: noun, adj@attr, adj@pred, verb
-    _check_pronunciation("beloved", "adj", expected=None)
-    # NOTE: Multiple variations that cannot be disambiguated with part-of-speech.
-    _check_pronunciation("reasonable", expected=None)  # Options: 1, 2
-    _check_pronunciation("reasonable", "adj", expected=None)
-
-    # NOTE: This should be disambiguated correctly.
-    _check_pronunciation("read", "verb", "past", expected="R EH1 D")
-    _check_pronunciation("read", "verb", "pres", expected="R IY1 D")
-    _check_pronunciation("beloved", "verb", expected="B IH0 L AH1 V D")
-    _check_pronunciation("beloved", "noun", expected="B IH0 L AH1 V D")
+    # NOTE: Multiple variations that can only be disambiguated with part-of-speech.
+    _check_pronunciation("read", expected=None)
+    _check_pronunciation("beloved", expected=None)
 
     # NOTE: Abbreviations that are sometimes expanded during voice-over are not disambiguated.
-    _check_pronunciation("feb", "noun", expected=None)
-
-
-def test_get_initialism_pronunciation():
-    """Test `lib.text.get_initialism_pronunciation` handles initialisms with various letters and
-    cases."""
-    assert lib.text.get_initialism_pronunciation("ibm") == tuple("AY1 B IY1 EH1 M".split())
-    assert lib.text.get_initialism_pronunciation("IBM") == tuple("AY1 B IY1 EH1 M".split())
-    assert lib.text.get_initialism_pronunciation("CACLD") == tuple(
-        "S IY1 EY1 S IY1 EH1 L D IY1".split()
-    )
-    assert lib.text.get_initialism_pronunciation("FOIA") == tuple("EH1 F OW1 AY1 EY1".split())
-    assert lib.text.get_initialism_pronunciation("GENEGO") == tuple(
-        "JH IY1 IY1 EH1 N IY1 JH IY1 OW1".split()
-    )
-    assert lib.text.get_initialism_pronunciation("SRI") == tuple("EH1 S AA1 R AY1".split())
-    assert lib.text.get_initialism_pronunciation("USA") == tuple("Y UW1 EH1 S EY1".split())
+    _check_pronunciation("feb", expected=None)
 
 
 def test_get_pronunciation__non_standard_words():
-    """Test `lib.text.get_pronunciation` errors given non-standard words."""
-    with pytest.raises(AssertionError):
-        lib.text.get_pronunciation("I B M")
-    with pytest.raises(AssertionError):
-        lib.text.get_pronunciation("I.B.M.")
-    with pytest.raises(AssertionError):
-        lib.text.get_pronunciation("able-bodied")
-    with pytest.raises(AssertionError):
-        lib.text.get_pronunciation("ABC123")
+    """Test `lib.text.get_pronunciation` returns `None` given non-standard words."""
+    _check_pronunciation("I B M", expected=None)
+    _check_pronunciation("I.B.M.", expected=None)
+    _check_pronunciation("able-bodied", expected=None)
+    _check_pronunciation("ABC123", expected=None)
 
 
-def test_get_pronunciations():
-    """Test `lib.text.get_pronunciations` against basic cases: non-standard words, initialisms,
-    appostrophes, and abbreviations."""
-    nlp = lib.text.load_en_core_web_sm()
-    get_pronunciations = lambda s: lib.text.get_pronunciations(nlp(s))
-    assert get_pronunciations("In 1968 the U.S. Army") == (
-        ("IH1", "N"),
-        None,  # Non-standard word ignored
-        None,
-        None,  # Non-standard word ignored
-        ("AA1", "R", "M", "IY0"),
-    )
-    assert get_pronunciations("Individual-Based Model (IBM)") == (
-        ("IH2", "N", "D", "IH0", "V", "IH1", "JH", "UW0", "AX", "L"),
-        None,
-        ("B", "EY1", "S", "T"),
-        ("M", "AA1", "D", "AX", "L"),
-        None,
-        ("AY1", "B", "IY1", "EH1", "M"),  # Initialism handled
-        None,
-    )
-    assert get_pronunciations("NASA's TV mission is to pioneer.") == (
-        ("N", "AE1", "S", "AX"),
-        None,  # NOTE: spaCy splits up apostrophes
-        None,  # Ambigious abbreviation is ignored
-        ("M", "IH1", "SH", "AX", "N"),
-        ("IH1", "Z"),
-        None,
-        ("P", "AY2", "AX", "N", "IH1", "R"),
-        None,
-    )
-    assert get_pronunciations("Youssou N'Dour is a Senegalese singer") == (
-        None,
-        ("N", "D", "AW1", "AXR"),  # Apostrophes handled
-        ("IH1", "Z"),
-        None,
-        ("S", "EH2", "N", "AX", "G", "AX", "L", "IY1", "Z"),
-        ("S", "IH1", "NG", "G", "AXR"),
-    )
+def test_respell():
+    """Test `lib.text.respell` on basic scenarios."""
+    expectations = {
+        "zebra": "ZEE-bruh",
+        "motorcycle": "MOH-tur-sy-kuhl",  # NOTE: Secondary is lowercase if primary is uppercase.
+        "suspicious": "suh-SPIH-shuhs",
+        "maui": "MOW-ee",
+        "cobalt": "KOH-bawlt",  # NOTE: Wikipedia recommends "KOH-bolt"
+        "father": "FAH-dhur",
+        "farther": "FAR-dhur",  # NOTE: Wikipedia recommends "FAR-dhər", testing AA R : ahr -> ar
+        "ceres": "SEE-reez",  # NOTE: Wikipedia recommends "SEER-eez"
+        "algorithm": "AL-gur-ih-dhuhm",  # NOTE: Wikipedia recommends "AL-gə-ridh-əm"
+        "pan": "PAN",
+        "machine": "muh-SHEEN",  # NOTE: Wikipedia recommends "mə-SHEEN",
+        "blank": "BLAYNK",  # Testing AE NG K : angk -> aynk
+        "blanketed": "BLAYNG-kuh-tihd",  # Testing AE NG : ang -> ayng
+        "ink": "IHNK",  # Testing NG K : ngk -> nk
+        "millionaire": "MIH-lyuh-NERR",  # Testing EH R : ehr -> err
+        "engineer": "EHN-juh-NEER",  # Testing IH R : ihr -> eer
+        "mirror": "MEE-rur",  # Testing IH - R : ih-r -> ee-r
+        "storyboard": "STOH-ree-bord",  # Testing AO - r : AW-r -> OH-r and AO R : awr -> or
+    }
+    for word, pronunciation in expectations.items():
+        assert pronunciation == lib.text.respell(word, lib.text.load_cmudict_syl())
 
 
-def test_get_pronunciations__part_of_speech():
-    """Test `lib.text.get_pronunciations` with ambigious part of speech cases."""
-    nlp = lib.text.load_en_core_web_sm()
-    get_pronunciations = lambda s: lib.text.get_pronunciations(nlp(s))
-    assert get_pronunciations("It was time to present the present.") == (
-        ("IH1", "T"),
-        None,
-        ("T", "AY1", "M"),
-        None,
-        ("P", "R", "IH0", "Z", "EH1", "N", "T"),  # Verb
-        None,
-        ("P", "R", "EH1", "Z", "AX", "N", "T"),  # Noun
-        None,
-    )
-    assert get_pronunciations("He has read the whole thing.") == (
-        ("HH", "IY1"),
-        None,
-        ("R", "EH1", "D"),  # Verb, Past Tense
-        None,
-        ("HH", "OW1", "L"),
-        ("TH", "IH1", "NG"),
-        None,
-    )
-    assert get_pronunciations("We read.") == (
-        ("W", "IY1"),
-        ("R", "IY1", "D"),  # Verb, Present Tense
-        None,
-    )
+def test_respell__vowels():
+    """Test `lib.text.respell` on various vowels."""
+    vowel_expectations = {
+        "bat": "BAT",
+        "father": "FAH-dhur",
+        "oddball": "AHD-bawl",
+        "straighten": "STRAY-tuhn",
+        "happy": "HA-pee",
+        "prestige": "preh-STEEZH",
+        "about": "uh-BOWT",
+        "letter": "LEH-tur",
+        "historic": "hih-STOH-rihk",
+        "boat": "BOHT",
+        "boot": "BOOT",
+        "flower": "FLOW-ur",
+        "joy": "JOY",
+        "jump": "JUHMP",
+        "nook": "NUUK",
+        "site": "SYT",
+    }
+    for word, pronunciation in vowel_expectations.items():
+        assert pronunciation == lib.text.respell(word, lib.text.load_cmudict_syl())
+
+
+def test_respell__consonant():
+    """Test `lib.text.respell` on various consonant."""
+    consonant_expectations = {
+        "bunk": "BUHNK",
+        "dusters": "DUH-sturz",
+        "although": "AWL-DHOH",
+        "firstly": "FURST-lee",
+        "global": "GLOH-buhl",
+        "horse": "HORS",
+        "jealous": "JEH-luhs",
+        "kite": "KYT",
+        "believe": "bih-LEEV",
+        "flammable": "FLA-muh-buhl",
+        "friend": "FREHND",
+        "singing": "SIH-ngihng",
+        "people": "PEE-puhl",
+        "rascal": "RAS-kuhl",
+        "slice": "SLYS",
+        "shy": "SHY",
+        "turtle": "TUR-tuhl",
+        "nature": "NAY-chur",
+        "thinks": "THIHNKS",
+        "save": "SAYV",
+        "win": "WIHN",
+        "yesteryear": "YEH-stur-yeer",
+        "please": "PLEEZ",
+        "measure": "MEH-zhur",
+    }
+    for word, pronunciation in consonant_expectations.items():
+        assert pronunciation == lib.text.respell(word, lib.text.load_cmudict_syl())
+
+
+def test_respell_initialism():
+    """Test `lib.text.respell_initialism` on initialisms and acronyms."""
+    expectations = {
+        "FBI": "ehf-bee-Y",
+        "RSVP": "ar-ehs-vee-PEE",
+        "FAQ": "ehf-ay-KYOO",
+        "UN": "yoo-EHN",
+        "LGBTQIA": "ehl-jee-bee-tee-kyoo-y-AY",
+        "FSW": "ehf-ehs-DUH-buhl-yoo",  # Test final W does not have all capitalized syllables
+    }
+    for initialism, pronunciation in expectations.items():
+        assert pronunciation == lib.text.respell_initialism(initialism)
+
+
+def test_respellings():
+    """Test to ensure `RESPELLINGS` covers all of `ARPAbet`."""
+    assert all(_remove_arpabet_markings(a) in RESPELLINGS for a in get_args(lib.text.ARPAbet))
+
+
+def test_respellings_alphabet():
+    """Test to ensure `RESPELLING_ALPHABET` covers the entire alphabet."""
+    assert all(a in RESPELLING_ALPHABET for a in string.ascii_uppercase)
 
 
 def test_natural_keys():
@@ -529,11 +395,7 @@ def test_strip():
     assert lib.text.strip("Hello World  ") == ("Hello World", "", "  ")
     assert lib.text.strip("  Hello World") == ("Hello World", "  ", "")
     assert lib.text.strip(" \n Hello World \n ") == ("Hello World", " \n ", " \n ")
-    assert lib.text.strip(" \n\n Hello World \n\n ") == (
-        "Hello World",
-        " \n\n ",
-        " \n\n ",
-    )
+    assert lib.text.strip(" \n\n Hello World \n\n ") == ("Hello World", " \n\n ", " \n\n ")
 
 
 def test_normalize_vo_script():
@@ -774,51 +636,6 @@ def test_add_space_between_sentences__regression():
     ]
     for script in fixed:
         assert lib.text.add_space_between_sentences(nlp(script)) == script
-
-
-def test_normalize_non_standard_words():
-    cases = [
-        ("Mr. Gurney", "Mr. Gurney"),
-        ("San Antonio at 1:30 p.m.,", "San Antonio at one thirty P M,"),
-        ("between May 1st, 1827,", "between May first, eighteen twenty seven,"),
-        (
-            "inch BBL, unquote, cost $29.95.",
-            "inch B B L, unquote, cost twenty nine point nine five dollars.",
-        ),
-        (
-            "Post Office Box 2915, Dallas, Texas",
-            "Post Office B O X two thousand, nine hundred and fifteen, Dallas, Texas",
-        ),
-        (
-            "serial No. C2766, which was also found",
-            "serial No. century two thousand, seven hundred and sixty six, which was also found",
-        ),
-        ("Newgate down to 1818,", "Newgate down to eighteen eighteen,"),
-        (
-            "It was about 250 B.C., when the great",
-            "It was about two hundred and fifty B C, when the great",
-        ),
-        ("In 606, Nineveh", "In six hundred and six, Nineveh"),
-        ("Exhibit No. 143 as the", "Exhibit No. one hundred and forty three as the"),
-        ("William IV. was also the victim", "William the fourth. was also the victim"),
-        ("Chapter 4. The Assassin:", "Chapter four. The Assassin:"),
-        ("was shipped on March 20, and the", "was shipped on March twentieth, and the"),
-        ("4 March 2014", "the fourth of March twenty fourteen"),
-        (
-            "distance of 265.3 feet was, quote",
-            "distance of two hundred and sixty five point three feet was, quote",
-        ),
-        (
-            "information on some 50,000 cases",
-            "information on some fifty thousand cases",
-        ),
-        (
-            "PRS received items in 8,709 cases",
-            "P R S received items in eight thousand, seven hundred and nine cases",
-        ),
-    ]
-    for input_, output in cases:
-        assert lib.text.normalize_non_standard_words(input_) == output
 
 
 def _align_and_format(tokens, other, **kwargs):

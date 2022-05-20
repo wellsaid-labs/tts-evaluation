@@ -1,3 +1,4 @@
+from run._config import audio, data, environment, labels, lang
 from run._config.all import configure
 from run._config.audio import FRAME_HOP, NUM_FRAME_CHANNELS
 from run._config.data import DATASETS, DEFAULT_SCRIPT, DEV_SPEAKERS
@@ -26,20 +27,26 @@ from run._config.labels import (
     get_timer_label,
 )
 from run._config.lang import (
-    ENGLISH_PHONETIC_CHARACTERS,
-    GRAPHEME_TO_PHONEME_RESTRICTED,
-    PHONEME_SEPARATOR,
     STT_CONFIGS,
     LanguageCode,
+    get_spoken_chars,
     is_normalized_vo_script,
     is_sound_alike,
     is_voiced,
+    load_spacy_nlp,
     normalize_vo_script,
+    replace_punc,
 )
+from run._config.train import make_signal_model_train_config, make_spectrogram_model_train_config
 
 # TODO: Reduce the usage of globals, and use configuration if possible.
 
 __all__ = [
+    "audio",
+    "data",
+    "environment",
+    "labels",
+    "lang",
     "configure",
     "FRAME_HOP",
     "NUM_FRAME_CHANNELS",
@@ -66,13 +73,15 @@ __all__ = [
     "get_model_label",
     "get_signal_model_label",
     "get_timer_label",
-    "ENGLISH_PHONETIC_CHARACTERS",
-    "GRAPHEME_TO_PHONEME_RESTRICTED",
-    "PHONEME_SEPARATOR",
     "STT_CONFIGS",
     "LanguageCode",
+    "get_spoken_chars",
     "is_normalized_vo_script",
     "is_sound_alike",
     "is_voiced",
     "normalize_vo_script",
+    "replace_punc",
+    "load_spacy_nlp",
+    "make_signal_model_train_config",
+    "make_spectrogram_model_train_config",
 ]

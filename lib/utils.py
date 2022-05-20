@@ -18,12 +18,19 @@ from abc import abstractmethod
 from contextlib import contextmanager
 
 import numpy as np
+import numpy.typing as npt
 import torch
+import torch.distributed
 import torch.multiprocessing
 import torch.nn
 import torch.nn.functional
 import torch.utils.data
+from torch.nn import functional
+from torch.nn.parameter import Parameter
 from tqdm import tqdm
+
+# TODO: Added for backwards compatibility with checkpoints.
+from lib.distributed import NumeralizePadEmbed  # noqa
 
 logger = logging.getLogger(__name__)
 
@@ -62,11 +69,12 @@ def get_chunks(
         yield list_[i : i + n]
 
 
-def get_weighted_std(tensor: torch.Tensor, dim: int = 0) -> torch.Tensor:
+def get_weighted_std(tensor: torch.Tensor, dim: int = 0, strict: bool = False) -> torch.Tensor:
     """Computed the weighted standard deviation accross a dimension in `tensor`.
 
+    TODO: Document `strict` and it's importance.
+
     NOTE:
-    - `tensor` must sum up to 1.0 on `dim`.
     - The value of an element in a `tensor` corresponds to it's weight.
     - The index of an element in a `tensor` corresponds to it's position.
 
@@ -78,11 +86,13 @@ def get_weighted_std(tensor: torch.Tensor, dim: int = 0) -> torch.Tensor:
     Args:
         tensor (torch.FloatTensor [*, dim, *])
         dim: Compute standard deviation along `dim` in `tensor`.
+        strict: Iff then `tensor` must sum up to 1.0 on `dim`.
     """
-    # Expects normalized weightes total of 0, 1 to ensure correct variance decisions
-    assert all(
-        math.isclose(value, 1, abs_tol=1e-3) for value in tensor.sum(dim=dim).view(-1).tolist()
-    )
+    if strict:
+        # Expects normalized weightes total of 0, 1 to ensure correct variance decisions
+        assert all(
+            math.isclose(value, 1, abs_tol=1e-3) for value in tensor.sum(dim=dim).view(-1).tolist()
+        )
 
     # Create position matrix where the index is the position and the value is the weight
     indicies = torch.arange(0, tensor.shape[dim], dtype=tensor.dtype, device=tensor.device)
@@ -105,9 +115,6 @@ def get_weighted_std(tensor: torch.Tensor, dim: int = 0) -> torch.Tensor:
 # NOTE: Learn more about this typing:
 # https://github.com/microsoft/pyright/issues/1147
 _FlattenReturnType = typing.TypeVar("_FlattenReturnType")
-_FlattenInputType = typing.Union[
-    _FlattenReturnType, typing.Sequence[typing.Union[_FlattenReturnType, "_FlattenInputType"]]
-]
 
 
 def flatten_2d(
@@ -128,13 +135,6 @@ def flatten_3d(
     return [item for sublist in l for subsublist in sublist for item in subsublist]
 
 
-def flatten(l: _FlattenInputType) -> typing.List[_FlattenReturnType]:
-    """Flatten a list of lists into a list."""
-    if isinstance(l, list):
-        return sum(map(flatten, l), [])
-    return [l]
-
-
 def flatten_parameters(model: torch.nn.Module) -> torch.nn.Module:
     """Apply `flatten_parameters` to `model`."""
     lambda_ = lambda m: m.flatten_parameters() if hasattr(m, "flatten_parameters") else None
@@ -149,12 +149,13 @@ def identity(x: _IdentityReturnType) -> _IdentityReturnType:
 
 
 _SplitReturnType = typing.TypeVar("_SplitReturnType")
+_SplitIdentityFunc = typing.cast(typing.Callable[[float], float], identity)
 
 
 def split(
     list_: typing.List[_SplitReturnType],
     splits: typing.List[float],
-    value: typing.Callable[[_SplitReturnType], float] = identity,
+    value: typing.Callable[[_SplitReturnType], float] = _SplitIdentityFunc,
 ) -> typing.Iterator[typing.List[_SplitReturnType]]:
     """Split `list_` when the accumulated sum passes a threshold.
 
@@ -255,7 +256,7 @@ def disk_cache(path: pathlib.Path):
 
             return result
 
-        wrapper.clear_cache = lambda: path.unlink()
+        wrapper.clear_cache = lambda: path.unlink() if path.exists() else None
 
         return typing.cast(_CacheReturnDecoratorFunction, wrapper)
 
@@ -314,9 +315,9 @@ def pad_tensor(
     """
     padding = [[0, 0] for _ in range(input_.dim())]
     padding[dim] = list(pad)
-    # NOTE: `torch.nn.functional.pad` accepts the last dimension first.
+    # NOTE: `functional.pad` accepts the last dimension first.
     flat: typing.List[int] = flatten_2d(list(reversed(padding)))
-    return torch.nn.functional.pad(input_, flat, **kwargs)
+    return functional.pad(input_, flat, **kwargs)
 
 
 def trim_tensors(*args: torch.Tensor, dim: int = 2) -> typing.Iterable[torch.Tensor]:
@@ -342,9 +343,9 @@ class LSTM(torch.nn.LSTM):
         super().__init__(*args, **kwargs)
         num_directions = 2 if self.bidirectional else 1
         init_hidden_state = torch.randn(self.num_layers * num_directions, 1, self.hidden_size)
-        self.init_hidden_state = torch.nn.parameter.Parameter(init_hidden_state)
+        self.init_hidden_state = Parameter(init_hidden_state)
         init_cell_state = torch.randn(self.num_layers * num_directions, 1, self.hidden_size)
-        self.init_cell_state = torch.nn.parameter.Parameter(init_cell_state)
+        self.init_cell_state = Parameter(init_cell_state)
 
     def forward(  # type: ignore
         self,
@@ -368,8 +369,8 @@ class LSTMCell(torch.nn.LSTMCell):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.init_hidden_state = torch.nn.Parameter(torch.randn(1, self.hidden_size))
-        self.init_cell_state = torch.nn.Parameter(torch.randn(1, self.hidden_size))
+        self.init_hidden_state = Parameter(torch.randn(1, self.hidden_size))
+        self.init_cell_state = Parameter(torch.randn(1, self.hidden_size))
 
     def forward(
         self,
@@ -384,11 +385,16 @@ class LSTMCell(torch.nn.LSTMCell):
         return super().forward(input, hx=hx)
 
 
-_ClampReturnType = typing.TypeVar("_ClampReturnType")
+_ClampReturnType = typing.TypeVar("_ClampReturnType", float, int)
 
 
-def clamp(a: _ClampReturnType, min_: float = -math.inf, max_: float = math.inf) -> _ClampReturnType:
-    return max(min(a, max_), min_)
+def clamp(
+    a: _ClampReturnType,
+    min_: typing.Optional[_ClampReturnType] = None,
+    max_: typing.Optional[_ClampReturnType] = None,
+) -> _ClampReturnType:
+    a = a if max_ is None else min(a, max_)
+    return a if min_ is None else max(a, min_)
 
 
 _CallOnceReturnType = typing.TypeVar("_CallOnceReturnType")
@@ -424,7 +430,7 @@ class MappedIterator(typing.Mapping[int, _MappedIteratorItem], typing.Generic[_M
     def __iter__(self):
         return [self[i] for i in range(len(self))]
 
-    def __len__(_):
+    def __len__(self):
         raise NotImplementedError()
 
 
@@ -617,11 +623,11 @@ class Timeline:
         self._intervals = np.array(intervals, dtype=self.dtype).T.reshape(2, len(intervals))
         self._intervals = np.ascontiguousarray(self._intervals)
 
-    def start(self, index: int) -> np.ndarray:
+    def start(self, index: int) -> npt.NDArray[np.float_]:
         """Get the start of the interval at `index`."""
         return self._intervals[0, index]
 
-    def stop(self, index: int) -> np.ndarray:
+    def stop(self, index: int) -> npt.NDArray[np.float_]:
         """Get the stop of the interval at `index`."""
         return self._intervals[1, index]
 
@@ -657,7 +663,7 @@ class Timeline:
         """Similar to `make_slice` except this returns an `Iterable` of indicies."""
         return range(*self.make_slice(interval).indices(self._intervals.shape[1]))
 
-    def __getitem__(self, interval: typing.Union[int, float, slice]) -> np.ndarray:
+    def __getitem__(self, interval: typing.Union[int, float, slice]) -> npt.NDArray[np.float_]:
         """Get the intervals overlapping `interval`."""
         return self._intervals[:, self.make_slice(interval)].T
 
@@ -727,7 +733,7 @@ def lengths_to_mask(
         lengths = lengths.squeeze()
         assert len(lengths.shape) < 2, "Lengths must be one or zero dimensional"
         lengths = lengths.view(-1)
-    max_len = 0 if len(lengths) == 0 else int(max(lengths))
+    max_len = 0 if len(lengths) == 0 else int(max(lengths))  # type: ignore
     tokens_mask = torch.zeros(len(lengths), max_len, device=device, dtype=torch.bool)
     for i, length in enumerate(lengths):
         tokens_mask[i, :length] = True

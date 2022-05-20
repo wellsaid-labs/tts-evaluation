@@ -11,8 +11,8 @@ import pytest
 import lib
 from lib.utils import flatten_2d
 from run.data import _loader
-from run.data._loader.data_structures import Alignment
-from run.data._loader.english import HILARY_NORIEGA
+from run.data._loader.english.wsl import ALANA_B
+from run.data._loader.structures import Alignment
 from run.data._loader.utils import SpanGenerator, get_non_speech_segments_and_cache
 from tests._utils import (
     TEST_DATA_PATH,
@@ -101,15 +101,11 @@ def test_get_non_speech_segments_and_cache():
 def test__maybe_normalize_audio_and_cache():
     """Test that `_maybe_normalize_audio_and_cache` uses the cache."""
     metadata = lib.audio.get_audio_metadata(TEST_DATA_LJ)
-    kwargs = dict(
+    kwargs: typing.Dict[str, typing.Any] = dict(
         suffix=".wav",
         data_type=lib.audio.AudioDataType.FLOATING_POINT,
         bits=16,
-        sample_rate=metadata.sample_rate,
-        num_channels=metadata.num_channels,
-        encoding=metadata.encoding,
-        bit_rate=metadata.bit_rate,
-        precision=metadata.precision,
+        format_=metadata.format,
     )
     path = _loader.utils.maybe_normalize_audio_and_cache(metadata, **kwargs)
     assert path == metadata.path
@@ -287,12 +283,7 @@ def test_dataset_loader(mock_run, mock_get_audio_metadata):
     """Test `_loader.dataset_loader` loads a dataset."""
     mock_get_audio_metadata.side_effect = get_audio_metadata_side_effect
     mock_run.side_effect = functools.partial(subprocess_run_side_effect, _command="gsutil")
-    passages = _loader.dataset_loader(
-        TEST_DATA_PATH / "datasets",
-        "hilary_noriega",
-        "",
-        HILARY_NORIEGA,
-    )
+    passages = _loader.dataset_loader(TEST_DATA_PATH / "datasets", "hilary_noriega", "", ALANA_B)
     alignments = [
         Alignment(a[0], a[1], a[2])
         for a in [
@@ -325,7 +316,7 @@ def test_dataset_loader(mock_run, mock_get_audio_metadata):
     assert passages[0].audio_file.sample_rate == 24000
     assert passages[0].audio_file.encoding == lib.audio.AudioEncoding.PCM_FLOAT_32_BIT
     assert path.stem in passages[0].audio_file.path.stem
-    assert passages[0].speaker == HILARY_NORIEGA
+    assert passages[0].speaker == ALANA_B
     assert passages[0].script == "Author of the danger trail, Philip Steels, etc."
     assert passages[0].transcript == (
         "author of the danger Trail Philip Steels Etc. Not at this particular case Tom "

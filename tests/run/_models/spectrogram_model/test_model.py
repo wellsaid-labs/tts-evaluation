@@ -1,94 +1,96 @@
+import dataclasses
 import itertools
 import math
 import random
 import types
 import typing
+from unittest import mock
 
-import hparams
-import pytest
+import config as cf
 import torch
 import torch.nn
-from hparams import HParams
+from torch.nn import Embedding
 from torch.nn.functional import binary_cross_entropy_with_logits, mse_loss
 from torchnlp.random import fork_rng
 
-import lib
-from lib.spectrogram_model import Mode, Params, SpectrogramModel
-from lib.spectrogram_model.attention import Attention, AttentionHiddenState
-from lib.spectrogram_model.decoder import Decoder, DecoderHiddenState
+import run
+from lib.distributed import NumeralizePadEmbed
 from lib.utils import lengths_to_mask
+from run._models.spectrogram_model.attention import Attention
+from run._models.spectrogram_model.containers import (
+    AttentionHiddenState,
+    DecoderHiddenState,
+    Encoded,
+    Preds,
+)
+from run._models.spectrogram_model.decoder import Decoder
+from run._models.spectrogram_model.model import Inputs, Mode, SpectrogramModel
 from tests import _utils
 
 assert_almost_equal = lambda *a, **k: _utils.assert_almost_equal(*a, **k, decimal=5)
 
 
-class _Config(typing.NamedTuple):
-    vocab_size: int = 17
-    num_speakers: int = 3
-    num_sessions: int = 5
+class Params(typing.NamedTuple):
+    max_tokens: int = 17
+    max_seq_meta_values: typing.Tuple[int, int] = (3, 5)
     num_frame_channels: int = 6
     batch_size: int = 5
     max_frames: int = 5
     max_num_tokens: int = 6
-    padding_index: int = 0
+    max_tokens_index: int = 0
 
     @property
     def max_frames_per_token(self) -> float:
         return self.max_frames / self.max_num_tokens
 
 
-@pytest.fixture(autouse=True)
-def run_around_tests():
-    yield
-    hparams.clear_config()
-
-
 def _make_spectrogram_model(
-    config: _Config,
-    speaker_embedding_size: int = 8,
+    params: Params,
+    seq_meta_embed_size: int = 8,
     output_scalar: float = 1.2,
     stop_threshold: float = 0.5,
     dropout: float = 0.5,
-    padding_index: int = 0,
     window_length: int = 3,
     stop_token_eps: float = 1e-10,
 ) -> SpectrogramModel:
     """Make `spectrogram_model.SpectrogramModel` for testing."""
-    hparams_config = {
-        lib.spectrogram_model.encoder.Encoder.__init__: HParams(
+    config = {
+        run._models.spectrogram_model.encoder.Encoder: cf.Args(
+            seq_meta_embed_dropout=dropout,
             out_size=16,
             hidden_size=16,
             num_conv_layers=2,
             conv_filter_size=3,
             lstm_layers=1,
             dropout=dropout,
-            padding_index=padding_index,
         ),
-        lib.spectrogram_model.decoder.Decoder.__init__: HParams(
+        run._models.spectrogram_model.decoder.Decoder: cf.Args(
             pre_net_size=16,
             lstm_hidden_size=16,
             encoder_out_size=16,
             stop_net_dropout=dropout,
         ),
-        lib.spectrogram_model.pre_net.PreNet.__init__: HParams(num_layers=1, dropout=dropout),
-        lib.spectrogram_model.attention.Attention.__init__: HParams(
+        run._models.spectrogram_model.pre_net.PreNet: cf.Args(num_layers=1, dropout=dropout),
+        run._models.spectrogram_model.attention.Attention: cf.Args(
             hidden_size=4,
             conv_filter_size=3,
             dropout=dropout,
             window_length=window_length,
             avg_frames_per_token=1.0,
         ),
+        torch.nn.LayerNorm: cf.Args(eps=1e-05),
     }
-    hparams.add_config(hparams_config)
+    cf.add(config, overwrite=True)
     model = SpectrogramModel(
-        vocab_size=config.vocab_size,
-        num_speakers=config.num_speakers,
-        num_sessions=config.num_sessions,
-        speaker_embedding_size=speaker_embedding_size,
-        num_frame_channels=config.num_frame_channels,
-        max_frames_per_token=config.max_frames_per_token,
+        max_tokens=params.max_tokens,
+        max_seq_meta_values=params.max_seq_meta_values,
+        max_token_meta_values=tuple(),
+        max_token_embed_size=0,
+        token_meta_embed_size=0,
+        seq_meta_embed_size=seq_meta_embed_size,
+        num_frame_channels=params.num_frame_channels,
+        max_frames_per_token=params.max_frames_per_token,
         output_scalar=output_scalar,
-        speaker_embed_dropout=dropout,
         stop_threshold=stop_threshold,
         stop_token_eps=stop_token_eps,
     )
@@ -99,24 +101,40 @@ def _make_spectrogram_model(
     return model
 
 
-def _make_inputs(config: _Config) -> typing.Tuple[Params, torch.Tensor, torch.Tensor, torch.Tensor]:
+def _make_inputs(
+    params: Params,
+) -> typing.Tuple[Inputs, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Make `spectrogram_model.SpectrogramModel` inputs for testing."""
     long_ = torch.long
-    size = (config.max_num_tokens, config.batch_size)
-    tokens = torch.randint(config.padding_index + 1, config.vocab_size, size, dtype=long_)
-    speaker = torch.randint(0, config.num_speakers, (1, config.batch_size), dtype=long_)
-    session = torch.randint(0, config.num_sessions, (1, config.batch_size), dtype=long_)
 
-    num_tokens = torch.randint(1, config.max_num_tokens, (config.batch_size,), dtype=long_)
+    # NOTE: `1` and `transpose(0, 1)` is set for backwards compatibility so that same random numbers
+    # are generated.
+    # TODO: Remove and update `test_spectrogram_model__version` values.
+    tokens_size = (params.max_num_tokens, params.batch_size)
+    tokens = torch.randint(1, params.max_tokens, tokens_size).transpose(0, 1).tolist()
+    speakers = torch.randint(0, params.max_seq_meta_values[0], (params.batch_size,)).tolist()
+    sessions = torch.randint(0, params.max_seq_meta_values[1], (params.batch_size,)).tolist()
+
+    num_tokens = torch.randint(1, params.max_num_tokens, (params.batch_size,), dtype=long_)
     # NOTE: Ensure at least one sequence is `max_num_tokens`.
-    num_tokens[-1] = config.max_num_tokens
+    num_tokens[params.max_tokens_index] = params.max_num_tokens
+    for i in range(params.batch_size):
+        tokens[i] = tokens[i][: num_tokens[i]]
 
-    target_frames = torch.randn(config.max_frames, config.batch_size, config.num_frame_channels)
-    target_lengths = torch.randint(1, config.max_frames, (config.batch_size,), dtype=long_)
-    target_lengths[-1] = config.max_frames  # NOTE: Ensure at least one sequence is `max_frames`.
+    inputs = Inputs(
+        tokens=tokens,
+        seq_metadata=[speakers, sessions],
+        token_metadata=[[[] for _ in tokens]],
+        token_embeddings=[torch.empty(int(n), 0) for n in num_tokens],
+        slices=[slice(0, int(n)) for n in num_tokens],
+    )
+
+    target_frames = torch.randn(params.max_frames, params.batch_size, params.num_frame_channels)
+    target_lengths = torch.randint(1, params.max_frames, (params.batch_size,), dtype=long_)
+    target_lengths[-1] = params.max_frames  # NOTE: Ensure at least one sequence is `max_frames`.
     target_mask = lengths_to_mask(target_lengths).transpose(0, 1)  # [num_frames, batch_size]
 
-    return Params(tokens, speaker, session, num_tokens), target_frames, target_mask, target_lengths
+    return inputs, num_tokens, target_frames, target_mask, target_lengths
 
 
 def _logit(x: torch.Tensor) -> torch.Tensor:
@@ -188,26 +206,24 @@ def _mock_model(model: SpectrogramModel) -> typing.Callable[[int], None]:
 
     def attention_forward(
         self: Attention,
-        tokens: torch.Tensor,
-        tokens_mask: torch.Tensor,
-        num_tokens: torch.Tensor,
+        encoded: Encoded,
         query: torch.Tensor,
         hidden_state: AttentionHiddenState,
         token_skip_warning: int,
     ):
         window_start = hidden_state.window_start
-        cumulative_alignment_padding = self.cumulative_alignment_padding
-        slice_ = slice(cumulative_alignment_padding, -cumulative_alignment_padding)
-        first_token = hidden_state.cumulative_alignment[:, slice_].sum() == 0
+        cum_alignment_padding = self.cum_alignment_padding
+        slice_ = slice(cum_alignment_padding, -cum_alignment_padding)
+        first_token = hidden_state.cum_alignment[:, slice_].sum() == 0
         context, alignment, hidden_state = _attention_forward(
-            tokens, tokens_mask, num_tokens, query, hidden_state, token_skip_warning
+            encoded, query, hidden_state, token_skip_warning
         )
         # NOTE: On the first iteration, `window_start` should not advance because it needs to
         # focus on the first token.
         window_start = (
             window_start.zero_()
             if first_token
-            else torch.clamp(torch.min(window_start + 1, num_tokens - window_length), min=0)
+            else torch.clamp(torch.min(window_start + 1, encoded.num_tokens - window_length), min=0)
         )
         return context, alignment, hidden_state._replace(window_start=window_start)
 
@@ -224,162 +240,170 @@ def _mock_model(model: SpectrogramModel) -> typing.Callable[[int], None]:
     return set_stop_token_rand_offset
 
 
+def _check_preds(params: Params, model: SpectrogramModel, num_tokens: torch.Tensor, preds: Preds):
+    """Check invariants for `preds`."""
+    max_frames = params.max_frames if model.training else preds.num_frames.max()
+    assert max_frames <= params.max_frames
+    assert preds.frames.dtype == torch.float
+    assert preds.frames.shape == (max_frames, params.batch_size, model.num_frame_channels)
+    assert preds.stop_tokens.dtype == torch.float
+    assert preds.stop_tokens.shape == (max_frames, params.batch_size)
+    assert preds.alignments.dtype == torch.float
+    assert preds.alignments.shape == (max_frames, params.batch_size, params.max_num_tokens)
+    assert preds.num_frames.dtype == torch.long
+    assert preds.num_frames.shape == (params.batch_size,)
+    for i, num_frames in enumerate(preds.num_frames.tolist()):
+        assert num_frames > 0
+        assert num_frames <= max_frames
+        probability = torch.sigmoid(preds.stop_tokens[num_frames - 1, i])
+        thresholded = probability >= model.stop_threshold
+        if model.training:
+            assert num_frames < params.max_frames_per_token * num_tokens[i] or preds.reached_max[i]
+        else:
+            assert thresholded or preds.reached_max[i]
+    assert preds.frames_mask.dtype == torch.bool
+    assert preds.frames_mask.shape == (params.batch_size, max_frames)
+    assert preds.num_tokens.dtype == torch.long
+    assert preds.num_tokens.shape == (params.batch_size,)
+    assert preds.tokens_mask.dtype == torch.bool
+    assert preds.tokens_mask.shape == (params.batch_size, params.max_num_tokens)
+    assert preds.reached_max.dtype == torch.bool
+    assert preds.reached_max.shape == (params.batch_size,)
+
+
 def test_spectrogram_model():
     """Test `spectrogram_model.SpectrogramModel` handles a basic case."""
     with fork_rng(123):
-        config = _Config(batch_size=1)
-        params, *_ = _make_inputs(config)
-        model = _make_spectrogram_model(config)
+        params = Params(batch_size=1)
+        inputs, num_tokens, *_ = _make_inputs(params)
+        model = _make_spectrogram_model(params).eval()
         _mock_model(model)
-
-        frames, stop_tokens, alignments, lengths, reached_max = model(
-            params, mode=Mode.INFER, use_tqdm=True
-        )
-
-        assert frames.dtype == torch.float
-        assert frames.shape == (lengths.max(), config.batch_size, model.num_frame_channels)
-        assert stop_tokens.dtype == torch.float
-        assert stop_tokens.shape == (lengths.max(), config.batch_size)
-        assert alignments.dtype == torch.float
-        assert alignments.shape == (lengths.max(), config.batch_size, config.max_num_tokens)
-        assert lengths.shape == (1, config.batch_size)
-        for i, length in enumerate(lengths[0].tolist()):
-            assert length > 0
-            assert length <= config.max_frames
-            thresholded = torch.sigmoid(stop_tokens[length - 1, i]) >= model.stop_threshold
-            assert thresholded or reached_max[:, i]
-        assert reached_max.dtype == torch.bool
-        assert reached_max.sum().item() >= 0
+        _set_embedding_vocab(model, params)
+        preds = model(inputs, mode=Mode.INFER, use_tqdm=True)
+        _check_preds(params, model, num_tokens, preds)
 
 
 def test_spectrogram_model__train():
     """Test `spectrogram_model.SpectrogramModel` handles a basic training case."""
-    config = _Config()
-    params, target_frames, target_mask, _ = _make_inputs(config)
-    model = _make_spectrogram_model(config)
+    params = Params()
+    inputs, num_tokens, target_frames, target_mask, _ = _make_inputs(params)
+    model = _make_spectrogram_model(params)
     _mock_model(model)
-
-    preds = model(params, target_frames, target_mask=target_mask)
-
-    assert preds.frames.dtype == torch.float
-    assert preds.frames.shape == (config.max_frames, config.batch_size, config.num_frame_channels)
-    assert preds.stop_tokens.dtype == torch.float
-    assert preds.stop_tokens.shape == (config.max_frames, config.batch_size)
-    assert preds.alignments.dtype == torch.float
-    assert preds.alignments.shape == (config.max_frames, config.batch_size, config.max_num_tokens)
+    preds = model(inputs, target_frames, target_mask=target_mask)
+    _check_preds(params, model, num_tokens, preds)
     (preds.frames.sum() + preds.stop_tokens.sum()).backward()
 
 
 def test_spectrogram_model__reached_max_all():
     """Test `spectrogram_model.SpectrogramModel` handles `reached_max`."""
-    config = _Config(batch_size=32)
-    params, *_ = _make_inputs(config)
-    model = _make_spectrogram_model(config, dropout=0)
+    params = Params(batch_size=32)
+    inputs, num_tokens, *_ = _make_inputs(params)
+    model = _make_spectrogram_model(params, dropout=0)
 
     # NOTE: Make sure that stop-token is not predicted; therefore, reaching `max_frames_per_token`.
-    weight = typing.cast(torch.nn.Parameter, model.decoder.linear_stop_token[-1].weight)
+    weight = typing.cast(torch.nn.parameter.Parameter, model.decoder.linear_stop_token[-1].weight)
     torch.nn.init.constant_(weight, -math.inf)
-    bias = typing.cast(torch.nn.Parameter, model.decoder.linear_stop_token[-1].bias)
+    bias = typing.cast(torch.nn.parameter.Parameter, model.decoder.linear_stop_token[-1].bias)
     torch.nn.init.constant_(bias, -math.inf)
 
-    preds = model(params, mode=Mode.INFER)
-
-    assert preds.frames.dtype == torch.float
-    assert preds.frames.shape == (config.max_frames, config.batch_size, config.num_frame_channels)
-    assert preds.stop_tokens.dtype == torch.float
-    assert preds.stop_tokens.shape == (config.max_frames, config.batch_size)
-    assert preds.alignments.dtype == torch.float
-    assert preds.alignments.shape == (config.max_frames, config.batch_size, config.max_num_tokens)
-    assert preds.lengths.shape == (1, config.batch_size)
-    assert preds.reached_max.dtype == torch.bool
-    assert preds.reached_max.sum().item() == config.batch_size
+    preds = model(inputs, mode=Mode.INFER)
+    _check_preds(params, model, num_tokens, preds)
+    assert preds.reached_max.sum().item() == params.batch_size
 
 
 def test_spectrogram_model__is_stop():
     """Test `spectrogram_model.SpectrogramModel._is_stop` basic cases."""
-    config = _Config()
-    model = _make_spectrogram_model(config, window_length=3, stop_threshold=0.5)
+    params = Params()
+    model = _make_spectrogram_model(params, window_length=3, stop_threshold=0.5)
     tensor = torch.tensor
     _is_stop = lambda a, b, c, d: model._is_stop(_logit(tensor(a)), tensor(b), tensor(c), tensor(d))
     # NOTE: For example, test that this handles a scenario where the window intersects the boundary
     # and `stop_token` is above threshold.
-    assert _is_stop(1.0, 8, 5, False)[0]
-    assert not _is_stop(1.0, 8, 4, False)[0]
-    assert not _is_stop(0.25, 8, 5, False)[0]
-    assert _is_stop(0.25, 8, 4, True)[0]
+    assert _is_stop(1.0, 8, 6, False)[0]
+    assert not _is_stop(1.0, 8, 5, False)[0]
+    assert not _is_stop(0.25, 8, 6, False)[0]
+    assert _is_stop(0.25, 8, 5, True)[0]
 
 
 def test_spectrogram_model__stop():
     """Test `spectrogram_model.SpectrogramModel` `stop_tokens` is consistent with `lengths`,
     `window_start`, `window_length` and masking."""
     with fork_rng(123):
-        config = _Config(batch_size=16, max_frames=8)
-        params, *_ = _make_inputs(config)
+        params = Params(batch_size=16, max_frames=8)
+        inputs, num_tokens, *_ = _make_inputs(params)
         window_length = 3
-        model = _make_spectrogram_model(config, window_length=window_length)
+        model = _make_spectrogram_model(params, window_length=window_length)
         _mock_model(model)
 
-        preds = model(params, mode=Mode.INFER)
+        preds = model(inputs, mode=Mode.INFER)
 
-        max_lengths = (params.num_tokens.float() * config.max_frames_per_token).long()
+        max_lengths = (num_tokens.float() * params.max_frames_per_token).long()
         max_lengths = torch.clamp(max_lengths, min=1)
         threshold = torch.sigmoid(preds.stop_tokens) >= model.stop_threshold
-        for i in range(config.batch_size):  # NOTE: Only stop if the window includes the last token.
-            min_index = torch.clamp_min(params.num_tokens[i] - window_length, 0).item()
+        for i in range(params.batch_size):  # NOTE: Only stop if the window includes the last token.
+            min_index = torch.clamp_min(num_tokens[i] - window_length, 0).item()
             min_index = typing.cast(int, min_index)
             threshold[:min_index, i] = False
         stopped_index = _get_index_first_nonzero(threshold)
         stopped_index[stopped_index == -1] = max_lengths[stopped_index == -1] - 1
         expected_length = torch.min(stopped_index + 1, max_lengths)
-        assert_almost_equal(preds.lengths.squeeze(0), expected_length)
+        assert_almost_equal(preds.num_frames, expected_length)
 
-        for i in range(config.batch_size):
-            assert preds.frames[typing.cast(int, preds.lengths[:, i].item()) :, i].sum() == 0
+        for i in range(params.batch_size):
+            assert preds.frames[typing.cast(int, preds.num_frames[i].item()) :, i].sum() == 0
 
 
 def test_spectrogram_model__infer_train():
     """Test `spectrogram_model.SpectrogramModel` outputs for train and infer are consistent."""
-    config = _Config()
-    params, *_ = _make_inputs(config)
-    model = _make_spectrogram_model(config, dropout=0)
+    params = Params()
+    inputs, *_ = _make_inputs(params)
+    model = _make_spectrogram_model(params, dropout=0)
     _mock_model(model)
 
     with fork_rng(seed=123):
-        preds = model(params, mode=Mode.INFER)
+        preds = model(inputs, mode=Mode.INFER)
 
     with fork_rng(seed=123):
-        aligned_preds = model(
-            params,
-            target_frames=preds.frames,
-            target_mask=lengths_to_mask(preds.lengths).transpose(0, 1),
-            mode=Mode.FORWARD,
-        )
+        target_mask = preds.frames_mask.transpose(0, 1)
+        aligned_preds = model(inputs, preds.frames, target_mask, mode=Mode.FORWARD)
 
     assert_almost_equal(preds.frames, aligned_preds.frames)
     assert_almost_equal(preds.stop_tokens, aligned_preds.stop_tokens)
     assert_almost_equal(preds.alignments, aligned_preds.alignments)
 
 
+def _set_embedding_vocab(model: SpectrogramModel, params: Params):
+    """Update `model` vocab so it can be run in inference mode."""
+    model.encoder.embed_token.update_tokens(list(range(params.max_tokens)))
+    for i, max_values in enumerate(params.max_seq_meta_values):
+        embedding = typing.cast(NumeralizePadEmbed, model.encoder.embed_seq_metadata[i])
+        embedding.update_tokens(list(range(max_values)))
+
+
 def test_spectrogram_model__infer_generate():
     """Test `spectrogram_model.SpectrogramModel` outputs for infer and generate are consistent."""
-    config = _Config()
-    params, *_ = _make_inputs(config)
-    model = _make_spectrogram_model(config, dropout=0)
+    params = Params()
+    inputs, *_ = _make_inputs(params)
+    model = _make_spectrogram_model(params, dropout=0)
     _mock_model(model)
 
     with fork_rng(seed=123):
-        preds = model.eval()(params, mode=Mode.INFER)
+        _set_embedding_vocab(model, params)
+        preds = model.eval()(inputs, mode=Mode.INFER)
 
     for i in [1, 8, 11]:
         with fork_rng(seed=123):
-            generator = model(params, mode=Mode.GENERATE, split_size=i)
+            generator = model(inputs, mode=Mode.GENERATE, split_size=i)
             generated = tuple(zip(*list(generator)))
 
         assert_almost_equal(preds.frames, torch.cat(generated[0]))
         assert_almost_equal(preds.stop_tokens, torch.cat(generated[1]))
         assert_almost_equal(preds.alignments, torch.cat(generated[2]))
-        assert_almost_equal(preds.lengths, generated[3][-1])
-        assert_almost_equal(preds.reached_max, generated[4][-1])
+        assert_almost_equal(preds.num_frames, generated[3][-1])
+        assert_almost_equal(preds.frames_mask, generated[4][-1])
+        assert_almost_equal(preds.num_tokens, generated[5][-1])
+        assert_almost_equal(preds.tokens_mask, generated[6][-1])
+        assert_almost_equal(preds.reached_max, generated[7][-1])
 
 
 # NOTE: The random generator for dropout varies based on the tensor size; therefore, it's
@@ -394,83 +418,92 @@ def test_spectrogram_model__infer_generate():
 
 def test_spectrogram_model__infer_batch_padding_invariance():
     """Test `spectrogram_model.SpectrogramModel` infer ouput is batch and padding invariant."""
-    config = _Config()
-    params, *_ = _make_inputs(config)
-    model = _make_spectrogram_model(config, dropout=0)
+    params = Params()
+    inputs, num_tokens, *_ = _make_inputs(params)
+    model = _make_spectrogram_model(params, dropout=0)
     set_stop_token_rand_offset = _mock_model(model)
 
     with fork_rng(seed=123):
-        batch_preds = model.eval()(params, mode=Mode.INFER)
+        _set_embedding_vocab(model, params)
+        batch_preds = model.eval()(inputs, mode=Mode.INFER)
 
-    for i in range(config.batch_size):
+    for i in range(params.batch_size):
         set_stop_token_rand_offset(i)
-        num_tokens_ = typing.cast(int, params.num_tokens[i].item())
+        num_tokens_ = typing.cast(int, num_tokens[i].item())
         with fork_rng(seed=123):
-            params_ = params._replace(
-                tokens=params.tokens[:num_tokens_, i : i + 1],
-                speaker=params.speaker[:, i : i + 1],
-                session=params.session[:, i : i + 1],
-                num_tokens=None,
+            inputs_ = dataclasses.replace(
+                inputs,
+                tokens=[t[:num_tokens_] for t in inputs.tokens][i : i + 1],
+                seq_metadata=[m[i : i + 1] for m in inputs.seq_metadata],
+                token_metadata=[m[i : i + 1] for m in inputs.seq_metadata],
+                token_embeddings=inputs.token_embeddings[i : i + 1],
+                slices=inputs.slices[i : i + 1],
             )
-            preds = model(params_, mode=Mode.INFER)
+            preds = model(inputs_, mode=Mode.INFER)
 
-        length = typing.cast(int, batch_preds.lengths[0, i].item())
-        assert_almost_equal(preds.reached_max, batch_preds.reached_max[:, i : i + 1])
+        length = typing.cast(int, batch_preds.num_frames[i].item())
+        assert_almost_equal(preds.reached_max, batch_preds.reached_max[i : i + 1])
         assert_almost_equal(preds.frames, batch_preds.frames[:length, i : i + 1])
         assert_almost_equal(preds.stop_tokens, batch_preds.stop_tokens[:length, i : i + 1])
-        assert_almost_equal(
-            preds.alignments, batch_preds.alignments[:length, i : i + 1, :num_tokens_]
-        )
-        assert_almost_equal(preds.lengths, batch_preds.lengths[:, i : i + 1])
+        batch_preds_alignments = batch_preds.alignments[:length, i : i + 1, :num_tokens_]
+        assert_almost_equal(preds.alignments, batch_preds_alignments)
+        assert_almost_equal(preds.num_frames, batch_preds.num_frames[i : i + 1])
 
 
 def test_spectrogram_model__train_batch_padding_invariance():
     """Test `spectrogram_model.SpectrogramModel` train ouput is batch and padding invariant.
     Additionally, this tests inputting a tensor without a batch dimension."""
-    config = _Config(batch_size=5)
-    batch_params, target_frames, target_mask, target_lengths = _make_inputs(config)
-    model = _make_spectrogram_model(config, dropout=0)
+    params = Params(batch_size=5)
+    batch_inputs, _, target_frames, target_mask, target_lengths = _make_inputs(params)
+    model = _make_spectrogram_model(params, dropout=0)
     _mock_model(model)
-    i = 0
+    i = params.max_tokens_index
     padding = 3
-    batch_params.num_tokens[i] = config.max_num_tokens - padding
-    target_lengths[i] = config.max_frames - padding
+    num_tokens = params.max_num_tokens - padding
+    batch_inputs.tokens[i] = batch_inputs.tokens[i][:num_tokens]
+    batch_inputs.token_metadata[i] = batch_inputs.token_metadata[i][:num_tokens]
+    batch_inputs.token_embeddings[i] = batch_inputs.token_embeddings[i][:num_tokens]
+    slice_ = batch_inputs.slices[i]
+    batch_inputs.slices[i] = slice(slice_.start, min(num_tokens, slice_.stop))
+    batch_inputs = dataclasses.replace(batch_inputs)
+    target_lengths[i] = params.max_frames - padding
 
     with fork_rng(seed=123):
         target_mask = lengths_to_mask(target_lengths).transpose(0, 1)
-        batch_preds = model(batch_params, target_frames=target_frames, target_mask=target_mask)
+        batch_preds = model(batch_inputs, target_frames=target_frames, target_mask=target_mask)
         (batch_preds.frames[:, i].sum() + batch_preds.stop_tokens[:, i].sum()).backward()
         batch_grad = [p.grad for p in model.parameters() if p.grad is not None]
         model.zero_grad()
 
-    num_tokens = typing.cast(int, batch_params.num_tokens[i].item())
     length = typing.cast(int, target_lengths[i].item())
-    params = batch_params._replace(
-        tokens=batch_params.tokens[:num_tokens, i],
-        speaker=batch_params.speaker[:, i],
-        session=batch_params.session[:, i],
-        num_tokens=batch_params.num_tokens[i],
+    inputs = dataclasses.replace(
+        batch_inputs,
+        tokens=[t[:num_tokens] for t in batch_inputs.tokens][i : i + 1],
+        seq_metadata=[m[i : i + 1] for m in batch_inputs.seq_metadata],
+        token_metadata=[
+            [s[:num_tokens] for s in m[i : i + 1]] for m in batch_inputs.token_metadata
+        ],
+        token_embeddings=[t[:num_tokens] for t in batch_inputs.token_embeddings[i : i + 1]],
+        slices=[slice(s.start, min(s.stop, num_tokens)) for s in batch_inputs.slices[i : i + 1]],
     )
 
     with fork_rng(seed=123):
-        preds = model(
-            params,
-            target_frames=target_frames[:length, i],
-            target_mask=lengths_to_mask(length).transpose(0, 1),
-        )
+        target_mask = target_mask[:length, i : i + 1]
+        target_frames = target_frames[:length, i : i + 1]
+        preds = model(inputs, target_frames=target_frames, target_mask=target_mask)
         (preds.frames.sum() + preds.stop_tokens.sum()).backward()
         grad = [p.grad for p in model.parameters() if p.grad is not None]
         model.zero_grad()
 
-    assert_almost_equal(preds.frames, batch_preds.frames[:length, i])
-    assert_almost_equal(preds.stop_tokens, batch_preds.stop_tokens[:length, i])
-    assert_almost_equal(preds.alignments, batch_preds.alignments[:length, i, :num_tokens])
+    assert_almost_equal(preds.frames, batch_preds.frames[:length, i : i + 1])
+    assert_almost_equal(preds.stop_tokens, batch_preds.stop_tokens[:length, i : i + 1])
+    assert_almost_equal(preds.alignments, batch_preds.alignments[:length, i : i + 1, :num_tokens])
     [assert_almost_equal(r, e) for r, e in zip(grad, batch_grad)]
 
 
 _expected_parameters = {
-    "embed_speaker.weight": torch.tensor(-3.281343),
-    "embed_session.weight": torch.tensor(0.318184),
+    "encoder.embed_seq_metadata.0.weight": torch.tensor(-3.281343),
+    "encoder.embed_seq_metadata.1.weight": torch.tensor(0.318184),
     "encoder.embed_token.weight": torch.tensor(-4.785396),
     "encoder.embed.0.weight": torch.tensor(0.664301),
     "encoder.embed.0.bias": torch.tensor(-0.198331),
@@ -534,8 +567,8 @@ _expected_parameters = {
 }
 
 _expected_grads = {
-    "embed_speaker.weight": torch.tensor(-7.907637),
-    "embed_session.weight": torch.tensor(-11.760118),
+    "encoder.embed_seq_metadata.0.weight": torch.tensor(-7.907637),
+    "encoder.embed_seq_metadata.1.weight": torch.tensor(-11.760118),
     "encoder.embed_token.weight": torch.tensor(-3.497558),
     "encoder.embed.0.weight": torch.tensor(-14.660476),
     "encoder.embed.0.bias": torch.tensor(1.748332),
@@ -631,21 +664,53 @@ _expected_alignments = [
 _expected_alignments = torch.tensor(_expected_alignments)
 
 
+def _side_effect(params: Params, num_embeddings: int, *args, padding_idx=None, **kwargs):
+    """Side-effect used in `_make_backward_compatible_model` for creating the `Embedding`.
+
+    TODO: Remove and update `test_spectrogram_model__version` values.
+    """
+    assert all(params.max_tokens != n for n in params.max_seq_meta_values)
+    default_tokens = len(NumeralizePadEmbed._Tokens)
+    padding_idx = padding_idx if num_embeddings == (params.max_tokens + default_tokens) else None
+    return Embedding(num_embeddings - default_tokens, *args, padding_idx=padding_idx, **kwargs)
+
+
+def _make_backward_compatible_model(params: Params, stop_threshold=0.5):
+    """Set `Embedding` in a backward compatible way so `test_spectrogram_model__version` passes.
+
+    TODO: Remove and update `test_spectrogram_model__version` values.
+    """
+
+    with mock.patch("lib.utils.torch.nn.Embedding") as module:
+        module.side_effect = lambda *a, **k: _side_effect(params, *a, **k)
+        model = _make_spectrogram_model(params, stop_threshold=stop_threshold, stop_token_eps=_eps)
+
+    model.encoder.embed_token.vocab.update({i: i for i in range(params.max_tokens)})
+    model.encoder.embed_token.num_embeddings = len(model.encoder.embed_token.vocab)
+    for embed, max_values in zip(model.encoder.embed_seq_metadata, params.max_seq_meta_values):
+        embed = typing.cast(NumeralizePadEmbed, embed)
+        embed.vocab.update({i: i for i in range(max_values)})
+        embed.num_embeddings = len(embed.vocab)
+
+    return model
+
+
 def test_spectrogram_model__version():
     """Test `spectrogram_model.SpectrogramModel` has not changed since it was last tested."""
     torch.set_printoptions(precision=6, linewidth=100)
 
     with fork_rng(123):
-        config = _Config(max_frames=8)
-        params, target_frames, target_mask, _ = _make_inputs(config)
+        # TODO: Remove `max_tokens_index` and update `test_spectrogram_model__version` values.
+        params = Params(max_frames=8, max_tokens_index=-1)
+        inputs, _, target_frames, target_mask, _ = _make_inputs(params)
         val = torch.randn(1)
         print("Rand", val)
         assert_almost_equal(val, torch.tensor(0.162034))
 
     with fork_rng(123):
-        model = _make_spectrogram_model(config, stop_threshold=0.5, stop_token_eps=_eps)
+        model = _make_backward_compatible_model(params)
         with torch.no_grad():
-            preds = model(params, mode=Mode.INFER)
+            preds = model(inputs, mode=Mode.INFER)
 
         _utils.print_params("_expected_parameters", model.named_parameters())
         for name, parameter in model.named_parameters():
@@ -656,24 +721,24 @@ def test_spectrogram_model__version():
         assert_almost_equal(torch.sigmoid(preds.stop_tokens.transpose(0, 1)), _expected_stop_tokens)
         print("Alignments", preds.alignments.sum(dim=0))
         assert_almost_equal(preds.alignments.sum(dim=0), _expected_alignments)
-        print("Lengths", preds.lengths.squeeze(0))
-        assert_almost_equal(preds.lengths.squeeze(0), torch.tensor([6, 1, 2, 4, 8]))
-        print("Reached Max", preds.reached_max.squeeze(0))
+        print("Num Frames", preds.num_frames)
+        assert_almost_equal(preds.num_frames, torch.tensor([6, 1, 2, 4, 8]))
+        print("Reached Max", preds.reached_max)
         expected = torch.tensor([True, False, True, True, True])
-        assert_almost_equal(preds.reached_max.squeeze(0), expected)
+        assert_almost_equal(preds.reached_max, expected)
 
     with fork_rng(seed=123):
         target_frames = preds.frames
-        target_mask = lengths_to_mask(preds.lengths).transpose(0, 1)
-        preds = model(params, target_frames, target_mask=target_mask)
+        targets_mask = preds.frames_mask.transpose(0, 1)
+        preds = model(inputs, target_frames, targets_mask)
 
         spectrogram_loss = mse_loss(preds.frames, target_frames, reduction="none")
-        spectrogram_loss *= target_mask.unsqueeze(2)
-        target = torch.zeros(preds.frames.shape[0], config.batch_size)
+        spectrogram_loss *= targets_mask.unsqueeze(2)
+        target = torch.zeros(preds.frames.shape[0], params.batch_size)
         stop_token_loss = binary_cross_entropy_with_logits(
             preds.stop_tokens, target, reduction="none"
         )
-        stop_token_loss *= target_mask
+        stop_token_loss *= targets_mask
         (spectrogram_loss.sum() + stop_token_loss.sum()).backward()
 
         print("Spectrogram Loss", spectrogram_loss.sum())

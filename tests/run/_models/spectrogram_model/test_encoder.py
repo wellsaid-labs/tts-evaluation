@@ -1,48 +1,50 @@
+import dataclasses
 import typing
 from functools import partial
 
+import config as cf
 import torch
 import torch.nn
 from torchnlp.random import fork_rng
 
-import lib.spectrogram_model.encoder
-from lib.spectrogram_model.model import Inputs
+from run._models import spectrogram_model
+from run._models.spectrogram_model.wrapper import Inputs
 from tests import _utils
 
 assert_almost_equal = partial(_utils.assert_almost_equal, decimal=5)
 
 
 def test__roll():
-    """Test `lib.spectrogram_model.encoder._roll` to roll given a simple tensor."""
+    """Test `spectrogram_model.encoder._roll` to roll given a simple tensor."""
     tensor = torch.tensor([1, 2, 3, 4, 5, 6])
-    result = lib.spectrogram_model.encoder._roll(tensor, shift=torch.tensor(4), dim=0)
+    result = spectrogram_model.encoder._roll(tensor, shift=torch.tensor(4), dim=0)
     assert torch.equal(result, torch.tensor([3, 4, 5, 6, 1, 2]))
 
 
 def test__roll__2d():
-    """Test `lib.spectrogram_model.encoder._roll` to roll given a 2d `tensor` with variable
+    """Test `spectrogram_model.encoder._roll` to roll given a 2d `tensor` with variable
     `shift`. Furthermore, this tests a negative `dim`."""
     tensor = torch.tensor([[1, 2, 3], [1, 2, 3], [1, 2, 3]])
-    result = lib.spectrogram_model.encoder._roll(tensor, shift=torch.tensor([0, 1, 2]), dim=-1)
+    result = spectrogram_model.encoder._roll(tensor, shift=torch.tensor([0, 1, 2]), dim=-1)
     assert torch.equal(result, torch.tensor([[1, 2, 3], [3, 1, 2], [2, 3, 1]]))
 
 
 def test__roll__transpose():
-    """Test `lib.spectrogram_model.encoder._roll` to roll given a transposed 2d `tensor`.
-     `lib.spectrogram_model.encoder._roll` should return consistent results regardless of the
+    """Test `spectrogram_model.encoder._roll` to roll given a transposed 2d `tensor`.
+     `spectrogram_model.encoder._roll` should return consistent results regardless of the
     dimension and ordering of the data."""
     tensor = torch.tensor([[1, 2, 3], [1, 2, 3], [1, 2, 3]]).transpose(0, 1)
-    result = lib.spectrogram_model.encoder._roll(
+    result = spectrogram_model.encoder._roll(
         tensor, shift=torch.tensor([0, 1, 2]), dim=0
     ).transpose(0, 1)
     assert torch.equal(result, torch.tensor([[1, 2, 3], [3, 1, 2], [2, 3, 1]]))
 
 
 def test__roll__3d():
-    """Test `lib.spectrogram_model.encoder._roll` to roll given a 3d `tensor` and 2d `start`."""
+    """Test `spectrogram_model.encoder._roll` to roll given a 3d `tensor` and 2d `start`."""
     tensor = torch.tensor([1, 2, 3]).view(1, 3, 1).expand(4, 3, 4)
     shift = torch.arange(0, 16).view(4, 4)
-    result = lib.spectrogram_model.encoder._roll(tensor, shift=shift, dim=1)
+    result = spectrogram_model.encoder._roll(tensor, shift=shift, dim=1)
     assert shift[0, 0] == 0
     assert torch.equal(result[0, :, 0], torch.tensor([1, 2, 3]))
     assert shift[0, 1] == 1
@@ -59,15 +61,15 @@ def test__roll__3d():
 
 def _make_rnn(
     input_size: int = 4, hidden_size: int = 5, num_layers: int = 2, **kwargs
-) -> lib.spectrogram_model.encoder._RightMaskedBiRNN:
+) -> spectrogram_model.encoder._RightMaskedBiRNN:
     """Make `encoder._RightMaskedBiRNN` for testing."""
-    return lib.spectrogram_model.encoder._RightMaskedBiRNN(
+    return spectrogram_model.encoder._RightMaskedBiRNN(
         input_size=input_size, hidden_size=hidden_size, num_layers=num_layers, **kwargs
     )
 
 
 def _make_rnn_inputs(
-    module: lib.spectrogram_model.encoder._RightMaskedBiRNN,
+    module: spectrogram_model.encoder._RightMaskedBiRNN,
     batch_size: int = 2,
     seq_len: int = 3,
 ) -> typing.Tuple[torch.Tensor, torch.Tensor]:
@@ -124,7 +126,7 @@ def test__right_masked_bi_rnn__jagged_mask():
     tokens_mask = torch.tensor([[1, 1, 1, 0, 0], [1, 1, 0, 0, 0]], dtype=torch.bool).transpose(0, 1)
     num_tokens = tokens_mask.sum(dim=0)
 
-    masked_bi_rnn = lib.spectrogram_model.encoder._RightMaskedBiRNN(
+    masked_bi_rnn = spectrogram_model.encoder._RightMaskedBiRNN(
         input_size=input_size,
         hidden_size=hidden_size,
         num_layers=1,
@@ -171,48 +173,80 @@ def test__right_masked_bi_rnn__multilayer_mask():
 
 
 def _make_encoder(
-    vocab_size=10,
-    speaker_embedding_size=6,
+    max_tokens=10,
+    max_seq_meta_values=(11, 12),
+    max_token_meta_values=(13,),
+    max_token_embed_size=8,
+    seq_meta_embed_size=6,
+    token_meta_embed_size=12,
+    seq_meta_embed_dropout=0.1,
     out_size=8,
     hidden_size=8,
     num_conv_layers=2,
     conv_filter_size=5,
     lstm_layers=2,
     dropout=0.5,
-    padding_index=0,
     batch_size=4,
     num_tokens=5,
+    context=3,
+    num_token_metadata=1,
 ):
     """Make `encoder.Encoder` and it's inputs for testing."""
-    encoder = lib.spectrogram_model.encoder.Encoder(
-        vocab_size=vocab_size,
-        speaker_embedding_size=speaker_embedding_size,
+    encoder = cf.partial(spectrogram_model.encoder.Encoder)(
+        max_tokens=max_tokens,
+        max_seq_meta_values=max_seq_meta_values,
+        max_token_meta_values=max_token_meta_values,
+        max_token_embed_size=max_token_embed_size,
+        seq_meta_embed_size=seq_meta_embed_size,
+        token_meta_embed_size=token_meta_embed_size,
+        seq_meta_embed_dropout=seq_meta_embed_dropout,
         out_size=out_size,
         hidden_size=hidden_size,
         num_conv_layers=num_conv_layers,
         conv_filter_size=conv_filter_size,
         lstm_layers=lstm_layers,
         dropout=dropout,
-        padding_index=padding_index,
     )
 
     # NOTE: Ensure modules like `LayerNorm` perturbs the input instead of being just an identity.
     [torch.nn.init.normal_(p) for p in encoder.parameters() if p.std() == 0]
 
-    tokens = torch.randint(1, vocab_size, (batch_size, num_tokens))
-    tokens_mask = torch.ones(batch_size, num_tokens, dtype=torch.bool)
-    speaker = torch.randn(batch_size, speaker_embedding_size)
-    input_ = Inputs(tokens, speaker, tokens_mask.sum(dim=1), tokens_mask)
-    return encoder, input_, (num_tokens, batch_size, out_size)
+    num_tokens_pad = num_tokens + context * 2
+    speakers = torch.randint(1, max_seq_meta_values[0], (batch_size,))
+    sessions = torch.randint(1, max_seq_meta_values[1], (batch_size,))
+    tokens = torch.randint(1, max_tokens, (batch_size, num_tokens_pad))
+    token_meta = torch.randint(1, max_tokens, (num_token_metadata, batch_size, num_tokens_pad))
+    token_embeddings = list(torch.randn(batch_size, num_tokens_pad, max_token_embed_size).unbind())
+    inputs = Inputs(
+        tokens=tokens.tolist(),
+        seq_metadata=[speakers.tolist(), sessions.tolist()],
+        token_metadata=token_meta.tolist(),
+        token_embeddings=token_embeddings,
+        slices=[slice(context, -context) for _ in range(batch_size)],
+    )
+    return encoder, inputs, (num_tokens, batch_size, out_size)
 
 
 def test_encoder():
     """Test `encoder.Encoder` handles a basic case."""
-    (module, arg, (num_tokens, batch_size, out_size)) = _make_encoder()
-    output = module(arg)
-    assert output.dtype == torch.float
-    assert output.shape == (num_tokens, batch_size, out_size)
-    output.sum().backward()
+    module, arg, (num_tokens, batch_size, out_size) = _make_encoder()
+    encoded = module(arg)
+
+    assert encoded.tokens.dtype == torch.float
+    assert encoded.tokens.shape == (num_tokens, batch_size, out_size)
+
+    assert encoded.tokens_mask.dtype == torch.bool
+    assert encoded.tokens_mask.shape == (batch_size, num_tokens)
+
+    assert encoded.num_tokens.dtype == torch.long
+    assert encoded.num_tokens.shape == (batch_size,)
+
+    mask_ = ~encoded.tokens_mask.transpose(0, 1).unsqueeze(-1)
+    assert encoded.tokens.masked_select(mask_).sum() == 0
+    assert torch.equal(encoded.tokens_mask.sum(dim=1), encoded.num_tokens)
+    assert encoded.num_tokens.tolist(), [len(t) for t in arg.tokens]
+
+    encoded.tokens.sum().backward()
 
 
 def test_encoder__filter_size():
@@ -221,25 +255,35 @@ def test_encoder__filter_size():
         module, arg, (num_tokens, batch_size, out_size) = _make_encoder(
             conv_filter_size=filter_size
         )
-        output = module(arg)
-        assert output.shape == (num_tokens, batch_size, out_size)
-        output.sum().backward()
+        encoded = module(arg)
+        assert encoded.tokens.shape == (num_tokens, batch_size, out_size)
+        assert encoded.tokens_mask.shape == (batch_size, num_tokens)
+        assert encoded.num_tokens.shape == (batch_size,)
+        encoded.tokens.sum().backward()
 
 
 def test_encoder__padding_invariance():
     """Test `encoder.Encoder` is consistent regardless of the padding."""
-    (module, arg, (_, batch_size, _)) = _make_encoder(dropout=0)
+    module, arg, _ = _make_encoder(dropout=0, seq_meta_embed_dropout=0)
     expected = module(arg)
-    expected.sum().backward()
+    expected.tokens.sum().backward()
     expected_grad = [p.grad for p in module.parameters() if p.grad is not None]
     module.zero_grad()
     for padding_len in range(1, 10):
-        padding = torch.zeros(batch_size, padding_len)
-        padded_tokens = torch.cat([arg.tokens, padding.long()], dim=1)
-        padded_tokens_mask = torch.cat([arg.tokens_mask, padding.bool()], dim=1)
-        result = module(arg._replace(tokens=padded_tokens, tokens_mask=padded_tokens_mask))
-        result.sum().backward()
+        pad_token: typing.List[typing.Hashable] = [module.embed_token.pad_token] * padding_len
+        pad_meta: typing.List[typing.Hashable]
+        pad_meta = [module.embed_token_metadata[0].pad_token] * padding_len
+        inputs = dataclasses.replace(
+            arg,
+            tokens=[t + pad_token for t in arg.tokens],
+            token_metadata=[[s + pad_meta for s in m] for m in arg.token_metadata],
+            token_embeddings=[
+                torch.cat([t, torch.zeros(padding_len, t.shape[1])]) for t in arg.token_embeddings
+            ],
+        )
+        result = module(inputs)
+        result.tokens.sum().backward()
         result_grad = [p.grad for p in module.parameters() if p.grad is not None]
         module.zero_grad()
-        assert_almost_equal(result[:-padding_len], expected, decimal=5)
+        assert_almost_equal(result.tokens[:-padding_len], expected.tokens, decimal=5)
         [assert_almost_equal(r, e) for r, e in zip(result_grad, expected_grad)]

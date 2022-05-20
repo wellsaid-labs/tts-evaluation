@@ -21,7 +21,6 @@ Setup your local development environment by following [these instructions](LOCAL
 
    ```zsh
    TRAIN_SCRIPT_PATH='path/to/train' # EXAMPLE: run/train/spectrogram_model
-   ZONE='your-vm-zone' # EXAMPLE: us-east1-c
    NAME=$USER"-your-instance-name" # EXAMPLE: michaelp-baseline
    GCP_USER='your-gcp-user-name' # Example: michaelp
    TYPE='preemptible' # Either 'preemptible' or 'persistent'
@@ -55,8 +54,7 @@ Setup your local development environment by following [these instructions](LOCAL
    ```zsh
    python -m run.utils.gcp $TYPE make-instance \
       --name=$NAME \
-      --zone=$ZONE \
-      --machine-type='n1-standard-32' \
+      --machine-type='n1-highmem-32' \
       --gpu-type='nvidia-tesla-t4' \
       --gpu-count=4 \
       --disk-size=1024 \
@@ -153,6 +151,15 @@ Setup your local development environment by following [these instructions](LOCAL
    [create a Google Machine Image](https://cloud.google.com/compute/docs/machine-images/create-machine-images)
    so you don't need to setup your VM from scratch again.
 
+1. Download any spaCy models that you may need, potentially including...
+
+   ```bash
+   python -m spacy download en_core_web_md
+   python -m spacy download de_core_news_md
+   python -m spacy download es_core_news_md
+   python -m spacy download pt_core_news_md
+   ```
+
 1. Start a `screen` session with a new virtual environment...
 
    ```bash
@@ -227,16 +234,15 @@ Setup your local development environment by following [these instructions](LOCAL
 1. Setup your environment variables again...
 
    ```zsh
-   ZONE='your-vm-zone' # EXAMPLE: us-central1-a
    NAME=$USER"-your-instance-name" # EXAMPLE: michaelp-baseline
+   VM_NAME=$(python -m run.utils.gcp most-recent --name $NAME)
+   echo "VM_NAME=$VM_NAME"
+   VM_ZONE=$(python -m run.utils.gcp zone --name $VM_NAME)
    ```
 
 1. (Optional) Download checkpoints to your local drive...
 
    ```bash
-   VM_NAME=$(python -m run.utils.gcp most-recent --name $NAME)
-   VM_ZONE=$(python -m run.utils.gcp zone --name $VM_NAME)
-
    DIR_NAME='' # EXAMPLE: spectrogram_model
    CHECKPOINT='' # EXAMPLE: '**/**/checkpoints/step_630927.pt'
 
@@ -250,7 +256,7 @@ Setup your local development environment by following [these instructions](LOCAL
 1. Delete your instance...
 
    ```zsh
-   python -m run.utils.gcp $TYPE delete-instance --name=$NAME --zone=$ZONE
+   python -m run.utils.gcp $TYPE delete-instance --name=$VM_NAME --zone=$VM_ZONE
    ```
 
    You may need to run the above a couple of times.
@@ -260,9 +266,7 @@ Setup your local development environment by following [these instructions](LOCAL
    ```zsh
    IMAGE_FAMILY=$NAME # EXAMPLE: michaelp-baseline
    IMAGE_NAME="$IMAGE_FAMILY-v1" # EXAMPLE: michaelp-baseline-v1
-   VM_NAME=$(python -m run.utils.gcp $TYPE most-recent --name $NAME)
-   VM_ZONE=$(python -m run.utils.gcp zone --name $VM_NAME)
-   gcloud compute ssh --zone=$ZONE $VM_NAME \
+   gcloud compute ssh --zone=$VM_ZONE $VM_NAME \
       --command="rm /opt/wellsaid-labs/AUTO_START_FROM_CHECKPOINT"
    python -m run.utils.gcp $TYPE image-and-delete \
       --image-family=$IMAGE_FAMILY \
