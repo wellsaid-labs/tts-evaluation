@@ -305,7 +305,7 @@ class Batch(_utils.Batch):
         return len(self.spans)
 
 
-def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
+def make_batch(spans: typing.List[Span], max_workers: int = 6, respell_prob: float = 0.0) -> Batch:
     """
     NOTE: spaCy splits some (not all) words on apostrophes while AmEPD does not; therefore,
     those words will not be found in AmEPD. The options are:
@@ -350,8 +350,8 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
         audio=signals,
         spectrogram=spectrogram,
         spectrogram_mask=spectrogram_mask,
-        stop_token=_make_stop_token(spectrogram, **cf.get()),
-        inputs=preprocess_spans(spans),
+        stop_token=cf.partial(_make_stop_token)(spectrogram),
+        inputs=preprocess_spans(spans, respell_prob=respell_prob),
     )
 
 
@@ -394,7 +394,7 @@ class DataProcessor(typing.Mapping[int, Batch]):
         return sys.maxsize
 
     def __getitem__(self, index) -> Batch:
-        return make_batch(self.index_to_spans[index])
+        return cf.partial(make_batch)(self.index_to_spans[index])
 
 
 def train_get_weight(speaker: Speaker, dataset_size: float):

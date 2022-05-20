@@ -9,7 +9,8 @@ import torch
 import torch.nn
 from tqdm import tqdm
 
-from lib.utils import NumeralizePadEmbed, lengths_to_mask
+from lib.distributed import NumeralizePadEmbed
+from lib.utils import lengths_to_mask
 from run._models.spectrogram_model import decoder, encoder
 from run._models.spectrogram_model.containers import Encoded, Preds
 from run._models.spectrogram_model.inputs import Inputs
@@ -202,7 +203,7 @@ class SpectrogramModel(torch.nn.Module):
 
             lengths[~stopped] += 1
             frame = frame.masked_fill(stopped.view(1, -1, 1), 0)
-            hidden_state = hidden_state._replace(last_frame=frame)
+            hidden_state = hidden_state._replace(last_frame=frame)  # type: ignore
             reached_max = lengths == max_lengths
             window_start = hidden_state.attention_hidden_state.window_start
             is_stop, stop_token = self._is_stop(stop_token, num_tokens, window_start, reached_max)

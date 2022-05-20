@@ -20,6 +20,7 @@ import torch.utils
 import torch.utils.data
 from third_party import get_parameter_norm
 from torch.nn.functional import binary_cross_entropy_with_logits, mse_loss
+from torchnlp.random import fork_rng
 from torchnlp.utils import get_total_parameters
 
 import lib
@@ -27,10 +28,10 @@ from lib.audio import griffin_lim
 from lib.distributed import is_master
 from lib.utils import log_runtime
 from lib.visualize import plot_alignments, plot_logits, plot_mel_spectrogram
-from run._config import Cadence, DatasetType, get_dataset_label, get_model_label, load_spacy_nlp
-from run._models.spectrogram_model import Inputs, Mode, Preds, SpectrogramModel
+from run._config import Cadence, DatasetType, get_dataset_label, get_model_label
+from run._models.spectrogram_model import Mode, Preds, SpectrogramModel
 from run._utils import Dataset, SpanGeneratorGetWeight
-from run.data._loader.structures import Language, Speaker
+from run.data._loader.structures import Speaker
 from run.train import _utils
 from run.train._utils import (
     CometMLExperiment,
@@ -89,6 +90,7 @@ class Checkpoint(_utils.Checkpoint):
 
     def export(self) -> SpectrogramModel:
         """Export inference ready `SpectrogramModel` without needing additional context managers."""
+        logger.info("Exporting spectrogram model...")
         self.check_invariants()
         model = None
         with contextlib.ExitStack() as stack:
@@ -312,8 +314,8 @@ def _visualize_source_vs_target(args: _HandleBatchArgs, preds: Preds):
 def _run_step(
     args: _HandleBatchArgs,
     spectrogram_loss_scalar: float,
-    stop_token_min_loss: float,
     average_spectrogram_length: float,
+    stop_token_loss_multiplier: typing.Callable[[int], float],
 ):
     """Run the `model` on the next batch from `data_loader`, and maybe update it.
 
@@ -335,9 +337,10 @@ def _run_step(
         ...
         visualize: If `True` visualize the results with `comet`.
         spectrogram_loss_scalar: This scales the spectrogram loss by some value.
-        stop_token_min_loss: This thresholds the stop token loss to prevent overfitting.
         average_spectrogram_length: The training dataset average spectrogram length. It is used
             to normalize the loss magnitude.
+        stop_token_loss_multiplier: A callable to determine the stop token multiplier based on the
+            step.
     """
     args.timer.record_event(args.timer.MODEL_FORWARD)
     preds = args.state.model(
@@ -372,8 +375,9 @@ def _run_step(
         spectrogram_loss_ *= spectrogram_loss_scalar
 
         # stop_token_loss [num_frames, batch_size] → [1]
-        stop_token_loss_ = (stop_token_loss.sum(dim=0) / average_spectrogram_length).mean()
-        stop_token_loss_ = (stop_token_loss_ - stop_token_min_loss).abs() + stop_token_min_loss
+        multiplier = stop_token_loss_multiplier(int(args.state.step.item()))
+        delim = average_spectrogram_length
+        stop_token_loss_ = ((stop_token_loss.sum(dim=0) * multiplier) / delim).mean()
 
         args.timer.record_event(args.timer.MODEL_BACKWARD)
         params = [p for g in args.state.optimizer.param_groups for p in g["params"]]
@@ -485,8 +489,8 @@ def _visualize_inferred(args: _HandleBatchArgs, preds: Preds, pick: _Pick = _ran
         audio=audio,
         context=args.state.comet.context,
         text=args.batch.spans[item].script,
-        text_context=args.batch.inputs.reconstruct_text(item),
-        speaker=args.batch.spans[item].speaker,
+        reconstructed_text=args.batch.inputs.reconstruct_text(item)[args.batch.inputs.slices[item]],
+        reconstructed_text_context=args.batch.inputs.reconstruct_text(item),
         session=args.batch.spans[item].session,
         predicted_loudness=get_average_db_rms_level(predicted_spectrogram.unsqueeze(1)).item(),
         gold_loudness=get_average_db_rms_level(gold_spectrogram.unsqueeze(1)).item(),
@@ -523,30 +527,15 @@ def _run_inference(args: _HandleBatchArgs):
     args.metrics.update(values)
 
 
-def _visualize_select_cases(
-    state: _State,
-    dataset_type: DatasetType,
-    cadence: Cadence,
-    cases: typing.List[typing.Tuple[Language, str]],
-    speakers: typing.Set[Speaker],
-    num_cases: int = 5,
-):
+def _visualize_select_cases(state: _State, dataset_type: DatasetType, cadence: Cadence, **kw):
     """Run spectrogram model in inference mode and visualize a test case."""
     if not is_master():
         return
 
     model = typing.cast(SpectrogramModel, state.model.module)
-    session_vocab = [s for s in model.session_embed.vocab.keys() if isinstance(s, tuple)]
-    assert state.comet.curr_epoch is not None
-    cases = [random.choice(cases) for _ in range(num_cases)]
-    seshs = [
-        random.choice([s for s in session_vocab if s[0].language is l and s[0] in speakers])
-        for (l, _) in cases
-    ]
-    docs = [load_spacy_nlp(l)(t) for (l, t) in cases]
-    preds = model(Inputs(seshs, docs), mode=Mode.INFER)
+    inputs, preds = cf.partial(_utils.process_select_cases)(model, model.session_embed.vocab, **kw)
 
-    for item in range(num_cases):
+    for item in range(len(inputs.doc)):
         text_length = int(preds.num_tokens[item].item())
         num_frames_predicted = int(preds.num_frames[item].item())
         # spectrogram [num_frames, frame_channels]
@@ -563,15 +552,15 @@ def _visualize_select_cases(
         )
         assets = state.comet.log_figures({l: v(n) for l, v, n in figures})
         audio = cf.partial(griffin_lim)(predicted_spectrogram.cpu().numpy())
-        npy_urls = {f"{l} Array": state.comet.log_npy(l, seshs[item][0], a) for l, _, a in figures}
+        log_npy = state.comet.log_npy
+        npy_urls = {f"{l} Array": log_npy(l, inputs.session[item][0], a) for l, _, a in figures}
         link = lambda h: "Failed to upload." if h is None else f'<a href="{h}">{h}</a>'
         state.comet.log_html_audio(
-            item=item,
+            randomly_sampled_case=item,
             audio={"predicted_griffin_lim_audio": audio},
             context=state.comet.context,
-            text=cases[item][1],
-            speaker=seshs[item][0],
-            session=seshs[item][1],
+            text=str(inputs.doc[item]),
+            session=inputs.session[item],
             predicted_loudness=get_average_db_rms_level(predicted_spectrogram.unsqueeze(1)).item(),
             dataset_type=dataset_type,
             **{f"{k} Figure": link(v) for k, v in assets.items()},
@@ -705,6 +694,8 @@ def run_worker(
         [_run_steps(state, *args, steps_per_epoch=steps_per_epoch) for args in contexts]
 
         with set_context(Context.EVALUATE_INFERENCE, state.comet, state.model, ema=state.ema):
-            _visualize_select_cases(state, DatasetType.TEST, Cadence.MULTI_STEP, **cf.get())
+            assert comet.curr_epoch is not None
+            with fork_rng(comet.curr_epoch):
+                _visualize_select_cases(state, DatasetType.TEST, Cadence.MULTI_STEP)
 
         save_checkpoint(state.to_checkpoint(), checkpoints_directory, f"step_{state.step.item()}")

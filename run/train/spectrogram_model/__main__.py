@@ -1,31 +1,18 @@
 import logging
 import pathlib
 import typing
-from functools import partial
 from unittest.mock import MagicMock
 
 import config as cf
-import torch
-import torch.optim
 
-import lib
 from run._config import (
-    DEV_SPEAKERS,
-    NUM_FRAME_CHANNELS,
-    RANDOM_SEED,
     SPECTROGRAM_MODEL_EXPERIMENTS_PATH,
     get_config_label,
+    make_spectrogram_model_train_config,
 )
 from run._utils import Dataset
-from run.data._loader.structures import Language
-from run.train._utils import (
-    CometMLExperiment,
-    resume_experiment,
-    run_workers,
-    set_run_seed,
-    start_experiment,
-)
-from run.train.spectrogram_model import _data, _metrics, _worker
+from run.train._utils import CometMLExperiment, resume_experiment, run_workers, start_experiment
+from run.train.spectrogram_model import _worker
 
 logger = logging.getLogger(__name__)
 
@@ -43,141 +30,6 @@ else:
         app = MagicMock()
         typer = MagicMock()
         logger.info("Ignoring optional `typer` dependency.")
-
-
-ENGLISH_TEST_CASES = [
-    # NOTE: These statements have a mix of heteronyms, initialisms, hard words (locations,
-    # medical terms, technical terms), etc for testing pronunciation.
-    "For more updates on covid nineteen, please contact us via the URL at the bottom of the "
-    "screen, or visit our office in Seattle at the address shown here.",
-    "I've listed INTJ on my resume because it's important for me that you understand how I "
-    "conduct myself in stressful situations.",
-    "The website is live and you can access your records via the various APIs slash URLs or use "
-    "the Studio as an alternate avenue.",
-    "The nurses will resume the triage conduct around the oropharyngeal and test for "
-    "tachydysrhythmia to ensure the patient lives another day.",
-    "Access your clusters using the Kubernetes API. You can alternate between the CLI and the "
-    "web interface.",
-    "Live from Seattle, it's AIQTV, with the governor's special address on the coronavirus. Don't "
-    "forget to record this broadcast for viewing later.",
-    "Let's add a row on our assay tracking sheet so we can build out the proper egress "
-    "measurements.",
-    "Hello! Can you put this contractor into a supervisory role?",
-    # NOTE: These questions each have a different expected inflection.
-    "Have you ever hidden a snack so that nobody else would find it and eat it first?",
-    "If you can instantly become an expert in something, what would it be?",
-    "What led to the two of you having a disagreement?",
-    "Why do some words sound funny to us?",
-    "Can fish see air like we see water?",
-    # NOTE: All these questions should have an upward inflection at the end.
-    "Are you a messy person?",
-    "Did you have cats growing up?",
-    "Do you consider yourself an adventurous person?",
-    "Do you have any weird food combos?",
-    "Do you respond to texts fast?",
-    "Have you ever been stalked by an animal that later became your pet?",
-    # NOTE: Test cases with a variety of lengths, respellings, and punctuation marks.
-    "WellSaid Labs.",
-    "Livingroom",
-    "Ophthalmologist",
-    "ACLA",
-    "ACLA.",  # NOTE: `ACLA` sometimes gets cut-off, this is a test to see how a period affects it.
-    "NASA",
-    "Why?",
-    'Ready to find out ""more""?',
-    "Thisss isrealy awhsome.",
-    "Topic two:     Is an N R A right for my rate?.",
-    'Internet Assigned Numbers Authority ("""I-eigh n Eigh""")',
-    '"""G-E-ran""" is an abbreviation for GSM EDGE',
-    "epidermolysis bullosa (ep-ih-dur-MOL-uh-sis buhl-LOE-sah) (epi-dermo-lysiss) is a group of",
-    "Harry lay in his dark cupboard much later, wishing he had a watch. He didn't know what time "
-    "it was and he couldn't be sure the Dursleys were asleep yet. Until they were, he couldn't "
-    "risk sneaking to the kitchen for some food. He'd lived with the Dursleys almost ten years, "
-    "ten miserable years, as long as he could remember, ever since he'd been a baby and his "
-    "parents had died in that car crash. He couldn't remember being in the car when his parents "
-    "had died. Sometimes, when he strained his memory during long hours in his cupboard, he came "
-    "up with a strange vision: a blinding flash of green light and a burning pain on his "
-    "forehead. This, he supposed, was the crash, though he couldn't imagine where all the green "
-    "light came from. He couldn't remember his parents at all. His aunt and uncle never spoke "
-    "about them, and of course he was forbidden to ask questions. There were no photographs of "
-    "them in the house. When he had been younger, Harry had dreamed and dreamed of some unknown "
-    "relation coming to take him away, but it had never happened; the Dursleys were his only "
-    "family. Yet sometimes he thought (or maybe hoped) that strangers in the street seemed to "
-    "know him. Very strange strangers they were, too.",
-]
-TEST_CASES = [(Language.ENGLISH, t) for t in ENGLISH_TEST_CASES]
-
-
-def _make_configuration(train_dataset: Dataset, dev_dataset: Dataset, debug: bool) -> cf.Config:
-    """Make additional configuration for spectrogram model training."""
-    train_size = sum(sum(p.segmented_audio_length() for p in d) for d in train_dataset.values())
-    dev_size = sum(sum(p.segmented_audio_length() for p in d) for d in dev_dataset.values())
-    ratio = train_size / dev_size
-    logger.info("The training dataset is approx %fx bigger than the development dataset.", ratio)
-    train_batch_size = 28 if debug else 56
-    batch_size_ratio = 4
-    dev_batch_size = train_batch_size * batch_size_ratio
-    dev_steps_per_epoch = 1 if debug else 64
-    train_steps_per_epoch = int(round(dev_steps_per_epoch * batch_size_ratio * ratio))
-    train_steps_per_epoch = 1 if debug else train_steps_per_epoch
-    assert train_batch_size % lib.distributed.get_device_count() == 0
-    assert dev_batch_size % lib.distributed.get_device_count() == 0
-
-    return {
-        set_run_seed: cf.Args(seed=RANDOM_SEED),
-        _worker._State._get_optimizers: cf.Args(
-            lr_multiplier_schedule=partial(
-                lib.optimizers.warmup_lr_multiplier_schedule, warmup=500
-            ),
-            # SOURCE (Tacotron 2):
-            # We use the Adam optimizer [29] with β1 = 0.9, β2 = 0.999
-            optimizer=torch.optim.AdamW,
-            exclude_from_decay=_worker.exclude_from_decay,
-        ),
-        _worker._run_step: cf.Args(
-            # NOTE: This scalar calibrates the loss so that it's scale is similar to Tacotron-2.
-            spectrogram_loss_scalar=1 / 100,
-            # NOTE: Learn more about this parameter here: https://arxiv.org/abs/2002.08709
-            # NOTE: This value is the minimum loss the test set achieves before the model
-            # starts overfitting on the train set.
-            # TODO: Try increasing the stop token minimum loss because it still overfit.
-            stop_token_min_loss=0.019,
-            # NOTE: This value is the average spectrogram length in the training dataset.
-            average_spectrogram_length=58.699,
-        ),
-        _worker._get_data_loaders: cf.Args(
-            # SOURCE: Tacotron 2
-            # To train the feature prediction network, we apply the standard maximum-likelihood
-            # training procedure (feeding in the correct output instead of the predicted output on
-            # the decoder side, also referred to as teacher-forcing) with a batch size of 64 on a
-            # single GPU.
-            # NOTE: Batch size parameters set after experimentation on a 2 Px100 GPU.
-            train_batch_size=train_batch_size,
-            dev_batch_size=dev_batch_size,
-            train_steps_per_epoch=train_steps_per_epoch,
-            dev_steps_per_epoch=int(dev_steps_per_epoch),
-            train_get_weight=_data.train_get_weight,
-            dev_get_weight=_data.dev_get_weight,
-            num_workers=2,
-            prefetch_factor=2 if debug else 10,
-        ),
-        _worker._visualize_select_cases: cf.Args(cases=TEST_CASES, speakers=DEV_SPEAKERS),
-        _metrics.Metrics._get_model_metrics: cf.Args(num_frame_channels=NUM_FRAME_CHANNELS),
-        # NOTE: Based on the alignment visualizations, if the maximum alignment is less than 30%
-        # then a misalignment has likely occured.
-        _metrics.get_num_small_max: cf.Args(threshold=0.3),
-        # SOURCE (Tacotron 2):
-        # We use the Adam optimizer with β1 = 0.9, β2 = 0.999, eps = 10−6 learning rate of 10−3
-        # We also apply L2 regularization with weight 10−6
-        # NOTE: No L2 regularization performed better based on Comet experiments in March 2020.
-        torch.optim.AdamW: cf.Args(
-            eps=10 ** -6,
-            weight_decay=0.01,
-            lr=10 ** -3,
-            amsgrad=False,
-            betas=(0.9, 0.999),
-        ),
-    }
 
 
 def _run_app(
@@ -200,7 +52,7 @@ def _run_app(
     TODO: Should we consider setting OMP num threads similarly:
     https://github.com/pytorch/pytorch/issues/22260
     """
-    cf.add(_make_configuration(train_dataset, dev_dataset, debug))
+    cf.add(make_spectrogram_model_train_config(train_dataset, dev_dataset, debug))
     cf.add(cli_config)
     comet.log_parameters({get_config_label(k): v for k, v in cf.log(lambda x: x).items()})
     return run_workers(

@@ -547,12 +547,12 @@ def test_has_a_mistranscription__span():
     assert not has_a_mistranscription(passages[1][1:])
 
 
-def test_spacy_with_context():
-    """Test that `spacy_with_context` gets the full context."""
+def test_spacy_context():
+    """Test that `spacy_context` gets the full context."""
     script = "Give it back! He pleaded."
     passage = make_passage(script=script)
-    assert str(passage[2:4].spacy_with_context(10)) == "Give it back! He pleaded."
-    assert str(passage[2:4].spacy_with_context(0)) == "back! He"
+    assert str(passage[2:4].spacy_context(10)) == "Give it back! He pleaded."
+    assert str(passage[2:4].spacy_context(0)) == "back! He"
     assert str(passage[2:4].spacy) == "back! He"
 
 

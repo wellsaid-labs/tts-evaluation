@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 LINCOLN__CUSTOM = struc.Speaker(
     "Lincoln_custom_ma",
     struc.Style.OTHER,
-    None,  # type: ignore
+    struc.Dialect.EN_UNKNOWNN,
     "Lincoln (Custom)",
     "Lincoln_custom_ma",
 )
@@ -29,7 +29,7 @@ _deprecated_metadata = {
     # iHeartRadio for a proof of concept. It was never intended to be publicized.
     (
         "Sean Hannity",
-        struc.Speaker("Sean Hannity", struc.Style.OTHER, None),  # type: ignore
+        struc.Speaker("sean_hannity", struc.Style.OTHER, struc.Dialect.EN_UNKNOWNN),
         "https://drive.google.com/uc?export=download&id=1YHX6yl1kX7lQguxSs4sJ1FPrAS9NZ8O4",
         "Sean Hannity.tar.gz",
         False,
@@ -37,7 +37,7 @@ _deprecated_metadata = {
     # NOTE: This dataset was decommissioned due to poor quality.
     (
         "Nadine Nagamatsu",
-        struc.Speaker("Nadine Nagamatsu", struc.Style.OG_NARR, None),  # type: ignore
+        struc.Speaker("nadine_nagamatsu", struc.Style.OG_NARR, struc.Dialect.EN_UNKNOWNN),
         "https://drive.google.com/uc?export=download&id=1fwW6oV7x3QYImSfG811vhfjp8jKXVMGZ",
         "Nadine Nagamatsu.tar.gz",
         False,

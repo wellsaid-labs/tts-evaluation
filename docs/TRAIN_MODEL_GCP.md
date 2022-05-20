@@ -54,7 +54,7 @@ Setup your local development environment by following [these instructions](LOCAL
    ```zsh
    python -m run.utils.gcp $TYPE make-instance \
       --name=$NAME \
-      --machine-type='n1-standard-32' \
+      --machine-type='n1-highmem-32' \
       --gpu-type='nvidia-tesla-t4' \
       --gpu-count=4 \
       --disk-size=1024 \

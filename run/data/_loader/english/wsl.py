@@ -3,9 +3,6 @@ from functools import partial
 from run.data._loader import structures as struc
 from run.data._loader.utils import wsl_gcs_dataset_loader
 
-# TODO: Consider not using the actors realnames in the codebase in an effort to protect their
-# privacy.
-
 Dia = struc.Dialect
 
 
@@ -78,11 +75,27 @@ ZACH_E = narr("zach_e", "Zach E", "seth_jones")
 GENEVIEVE_M = narr("genevieve_m", "Genevieve M", "sophie_reppert")
 JAMES_B = narr("james_b", "James B (en_GB)", "steve_newman", Dia.EN_UK)
 
+# 2022 Q2 NARRATION
+TERRA_G = narr("terra_g", "Celeste Parrish", "celeste_parrish")
+PHILIP_J = narr("philip_j", "Chris Anderson", "chris_anderson")
+MARCUS_G = narr("marcus_g", "Dan Furca", "dan_furca")
+JORDAN_T = narr("jordan_t", "Danielle Whiteside", "danielle_whiteside")
+DONNA_W = narr("donna_w", "Erica Brookhyser (en_US, Southern)", "erica_brookhyser")
+GREG_G = narr("greg_g", "Glen Lloyd (en_AU)", "glen_lloyd", Dia.EN_AU)
+ZOEY_O = narr("zoey_o", "Helen Marion Rowe (en_AU)", "helen_marion_rowe", Dia.EN_AU)
+FIONA_H = narr("fiona_h", "Donnla Hughes (en_UK)", "donnla_hughes", Dia.EN_UK)
+ROXY_T = narr("roxy_t", "Emma Topping (en_UK)", "emma_topping", Dia.EN_UK)
+KARI_N = narr("kari_n", "Kara Noble (en_UK)", "kara_noble", Dia.EN_UK)
+DIARMID_C = narr("diarmid_c", "Kevin Cherry (en_UK, Scottish)", "kevin_cherry", Dia.EN_UK)
+ELIZABETH_U = narr("elizabeth_u", "Suzi Stringer (en_UK)", "suzi_stringer")
+ALAN_T = narr("alan_t", "Tomas Frazer (en_UK)", "tomas_frazer", Dia.EN_UK)
+
 ###############
 # PROMOTIONAL #
 ###############
 promo = partial(make, style=struc.Style.PROMO)
 SOFIA_H__PROMO = promo(SOFIA_H.label, "Sofia H-Heller (Promo)", "adrienne_walker__promo")
+AVA_M__PROMO = promo(AVA_M.label, "Alicia Harris (Promo)", "alicia_harris__promo")
 ERIC_S__EN_IE__PROMO = promo(
     "eric_s__en_ie",
     "Eric S (Promo, Ireland)",
@@ -94,16 +107,14 @@ DAMIAN_P__PROMO = promo("damian_p", "Damian P (Promo)", "damon_papadopoulos__pro
 JODI_P__PROMO = promo(JODI_P.label, "Jodi P (Promo)", "dana_hurley__promo")
 STEVE_B__PROMO = promo("steve_b", "Steve B (Promo)", "darby_cupit__promo")
 LEE_M__PROMO = promo("lee_m", "Lee M (Promo)", "ed_lacomb__promo")
+TOBIN_A__PROMO = promo(TOBIN_A.label, "Hanuman Welch (Promo)", "hanuman_welch__promo")
 BELLA_B__PROMO = promo("bella_b", "Bella B (Promo)", "izzy_tugman__promo")
 SELENE_R__PROMO = promo("selene_r", "Selene R (Promo)", "linsay_rousseau__promo")
 TILDA_C__PROMO = promo("tilda_c", "Tilda C (Promo)", "naomi_mercer_mckell__promo")
 WADE_C__PROMO = promo(WADE_C.label, "Wade C (Promo)", "sam_scholl__promo")
 PAUL_B__PROMO = promo("paul_b", "Paul B (Promo)", "shawn_williams__promo")
-SHARON_GAULD_ALEXANDER__PROMO = promo(
-    "sharon_gauld_alexander",
-    "Sharon Gauld Alexander (Promo)",
-    "sharon_gauld_alexander__promo",
-    Dia.EN_CA,
+CHARLIE_Z__PROMO = promo(
+    "charlie_z", "Sharon Gauld Alexander (Promo)", "sharon_gauld_alexander__promo", Dia.EN_CA
 )
 
 ##################
@@ -112,6 +123,7 @@ SHARON_GAULD_ALEXANDER__PROMO = promo(
 convo = partial(make, style=struc.Style.CONVO)
 SOFIA_H__CONVO = convo(SOFIA_H.label, "Sofia H (Convo)", "adrienne_walker__convo")
 AVA_M__CONVO = convo(AVA_M.label, "Ava M (Convo)", "alicia_harris__convo")
+TOBIN_A__CONVO = convo(TOBIN_A.label, "Hanuman Welch (Convo)", "hanuman_welch__convo")
 KAI_M__CONVO = convo(KAI_M.label, "Kai M (Convo)", "jack_rutkowski__convo")
 NICOLE_L__CONVO = convo(NICOLE_L.label, "Nicole L (Convo)", "megan_sinclair__convo")
 WADE_C__CONVO = convo(WADE_C.label, "Wade C (Convo)", "sam_scholl__convo")
