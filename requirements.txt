@@ -4,15 +4,14 @@ scipy
 
 # NOTE: For optimized `torch` install, visit https://pytorch.org and follow the "Get Started"
 # guide.
-torch==1.8.1
+torch==1.11.0
 
 # Language Library
 git+https://github.com/PetrochukM/PyTorch-NLP.git
 git+https://github.com/savoirfairelinux/num2words.git
 # Learn more: https://spacy.io/usage/models#production
-spacy==2.2.4
-https://github.com/explosion/spacy-models/releases/download/en_core_web_md-2.2.5/en_core_web_md-2.2.5.tar.gz#egg=en_core_web_md
-https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-2.2.5/en_core_web_sm-2.2.5.tar.gz#egg=en_core_web_sm
+spacy==3.2.3
+https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.2.0/en_core_web_sm-3.2.0.tar.gz#egg=en_core_web_sm
 unidecode
 normalise
 ftfy
@@ -21,10 +20,11 @@ nltk
 # Audio Library
 librosa==0.8.1
 pyloudnorm
+torchaudio
 
 # Visualization Library
 matplotlib
-comet-ml[cpu_logging]==3.8.0
+comet-ml[cpu_logging]==3.28.2
 tabulate
 streamlit==0.89.0
 altair
@@ -57,5 +57,6 @@ gunicorn
 
 # Cloud
 google-cloud-speech
+google-cloud-texttospeech
 google-cloud-storage
 google-api-python-client

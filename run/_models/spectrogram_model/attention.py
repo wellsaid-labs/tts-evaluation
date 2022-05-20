@@ -103,6 +103,7 @@ class Attention(torch.nn.Module):
         # Learn more:
         # https://datascience.stackexchange.com/questions/23183/why-convolutions-always-use-odd-numbers-as-filter-size
         assert conv_filter_size % 2 == 1, "`conv_filter_size` must be odd"
+        assert window_length % 2 == 1, "`window_length` must be odd"
         self.dropout = dropout
         self.hidden_size = hidden_size
         self.window_length = window_length
@@ -204,9 +205,8 @@ class Attention(torch.nn.Module):
         window_start = alignment.max(dim=1)[1] - window_length // 2 - cum_alignment_padding
         # TODO: Cache `num_tokens - window_length` clamped at 0 so that we dont need to
         # recompute the `clamp` and subtraction each time.
-        # TODO: `torch.clamp` does not prompt a consistent left-to-right progression. Can this be
-        # fixed? For example, we could pad the alignment and encoder output so that `window_start`
-        # can progress to the end.
+        # NOTE: `torch.clamp` does not prompt a consistent left-to-right progression. This can
+        # be addressed with proper padding on the attention input.
         window_start = torch.min(window_start, encoded.num_tokens - window_length)
         window_start = torch.clamp(window_start, min=0)
         window_start = torch.max(last_window_start, window_start)

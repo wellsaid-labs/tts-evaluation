@@ -1,4 +1,5 @@
 import collections
+import dataclasses
 import itertools
 import math
 import typing
@@ -19,8 +20,8 @@ from run.train.signal_model._data import Batch
 _GetMetrics = typing.Dict[GetLabel, float]
 
 
-class MetricsKey(typing.NamedTuple):
-    label: str
+@dataclasses.dataclass(frozen=True)
+class MetricsKey(_utils.MetricsKey):
     speaker: typing.Optional[Speaker] = None
     fft_length: typing.Optional[int] = None
 
@@ -212,6 +213,7 @@ class Metrics(_utils.Metrics[MetricsKey]):
         """
         speakers = set(key.speaker for key in self.data.keys()) if is_verbose else [None]
         fft_lengths = set(key.fft_length for key in self.data.keys())
+        num_lengths = sum(1 for l in fft_lengths if isinstance(l, int))
         for args in itertools.product(speakers, fft_lengths):
             reduce_: typing.Callable[[str], float]
             reduce_ = lambda a, **k: self._reduce(MetricsKey(a, *args), select=select, **k)
@@ -220,7 +222,7 @@ class Metrics(_utils.Metrics[MetricsKey]):
             div: typing.Callable[[typing.Union[float, str], typing.Union[float, str]], float]
             div = lambda n, d, **k: self._div(process(n), process(d), select=select, **k)
             num_slices = self._reduce(MetricsKey(self.NUM_SLICES, args[0]), select=select)
-            num_slices = len(fft_lengths) * num_slices if args[1] is None else num_slices
+            num_slices = num_lengths * num_slices if args[1] is None else num_slices
             yield dict(speaker=args[0], fft_length=args[1]), num_slices, reduce_, div
 
     def _get_discrim_metrics(self, select: _utils.MetricsSelect, is_verbose: bool) -> _GetMetrics:
@@ -256,7 +258,7 @@ class Metrics(_utils.Metrics[MetricsKey]):
     def _get_dataset_metrics(self, select: _utils.MetricsSelect, is_verbose: bool) -> _GetMetrics:
         reduce = lambda *a, **k: self._reduce(MetricsKey(*a), select=select, **k)
 
-        metrics = {
+        metrics: _GetMetrics = {
             self.MIN_DATA_LOADER_QUEUE_SIZE: reduce(self.DATA_QUEUE_SIZE, op=min),
             self.MIN_NUM_SAMPLES: reduce(self.NUM_SAMPLES_MIN_, op=min),
             self.AVERAGE_NUM_SAMPLES: self._div(
@@ -272,6 +274,7 @@ class Metrics(_utils.Metrics[MetricsKey]):
                 self.FREQUENCY_NUM_SECONDS: _reduce(self.NUM_SAMPLES) / total_seconds,
             }
             metrics.update({partial(k, **kwargs): v for k, v in update.items()})
+
         return metrics
 
     def log(

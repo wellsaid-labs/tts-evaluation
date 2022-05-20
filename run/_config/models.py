@@ -6,12 +6,13 @@ import torch.nn
 
 import lib
 import run
-from run._config.audio import NUM_FRAME_CHANNELS
+from run._config.audio import FRAME_SIZE, NUM_FRAME_CHANNELS
+from run._config.data import DATASETS
 
 logger = logging.getLogger(__name__)
 
 
-def configure():
+def configure(overwrite: bool = False):
     """Configure spectrogram and signal model."""
     # SOURCE (Tacotron 2):
     # Attention probabilities are computed after projecting inputs and location
@@ -27,8 +28,11 @@ def configure():
     # parameters.
     # TODO: After "grapheme to phoneme" is deprecated consider setting these automatically.
     max_tokens = 1000
-    max_speakers = 100
-    max_sessions = 10000
+    max_sessions = 2000
+    max_speakers = len(set(s.label for s in DATASETS.keys()))
+    max_dialects = len(set(s.dialect for s in DATASETS.keys()))
+    max_styles = len(set(s.style for s in DATASETS.keys()))
+    max_languages = len(set(s.language for s in DATASETS.keys()))
 
     # NOTE: Configure the model sizes.
     config = {
@@ -70,7 +74,9 @@ def configure():
             # number of characters the model is attending too at a time. That metric can be used
             # to set the `window_length`.
             window_length=9,
-            avg_frames_per_token=1.4555,
+            # NOTE: This value was computed with a reference frame size of 4096, and it scales
+            # linearly with frame size.
+            avg_frames_per_token=1.45 * (4096 / FRAME_SIZE),
         ),
         run._models.spectrogram_model.decoder.Decoder: cf.Args(
             encoder_out_size=encoder_out_size,
@@ -93,13 +99,18 @@ def configure():
             max_tokens=max_tokens,
             max_speakers=max_speakers,
             max_sessions=max_sessions,
+            max_dialects=max_dialects,
+            max_styles=max_styles,
+            max_languages=max_languages,
             num_frame_channels=NUM_FRAME_CHANNELS,
+            max_token_embed_size=396,
             # SOURCE (Transfer Learning from Speaker Verification to Multispeaker Text-To-Speech
             #         Synthesis):
             # The paper mentions their proposed model uses a 256 dimension embedding.
             # NOTE: See https://github.com/wellsaid-labs/Text-to-Speech/pull/258 to learn more about
             # this parameter.
-            seq_meta_embed_size=128,
+            seq_meta_embed_size=150,
+            token_meta_embed_size=128,
         ),
         run._models.signal_model.wrapper.SignalModelWrapper: cf.Args(
             max_speakers=max_speakers,
@@ -110,14 +121,11 @@ def configure():
             max_channel_size=512,
         ),
         # NOTE: We found this hidden size to be effective on Comet in April 2020.
-        run._models.signal_model.wrapper.SpectrogramDiscriminatorWrapper: cf.Args(
-            max_speakers=max_speakers,
-            max_sessions=max_sessions,
-            seq_meta_embed_size=128,
-            hidden_size=512,
+        run._models.signal_model.model.SpectrogramDiscriminator: cf.Args(
+            seq_meta_embed_size=128, hidden_size=512
         ),
     }
-    cf.add(config)
+    cf.add(config, overwrite)
 
     # NOTE: Configure the model regularization.
     config = {
@@ -132,7 +140,7 @@ def configure():
             dropout=0.1, seq_meta_embed_dropout=0.1
         ),
     }
-    cf.add(config)
+    cf.add(config, overwrite)
 
     config = {
         # NOTE: Window size smoothing parameter is not sensitive.
@@ -152,11 +160,11 @@ def configure():
             stop_threshold=stop_threshold,
         ),
     }
-    cf.add(config)
+    cf.add(config, overwrite)
 
     config = {
         # NOTE: BERT uses `eps=1e-12` for `LayerNorm`, see here:
         # https://github.com/huggingface/transformers/blob/master/src/transformers/configuration_bert.py
         torch.nn.LayerNorm: cf.Args(eps=1e-12),
     }
-    cf.add(config)
+    cf.add(config, overwrite)

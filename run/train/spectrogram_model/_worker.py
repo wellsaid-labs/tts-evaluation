@@ -1,3 +1,5 @@
+import atexit
+import collections
 import contextlib
 import copy
 import dataclasses
@@ -18,16 +20,18 @@ import torch.utils
 import torch.utils.data
 from third_party import get_parameter_norm
 from torch.nn.functional import binary_cross_entropy_with_logits, mse_loss
+from torchnlp.random import fork_rng
 from torchnlp.utils import get_total_parameters
 
 import lib
 from lib.audio import griffin_lim
 from lib.distributed import is_master
-from lib.utils import NumeralizePadEmbed, log_runtime
+from lib.utils import log_runtime
 from lib.visualize import plot_alignments, plot_logits, plot_mel_spectrogram
 from run._config import Cadence, DatasetType, get_dataset_label, get_model_label
 from run._models.spectrogram_model import Mode, Preds, SpectrogramModel
-from run._utils import Dataset
+from run._utils import Dataset, SpanGeneratorGetWeight
+from run.data._loader.structures import Speaker
 from run.train import _utils
 from run.train._utils import (
     CometMLExperiment,
@@ -86,8 +90,8 @@ class Checkpoint(_utils.Checkpoint):
 
     def export(self) -> SpectrogramModel:
         """Export inference ready `SpectrogramModel` without needing additional context managers."""
+        logger.info("Exporting spectrogram model...")
         self.check_invariants()
-        self.model.grad_enabled = None  # NOTE: For backwards compatibility
         model = None
         with contextlib.ExitStack() as stack:
             stack.enter_context(set_train_mode(self.model, False, self.ema))
@@ -240,15 +244,15 @@ def _get_data_loaders(
     dev_batch_size: int,
     train_steps_per_epoch: int,
     dev_steps_per_epoch: int,
-    is_train_balanced: bool,
-    is_dev_balanced: bool,
+    train_get_weight: SpanGeneratorGetWeight,
+    dev_get_weight: SpanGeneratorGetWeight,
     num_workers: int,
     prefetch_factor: int,
 ) -> typing.Tuple[DataLoader[Batch], DataLoader[Batch]]:
     """Initialize training and development data loaders."""
     step = int(state.step.item())
-    train = DataProcessor(train_dataset, train_batch_size, step, balanced=is_train_balanced)
-    dev = DataProcessor(dev_dataset, dev_batch_size, step, balanced=is_dev_balanced)
+    train = DataProcessor(train_dataset, train_batch_size, step, get_weight=train_get_weight)
+    dev = DataProcessor(dev_dataset, dev_batch_size, step, get_weight=dev_get_weight)
     kwargs: typing.Dict[str, typing.Any] = dict(
         num_workers=num_workers,
         device=state.device,
@@ -310,8 +314,8 @@ def _visualize_source_vs_target(args: _HandleBatchArgs, preds: Preds):
 def _run_step(
     args: _HandleBatchArgs,
     spectrogram_loss_scalar: float,
-    stop_token_min_loss: float,
     average_spectrogram_length: float,
+    stop_token_loss_multiplier: typing.Callable[[int], float],
 ):
     """Run the `model` on the next batch from `data_loader`, and maybe update it.
 
@@ -333,9 +337,10 @@ def _run_step(
         ...
         visualize: If `True` visualize the results with `comet`.
         spectrogram_loss_scalar: This scales the spectrogram loss by some value.
-        stop_token_min_loss: This thresholds the stop token loss to prevent overfitting.
         average_spectrogram_length: The training dataset average spectrogram length. It is used
             to normalize the loss magnitude.
+        stop_token_loss_multiplier: A callable to determine the stop token multiplier based on the
+            step.
     """
     args.timer.record_event(args.timer.MODEL_FORWARD)
     preds = args.state.model(
@@ -359,7 +364,6 @@ def _run_step(
     stop_token_loss *= args.batch.spectrogram_mask.tensor
 
     if args.state.model.training:
-
         # NOTE: We sum over the `num_frames` dimension to ensure that we don't bias based on
         # `num_frames`. For example, a larger `num_frames` means that the denominator is larger;
         # therefore, the loss value for each element is smaller.
@@ -371,8 +375,9 @@ def _run_step(
         spectrogram_loss_ *= spectrogram_loss_scalar
 
         # stop_token_loss [num_frames, batch_size] → [1]
-        stop_token_loss_ = (stop_token_loss.sum(dim=0) / average_spectrogram_length).mean()
-        stop_token_loss_ = (stop_token_loss_ - stop_token_min_loss).abs() + stop_token_min_loss
+        multiplier = stop_token_loss_multiplier(int(args.state.step.item()))
+        delim = average_spectrogram_length
+        stop_token_loss_ = ((stop_token_loss.sum(dim=0) * multiplier) / delim).mean()
 
         args.timer.record_event(args.timer.MODEL_BACKWARD)
         params = [p for g in args.state.optimizer.param_groups for p in g["params"]]
@@ -428,7 +433,7 @@ def _max_num_frames_diff(args: _HandleBatchArgs, preds: Preds) -> int:
     return int(torch.argmax((args.batch.spectrogram.lengths - preds.num_frames).abs()))
 
 
-def _random_sequence(args: _HandleBatchArgs, *_) -> int:
+def _random_sequence(args: _HandleBatchArgs, preds: Preds) -> int:
     """Get a random batch index."""
     return random.randint(0, len(args.batch) - 1)
 
@@ -484,7 +489,8 @@ def _visualize_inferred(args: _HandleBatchArgs, preds: Preds, pick: _Pick = _ran
         audio=audio,
         context=args.state.comet.context,
         text=args.batch.spans[item].script,
-        speaker=args.batch.spans[item].speaker,
+        reconstructed_text=args.batch.inputs.reconstruct_text(item)[args.batch.inputs.slices[item]],
+        reconstructed_text_context=args.batch.inputs.reconstruct_text(item),
         session=args.batch.spans[item].session,
         predicted_loudness=get_average_db_rms_level(predicted_spectrogram.unsqueeze(1)).item(),
         gold_loudness=get_average_db_rms_level(gold_spectrogram.unsqueeze(1)).item(),
@@ -521,6 +527,47 @@ def _run_inference(args: _HandleBatchArgs):
     args.metrics.update(values)
 
 
+def _visualize_select_cases(state: _State, dataset_type: DatasetType, cadence: Cadence, **kw):
+    """Run spectrogram model in inference mode and visualize a test case."""
+    if not is_master():
+        return
+
+    model = typing.cast(SpectrogramModel, state.model.module)
+    inputs, preds = cf.partial(_utils.process_select_cases)(model, model.session_embed.vocab, **kw)
+
+    for item in range(len(inputs.doc)):
+        text_length = int(preds.num_tokens[item].item())
+        num_frames_predicted = int(preds.num_frames[item].item())
+        # spectrogram [num_frames, frame_channels]
+        predicted_spectrogram = preds.frames[:num_frames_predicted, item]
+        predicted_alignments = preds.alignments[:num_frames_predicted, item, :text_length]
+        predicted_stop_token = preds.stop_tokens[:num_frames_predicted, item]
+
+        model = partial(get_model_label, cadence=cadence)
+        _plot_mel_spectrogram = cf.partial(plot_mel_spectrogram)
+        figures = (
+            (model("predicted_spectrogram"), _plot_mel_spectrogram, predicted_spectrogram),
+            (model("alignment"), plot_alignments, predicted_alignments),
+            (model("stop_token"), plot_logits, predicted_stop_token),
+        )
+        assets = state.comet.log_figures({l: v(n) for l, v, n in figures})
+        audio = cf.partial(griffin_lim)(predicted_spectrogram.cpu().numpy())
+        log_npy = state.comet.log_npy
+        npy_urls = {f"{l} Array": log_npy(l, inputs.session[item][0], a) for l, _, a in figures}
+        link = lambda h: "Failed to upload." if h is None else f'<a href="{h}">{h}</a>'
+        state.comet.log_html_audio(
+            randomly_sampled_case=item,
+            audio={"predicted_griffin_lim_audio": audio},
+            context=state.comet.context,
+            text=str(inputs.doc[item]),
+            session=inputs.session[item],
+            predicted_loudness=get_average_db_rms_level(predicted_spectrogram.unsqueeze(1)).item(),
+            dataset_type=dataset_type,
+            **{f"{k} Figure": link(v) for k, v in assets.items()},
+            **{k: link(v) for k, v in npy_urls.items()},
+        )
+
+
 _HandleBatch = typing.Callable[[_HandleBatchArgs], None]
 
 
@@ -531,25 +578,30 @@ def _log_vocab(state: _State, dataset_type: DatasetType):
 
     label = partial(get_dataset_label, cadence=Cadence.RUN, type_=dataset_type)
     model = typing.cast(SpectrogramModel, state.model.module)
-    filter_ = lambda v: [t for t in v.keys() if not isinstance(t, NumeralizePadEmbed._Tokens)]
-    session_vocab = filter_(model.session_vocab)
-    token_vocab = filter_(model.token_vocab)
-    speaker_vocab = filter_(model.speaker_vocab)
+    session_vocab = model.session_embed.tokens()
     parameters = {
-        label("token_vocab_size"): len(token_vocab),
-        label("token_vocab"): sorted(token_vocab),
-        label("speaker_vocab_size"): len(speaker_vocab),
-        label("speaker_vocab"): sorted([s.label for s in speaker_vocab]),
+        label("token_vocab_size"): len(model.token_embed.tokens()),
+        label("token_vocab"): sorted(model.token_embed.tokens()),
+        label("speaker_vocab_size"): len(model.speaker_embed.tokens()),
+        label("speaker_vocab"): sorted(s for s in model.speaker_embed.tokens()),
         label("session_vocab_size"): len(session_vocab),
-        label("session_vocab"): sorted([(spk.label, sesh) for spk, sesh in session_vocab]),
+        label("dialect_vocab_size"): len(model.dialect_embed.tokens()),
+        label("dialect_vocab"): sorted(d.value[1] for d in model.dialect_embed.tokens()),
+        label("style_vocab_size"): len(model.style_embed.tokens()),
+        label("style_vocab"): sorted(s.value for s in model.style_embed.tokens()),
+        label("language_vocab_size"): len(model.language_embed.tokens()),
+        label("language_vocab"): sorted(l.value for l in model.language_embed.tokens()),
     }
     state.comet.log_parameters(parameters)
 
-    for speaker in speaker_vocab:
-        sessions = [sesh for spk, sesh in session_vocab if spk == speaker]
+    sessions: typing.Dict[Speaker, typing.List[str]] = collections.defaultdict(list)
+    for session in session_vocab:
+        sessions[session[0]].append(session[1])
+
+    for speaker, session_label in sessions.items():
         parameters = {
-            label("num_sessions", speaker=speaker): len(sessions),
-            label("sessions", speaker=speaker): sorted(sessions),
+            label("num_sessions", speaker=speaker): len(session_label),
+            label("sessions", speaker=speaker): sorted(session_label),
         }
         state.comet.log_parameters(parameters)
 
@@ -577,7 +629,7 @@ def _run_steps(
             if item is None:
                 break
 
-            index, batch = item
+            index, batch = typing.cast(typing.Tuple[int, Batch], item)
             handle_batch(make_args(metrics, timer, batch, index == 0))
 
             if Context.TRAIN == context:
@@ -587,7 +639,8 @@ def _run_steps(
             timer = Timer().record_event(Timer.LOAD_DATA)
 
         metrics.log(is_verbose=True, type_=dataset_type, cadence=Cadence.MULTI_STEP)
-        _log_vocab(state, dataset_type)
+        if Context.TRAIN == context:
+            _log_vocab(state, dataset_type)
 
 
 def exclude_from_decay(
@@ -620,7 +673,10 @@ def run_worker(
     TODO: Should we checkpoint `metrics` so that metrics like `num_frames_per_speaker`,
     `num_spans_per_text_length`, or `max_num_frames` can be computed accross epochs?
     """
-    assert isinstance(checkpoint, Checkpoint)
+    if is_master():
+        atexit.register(cf.purge)
+
+    assert isinstance(checkpoint, Checkpoint) or checkpoint is None
     state = (
         _State.from_scratch(comet, device)
         if checkpoint is None
@@ -636,4 +692,10 @@ def run_worker(
     while True:
         steps_per_epoch = train_loader.num_steps_per_epoch
         [_run_steps(state, *args, steps_per_epoch=steps_per_epoch) for args in contexts]
+
+        with set_context(Context.EVALUATE_INFERENCE, state.comet, state.model, ema=state.ema):
+            assert comet.curr_epoch is not None
+            with fork_rng(comet.curr_epoch):
+                _visualize_select_cases(state, DatasetType.TEST, Cadence.MULTI_STEP)
+
         save_checkpoint(state.to_checkpoint(), checkpoints_directory, f"step_{state.step.item()}")

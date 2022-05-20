@@ -25,18 +25,17 @@ from lib.audio import sec_to_sample
 from lib.distributed import get_rank, get_world_size, is_initialized
 from lib.samplers import BucketBatchSampler
 from lib.utils import Tuple, flatten_2d, lengths_to_mask
-from run._models.spectrogram_model import Inputs
-from run.data._loader import Alignment, Language, Span
+from run._models.spectrogram_model import preprocess_spans
+from run._models.spectrogram_model.model import Inputs
+from run.data._loader.structures import Alignment, Span, Speaker
 from run.train import _utils
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import librosa
-    import spacy.tokens
     from scipy import ndimage
 else:
     librosa = LazyLoader("librosa", globals(), "librosa")
     ndimage = LazyLoader("ndimage", globals(), "scipy.ndimage")
-    spacy = LazyLoader("spacy", globals(), "spacy")
 
 
 logger = logging.getLogger(__name__)
@@ -151,21 +150,6 @@ def _random_speed_annotations(
         speed[slice_] = round(second_per_char, precision)
         speed_mask[slice_] = True
     return speed, speed_mask
-
-
-def _get_char_to_word(doc: spacy.tokens.Doc) -> typing.List[int]:
-    """Get a mapping from characters to words in `doc`."""
-    char_to_word = [-1] * len(doc.text)
-    for token in doc:
-        char_to_word[token.idx : token.idx + len(token.text)] = [token.i] * len(token.text)
-    return char_to_word
-
-
-def _get_word_vectors(char_to_word: typing.List[int], doc: spacy.tokens.Doc) -> torch.Tensor:
-    """Get word vectors mapped onto a character length vector."""
-    zeros = torch.zeros(doc.vector.size)
-    word_vectors_ = numpy.stack([zeros if w < 0 else doc[w].vector for w in char_to_word])
-    return torch.from_numpy(word_vectors_)
 
 
 def _pad_and_trim_signal(signal: numpy.ndarray) -> torch.Tensor:
@@ -307,27 +291,21 @@ class Batch(_utils.Batch):
     # SequenceBatch[torch.FloatTensor [num_frames, batch_size], torch.LongTensor [1, batch_size])
     stop_token: SequenceBatch
 
-    # The model inputs
     inputs: Inputs
+
+    def apply(self, call: typing.Callable[[torch.Tensor], torch.Tensor]) -> "Batch":
+        batch: Batch = super().apply(call)
+        assert isinstance(batch.inputs.token_embeddings, torch.Tensor)
+        object.__setattr__(batch.inputs, "token_embeddings", call(batch.inputs.token_embeddings))
+        object.__setattr__(batch.inputs, "num_tokens", call(batch.inputs.num_tokens))
+        object.__setattr__(batch.inputs, "tokens_mask", call(batch.inputs.tokens_mask))
+        return batch
 
     def __len__(self):
         return len(self.spans)
 
 
-def _en_span_to_tokens(spans: typing.List[Span]) -> typing.List[typing.List[str]]:
-    """Process English `Span`s of text into a list of tokens."""
-    nlp = lib.text.load_en_core_web_md(disable=("parser", "ner"))
-    en_docs: typing.List[spacy.tokens.Doc] = list(nlp.pipe([s.passage.script for s in spans]))
-    for i in range(len(spans)):
-        script_slice = spans[i].script_slice
-        span = en_docs[i].char_span(script_slice.start, script_slice.stop)  # type: ignore
-        assert span is not None, "Invalid `spacy.tokens.Span` selected."
-        en_docs[i] = span.as_doc()
-    phonemes = typing.cast(typing.List[str], cf.partial(lib.text.grapheme_to_phoneme)(en_docs))
-    return [p.split(run._config.PHONEME_SEPARATOR) for p in phonemes]
-
-
-def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
+def make_batch(spans: typing.List[Span], max_workers: int = 6, respell_prob: float = 0.0) -> Batch:
     """
     NOTE: spaCy splits some (not all) words on apostrophes while AmEPD does not; therefore,
     those words will not be found in AmEPD. The options are:
@@ -344,7 +322,7 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
     - 27% for `_signals_to_spectrograms`
     - 25% on `nlp.pipe`
     - 13% on `_random_loudness_annotations`
-    - 13% on `grapheme_to_phoneme`
+    - 13% on `grapheme_to_phoneme` (Removed in March 2022)
     - 6% for `_pad_and_trim_signal`
     - 5% for `input_encoder.encode` (Removed in Feburary 2022)
     - 4% on `stack_and_pad_tensors` (Removed in Feburary 2022)
@@ -359,15 +337,6 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
     """
     assert len(spans) > 0, "Batch must have at least one item."
 
-    en_spans = [(i, s) for i, s in enumerate(spans) if s.speaker.language == Language.ENGLISH]
-    en_tokens = _en_span_to_tokens([s for _, s in en_spans])
-
-    tokens = [list(s.script) for s in spans]
-    for i, token in enumerate(en_tokens):
-        tokens[i] = token
-    speakers = [s.speaker for s in spans]
-    sessions = [s.session for s in spans]
-
     with futures.ThreadPoolExecutor(max_workers=min(max_workers, len(spans))) as pool:
         signals_ = list(pool.map(lambda s: s.audio(), spans))
         signals_ = typing.cast(typing.List[numpy.ndarray], signals_)
@@ -381,8 +350,8 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
         audio=signals,
         spectrogram=spectrogram,
         spectrogram_mask=spectrogram_mask,
-        stop_token=_make_stop_token(spectrogram, **cf.get()),
-        inputs=Inputs(tokens=tokens, speaker=speakers, session=sessions),
+        stop_token=cf.partial(_make_stop_token)(spectrogram),
+        inputs=preprocess_spans(spans, respell_prob=respell_prob),
     )
 
 
@@ -425,4 +394,16 @@ class DataProcessor(typing.Mapping[int, Batch]):
         return sys.maxsize
 
     def __getitem__(self, index) -> Batch:
-        return make_batch(self.index_to_spans[index])
+        return cf.partial(make_batch)(self.index_to_spans[index])
+
+
+def train_get_weight(speaker: Speaker, dataset_size: float):
+    # TODO: The dictionary datasets are small, making up, roughly 1/17th of the training dataset;
+    # however, they have many new words. In attempt to get the model to better learn pronunciation,
+    # give 5x more weight to that dataset, so, it'll come up 5x more times during training.
+    return dataset_size
+
+
+def dev_get_weight(speaker: Speaker, dataset_size: float):
+    # NOTE: For the dev set, we evaluate each speaker in production, equally.
+    return 1.0

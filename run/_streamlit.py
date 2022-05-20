@@ -194,7 +194,7 @@ def path_to_web_path(path: pathlib.Path) -> WebPath:
 
 def audio_to_web_path(audio: np.ndarray, name: str = "audio.wav", **kwargs) -> WebPath:
     web_path = make_temp_web_dir() / name
-    lib.audio.write_audio(web_path, audio, **kwargs)
+    cf.partial(lib.audio.write_audio)(web_path, audio, **kwargs)
     return web_path
 
 
@@ -255,8 +255,8 @@ def span_audio(span: run.data._loader.Span) -> np.ndarray:
 
 def passage_audio(passage: run.data._loader.Passage) -> np.ndarray:
     """Get `span` audio using cached `read_wave_audio`."""
-    start = passage.first.audio[0]
-    return read_wave_audio(passage.audio_file, start, passage.aligned_audio_length())
+    length = passage.segmented_audio_length()
+    return read_wave_audio(passage.audio_file, passage.audio_start, length)
 
 
 @session_cache(maxsize=None)
@@ -265,7 +265,7 @@ def get_dataset(speaker_labels: typing.FrozenSet[str]) -> Dataset:
     logger.info("Loading dataset...")
     with st.spinner(f"Loading dataset(s): {','.join(list(speaker_labels))}"):
         datasets = {k: v for k, v in run._config.DATASETS.items() if k.label in speaker_labels}
-        dataset = cf.partial(run._utils.get_dataset)(datasets)
+        dataset = cf.call(run._utils.get_dataset, datasets=datasets, _overwrite=True)
         logger.info(f"Finished loading {set(speaker_labels)} dataset(s)! {lib.utils.mazel_tov()}")
     return dataset
 
@@ -282,7 +282,7 @@ def get_dev_dataset() -> Dataset:
 @session_cache(maxsize=None)
 def fast_grapheme_to_phoneme(text: str):
     """Fast grapheme to phoneme, cached."""
-    return lib.text._line_grapheme_to_phoneme([text], separator="|")[0]
+    return lib.text.grapheme_to_phoneme([text], separator="|")[0]
 
 
 def make_signal_chart(

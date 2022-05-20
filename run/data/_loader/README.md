@@ -5,25 +5,8 @@ The available datasets are:
 
 ## Commercial Datasets
 
-These datasets were commissioned and created by WellSaid. They are defined in `__init__.py`.
-
-- Adrienne Walker-Heller
-- Alicia Harris
-- Beth Cameron
-- Beth Cameron (Custom)
-- Elise Randall
-- Frank Bonacquisti
-- George Drake
-- Hanuman Welch
-- Heather Doe
-- Hilary Noriega
-- Jack Rutkowski
-- Mark Atherlay
-- Megan Sinclair
-- Nadine Nagamatsu
-- Sam Scholl
-- Steven Wahlberg
-- Susan Murphy
+These datasets were commissioned and created by WellSaid. They are defined in
+`**/wsl.py` and `**/wsl_archive.py`.
 
 ## Research Datasets
 
@@ -35,7 +18,3 @@ These datasets were acquired through the research community and have permissive 
   - Judy Bieber
   - Mary Ann
   - Elliot Miller
-
-## Private Datasets
-
-- Sean Hannity, defined in `__init__.py`

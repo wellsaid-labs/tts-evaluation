@@ -19,16 +19,7 @@ from third_party import LazyLoader
 import lib
 from lib.audio import AudioDataType, AudioEncoding, AudioFormat, AudioMetadata
 from lib.utils import Timeline
-from run.data._loader.data_structures import (
-    Alignment,
-    IsLinked,
-    Passage,
-    Span,
-    Speaker,
-    UnprocessedDataset,
-    UnprocessedPassage,
-    make_passages,
-)
+from run.data._loader import structures as struc
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import pandas
@@ -162,7 +153,7 @@ def get_non_speech_segments_and_cache(
 _Float = typing.Union[np.floating, float]
 
 
-class SpanGenerator(typing.Iterator[Span]):
+class SpanGenerator(typing.Iterator[struc.Span]):
     """Randomly generate `Span`(s) that are at most `max_seconds` long.
 
     NOTE:
@@ -190,7 +181,7 @@ class SpanGenerator(typing.Iterator[Span]):
 
     def __init__(
         self,
-        passages: typing.List[Passage],
+        passages: typing.List[struc.Passage],
         max_seconds: float,
         max_pause: float,
         **kwargs,
@@ -204,7 +195,7 @@ class SpanGenerator(typing.Iterator[Span]):
         self.max_pause = max_pause
         lengths = [p.segmented_audio_length() for p in self.passages]
         self._weights = torch.tensor(lengths)
-        make_timeline: typing.Callable[[Passage], Timeline]
+        make_timeline: typing.Callable[[struc.Passage], Timeline]
         make_timeline = lambda p: Timeline(
             [(s.audio_start, s.audio_stop) for s in p.speech_segments], **kwargs
         )
@@ -225,7 +216,7 @@ class SpanGenerator(typing.Iterator[Span]):
     def _is_include(self, x1: _Float, x2: _Float, y1: _Float, y2: _Float):
         return self._overlap(x1, x2, y1, y2) >= random.random()
 
-    def next(self, length: float) -> typing.Optional[Span]:
+    def next(self, length: float) -> typing.Optional[struc.Span]:
         if len(self.passages) == 0:
             raise StopIteration()
 
@@ -266,13 +257,13 @@ class SpanGenerator(typing.Iterator[Span]):
             audio_slice = slice(segments[0].audio_start, segments[-1].audio_stop)
             return passage.span(slice_, audio_slice)
 
-    def __next__(self) -> Span:
+    def __next__(self) -> struc.Span:
         while True:
             span = self.next(random.uniform(0, self.max_seconds))
             if span is not None:
                 return span
 
-    def __iter__(self) -> typing.Iterator[Span]:
+    def __iter__(self) -> typing.Iterator[struc.Span]:
         return self
 
 
@@ -309,13 +300,13 @@ file is around 72,000 and the precision of the alignments is 0.1, so it should b
 
 
 def _temporary_fix_for_transcript_offset(
-    transcript: str, alignments: typing.Tuple[Alignment, ...]
-) -> typing.Tuple[Alignment, ...]:
+    transcript: str, alignments: typing.Tuple[struc.Alignment, ...]
+) -> typing.Tuple[struc.Alignment, ...]:
     """Temporary fix for a bug in `sync_script_with_audio.py`.
 
     TODO: Remove after datasets are reprocessed.
     """
-    return_: typing.List[Alignment] = []
+    return_: typing.List[struc.Alignment] = []
     for alignment in alignments:
         word = transcript[alignment.transcript[0] : alignment.transcript[1]]
         if word.strip() != word:
@@ -327,14 +318,15 @@ def _temporary_fix_for_transcript_offset(
     return tuple(return_)
 
 
-DataLoader = typing.Callable[[Path], typing.List[Passage]]
+DataLoader = typing.Callable[[Path], typing.List[struc.Passage]]
+DataLoaders = typing.Dict[struc.Speaker, DataLoader]
 
 
 def dataset_loader(
     directory: Path,
     root_directory_name: str,
     gcs_path: str,
-    speaker: Speaker,
+    speaker: struc.Speaker,
     alignments_directory_name: str = "alignments",
     alignments_suffix: str = ".json",
     recordings_directory_name: str = "recordings",
@@ -344,7 +336,7 @@ def dataset_loader(
     text_column: str = "Content",
     strict: bool = False,
     add_tqdm: bool = False,
-) -> typing.List[Passage]:
+) -> typing.List[struc.Passage]:
     """Load an alignment text-to-speech (TTS) dataset from GCS.
 
     TODO: Add `-m` when this issue is resolved:
@@ -404,7 +396,7 @@ def dataset_loader(
         assert len(files) == 0 or len(files_) == len(files[-1]), message
         files.append(sorted(files_, key=lambda p: lib.text.numbers_then_natural_keys(p.name)))
 
-    dataset: UnprocessedDataset = []
+    dataset: struc.UnprocessedDataset = []
     iterator = typing.cast(typing.Iterator[typing.Tuple[Path, Path, Path]], zip(*tuple(files)))
     for alignment_path, recording_path, script_path in iterator:
         scripts = pandas.read_csv(str(script_path.absolute()))
@@ -413,9 +405,9 @@ def dataset_loader(
         assert len(scripts) == len(json_["alignments"]), error
         document = []
         for (_, script), alignments in zip(scripts.iterrows(), json_["alignments"]):
-            alignments_ = tuple(Alignment.from_json(a) for a in alignments)
+            alignments_ = tuple(struc.Alignment.from_json(a) for a in alignments)
             alignments_ = _temporary_fix_for_transcript_offset(json_["transcript"], alignments_)
-            passage = UnprocessedPassage(
+            passage = struc.UnprocessedPassage(
                 audio_path=recording_path,
                 speaker=speaker,
                 script=typing.cast(str, script[text_column]),
@@ -425,20 +417,20 @@ def dataset_loader(
             )
             document.append(passage)
         dataset.append(document)
-    is_linked = IsLinked(transcript=True, audio=True)
-    return make_passages(root_directory_name, dataset, is_linked=is_linked, add_tqdm=add_tqdm)
+    is_linked = struc.IsLinked(transcript=True, audio=True)
+    return struc.make_passages(root_directory_name, dataset, is_linked=is_linked, add_tqdm=add_tqdm)
 
 
 def conventional_dataset_loader(
     directory: Path,
-    speaker: Speaker,
+    speaker: struc.Speaker,
     metadata_path_template: str = "{directory}/metadata.csv",
     metadata_audio_column: typing.Union[str, int] = 0,
     metadata_text_column: typing.Union[str, int] = 2,
     metadata_kwargs={"quoting": csv.QUOTE_NONE, "header": None, "delimiter": "|"},
     audio_path_template: str = "{directory}/wavs/{file_name}.wav",
     additional_metadata: typing.Dict = {},
-) -> typing.List[UnprocessedPassage]:
+) -> typing.List[struc.UnprocessedPassage]:
     """Load a conventional speech dataset.
 
     A conventional speech dataset has these invariants:
@@ -466,12 +458,14 @@ def conventional_dataset_loader(
     metadata_path = Path(metadata_path_template.format(directory=directory))
     if os.stat(str(metadata_path)).st_size == 0:
         return []
-    df = typing.cast(pandas.DataFrame, pandas.read_csv(metadata_path, **metadata_kwargs))
+    df = typing.cast(
+        pandas.DataFrame, pandas.read_csv(metadata_path, **metadata_kwargs, keep_default_na=False)
+    )
     get_audio_path = lambda n: Path(audio_path_template.format(directory=directory, file_name=n))
     handled_columns = [metadata_text_column, metadata_audio_column]
     get_other_metadata = lambda r: {k: v for k, v in r.items() if k not in handled_columns}
     return [
-        UnprocessedPassage(
+        struc.UnprocessedPassage(
             audio_path=get_audio_path(row[metadata_audio_column]),
             speaker=speaker,
             script=typing.cast(str, row[metadata_text_column]).strip(),
@@ -485,14 +479,14 @@ def conventional_dataset_loader(
 
 def wsl_gcs_dataset_loader(
     directory: Path,
-    speaker: Speaker,
+    speaker: struc.Speaker,
     gcs_path: str = "gs://wellsaid_labs_datasets",
     prefix: str = "",
     post_suffix="__manual_post",
     recordings_directory_name: str = "recordings",
     data_directory: str = "processed",
     **kwargs,
-) -> typing.List[Passage]:
+) -> typing.List[struc.Passage]:
     """
     Load WellSaid Labs dataset from Google Cloud Storage (GCS).
 
@@ -525,8 +519,9 @@ def wsl_gcs_dataset_loader(
         data_directory
         **kwargs
     """
-    suffix = post_suffix if post_suffix in speaker.label else ""
-    label = speaker.label.replace(post_suffix, "")
+    suffix = post_suffix if speaker.post else ""
+    assert speaker.gcs_dir is not None
+    label = speaker.gcs_dir.replace(post_suffix, "")
     gcs_path = "/".join([s for s in [gcs_path, prefix, label, data_directory] if len(s) > 0])
     kwargs = dict(recordings_directory_name=recordings_directory_name + suffix, **kwargs)
     return dataset_loader(directory, label, gcs_path, speaker, **kwargs)

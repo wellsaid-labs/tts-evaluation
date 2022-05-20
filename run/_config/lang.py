@@ -4,11 +4,12 @@ import typing
 from functools import lru_cache, partial
 
 import config as cf
+import spacy.language
 from third_party import LazyLoader
 
 import lib
-import run._config.data
-from lib.text import _line_grapheme_to_phoneme, get_spoken_chars
+import run
+from lib.text import grapheme_to_phoneme
 from lib.utils import identity
 from run.data._loader import Language
 
@@ -22,13 +23,7 @@ logger = logging.getLogger(__name__)
 
 LANGUAGE = Language.ENGLISH
 
-# NOTE: eSpeak doesn't have a dictionary of all the phonetic characters, so this is a dictionary
-# of the phonetic characters we found in the English dataset.
-# TODO: Remove this once `grapheme_to_phoneme` is deprecated
-PHONEME_SEPARATOR = "|"
-GRAPHEME_TO_PHONEME_RESTRICTED = list(lib.text.GRAPHEME_TO_PHONEME_RESTRICTED) + [PHONEME_SEPARATOR]
 # fmt: off
-
 
 _NON_ASCII_CHARS: typing.Dict[Language, frozenset] = {
     # Resources:
@@ -36,13 +31,13 @@ _NON_ASCII_CHARS: typing.Dict[Language, frozenset] = {
     # https://en-academic.com/dic.nsf/enwiki/3894487
     Language.ENGLISH: frozenset([
         "â", "Â", "à", "À", "á", "Á", "ê", "Ê", "é", "É", "è", "È", "ë", "Ë", "î", "Î", "ï", "Ï",
-        "ô", "Ô", "ù", "Ù", "û", "Û", "ç", "Ç", "ä", "ö", "ü", "Ä", "Ö", "Ü", "ñ", "Ñ",
+        "ô", "Ô", "ù", "Ù", "û", "Û", "ç", "Ç", "ä", "ö", "ü", "Ä", "Ö", "Ü", "ñ", "Ñ"
     ]),
     Language.GERMAN: frozenset(["ß", "ä", "ö", "ü", "Ä", "Ö", "Ü"]),
     # Portuguese makes use of five diacritics: the cedilla (ç), acute accent (á, é, í, ó, ú),
     # circumflex accent (â, ê, ô), tilde (ã, õ), and grave accent (à, and rarely è, ì, ò, and ù).
     # src: https://en.wikipedia.org/wiki/Portuguese_orthography
-    Language.PORTUGUESE_BR: frozenset([
+    Language.PORTUGUESE: frozenset([
         "á", "Á", "é", "É", "í", "Í", "ó", "Ó", "ú", "Ú", "ç", "Ç", "â", "Â", "ê", "Ê", "ô", "Ô",
         "ã", "Ã", "õ", "Õ", "à", "À", "è", "È", "ì", "Ì", "ò", "Ò", "ù", "Ù"
     ]),
@@ -51,7 +46,7 @@ _NON_ASCII_CHARS: typing.Dict[Language, frozenset] = {
     # The special characters required are ⟨á⟩, ⟨é⟩, ⟨í⟩, ⟨ó⟩, ⟨ú⟩, ⟨ñ⟩, ⟨Ñ⟩, ⟨ü⟩, ⟨Ü⟩, ⟨¿⟩, ⟨¡⟩
     # and the uppercase ⟨Á⟩, ⟨É⟩, ⟨Í⟩, ⟨Ó⟩, and ⟨Ú⟩.
     # src: https://en.wikipedia.org/wiki/Spanish_orthography
-    Language.SPANISH_CO: frozenset([
+    Language.SPANISH: frozenset([
         "á", "Á", "é", "É", "í", "Í", "ó", "Ó", "ú", "Ú", "ñ", "Ñ", "ü", "Ü"
     ]),
 }
@@ -59,8 +54,8 @@ _NON_ASCII_CHARS: typing.Dict[Language, frozenset] = {
 _NON_ASCII_MARKS: typing.Dict[Language, frozenset] = {
     Language.ENGLISH: frozenset(),
     Language.GERMAN: frozenset(),
-    Language.PORTUGUESE_BR: frozenset(),
-    Language.SPANISH_CO: frozenset(["¿", "¡"]),
+    Language.PORTUGUESE: frozenset(),
+    Language.SPANISH: frozenset(["¿", "¡"]),
 }
 _NON_ASCII_ALL = {l: _NON_ASCII_CHARS[l].union(_NON_ASCII_MARKS[l]) for l in Language}
 
@@ -77,9 +72,22 @@ def is_voiced(text: str, language: Language) -> bool:
     return lib.text.is_voiced(text, _NON_ASCII_CHARS[language])
 
 
-SST_CONFIGS = None
+_PUNCT_REGEXES = {l: re.compile(r"[^\w\s" + "".join(_NON_ASCII_CHARS[l]) + r"]") for l in Language}
+
+
+def get_spoken_chars(text: str, language: Language) -> str:
+    return lib.text.get_spoken_chars(text, _PUNCT_REGEXES[language])
+
+
+def replace_punc(text: str, replace: str, language: Language) -> str:
+    return _PUNCT_REGEXES[language].sub(replace, text)
+
+
+STT_CONFIGS = None
+LanguageCode = typing.Literal["en-US", "de-DE", "pt-BR", "es-CO"]
 
 try:
+    # TODO: Integrate this with the new `Dialect`s data structure.
     _make_config = partial(
         google_speech.RecognitionConfig,
         model="command_and_search",
@@ -90,10 +98,9 @@ try:
     STT_CONFIGS = {
         Language.ENGLISH: _make_config(language_code="en-US", model="video"),
         Language.GERMAN: _make_config(language_code="de-DE"),
-        Language.PORTUGUESE_BR: _make_config(language_code="pt-BR"),
-        Language.SPANISH_CO: _make_config(language_code="es-CO"),
+        Language.PORTUGUESE: _make_config(language_code="pt-BR"),
+        Language.SPANISH: _make_config(language_code="es-CO"),
     }
-    LanguageCode = typing.Literal["en-US", "de-DE", "pt-BR", "es-CO"]
 except ImportError:
     logger.info("Ignoring optional `google` import.")
 
@@ -104,17 +111,14 @@ def _grapheme_to_phoneme(grapheme: str) -> str:
 
     NOTE: Use private `_line_grapheme_to_phoneme` for performance...
     """
-    return _line_grapheme_to_phoneme([grapheme], separator="|")[0]
-
-
-_PUNCT_REGEXES = {l: re.compile(r"[^\w\s" + "".join(_NON_ASCII_CHARS[l]) + r"]") for l in Language}
+    return grapheme_to_phoneme([grapheme], separator="|")[0]
 
 
 def _spoken_chars_and_de_eszett_transliteration(text: str) -> str:
     """
     NOTE: (Rhyan) The "ß" is used to denote a "ss" sound.
     """
-    return get_spoken_chars(text, _PUNCT_REGEXES[Language.GERMAN]).replace("ß", "ss")
+    return get_spoken_chars(text, Language.GERMAN).replace("ß", "ss")
 
 
 # NOTE: Phonetic rules to help determine if two words sound-a-like.
@@ -129,6 +133,14 @@ def _remove_letter_casing(a: str) -> str:
 
 
 @lru_cache(maxsize=2 ** 20)
+def _is_sound_alike(a: str, b: str, language: Language) -> bool:
+    a = normalize_vo_script(a, language)
+    b = normalize_vo_script(b, language)
+    spoken_chars = partial(get_spoken_chars, language=language)
+    sound_out = _SOUND_OUT[language] if language in _SOUND_OUT else identity
+    return any(func(a) == func(b) for func in (_remove_letter_casing, spoken_chars, sound_out))
+
+
 def is_sound_alike(a: str, b: str, language: Language) -> bool:
     """Return `True` if `str` `a` and `str` `b` sound a-like.
 
@@ -144,18 +156,33 @@ def is_sound_alike(a: str, b: str, language: Language) -> bool:
         >>> is_sound_alike('financingA', 'financing a', Language.ENGLISH)
         True
     """
-    a = normalize_vo_script(a, language)
-    b = normalize_vo_script(b, language)
-    punc_regex = _PUNCT_REGEXES[language] if language in _PUNCT_REGEXES else None
-    spoken_chars = partial(get_spoken_chars, punc_regex=punc_regex) if punc_regex else identity
-    sound_out = _SOUND_OUT[language] if language in _SOUND_OUT else identity
-    return any(func(a) == func(b) for func in (_remove_letter_casing, spoken_chars, sound_out))
+    if a == b:
+        return True
+
+    return _is_sound_alike(a, b, language)
 
 
-def configure():
+_LANGUAGE_TO_SPACY = {
+    Language.ENGLISH: "en_core_web_md",
+    Language.GERMAN: "de_core_news_md",
+    Language.SPANISH: "es_core_news_md",
+    Language.PORTUGUESE: "pt_core_news_md",
+}
+
+
+def load_spacy_nlp(language: Language) -> spacy.language.Language:
+    disable = ("ner", "tagger", "lemmatizer")
+    return lib.text.load_spacy_nlp(_LANGUAGE_TO_SPACY[language], disable=disable)
+
+
+def configure(overwrite: bool = False):
     """Configure modules involved in processing text."""
+    # NOTE: These are speakers with small and reliable datasets, in the right language.
+    debug_speakers = set(
+        s for s in run._config.DEV_SPEAKERS if LANGUAGE is None or s.language == LANGUAGE
+    )
     config = {
-        lib.text.grapheme_to_phoneme: cf.Args(separator=PHONEME_SEPARATOR),
-        run._config.data._include_passage: cf.Args(language=LANGUAGE),
+        run._utils._get_debug_datasets: cf.Args(speakers=debug_speakers),
+        run._utils.get_dataset: cf.Args(language=LANGUAGE),
     }
-    cf.add(config)
+    cf.add(config, overwrite)

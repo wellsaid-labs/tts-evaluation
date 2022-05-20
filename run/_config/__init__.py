@@ -27,15 +27,17 @@ from run._config.labels import (
     get_timer_label,
 )
 from run._config.lang import (
-    GRAPHEME_TO_PHONEME_RESTRICTED,
-    PHONEME_SEPARATOR,
     STT_CONFIGS,
     LanguageCode,
+    get_spoken_chars,
     is_normalized_vo_script,
     is_sound_alike,
     is_voiced,
+    load_spacy_nlp,
     normalize_vo_script,
+    replace_punc,
 )
+from run._config.train import make_signal_model_train_config, make_spectrogram_model_train_config
 
 # TODO: Reduce the usage of globals, and use configuration if possible.
 
@@ -71,12 +73,15 @@ __all__ = [
     "get_model_label",
     "get_signal_model_label",
     "get_timer_label",
-    "GRAPHEME_TO_PHONEME_RESTRICTED",
-    "PHONEME_SEPARATOR",
     "STT_CONFIGS",
     "LanguageCode",
+    "get_spoken_chars",
     "is_normalized_vo_script",
     "is_sound_alike",
     "is_voiced",
     "normalize_vo_script",
+    "replace_punc",
+    "load_spacy_nlp",
+    "make_signal_model_train_config",
+    "make_spectrogram_model_train_config",
 ]
