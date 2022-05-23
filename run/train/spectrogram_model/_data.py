@@ -40,11 +40,6 @@ else:
 
 logger = logging.getLogger(__name__)
 
-# TODO: Remove
-InputEncoder = None
-DecodedInput = None
-EncodedInput = None
-
 
 def _random_nonoverlapping_alignments(
     alignments: Tuple[Alignment], max_alignments: int
@@ -307,17 +302,6 @@ class Batch(_utils.Batch):
 
 def make_batch(spans: typing.List[Span], max_workers: int = 6, respell_prob: float = 0.0) -> Batch:
     """
-    NOTE: spaCy splits some (not all) words on apostrophes while AmEPD does not; therefore,
-    those words will not be found in AmEPD. The options are:
-    1. Return two different sequences with two different character to word mappings.
-    2. Merge the words with apostrophes, and merge the related word vectors.
-    (Choosen) 3. Keep the apostrophes separate, and miss some pronunciations.
-
-    NOTE: Contextual word-vectors would likely be more informative than word-vectors; however,
-    they are likely not as robust in the presence of OOV words due to intentional misspellings.
-    Our users intentionally misspell words to adjust the pronunciation. For that reason, we use
-    word-vectors.
-
     NOTE: In Janurary 2020, this function profiled like so:
     - 27% for `_signals_to_spectrograms`
     - 25% on `nlp.pipe`

@@ -45,7 +45,7 @@ del DEV_SPEAKERS[_loader.english.wsl.KAI_M]
 del DEV_SPEAKERS[_loader.english.wsl.WADE_C]
 # NOTE: The `RAMONA_J__CUSTOM` dataset isn't included in the studio.
 del DEV_SPEAKERS[_loader.english.wsl.RAMONA_J__CUSTOM]
-# NOTE: Elizabeth’s dataset is low quality & might be fixed or re-recorded. Tobin’s did not differ
+# NOTE: Elizabeth's dataset is low quality & might be fixed or re-recorded. Tobin's did not differ
 # from his Narration enough to be considered new styles & both datasets were again quick &
 # inconsistent delivery.
 del DEV_SPEAKERS[_loader.english.wsl.TOBIN_A__CONVO]

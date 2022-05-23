@@ -45,7 +45,6 @@ def grapheme_to_phoneme(
 ) -> typing.List[str]:
     """
     TODO: Support `espeak-ng` `service`, if needed.
-    TODO: Run phonetic processing on the batched `output` instead of the splits.
 
     Args:
         graphemes: Batch of grapheme sequences.
@@ -196,7 +195,7 @@ ARPAbet = typing.Literal[
 # fmt: on
 
 
-def _is_valid_amepd_word(word: str):
+def _is_valid_cmudict_syl_word(word: str):
     return len(word) > 0 and all(c.isalpha() or c == "'" for c in word)
 
 
@@ -260,7 +259,7 @@ def load_cmudict_syl(
         syllables: typing.List[typing.Tuple[ARPAbet, ...]] = []
         for syllable in pronunciation.split(" - "):
             arpabet = typing.cast(typing.Tuple[ARPAbet, ...], tuple(syllable.split()))
-            message = f"The pronunciation may only use ARPABET characters: {word}"
+            message = f"The pronunciation may only use ARPAbet characters: {word}"
             assert all(c in get_args(ARPAbet) for c in arpabet), message
             syllables.append(arpabet)
 
@@ -271,7 +270,7 @@ def load_cmudict_syl(
             continue
 
         assert word.isupper(), "A word in this dictionary must be uppercase."
-        assert _is_valid_amepd_word(word)
+        assert _is_valid_cmudict_syl_word(word)
 
         dictionary[word].append(tuple(syllables))
 
@@ -294,11 +293,11 @@ def get_pronunciation(word: str, dictionary: CMUDictSyl) -> typing.Optional[Pron
     if len(word) > 1 and word.isupper():  # NOTE: Acronyms are not supported.
         return None
 
-    if not _is_valid_amepd_word(word):
+    if not _is_valid_cmudict_syl_word(word):
         return None
 
-    # NOTE: This dictionary does not include apostrophe's at the end of a word because they do not
-    # change the pronunciation of the word. Learn more here:
+    # NOTE: We do not include apostrophe's at the end of a word because they do not change the
+    # pronunciation of the word. Learn more here:
     # https://github.com/rhdunn/amepd/commit/5fcd23a4424807e8b1c3f8736f19b38cd7e5abaf
     word = word[:-1] if word[-1] == "'" else word
     pronunciations = dictionary[word.upper()]

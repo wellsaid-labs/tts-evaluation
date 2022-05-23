@@ -26,9 +26,7 @@ def configure(overwrite: bool = False):
 
     # NOTE: These values can be increased as needed, they preemtively allocate model
     # parameters.
-    # TODO: After "grapheme to phoneme" is deprecated consider setting these automatically.
     max_tokens = 1000
-    max_sessions = 2000
     max_speakers = len(set(s.label for s in DATASETS.keys()))
     max_dialects = len(set(s.dialect for s in DATASETS.keys()))
     max_styles = len(set(s.style for s in DATASETS.keys()))
@@ -98,7 +96,6 @@ def configure(overwrite: bool = False):
         run._models.spectrogram_model.wrapper.SpectrogramModelWrapper: cf.Args(
             max_tokens=max_tokens,
             max_speakers=max_speakers,
-            max_sessions=max_sessions,
             max_dialects=max_dialects,
             max_styles=max_styles,
             max_languages=max_languages,
@@ -114,7 +111,6 @@ def configure(overwrite: bool = False):
         ),
         run._models.signal_model.wrapper.SignalModelWrapper: cf.Args(
             max_speakers=max_speakers,
-            max_sessions=max_sessions,
             seq_meta_embed_size=128,
             frame_size=NUM_FRAME_CHANNELS,
             hidden_size=32,

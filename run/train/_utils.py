@@ -641,18 +641,12 @@ def _worker_init_fn(
     rank: int,
     num_threads: int = 1,
 ):
-    """
-    TODO: Add a method for transfering global configuration between processes without private
-    variables.
-    TODO: After the global configuration is transfered, the functions need to be rechecked
-    like for a configuration, just in case the configuration is on a new process.
-    NOTE: Set `num_threads` to ensure that these workers share resources with the main process.
-    """
     cf.enable_fast_trace()
     cf.add(configuration)
     info = torch.utils.data.get_worker_info()
     assert isinstance(info, torch.utils.data._utils.worker.WorkerInfo)
     lib.environment.set_basic_logging_config()
+    # NOTE: Set `num_threads` to ensure that these workers share resources with the main process.
     set_num_threads(num_threads)
     logger.info("Worker %d/%d started for rank %d.", info.id + 1, info.num_workers, rank)
     if worker_init_fn is not None:

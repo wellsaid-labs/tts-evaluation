@@ -134,7 +134,7 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
             # https://www.iso.org/standard/34222.html. It does have some issues though:
             # http://www.lindos.co.uk/cgi-bin/FlexiData.cgi?SOURCE=Articles&VIEW=full&id=2
             get_weighting=lib.audio.iso226_weighting,
-            # NOTE: Ensure that the weighting isn't below -30 decibels; otherwise, the value may go
+            # NOTE: Ensure that the weighting isn't below -30 decibels; otherwise, a value may go
             # to zero which and it'll go to infinity when applying the operations in inverse.
             min_weight=-30,
             **hertz_bounds,

@@ -25,6 +25,10 @@ def _get_ratio(train_dataset: Dataset, dev_dataset: Dataset) -> float:
     return ratio
 
 
+def _get_num_sessions(train_dataset: Dataset) -> int:
+    return len(set(psg.session for data in train_dataset.values() for psg in data))
+
+
 def make_spectrogram_model_train_config(
     train_dataset: Dataset, dev_dataset: Dataset, debug: bool
 ) -> cf.Config:
@@ -109,6 +113,9 @@ def make_spectrogram_model_train_config(
             amsgrad=False,
             betas=(0.9, 0.999),
         ),
+        run._models.spectrogram_model.wrapper.SpectrogramModelWrapper: cf.Args(
+            max_sessions=_get_num_sessions(train_dataset),
+        ),
     }
 
 
@@ -192,5 +199,8 @@ def make_signal_model_train_config(
         _worker._run_discriminator: cf.Args(real_label=real_label, fake_label=fake_label),
         signal_model._metrics.Metrics.get_discrim_values: cf.Args(
             real_label=real_label, fake_label=fake_label, threshold=threshold
+        ),
+        run._models.signal_model.wrapper.SignalModelWrapper: cf.Args(
+            max_sessions=_get_num_sessions(train_dataset),
         ),
     }

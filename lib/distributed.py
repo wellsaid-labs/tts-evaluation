@@ -20,10 +20,6 @@ from lib.environment import IS_TESTING_ENVIRONMENT
 logger = logging.getLogger(__name__)
 
 
-# TODO: Rename `master` to `main`, learn more:
-# https://www.wired.com/story/tech-confronts-use-labels-master-slave/
-
-
 def is_initialized() -> bool:
     """Return `True` if distributed mode is initialized."""
     return torch.distributed.is_available() and torch.distributed.is_initialized()
@@ -145,9 +141,9 @@ class DictStore:
     Args:
         data: On the master process, this is a merged collection of data from the worker processes.
         cache_keys: Instead of pickling, sending, and receiving keys, this maps each key to a
-            unique identifier which is used in it's stead. This setting is particularly
-            helpful to use if there are a limited set of keys that are slow to `pickle`. Python
-            objects like `NamedTuple` or `dataclasses` are slow to `pickle`, for example.
+            unique identifier which are used instead. This setting is particularly helpful to use
+            if there are a limited set of keys that are slow to `pickle`. Python objects like
+            `NamedTuple` or `dataclasses` are slow to `pickle`, for example.
     """
 
     sync_every = 1
@@ -242,11 +238,11 @@ class NumeralizePadEmbed(torch.nn.Module, typing.Generic[_NumeralizePadEmbedVar]
 
     NOTE: This layer is intended to simplify the boilerplate code required to numeralize, pad,
           and embed a simple sequence. In order to support this end-to-end, this embedding layer
-          only works with inputs in the form of [batch_size] or [batch_size, num_tokens].
+          only works with inputs in the form of `[batch_size]` or `[batch_size, num_tokens]`.
 
     NOTE: In a former version of this, we tried to track the `unk_token` embedding to see if it
           had changed, in order to trigger a vocab update. This turned out to be difficult due
-          to the fancy optimizers with various second order and ema optimization techniques.
+          to the fancy optimizers with various second order and EMA optimization techniques.
 
           With that in mind, it's theoritically possible, that we could have a fancy update
           detection mechanism based on changes in `unk_token`.

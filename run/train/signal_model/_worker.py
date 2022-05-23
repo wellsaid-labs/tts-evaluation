@@ -571,7 +571,7 @@ def _visualize_select_cases(
     """Run spectrogram and signal model in inference mode and visualize results.
 
     TODO: Generate spectrograms individually is slow(ish), for now, the user can download the audio
-    and generate them manuallym, in the future they could be generated in a batch.
+    and generate them manually, in the future they could be generated in a batch.
     """
     if not is_master():
         return
