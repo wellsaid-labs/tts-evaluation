@@ -18,6 +18,9 @@ const origin = __ENV.ORIGIN;
 const apiKey = __ENV.API_KEY;
 const apiKeyLocation = __ENV.API_KEY_LOCATION || "header"; // body || header
 const hostHeader = __ENV.HOST;
+const skipValidationEndpoint =
+  __ENV.SKIP_VALIDATION_ENDPOINT === "true" || false;
+const apiPathPrefix = __ENV.API_PATH_PREFIX || "v1/tts"; // v1/tts || api/text_to_speech
 
 let characterLengthTrend = new Trend("character_length");
 
@@ -27,22 +30,18 @@ export let options = {
       // https://k6.io/docs/using-k6/scenarios/executors/ramping-arrival-rate/
       executor: "ramping-arrival-rate",
       startRate: 8,
-      timeUnit: "1m",
+      timeUnit: "1s",
       stages: [
-        // Based off of real usage (on 1-min interval)
-        { target: 10, duration: "1m" },
-        { target: 30, duration: "10s" },
-        { target: 30, duration: "1m" },
-        { target: 25, duration: "1m" },
-        { target: 50, duration: "10s" },
-        { target: 50, duration: "1m" },
-        { target: 10, duration: "10s" },
-        { target: 10, duration: "1m" },
-        { target: 30, duration: "10s" },
-        { target: 30, duration: "1m" },
+        // Sample ramp up to 20iter/sec and back down
+        { target: 1, duration: "30s" },
+        { target: 5, duration: "2m" },
+        { target: 10, duration: "2m" },
+        { target: 20, duration: "1m" },
+        { target: 5, duration: "1m" },
+        { target: 1, duration: "30s" },
       ],
       preAllocatedVUs: 4,
-      maxVUs: 64,
+      maxVUs: 256,
       gracefulStop: "60s",
     },
   },
@@ -70,8 +69,8 @@ export default function main() {
   // We use these two values to deterministically select a line of text, so that the tests
   // are consistent while still maintaining some degree of variability to better simulate "real"
   // traffic.
-  const validateUrl = `${origin}/api/text_to_speech/input_validated`;
-  const streamUrl = `${origin}/api/text_to_speech/stream`;
+  const validateUrl = `${origin}/${apiPathPrefix}/input_validated`;
+  const streamUrl = `${origin}/${apiPathPrefix}/stream`;
 
   const maxLineNo = lines.length - 1;
   const lineNo = Math.min(__VU + __ITER, (__VU + __ITER) % maxLineNo);
@@ -98,12 +97,14 @@ export default function main() {
   if (hostHeader) options.headers["Host"] = hostHeader;
 
   // A: validate inputs
-  const validateResponse = http.post(validateUrl, body, options);
-  check(validateResponse, {
-    validate_200_response: (r) => {
-      return r.status === 200;
-    },
-  });
+  if (!skipValidationEndpoint) {
+    const validateResponse = http.post(validateUrl, body, options);
+    check(validateResponse, {
+      validate_200_response: (r) => {
+        return r.status === 200;
+      },
+    });
+  }
 
   // B: stream
   const streamResponse = http.post(streamUrl, body, options);

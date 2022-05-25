@@ -15,6 +15,8 @@ To run the tests:
    ORIGIN=https://staging.tts.wellsaidlabs.com
    API_KEY=XXXXXXXXXXXX
    API_KEY_LOCATION=<header|body>
+   API_PATH_PREFIX=<api/text_to_speech|v1/tts>
+   SKIP_VALIDATION_ENDPOINT=<true|false>
    ```
 
 Where `ORIGIN` is the HTTP origin of the TTS service that you'd like to test,
@@ -25,6 +27,15 @@ instructions on how to generate an api key.
 The `API_KEY_LOCATION` variable defaults to `header`, authenticating via the
 `X-Api-Key` header. This value is configurable in order to support our previous
 infrastructure setup that authenticated via the `api_key` body parameter.
+
+By default we chain the `input_validated` and `stream` endpoints to mimic real
+usage. If you would like to test the stream endpoint in isolation set the
+`SKIP_VALIDATION_ENDPOINT=true` env variable.
+
+Set the `API_PATH_PREFIX` env variable accordingly:
+
+- TTS service (tts.wellsaidlabs.com): `api/text_to_speech`
+- Developer API (api.wellsaidlabs.com): `v1/tts`
 
 1. Build and run the tests like so (replacing `dev.env` with your environment
    configuration file):
@@ -51,15 +62,15 @@ Each line is a single paragraph of text. The character distribution per line is
 as follows:
 
 ```txt
+  23 0-100
   11 300-400
   11 200-300
    9 400-500
-   8 0-100
+   7 100-200
    6 500-600
-   5 100-200
    3 600-700
    2 700-800
-   1 1400-1500
+   1 900-1000
 ```
 
 ### data/actors.txt
