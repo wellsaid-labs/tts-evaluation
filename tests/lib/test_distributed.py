@@ -15,7 +15,7 @@ import torch.nn
 from torch.multiprocessing.spawn import spawn
 
 import lib
-from lib.distributed import DictStoreData, NumeralizePadEmbed
+from lib.distributed import ListedDict, NumeralizePadEmbed
 
 
 def init_process_group(rank, nprocs, backend="gloo", init_method="tcp://127.0.0.1:23456"):
@@ -59,9 +59,9 @@ def test_is_master__not_initialized():
     assert lib.distributed.is_master()
 
 
-def test_dict_store_data():
-    """Test `DictStoreData` on it's basic operations."""
-    data: DictStoreData[str, int] = DictStoreData()
+def test_listed_dict():
+    """Test `ListedDict` on it's basic operations."""
+    data: ListedDict[str, int] = ListedDict()
     data.append([{"a": 1}, {"a": 2}, {"b": 11}, {"b": 22}])
     data.append([{"a": 2}, {"a": 3}])
     assert data["a"] == [[1, 2], [2, 3]]

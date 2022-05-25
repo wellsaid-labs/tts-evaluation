@@ -177,7 +177,7 @@ def load_spacy_nlp(language: Language) -> spacy.language.Language:
 
 def configure(overwrite: bool = False):
     """Configure modules involved in processing text."""
-    # NOTE: These are speakers with small and reliable datasets, in the right language.
+    # NOTE: These are speakers reliable datasets, in the right language.
     debug_speakers = set(
         s for s in run._config.DEV_SPEAKERS if LANGUAGE is None or s.language == LANGUAGE
     )

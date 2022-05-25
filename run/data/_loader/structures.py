@@ -354,7 +354,7 @@ class Passage:
         return self._doc
 
     def __getstate__(self):
-        # NOTE: Delete temporary `_doc`, learn more here:  https://spacy.io/usage/saving-loading
+        # TODO: Delete temporary `_doc`, learn more here:  https://spacy.io/usage/saving-loading
         state = self.__dict__.copy()
         if hasattr(state, "_doc"):
             del state["_doc"]

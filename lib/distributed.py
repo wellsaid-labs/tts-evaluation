@@ -20,10 +20,6 @@ from lib.environment import IS_TESTING_ENVIRONMENT
 logger = logging.getLogger(__name__)
 
 
-# TODO: Rename `master` to `main`, learn more:
-# https://www.wired.com/story/tech-confronts-use-labels-master-slave/
-
-
 def is_initialized() -> bool:
     """Return `True` if distributed mode is initialized."""
     return torch.distributed.is_available() and torch.distributed.is_initialized()
@@ -71,37 +67,37 @@ def spawn(*args, nprocs=None, **kwargs):
     return torch.multiprocessing.spawn(*args, nprocs=nprocs, **kwargs)  # type: ignore
 
 
-DictStoreDataKey = typing.TypeVar("DictStoreDataKey")
-DictStoreDataValue = typing.TypeVar("DictStoreDataValue")
+ListedDictKey = typing.TypeVar("ListedDictKey")
+ListedDictValue = typing.TypeVar("ListedDictValue")
 
 
-class DictStoreData(typing.Generic[DictStoreDataKey, DictStoreDataValue]):
-    """An ordered dictionary to store data for each `DictStore` sync."""
+class ListedDict(typing.Generic[ListedDictKey, ListedDictValue]):
+    """Store lists of dictionaries efficiently."""
 
     def __init__(self):
         super().__init__()
-        self._data: typing.List[typing.List[typing.Dict[DictStoreDataKey, DictStoreDataValue]]] = []
+        self._data: typing.List[typing.List[typing.Dict[ListedDictKey, ListedDictValue]]] = []
         self._keys = set()
 
-    def append(self, data: typing.List[typing.Dict[DictStoreDataKey, DictStoreDataValue]]):
-        """Append new data from the most recent store sync."""
+    def append(self, data: typing.List[typing.Dict[ListedDictKey, ListedDictValue]]):
+        """Append an additional list of dictionaries."""
         self._data.append(data)
         for dict_ in data:
             self._keys.update(dict_.keys())
 
     @typing.overload
-    def __getitem__(self, key: slice) -> DictStoreData[DictStoreDataKey, DictStoreDataValue]:
-        """Get a `DictStoreData` that accesses a slice of sync."""
+    def __getitem__(self, key: slice) -> ListedDict[ListedDictKey, ListedDictValue]:
+        """Get a `slice` of dictionaries."""
         ...
 
     @typing.overload
-    def __getitem__(self, key: DictStoreDataKey) -> typing.List[typing.List[DictStoreDataValue]]:
-        """Get all the values for `key` in `DictStoreData` for each sync."""
+    def __getitem__(self, key: ListedDictKey) -> typing.List[typing.List[ListedDictValue]]:
+        """Get all the values for `key` in `ListedDict` in each dictionary."""
         ...
 
     def __getitem__(self, key):
         if isinstance(key, slice):
-            data = DictStoreData()
+            data = ListedDict()
             data._data = self._data[key]
             data._keys = self._keys
             return data
@@ -111,10 +107,10 @@ class DictStoreData(typing.Generic[DictStoreDataKey, DictStoreDataValue]):
 
         return [[d[key] for d in r if key in d] for r in self._data]
 
-    def keys(self) -> typing.Iterator[DictStoreDataKey]:
+    def keys(self) -> typing.Iterator[ListedDictKey]:
         return iter(self._keys)
 
-    def __iter__(self) -> typing.Iterator[DictStoreDataKey]:
+    def __iter__(self) -> typing.Iterator[ListedDictKey]:
         return iter(self._keys)
 
     def __len__(self) -> int:
@@ -145,9 +141,9 @@ class DictStore:
     Args:
         data: On the master process, this is a merged collection of data from the worker processes.
         cache_keys: Instead of pickling, sending, and receiving keys, this maps each key to a
-            unique identifier which is used in it's stead. This setting is particularly
-            helpful to use if there are a limited set of keys that are slow to `pickle`. Python
-            objects like `NamedTuple` or `dataclasses` are slow to `pickle`, for example.
+            unique identifier which are used instead. This setting is particularly helpful to use
+            if there are a limited set of keys that are slow to `pickle`. Python objects like
+            `NamedTuple` or `dataclasses` are slow to `pickle`, for example.
     """
 
     sync_every = 1
@@ -160,7 +156,7 @@ class DictStore:
     key_cache_prefix = "__"
 
     def __init__(self, cache_keys: bool = False):
-        self.data = DictStoreData()
+        self.data = ListedDict()
         self.cache_keys = cache_keys
         self._operation = -1
         self._world_size = get_world_size()
@@ -242,11 +238,11 @@ class NumeralizePadEmbed(torch.nn.Module, typing.Generic[_NumeralizePadEmbedVar]
 
     NOTE: This layer is intended to simplify the boilerplate code required to numeralize, pad,
           and embed a simple sequence. In order to support this end-to-end, this embedding layer
-          only works with inputs in the form of [batch_size] or [batch_size, num_tokens].
+          only works with inputs in the form of `[batch_size]` or `[batch_size, num_tokens]`.
 
     NOTE: In a former version of this, we tried to track the `unk_token` embedding to see if it
           had changed, in order to trigger a vocab update. This turned out to be difficult due
-          to the fancy optimizers with various second order and ema optimization techniques.
+          to the fancy optimizers with various second order and EMA optimization techniques.
 
           With that in mind, it's theoritically possible, that we could have a fancy update
           detection mechanism based on changes in `unk_token`.

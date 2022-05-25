@@ -51,6 +51,7 @@ class Token:
     prefix: typing.ClassVar[str] = "|\\"
     suffix: typing.ClassVar[str] = "\\|"
     delim: typing.ClassVar[str] = "\\"
+    # TODO: Configure the allowable characters based on language.
     valid_chars: typing.ClassVar[str] = string.ascii_lowercase
 
     def __post_init__(self):
@@ -62,10 +63,7 @@ class Token:
         object.__setattr__(self, "pronun", pronun)
 
     def _is_respelled(self):
-        """Is the `self.token.text` already respelled?
-
-        TODO: Configure the allowable characters based on language.
-        """
+        """Is the `self.token.text` already respelled?"""
         text = self.token.text
         is_respelled = text.startswith(self.prefix) and text.endswith(self.suffix)
         text = text[len(self.prefix) : -len(self.suffix)]
@@ -100,6 +98,10 @@ class Token:
         # TODO: At the moment, if a pronunciation exists, then we don't have data on the original
         # word and it's meaning. In the future, when the original word is not lost
         # we can preserve the original word vector.
+        # NOTE: Contextual word-vectors would likely be more informative than word-vectors; however,
+        # they are likely not as robust in the presence of OOV words due to intentional
+        # misspellings. Our users intentionally misspell words to adjust the pronunciation. For that
+        # reason, using contextual word-vectors is risky.
         if self.pronun is Pronunciation.RESPELLING or self.is_whitespace:
             return np.zeros(self.token.tensor.shape[0] + self.token.vector.shape[0])
         return np.concatenate((self.token.vector, self.token.tensor))
@@ -186,7 +188,15 @@ SpanDoc = typing.Union[spacy.tokens.span.Span, spacy.tokens.doc.Doc]
 def _token_to_tokens(
     token: spacy.tokens.token.Token, span: SpanDoc, respell_prob: float
 ) -> typing.Tuple[Token, Token]:
-    """Convert `token` into `Token`s."""
+    """Convert `token` into `Token`s.
+
+    Args:
+        token
+        span
+        respell_prob: The probability of respellings any particular spaCy token, as long as, that
+            word is in the pronunciation dictionary and doesn't have any punctuation
+            (e.g. hyphenation).
+    """
     is_context = token not in span
     is_whitespace_context = True if token == span[-1] else is_context
     try_to_respell = not is_context and random.random() < respell_prob
@@ -195,6 +205,9 @@ def _token_to_tokens(
     if last_token is not None and len(last_token.whitespace_) == 0 and not last_token.is_punct:
         try_to_respell = False
 
+    # NOTE: `try_to_respell` handles only basic scenarios. A more complex scenario, for example,
+    # is apostrophes. spaCy, by default, splits some (not all) words on apostrophes while our
+    # pronunciation dictionary does not; therefore, those words will not be found in it.
     next_token = None if len(token.doc) - 1 == token.i else token.doc[token.i + 1]
     if next_token is not None and len(token.whitespace_) == 0 and not next_token.is_punct:
         try_to_respell = False

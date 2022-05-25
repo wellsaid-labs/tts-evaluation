@@ -366,7 +366,7 @@ class Metrics(_utils.Metrics[MetricsKey]):
         self, batch: Batch, model: SpectrogramModel, preds: Preds
     ) -> MetricsValues:
         """
-        TODO: Get dataset metrics on OOV words (spaCy and AmEPD) in our dataset.
+        TODO: Get dataset metrics on OOV words (spaCy and pronunciation dictionary) in our dataset.
         TODO: Create a `streamlit` for measuring coverage in our dataset, and other datasets.
         TODO: Measure the difference between punctuation in the phonetic vs grapheme phrases.
         Apart from unique cases, they should have the same punctuation.

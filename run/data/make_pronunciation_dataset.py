@@ -21,6 +21,7 @@ TODO:
 - Run diacritics through Google's TTS.
 - Consider, randomly, repeating some words, several times in a list, to teach the model to be
   consistent.
+- GCP may, even if the word is lower case, pronounce it, as an initialism.
 
 Other resources:
 - https://nakanishi.kobegakuin-gc.jp/uploads/nakanishi/files/nakanishi/200910_Database.pdf

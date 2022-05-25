@@ -42,7 +42,7 @@ from torchnlp.encoders.text import SequenceBatch
 
 import lib
 import run
-from lib.distributed import DictStoreData, is_master
+from lib.distributed import ListedDict, is_master
 from lib.environment import load, load_most_recent_file
 from lib.utils import dataclass_as_dict, flatten_2d, seconds_to_str
 from run._config import (
@@ -641,18 +641,12 @@ def _worker_init_fn(
     rank: int,
     num_threads: int = 1,
 ):
-    """
-    TODO: Add a method for transfering global configuration between processes without private
-    variables.
-    TODO: After the global configuration is transfered, the functions need to be rechecked
-    like for a configuration, just in case the configuration is on a new process.
-    NOTE: Set `num_threads` to ensure that these workers share resources with the main process.
-    """
     cf.enable_fast_trace()
     cf.add(configuration)
     info = torch.utils.data.get_worker_info()
     assert isinstance(info, torch.utils.data._utils.worker.WorkerInfo)
     lib.environment.set_basic_logging_config()
+    # NOTE: Set `num_threads` to ensure that these workers share resources with the main process.
     set_num_threads(num_threads)
     logger.info("Worker %d/%d started for rank %d.", info.id + 1, info.num_workers, rank)
     if worker_init_fn is not None:
@@ -853,9 +847,9 @@ class MetricsKey:
 
 MetricsKeyTypeVar = typing.TypeVar("MetricsKeyTypeVar", bound=MetricsKey)
 MetricsReduceOp = typing.Callable[[typing.List[float]], float]
-# NOTE: `MetricsSelect` selects a subset of `DictStoreData` values.
+# NOTE: `MetricsSelect` selects a subset of `ListedDict` values.
 MetricsSelect = typing.Callable[
-    [DictStoreData[MetricsKeyTypeVar, float]], DictStoreData[MetricsKeyTypeVar, float]
+    [ListedDict[MetricsKeyTypeVar, float]], ListedDict[MetricsKeyTypeVar, float]
 ]
 
 
@@ -872,7 +866,7 @@ class Metrics(lib.distributed.DictStore, typing.Generic[MetricsKeyTypeVar]):
     LR = partial(get_model_label, "lr")
 
     def __init__(self, comet: CometMLExperiment, *args, **kwargs):
-        self.data: DictStoreData[MetricsKeyTypeVar, float]
+        self.data: ListedDict[MetricsKeyTypeVar, float]
         super().__init__(*args, **kwargs, cache_keys=True)
         self.comet = comet
 
