@@ -253,6 +253,18 @@ ENGLISH_TEST_CASES = [
     "If you want to get the good food at the ::bu-FAY::, you have to be willing to "
     "::BUF-et:: and punch your way to the front of the line.",
     "Does ::BEE-u-loh-ZHEEK:: ::ru-SHURSH:: really work?",
+    # NOTE: Test v10 regressions
+    # - Difficult acronyms
+    "It took six Ph.Ds to design a VCR a five-year-old could use.",
+    # - "Cape Cod" was repeated
+    "It is ironic that today's least ::PAH-pyuh-lay-tuhd:: town on Cape Cod",
+    # - Short sentences were cut off
+    "Taking sides early - I feel like... I feel like that's a recipe for disaster. It is.",
+    "manager. Egan",
+    "then walked away without taking any questions. Wow,",
+    "Thanks! For..",
+    "using your ears. Why?",
+    "Yes. Are you ready to play? Yeah.",
 ]
 TEST_CASES = [(struc.Language.ENGLISH, norm_respellings(t)) for t in ENGLISH_TEST_CASES]
 
