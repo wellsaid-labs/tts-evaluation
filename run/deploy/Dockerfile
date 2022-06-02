@@ -182,8 +182,6 @@ RUN apt-get update --fix-missing \
   && apt-get install -y \
   # NOTE: ffmpeg dependency (mp3 encoding, see --enable-libmp3lame flag)
   lame \
-  # NOTE: To avoid manually copying `espeak`'s dependencies, we install `espeak` outside of builder.
-  espeak \
   && rm -rf /var/lib/apt/lists/*
 
 LABEL maintainer="michael@wellsaidlabs.com"
