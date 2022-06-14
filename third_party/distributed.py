@@ -74,7 +74,7 @@ def gather_object(obj, object_gather_list=None, dst=0, group=None):
         >>> output
         ['foo', 12, {1: 2}]
     """
-    if _rank_not_in_group(group):
+    if _rank_not_in_group(group):  # type: ignore
         _warn_not_in_group("gather_object")
         return
 

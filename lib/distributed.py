@@ -286,7 +286,7 @@ class NumeralizePadEmbed(torch.nn.Module, typing.Generic[_NumeralizePadEmbedVar]
         self.unk_token = self._Tokens.UNK_TOKEN
 
         VocabKey = typing.Union[_NumeralizePadEmbedVar, NumeralizePadEmbed._Tokens]
-        self.vocab: typing.Dict[VocabKey, int]
+        self.vocab: typing.Dict[VocabKey, int]  # type: ignore
         self.vocab = {self.pad_token: self.pad_idx, self.unk_token: self.unk_idx}
 
         max_embeddings = len(self.vocab) + max_embeddings

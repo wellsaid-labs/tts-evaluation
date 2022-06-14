@@ -13,6 +13,7 @@ import altair as alt
 import numpy as np
 import pandas as pd
 import streamlit as st
+from streamlit.uploaded_file_manager import UploadedFile
 from streamlit_datatable import st_datatable
 
 from run._streamlit import path_to_web_path, web_path_to_url
@@ -37,7 +38,8 @@ def st_merge(dfs: typing.List[pd.DataFrame]) -> pd.DataFrame:
             merge_options.append(cols)
     st.info(f"Found only {len(merge_options)} groups of columns which can be merged.")
 
-    merge_columns = st.selectbox("Merge On", merge_options, format_func=lambda a: ", ".join(a))
+    format_func = lambda a: ", ".join(a)
+    merge_columns = st.selectbox("Merge On", merge_options, format_func=format_func)  # type: ignore
     for i, other_df in enumerate(dfs[1:]):
         df = df.merge(other_df, left_on=merge_columns[i], right_on=merge_columns[i + 1])
 
@@ -58,11 +60,12 @@ def st_bar_chart(
     """
     scale = alt.Scale(domain=[min_val, max_val])
     aggregated_column = "Mean of " + metric_column
+    agg_def = alt.AggregatedFieldDef(field=metric_column, op="mean", **{"as": aggregated_column})
     bar_chart = (
         alt.Chart(df)
         .transform_aggregate(
-            [alt.AggregatedFieldDef(field=metric_column, op="mean", **{"as": aggregated_column})],
-            groupby=[bucket_columns[0]],
+            [agg_def],  # type: ignore
+            groupby=[bucket_columns[0]],  # type: ignore
         )
         .mark_bar()
         .encode(
@@ -74,7 +77,7 @@ def st_bar_chart(
     )
     error_bar_chart = (
         alt.Chart(df)
-        .mark_errorbar(extent="ci", clip=True)
+        .mark_errorbar(extent="ci", clip=True)  # type: ignore
         .encode(
             x=alt.X(field=bucket_columns[0], type="nominal"),
             y=alt.Y(field=metric_column, type="quantitative", scale=scale),
@@ -103,6 +106,8 @@ def main():
         "required to complete the analysis."
     )
     files = st.file_uploader("CSV(s)", accept_multiple_files=True)
+    assert isinstance(files, list)
+    files = typing.cast(typing.List[UploadedFile], files)
     if len(files) == 0:
         st.stop()
 
@@ -119,16 +124,21 @@ def main():
 
     st.markdown("## Aggregate Statistics")
     segment_columns = st.multiselect("Segment On", list(df.columns))
-    numeric_columns = [c for c in df.columns if np.issubdtype(df[c].dtype, np.number)]
+    numeric_columns = [
+        c for c in df.columns if np.issubdtype(df[c].dtype, np.number)  # type: ignore
+    ]
     metric_column = st.selectbox("Metric Column", numeric_columns)
     min_val, max_val = min(df[metric_column]), max(df[metric_column])
     min_val, max_val = st.slider("Chart range", min_val, max_val, (min_val, max_val), step=0.25)
     if len(segment_columns) > 2 or len(segment_columns) == 0:
         st.error("Please select only 1 or 2 columns.")
         st.stop()
+    segment_columns = typing.cast(
+        typing.Union[typing.Tuple[str], typing.Tuple[str, str]], tuple(segment_columns)
+    )
 
-    selected = df[[metric_column] + segment_columns]
-    grouped = selected.groupby(segment_columns).agg(["mean", "std"]).reset_index()
+    selected = df[[metric_column] + list(segment_columns)]
+    grouped = selected.groupby(segment_columns).agg(["mean", "std"]).reset_index()  # type: ignore
     grouped.columns = [" | ".join(r for r in c if r) for c in grouped.columns]
     st_datatable(grouped)
     st_bar_chart(selected, segment_columns, metric_column, min_val, max_val)

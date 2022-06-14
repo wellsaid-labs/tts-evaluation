@@ -153,7 +153,7 @@ class TTSPackage:
         """Get the sessions these models are familiar with."""
         sesh = set(self.signal_model.session_embed.vocab.keys())
         inter = set(self.spec_model.session_embed.vocab.keys()).intersection(sesh)
-        return set(s for s in inter if isinstance(s, tuple))
+        return set(typing.cast(Session, s) for s in inter if isinstance(s, tuple))
 
 
 def package_tts(

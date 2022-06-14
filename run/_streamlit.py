@@ -346,7 +346,7 @@ def dataset_passages(dataset: Dataset) -> typing.Iterator[Passage]:
 
 @session_cache(maxsize=None)
 def load_en_core_web_md(*args, **kwargs):
-    return lib.text.load_en_core_web_md(*args, **kwargs)
+    return lib.text.load_spacy_nlp("en_core_web_md", *args, **kwargs)
 
 
 def st_data_frame(df: pd.DataFrame):
