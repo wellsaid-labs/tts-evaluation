@@ -53,6 +53,9 @@ class Token:
     delim: typing.ClassVar[str] = "\\"
     # TODO: Configure the allowable characters based on language.
     valid_chars: typing.ClassVar[str] = string.ascii_lowercase
+    respell_err_msg: typing.ClassVar[str] = (
+        "Please format your respelling " "correctly (https://help.wellsaidlabs.com/pronunciation)"
+    )
 
     def __post_init__(self):
         if not self._is_respelled():
@@ -68,11 +71,12 @@ class Token:
         is_respelled = text.startswith(self.prefix) and text.endswith(self.suffix)
         text = text[len(self.prefix) : -len(self.suffix)]
         if is_respelled:
-            message = f"Invalid respelling: {text}"
-            assert len(text) > 0, message
-            assert text[0].lower() in self.valid_chars, message
-            assert text[-1].lower() in self.valid_chars, message
-            assert len(set(text.lower()) - set(list(self.valid_chars + self.delim))) == 0, message
+            assert len(text) > 0, self.respell_err_msg
+            assert text[0].lower() in self.valid_chars, self.respell_err_msg
+            assert text[-1].lower() in self.valid_chars, self.respell_err_msg
+            assert (
+                len(set(text.lower()) - set(list(self.valid_chars + self.delim))) == 0
+            ), self.respell_err_msg
         return is_respelled
 
     def _try_respelling(self) -> typing.Optional[str]:
@@ -130,6 +134,7 @@ class Token:
             updated = match[len(prefix) : -len(suffix)].replace(delim, cls.delim)
             updated = f"{cls.prefix}{updated}{cls.suffix}"
             script = script.replace(match, updated)
+        assert prefix not in script, cls.respell_err_msg
         return script
 
 

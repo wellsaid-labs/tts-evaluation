@@ -265,6 +265,10 @@ ENGLISH_TEST_CASES = [
     "Thanks! For..",
     "using your ears. Why?",
     "Yes. Are you ready to play? Yeah.",
+    # - This question generated a long silence, after "morning"
+    "Can you tell me more about what happened that morning?",
+    # - This word was pronounced incorrectly
+    "anemone",
 ]
 TEST_CASES = [(struc.Language.ENGLISH, norm_respellings(t)) for t in ENGLISH_TEST_CASES]
 

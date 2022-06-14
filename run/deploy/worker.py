@@ -83,16 +83,16 @@ LANGUAGE_TO_SPACY: typing.Dict[Language, spacy.language.Language]
 SPACY: English
 # NOTE: The keys need to stay the same for backwards compatibility.
 _SESSIONS = [
-    (english.m_ailabs.JUDY_BIEBER, "emerald_city_of_oz/wavs/emerald_city_of_oz_06"),
-    (english.m_ailabs.MARY_ANN, "northandsouth/wavs/northandsouth_09"),
-    (english.lj_speech.LINDA_JOHNSON, "LJ003"),
+    (english.m_ailabs.JUDY_BIEBER, ""),
+    (english.m_ailabs.MARY_ANN, ""),
+    (english.lj_speech.LINDA_JOHNSON, ""),
     (english.wsl.ALANA_B, "script_3"),
     (english.wsl.RAMONA_J, "7"),
     (english.wsl.RAMONA_J__CUSTOM, "sukutdental_021819"),
-    (english.lj_speech.LINDA_JOHNSON, "LJ003"),
+    (english.lj_speech.LINDA_JOHNSON, ""),
     (english.wsl.WADE_C, "102-107"),
     (english.wsl.SOFIA_H, "14"),
-    (english.wsl.DAVID_D, "copy_of_wsl-_script_022-027"),
+    (english.wsl.DAVID_D, ""),
     (english.wsl.VANESSA_N, "76-81"),
     (english.wsl.ISABEL_V, "heather_4-21_a"),
     (english.wsl.AVA_M, "well_said_script_16-21"),
