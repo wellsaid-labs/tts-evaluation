@@ -261,9 +261,11 @@ def batch_text_to_speech(
 ) -> typing.List[TTSInputOutput]:
     """Run TTS end-to-end quickly with a verbose output."""
     inputs = [(normalize_vo_script(script, sesh[0].language), sesh) for script, sesh in inputs]
+    logger.info(f"Processing {len(inputs)} examples with spaCy...")
     inputs_ = list(enumerate(_multilingual_spacy_pipe(inputs)))
     inputs_ = sorted(inputs_, key=lambda i: len(str(i[1][0])))
     results: typing.Dict[int, TTSInputOutput] = {}
+    logger.info(f"Processing {len(inputs)} examples with TTS models...")
     for batch in tqdm_(list(get_chunks(inputs_, batch_size))):
         batch_input = Inputs(doc=[i[1][0] for i in batch], session=[i[1][1] for i in batch])
         preds = package.spec_model(inputs=batch_input, mode=Mode.INFER)

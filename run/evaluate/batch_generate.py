@@ -74,30 +74,15 @@ def make_result(span: Span, audio: typing.Optional[np.ndarray] = None) -> typing
 
 def main():
     st.markdown("# Batch Generation ")
-    st.markdown(
-        "Use this workbook to generate a batch of clips and export them for further evaluation."
-    )
+    st.markdown("Use this workbook to generate a batch of clips and export them.")
     run._config.configure(overwrite=True)
 
     form: DeltaGenerator = st.form("form")
     options = [k.name for k in CHECKPOINTS_LOADERS.keys()]
-    checkpoints_keys = typing.cast(
-        typing.List[str], form.multiselect("Checkpoints", options=options)
-    )
-    num_fake = form.number_input(
-        "Number of Generated Clips",
-        min_value=0,
-        value=16,  # type: ignore
-        step=1,
-    )
-    num_fake = int(num_fake)
-    num_real = form.number_input(
-        "Number of Real Clips",
-        min_value=0,
-        value=16,  # type: ignore
-        step=1,
-    )
-    num_real = int(num_real)
+    checkpoints_keys = form.multiselect("Checkpoints", options=options)
+    checkpoints_keys = typing.cast(typing.List[str], checkpoints_keys)
+    num_fake = int(form.number_input("Number of Generated Clips", min_value=0, value=16, step=1))
+    num_real = int(form.number_input("Number of Real Clips", min_value=0, value=16, step=1))
     shuffle = form.checkbox("Shuffle Clips", value=True)
     include_dic = form.checkbox("Include Dictionary Dataset", value=False)
     if not form.form_submit_button("Generate"):

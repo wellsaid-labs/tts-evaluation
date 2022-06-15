@@ -75,9 +75,10 @@ def pickle_cache(func: _WrappedFunction = None, **kwargs) -> _WrappedFunction:
 
     @functools.wraps(func)
     def decorator(*args, **kwargs):
+        logger.info(f"Pickling `{func.__qualname__}` arguments...")
         key = (pickle.dumps(args), pickle.dumps(kwargs))
         if key in cache:
-            logger.info(f"Loading `{func.__qualname__} `cache...")
+            logger.info(f"Loading `{func.__qualname__}` cache...")
             loaded = pickle.loads(cache[key])
             logger.info(f"Loaded `{func.__qualname__}` cache!")
             return loaded
