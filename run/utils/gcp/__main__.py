@@ -172,7 +172,7 @@ def _make_instance(
     name: str,
     zone: typing.Optional[str],
     machine_type: str,
-    gpu_type: str,
+    gpu_type: typing.Optional[str],
     gpu_count: int,
     disk_size: int,
     disk_type: str,
@@ -217,7 +217,6 @@ def _make_instance(
         "properties": {
             "machineType": machine_type,
             "metadata": {"kind": "compute#metadata", "items": metadata_},
-            "guestAccelerators": [{"acceleratorCount": gpu_count, "acceleratorType": gpu_type}],
             "disks": [
                 {
                     "kind": "compute#attachedDisk",
@@ -259,6 +258,11 @@ def _make_instance(
             ],
         },
     }
+    if gpu_count > 0:
+        assert gpu_type is not None, "GPU type needs to be defined."
+        accel = {"acceleratorCount": gpu_count, "acceleratorType": gpu_type}
+        body["properties"]["guestAccelerators"] = [accel]
+
     template_op = compute.instanceTemplates().insert(project=project, body=body).execute()
     template_op = _wait_for_operation(template_op["name"])
     logger.info("Created instance template: %s", template_op["targetLink"])
@@ -275,8 +279,8 @@ def make_persistent_instance(
     name: str = typer.Option(...),
     zone: str = typer.Option(None, help="Select a specific zone for training."),
     machine_type: str = typer.Option(...),
-    gpu_type: str = typer.Option(...),
-    gpu_count: int = typer.Option(...),
+    gpu_type: typing.Optional[str] = typer.Option(None),
+    gpu_count: int = typer.Option(0),
     disk_size: int = typer.Option(...),
     disk_type: str = typer.Option(...),
     image_project: str = typer.Option(project),
@@ -295,8 +299,8 @@ def make_preemptible_instance(
     name: str = typer.Option(...),
     zone: str = typer.Option(None, help="Select a specific zone for training."),
     machine_type: str = typer.Option(...),
-    gpu_type: str = typer.Option(...),
-    gpu_count: int = typer.Option(...),
+    gpu_type: typing.Optional[str] = typer.Option(None),
+    gpu_count: int = typer.Option(0),
     disk_size: int = typer.Option(...),
     disk_type: str = typer.Option(...),
     image_project: str = typer.Option(project),

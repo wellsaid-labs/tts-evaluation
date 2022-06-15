@@ -13,15 +13,15 @@ Usage:
 Use gcloud port-forwarding to interact via your local browser:
 ```
 VM_NAME="name-of-remote-machine"
-ZONE="zone-of-remote-machine"
+VM_ZONE="zone-of-remote-machine"
 PROJECT_ID=voice-research-255602
 LOCAL_PORT=2222
 REMOTE_PORT=8501
 
 gcloud compute ssh $VM_NAME \
     --project $PROJECT_ID \
-    --zone $ZONE \
-    -- -NL $LOCAL_PORT:localhost:$REMOTE_PORT
+    --zone $VM_ZONE \
+    -- -NL $LOCAL_PORT":localhost:"$REMOTE_PORT
 ```
 """
 import functools
@@ -89,7 +89,7 @@ def main():
         "Use this workbook to find the best permutation of a "
         "set of model(s), a speaker, a recording session, and a script."
     )
-    run._config.configure()
+    run._config.configure(overwrite=True)
 
     get_paths = functools.partial(st_select_paths, suffix=PT_EXTENSION)
     sig_paths = get_paths("Signal Checkpoints(s)", SIGNAL_MODEL_EXPERIMENTS_PATH)

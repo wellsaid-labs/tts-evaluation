@@ -25,7 +25,6 @@ from lib.text import natural_keys
 from run._config import DEFAULT_SCRIPT
 from run._streamlit import (
     WebPath,
-    get_session_state,
     load_en_core_web_md,
     load_tts,
     make_temp_web_dir,
@@ -34,7 +33,6 @@ from run._streamlit import (
 )
 from run._tts import (
     CHECKPOINTS_LOADERS,
-    Checkpoints,
     Inputs,
     PreprocessedInputs,
     TTSPackage,
@@ -142,18 +140,14 @@ def wait_until_first_byte(service: Container, web_path: WebPath):
 
 
 def main():
-    st.markdown("# Stream Generation ")
+    st.markdown("# Stream Generation")
     st.markdown("Use this workbook to stream clip generation.")
-    run._config.configure()
+    run._config.configure(overwrite=True)
 
-    state = typing.cast(_State, get_session_state())
+    options = [k.name for k in CHECKPOINTS_LOADERS.keys()]
+    checkpoint = typing.cast(str, st.selectbox("Checkpoints", options=options))
 
-    options = list(CHECKPOINTS_LOADERS.keys())
-    format_: typing.Callable[[Checkpoints], str] = lambda s: s.value
-    checkpoint = st.selectbox("Checkpoints", options=options, format_func=format_)  # type: ignore
-    checkpoint = typing.cast(Checkpoints, checkpoint)
-
-    with st.spinner(f"Loading `{checkpoint.value}` checkpoint(s)..."):
+    with st.spinner(f"Loading `{checkpoint}` checkpoint(s)..."):
         tts = load_tts(checkpoint)
 
     format_speaker: typing.Callable[[Speaker], str] = lambda s: str(s)
@@ -181,19 +175,19 @@ def main():
         inputs = process_tts_inputs(nlp, tts, script, session)
         st.info(f"{len(inputs[1].tokens[0]):,} token(s) were inputted.")
 
-    if "service" in state and state["service"].is_alive():
+    if "service" in st.session_state and st.session_state["service"].is_alive():
         logger.info("Shutting down streaming service...")
         requests.get(f"{STREAMING_SERVICE_ENDPOINT}/shutdown")
-        state["service"].join()
-        del state["service"]
+        st.session_state["service"].join()
+        del st.session_state["service"]
 
     web_path = make_temp_web_dir() / "audio.mp3"
     with st.spinner("Starting streaming service..."):
         is_streaming = (multiprocessing.Event if use_process else threading.Event)()
         args = (copy.deepcopy(cf.export()), web_path, is_streaming, *inputs, tts)
         container = multiprocessing.Process if use_process else threading.Thread
-        state["service"] = container(target=_streaming_service, args=args, daemon=True)
-        state["service"].start()
+        st.session_state["service"] = container(target=_streaming_service, args=args, daemon=True)
+        st.session_state["service"].start()
         wait_until_healthy()
 
     # NOTE: `v={time.time()}` is used for cache busting, learn more:
@@ -201,7 +195,7 @@ def main():
     endpoint = f"{STREAMING_SERVICE_ENDPOINT}/stream.mp3?v={time.time()}"
     st_html(f'<audio controls src="{endpoint}"></audio>')
     start_time = time.time()
-    wait_until_first_byte(state["service"], web_path)
+    wait_until_first_byte(st.session_state["service"], web_path)
     assert is_streaming.is_set()
 
     url = web_path_to_url(web_path)
@@ -210,7 +204,7 @@ def main():
     ttfb = time.time() - start_time
     start_time = time.time()
     stats = st.empty()
-    while state["service"].is_alive() and web_path.exists() and is_streaming.is_set():
+    while st.session_state["service"].is_alive() and web_path.exists() and is_streaming.is_set():
         seconds_generated = get_audio_metadata(web_path).length
         elapsed = time.time() - start_time
 

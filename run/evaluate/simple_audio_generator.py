@@ -18,24 +18,20 @@ from run._streamlit import (
     st_html,
     web_path_to_url,
 )
-from run._tts import CHECKPOINTS_LOADERS, Checkpoints, batch_text_to_speech
+from run._tts import CHECKPOINTS_LOADERS, batch_text_to_speech
 from run.data._loader import Session, Speaker
 
 
 def main():
     st.markdown("# Simple Audio Generator")
     st.markdown("Use this workbook to generate audio for quick evaluation.")
-    run._config.configure()
+    run._config.configure(overwrite=True)
 
-    options = list(CHECKPOINTS_LOADERS.keys())
-    format_: typing.Callable[[Checkpoints], str] = lambda s: s.value
-    checkpoints_key = st.selectbox(
-        "Checkpoints", options=options, format_func=format_  # type: ignore
-    )
-    checkpoints_key = typing.cast(Checkpoints, checkpoints_key)
+    options = [k.name for k in CHECKPOINTS_LOADERS.keys()]
+    checkpoint = typing.cast(str, st.selectbox("Checkpoints", options=options))
 
     with st.spinner("Loading checkpoint(s)..."):
-        tts = load_tts(checkpoints_key)
+        tts = load_tts(checkpoint)
 
     format_speaker: typing.Callable[[Speaker], str] = lambda s: s.label
     speakers = sorted(sesh[0] for sesh in tts.session_vocab())

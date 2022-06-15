@@ -31,6 +31,7 @@ import config as cf
 import numpy as np
 import pandas as pd
 import streamlit as st
+from streamlit.delta_generator import DeltaGenerator
 from streamlit_datatable import st_datatable
 from tqdm import tqdm
 
@@ -45,8 +46,8 @@ from run._streamlit import (
     st_html,
     web_path_to_url,
 )
-from run._tts import CHECKPOINTS_LOADERS, Checkpoints, batch_span_to_speech
-from run.data._loader import Span
+from run._tts import CHECKPOINTS_LOADERS, batch_span_to_speech
+from run.data._loader import DICTIONARY_DATASETS, Span
 from run.train.spectrogram_model._metrics import (
     get_alignment_norm,
     get_alignment_std,
@@ -57,12 +58,13 @@ from run.train.spectrogram_model._metrics import (
 st.set_page_config(layout="wide")
 
 
-def make_result(span: Span, audio: np.ndarray) -> typing.Dict[str, str]:
-    audio_web_path = audio_to_web_path(audio)
+def make_result(span: Span, audio: typing.Optional[np.ndarray] = None) -> typing.Dict[str, str]:
+    audio_web_path = audio_to_web_path(span.audio() if audio is None else audio)
     return {
         "Transcript": span.transcript,
         "Script": span.script,
         "Audio File": str(span.audio_file.path.relative_to(lib.environment.ROOT_PATH)),
+        "Language": span.speaker.dialect.value[1],
         "Speaker": span.speaker.label,
         "Session": str(span.session),
         "Audio": f'<audio controls src="{web_path_to_url(audio_web_path)}"></audio>',
@@ -75,61 +77,63 @@ def main():
     st.markdown(
         "Use this workbook to generate a batch of clips and export them for further evaluation."
     )
-    run._config.configure()
+    run._config.configure(overwrite=True)
 
-    options = list(CHECKPOINTS_LOADERS.keys())
-    format_: typing.Callable[[Checkpoints], str] = lambda s: s.value
+    form: DeltaGenerator = st.form("form")
+    options = [k.name for k in CHECKPOINTS_LOADERS.keys()]
     checkpoints_keys = typing.cast(
-        typing.List[Checkpoints],
-        st.multiselect("Checkpoints", options=options, format_func=format_),  # type: ignore
+        typing.List[str], form.multiselect("Checkpoints", options=options)
     )
-    num_fake_clips = st.number_input(
+    num_fake = form.number_input(
         "Number of Generated Clips",
-        min_value=1,
+        min_value=0,
         value=16,  # type: ignore
         step=1,
     )
-    num_fake_clips = int(num_fake_clips)
-    num_real_clips = st.number_input(
+    num_fake = int(num_fake)
+    num_real = form.number_input(
         "Number of Real Clips",
-        min_value=1,
+        min_value=0,
         value=16,  # type: ignore
         step=1,
     )
-    num_real_clips = int(num_real_clips)
-    shuffle = st.checkbox("Shuffle Clips", value=True)
-
-    if not st.button("Generate"):
-        st.stop()
-
-    results = []
-    generator = cf.partial(run._utils.SpanGenerator)(get_dev_dataset(), weight=lambda *_: 1.0)
-    for _ in range(num_real_clips):
-        span = next(generator)
-        results.append({"Checkpoints": "original", **make_result(span, span.audio())})
+    num_real = int(num_real)
+    shuffle = form.checkbox("Shuffle Clips", value=True)
+    include_dic = form.checkbox("Include Dictionary Dataset", value=False)
+    if not form.form_submit_button("Generate"):
+        return
 
     with st.spinner("Loading and exporting model(s)..."):
         packages = [load_tts(c) for c in checkpoints_keys]
+    session_vocab = set.intersection(*tuple(p.session_vocab() for p in packages))
+
+    get_weight = run.train.spectrogram_model._data.dev_get_weight
+    generator = cf.partial(run._utils.SpanGenerator)(get_dev_dataset(), get_weight=get_weight)
+    include_span: typing.Callable[[Span], bool] = lambda s: s.session in session_vocab and (
+        include_dic or s.speaker not in DICTIONARY_DATASETS
+    )
+    generator = (s for s in generator if include_span(s))
+    results = [{"Checkpoints": "original", **make_result(next(generator))} for _ in range(num_real)]
 
     for package, checkpoints_ in zip(packages, checkpoints_keys):
-        spans = [next(generator) for _ in tqdm(range(num_fake_clips), total=num_fake_clips)]
-        with st.spinner(f"Generating clips with `{checkpoints_.name}` checkpoints..."):
+        spans = [next(generator) for _ in tqdm(range(num_fake), total=num_fake)]
+        with st.spinner(f"Generating clips with `{checkpoints_}` checkpoints..."):
             in_outs = batch_span_to_speech(package, spans)
 
         for span, (_, pred, audio) in zip(spans, in_outs):
             image_web_path = make_temp_web_dir() / "alignments.png"
-            lib.visualize.plot_alignments(pred.alignments).savefig(image_web_path)
+            lib.visualize.plot_alignments(pred.alignments[:, 0]).savefig(image_web_path)
             num_frames = pred.frames.shape[0]
-            num_pause_frames = get_num_pause_frames(pred.frames.unsqueeze(1), None, **cf.get())
+            num_pause_frames = get_num_pause_frames(pred.frames, None, **cf.get())
             result = {
-                "Checkpoints": checkpoints_.name,
+                "Checkpoints": checkpoints_,
                 "Frames Per Token": num_frames / pred.num_tokens[0].item(),
                 "Num Pause Frames": num_pause_frames[0],
                 "Alignment Norm": (get_alignment_norm(pred)[0] / num_frames).item(),
                 "Alignment STD": (get_alignment_std(pred)[0] / num_frames).item(),
                 "Alignment Skips": get_num_skipped(pred)[0].item(),
                 "Alignment": f'<img src="{web_path_to_url(image_web_path)}" />',
-                **make_result(span, audio),
+                **make_result(span, audio[0]),
             }
             results.append(result)
 
@@ -137,7 +141,7 @@ def main():
         random.shuffle(results)
 
     for index, result in enumerate(results):
-        result["Id"] = index
+        result["Id"] = str(index)
 
     data_frame = pd.DataFrame(results)
     with st.spinner("Visualizing data..."):

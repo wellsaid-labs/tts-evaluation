@@ -14,7 +14,7 @@ import config as cf
 import numpy as np
 import tqdm
 from streamlit.server.server import Server
-from third_party import LazyLoader, session_state
+from third_party import LazyLoader
 
 import lib
 import run
@@ -58,15 +58,6 @@ def is_streamlit_running() -> bool:
         return False
 
 
-def get_session_state() -> dict:
-    """Get a reference to a session state represented as a `dict`.
-
-    TODO: Upgrade to `streamlit`s official `session_state` implementation, learn more:
-    https://blog.streamlit.io/session-state-for-streamlit/
-    """
-    return session_state.get(cache={})
-
-
 _WrappedFunction = typing.TypeVar("_WrappedFunction", bound=typing.Callable[..., typing.Any])
 
 
@@ -86,9 +77,14 @@ def pickle_cache(func: _WrappedFunction = None, **kwargs) -> _WrappedFunction:
     def decorator(*args, **kwargs):
         key = (pickle.dumps(args), pickle.dumps(kwargs))
         if key in cache:
-            return pickle.loads(cache[key])
+            logger.info(f"Loading `{func.__qualname__} `cache...")
+            loaded = pickle.loads(cache[key])
+            logger.info(f"Loaded `{func.__qualname__}` cache!")
+            return loaded
         result = func(*args, **kwargs)
+        logger.info(f"Saving `{func.__qualname__}` cache...")
         cache[key] = pickle.dumps(result)
+        logger.info(f"Saved `{func.__qualname__}` cache!")
         return result
 
     def cache_clear():
@@ -130,23 +126,25 @@ def session_cache(func: typing.Optional[typing.Callable] = None, **kwargs):
     if not is_streamlit_running():
         return func
 
-    session_state = get_session_state()
-    if func.__qualname__ not in session_state["cache"]:
-        logger.info("Creating `%s` cache.", func.__qualname__)
-        session_state["cache"][func.__qualname__] = pickle_cache(**kwargs)(func)
+    if "cache" not in st.session_state:
+        st.session_state["cache"] = {}
 
-    return session_state["cache"][func.__qualname__]
+    if func.__qualname__ not in st.session_state["cache"]:
+        logger.info("Creating `%s` cache.", func.__qualname__)
+        st.session_state["cache"][func.__qualname__] = pickle_cache(**kwargs)(func)
+
+    return st.session_state["cache"][func.__qualname__]
 
 
 def clear_session_cache():
     """Clear the cache for `session_cache`."""
     logger.info("Clearing cache...")
-    [v.cache_clear() for v in get_session_state()["cache"].values()]
+    [v.cache_clear() for v in st.session_state["cache"].values()]
 
 
 @session_cache(maxsize=None)
-def load_tts(checkpoints_key: Checkpoints):
-    return package_tts(*CHECKPOINTS_LOADERS[checkpoints_key]())
+def load_tts(checkpoints_key: str):
+    return package_tts(*CHECKPOINTS_LOADERS[Checkpoints[checkpoints_key]]())
 
 
 @session_cache(maxsize=None)
@@ -274,8 +272,7 @@ def get_dataset(speaker_labels: typing.FrozenSet[str]) -> Dataset:
 def get_dev_dataset() -> Dataset:
     """Load dev dataset, and cache."""
     with st.spinner("Loading dataset..."):
-        dataset = run._utils.get_dataset(**cf.get())
-        _, dev_dataset = run._utils.split_dataset(dataset, **cf.get())
+        _, dev_dataset = run._utils.get_datasets(False)
     return dev_dataset
 
 

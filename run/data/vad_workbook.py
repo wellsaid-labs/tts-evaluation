@@ -53,7 +53,6 @@ from run._streamlit import (
     clear_session_cache,
     dataset_passages,
     get_dataset,
-    get_session_state,
     make_interval_chart,
     make_signal_chart,
     passage_audio,
@@ -383,10 +382,9 @@ def _get_hard_passages(dataset: run._utils.Dataset, threshold: float = 20) -> ty
 
 def _init_random_seed(key: str = "random_seed", default_value: int = 123) -> str:
     """Create a persistent state for the random seed."""
-    state = get_session_state()
     value = st.sidebar.number_input("Random Seed", value=default_value)  # type: ignore
-    if key not in state or value != default_value:
-        state[key] = default_value
+    if key not in st.session_state or value != default_value:
+        st.session_state[key] = default_value
     return key
 
 
@@ -402,7 +400,6 @@ def main():
     label = "Max Passage Seconds"
     max_len = st.sidebar.number_input(label, 0.0, value=60.0, step=1.0)  # type: ignore
 
-    state = get_session_state()
     random_seed_key = _init_random_seed()
 
     speakers: typing.List[str] = [k.label for k in DATASETS.keys()]
@@ -415,14 +412,14 @@ def main():
     use_hard = st.checkbox("Find Challenging Passage", value=True)
     passages = _get_hard_passages(dataset) if use_hard else list(dataset.values())[0]
     passages = [p for p in passages if p.aligned_audio_length() < max_len]
-    state[random_seed_key] += int(st.button("New Passage"))
-    with fork_rng(state[random_seed_key]):
+    st.session_state[random_seed_key] += int(st.button("New Passage"))
+    with fork_rng(st.session_state[random_seed_key]):
         passage = random.choice(list(passages))
     start = passage.audio_start
     end = passage.audio_stop
     st.info(
         "### Randomly Choosen Passage\n"
-        f"#### Random Seed\n{state[random_seed_key]}\n"
+        f"#### Random Seed\n{st.session_state[random_seed_key]}\n"
         f"#### Audio File\n`{passage.audio_file.path.relative_to(lib.environment.ROOT_PATH)}`\n\n"
         "#### Audio Slice\n"
         f"{seconds_to_str(end - start)} ({seconds_to_str(start)}, {seconds_to_str(end)})\n\n"

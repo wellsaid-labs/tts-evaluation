@@ -52,7 +52,7 @@ def main(
         typer.echo(f"The directory {path.parent} doesn't exist.")
         raise typer.Exit()
 
-    run._config.configure()
+    run._config.configure(overwrite=True)
     train_dataset, dev_dataset = run._utils.get_datasets(debug)
     train_dataset = {} if use_dev_dataset else train_dataset
 

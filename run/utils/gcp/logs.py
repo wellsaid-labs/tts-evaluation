@@ -14,7 +14,6 @@ import pandas as pd
 import streamlit as st
 
 import lib
-from run._streamlit import get_session_state
 
 st.set_page_config(layout="wide")
 
@@ -98,36 +97,35 @@ def main():
     st.title("Google Cloud Platform (GCP) Log Parser")
     st.write("Query, parse, and visualize up to 90 days of GCP logs.")
 
-    # NOTE: Use `state` to ensure settings are persistant.
-    state = get_session_state()
-
-    query = st.text_input("Google Cloud Logging Search String", value=state.get("query", ""))
-    state["query"] = query
+    label = "Google Cloud Logging Search String"
+    query = st.text_input(label, value=st.session_state.get("query", ""))
+    st.session_state["query"] = query
 
     label = "Select Time Range"
     option: typing.Tuple[str, timedelta] = st.selectbox(
         label,
         OPTIONS,
-        index=state.get("index", 3),
+        index=st.session_state.get("index", 3),
         format_func=lambda k: k[0],  # type: ignore
     )
-    state["index"] = OPTIONS.index(option)
+    st.session_state["index"] = OPTIONS.index(option)
     end = datetime.utcnow()
     start = end - option[1]
 
     cols = st.beta_columns([1, 1])
-    query_limit = cols[0].number_input("Query Limit", value=state.get("query_limit", 100))
-    state["query_limit"] = query_limit
+    label = "Query Limit"
+    query_limit = cols[0].number_input(label, value=st.session_state.get("query_limit", 100))
+    st.session_state["query_limit"] = query_limit
     label = "Random Sample"
-    fraction = state.get("fraction", 1.0)
+    fraction = st.session_state.get("fraction", 1.0)
     fraction = cols[1].number_input(label, min_value=0.0, value=fraction, max_value=1.0, step=0.01)
-    state["fraction"] = fraction
+    st.session_state["fraction"] = fraction
 
     cols = st.beta_columns([1, 1])
-    regex = cols[0].text_input("Text Payload Regex", value=state.get("regex", ""))
-    state["regex"] = regex
-    group = cols[1].number_input("Regex Group", min_value=0, value=state.get("group", 0))
-    state["group"] = group
+    regex = cols[0].text_input("Text Payload Regex", value=st.session_state.get("regex", ""))
+    st.session_state["regex"] = regex
+    group = cols[1].number_input("Regex Group", min_value=0, value=st.session_state.get("group", 0))
+    st.session_state["group"] = group
 
     if not st.button("Run Query"):
         st.stop()

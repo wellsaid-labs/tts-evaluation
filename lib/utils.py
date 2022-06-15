@@ -244,7 +244,9 @@ def disk_cache(path: pathlib.Path):
                     "cache."
                 )
                 with path.open("rb") as f:
-                    return pickle.load(f)
+                    loaded = pickle.load(f)
+                logger.info("Loaded cache!")
+                return loaded
 
             result = function(*args, **kwargs)
             with path.open("wb") as f:

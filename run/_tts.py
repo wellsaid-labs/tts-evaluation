@@ -274,16 +274,18 @@ def batch_text_to_speech(
             j: TTSInputOutput(
                 inputs=Inputs(doc=[batch_input.doc[i]], session=[batch_input.session[i]]),
                 spec_model=Preds(
-                    frames=preds.frames[: preds.num_frames[i], i],
-                    stop_tokens=preds.stop_tokens[: preds.num_frames[i], i],
-                    alignments=preds.alignments[: preds.num_frames[i], i, : preds.num_tokens[i]],
-                    num_frames=preds.num_frames[i],
-                    frames_mask=preds.frames_mask[i, : preds.num_frames[i]],
-                    num_tokens=preds.num_tokens[i],
-                    tokens_mask=preds.tokens_mask[i, : preds.num_tokens[i]],
-                    reached_max=preds.reached_max[i],
+                    frames=preds.frames[: preds.num_frames[i], i : i + 1],
+                    stop_tokens=preds.stop_tokens[: preds.num_frames[i], i : i + 1],
+                    alignments=preds.alignments[
+                        : preds.num_frames[i], i : i + 1, : preds.num_tokens[i]
+                    ],
+                    num_frames=preds.num_frames[i : i + 1],
+                    frames_mask=preds.frames_mask[i : i + 1, : preds.num_frames[i]],
+                    num_tokens=preds.num_tokens[i : i + 1],
+                    tokens_mask=preds.tokens_mask[i : i + 1, : preds.num_tokens[i]],
+                    reached_max=preds.reached_max[i : i + 1],
                 ),
-                sig_model=signals[0][i][: num_samples[:, i]].detach().numpy(),
+                sig_model=signals[0][i : i + 1, : num_samples[i]].detach().numpy(),
             )
             for i, (j, _) in zip(range(len(batch)), batch)
         }
