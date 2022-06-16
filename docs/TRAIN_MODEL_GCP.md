@@ -235,7 +235,7 @@ Setup your local development environment by following [these instructions](LOCAL
 
    ```zsh
    NAME=$USER"-your-instance-name" # EXAMPLE: michaelp-baseline
-   VM_NAME=$(python -m run.utils.gcp most-recent --name $NAME)
+   VM_NAME=$(python -m run.utils.gcp $TYPE most-recent --name $NAME)
    echo "VM_NAME=$VM_NAME"
    VM_ZONE=$(python -m run.utils.gcp zone --name $VM_NAME)
    ```
