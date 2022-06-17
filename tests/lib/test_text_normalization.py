@@ -25,6 +25,7 @@ from lib.text_normalization import (
     _normalize_title_abbreviations,
     _normalize_urls,
     _normalize_years,
+    _num2words,
     normalize_text,
 )
 
@@ -38,6 +39,38 @@ def assert_normalized(
 ):
     for text_in, text_out in zip(in_, out):
         assert _normalize_text_from_pattern(text_in, pattern, normalize, **kwargs) == text_out
+
+
+def test__num2words():
+    """Test `_num2words` for numbers with leading or trailing zeros."""
+    in_ = [
+        "",
+        "0",
+        "00",
+        "00.",
+        "00.00",
+        "003",
+        "003.",
+        "003.00",
+        "003.10",
+        "0030.10",
+        "0030.1010",
+    ]
+    out = [
+        "",
+        "zero",
+        "zero zero",
+        "zero zero point",
+        "zero zero point zero zero",
+        "zero zero three",
+        "zero zero three point",
+        "zero zero three point zero zero",
+        "zero zero three point one zero",
+        "zero zero thirty point one zero",
+        "zero zero thirty point one zero one zero",
+    ]
+    for text_in, text_out in zip(in_, out):
+        assert _num2words(text_in, ignore_zeros=False) == text_out
 
 
 def test___normalize_text_from_pattern__money():

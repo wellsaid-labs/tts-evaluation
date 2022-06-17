@@ -34,7 +34,7 @@ import re
 import typing
 
 import en_core_web_sm
-from num2words import num2words
+from num2words import num2words as __num2words
 from spacy.tokens import Span
 
 from lib.non_standard_words import (
@@ -58,36 +58,42 @@ logger = logging.getLogger(__name__)
 # TODO: Don't load `en_core_web_md` globally.
 SPACY = en_core_web_sm.load()
 
+_NON_ZERO_DIGITS = re.compile(r"[1-9]")
 
-# TODO: Add documentation for `my_num2words`.
-# TODO: What's the difference between `my_num2words` and `num2words`?
-def my_num2words(num: str) -> str:
+
+def _num2words(num: str, ignore_zeros: bool = True, **kwargs) -> str:
+    """Normalize `num` into standard words.
+
+    TODO: Should we consider just creating a basic function that voices each individual number
+    without any fancy interpretation? Is that what we need?
+
+    Args:
+        ignore_zeros: If `False`, this verbalizes the leading and trailing zeros, as well.
+    """
+    if ignore_zeros:
+        return __num2words(num, **kwargs)
+
+    is_decimal = "." in num
     result = []
-    # CASE: `num` is all zeros
-    if re.search(r"[1-9]", num) is None:
-        if "." in num:
-            whole, fract = num.split(".")
-            result.extend("zero" for _ in list(whole))
+    if _NON_ZERO_DIGITS.search(num) is None:  # CASE: `num` is all zeros
+        whole, fract = num.split(".") if is_decimal else (num, "")
+        result.extend("zero" for _ in list(whole))
+        if is_decimal:
             result.append("point")
             result.extend("zero" for _ in list(fract))
     else:
-        cleaned_num = num.lstrip("0")  # NOTE: Handle leading and trailing zeros
-        # TODO: Is this `split` necessary? Can we just calc the number of remaining numbers?
-        leading_zeros = list(num.split(cleaned_num)[0])
-        result.extend("zero" for _ in leading_zeros)
-        if "." in num:
-            cleaned_num = num.rstrip("0")
-            trailing_zeros = list(num.split(cleaned_num)[1])
-            zeros = ["zero" for _ in trailing_zeros]
-            num_word = num2words(cleaned_num)
-            if cleaned_num[-1] == ".":
-                num_word += " point " + " ".join(zeros)
-                result.append(num_word)
+        lstripped = num.lstrip("0")  # NOTE: Handle leading zeros
+        result.extend("zero" for _ in range(len(num) - len(lstripped)))
+        if is_decimal:
+            rstripped = lstripped.rstrip("0")  # NOTE: Handle trailing zeros
+            zeros = ["zero" for _ in range(len(lstripped) - len(rstripped))]
+            result.append(__num2words(rstripped, **kwargs))
+            if rstripped[-1] == ".":
+                result.append(f"point{' ' if len(zeros) > 0 else ''}{' '.join(zeros)}")
             else:
-                result.append(num2words(cleaned_num))
                 result.extend(zeros)
         else:
-            result.append(num2words(cleaned_num))
+            result.append(__num2words(lstripped, **kwargs))
 
     return " ".join(result)
 
@@ -138,18 +144,18 @@ def _normalize_money(match: typing.Match[str]) -> str:
     # CASE: Big Money ($1.2B, $1.2 billion, etc.)
     if abbr:
         abbr = abbr.upper()
-        return " ".join([num2words(money), MONEY_ABBREVIATIONS[abbr], CURRENCIES[currency][1]])
+        return " ".join([_num2words(money), MONEY_ABBREVIATIONS[abbr], CURRENCIES[currency][1]])
     elif trail:
-        return num2words(money) + trail + " " + CURRENCIES[currency][1]
+        return _num2words(money) + trail + " " + CURRENCIES[currency][1]
 
     # CASE: Standard ($1.20, $4,000, etc.)
     tokens = money.split(".")
     assert len(tokens) == 2 or len(tokens) == 1, "Found strange number."
     dollars = int(tokens[0].replace(",", ""))
     cents = int(tokens[1]) if len(tokens) > 1 else 0
-    normalized = num2words(dollars) + " " + CURRENCIES[currency][0 if dollars == 1 else 1]
+    normalized = _num2words(dollars) + " " + CURRENCIES[currency][0 if dollars == 1 else 1]
     if cents > 0:
-        normalized += " and " + num2words(cents)
+        normalized += " and " + _num2words(cents)
         normalized += " " + CURRENCIES[currency][2 if cents == 1 else 3]
     return normalized
 
@@ -161,7 +167,7 @@ def _normalize_ordinals(match: typing.Match[str]) -> str:
         match: Matched text (e.g. 1st, 2nd)
     """
     numeral = "".join(match.group(1).split(","))
-    return num2words(numeral, ordinal=True)
+    return _num2words(numeral, ordinal=True)
 
 
 def _normalize_times(match: typing.Match[str], o_clock: str = "") -> str:
@@ -172,10 +178,10 @@ def _normalize_times(match: typing.Match[str], o_clock: str = "") -> str:
         o_clock: Phrasing preference of 'o'clock' for on-the-hour times.
     """
     hour: str = match.group(2)
-    minute: str = o_clock if match.group(3) == "00" else num2words(match.group(3))
+    minute: str = o_clock if match.group(3) == "00" else _num2words(match.group(3))
     suffix: typing.Optional[str] = match.group(4)
     suffix = "" if suffix is None else suffix.replace(".", "").strip().upper()
-    segments = (s for s in (num2words(hour), minute, suffix) if len(s) > 0)
+    segments = (s for s in (_num2words(hour), minute, suffix) if len(s) > 0)
     return " ".join(segments)
 
 
@@ -186,10 +192,10 @@ def _normalize_abbreviated_times(match: typing.Match[str]) -> str:
         match: Matched text (e.g. 10PM, 10 p.m.)
     """
     suffix = "" if match.group(2) is None else match.group(2).replace(".", "").strip().upper()
-    return num2words(match.group(1)) + " " + suffix
+    return _num2words(match.group(1)) + " " + suffix
 
 
-def _normalize_phone_numbers(match: typing.Union[typing.Match[str], str]) -> str:
+def _normalize_phone_numbers(match: typing.Match[str]) -> str:
     """Take regex match of phone number pattern and translate it into standard words.
 
     TODO: Support "oh" instead of "zero" because it's more typical based on this source:
@@ -198,21 +204,21 @@ def _normalize_phone_numbers(match: typing.Union[typing.Match[str], str]) -> str
     Args:
         match: Matched text (e.g. 1.800.573.1313, (123) 555-1212)
     """
-    phone_number = match if isinstance(match, str) else match.group(0)
+    phone_number = match.group(0)
     numerals = re.split(r"\+|\(|\)|-|\.| ", phone_number)
     digits = []
     for n in numerals:
         if len(n) > 0:
             if n == "800":
-                digits.append(num2words(n))
+                digits.append(_num2words(n))
             elif re.search(r"[a-zA-Z]", n) is not None:
                 digits.append(n)
             else:
-                digits.append(" ".join(list(map(num2words, list(n)))))
+                digits.append(" ".join(list(map(_num2words, list(n)))))
     return ", ".join(digits)
 
 
-num2year = lambda n: num2words(int(n), lang="en", to="year")
+num2year = lambda n: _num2words(int(n), lang="en", to="year")
 
 
 def _normalize_years(match: typing.Match[str]) -> str:
@@ -251,7 +257,7 @@ def _normalize_number_ranges(match: typing.Match[str], connector: str = "to") ->
     # TODO: Should 7-11 and 9-11 be included?
     special_cases = ["1-800", "50-50"]  # '7-11' and '9-11' are commonly spoken without 'to'
     connector = " " if num_range in special_cases else " %s " % connector
-    return connector.join(list(map(num2words, _HYPHEN_PATTERN.split(num_range))))
+    return connector.join(list(map(_num2words, _HYPHEN_PATTERN.split(num_range))))
 
 
 def _normalize_percents(match: typing.Match[str]) -> str:
@@ -264,7 +270,7 @@ def _normalize_percents(match: typing.Match[str]) -> str:
     """
     num = "".join(re.split(r",|%|'|\"", match.group(0)))
     suffix = " %s" % SYMBOLS_VERBALIZED.get("%")
-    return " to ".join(list(map(num2words, _HYPHEN_PATTERN.split(num)))) + suffix
+    return " to ".join(list(map(_num2words, _HYPHEN_PATTERN.split(num)))) + suffix
 
 
 def _normalize_number_signs(match: typing.Match[str]) -> str:
@@ -277,13 +283,12 @@ def _normalize_number_signs(match: typing.Match[str]) -> str:
     """
     num = "".join(re.split(r",|#|'|\"", match.group(0)))
     if any(h in num for h in HYPHENS):
-        return "numbers " + " through ".join(list(map(num2words, _HYPHEN_PATTERN.split(num))))
-    return "number " + num2words(num)
+        return "numbers " + " through ".join(list(map(_num2words, _HYPHEN_PATTERN.split(num))))
+    return "number " + _num2words(num)
 
 
 def _normalize_urls(match: typing.Match[str]) -> str:
-    """
-    Take regex match of URL (website, email, etc.) pattern and translate it into standard words.
+    """Take regex match of URL (website, email, etc.) pattern and translate it into standard words.
 
     Args:
         match: Matched text
@@ -308,7 +313,7 @@ def _normalize_urls(match: typing.Match[str]) -> str:
     for word in return_.split(" "):
         for char in word:
             if char.isdigit():
-                return_ = return_.replace(char, " %s " % num2words(char))
+                return_ = return_.replace(char, " %s " % _num2words(char))
 
     return re.sub(" +", " ", return_).strip()
 
@@ -357,7 +362,7 @@ def _normalize_measurement_abbreviations(match: typing.Match[str]) -> str:
 
     replacement_text = ""
     prefix = match.group(1)
-    value = my_num2words("".join(match.group(2).split(",")))
+    value = _num2words("".join(match.group(2).split(",")), ignore_zeros=False)
     units = UNITS_ABBREVIATIONS.get(match.group(6))
 
     if prefix is not None:
@@ -415,7 +420,7 @@ def _normalize_fraction(match: typing.Match[str]) -> str:
     denominator = int(match.group(3))
 
     if whole is not None:
-        normalized += my_num2words(whole) + " and "
+        normalized += _num2words(whole, ignore_zeros=False) + " and "
 
     if numerator == 1:
         if denominator == 2:
@@ -423,7 +428,7 @@ def _normalize_fraction(match: typing.Match[str]) -> str:
         if denominator == 4:
             return normalized + "one quarter"
 
-    normalized += num2words(numerator) + " " + num2words(denominator, ordinal=True)
+    normalized += _num2words(numerator) + " " + _num2words(denominator, ordinal=True)
 
     if numerator > 1:
         normalized += "s"
@@ -433,7 +438,7 @@ def _normalize_fraction(match: typing.Match[str]) -> str:
 
 def _normalize_generic_digit(match: typing.Match[str]) -> str:
     digits = match.group(0)
-    return my_num2words("".join(digits.split(",")))
+    return _num2words("".join(digits.split(",")), ignore_zeros=False)
 
 
 def get_person_title(span):
@@ -590,10 +595,10 @@ def _normalize_roman_numerals(text: str) -> str:
                 word = match.group(0)
                 if type in ["PERSON", "ORDINAL"]:
                     # Ordinal tranlsation
-                    translated = "the " + num2words(_roman_to_int(word), ordinal=True).capitalize()
+                    translated = "the " + _num2words(_roman_to_int(word), ordinal=True).capitalize()
                 else:
                     # Cardinal translation
-                    translated = num2words(_roman_to_int(word)).capitalize()
+                    translated = _num2words(_roman_to_int(word)).capitalize()
 
                 if translated != "":
                     replacement_text = phrase.replace(word, translated, 1)
@@ -743,10 +748,7 @@ def normalize_text(text_in: str) -> str:
         _normalize_phone_numbers,
     )
     normalized = _normalize_text_from_pattern(normalized, RegExPatterns.DECADES, _normalize_decades)
-    print(normalized)
     normalized = _normalize_text_from_pattern(normalized, RegExPatterns.YEARS, _normalize_years)
-    print("""""" """""")
-    print(normalized)
     normalized = _normalize_text_from_pattern(
         normalized, RegExPatterns.NUMBER_RANGES, _normalize_number_ranges
     )
@@ -771,9 +773,7 @@ def normalize_text(text_in: str) -> str:
     )
     normalized = _normalize_title_abbreviations(normalized)
     normalized = _normalize_roman_numerals(normalized)
-
-    # ADD: normalize_general_abbreviations
-    print(normalized)
+    # TODO: Add `normalize_general_abbreviations`.
     return normalized
 
 
