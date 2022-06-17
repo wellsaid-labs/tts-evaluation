@@ -51,6 +51,7 @@ from run.data._loader import DICTIONARY_DATASETS, Span
 from run.train.spectrogram_model._metrics import (
     get_alignment_norm,
     get_alignment_std,
+    get_max_pause,
     get_num_pause_frames,
     get_num_skipped,
 )
@@ -105,15 +106,17 @@ def main():
         with st.spinner(f"Generating clips with `{checkpoints_}` checkpoints..."):
             in_outs = batch_span_to_speech(package, spans)
 
-        for span, (_, pred, audio) in zip(spans, in_outs):
+        for span, (_, pred, audio) in tqdm(zip(spans, in_outs), total=len(spans)):
             image_web_path = make_temp_web_dir() / "alignments.png"
             lib.visualize.plot_alignments(pred.alignments[:, 0]).savefig(image_web_path)
             num_frames = pred.frames.shape[0]
-            num_pause_frames = get_num_pause_frames(pred.frames, None, **cf.get())
+            num_pause_frames = cf.partial(get_num_pause_frames)(pred.frames, None)
+            max_pause_frames = cf.partial(get_max_pause)(pred.frames, None)
             result = {
                 "Checkpoints": checkpoints_,
                 "Frames Per Token": num_frames / pred.num_tokens[0].item(),
                 "Num Pause Frames": num_pause_frames[0],
+                "Max Pause Frames": max_pause_frames[0],
                 "Alignment Norm": (get_alignment_norm(pred)[0] / num_frames).item(),
                 "Alignment STD": (get_alignment_std(pred)[0] / num_frames).item(),
                 "Alignment Skips": get_num_skipped(pred)[0].item(),

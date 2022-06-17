@@ -269,6 +269,9 @@ ENGLISH_TEST_CASES = [
     "Can you tell me more about what happened that morning?",
     # - This word was pronounced incorrectly
     "anemone",
+    # - This word caused the model to overflow
+    "::po-lahn-co::",
+    "::fran-SIH-skoh::",
 ]
 TEST_CASES = [(struc.Language.ENGLISH, norm_respellings(t)) for t in ENGLISH_TEST_CASES]
 

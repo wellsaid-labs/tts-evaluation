@@ -77,6 +77,10 @@ class Token:
             assert (
                 len(set(text.lower()) - set(list(self.valid_chars + self.delim))) == 0
             ), self.respell_err_msg
+            assert all(
+                len(set(self._get_case(c) for c in syllab)) == 1
+                for syllab in text.split(self.delim)
+            ), self.respell_err_msg
         return is_respelled
 
     def _try_respelling(self) -> typing.Optional[str]:

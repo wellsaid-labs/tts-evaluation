@@ -251,6 +251,10 @@ def test__preprocess_invalid_respelling():
         doc = nlp("|\\MOH|tər\\|")  # Invalid character
         _preprocess([(make_session(), doc, doc)])
 
+    with pytest.raises(AssertionError):
+        doc = nlp("|\\Moh\\|")  # Mix capitalization
+        _preprocess([(make_session(), doc, doc)])
+
 
 def test_preprocess_inputs_and_spans():
     """Test that `preprocess_spans` and `preprocess_inputs` function similarly."""

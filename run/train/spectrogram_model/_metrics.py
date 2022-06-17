@@ -216,6 +216,47 @@ def get_num_pause_frames(
     return num_frames
 
 
+def get_max_pause(
+    db_spectrogram: torch.Tensor,
+    mask: typing.Optional[torch.Tensor],
+    max_loudness: float,
+    min_speech_segment: float,
+    frame_hop: int,
+    sample_rate: int,
+    **kwargs,
+) -> typing.List[int]:
+    """Get the maximum pause length.
+
+    TODO: Incorperate this into training.
+    TODO: Test this function.
+
+    Args:
+        db_spectrogram (torch.FloatTensor [num_frames, batch_size, frame_channels])
+        mask (torch.FloatTensor [batch_size, num_frames])
+        max_loudness: The maximum loudness a pause can be.
+        min_speech_segment: The minimum length that a speech segment must be.
+        ...
+    """
+    # [num_frames, batch_size, frame_channels] → [batch_size, num_frames, frame_channels]
+    power_spec = lib.audio.db_to_power(db_spectrogram).transpose(0, 1)
+    # [batch_size, num_frames, frame_channels] → [batch_size, num_frames]
+    framed_rms_level = cf.partial(power_spectrogram_to_framed_rms)(power_spec, **kwargs)
+    is_silent = framed_rms_level < lib.audio.db_to_amp(max_loudness)  # [batch_size, num_frames]
+    is_silent = is_silent if mask is None else is_silent * mask
+    batch_size = is_silent.shape[0]
+    ss_threshold = min_speech_segment * sample_rate / frame_hop
+    max_frames = [0] * batch_size
+    for i in range(batch_size):
+        _is_silent, inverse, count = torch.unique_consecutive(
+            is_silent[i], return_counts=True, return_inverse=True
+        )
+        _is_silent[count < ss_threshold] = True
+        is_silent[i] = torch.gather(_is_silent, 0, inverse)
+        _is_silent, count = torch.unique_consecutive(is_silent[i], return_counts=True)
+        max_frames[i] = int((_is_silent.float() * count).max().item())
+    return max_frames
+
+
 def get_alignment_norm(preds: Preds) -> torch.Tensor:
     """The inf-norm of an alignment. The more focused an alignment is the higher this metric. The
     metric is bounded at [0, 1].

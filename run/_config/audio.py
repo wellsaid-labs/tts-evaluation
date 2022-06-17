@@ -108,6 +108,7 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
         lib.audio.SignalTodBMelSpectrogram: args,
         lib.audio.griffin_lim: args,
         run.train.spectrogram_model._metrics.get_num_pause_frames: args,
+        run.train.spectrogram_model._metrics.get_max_pause: args,
         run.data._loader.utils.normalize_audio: args,
         run._tts.text_to_speech_ffmpeg_generator: args,
         lib.audio.get_pyloudnorm_meter: args,
@@ -174,6 +175,11 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
         run.train.spectrogram_model._metrics.get_num_pause_frames: Args(
             frame_hop=FRAME_HOP,
             min_length=too_long_pause_length,
+            max_loudness=-50,
+        ),
+        run.train.spectrogram_model._metrics.get_max_pause: Args(
+            frame_hop=FRAME_HOP,
+            min_speech_segment=0.1,
             max_loudness=-50,
         ),
         run._models.signal_model.wrapper.SignalModelWrapper: Args(
