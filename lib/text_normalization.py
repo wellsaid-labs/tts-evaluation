@@ -58,8 +58,6 @@ logger = logging.getLogger(__name__)
 # TODO: Don't load `en_core_web_md` globally.
 SPACY = en_core_web_sm.load()
 
-_NON_ZERO_DIGITS = re.compile(r"[1-9]")
-
 
 def _num2words(num: str, ignore_zeros: bool = True, **kwargs) -> str:
     """Normalize `num` into standard words.
@@ -68,34 +66,26 @@ def _num2words(num: str, ignore_zeros: bool = True, **kwargs) -> str:
     without any fancy interpretation? Is that what we need?
 
     Args:
+        ...
         ignore_zeros: If `False`, this verbalizes the leading and trailing zeros, as well.
     """
     if ignore_zeros:
         return __num2words(num, **kwargs)
 
-    is_decimal = "." in num
-    result = []
-    if _NON_ZERO_DIGITS.search(num) is None:  # CASE: `num` is all zeros
-        whole, fract = num.split(".") if is_decimal else (num, "")
-        result.extend("zero" for _ in list(whole))
-        if is_decimal:
-            result.append("point")
-            result.extend("zero" for _ in list(fract))
-    else:
-        lstripped = num.lstrip("0")  # NOTE: Handle leading zeros
-        result.extend("zero" for _ in range(len(num) - len(lstripped)))
-        if is_decimal:
-            rstripped = lstripped.rstrip("0")  # NOTE: Handle trailing zeros
-            zeros = ["zero" for _ in range(len(lstripped) - len(rstripped))]
-            result.append(__num2words(rstripped, **kwargs))
-            if rstripped[-1] == ".":
-                result.append(f"point{' ' if len(zeros) > 0 else ''}{' '.join(zeros)}")
-            else:
-                result.extend(zeros)
-        else:
-            result.append(__num2words(lstripped, **kwargs))
+    lstripped = num.lstrip("0")  # NOTE: Handle leading zeros
+    out = ["zero" for _ in range(len(num) - len(lstripped))]
+    if "." in num:
+        rstripped = lstripped.rstrip("0")  # NOTE: Handle trailing zeros
+        zeros = ["zero" for _ in range(len(lstripped) - len(rstripped))]
+        if rstripped != ".":
+            out.append(__num2words(rstripped, **kwargs))
+        if rstripped[-1] == ".":
+            out.append("point")
+        out.extend(zeros)
+    elif len(lstripped) > 0:
+        out.append(__num2words(lstripped, **kwargs))
 
-    return " ".join(result)
+    return " ".join(out)
 
 
 def reg_ex_or(vals: typing.Iterable[str], delimiter=r"|") -> str:
