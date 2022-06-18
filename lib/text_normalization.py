@@ -75,11 +75,11 @@ def _num2words(num: str, ignore_zeros: bool = True, **kwargs) -> str:
     lstripped = num.lstrip("0")  # NOTE: Handle leading zeros
     out = ["zero" for _ in range(len(num) - len(lstripped))]
     if "." in num:
-        rstripped = lstripped.rstrip("0")  # NOTE: Handle trailing zeros
-        zeros = ["zero" for _ in range(len(lstripped) - len(rstripped))]
-        if rstripped != ".":
-            out.append(__num2words(rstripped, **kwargs))
-        if rstripped[-1] == ".":
+        stripped = lstripped.rstrip("0")  # NOTE: Handle trailing zeros
+        zeros = ["zero" for _ in range(len(lstripped) - len(stripped))]
+        if stripped != ".":
+            out.append(__num2words(stripped, **kwargs))
+        if stripped[-1] == ".":
             out.append("point")
         out.extend(zeros)
     elif len(lstripped) > 0:
