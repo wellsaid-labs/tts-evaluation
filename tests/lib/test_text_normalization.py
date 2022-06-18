@@ -117,7 +117,7 @@ def test___normalize_text_from_pattern__ordinals():
         "Jesus of Prague, the 13th-century Cathedral of St. Matthew",
         "what he wanted for his 15th birthday.",
         "be recycled, while the 3rd booster - travelling much too fast",
-        "celebrate the 400th anniversary of Rembrandt’s birth?",
+        "celebrate the 400th anniversary of Rembrandt's birth?",
         "1127 days, from June 25th 1950 through July 27th 1953",
         "In the early-20th century, people like Ordway Tead,",
         "2000 (MM) was a century leap year starting on Saturday of the Gregorian calendar, the "
@@ -130,7 +130,7 @@ def test___normalize_text_from_pattern__ordinals():
         "Jesus of Prague, the thirteenth-century Cathedral of St. Matthew",
         "what he wanted for his fifteenth birthday.",
         "be recycled, while the third booster - travelling much too fast",
-        "celebrate the four hundredth anniversary of Rembrandt’s birth?",
+        "celebrate the four hundredth anniversary of Rembrandt's birth?",
         "1127 days, from June twenty-fifth 1950 through July twenty-seventh 1953",
         "In the early-twentieth century, people like Ordway Tead,",
         "2000 (MM) was a century leap year starting on Saturday of the Gregorian calendar, the "
@@ -283,7 +283,7 @@ def test___normalize_text_from_pattern__years():
         "It is 1959: in this remote corner of India.",
         "Twenty years ago, in 1990, Declan Treacy invented",
         "A 2004 CIBC survey suggests",
-        "with a run of hit songs during the mid-1960’s, including “Surfin’ U.S.A.” (1963)",
+        "with a run of hit songs during the mid-1960's, including “Surfin' U.S.A.” (1963)",
         "If you find a 1776-1976 quarter",
     ]
     out = [
@@ -291,7 +291,7 @@ def test___normalize_text_from_pattern__years():
         "It is nineteen fifty-nine: in this remote corner of India.",
         "Twenty years ago, in nineteen ninety, Declan Treacy invented",
         "A two thousand and four CIBC survey suggests",
-        "with a run of hit songs during the mid-nineteen sixty’s, including “Surfin’ U.S.A.” "
+        "with a run of hit songs during the mid-nineteen sixty's, including “Surfin' U.S.A.” "
         "(nineteen sixty-three)",
         "If you find a seventeen seventy-six to nineteen seventy-six quarter",
     ]
@@ -491,7 +491,8 @@ def test___normalize_text_from_pattern__generic_digit():
     ]
     out = [
         "it had been four thousand, eight hundred and seventy-nine days and took fifty-three "
-        "boats to relocate all two hundred and thirty-five residents just one point two miles south",
+        "boats to relocate all two hundred and thirty-five residents just one point two miles "
+        "south",
         "find us between the hours of two and seven every afternoon.",
         "two point three revolutions in ten minutes",
     ]
@@ -508,7 +509,8 @@ def test___normalize_text_from_pattern__fraction():
     ]
     out = [
         "it had been four thousand, eight hundred and seventy-nine days and took fifty-three "
-        "boats to relocate all two hundred and thirty-five residents just one point two miles south",
+        "boats to relocate all two hundred and thirty-five residents just one point two miles "
+        "south",
         "find us between the hours of two and seven every afternoon.",
         "two point three revolutions in ten minutes",
     ]
@@ -540,16 +542,17 @@ def test__normalize_roman_numerals():
     """Test `normalize_roman_numerals`."""
     in_ = [
         "the detonation over Nagasaki - ended World War II. Yet the shocking human effects soon ",
-        "from Auburn’s Cam Newton, Baylor’s Robert Griffin III and the Aggies Johnny Football",
+        "from Auburn's Cam Newton, Baylor's Robert Griffin III and the Aggies Johnny Football",
         "home to such English royalty as King Edward I, Henry V and Henry VIII.",
         "with experimental oxygen bottles from Camp IV high on Mount Everest.",
         "the Marqués de San Miguel de Aguayo proposed to King Philip V, of Spain that 400 families",
     ]
     out = [
         "the detonation over Nagasaki - ended World War Two. Yet the shocking human effects soon ",
-        "from Auburn’s Cam Newton, Baylor’s Robert Griffin the Third and the Aggies Johnny "
+        "from Auburn's Cam Newton, Baylor's Robert Griffin the Third and the Aggies Johnny "
         "Football",
-        "home to such English royalty as King Edward the First, Henry the Fifth and Henry the Eighth.",
+        "home to such English royalty as King Edward the First, Henry the Fifth and Henry the "
+        "Eighth.",
         "with experimental oxygen bottles from Camp Four high on Mount Everest.",
         "the Marqués de San Miguel de Aguayo proposed to King Philip the Fifth, of Spain that "
         "400 families",
