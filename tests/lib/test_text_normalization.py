@@ -217,10 +217,10 @@ def test_reg_ex_patterns_toll_free_phone_numbers():
     assert match("1 (800) XFINITY")
     assert match("+1 (800) XFINITY")
     assert match("+1 (800) XFINITY")
-    assert match("1800-XFINITY")
     assert match("1(800)Xfinity")
     assert match("1-800-ski-green")
     assert match("1-800-4MY-HOME")
+    assert not match("1800-XFINITY")  # No delimiter between Area Code and Line Number
     assert not match("1800XFINITY")  # No delimiter between Area Code and Line Number
     assert not match("1-800XFINITY")
 
@@ -560,26 +560,44 @@ def test__normalize_roman_numerals():
 
 
 def test_normalize_text():
-    """Basic integration test for testing text normalization for text containing multiple non-standard-word cases."""
+    """Basic integration test for testing text normalization for text containing multiple
+    non-standard-word cases."""
     in_ = [
-        "Do you want to learn how to turn $200 into a grand!? Call 1-800-MONEY-4-ME now or visit www.money4me.com/now!",
-        "It is estimated that by 2010, $1.2 trillion will be spent on education reform for 250,000,000 students",
+        "Do you want to learn how to turn $200 into a grand!? Call 1-800-MONEY-4-ME now or "
+        "visit www.money4me.com/now!",
+        "It is estimated that by 2010, $1.2 trillion will be spent on education reform for "
+        "250,000,000 students",
         "The 60s saw a 24% rise in political engagement among the 30-40 year old age group",
-        "How is the NCAA managing the fall out from yesterday's 7:00 game? Tune in to News at 5 later tonight!",
+        "How is the NCAA managing the fall out from yesterday's 7:00 game? Tune in to News at "
+        "5 later tonight!",
         "November 27th, 1934 came with the discovery of a diamond that was 48-kt!",
-        "7:25AM. Run 13mi, eat 2,000cal, nap for 10-15 minutes, and eat dinner with Dr. Amelia Fern at 7:00 tonight.",
-        "Growth Plan: #1: The WSL team will accrue NZ$150M this month, #2: we will continue contributing $1K in the 1st and 2nd quarters, #3: we will double that by 2024",
-        "It took 3 years, but 2018 marked the beginning of a new AAA era when Dr. Ruth Kinton became the 1st woman to take over the prestigious position of C.E.O.",
+        "7:25AM. Run 13mi, eat 2,000cal, nap for 10-15 minutes, and eat dinner with Dr. Amelia "
+        "Fern at 7:00 tonight.",
+        "Growth Plan: #1: The WSL team will accrue NZ$150M this month, #2: we will continue "
+        "contributing $1K in the 1st and 2nd quarters, #3: we will double that by 2024",
+        "It took 3 years, but 2018 marked the beginning of a new AAA era when Dr. Ruth Kinton "
+        "became the 1st woman to take over the prestigious position of C.E.O.",
     ]
     out = [
-        "Do you want to learn how to turn two hundred dollars into a grand!? Call one, eight hundred, MONEY, four, ME now or visit w w w dot money four me dot com slash now!",
-        "It is estimated that by twenty ten, one point two trillion dollars will be spent on education reform for two hundred and fifty million students",
-        "The sixties saw a twenty-four percent rise in political engagement among the thirty to forty year old age group",
-        "How is the N C double A managing the fall out from yesterday's seven o'clock game? Tune in to News at five later tonight!",
-        "November twenty-seventh, nineteen thirty-four came with the discovery of a diamond that was forty-eight karats!",
-        "seven twenty-five AM. Run thirteen miles, eat two thousand calories, nap for ten to fifteen minutes, and eat dinner with Doctor Amelia Fern at seven o'clock tonight.",
-        "Growth Plan: number one: The WSL team will accrue one hundred and fifty million New Zealand dollars this month, number two: we will continue contributing one thousand dollars in the first and second quarters, number three: we will double that by twenty twenty-four",
-        "It took three years, but twenty eighteen marked the beginning of a new Triple A era when Doctor Ruth Kinton became the first woman to take over the prestigious position of CEO.",
+        "Do you want to learn how to turn two hundred dollars into a grand!? Call one, eight "
+        "hundred, MONEY, four, ME now or visit w w w dot money four me dot com slash now!",
+        "It is estimated that by twenty ten, one point two trillion dollars will be spent on "
+        "education reform for two hundred and fifty million students",
+        "The sixties saw a twenty-four percent rise in political engagement among the thirty to "
+        "forty year old age group",
+        "How is the N C double A managing the fall out from yesterday's seven o'clock game? Tune "
+        "in to News at five later tonight!",
+        "November twenty-seventh, nineteen thirty-four came with the discovery of a diamond that "
+        "was forty-eight karats!",
+        "seven twenty-five AM. Run thirteen miles, eat two thousand calories, nap for ten to "
+        "fifteen minutes, and eat dinner with Doctor Amelia Fern at seven o'clock tonight.",
+        "Growth Plan: number one: The WSL team will accrue one hundred and fifty million New "
+        "Zealand dollars this month, number two: we will continue contributing one thousand "
+        "dollars in the first and second quarters, number three: we will double that by "
+        "twenty twenty-four",
+        "It took three years, but twenty eighteen marked the beginning of a new Triple A era "
+        "when Doctor Ruth Kinton became the first woman to take over the prestigious position of "
+        "CEO.",
     ]
 
     for text_in, text_out in zip(in_, out):

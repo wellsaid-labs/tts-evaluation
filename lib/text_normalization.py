@@ -88,7 +88,7 @@ def _num2words(num: str, ignore_zeros: bool = True, **kwargs) -> str:
     return " ".join(out)
 
 
-def reg_ex_or(vals: typing.Iterable[str], delimiter=r"|") -> str:
+def reg_ex_or(vals: typing.Iterable[str], delimiter: str = r"|") -> str:
     return delimiter.join(re.escape(v) for v in vals)
 
 
@@ -635,10 +635,10 @@ class RegExPatterns:
         r"\b"
     )
     TOLL_FREE_PHONE_NUMBERS: typing.Final[typing.Pattern[str]] = re.compile(
-        r"(?:\+?(\d{1,2}))"  # GROUP 1: The Country Code
-        r"[-. ]{0,1}"
+        r"(?:\+?(\d{1,2})[-. (]{1})"  # GROUP 1: The Country Code
         # TODO: For toll free numbers, consider being more restrictive, like so:
         # https://stackoverflow.com/questions/34586409/regular-expression-for-us-toll-free-number
+        # https://en.wikipedia.org/wiki/Toll-free_telephone_number
         r"\(?(\d{3})\)?"  # GROUP 2: The Area Code
         r"[-. )]{1,2}"
         r"([a-zA-Z0-9-\.]{1,10})"  # GROUP 3: The Line Number
