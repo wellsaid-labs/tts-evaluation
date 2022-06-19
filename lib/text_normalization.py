@@ -12,22 +12,22 @@ TODO: Handle...
       * / (silent, slash, context)
       * @ (at)
       * : (to - ratio context ?)
-TODO: Rename `text_utils` to something more specific like `text_normalization`?
 TODO: Group together all the text related modules. For example, we could create a folder to
 incapsulate `text.py`, `text_utils.py` and `non_standard_words.py`? Or we could just add everything
 to `text.py`?
-TODO: For clarity, define the regex pattern next to the normalization function to make skimming
-easier.
 TODO: First, run a sentencizer before classifying and normalizing the text. This should help ensure
 that end of sentence punctuation marks are preserved. For example, this will help in scenarios
 where a dotted phone number or abbreviation is at the end of a sentence.
-TODO: Add a top-level text normalization function.
 TODO: Add a classifier which checks if a string has any non-standard words. This should be
 helpful for finding test cases, and ensuring that nothing was missed. For example, it could look
 for the presence of numbers.
-TODO: For every `match.group` please specify the typing, so it's clear if the group is optional
-or not. For example, `currency: str = match.group(1)` and
-`trail: typing.Optional[str] = match.group(4)`.
+TODO: Accept a spaCy `Doc` as an arguement, use it's metadata to normalize non-standard words...
+
+We'd need to normalize at the `Token` rather than `Span` level so that each word as an embedding.
+It's also preferrable to use the embeddings prior to normalization because the text spaCy trained
+on is likely not verbalized. Furthermore, if working with `Token`s, we'd need to create a mechanism
+for rearranging them when verbalizing monetary values. Keep in mind, if we are using word embeddings
+prior to verbalization, we should do the same thing during training.
 """
 import logging
 import re
@@ -679,21 +679,36 @@ class RegExPatterns:
         r"(\.)"
         r"([a-z]{2,4})"  # Group 6: Domain extension
         r"\b"
-        r"([-a-zA-Z0-9@:%_\+.~#?&//=]*)"  # Group 7: Port, Path, Parameters and Anchor
+        r"([-a-zA-Z0-9@:%_\+.~#?&//=]*)"  # Group 7: Port, path, parameters and anchor
         r"\b"
     )
-    # TODO: Document the rest of these regexes.
-    FRACTIONS: typing.Final[typing.Pattern[str]] = re.compile(r"\b(\d+ )?(\d+)\/(\d+)\b")
-    GENERIC_DIGITS: typing.Final[typing.Pattern[str]] = re.compile(r"\b\d{1,3}(,\d{3})*(\.\d+)?\b")
-    ACRONYMS: typing.Final[typing.Pattern[str]] = re.compile(r"([A-Z]\.?){2,}|([a-z]\.){2,}")
-    MEASUREMENT_ABBREVIATIONS: typing.Final[typing.Pattern[str]] = re.compile(
-        r"(" + reg_ex_or(PLUS_OR_MINUS_PREFIX.keys()) + r")?"
-        r"(\d{1,3}(,\d{3})*(\.\d+)?)"
-        r"( |-)?"
-        r"((" + reg_ex_or(UNITS_ABBREVIATIONS.keys()) + r"))"
-        r"([ |.|!|?|,|;])"
+    FRACTIONS: typing.Final[typing.Pattern[str]] = re.compile(
+        r"\b"
+        r"(\d+ )?"  # GROUP 1 (Optional): Whole Number
+        r"(\d+)"  # GROUP 2: Numerator
+        r"\/"
+        r"(\d+)"  # GROUP 3: Denominator
+        r"\b"
     )
-    # TODO: Could this list be created from a Pythonic list?
+    GENERIC_DIGITS: typing.Final[typing.Pattern[str]] = re.compile(
+        r"\b"
+        r"\d{1,3}"
+        r"(,\d{3})*"  # GROUP 1: Thousands separator
+        r"(\.\d+)?"  # GROUP 2 (Optional): Decimal
+        r"\b"
+    )
+    ACRONYMS: typing.Final[typing.Pattern[str]] = re.compile(
+        r"([A-Z]\.?){2,}"  # GROUP 1: Upper case acronym
+        r"|"
+        r"([a-z]\.){2,}"  # GROUP 2: Lower case acronym
+    )
+    MEASUREMENT_ABBREVIATIONS: typing.Final[typing.Pattern[str]] = re.compile(
+        r"(" + reg_ex_or(PLUS_OR_MINUS_PREFIX.keys()) + r")?"  # GROUP 1 (Optional): Prefix symbol
+        r"(\d{1,3}(,\d{3})*(\.\d+)?)"  # GROUP 2 - 4: Number
+        r"( |-)?"  # GROUP 5 (Optional): Delimiter
+        r"(" + reg_ex_or(UNITS_ABBREVIATIONS.keys()) + r")"  # GROUP 6: Unit
+        r"\b"
+    )
     ROMAN_NUMERALS: typing.Final[typing.Pattern[str]] = re.compile(
         r"^(M{0,4}(CM|CD|D?C{0,3})(XC|XL|L?X{0,3})(IX|IV|V?I{0,3}))+$"
     )
