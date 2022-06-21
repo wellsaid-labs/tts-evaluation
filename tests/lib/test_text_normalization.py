@@ -189,7 +189,6 @@ def test_reg_ex_patterns_phone_numbers():
     # NOTE: These test cases were adapted from here:
     # https://stackoverflow.com/questions/16699007/regular-expression-to-match-standard-10-digit-phone-number
     match = RegExPatterns.PHONE_NUMBERS.fullmatch
-    assert match("18005551234")
     assert match("1 800 555 1234")
     assert match("+1 800 555-1234")
     assert match("+86 800 555 1234")
@@ -197,12 +196,14 @@ def test_reg_ex_patterns_phone_numbers():
     assert match("1 (800) 555-1234")
     assert match("(800)555-1234")
     assert match("(800) 555-1234")
-    assert match("(800)5551234")
     assert match("800-555-1234")
     assert match("800.555.1234")
     assert match("555-6482")  # No area code
-    assert match("180055512345")  # Too many digits
     assert match("86 800 555 1212")  # Non-NA country code doesn't have +
+    assert match("1 (800)  555-1234")  # Too many spaces
+    assert not match("180055512345")  # Too many digits
+    assert not match("(800)5551234")
+    assert not match("18005551234")
     assert not match("4 967 295,000")  # Canadian Number
     assert not match("800 555 1234x5678")  # Extension not supported
     assert not match("8005551234 x5678")  # Extension not supported
@@ -210,7 +211,6 @@ def test_reg_ex_patterns_phone_numbers():
     assert not match("+1 800 555x1234")  # Invalid delimiter
     assert not match("+867 800 555 1234")  # Country code too long
     assert not match("1-800-555-1234p")  # Invalid character
-    assert not match("1 (800)  555-1234")  # Too many spaces
     assert not match("800x555x1234")  # Invalid delimiter
 
 
@@ -625,6 +625,10 @@ def test__verbalize_title_abbreviations():
             "Mr. and Mrs. Frizzle are out for the day.",
             "Mister and Missus Frizzle are out for the day.",
         ),
+        (
+            "Jain - Mr Johnson (Lyrics Video) - YouTube",
+            "Jain - Mister Johnson (Lyrics Video) - YouTube",
+        ),
     ]
     assert_verbalized(tests, RegExPatterns.TITLE_ABBREVIATIONS, _verbalize_title_abbreviation)
 
@@ -701,6 +705,15 @@ def test_verbalize_text():
             "German four, nine six seven, two nine five, zero zero zero Italian four, nine six "
             "seven, two nine five, zero zero zero US-English four million, nine hundred and "
             "sixty-seven thousand, two hundred and ninety-five point zero zero",
+        ),
+        (
+            "[2-Pack, 1ft] Short USB Type C Cable, etguuds 4.2A Fast Charging USB-A to USB-C "
+            "Charger Cord Braided Compatible with Samsung Galaxy S20 S10 S9 S8 Plus S10E Note "
+            "20 10 9 8, A10e A20 A50 A51, Moto G7 G8",
+            "[two pack, one foot] Short USB Type C Cable, etguuds four point two A Fast "
+            "Charging USB-A to USB-C Charger Cord Braided Compatible with Samsung Galaxy S "
+            "twenty S ten S nine S eight Plus S ten E Note twenty ten nine eight, A ten e "
+            "A twenty A fifty A fifty-one , Moto G seven G eight",
         ),
     ]
     for text_in, text_out in tests:

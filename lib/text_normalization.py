@@ -83,9 +83,22 @@ def _num2words(num: str, ignore_zeros: bool = True, **kwargs) -> str:
     return " ".join(out)
 
 
-def reg_ex_or(vals: typing.Iterable[str], delimiter: str = r"|") -> str:
+_WORD_CHARACTER = re.compile("^\w$")
+
+_get_bound = lambda t: r"\B" if _WORD_CHARACTER.match(t) is None else r"\b"
+
+
+def _add_bounds(vals: typing.Iterable[str], left: bool = False, right: bool = False):
+    """Add the correct boundary characters to every sequence in `vals`."""
+    vals = [_get_bound(v[0]) + v for v in vals] if left else vals
+    return [v + _get_bound(v[-1]) for v in vals] if right else vals
+
+
+def _reg_ex_or(vals: typing.Iterable[str], delimiter: str = r"|", **kwargs) -> str:
     iter_ = sorted(vals, key=len, reverse=True)  # type: ignore
-    return f"(?:{delimiter.join(re.escape(v) for v in iter_)})"
+    iter_ = (re.escape(v) for v in iter_)
+    iter_ = _add_bounds(iter_, **kwargs)
+    return f"(?:{delimiter.join(iter_)})"
 
 
 def _verbalize_money(
@@ -380,63 +393,73 @@ def _verbalize_title_abbreviation(abbr: str) -> str:
     return TITLES_PERSON[key] if key in TITLES_PERSON else abbr
 
 
-_TIME_PERIOD = r"(\s?[ap]\.?m\.?)"  # Time period (e.g. AM, PM, a.m., p.m., am, pm)
-_PHONE_NUMBER_DELIMITER = r"[-. ]{0,1}"
+# TODO: Not add spaces between letters
+
+_TIME_PERIOD = r"(\s?[ap]\.?m\b(?:\.\B)?)"  # Time period (e.g. AM, PM, a.m., p.m., am, pm)
 # TODO: Is this just a generic digit?
-_DIGIT = r"\d{1,3}(?:,\d{3})*(?:\.\d+)?"
-_NUMBER_RANGE_SUFFIX = rf"(?:\s?[{reg_ex_or(HYPHENS, '')}]\s?{_DIGIT})"
+# TODO: What about a digit without commas?
+_DIGIT = r"\d(?:\d|\,\d)*(?:\.)?[\d]*"
+_NUMBER_RANGE_SUFFIX = rf"(?:\s?[{_reg_ex_or(HYPHENS, '')}]\s?{_DIGIT})"
 _MAYBE_NUMBER_RANGE = rf"(?:{_DIGIT}{_NUMBER_RANGE_SUFFIX}?)"
 _NUMBER_RANGE = rf"(?:{_DIGIT}{_NUMBER_RANGE_SUFFIX})"
+_COUNTRY_CODE = r"\+?\b\d{1,2}[-. ]*"
+_AREA_CODE = r"\(?\b\d{3}\b\)?[-. ]*"
+_PHONE_DELIMITER = r"[-. ]{1}"
 
 # TODO: Handle the various thousand seperators, like dots or spaces.
+# TODO: Add boundary characters to each regex, so it doesn't accidently pick up something in the
+# middle of a word.
 
 
 class RegExPatterns:
+    # NOTE: Each RegEx ends with a `\b` or `\B` to ensure there is no partial matches.
 
     MONEY: typing.Final[typing.Pattern[str]] = re.compile(
-        rf"({reg_ex_or(CURRENCIES.keys())})"  # GROUP 1: Currency prefix
+        rf"({_reg_ex_or(CURRENCIES.keys(), left=True)})"  # GROUP 1: Currency prefix
         rf"({_DIGIT})"  # GROUP 2: Numerical value
         r"([kmbt]{0,2})"  # GROUP 3: Unit
         # GROUP 4 (Optional): Currency suffix
-        rf"(\b\s(?:{reg_ex_or(MONEY_SUFFIX + LARGE_NUMBERS + LARGE_FICTIOUS_NUMBERS)}))?"
+        rf"(\b\s(?:{_reg_ex_or(MONEY_SUFFIX + LARGE_NUMBERS + LARGE_FICTIOUS_NUMBERS)}))?"
         r"\b",  # Word boundary
         flags=re.IGNORECASE,
     )
     ORDINALS: typing.Final[typing.Pattern[str]] = re.compile(
-        r"([0-9]{0,3}(?:[,]{0,1}[0-9])+)"  # GROUP 1: Numerical value
-        rf"{reg_ex_or(ORDINAL_SUFFIXES)}"  # Ordinal suffix
+        r"\b([0-9]{0,3}(?:[,]{0,1}[0-9])+)"  # GROUP 1: Numerical value
+        rf"{_reg_ex_or(ORDINAL_SUFFIXES)}\b"  # Ordinal suffix
     )
     TIMES: typing.Final[typing.Pattern[str]] = re.compile(
-        r"(\d{1,2})"  # GROUP 1: Hours
+        r"\b(\d{1,2})"  # GROUP 1: Hours
         r":"
         r"([0-5]{1}[0-9]{1})"  # GROUP 2: Minutes
-        rf"{_TIME_PERIOD}?",  # GROUP 3 (Optional): Time period
+        rf"(?:{_TIME_PERIOD}|\b)",  # GROUP 3 (Optional): Time period
         flags=re.IGNORECASE,
     )
     ABBREVIATED_TIMES: typing.Final[typing.Pattern[str]] = re.compile(
-        r"(\d{1,2})" rf"{_TIME_PERIOD}",  # GROUP 1: Hours, GROUP 2: Time period
+        r"\b(\d{1,2})" rf"{_TIME_PERIOD}",  # GROUP 1: Hours, GROUP 2: Time period
         flags=re.IGNORECASE,
     )
+    # TODO: If there is a country code, there must be an area code, right?
     PHONE_NUMBERS: typing.Final[typing.Pattern[str]] = re.compile(
         # NOTE: This Regex was adapted from here:
         # https://stackoverflow.com/questions/16699007/regular-expression-to-match-standard-10-digit-phone-number
-        r"((?:\+?\d{1,2}"
-        rf"{_PHONE_NUMBER_DELIMITER})?"  # (Optional) The Country Code
-        r"(?:\(?\d{3}\)?"
-        rf"{_PHONE_NUMBER_DELIMITER})?"  # (Optional) The Area Code
+        r"("
+        rf"(?:{_COUNTRY_CODE})?"  # (Optional) The Country Code
+        rf"(?:{_AREA_CODE})?"  # (Optional) The Area Code
         r"\d{3}"  # The Exchange Number
-        rf"{_PHONE_NUMBER_DELIMITER}"
-        r"\d{4})"  # The Subscriber Number
+        rf"{_PHONE_DELIMITER}"
+        r"\d{4}"  # The Subscriber Number
+        r")"
         r"\b"
     )
     TOLL_FREE_PHONE_NUMBERS: typing.Final[typing.Pattern[str]] = re.compile(
-        r"((?:\+?\d{1,2}[-. (]{1})"  # The Country Code
+        r"("
+        rf"{_COUNTRY_CODE}"  # The Country Code
         # TODO: For toll free numbers, consider being more restrictive, like so:
         # https://stackoverflow.com/questions/34586409/regular-expression-for-us-toll-free-number
         # https://en.wikipedia.org/wiki/Toll-free_telephone_number
-        r"\(?\d{3}\)?"  # (Optional) The Area Code
-        r"[-. )]{1,2}"
-        r"[a-zA-Z0-9-\.]{1,10})"  # The Line Number
+        rf"{_AREA_CODE}"  # The Area Code
+        r"[a-zA-Z0-9-\.]{1,10}"
+        r")"  # The Line Number
         r"\b"
     )
     YEARS: typing.Final[typing.Pattern[str]] = re.compile(
@@ -447,17 +470,18 @@ class RegExPatterns:
     )
     # fmt: off
     DECADES: typing.Final[typing.Pattern[str]] = re.compile(
-        r"(?:\')?"  # (Optional) Contraction (e.g. '90)
-        r"([0-9]{1,3}0)"  # GROUP 1: Year
-        r"s",
+        r"(?:\B\')?"  # (Optional) Contraction (e.g. '90)
+        r"\b([0-9]{1,3}0)"  # GROUP 1: Year
+        r"s\b",
     )
     # fmt: on
-    PERCENTS: typing.Final[typing.Pattern[str]] = re.compile(rf"\b({_MAYBE_NUMBER_RANGE}%)")
-    NUMBER_SIGNS: typing.Final[typing.Pattern[str]] = re.compile(rf"(#{_MAYBE_NUMBER_RANGE}\b)")
+    PERCENTS: typing.Final[typing.Pattern[str]] = re.compile(rf"\b({_MAYBE_NUMBER_RANGE}%\B)")
+    NUMBER_SIGNS: typing.Final[typing.Pattern[str]] = re.compile(rf"(\B#{_MAYBE_NUMBER_RANGE}\b)")
     NUMBER_RANGE: typing.Final[typing.Pattern[str]] = re.compile(rf"(\b{_NUMBER_RANGE}\b)")
     URLS: typing.Final[typing.Pattern[str]] = re.compile(
         # NOTE: Learn more about the autonomy of a URL here:
         # https://developer.mozilla.org/en-US/docs/Learn/Common_questions/What_is_a_URL
+        r"\b"
         r"(https?:\/\/)?"  # GROUP 1 (Optional): Protocol
         r"(www\.)?"  # GROUP 2 (Optional): World wide web subdomain
         r"([a-zA-Z]+\.)?"  # Group 3 (Optional): Other subdomain
@@ -479,20 +503,21 @@ class RegExPatterns:
     GENERIC_DIGIT: typing.Final[typing.Pattern[str]] = re.compile(rf"({_DIGIT})")
     # fmt: off
     ACRONYMS: typing.Final[typing.Pattern[str]] = re.compile(
-        r"((?:[A-Z]\.?){2,}"  # Upper case acronym
+        r"\b((?:[A-Z]){2,}\b"  # Upper case acronym
         r"|"
-        r"(?:[a-z]\.){2,})"  # Lower case acronym
+        r"(?:[A-z]\.){2,}\B)"  # Lower case acronym
     )
     # fmt: on
     MEASUREMENT_ABBREVIATIONS: typing.Final[typing.Pattern[str]] = re.compile(
-        r"(" + reg_ex_or(PLUS_OR_MINUS_PREFIX.keys()) + r")?"  # GROUP 1 (Optional): Prefix symbol
-        rf"({_DIGIT})"  # GROUP 2: Number
+        # GROUP 1 (Optional): Prefix symbol
+        rf"(\B{_reg_ex_or(PLUS_OR_MINUS_PREFIX.keys())})?"
+        rf"(\b{_DIGIT})"  # GROUP 2: Number
         r"[ -]{0,}"  # Delimiter
         # GROUP 3: Unit
-        r"(" + reg_ex_or(UNITS_ABBREVIATIONS.keys()) + r")"
+        rf"({_reg_ex_or(UNITS_ABBREVIATIONS.keys(), right=True)})"
     )
     TITLE_ABBREVIATIONS: typing.Final[typing.Pattern[str]] = re.compile(
-        rf"\b({reg_ex_or(TITLES_PERSON.keys())}(?:\.|\b))",
+        rf"\b({_reg_ex_or(TITLES_PERSON.keys())}(?:\.|\b))",
         flags=re.IGNORECASE,
     )
 
