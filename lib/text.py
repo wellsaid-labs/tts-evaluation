@@ -686,7 +686,6 @@ def load_en_core_web_sm(*args, **kwargs):
     return load_spacy_nlp("en_core_web_sm", *args, **kwargs)
 
 
-@functools.lru_cache(maxsize=None)
 def load_en_english(*args, **kwargs) -> Language:
     """Load and cache in memory a spaCy `Language` object."""
     return spacy_en.English(*args, **kwargs)

@@ -135,147 +135,147 @@ MONEY_ABBREVIATIONS: typing.Final[typing.Dict[str, str]] = {
 
 # TODO: Use `tuple` instead of `list` because `tuple` cannot be modified like a `list` can.
 
-LENGTH: typing.Final[typing.Dict[str, typing.List[str]]] = {
-    "in. ": ["inch", "inches"],  # inches is tricky because 'in' is a word
-    "ft": ["foot", "feet"],
-    "yd": ["yard", "yards"],
-    "mi": ["mile", "miles"],
-    "mm": ["millimeter", "millimeters"],
-    "cm": ["centimeter", "centimeters"],
-    "m": ["meter", "meters"],
-    "km": ["kilometer", "kilometers"],
+LENGTH: typing.Final[typing.Dict[str, typing.Tuple[str, str]]] = {
+    "in. ": ("inch", "inches"),  # inches is tricky because 'in' is a word
+    "ft": ("foot", "feet"),
+    "yd": ("yard", "yards"),
+    "mi": ("mile", "miles"),
+    "mm": ("millimeter", "millimeters"),
+    "cm": ("centimeter", "centimeters"),
+    "m": ("meter", "meters"),
+    "km": ("kilometer", "kilometers"),
 }
 
-AREA: typing.Final[typing.Dict[str, typing.List[str]]] = {
-    "sq in": ["square inch", "square inches"],
-    "sq ft": ["square foot", "square feet"],
-    "sq yd": ["square yard", "square yards"],
-    "sq mi": ["square mile", "square miles"],
-    "ac": ["acre", "acres"],
-    "ha": ["hectare", "hectares"],
+AREA: typing.Final[typing.Dict[str, typing.Tuple[str, str]]] = {
+    "sq in": ("square inch", "square inches"),
+    "sq ft": ("square foot", "square feet"),
+    "sq yd": ("square yard", "square yards"),
+    "sq mi": ("square mile", "square miles"),
+    "ac": ("acre", "acres"),
+    "ha": ("hectare", "hectares"),
 }
 
-VOLUME: typing.Final[typing.Dict[str, typing.List[str]]] = {
-    "cu mi": ["cubic mile", "cubic miles"],
-    "cu yd": ["cubic yard", "cubic yards"],
-    "cu ft": ["cubic foot", "cubic feet"],
-    "cu in": ["cubic inch", "cubic inches"],
+VOLUME: typing.Final[typing.Dict[str, typing.Tuple[str, str]]] = {
+    "cu mi": ("cubic mile", "cubic miles"),
+    "cu yd": ("cubic yard", "cubic yards"),
+    "cu ft": ("cubic foot", "cubic feet"),
+    "cu in": ("cubic inch", "cubic inches"),
 }
 
-LIQUID_VOLUME: typing.Final[typing.Dict[str, typing.List[str]]] = {
-    "tsp": ["teaspoon", "teaspoons"],
-    # "t": ["teaspoon", "teaspoons"],       # RARE
-    "tbs": ["tablespoon", "tablespoons"],
-    "tbsp": ["tablespoon", "tablespoons"],
-    # "T": ["tablespoon", "tablespoons"],   # RARE, Watch out for 'Tons'
-    # "c": ["cup", "cups"],                 # RARE
-    "fl oz": ["fluid ounce", "fluid ounces"],
-    "qt": ["quart", "quarts"],
-    "pt": ["pint", "pints"],
-    "gal": ["gallon", "gallons"],
-    "mL": ["milliliter", "milliliters"],
-    "L": ["liter", "liters"],
-    "kL": ["kiloliter", "kiloliters"],
+LIQUID_VOLUME: typing.Final[typing.Dict[str, typing.Tuple[str, str]]] = {
+    "tsp": ("teaspoon", "teaspoons"),
+    # "t": ("teaspoon", "teaspoons"),       # RARE
+    "tbs": ("tablespoon", "tablespoons"),
+    "tbsp": ("tablespoon", "tablespoons"),
+    # "T": ("tablespoon", "tablespoons"),   # RARE, Watch out for 'Tons'
+    # "c": ("cup", "cups"),                 # RARE
+    "fl oz": ("fluid ounce", "fluid ounces"),
+    "qt": ("quart", "quarts"),
+    "pt": ("pint", "pints"),
+    "gal": ("gallon", "gallons"),
+    "mL": ("milliliter", "milliliters"),
+    "L": ("liter", "liters"),
+    "kL": ("kiloliter", "kiloliters"),
 }
 
-WEIGHT_MASS: typing.Final[typing.Dict[str, typing.List[str]]] = {
-    "lb": ["pound", "pounds"],
-    "oz": ["ounce", "ounces"],
-    "mg": ["milligram", "milligrams"],
-    "g": ["gram", "grams"],
-    "kg": ["kilogram", "kilograms"],
-    "MT": ["metric ton", "metric tons"],
-    "ct": ["carat", "carats"],
-    "kt": ["karat", "karats"],
+WEIGHT_MASS: typing.Final[typing.Dict[str, typing.Tuple[str, str]]] = {
+    "lb": ("pound", "pounds"),
+    "oz": ("ounce", "ounces"),
+    "mg": ("milligram", "milligrams"),
+    "g": ("gram", "grams"),
+    "kg": ("kilogram", "kilograms"),
+    "MT": ("metric ton", "metric tons"),
+    "ct": ("carat", "carats"),
+    "kt": ("karat", "karats"),
 }
 
-SPEED: typing.Final[typing.Dict[str, typing.List[str]]] = {
-    "MPH": ["mile per hour", "miles per hour"],
-    "mph": ["mile per hour", "miles per hour"],
-    "kph": ["kilometer per hour", "kilometers per hour"],
-    "rpm": ["revolution per minute", "revolutions per minute"],
-    "kn": ["knot", "knots"],
-    "m/s": ["meter per second", "meters per second"],
-    "ft/s": ["foot per second", "feet per second"],
+SPEED: typing.Final[typing.Dict[str, typing.Tuple[str, str]]] = {
+    "MPH": ("mile per hour", "miles per hour"),
+    "mph": ("mile per hour", "miles per hour"),
+    "kph": ("kilometer per hour", "kilometers per hour"),
+    "rpm": ("revolution per minute", "revolutions per minute"),
+    "kn": ("knot", "knots"),
+    "m/s": ("meter per second", "meters per second"),
+    "ft/s": ("foot per second", "feet per second"),
 }
 
-TEMPERATURE: typing.Final[typing.Dict[str, typing.List[str]]] = {
-    "°F": ["degree Fahrenheit", "degrees Fahrenheit"],
-    "°C": ["degree Celsius", "degrees Celsius"],
-    # "K": ["Kelvin", "Kelvin"],           # Too rare; K is much more often associated with 4K, 401K
+TEMPERATURE: typing.Final[typing.Dict[str, typing.Tuple[str, str]]] = {
+    "°F": ("degree Fahrenheit", "degrees Fahrenheit"),
+    "°C": ("degree Celsius", "degrees Celsius"),
+    # "K": ("Kelvin", "Kelvin"),           # Too rare; K is much more often associated with 4K, 401K
 }
 
-ENERGY: typing.Final[typing.Dict[str, typing.List[str]]] = {
-    # "W": ["watt", "watts"],         # RARE
-    "mW": ["megawatt", "megawatts"],
-    "kW": ["kilowatt", "kilowatts"],
-    "kWh": ["kilowatt-hour", "kilowatt-hours"],
-    # "A": ["ampere", "amperes"],     # Too vague at this point, often used for labeling "1A, 1B..."
-    "Hz": ["hertz", "hertz"],
-    "mHz": ["megahertz", "megahertz"],
-    "kHz": ["kilohertz", "kilohertz"],
-    "GHz": ["gigahertz", "gigahertz"],
-    # "N": ["newton", "newtons"],     # RARE
-    "Pa": ["pascal", "pascals"],
-    # "J": ["joule", "joules"],       # RARE
-    # "V": ["volt", "volts"],         # RARE
-    "cal": ["calorie", "calories"],
-    "lb-ft": ["pount-foot", "pound-feet"],
+ENERGY: typing.Final[typing.Dict[str, typing.Tuple[str, str]]] = {
+    # "W": ("watt", "watts"),         # RARE
+    "mW": ("megawatt", "megawatts"),
+    "kW": ("kilowatt", "kilowatts"),
+    "kWh": ("kilowatt-hour", "kilowatt-hours"),
+    # "A": ("ampere", "amperes"),     # Too vague at this point, often used for labeling "1A, 1B..."
+    "Hz": ("hertz", "hertz"),
+    "mHz": ("megahertz", "megahertz"),
+    "kHz": ("kilohertz", "kilohertz"),
+    "GHz": ("gigahertz", "gigahertz"),
+    # "N": ("newton", "newtons"),     # RARE
+    "Pa": ("pascal", "pascals"),
+    # "J": ("joule", "joules"),       # RARE
+    # "V": ("volt", "volts"),         # RARE
+    "cal": ("calorie", "calories"),
+    "lb-ft": ("pount-foot", "pound-feet"),
 }
 
-MEMORY: typing.Final[typing.Dict[str, typing.List[str]]] = {
-    "b": ["bit", "bits"],
-    # "B": ["byte", "bytes"],         # Too vague at this point, often used for labeling "1A, 1B..."
-    "KB": ["kilobyte", "kilobytes"],
-    "MB": ["megabyte", "megabytes"],
-    "GB": ["gigabyte", "gigabytes"],
+MEMORY: typing.Final[typing.Dict[str, typing.Tuple[str, str]]] = {
+    "b": ("bit", "bits"),
+    # "B": ("byte", "bytes"),         # Too vague at this point, often used for labeling "1A, 1B..."
+    "KB": ("kilobyte", "kilobytes"),
+    "MB": ("megabyte", "megabytes"),
+    "GB": ("gigabyte", "gigabytes"),
 }
 
-TIME: typing.Final[typing.Dict[str, typing.List[str]]] = {
-    "sec": ["second", "seconds"],
-    "min": ["minute", "minutes"],
-    "hr": ["hour", "hours"],
-    "wk": ["week", "weeks"],
-    "mo": ["month", "months"],
-    "yr": ["year", "years"],
-    "yo": ["year-old", "year-old"],
+TIME: typing.Final[typing.Dict[str, typing.Tuple[str, str]]] = {
+    "sec": ("second", "seconds"),
+    "min": ("minute", "minutes"),
+    "hr": ("hour", "hours"),
+    "wk": ("week", "weeks"),
+    "mo": ("month", "months"),
+    "yr": ("year", "years"),
+    "yo": ("year-old", "year-old"),
 }
 
-ETCETERA: typing.Final[typing.Dict[str, typing.List[str]]] = {
-    "doz": ["dozen", "dozens"],
-    "rad": ["radian", "radians"],
-    "dB": ["decibel", "decibels"],
+ETCETERA: typing.Final[typing.Dict[str, typing.Tuple[str, str]]] = {
+    "doz": ("dozen", "dozens"),
+    "rad": ("radian", "radians"),
+    "dB": ("decibel", "decibels"),
 }
 
-SUPERSCRIPT: typing.Final[typing.Dict[str, typing.List[str]]] = {
-    "in²": ["square inch", "square inches"],
-    "ft²": ["square foot", "square feet"],
-    "yd²": ["square yard", "square yards"],
-    "mi²": ["square mile", "square miles"],
-    "cm²": ["square centimeter", "square centimeters"],
-    "m²": ["square meter", "square meters"],
-    "km²": ["square kilometer", "square kilometers"],
-    "mi³": ["cubic mile", "cubic miles"],
-    "yd³": ["cubic yard", "cubic yards"],
-    "ft³": ["cubic foot", "cubic feet"],
-    "in³": ["cubic inch", "cubic inches"],
-    "cm³": ["cubic centimeter", "cubic centimeters"],
-    "m³": ["cubic meter", "cubic meters"],
-    "km³": ["cubic kilometer", "cubic kilometers"],
-    "m/s²": ["meter per second squared", "meters per second squared"],
-    "ft/s²": ["foot per second squared", "feet per second squared"],
+SUPERSCRIPT: typing.Final[typing.Dict[str, typing.Tuple[str, str]]] = {
+    "in²": ("square inch", "square inches"),
+    "ft²": ("square foot", "square feet"),
+    "yd²": ("square yard", "square yards"),
+    "mi²": ("square mile", "square miles"),
+    "cm²": ("square centimeter", "square centimeters"),
+    "m²": ("square meter", "square meters"),
+    "km²": ("square kilometer", "square kilometers"),
+    "mi³": ("cubic mile", "cubic miles"),
+    "yd³": ("cubic yard", "cubic yards"),
+    "ft³": ("cubic foot", "cubic feet"),
+    "in³": ("cubic inch", "cubic inches"),
+    "cm³": ("cubic centimeter", "cubic centimeters"),
+    "m³": ("cubic meter", "cubic meters"),
+    "km³": ("cubic kilometer", "cubic kilometers"),
+    "m/s²": ("meter per second squared", "meters per second squared"),
+    "ft/s²": ("foot per second squared", "feet per second squared"),
 }
 
-OTHER: typing.Final[typing.Dict[str, typing.List[str]]] = {
-    # '"': ["inch", "inches"],              # Too vague, quotes are often used for emphasis instead.
-    "″": ["inch", "inches"],
-    # "'": ["foot", "feet"],                # Too vague, quotes are often used for emphasis instead.
-    "′": ["foot", "feet"],
-    "°": ["degree", "degrees"],
-    "Ω": ["ohm", "ohms"],
+OTHER: typing.Final[typing.Dict[str, typing.Tuple[str, str]]] = {
+    # '"': ("inch", "inches"),              # Too vague, quotes are often used for emphasis instead.
+    "″": ("inch", "inches"),
+    # "'": ("foot", "feet"),                # Too vague, quotes are often used for emphasis instead.
+    "′": ("foot", "feet"),
+    "°": ("degree", "degrees"),
+    "Ω": ("ohm", "ohms"),
 }
 
-UNITS_ABBREVIATIONS = {
+UNITS_ABBREVIATIONS: typing.Dict[str, typing.Tuple[str, str]] = {
     **LENGTH,
     **AREA,
     **VOLUME,
@@ -290,7 +290,6 @@ UNITS_ABBREVIATIONS = {
     **SUPERSCRIPT,
     **OTHER,
 }
-UNITS_ABBREVIATIONS = {k: v for k, v in sorted(UNITS_ABBREVIATIONS.items(), key=len, reverse=True)}
 
 
 PLUS_OR_MINUS_PREFIX: typing.Final[typing.Dict[str, str]] = {
@@ -305,29 +304,29 @@ PLUS_OR_MINUS_PREFIX: typing.Final[typing.Dict[str, str]] = {
 # PERSON TITLES #
 #################
 
-TITLES_PERSON: typing.Final[typing.Dict[str, str]] = {
-    "Mr": "Mister",
-    "Ms": "Miz",
-    "Mrs": "Missus",
-    "Dr": "Doctor",
-    "Prof": "Professor",
-    "Rev": "Reverend",
-    "Fr": "Father",
-    "Pr": "Pastor",
-    "Br": "Brother",
-    "Sr": "Sister",
-    "St": "Saint",
-    "Pres": "President",
-    "VP": "Vice President",
-    "Hon": "Honorable",
-    "Rep": "Representative",
-    "Sen": "Senator",
-    "Adm": "Admiral",
-    "Capt": "Captain",
-    "Gen": "General",
-    "Col": "Colonel",
-    "Lt": "Lieutenant",
-    "Maj": "Major",
+TITLES_PERSON_PRX: typing.Final[typing.Dict[str, str]] = {
+    "mr": "Mister",
+    "ms": "Miz",
+    "mrs": "Missus",
+    "dr": "Doctor",
+    "prof": "Professor",
+    "rev": "Reverend",
+    "fr": "Father",
+    "pr": "Pastor",
+    "br": "Brother",
+    "sr": "Sister",
+    "st": "Saint",
+    "pres": "President",
+    "vp": "Vice President",
+    "hon": "Honorable",
+    "rep": "Representative",
+    "sen": "Senator",
+    "adm": "Admiral",
+    "capt": "Captain",
+    "gen": "General",
+    "col": "Colonel",
+    "lt": "Lieutenant",
+    "maj": "Major",
 }
 
 ###################
@@ -335,10 +334,12 @@ TITLES_PERSON: typing.Final[typing.Dict[str, str]] = {
 ###################
 
 TITLES_PERSON_SFX: typing.Final[typing.Dict[str, str]] = {
-    "Sr": "Senior",
-    "Jr": "Junior",
-    "Esq": "Esquire",
+    "sr": "Senior",
+    "jr": "Junior",
+    "esq": "Esquire",
 }
+
+TITLES_PERSON = {**TITLES_PERSON_PRX, **TITLES_PERSON_SFX}
 
 ############
 # ACRONYMS #
@@ -466,14 +467,4 @@ SYMBOLS_VERBALIZED: typing.Final[typing.Dict[str, str]] = {
     "±": "plus or minus",
 }
 
-HYPHENS = ["-", "—", "–"]
-
-__all__ = [
-    "CURRENCIES",
-    "MONEY_ABBREVIATIONS",
-    "UNITS_ABBREVIATIONS",
-    "ACRONYMS",
-    "SYMBOLS_VERBALIZED",
-    "TITLES_PERSON",
-    "TITLES_PERSON_SFX",
-]
+HYPHENS = ("-", "—", "–")
