@@ -315,7 +315,7 @@ TITLES_PERSON_PRX: typing.Final[typing.Dict[str, str]] = {
     "pr": "Pastor",
     "br": "Brother",
     "sr": "Sister",
-    "st": "Saint",
+    # "st": "Saint",    # Rare, 'st' is more commonly denoting 'street'
     "pres": "President",
     "vp": "Vice President",
     "hon": "Honorable",

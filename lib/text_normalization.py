@@ -34,7 +34,7 @@ import logging
 import re
 import typing
 
-from num2words import num2words as __num2words
+from num2words import num2words
 
 from lib.non_standard_words import (
     ACRONYMS,
@@ -65,7 +65,7 @@ def _num2words(num: str, ignore_zeros: bool = True, **kwargs) -> str:
     num = num.replace(",", "")
 
     if ignore_zeros:
-        return __num2words(num, **kwargs)
+        return num2words(num, **kwargs)
 
     lstripped = num.lstrip("0")  # NOTE: Handle leading zeros
     out = ["zero" for _ in range(len(num) - len(lstripped))]
@@ -73,12 +73,12 @@ def _num2words(num: str, ignore_zeros: bool = True, **kwargs) -> str:
         stripped = lstripped.rstrip("0")  # NOTE: Handle trailing zeros
         zeros = ["zero" for _ in range(len(lstripped) - len(stripped))]
         if stripped != ".":
-            out.append(__num2words(stripped, **kwargs))
+            out.append(num2words(stripped, **kwargs))
         if stripped[-1] == ".":
             out.append("point")
         out.extend(zeros)
     elif len(lstripped) > 0:
-        out.append(__num2words(lstripped, **kwargs))
+        out.append(num2words(lstripped, **kwargs))
 
     return " ".join(out)
 
@@ -118,9 +118,15 @@ def _verbalize_money(
     # CASE: Big Money ($1.2B, $1.2 billion, etc.)
     if abbr:
         abbr = abbr.upper()
-        return " ".join([_num2words(money), MONEY_ABBREVIATIONS[abbr], CURRENCIES[currency][1]])
+        return " ".join(
+            [
+                _num2words(money, ignore_zeros=False),
+                MONEY_ABBREVIATIONS[abbr],
+                CURRENCIES[currency][1],
+            ]
+        )
     elif trail:
-        return _num2words(money) + trail + " " + CURRENCIES[currency][1]
+        return _num2words(money, ignore_zeros=False) + trail + " " + CURRENCIES[currency][1]
 
     # CASE: Standard ($1.20, $4,000, etc.)
     tokens = money.split(".")
@@ -146,36 +152,36 @@ def _verbalize_ordinal(value: str) -> str:
     return _num2words(_NON_DIGIT_PATTERN.sub("", value), ordinal=True)
 
 
-def _verbalize_time_period(suffix: typing.Optional[str]):
+def _verbalize_time_period(period: typing.Optional[str]):
     """
     Args:
-        suffix (e.g. "PM", "a.m.")
+        period (e.g. "PM", "a.m.")
     """
-    return "" if suffix is None else suffix.replace(".", "").strip().upper()
+    return "" if period is None else period.replace(".", "").strip().upper()
 
 
-def _verbalize_time(hour: str, minute: str, suffix: typing.Optional[str], o_clock: str = "") -> str:
+def _verbalize_time(hour: str, minute: str, period: typing.Optional[str], o_clock: str = "") -> str:
     """Verbalize a time (e.g. "10:04PM", "2:13 a.m.").
 
     Args:
         hours (e.g. "10")
         minute (e.g. "04")
-        suffix (e.g. "PM", "a.m.")
+        period (e.g. "PM", "a.m.")
         o_clock: Phrasing preference of 'o'clock' for on-the-hour times.
     """
     minute = o_clock if minute == "00" else _num2words(minute)
-    suffix = _verbalize_time_period(suffix)
-    return " ".join((s for s in (_num2words(hour), minute, suffix) if len(s) > 0))
+    period = _verbalize_time_period(period)
+    return " ".join((s for s in (_num2words(hour), minute, period) if len(s) > 0))
 
 
-def _verbalize_abbreviated_time(hour: str, suffix: str) -> str:
+def _verbalize_abbreviated_time(hour: str, period: str) -> str:
     """Verbalize a abbreviated time (e.g. "10PM", "10 p.m.").
 
     Args:
         hours (e.g. "10")
-        suffix (e.g. "PM", "a.m.")
+        period (e.g. "PM", "a.m.")
     """
-    return f"{_num2words(hour)} {_verbalize_time_period(suffix)}"
+    return f"{_num2words(hour)} {_verbalize_time_period(period)}"
 
 
 _LETTER_PATTERN = re.compile(r"[A-Za-z]")
@@ -188,7 +194,7 @@ def _get_digits(text):
 
 
 def _verbalize_phone_number(phone_number: str) -> str:
-    """Verbalize a phone numbers (e.g. 1.800.573.1313, (123) 555-1212)
+    """Verbalize a phone number (e.g. 1.800.573.1313, (123) 555-1212)
 
     TODO: Support "oh" instead of "zero" because it's more typical based on this source:
     https://www.woodwardenglish.com/lesson/telephone-numbers-in-english/
@@ -199,14 +205,27 @@ def _verbalize_phone_number(phone_number: str) -> str:
     digits = []
     n: str
     for n in _ALPHANUMERIC_PATTERN.findall(phone_number):
-        if len(n) > 0:
-            if n == "800":
-                digits.append(_num2words(n))
-            elif _LETTER_PATTERN.search(n) is not None:
-                digits.append(n)
-            else:
-                digits.append(" ".join(list(map(_num2words, list(n)))))
+        if n == "800":
+            digits.append(_num2words(n))
+        elif _LETTER_PATTERN.search(n) is not None:
+            digits.append(n)
+        else:
+            digits.append(" ".join(list(map(_num2words, list(n)))))
     return ", ".join(digits)
+
+
+def _verbalize_alternative_phone_number(call_verb: str, phone_number: str) -> str:
+    """Verbalize a phone number indicated by 'call' or 'dial' (e.g. calling 911)
+
+    Args:
+        call_verb (e.g. Call, dialing)
+        phone_number (e.g. 911, 5-4332)
+    """
+    digits = []
+    n: str
+    for n in _ALPHANUMERIC_PATTERN.findall(phone_number):
+        digits.append(" ".join(list(map(_num2words, list(n)))))
+    return call_verb + ", ".join(digits)
 
 
 num2year = lambda n: _num2words(n, lang="en", to="year")
@@ -263,7 +282,7 @@ def _verbalize_url(
     subdomain: typing.Optional[str],
     domain_name: str,
     domain_extension: str,
-    rest: str,
+    remainder: str,
 ) -> str:
     """Verbalize a URL (e.g. https://www.wellsaidlabs.com, wellsaidlabs.com, rhyan@wellsaidlabs.com)
 
@@ -273,7 +292,7 @@ def _verbalize_url(
         subdomain (e.g. "help.")
         domain_name (e.g. "wellsaidlabs")
         domain_extension (e.g. "com", "org")
-        rest (e.g. "/things-to-do", ":80/path/to/myfile.html?key1=value1#SomewhereInTheDocument")
+        remainder (e.g. "/things-to-do", ":80/path/to/myfile.html?key1=value1#SomewhereInTheFile")
     """
     return_ = ""
     # CASE: Email
@@ -283,7 +302,7 @@ def _verbalize_url(
         # NOTE: Handle prefixes (e.g. "http://", "https://", "www.")
         prefixes = [protocol, www_subdomain]
         return_ += " " + " ".join(" ".join(list(m)) for m in prefixes if m is not None)
-        suffixes = [subdomain, domain_name, ".", domain_extension, rest]
+        suffixes = [subdomain, domain_name, ".", domain_extension, remainder]
         return_ += " ".join(m for m in suffixes if m is not None)
 
     for s in SYMBOLS_VERBALIZED:
@@ -326,13 +345,13 @@ def _verbalize_fraction(
     special_cases: typing.Dict[typing.Tuple[bool, str, str], str] = {
         (False, "1", "2"): "one half",
         (False, "1", "4"): "one quarter",
-        (True, "1", "2"): "half",
-        (True, "1", "4"): "quarter",
+        (True, "1", "2"): "a half",
+        (True, "1", "4"): "a quarter",
     },
 ) -> str:
     """Verbalize a fraction (e.g. "59 1/2").
 
-    TODO: Test if `my_num2words` recieves 00 for the whole number.
+    TODO: Test if `_num2words` receives 00 for the whole number.
     TODO: Test fractions with special formatting
     TODO: Test negative numbers
 
@@ -341,7 +360,7 @@ def _verbalize_fraction(
         numerator (e.g. "1")
         denominator (e.g. "2")
     """
-    verbalized = "" if whole is None else f"{_num2words(whole, ignore_zeros=False)} and "
+    verbalized = "" if whole is None else f"{_num2words(whole)} and "
     key = (whole is not None, numerator, denominator)
     if key in special_cases:
         return f"{verbalized}{special_cases[key]}".strip()
@@ -371,6 +390,7 @@ def _verbalize_acronym(acronym: str) -> str:
     """Verbalize a acronym.
 
     TODO: Consider how to to coordinate with Roman Numeral cases? Can you identify an ORG from a RN?
+    TODO: Consider speaker dialect for "Z" as "zed" case
 
     Args:
         acronym (e.g. RSVP, CEO, NASA, ASAP, NBA, A.S.A.P., C.T.O.)
@@ -405,6 +425,7 @@ _NUMBER_RANGE = rf"(?:{_DIGIT}{_NUMBER_RANGE_SUFFIX})"
 _COUNTRY_CODE = r"\+?\b\d{1,2}[-. ]*"
 _AREA_CODE = r"\(?\b\d{3}\b\)?[-. ]*"
 _PHONE_DELIMITER = r"[-. ]{1}"
+_PHONE_VERBS = r"(?:Call|call|Dial|dial)"
 
 # TODO: Handle the various thousand seperators, like dots or spaces.
 # TODO: Add boundary characters to each regex, so it doesn't accidently pick up something in the
@@ -464,9 +485,20 @@ class RegExPatterns:
         r")"  # The Line Number
         r"\b"
     )
+    ALTERNATIVE_PHONE_NUMBERS: typing.Final[typing.Pattern[str]] = re.compile(
+        r"\b"
+        r"("
+        rf"{_PHONE_VERBS}"  # Verb
+        r"(?:ing)?"  # (Optional) Verb ending
+        r"(?:\s)"
+        r")"  # Call verb
+        r"([0-9-\.]{1,10})"  # Phone Number
+        r"\b"
+    )
     YEARS: typing.Final[typing.Pattern[str]] = re.compile(
         r"\b"
         r"([0-9]{4}"  # Year (or start year in a range of years)
+        # TODO: Utilize _reg_ex_or(HYPHENS, ''), similar to number ranges
         r"(?:-[0-9]{1,4})?)"  # The end year in a range of years
         r"\b"
     )
@@ -534,6 +566,7 @@ def _norm(
 ):
     """Helper function for verbalizing `text` by matching and verbalizing non-standard words."""
     for match in reversed(list(pattern.finditer(text))):
+        print(match.groups())
         verbalized = verbalize(*match.groups(), **kw)
         left, right = text[: match.start()], text[match.end() :]
         if space_out:
@@ -562,6 +595,9 @@ def verbalize_text(text: str) -> str:
         sent = _norm(sent, RegExPatterns.TIMES, _verbalize_time, o_clock="o'clock")
         sent = _norm(sent, RegExPatterns.PHONE_NUMBERS, _verbalize_phone_number)
         sent = _norm(sent, RegExPatterns.TOLL_FREE_PHONE_NUMBERS, _verbalize_phone_number)
+        sent = _norm(
+            sent, RegExPatterns.ALTERNATIVE_PHONE_NUMBERS, _verbalize_alternative_phone_number
+        )
         sent = _norm(sent, RegExPatterns.DECADES, _verbalize_decade)
         sent = _norm(sent, RegExPatterns.YEARS, _verbalize_year)
         sent = _norm(sent, RegExPatterns.PERCENTS, _verbalize_percent)
