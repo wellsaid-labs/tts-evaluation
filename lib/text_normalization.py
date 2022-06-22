@@ -118,13 +118,8 @@ def _verbalize_money(
     # CASE: Big Money ($1.2B, $1.2 billion, etc.)
     if abbr:
         abbr = abbr.upper()
-        return " ".join(
-            [
-                _num2words(money, ignore_zeros=False),
-                MONEY_ABBREVIATIONS[abbr],
-                CURRENCIES[currency][1],
-            ]
-        )
+        money = _num2words(money, ignore_zeros=False)
+        return " ".join([money, MONEY_ABBREVIATIONS[abbr], CURRENCIES[currency][1]])
     elif trail:
         return _num2words(money, ignore_zeros=False) + trail + " " + CURRENCIES[currency][1]
 
@@ -425,7 +420,6 @@ _NUMBER_RANGE = rf"(?:{_DIGIT}{_NUMBER_RANGE_SUFFIX})"
 _COUNTRY_CODE = r"\+?\b\d{1,2}[-. ]*"
 _AREA_CODE = r"\(?\b\d{3}\b\)?[-. ]*"
 _PHONE_DELIMITER = r"[-. ]{1}"
-_PHONE_VERBS = r"(?:Call|call|Dial|dial)"
 
 # TODO: Handle the various thousand seperators, like dots or spaces.
 # TODO: Add boundary characters to each regex, so it doesn't accidently pick up something in the
@@ -488,12 +482,13 @@ class RegExPatterns:
     ALTERNATIVE_PHONE_NUMBERS: typing.Final[typing.Pattern[str]] = re.compile(
         r"\b"
         r"("
-        rf"{_PHONE_VERBS}"  # Verb
+        r"(?:call|dial)"  # Verb
         r"(?:ing)?"  # (Optional) Verb ending
         r"(?:\s)"
         r")"  # Call verb
         r"([0-9-\.]{1,10})"  # Phone Number
-        r"\b"
+        r"\b",
+        flags=re.IGNORECASE,
     )
     YEARS: typing.Final[typing.Pattern[str]] = re.compile(
         r"\b"
