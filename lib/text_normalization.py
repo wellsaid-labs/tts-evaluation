@@ -134,7 +134,7 @@ def _verbalize_money(
     return normalized
 
 
-_DIGIT_PATTERN = re.compile(r"\D")
+_NON_DIGIT_PATTERN = re.compile(r"\D")
 
 
 def _verbalize_ordinal(value: str) -> str:
@@ -143,7 +143,7 @@ def _verbalize_ordinal(value: str) -> str:
     Args:
         value (e.g. "123,456", "1", "2", "100.000")
     """
-    return _num2words(_DIGIT_PATTERN.sub("", value), ordinal=True)
+    return _num2words(_NON_DIGIT_PATTERN.sub("", value), ordinal=True)
 
 
 def _verbalize_time_period(suffix: typing.Optional[str]):
@@ -178,9 +178,9 @@ def _verbalize_abbreviated_time(hour: str, suffix: str) -> str:
     return f"{_num2words(hour)} {_verbalize_time_period(suffix)}"
 
 
-_LETTER_PATTERN = re.compile(r"[A-z]")
+_LETTER_PATTERN = re.compile(r"[A-Za-z]")
 _NUMBER_PATTERN = re.compile(r"[0-9\.\,]+")
-_ALPHANUMERIC_PATTERN = re.compile(r"[0-9A-z]+")
+_ALPHANUMERIC_PATTERN = re.compile(r"[0-9A-Za-z]+")
 
 
 def _get_digits(text):
@@ -309,7 +309,7 @@ def _verbalize_measurement_abbreviation(prefix: typing.Optional[str], value: str
     value = _num2words(value, ignore_zeros=False)
     if unit in UNITS_ABBREVIATIONS:
         singular, plural = UNITS_ABBREVIATIONS[unit]
-        unit = singular if value == "1" else plural  # TODO: Test
+        unit = singular if value == "one" else plural
     return f"{prefix} {value} {unit}".strip()
 
 
@@ -439,6 +439,8 @@ class RegExPatterns:
         flags=re.IGNORECASE,
     )
     # TODO: If there is a country code, there must be an area code, right?
+    # TODO: A phone number could have up to 15 characters
+    # https://stackoverflow.com/questions/6478875/regular-expression-matching-e-164-formatted-phone-numbers
     PHONE_NUMBERS: typing.Final[typing.Pattern[str]] = re.compile(
         # NOTE: This Regex was adapted from here:
         # https://stackoverflow.com/questions/16699007/regular-expression-to-match-standard-10-digit-phone-number
@@ -458,7 +460,7 @@ class RegExPatterns:
         # https://stackoverflow.com/questions/34586409/regular-expression-for-us-toll-free-number
         # https://en.wikipedia.org/wiki/Toll-free_telephone_number
         rf"{_AREA_CODE}"  # The Area Code
-        r"[a-zA-Z0-9-\.]{1,10}"
+        r"[A-Za-z\d][A-Za-z\d\-\.]{3,9}"
         r")"  # The Line Number
         r"\b"
     )
@@ -500,12 +502,13 @@ class RegExPatterns:
         r"(\d+)"  # GROUP 3: Denominator
         r"\b"
     )
+    ISOLATED_GENERIC_DIGIT: typing.Final[typing.Pattern[str]] = re.compile(rf"\b({_DIGIT})\b")
     GENERIC_DIGIT: typing.Final[typing.Pattern[str]] = re.compile(rf"({_DIGIT})")
     # fmt: off
     ACRONYMS: typing.Final[typing.Pattern[str]] = re.compile(
         r"\b((?:[A-Z]){2,}\b"  # Upper case acronym
         r"|"
-        r"(?:[A-z]\.){2,}\B)"  # Lower case acronym
+        r"(?:[A-Za-z]\.){2,}\B)"  # Lower case acronym
     )
     # fmt: on
     MEASUREMENT_ABBREVIATIONS: typing.Final[typing.Pattern[str]] = re.compile(
@@ -570,6 +573,7 @@ def verbalize_text(text: str) -> str:
         )
         sent = _norm(sent, RegExPatterns.ABBREVIATED_TIMES, _verbalize_abbreviated_time)
         sent = _norm(sent, RegExPatterns.FRACTIONS, _verbalize_fraction)
+        sent = _norm(sent, RegExPatterns.ISOLATED_GENERIC_DIGIT, _verbalize_generic_number)
         sent = _norm(sent, RegExPatterns.GENERIC_DIGIT, _verbalize_generic_number, space_out=True)
         sent = _norm(sent, RegExPatterns.ACRONYMS, _verbalize_acronym)
         sent = _norm(sent, RegExPatterns.TITLE_ABBREVIATIONS, _verbalize_title_abbreviation)
