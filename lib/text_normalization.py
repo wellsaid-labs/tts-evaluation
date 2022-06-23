@@ -39,6 +39,7 @@ from num2words import num2words
 from lib.non_standard_words import (
     ACRONYMS,
     CURRENCIES,
+    GENERAL_ABBREVIATIONS,
     HYPHENS,
     LARGE_FICTIOUS_NUMBERS,
     LARGE_NUMBERS,
@@ -47,7 +48,6 @@ from lib.non_standard_words import (
     ORDINAL_SUFFIXES,
     PLUS_OR_MINUS_PREFIX,
     SYMBOLS_VERBALIZED,
-    TITLES_PERSON,
     UNITS_ABBREVIATIONS,
 )
 from lib.text import load_en_english
@@ -83,7 +83,7 @@ def _num2words(num: str, ignore_zeros: bool = True, **kwargs) -> str:
     return " ".join(out)
 
 
-_WORD_CHARACTER = re.compile("^\w$")
+_WORD_CHARACTER = re.compile(r"^\w$")
 
 _get_bound = lambda t: r"\B" if _WORD_CHARACTER.match(t) is None else r"\b"
 
@@ -155,7 +155,9 @@ def _verbalize_time_period(period: typing.Optional[str]):
     return "" if period is None else period.replace(".", "").strip().upper()
 
 
-def _verbalize_time(hour: str, minute: str, period: typing.Optional[str], o_clock: str = "") -> str:
+def _verbalize_time(
+    hour: str, minute: str, period: typing.Optional[str], o_clock: str = "oh clock"
+) -> str:
     """Verbalize a time (e.g. "10:04PM", "2:13 a.m.").
 
     Args:
@@ -271,6 +273,9 @@ def _verbalize_number_sign(number: str) -> str:
     return f"number{'' if len(numbers) < 2 else 's'} {verbalized}"
 
 
+_WHITE_SPACES = re.compile(r"\s+")
+
+
 def _verbalize_url(
     protocol: typing.Optional[str],
     www_subdomain: typing.Optional[str],
@@ -307,7 +312,7 @@ def _verbalize_url(
     for char in digits:
         return_ = return_.replace(char, f" {_num2words(char)} ")
 
-    return re.sub(" +", " ", return_).strip()
+    return _WHITE_SPACES.sub(" ", return_).strip()
 
 
 def _verbalize_measurement_abbreviation(prefix: typing.Optional[str], value: str, unit: str) -> str:
@@ -327,12 +332,6 @@ def _verbalize_measurement_abbreviation(prefix: typing.Optional[str], value: str
     return f"{prefix} {value} {unit}".strip()
 
 
-# TODO: What about swedish numbers 4 294 967 295,000
-# Or Spanish numbers: 4.294.967.295,000
-# TODO: What about an ordinal with "."
-# TODO: Test a number range with decimal or space
-
-
 def _verbalize_fraction(
     whole: typing.Optional[str],
     numerator: str,
@@ -346,73 +345,61 @@ def _verbalize_fraction(
 ) -> str:
     """Verbalize a fraction (e.g. "59 1/2").
 
-    TODO: Test if `_num2words` receives 00 for the whole number.
-    TODO: Test fractions with special formatting
-    TODO: Test negative numbers
-
     Args:
         whole (e.g. "59")
         numerator (e.g. "1")
         denominator (e.g. "2")
     """
     verbalized = "" if whole is None else f"{_num2words(whole)} and "
-    key = (whole is not None, numerator, denominator)
+    key = (whole is not None, numerator[1:] if numerator[0] == "-" else numerator, denominator)
     if key in special_cases:
-        return f"{verbalized}{special_cases[key]}".strip()
+        minus = "minus " if numerator[0] == "-" else ""
+        return f"{verbalized}{minus}{special_cases[key]}".strip()
     verbalized += f"{_num2words(numerator)} {_num2words(denominator, ordinal=True)}"
     verbalized += "s" if int(numerator) > 1 else ""
     return verbalized.strip()
 
 
 def _verbalize_generic_number(
-    num_range: str, connector: str = "to", special_cases: typing.List[str] = ["1-800", "50-50"]
+    numbers: str, connector: str = "to", special_cases: typing.List[str] = ["1-800", "50-50"]
 ) -> str:
     """Verbalize a range of numbers.
 
     TODO: Handle special cases like 7-11 and 9-11, they are commonly spoken without 'to'?
-    TODO: Handle number ranges with spaces?
 
     Args:
-        num_range (e.g. 10-15, 35-75, 125-300, 50-50)
+        numbers (e.g. "1", "10-15", "35-75", "125-300", "50-50")
         ...
     """
-    connector = " " if num_range in special_cases else " %s " % connector
+    connector = " " if numbers in special_cases else " %s " % connector
     partial = functools.partial(_num2words, ignore_zeros=False)
-    return connector.join(list(map(partial, _get_digits(num_range))))
+    return connector.join(list(map(partial, _get_digits(numbers))))
 
 
 def _verbalize_acronym(acronym: str) -> str:
     """Verbalize a acronym.
 
-    TODO: Consider how to to coordinate with Roman Numeral cases? Can you identify an ORG from a RN?
     TODO: Consider speaker dialect for "Z" as "zed" case
 
     Args:
-        acronym (e.g. RSVP, CEO, NASA, ASAP, NBA, A.S.A.P., C.T.O.)
+        acronym (e.g. "RSVP", "CEO", "NASA", "ASAP", "NBA", "A.S.A.P.", "C.T.O.")
     """
     acronym = "".join(acronym.split("."))
     return ACRONYMS[acronym] if acronym in ACRONYMS else acronym
 
 
-# TODO: What about abbreviations with multiple periods?
-# TODO: What about abbreviations not in the table?
-
-
-def _verbalize_title_abbreviation(abbr: str) -> str:
-    """Verbalize a title abbreviation.
+def _verbalize_abbreviation(abbr: str) -> str:
+    """Verbalize an abbreviation.
 
     Args:
         abbr (e.g. "Mr", "Ms", etc.)
     """
     key = (abbr[:-1] if abbr[-1] == "." else abbr).lower()
-    return TITLES_PERSON[key] if key in TITLES_PERSON else abbr
+    return GENERAL_ABBREVIATIONS[key] if key in GENERAL_ABBREVIATIONS else abbr
 
-
-# TODO: Not add spaces between letters
 
 _TIME_PERIOD = r"(\s?[ap]\.?m\b(?:\.\B)?)"  # Time period (e.g. AM, PM, a.m., p.m., am, pm)
-# TODO: Is this just a generic digit?
-# TODO: What about a digit without commas?
+# TODO: Handle the various thousand seperators, like dots or spaces.
 _DIGIT = r"\d(?:\d|\,\d)*(?:\.)?[\d]*"
 _NUMBER_RANGE_SUFFIX = rf"(?:\s?[{_reg_ex_or(HYPHENS, '')}]\s?{_DIGIT})"
 _MAYBE_NUMBER_RANGE = rf"(?:{_DIGIT}{_NUMBER_RANGE_SUFFIX}?)"
@@ -420,10 +407,6 @@ _NUMBER_RANGE = rf"(?:{_DIGIT}{_NUMBER_RANGE_SUFFIX})"
 _COUNTRY_CODE = r"\+?\b\d{1,2}[-. ]*"
 _AREA_CODE = r"\(?\b\d{3}\b\)?[-. ]*"
 _PHONE_DELIMITER = r"[-. ]{1}"
-
-# TODO: Handle the various thousand seperators, like dots or spaces.
-# TODO: Add boundary characters to each regex, so it doesn't accidently pick up something in the
-# middle of a word.
 
 
 class RegExPatterns:
@@ -453,16 +436,14 @@ class RegExPatterns:
         r"\b(\d{1,2})" rf"{_TIME_PERIOD}",  # GROUP 1: Hours, GROUP 2: Time period
         flags=re.IGNORECASE,
     )
-    # TODO: If there is a country code, there must be an area code, right?
     # TODO: A phone number could have up to 15 characters
     # https://stackoverflow.com/questions/6478875/regular-expression-matching-e-164-formatted-phone-numbers
     PHONE_NUMBERS: typing.Final[typing.Pattern[str]] = re.compile(
         # NOTE: This Regex was adapted from here:
         # https://stackoverflow.com/questions/16699007/regular-expression-to-match-standard-10-digit-phone-number
         r"("
-        rf"(?:{_COUNTRY_CODE})?"  # (Optional) The Country Code
-        rf"(?:{_AREA_CODE})?"  # (Optional) The Area Code
-        r"\d{3}"  # The Exchange Number
+        rf"(?:(?:{_COUNTRY_CODE})?(?:{_AREA_CODE}))?"
+        r"\b\d{3}"  # The Exchange Number
         rf"{_PHONE_DELIMITER}"
         r"\d{4}"  # The Subscriber Number
         r")"
@@ -493,8 +474,8 @@ class RegExPatterns:
     YEARS: typing.Final[typing.Pattern[str]] = re.compile(
         r"\b"
         r"([0-9]{4}"  # Year (or start year in a range of years)
-        # TODO: Utilize _reg_ex_or(HYPHENS, ''), similar to number ranges
-        r"(?:-[0-9]{1,4})?)"  # The end year in a range of years
+        rf"(?:[{_reg_ex_or(HYPHENS, '')}]"
+        r"[0-9]{1,4})?)"  # The end year in a range of years
         r"\b"
     )
     # fmt: off
@@ -522,9 +503,8 @@ class RegExPatterns:
         r"\b"
     )
     FRACTIONS: typing.Final[typing.Pattern[str]] = re.compile(
-        r"\b"
-        r"(\d+ )?"  # GROUP 1 (Optional): Whole Number
-        r"(\d+)"  # GROUP 2: Numerator
+        r"((?:\B\-|\b)\d+ )?"  # GROUP 1 (Optional): Whole Number
+        r"((?:\B\-|\b)\d+)"  # GROUP 2: Numerator
         r"\/"
         r"(\d+)"  # GROUP 3: Denominator
         r"\b"
@@ -546,13 +526,12 @@ class RegExPatterns:
         # GROUP 3: Unit
         rf"({_reg_ex_or(UNITS_ABBREVIATIONS.keys(), right=True)})"
     )
-    TITLE_ABBREVIATIONS: typing.Final[typing.Pattern[str]] = re.compile(
-        rf"\b({_reg_ex_or(TITLES_PERSON.keys())}(?:\.|\b))",
-        flags=re.IGNORECASE,
+    ABBREVIATIONS: typing.Final[typing.Pattern[str]] = re.compile(
+        rf"\b({_reg_ex_or(GENERAL_ABBREVIATIONS.keys())}(?:\.|\b))"
     )
 
 
-def _norm(
+def _apply(
     text: str,
     pattern: typing.Pattern,
     verbalize: typing.Callable[..., str],
@@ -561,7 +540,6 @@ def _norm(
 ):
     """Helper function for verbalizing `text` by matching and verbalizing non-standard words."""
     for match in reversed(list(pattern.finditer(text))):
-        print(match.groups())
         verbalized = verbalize(*match.groups(), **kw)
         left, right = text[: match.start()], text[match.end() :]
         if space_out:
@@ -576,38 +554,35 @@ def verbalize_text(text: str) -> str:
     non-standard-words in plain English. The order of events is important. Normalizing generic
     digits before normalizing money cases specifically, for example, will yield incomplete and
     inaccurate results.
-
-    TODO: Add ADDRESS ABBREVIATIONS (Dr., St., Blvd., Apt., states??, ...)
-          Add GENERAL ABBREVIATIONS (etc., misc., appt., ...)
     """
     nlp = load_en_english()
     nlp.add_pipe("sentencizer")
     sents = []
     for span in nlp(text).sents:
         sent = span.text
-        sent = _norm(sent, RegExPatterns.MONEY, _verbalize_money)
-        sent = _norm(sent, RegExPatterns.ORDINALS, _verbalize_ordinal)
-        sent = _norm(sent, RegExPatterns.TIMES, _verbalize_time, o_clock="o'clock")
-        sent = _norm(sent, RegExPatterns.PHONE_NUMBERS, _verbalize_phone_number)
-        sent = _norm(sent, RegExPatterns.TOLL_FREE_PHONE_NUMBERS, _verbalize_phone_number)
-        sent = _norm(
+        sent = _apply(sent, RegExPatterns.MONEY, _verbalize_money)
+        sent = _apply(sent, RegExPatterns.ORDINALS, _verbalize_ordinal)
+        sent = _apply(sent, RegExPatterns.TIMES, _verbalize_time)
+        sent = _apply(sent, RegExPatterns.PHONE_NUMBERS, _verbalize_phone_number)
+        sent = _apply(sent, RegExPatterns.TOLL_FREE_PHONE_NUMBERS, _verbalize_phone_number)
+        sent = _apply(
             sent, RegExPatterns.ALTERNATIVE_PHONE_NUMBERS, _verbalize_alternative_phone_number
         )
-        sent = _norm(sent, RegExPatterns.DECADES, _verbalize_decade)
-        sent = _norm(sent, RegExPatterns.YEARS, _verbalize_year)
-        sent = _norm(sent, RegExPatterns.PERCENTS, _verbalize_percent)
-        sent = _norm(sent, RegExPatterns.NUMBER_SIGNS, _verbalize_number_sign)
-        sent = _norm(sent, RegExPatterns.NUMBER_RANGE, _verbalize_generic_number)
-        sent = _norm(sent, RegExPatterns.URLS, _verbalize_url)
-        sent = _norm(
+        sent = _apply(sent, RegExPatterns.DECADES, _verbalize_decade)
+        sent = _apply(sent, RegExPatterns.YEARS, _verbalize_year)
+        sent = _apply(sent, RegExPatterns.PERCENTS, _verbalize_percent)
+        sent = _apply(sent, RegExPatterns.NUMBER_SIGNS, _verbalize_number_sign)
+        sent = _apply(sent, RegExPatterns.NUMBER_RANGE, _verbalize_generic_number)
+        sent = _apply(sent, RegExPatterns.URLS, _verbalize_url)
+        sent = _apply(
             sent, RegExPatterns.MEASUREMENT_ABBREVIATIONS, _verbalize_measurement_abbreviation
         )
-        sent = _norm(sent, RegExPatterns.ABBREVIATED_TIMES, _verbalize_abbreviated_time)
-        sent = _norm(sent, RegExPatterns.FRACTIONS, _verbalize_fraction)
-        sent = _norm(sent, RegExPatterns.ISOLATED_GENERIC_DIGIT, _verbalize_generic_number)
-        sent = _norm(sent, RegExPatterns.GENERIC_DIGIT, _verbalize_generic_number, space_out=True)
-        sent = _norm(sent, RegExPatterns.ACRONYMS, _verbalize_acronym)
-        sent = _norm(sent, RegExPatterns.TITLE_ABBREVIATIONS, _verbalize_title_abbreviation)
+        sent = _apply(sent, RegExPatterns.ABBREVIATED_TIMES, _verbalize_abbreviated_time)
+        sent = _apply(sent, RegExPatterns.FRACTIONS, _verbalize_fraction)
+        sent = _apply(sent, RegExPatterns.ISOLATED_GENERIC_DIGIT, _verbalize_generic_number)
+        sent = _apply(sent, RegExPatterns.GENERIC_DIGIT, _verbalize_generic_number, space_out=True)
+        sent = _apply(sent, RegExPatterns.ACRONYMS, _verbalize_acronym)
+        sent = _apply(sent, RegExPatterns.ABBREVIATIONS, _verbalize_abbreviation)
         # NOTE: A period at the end of a sentence might get eaten.
         sent = sent + "." if span.text[-1] == "." and sent[-1] != "." else sent
         sents.extend([sent, span[-1].whitespace_])

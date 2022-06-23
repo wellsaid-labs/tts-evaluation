@@ -1,4 +1,9 @@
 import typing
+from functools import partial
+
+from lib.text import normalize_vo_script
+
+_norm = partial(normalize_vo_script, non_ascii=frozenset())
 
 ###############
 #   NUMBERS   #
@@ -91,7 +96,7 @@ ORDINAL_SUFFIXES: typing.Final[typing.Tuple[str, ...]] = ("st", "nd", "rd", "th"
 ############
 
 
-CURRENCIES: typing.Final[typing.Dict[str, typing.Tuple[str, str, str, str]]] = {
+_CURRENCIES: typing.Final[typing.Dict[str, typing.Tuple[str, str, str, str]]] = {
     "$": ("dollar", "dollars", "cent", "cents"),
     "US$": ("US dollar", "US dollars", "cent", "cents"),
     "€": ("euro", "euros", "cent", "cents"),
@@ -104,6 +109,9 @@ CURRENCIES: typing.Final[typing.Dict[str, typing.Tuple[str, str, str, str]]] = {
     "HK$": ("Hong Kong dollar", "Hong Kong dollars", "cent", "cents"),
     "NZ$": ("New Zealand dollar", "New Zealand dollars", "cent", "cents"),
 }
+
+CURRENCIES: typing.Final[typing.Dict[str, typing.Tuple[str, str, str, str]]]
+CURRENCIES = {_norm(k): v for k, v in _CURRENCIES.items()}
 
 MONEY_SUFFIX: typing.Final[typing.Tuple[str, ...]] = (
     "hundred",
@@ -132,8 +140,6 @@ MONEY_ABBREVIATIONS: typing.Final[typing.Dict[str, str]] = {
 #       I've left out rare single letter abbreviations. They are rarely used by our users
 #       to denote a measurement, more often are expected to be read as a letter: 1A, 4K, 5V, etc.
 
-
-# TODO: Use `tuple` instead of `list` because `tuple` cannot be modified like a `list` can.
 
 LENGTH: typing.Final[typing.Dict[str, typing.Tuple[str, str]]] = {
     "in. ": ("inch", "inches"),  # inches is tricky because 'in' is a word
@@ -190,7 +196,6 @@ WEIGHT_MASS: typing.Final[typing.Dict[str, typing.Tuple[str, str]]] = {
 }
 
 SPEED: typing.Final[typing.Dict[str, typing.Tuple[str, str]]] = {
-    "MPH": ("mile per hour", "miles per hour"),
     "mph": ("mile per hour", "miles per hour"),
     "kph": ("kilometer per hour", "kilometers per hour"),
     "rpm": ("revolution per minute", "revolutions per minute"),
@@ -266,16 +271,17 @@ SUPERSCRIPT: typing.Final[typing.Dict[str, typing.Tuple[str, str]]] = {
     "ft/s²": ("foot per second squared", "feet per second squared"),
 }
 
+
 OTHER: typing.Final[typing.Dict[str, typing.Tuple[str, str]]] = {
     # '"': ("inch", "inches"),              # Too vague, quotes are often used for emphasis instead.
-    "″": ("inch", "inches"),
+    # "″": ("inch", "inches"),
     # "'": ("foot", "feet"),                # Too vague, quotes are often used for emphasis instead.
-    "′": ("foot", "feet"),
+    # "′": ("foot", "feet"),
     "°": ("degree", "degrees"),
     "Ω": ("ohm", "ohms"),
 }
 
-UNITS_ABBREVIATIONS: typing.Dict[str, typing.Tuple[str, str]] = {
+_UNITS_ABBREVIATIONS: typing.Dict[str, typing.Tuple[str, str]] = {
     **LENGTH,
     **AREA,
     **VOLUME,
@@ -291,30 +297,34 @@ UNITS_ABBREVIATIONS: typing.Dict[str, typing.Tuple[str, str]] = {
     **OTHER,
 }
 
+UNITS_ABBREVIATIONS: typing.Final[typing.Dict[str, typing.Tuple[str, str]]]
+UNITS_ABBREVIATIONS = {_norm(k): v for k, v in _UNITS_ABBREVIATIONS.items()}
 
-PLUS_OR_MINUS_PREFIX: typing.Final[typing.Dict[str, str]] = {
+_PLUS_OR_MINUS_PREFIX = {
     "+": "plus",
     "-": "minus",
     "±": "plus or minus",
     "+/-": "plus or minus",
 }
+PLUS_OR_MINUS_PREFIX: typing.Final[typing.Dict[str, str]]
+PLUS_OR_MINUS_PREFIX = {_norm(k): v for k, v in _PLUS_OR_MINUS_PREFIX.items()}
 
 
 #################
-# PERSON TITLES #
+# ABBREVIATIONS #
 #################
 
 TITLES_PERSON_PRX: typing.Final[typing.Dict[str, str]] = {
     "mr": "Mister",
     "ms": "Miz",
     "mrs": "Missus",
-    "dr": "Doctor",
+    # "dr": "Doctor",
     "prof": "Professor",
     "rev": "Reverend",
     "fr": "Father",
     "pr": "Pastor",
     "br": "Brother",
-    "sr": "Sister",
+    # "sr": "Sister",   # Rare, 'sr' is more commonly denoting 'Senior'
     # "st": "Saint",    # Rare, 'st' is more commonly denoting 'street'
     "pres": "President",
     "vp": "Vice President",
@@ -327,11 +337,8 @@ TITLES_PERSON_PRX: typing.Final[typing.Dict[str, str]] = {
     "col": "Colonel",
     "lt": "Lieutenant",
     "maj": "Major",
+    "supt": "Superintendent",
 }
-
-###################
-# PERSON SUFFIXES #
-###################
 
 TITLES_PERSON_SFX: typing.Final[typing.Dict[str, str]] = {
     "sr": "Senior",
@@ -339,7 +346,92 @@ TITLES_PERSON_SFX: typing.Final[typing.Dict[str, str]] = {
     "esq": "Esquire",
 }
 
-TITLES_PERSON = {**TITLES_PERSON_PRX, **TITLES_PERSON_SFX}
+MONTH_ABBREVIATIONS: typing.Final[typing.Dict[str, str]] = {
+    "jan": "january",
+    "feb": "february",
+    "mar": "march",
+    "apr": "april",
+    # "may": "may",
+    "jun": "june",
+    "jul": "july",
+    "aug": "august",
+    "sep": "september",
+    "sept": "september",
+    "oct": "october",
+    "nov": "november",
+    "dec": "december",
+}
+
+GEOGRAPHY_ABBREVIATIONS: typing.Final[typing.Dict[str, str]] = {
+    "ave": "avenue",
+    "blvd": "boulevard",
+    "cyn": "canyon",
+    # "dr": "drive",
+    "ln": "lane",
+    "rd": "road",
+    "st": "street",
+    "appt": "appointment",
+}
+
+
+PART_OF_SPEECH_ABBREVIATIONS: typing.Final[typing.Dict[str, str]] = {
+    "adj": "adjective",
+    "adjs": "adjectives",
+    "adv": "adverb",
+    "advb": "adverb",
+    "pron": "pronoun",
+    "prov": "proverb",
+    "subj": "subject",
+    "subord": "subordinate",
+    "vb": "verb",
+    "vbl": "verbal",
+    "vbs": "verbs",
+}
+
+_OTHER_ABBREVIATIONS: typing.Final[typing.Dict[str, str]] = {
+    "cal": "calendar",
+    # "cent": "century", # Rare, 'cent' is more commonly denoting 'cent'
+    "conj": "conjunction",
+    "dept": "department",
+    "dict": "dictionary",
+    "doc": "document",
+    "docs": "documents",
+    "ed": "edition",
+    "eds": "editions",
+    "etc": "et cetera",
+    "fig": "figure",
+    "govt": "government",
+    "inc": "incorporated",
+    "num": "numbers",
+    "std": "standard",
+    "trig": "trigonometry",
+    "approx": "approximately",
+    "dept": "department",
+    "est": "established",
+    "misc": "miscellaneous",
+    "no": "number",
+    "tel": "telephone",
+    "vs": "versus",
+}
+
+
+_GENERAL_ABBREVIATIONS: typing.Final[typing.Dict[str, str]] = {}
+for dict_ in (
+    _OTHER_ABBREVIATIONS,
+    TITLES_PERSON_PRX,
+    TITLES_PERSON_SFX,
+    MONTH_ABBREVIATIONS,
+    GEOGRAPHY_ABBREVIATIONS,
+    PART_OF_SPEECH_ABBREVIATIONS,
+):
+    for key, value in dict_.items():
+        assert key not in _GENERAL_ABBREVIATIONS, f"Duplicate key found: {key} "
+        _GENERAL_ABBREVIATIONS[key] = value
+
+GENERAL_ABBREVIATIONS: typing.Final[typing.Dict[str, str]] = {
+    **{k.lower(): v for k, v in _GENERAL_ABBREVIATIONS.items()},
+    **{k.capitalize(): v for k, v in _GENERAL_ABBREVIATIONS.items()},
+}
 
 ############
 # ACRONYMS #
@@ -417,6 +509,17 @@ GENERAL: typing.Final[typing.Dict[str, str]] = {
     "SWAT": "Swat",
 }
 
+DIRECTIONS: typing.Final[typing.Dict[str, str]] = {
+    "E": "east",
+    "N": "north",
+    "NE": "northeast",
+    "NW": "northwest",
+    "S": "south",
+    "SE": "southeast",
+    "SW": "southwest",
+    "W": "west",
+}
+
 ACRONYMS: typing.Final[typing.Dict[str, str]] = {
     **ORGANIZATIONS,
     **EVENTS,
@@ -424,6 +527,7 @@ ACRONYMS: typing.Final[typing.Dict[str, str]] = {
     **TECH_TERMS,
     **SLANG,
     **STAR_WARS,
+    **DIRECTIONS,
     **GENERAL,
 }
 
@@ -431,7 +535,7 @@ ACRONYMS: typing.Final[typing.Dict[str, str]] = {
 # SYMBOLS  #
 ############
 
-SYMBOLS_VERBALIZED: typing.Final[typing.Dict[str, str]] = {
+_SYMBOLS_VERBALIZED: typing.Final[typing.Dict[str, str]] = {
     "!": "exclamation point",
     "@": "at",
     "#": "hash",
@@ -466,5 +570,7 @@ SYMBOLS_VERBALIZED: typing.Final[typing.Dict[str, str]] = {
     "/": "slash",
     "±": "plus or minus",
 }
+SYMBOLS_VERBALIZED: typing.Final[typing.Dict[str, str]]
+SYMBOLS_VERBALIZED = {_norm(k): v for k, v in _SYMBOLS_VERBALIZED.items()}
 
-HYPHENS = ("-", "—", "–")
+HYPHENS: typing.Tuple[str, ...] = tuple(_norm(t) for t in ("-", "—", "–"))
