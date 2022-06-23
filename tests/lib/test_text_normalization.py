@@ -843,10 +843,11 @@ def test_verbalize_text():
             "William Simmons Sr. and Billy Simmons Jr. arrived late.",
             "William Simmons Senior. and Billy Simmons Junior arrived late.",
         ),
+        ("1-800 flowers", "one, eight hundred, flowers"),
     ]
     for text_in, text_out in tests:
         assert verbalize_text(_norm(text_in)) == text_out
 
-    for tests_name, tests in all_tests:
+    for _, tests in all_tests:
         for text_in, text_out in tests:
             assert verbalize_text(_norm(text_in)) == text_out

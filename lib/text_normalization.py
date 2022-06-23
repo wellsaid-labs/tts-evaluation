@@ -142,7 +142,7 @@ def _verbalize_ordinal(value: str) -> str:
     """Verbalize an ordinal (e.g. "1st", "2nd").
 
     Args:
-        value (e.g. "123,456", "1", "2", "100.000")
+        value (e.g. "123,456", "1", "2", "100,000")
     """
     return _num2words(_NON_DIGIT_PATTERN.sub("", value), ordinal=True)
 
@@ -361,7 +361,7 @@ def _verbalize_fraction(
 
 
 def _verbalize_generic_number(
-    numbers: str, connector: str = "to", special_cases: typing.List[str] = ["1-800", "50-50"]
+    numbers: str, connector: str = "to", special_cases: typing.List[str] = ["50-50"]
 ) -> str:
     """Verbalize a range of numbers.
 

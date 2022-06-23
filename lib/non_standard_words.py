@@ -370,7 +370,11 @@ GEOGRAPHY_ABBREVIATIONS: typing.Final[typing.Dict[str, str]] = {
     "ln": "lane",
     "rd": "road",
     "st": "street",
-    "appt": "appointment",
+    "hwy": "highway",
+    "fwy": "freeway",
+    "rte": "route",
+    "apt": "apartment",
+    "no": "number",
 }
 
 
@@ -389,28 +393,28 @@ PART_OF_SPEECH_ABBREVIATIONS: typing.Final[typing.Dict[str, str]] = {
 }
 
 _OTHER_ABBREVIATIONS: typing.Final[typing.Dict[str, str]] = {
+    "approx": "approximately",
+    "appt": "appointment",
     "cal": "calendar",
     # "cent": "century", # Rare, 'cent' is more commonly denoting 'cent'
     "conj": "conjunction",
+    "dept": "department",
     "dept": "department",
     "dict": "dictionary",
     "doc": "document",
     "docs": "documents",
     "ed": "edition",
     "eds": "editions",
+    "est": "established",
     "etc": "et cetera",
     "fig": "figure",
     "govt": "government",
     "inc": "incorporated",
+    "misc": "miscellaneous",
     "num": "numbers",
     "std": "standard",
-    "trig": "trigonometry",
-    "approx": "approximately",
-    "dept": "department",
-    "est": "established",
-    "misc": "miscellaneous",
-    "no": "number",
     "tel": "telephone",
+    "trig": "trigonometry",
     "vs": "versus",
 }
 
