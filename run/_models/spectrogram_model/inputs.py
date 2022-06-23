@@ -112,7 +112,7 @@ class Token:
         # reason, using contextual word-vectors is risky.
         if self.pronun is Pronunciation.RESPELLING or self.is_whitespace:
             return np.zeros(self.token.tensor.shape[0] + self.token.vector.shape[0])
-        return np.concatenate((self.token.vector, self.token.tensor))
+        return np.concatenate((self.token.vector, self.token.tensor))  # type: ignore
 
     @staticmethod
     def _get_case(c: str) -> Casing:

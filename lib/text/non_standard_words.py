@@ -1,7 +1,7 @@
 import typing
 from functools import partial
 
-from lib.text import normalize_vo_script
+from lib.text.utils import normalize_vo_script
 
 _norm = partial(normalize_vo_script, non_ascii=frozenset())
 

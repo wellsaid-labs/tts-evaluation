@@ -36,7 +36,7 @@ import typing
 
 from num2words import num2words
 
-from lib.non_standard_words import (
+from lib.text.non_standard_words import (
     ACRONYMS,
     CURRENCIES,
     GENERAL_ABBREVIATIONS,
