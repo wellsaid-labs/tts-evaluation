@@ -157,6 +157,7 @@ def test___ordinals():
 
 _tests_times = [
     ("Today at 12:44 PM", "Today at twelve forty-four PM"),
+    # TODO: Should this be "seven PM" instead of "seven oh clock PM"?
     (
         "set session times for 7:00 p.m. but show up hours later",
         "set session times for seven oh clock PM but show up hours later",
