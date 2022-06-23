@@ -1,7 +1,7 @@
 import typing
 
-from lib.non_standard_words import _norm
-from lib.text_normalization import (
+from lib.text.non_standard_words import _norm
+from lib.text.verbalization import (
     RegExPatterns,
     _apply,
     _num2words,
