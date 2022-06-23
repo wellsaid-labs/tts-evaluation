@@ -1,9 +1,10 @@
 import typing
 from functools import partial
 
-from lib.text import normalize_vo_script
+from run._config import normalize_vo_script
+from run.data._loader import Language
 
-_norm = partial(normalize_vo_script, non_ascii=frozenset())
+_norm = partial(normalize_vo_script, language=Language.ENGLISH)
 
 ###############
 #   NUMBERS   #

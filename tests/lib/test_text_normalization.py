@@ -23,6 +23,7 @@ from lib.text_normalization import (
     _verbalize_year,
     verbalize_text,
 )
+from run.data._loader import Language
 
 
 def assert_verbalized(
@@ -34,7 +35,7 @@ def assert_verbalized(
     for text_in, text_out in tests:
         text_in = _norm(text_in)
         for pattern in patterns if isinstance(patterns, list) else [patterns]:
-            text_in = _apply(text_in, pattern, verbalize, **kwargs)
+            text_in = _apply(text_in, pattern, verbalize, Language.ENGLISH, **kwargs)
         assert text_in == text_out
 
 
@@ -846,8 +847,8 @@ def test_verbalize_text():
         ("1-800 flowers", "one, eight hundred, flowers"),
     ]
     for text_in, text_out in tests:
-        assert verbalize_text(_norm(text_in)) == text_out
+        assert verbalize_text(_norm(text_in), Language.ENGLISH) == text_out
 
     for _, tests in all_tests:
         for text_in, text_out in tests:
-            assert verbalize_text(_norm(text_in)) == text_out
+            assert verbalize_text(_norm(text_in), Language.ENGLISH) == text_out
