@@ -60,8 +60,10 @@ class Token:
 
     def __post_init__(self):
         if not self._is_respelled():
-            assert self.prefix not in self.token.text, "`prefix` must be unique"
-            assert self.suffix not in self.token.text, "`suffix` must be unique"
+            if self.prefix in self.token.text:
+                raise RespellingError("Invalid token with prefix outside of respelling.")
+            if self.suffix in self.token.text:
+                raise RespellingError("Invalid token with suffix outside of respelling.")
         pronun, text = self._get_text()
         object.__setattr__(self, "text", text)
         object.__setattr__(self, "pronun", pronun)
@@ -69,6 +71,7 @@ class Token:
     def _is_respelled(self):
         """Is the `self.token.text` already respelled?"""
         text = self.token.text
+        print(self.token.text)
         is_respelled = text.startswith(self.prefix) and text.endswith(self.suffix)
         text = text[len(self.prefix) : -len(self.suffix)]
         if is_respelled:
