@@ -55,7 +55,7 @@ from spacy.lang.en import English
 
 from lib.environment import load, set_basic_logging_config
 from run._config import TTS_PACKAGE_PATH, configure, load_spacy_nlp
-from run._models.spectrogram_model import Inputs, PreprocessedInputs
+from run._models.spectrogram_model import Inputs, PreprocessedInputs, RespellingError
 from run._tts import (
     PublicSpeakerValueError,
     PublicTextValueError,
@@ -287,10 +287,14 @@ def validate_and_unpack(
     except PublicTextValueError as error:
         app.logger.exception("Invalid text: %r", text)
         raise FlaskException(str(error), code="INVALID_TEXT")
+    except RespellingError:
+        raise FlaskException(
+            "Please format your respelling correctly (https://help.wellsaidlabs.com/pronunciation)",
+            code="INVALID_TEXT"
+        )
     except BaseException:
-        # TODO: Create public facing errors for respelling mistakes.
         app.logger.exception("Invalid text: %r", text)
-        raise FlaskException("Unable to parse text.", code="INVALID_TEXT")
+        raise FlaskException("Unknown error.", code="UNKNOWN_ERROR")
 
 
 @app.route("/healthy", methods=["GET"])
