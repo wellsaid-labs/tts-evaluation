@@ -8,7 +8,9 @@ import run.data._loader
 from run.data._loader import structures as struc
 from run.data._loader.english.m_ailabs import JUDY_BIEBER, Book, m_ailabs_en_us_speech_dataset
 from tests import _utils
-from tests.run.data._loader._utils import maybe_normalize_audio_and_cache_side_effect
+from tests.run.data._loader._utils import (  # type: ignore
+    maybe_normalize_audio_and_cache_side_effect,
+)
 
 
 @mock.patch("run.data._loader.structures._filter_existing_paths")

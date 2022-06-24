@@ -9,7 +9,9 @@ import run.data._loader
 from run.data._loader import Alignment
 from run.data._loader.english.lj_speech import LINDA_JOHNSON, lj_speech_dataset
 from tests import _utils
-from tests.run.data._loader._utils import maybe_normalize_audio_and_cache_side_effect
+from tests.run.data._loader._utils import (  # type: ignore
+    maybe_normalize_audio_and_cache_side_effect,
+)
 
 verbalize_test_cases = {
     # NOTE: This example has ambigious casing, and it is now removed from the dataset.

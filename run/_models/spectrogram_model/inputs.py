@@ -37,6 +37,10 @@ class Context(enum.Enum):
     SCRIPT: typing.Final = "script"
 
 
+class RespellingError(ValueError):
+    pass
+
+
 @dataclasses.dataclass(frozen=True)
 class Token:
     token: spacy.tokens.token.Token
@@ -53,14 +57,13 @@ class Token:
     delim: typing.ClassVar[str] = "\\"
     # TODO: Configure the allowable characters based on language.
     valid_chars: typing.ClassVar[str] = string.ascii_lowercase
-    respell_err_msg: typing.ClassVar[str] = (
-        "Please format your respelling " "correctly (https://help.wellsaidlabs.com/pronunciation)"
-    )
 
     def __post_init__(self):
         if not self._is_respelled():
-            assert self.prefix not in self.token.text, "`prefix` must be unique"
-            assert self.suffix not in self.token.text, "`suffix` must be unique"
+            if self.prefix in self.token.text:
+                raise RespellingError("Invalid token with prefix outside of respelling.")
+            if self.suffix in self.token.text:
+                raise RespellingError("Invalid token with suffix outside of respelling.")
         pronun, text = self._get_text()
         object.__setattr__(self, "text", text)
         object.__setattr__(self, "pronun", pronun)
@@ -71,16 +74,19 @@ class Token:
         is_respelled = text.startswith(self.prefix) and text.endswith(self.suffix)
         text = text[len(self.prefix) : -len(self.suffix)]
         if is_respelled:
-            assert len(text) > 0, self.respell_err_msg
-            assert text[0].lower() in self.valid_chars, self.respell_err_msg
-            assert text[-1].lower() in self.valid_chars, self.respell_err_msg
-            assert (
-                len(set(text.lower()) - set(list(self.valid_chars + self.delim))) == 0
-            ), self.respell_err_msg
-            assert all(
+            if len(text) == 0:
+                raise RespellingError("Found no text.")
+            if text[0].lower() not in self.valid_chars:
+                raise RespellingError("First respelling character is invalid.")
+            if text[-1].lower() not in self.valid_chars:
+                raise RespellingError("Last respelling character is invalid.")
+            if len(set(text.lower()) - set(list(self.valid_chars + self.delim))) != 0:
+                raise RespellingError("Found invalid characters in respelling.")
+            if not all(
                 len(set(self._get_case(c) for c in syllab)) == 1
                 for syllab in text.split(self.delim)
-            ), self.respell_err_msg
+            ):
+                raise RespellingError("Found invalid capitalization in respelling.")
         return is_respelled
 
     def _try_respelling(self) -> typing.Optional[str]:
@@ -138,7 +144,8 @@ class Token:
             updated = match[len(prefix) : -len(suffix)].replace(delim, cls.delim)
             updated = f"{cls.prefix}{updated}{cls.suffix}"
             script = script.replace(match, updated)
-        assert prefix not in script, cls.respell_err_msg
+        if prefix in script:
+            raise RespellingError("Found hanging prefix.")
         return script
 
 

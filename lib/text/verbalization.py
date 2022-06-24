@@ -38,6 +38,7 @@ from functools import partial
 from num2words import num2words
 
 from lib.text import load_en_english
+
 from lib.text.non_standard_words import (
     ACRONYMS,
     CURRENCIES,
