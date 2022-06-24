@@ -35,5 +35,5 @@ __all__ = [
     "align_tokens",
     "natural_keys",
     "_UNICODE_NORMAL_FORM",
-    "utils"
+    "utils",
 ]

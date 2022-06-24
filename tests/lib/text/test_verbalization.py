@@ -634,7 +634,7 @@ _tests_fractions = [
         "It was 37 3/4 years ago...",
         "It was thirty-seven and three fourths years ago...",
     ),
-    # TODO: Handle the specific grammer of expanding fractions, and maybe equations.
+    # TODO: Handle the specific grammar of expanding fractions, and maybe equations.
     ("Bake for ½ an hour.", "Bake for one half an hour."),
     (
         "An example of a negative mixed fraction: -5 1/2 and -1/2.",
@@ -693,11 +693,11 @@ def test___generic_numbers():
 
 
 _tests_verbalize_abbreviations = [
+    (
+        "Let's meet with Dr. Ruth Flintstone later today",
+        "Let's meet with Doctor Ruth Flintstone later today",
+    ),
     # TODO: Support contextual abbreviations like "Dr" which could be "Drive" or "Doctor"
-    # (
-    #     "Let's meet with Dr. Ruth Flintstone later today",
-    #     "Let's meet with Doctor Ruth Flintstone later today",
-    # ),
     # ("200 Lee Dr in Baytown, Texas", "200 Lee drive in Baytown, Texas"),
     # TODO: Support contextual abbreviations like "c" which could be "Cup" or "Circa"
     # (
@@ -733,6 +733,10 @@ _tests_verbalize_abbreviations = [
         "I live at three hundred and twenty-four south street in lincoln, nebraska.",
     ),
     ("Sen. Jon Ossoff (D-GA)", "Senator Jon Ossoff (D-GA)"),
+    (
+        "The ceremony will be held Nov. sixteenth.",
+        "The ceremony will be held november sixteenth.",
+    ),
 ]
 
 
@@ -781,7 +785,7 @@ def test_verbalize_text():
             "7:25AM. Run 13mi, eat 2,000cal, nap for 10-15 minutes, and eat dinner with Dr. "
             "Amelia Fern at 7:00 tonight.",
             "seven twenty-five AM. Run thirteen miles, eat two thousand calories, nap for ten to "
-            "fifteen minutes, and eat dinner with Dr. Amelia Fern at seven oh clock tonight.",
+            "fifteen minutes, and eat dinner with Doctor Amelia Fern at seven oh clock tonight.",
         ),
         (
             "Growth Plan: #1: The WSL team will accrue NZ$150M this month, #2: we will continue "
@@ -795,7 +799,7 @@ def test_verbalize_text():
             "It took 3 years, but 2018 marked the beginning of a new AAA era when Dr. Ruth Kinton "
             "became the 1st woman to take over the prestigious position of C.E.O.",
             "It took three years, but twenty eighteen marked the beginning of a new Triple A era "
-            "when Dr. Ruth Kinton became the first woman to take over the prestigious position "
+            "when Doctor Ruth Kinton became the first woman to take over the prestigious position "
             "of CEO.",
         ),
         (
@@ -804,6 +808,8 @@ def test_verbalize_text():
             "For example, if you have a current of two A and a voltage of five V, the power is "
             "two A * five V = ten W.",
         ),
+        # TODO: Support mixed alphanumeric/symbol cases (like serial numbers). The 'hyphen' may
+        # or may not be verbalized here as 'dash' or '', but shouldn't be in the result as '-'.
         (
             "Bacara utilized a DC-15A blaster rifle.",
             "Bacara utilized a DC- fifteen A blaster rifle.",
@@ -846,6 +852,11 @@ def test_verbalize_text():
             "William Simmons Senior. and Billy Simmons Junior arrived late.",
         ),
         ("1-800 flowers", "one, eight hundred, flowers"),
+        (
+            "The ceremony will be held Nov. 16th, 2023 at 5:00 in the evening.",
+            "The ceremony will be held november sixteenth, twenty twenty-three at five oh clock in "
+            "the evening.",
+        ),
     ]
     for text_in, text_out in tests:
         assert verbalize_text(_norm(text_in), Language.ENGLISH) == text_out

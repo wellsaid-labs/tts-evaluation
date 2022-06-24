@@ -37,6 +37,7 @@ from functools import partial
 
 from num2words import num2words
 
+from lib.text import load_en_english
 from lib.text.non_standard_words import (
     ACRONYMS,
     CURRENCIES,
@@ -51,7 +52,6 @@ from lib.text.non_standard_words import (
     SYMBOLS_VERBALIZED,
     UNITS_ABBREVIATIONS,
 )
-from lib.text import load_en_english
 from run._config import is_normalized_vo_script, normalize_vo_script
 from run.data._loader import Language
 
@@ -336,6 +336,7 @@ def _verbalize_measurement_abbreviation(prefix: typing.Optional[str], value: str
 
 
 def _verbalize_fraction(
+    minus: typing.Optional[str],
     whole: typing.Optional[str],
     numerator: str,
     denominator: str,
@@ -349,15 +350,16 @@ def _verbalize_fraction(
     """Verbalize a fraction (e.g. "59 1/2").
 
     Args:
+        minus (e.g. "-" in "-1/2")
         whole (e.g. "59")
         numerator (e.g. "1")
         denominator (e.g. "2")
     """
     verbalized = "" if whole is None else f"{_num2words(whole)} and "
-    key = (whole is not None, numerator[1:] if numerator[0] == "-" else numerator, denominator)
+    key = (whole is not None, numerator, denominator)
     if key in special_cases:
-        minus = "minus " if numerator[0] == "-" else ""
-        return f"{verbalized}{minus}{special_cases[key]}".strip()
+        minus = "minus " if minus == "-" else ""
+        return f"{minus}{verbalized}{special_cases[key]}".strip()
     verbalized += f"{_num2words(numerator)} {_num2words(denominator, ordinal=True)}"
     verbalized += "s" if int(numerator) > 1 else ""
     return verbalized.strip()
@@ -402,7 +404,7 @@ def _verbalize_abbreviation(abbr: str) -> str:
 
 
 _TIME_PERIOD = r"(\s?[ap]\.?m\b(?:\.\B)?)"  # Time period (e.g. AM, PM, a.m., p.m., am, pm)
-# TODO: Handle the various thousand seperators, like dots or spaces.
+# TODO: Handle the various thousand separators, like dots or spaces.
 _DIGIT = r"\d(?:\d|\,\d)*(?:\.)?[\d]*"
 _NUMBER_RANGE_SUFFIX = rf"(?:\s?[{_reg_ex_or(HYPHENS, '')}]\s?{_DIGIT})"
 _MAYBE_NUMBER_RANGE = rf"(?:{_DIGIT}{_NUMBER_RANGE_SUFFIX}?)"
@@ -506,11 +508,11 @@ class RegExPatterns:
         r"\b"
     )
     FRACTIONS: typing.Final[typing.Pattern[str]] = re.compile(
-        r"((?:\B\-|\b)\d+ )?"  # GROUP 1 (Optional): Whole Number
-        r"((?:\B\-|\b)\d+)"  # GROUP 2: Numerator
+        r"(\B\-|\b)?"  # GROUP 1 (Optional): Minus sign or boundary
+        r"(\d+ )?"  # GROUP 2 (Optional): Whole Number
+        r"(\d+)"  # GROUP 3: Numerator
         r"\/"
-        r"(\d+)"  # GROUP 3: Denominator
-        r"\b"
+        r"(\d+)"  # GROUP 4: Denominator
     )
     ISOLATED_GENERIC_DIGIT: typing.Final[typing.Pattern[str]] = re.compile(rf"\b({_DIGIT})\b")
     GENERIC_DIGIT: typing.Final[typing.Pattern[str]] = re.compile(rf"({_DIGIT})")

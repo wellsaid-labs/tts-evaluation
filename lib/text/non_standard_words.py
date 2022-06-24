@@ -319,7 +319,7 @@ TITLES_PERSON_PRX: typing.Final[typing.Dict[str, str]] = {
     "mr": "Mister",
     "ms": "Miz",
     "mrs": "Missus",
-    # "dr": "Doctor",
+    "dr": "Doctor",
     "prof": "Professor",
     "rev": "Reverend",
     "fr": "Father",
@@ -363,6 +363,19 @@ MONTH_ABBREVIATIONS: typing.Final[typing.Dict[str, str]] = {
     "dec": "december",
 }
 
+# TODO: Include Days of the week abbreviations; they currently confuse the sentencizer.
+DAY_ABBREVIATIONS: typing.Final[typing.Dict[str, str]] = {
+    # "sun": "sunday",
+    "mon": "monday",
+    "tue": "tuesday",
+    "tues": "tueseday",
+    "wed": "wednesday",
+    "thur": "thursday",
+    "thurs": "thursday",
+    "fri": "friday",
+    # "sat": "saturday",
+}
+
 GEOGRAPHY_ABBREVIATIONS: typing.Final[typing.Dict[str, str]] = {
     "ave": "avenue",
     "blvd": "boulevard",
@@ -375,7 +388,7 @@ GEOGRAPHY_ABBREVIATIONS: typing.Final[typing.Dict[str, str]] = {
     "fwy": "freeway",
     "rte": "route",
     "apt": "apartment",
-    "no": "number",
+    # "no": "number",
 }
 
 
@@ -426,6 +439,7 @@ for dict_ in (
     TITLES_PERSON_PRX,
     TITLES_PERSON_SFX,
     MONTH_ABBREVIATIONS,
+    # DAY_ABBREVIATIONS,
     GEOGRAPHY_ABBREVIATIONS,
     PART_OF_SPEECH_ABBREVIATIONS,
 ):
