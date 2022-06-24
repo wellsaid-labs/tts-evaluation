@@ -197,8 +197,8 @@ def process_tts_inputs(
 ) -> typing.Tuple[Inputs, PreprocessedInputs]:
     """Process TTS `script`, `speaker` and `session` for use with the model(s)."""
     normalized = normalize_vo_script(script, session[0].language)
-    if session[0].language == Language.ENGLISH:
-        script = verbalize_text(script)
+    if session[0].language is Language.ENGLISH:
+        normalized = verbalize_text(normalized)
     if len(normalized) == 0:
         raise PublicTextValueError("Text cannot be empty.")
 

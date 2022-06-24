@@ -71,7 +71,6 @@ class Token:
     def _is_respelled(self):
         """Is the `self.token.text` already respelled?"""
         text = self.token.text
-        print(self.token.text)
         is_respelled = text.startswith(self.prefix) and text.endswith(self.suffix)
         text = text[len(self.prefix) : -len(self.suffix)]
         if is_respelled:
