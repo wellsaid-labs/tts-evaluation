@@ -72,6 +72,13 @@ def is_voiced(text: str, language: Language) -> bool:
     return lib.text.is_voiced(text, _NON_ASCII_CHARS[language])
 
 
+def verbalize_text(text: str, language: Language) -> str:
+    if not is_normalized_vo_script(text, language):
+        logger.warning(f"Text was not normalized:\n{text}\n\tNormalizing now...")
+        return normalize_vo_script(text, language)
+    return lib.text.verbalize_text(text)
+
+
 _PUNCT_REGEXES = {l: re.compile(r"[^\w\s" + "".join(_NON_ASCII_CHARS[l]) + r"]") for l in Language}
 
 

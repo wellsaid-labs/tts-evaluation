@@ -33,12 +33,10 @@ import functools
 import logging
 import re
 import typing
-from functools import partial
 
 from num2words import num2words
 
 from lib.text import load_en_english
-
 from lib.text.non_standard_words import (
     ACRONYMS,
     CURRENCIES,
@@ -53,8 +51,6 @@ from lib.text.non_standard_words import (
     SYMBOLS_VERBALIZED,
     UNITS_ABBREVIATIONS,
 )
-from run._config import is_normalized_vo_script, normalize_vo_script
-from run.data._loader import Language
 
 logger = logging.getLogger(__name__)
 
@@ -541,15 +537,10 @@ def _apply(
     text: str,
     pattern: typing.Pattern,
     verbalize: typing.Callable[..., str],
-    language: Language,
     space_out: bool = False,
     **kw,
 ):
     """Helper function for verbalizing `text` by matching and verbalizing non-standard words."""
-    if not is_normalized_vo_script(text, language):
-        logger.warning(f"Text was not normalized:\n{text}\n\tNormalizing now...")
-        return normalize_vo_script(text, language)
-
     for match in reversed(list(pattern.finditer(text))):
         verbalized = verbalize(*match.groups(), **kw)
         left, right = text[: match.start()], text[match.end() :]
@@ -560,7 +551,7 @@ def _apply(
     return text
 
 
-def verbalize_text(text: str, language: Language) -> str:
+def verbalize_text(text: str) -> str:
     """Takes in a text string and, in an intentional and controlled manner, verbalizes numerals and
     non-standard-words in plain English. The order of events is important. Normalizing generic
     digits before normalizing money cases specifically, for example, will yield incomplete and
@@ -569,32 +560,31 @@ def verbalize_text(text: str, language: Language) -> str:
     nlp = load_en_english()
     nlp.add_pipe("sentencizer")
     sents = []
-    __apply = partial(_apply, language=language)
     for span in nlp(text).sents:
         sent = span.text
-        sent = __apply(sent, RegExPatterns.MONEY, _verbalize_money)
-        sent = __apply(sent, RegExPatterns.ORDINALS, _verbalize_ordinal)
-        sent = __apply(sent, RegExPatterns.TIMES, _verbalize_time)
-        sent = __apply(sent, RegExPatterns.PHONE_NUMBERS, _verbalize_phone_number)
-        sent = __apply(sent, RegExPatterns.TOLL_FREE_PHONE_NUMBERS, _verbalize_phone_number)
-        sent = __apply(
+        sent = _apply(sent, RegExPatterns.MONEY, _verbalize_money)
+        sent = _apply(sent, RegExPatterns.ORDINALS, _verbalize_ordinal)
+        sent = _apply(sent, RegExPatterns.TIMES, _verbalize_time)
+        sent = _apply(sent, RegExPatterns.PHONE_NUMBERS, _verbalize_phone_number)
+        sent = _apply(sent, RegExPatterns.TOLL_FREE_PHONE_NUMBERS, _verbalize_phone_number)
+        sent = _apply(
             sent, RegExPatterns.ALTERNATIVE_PHONE_NUMBERS, _verbalize_alternative_phone_number
         )
-        sent = __apply(sent, RegExPatterns.DECADES, _verbalize_decade)
-        sent = __apply(sent, RegExPatterns.YEARS, _verbalize_year)
-        sent = __apply(sent, RegExPatterns.PERCENTS, _verbalize_percent)
-        sent = __apply(sent, RegExPatterns.NUMBER_SIGNS, _verbalize_number_sign)
-        sent = __apply(sent, RegExPatterns.NUMBER_RANGE, _verbalize_generic_number)
-        sent = __apply(sent, RegExPatterns.URLS, _verbalize_url)
-        sent = __apply(
+        sent = _apply(sent, RegExPatterns.DECADES, _verbalize_decade)
+        sent = _apply(sent, RegExPatterns.YEARS, _verbalize_year)
+        sent = _apply(sent, RegExPatterns.PERCENTS, _verbalize_percent)
+        sent = _apply(sent, RegExPatterns.NUMBER_SIGNS, _verbalize_number_sign)
+        sent = _apply(sent, RegExPatterns.NUMBER_RANGE, _verbalize_generic_number)
+        sent = _apply(sent, RegExPatterns.URLS, _verbalize_url)
+        sent = _apply(
             sent, RegExPatterns.MEASUREMENT_ABBREVIATIONS, _verbalize_measurement_abbreviation
         )
-        sent = __apply(sent, RegExPatterns.ABBREVIATED_TIMES, _verbalize_abbreviated_time)
-        sent = __apply(sent, RegExPatterns.FRACTIONS, _verbalize_fraction)
-        sent = __apply(sent, RegExPatterns.ISOLATED_GENERIC_DIGIT, _verbalize_generic_number)
-        sent = __apply(sent, RegExPatterns.GENERIC_DIGIT, _verbalize_generic_number, space_out=True)
-        sent = __apply(sent, RegExPatterns.ACRONYMS, _verbalize_acronym)
-        sent = __apply(sent, RegExPatterns.ABBREVIATIONS, _verbalize_abbreviation)
+        sent = _apply(sent, RegExPatterns.ABBREVIATED_TIMES, _verbalize_abbreviated_time)
+        sent = _apply(sent, RegExPatterns.FRACTIONS, _verbalize_fraction)
+        sent = _apply(sent, RegExPatterns.ISOLATED_GENERIC_DIGIT, _verbalize_generic_number)
+        sent = _apply(sent, RegExPatterns.GENERIC_DIGIT, _verbalize_generic_number, space_out=True)
+        sent = _apply(sent, RegExPatterns.ACRONYMS, _verbalize_acronym)
+        sent = _apply(sent, RegExPatterns.ABBREVIATIONS, _verbalize_abbreviation)
         # NOTE: A period at the end of a sentence might get eaten.
         sent = sent + "." if span.text[-1] == "." and sent[-1] != "." else sent
         sents.extend([sent, span[-1].whitespace_])

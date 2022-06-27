@@ -36,6 +36,7 @@ from run._config.lang import (
     load_spacy_nlp,
     normalize_vo_script,
     replace_punc,
+    verbalize_text,
 )
 from run._config.train import make_signal_model_train_config, make_spectrogram_model_train_config
 
@@ -81,6 +82,7 @@ __all__ = [
     "is_voiced",
     "normalize_vo_script",
     "replace_punc",
+    "verbalize_text",
     "load_spacy_nlp",
     "make_signal_model_train_config",
     "make_spectrogram_model_train_config",
