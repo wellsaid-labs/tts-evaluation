@@ -56,7 +56,8 @@ def _num2words(num: str, ignore_zeros: bool = True, **kwargs) -> str:
         stripped = lstripped.rstrip("0")  # NOTE: Handle trailing zeros
         zeros = ["zero" for _ in range(len(lstripped) - len(stripped))]
         if stripped != ".":
-            out.append(num2words(stripped, **kwargs))
+            # NOTE: num2words will still verbalize the leading zero, even when not given (e.g. ".2")
+            out.append(num2words(stripped, **kwargs).replace("zero point", "point"))
         if stripped[-1] == ".":
             out.append("point")
         out.extend(zeros)
@@ -504,8 +505,6 @@ class RegExPatterns:
         r"(\d+)"  # GROUP 4: Denominator
         r"\b"
     )
-    ISOLATED_GENERIC_DIGIT: typing.Final[typing.Pattern[str]] = re.compile(rf"\b({_DIGIT})\b")
-    GENERIC_DIGIT: typing.Final[typing.Pattern[str]] = re.compile(rf"({_DIGIT})")
     # fmt: off
     ACRONYMS: typing.Final[typing.Pattern[str]] = re.compile(
         r"\b((?:[A-Z]){2,}\b"  # Upper case acronym
@@ -524,6 +523,8 @@ class RegExPatterns:
     ABBREVIATIONS: typing.Final[typing.Pattern[str]] = re.compile(
         rf"\b({_reg_ex_or(GENERAL_ABBREVIATIONS.keys())}(?:\.|\b))"
     )
+    ISOLATED_GENERIC_DIGIT: typing.Final[typing.Pattern[str]] = re.compile(rf"\b({_DIGIT})\b")
+    GENERIC_DIGIT: typing.Final[typing.Pattern[str]] = re.compile(rf"({_DIGIT})")
 
 
 def _apply(
@@ -574,9 +575,9 @@ def verbalize_text(text: str) -> str:
         )
         sent = _apply(sent, RegExPatterns.ABBREVIATED_TIMES, _verbalize_abbreviated_time)
         sent = _apply(sent, RegExPatterns.FRACTIONS, _verbalize_fraction)
-        sent = _apply(sent, RegExPatterns.ISOLATED_GENERIC_DIGIT, _verbalize_generic_number)
         sent = _apply(sent, RegExPatterns.ACRONYMS, _verbalize_acronym)
         sent = _apply(sent, RegExPatterns.ABBREVIATIONS, _verbalize_abbreviation)
+        sent = _apply(sent, RegExPatterns.ISOLATED_GENERIC_DIGIT, _verbalize_generic_number)
         sent = _apply(sent, RegExPatterns.GENERIC_DIGIT, _verbalize_generic_number, space_out=True)
         # NOTE: A period at the end of a sentence might get eaten.
         sent = sent + "." if span.text[-1] == "." and sent[-1] != "." else sent

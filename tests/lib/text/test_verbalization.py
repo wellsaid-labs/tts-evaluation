@@ -47,6 +47,7 @@ def test__num2words():
         ("00.", "zero zero point"),
         (".00", "point zero zero"),
         ("00.00", "zero zero point zero zero"),
+        ("0.3", "zero point three"),
         ("003", "zero zero three"),
         ("003.", "zero zero three point"),
         ("003.00", "zero zero three point zero zero"),
@@ -697,6 +698,10 @@ _tests_generic_numbers = [
     ),
     ("This may mean an even 50-50 split", "This may mean an even fifty fifty split"),
     ("Chapter 10.1 - 10.3 Quiz Review", "Chapter ten point one to ten point three Quiz Review"),
+    (
+        "I will leave my layer setting at 0.2 millilitres — the same as the base.",
+        "I will leave my layer setting at zero point two millilitres -- the same as the base.",
+    ),
 ]
 
 
