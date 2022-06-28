@@ -404,7 +404,7 @@ def test_normalize_vo_script():
     """Test `lib.text.utils.normalize_vo_script` handles all characters from 0 - 128."""
     # fmt: off
     assert list(normalize_vo_script(chr(i), frozenset(), strip=False) for i in range(0, 128)) == [
-        "", "", "", "", "", "", "", "", "", "  ", "\n", "", "\n", "\n", "", "", "", "", "", "", "",
+        "", "", "", "", "", "", "", "", "", " ", "\n", "", "\n", "\n", "", "", "", "", "", "", "",
         "", "", "", "", "", "", "", "", "", "", "", " ", "!", '"', "#", "$", "%", "&", "'", "(",
         ")", "*", "+", ",", "-", ".", "/", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", ":",
         ";", "<", "=", ">", "?", "@", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L",
@@ -417,7 +417,7 @@ def test_normalize_vo_script():
     # Cover whitespace normalization, common whitespace issues
     assert normalize_vo_script("\r\n", frozenset(), strip=False) == "\n"
     assert normalize_vo_script("\f", frozenset(), strip=False) == "\n"
-    assert normalize_vo_script("\thello\t", frozenset(), strip=False) == "  hello  "
+    assert normalize_vo_script("\thello\t", frozenset(), strip=False) == " hello "
 
     # Cover guillemet and quotation normalization
     assert all(
@@ -430,10 +430,10 @@ def test_normalize_vo_script():
         ]
     )
     # TODO: Need to Fix. Currently failing because 12½ normalizes to 121/2 instead of 12 1/2.
-    # assert (
-    #     normalize_vo_script("It's 12½ km² in area.", frozenset(), strip=False)
-    #     == "It's 12 1/2 km2 in area."
-    # )
+    assert (
+        normalize_vo_script("It's 12½ km² in area.", frozenset(), strip=False)
+        == "It's 12 1/2 km2 in area."
+    )
     assert (
         normalize_vo_script("‹Wir gehen am Dienstag.›", frozenset(), strip=False)
         == "'Wir gehen am Dienstag.'"
