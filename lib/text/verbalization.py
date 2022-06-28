@@ -334,14 +334,14 @@ def _verbalize_fraction(
         numerator (e.g. "1")
         denominator (e.g. "2")
     """
+    minus = "minus " if minus == "-" else ""
     verbalized = "" if whole is None else f"{_num2words(whole)} and "
     key = (whole is not None, numerator, denominator)
     if key in special_cases:
-        minus = "minus " if minus == "-" else ""
         return f"{minus}{verbalized}{special_cases[key]}".strip()
     verbalized += f"{_num2words(numerator)} {_num2words(denominator, ordinal=True)}"
     verbalized += "s" if int(numerator) > 1 else ""
-    return verbalized.strip()
+    return f"{minus}{verbalized.strip()}"
 
 
 def _verbalize_generic_number(

@@ -639,6 +639,11 @@ _tests_fractions = [
         "An example of a negative mixed fraction: -5 1/2 and -1/2.",
         "An example of a negative mixed fraction: minus five and a half and minus one half.",
     ),
+    (
+        "An example of a negative mixed fraction: -59 8/9 and -1/12.",
+        "An example of a negative mixed fraction: minus fifty-nine and eight ninths and minus "
+        "one twelfth.",
+    ),
 ]
 
 
