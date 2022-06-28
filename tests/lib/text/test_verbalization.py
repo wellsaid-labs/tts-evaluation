@@ -861,6 +861,10 @@ def test_verbalize_text():
             "The ceremony will be held november sixteenth, twenty twenty-three at five oh clock in "
             "the evening.",
         ),
+        (
+            "Is 2ms Response Time Good for Gaming",
+            "Is two ms Response Time Good for Gaming",
+        ),
     ]
     for text_in, text_out in tests:
         assert verbalize_text(_norm(text_in)) == text_out
