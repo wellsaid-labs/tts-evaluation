@@ -289,7 +289,7 @@ def validate_and_unpack(
         raise FlaskException(str(error), code="INVALID_TEXT")
     except RespellingError:
         raise FlaskException(
-            "Please format your respelling correctly (https://help.wellsaidlabs.com/pronunciation)",
+            "Please format your respelling correctly (help.wellsaid.com/respellings)",
             code="INVALID_TEXT"
         )
     except BaseException:
