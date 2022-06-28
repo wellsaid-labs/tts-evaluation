@@ -667,19 +667,7 @@ def test___fractions():
     assert_verbalized(_tests_fractions, RegExPatterns.FRACTIONS, _verbalize_fraction)
 
 
-_tests_generic_numbers = [
-    (
-        "it had been 4,879 days and took 53 boats to relocate all 235 residents just 1.20 "
-        "miles south",
-        "it had been four thousand, eight hundred and seventy-nine days and took fifty-three "
-        "boats to relocate all two hundred and thirty-five residents just one point two zero "
-        "miles south",
-    ),
-    (
-        "find us between the hours of 2 and 7 every afternoon.",
-        "find us between the hours of two and seven every afternoon.",
-    ),
-    ("2.3 revolutions in 10 minutes", "two point three revolutions in ten minutes"),
+_tests_generic_numbers__ranges = [
     (
         "children from grades 6-12, and compared",
         "children from grades six to twelve, and compared",
@@ -696,12 +684,37 @@ _tests_generic_numbers = [
         "Children ages 8-12 require tickets; children ages 3-7 do not.",
         "Children ages eight to twelve require tickets; children ages three to seven do not.",
     ),
-    ("This may mean an even 50-50 split", "This may mean an even fifty fifty split"),
     ("Chapter 10.1 - 10.3 Quiz Review", "Chapter ten point one to ten point three Quiz Review"),
+    ("This may mean an even 50-50 split", "This may mean an even fifty fifty split"),
+]
+
+
+def test___generic_numbers__ranges():
+    """Test `RegExPatterns.GENERIC_DIGITS` and `RegExPatterns.NUMBER_RANGE` matching and
+    `_verbalize_generic_number` verbalization for leftover, standalone numeral cases."""
+    assert_verbalized(
+        _tests_generic_numbers__ranges, RegExPatterns.NUMBER_RANGE, _verbalize_generic_number
+    )
+
+
+_tests_generic_numbers = [
+    (
+        "it had been 4,879 days and took 53 boats to relocate all 235 residents just 1.20 "
+        "miles south",
+        "it had been four thousand, eight hundred and seventy-nine days and took fifty-three "
+        "boats to relocate all two hundred and thirty-five residents just one point two zero "
+        "miles south",
+    ),
+    (
+        "find us between the hours of 2 and 7 every afternoon.",
+        "find us between the hours of two and seven every afternoon.",
+    ),
+    ("2.3 revolutions in 10 minutes", "two point three revolutions in ten minutes"),
     (
         "I will leave my layer setting at 0.2 millilitres — the same as the base.",
         "I will leave my layer setting at zero point two millilitres -- the same as the base.",
     ),
+    ("credit9.", "credit nine."),
 ]
 
 
@@ -710,8 +723,9 @@ def test___generic_numbers():
     `_verbalize_generic_number` verbalization for leftover, standalone numeral cases."""
     assert_verbalized(
         _tests_generic_numbers,
-        [RegExPatterns.NUMBER_RANGE, RegExPatterns.GENERIC_DIGIT],
+        RegExPatterns.GENERIC_DIGIT,
         _verbalize_generic_number,
+        space_out=True,
     )
 
 
@@ -763,6 +777,10 @@ _tests_verbalize_abbreviations = [
     (
         "We will speak with sen stanley shortley.",
         "We will speak with Senator stanley shortley.",
+    ),
+    (
+        "Spokesperson: “Mr. Snyder has not refused to appear” before Congress",
+        'Spokesperson: "Mister Snyder has not refused to appear" before Congress',
     ),
     # DO NOT VERBALIZE: ensure the following abbreviations are not caught by verbalization
     (
@@ -847,7 +865,7 @@ def test_verbalize_text():
         # or may not be verbalized here as 'dash' or '', but shouldn't be in the result as '-'.
         (
             "Bacara utilized a DC-15A blaster rifle.",
-            "Bacara utilized a DC- fifteen A blaster rifle.",
+            "Bacara utilized a DC-fifteen A blaster rifle.",
         ),
         # TODO: Support different number systems...
         # https://docs.oracle.com/cd/E19455-01/806-0169/overview-9/index.html
@@ -867,7 +885,7 @@ def test_verbalize_text():
             "[two-Pack, one foot] Short USB Type C Cable, etguuds four point two A Fast "
             "Charging USB-A to USB-C Charger Cord Braided Compatible with Samsung Galaxy S "
             "twenty S ten S nine S eight Plus S ten E Note twenty ten nine eight, A ten e "
-            "A twenty A fifty A fifty-one , Moto G seven G eight",
+            "A twenty A fifty A fifty-one, Moto G seven G eight",
         ),
         # TODO: Fix grammar after expanding a number.
         (

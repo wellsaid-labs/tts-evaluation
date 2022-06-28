@@ -393,7 +393,7 @@ def _verbalize_abbreviation(abbr: str) -> str:
 
 _TIME_PERIOD = r"( ?[ap]\.?m\b(?:\.\B)?)"  # Time period (e.g. AM, PM, a.m., p.m., am, pm)
 # TODO: Handle the various thousand separators, like dots or spaces.
-_DIGIT = r"\d(?:\d|\,\d)*(?:\.)?[\d]*"
+_DIGIT = r"\d(?:\d|\,\d)*(?:\.[\d]+)?"
 _NUMBER_RANGE_SUFFIX = rf"(?: ?[{_reg_ex_or(HYPHENS, '')}] ?{_DIGIT})"
 _MAYBE_NUMBER_RANGE = rf"(?:{_DIGIT}{_NUMBER_RANGE_SUFFIX}?)"
 _NUMBER_RANGE = rf"(?:{_DIGIT}{_NUMBER_RANGE_SUFFIX})"
@@ -522,7 +522,7 @@ class RegExPatterns:
         rf"({_reg_ex_or(UNITS_ABBREVIATIONS.keys(), right=True)})"
     )
     ABBREVIATIONS: typing.Final[typing.Pattern[str]] = re.compile(
-        rf"(?:\s|^)({_reg_ex_or(GENERAL_ABBREVIATIONS.keys())}(?:\.|\s|$))"
+        rf"(?<!-)\b({_reg_ex_or(GENERAL_ABBREVIATIONS.keys())}(?:\.|\b))(?!-)"
     )
     ISOLATED_GENERIC_DIGIT: typing.Final[typing.Pattern[str]] = re.compile(rf"\b({_DIGIT})\b")
     GENERIC_DIGIT: typing.Final[typing.Pattern[str]] = re.compile(rf"({_DIGIT})")
@@ -540,8 +540,8 @@ def _apply(
         verbalized = verbalize(*match.groups(), **kw)
         left, right = text[: match.start()], text[match.end() :]
         if space_out:
-            left = left + " " if len(left) > 0 and left[-1] != " " else left
-            right = " " + right if len(right) > 0 and right[0] != " " else right
+            left = left + " " if len(left) > 0 and left[-1].isalnum() else left
+            right = " " + right if len(right) > 0 and right[0].isalnum() else right
         text = f"{left}{verbalized}{right}"
     return text
 
@@ -577,9 +577,9 @@ def verbalize_text(text: str) -> str:
         sent = _apply(sent, RegExPatterns.ABBREVIATED_TIMES, _verbalize_abbreviated_time)
         sent = _apply(sent, RegExPatterns.FRACTIONS, _verbalize_fraction)
         sent = _apply(sent, RegExPatterns.ACRONYMS, _verbalize_acronym)
-        sent = _apply(sent, RegExPatterns.ABBREVIATIONS, _verbalize_abbreviation, space_out=True)
-        sent = _apply(sent, RegExPatterns.ISOLATED_GENERIC_DIGIT, _verbalize_generic_number)
+        sent = _apply(sent, RegExPatterns.ABBREVIATIONS, _verbalize_abbreviation)
         sent = _apply(sent, RegExPatterns.GENERIC_DIGIT, _verbalize_generic_number, space_out=True)
+        sent = _apply(sent, RegExPatterns.ISOLATED_GENERIC_DIGIT, _verbalize_generic_number)
         # NOTE: A period at the end of a sentence might get eaten.
         sent = sent + "." if span.text[-1] == "." and sent[-1] != "." else sent
         sents.extend([sent, span[-1].whitespace_])

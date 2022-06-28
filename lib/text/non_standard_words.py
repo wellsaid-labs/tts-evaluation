@@ -345,7 +345,7 @@ TITLES_PERSON_PRX: typing.Final[typing.Dict[str, str]] = {
     "rev": "Reverend",
     "fr": "Father",
     "pr": "Pastor",
-    # "br": "Brother",  # Rare, 'br' is more commonly denoting "Brazil"
+    # "br": "Brother",  # Rare, 'br' is more commonly denoting 'Brazil'
     # "sr": "Sister",   # Rare, 'sr' is more commonly denoting 'Senior'
     # "st": "Saint",    # Rare, 'st' is more commonly denoting 'street'
     "pres": "President",
@@ -355,7 +355,7 @@ TITLES_PERSON_PRX: typing.Final[typing.Dict[str, str]] = {
     "sen": "Senator",
     "adm": "Admiral",
     "capt": "Captain",
-    "gen": "General",
+    # "gen": "General",  # Rare, more commonly gen is denoting 'Generation' but can be spoken "gen"
     "col": "Colonel",
     "lt": "Lieutenant",
     "maj": "Major",
@@ -438,7 +438,7 @@ _OTHER_ABBREVIATIONS: typing.Final[typing.Dict[str, str]] = {
     "dict": "dictionary",
     "doc": "document",
     "docs": "documents",
-    "ed": "edition",
+    # "ed": "edition",  # Ed is a person's name
     "eds": "editions",
     "est": "established",
     "etc": "et cetera",
