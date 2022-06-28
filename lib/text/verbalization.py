@@ -31,6 +31,7 @@ from lib.text.non_standard_words import (
     ORDINAL_SUFFIXES,
     PLUS_OR_MINUS_PREFIX,
     SYMBOLS_VERBALIZED,
+    TIME_ZONES,
     UNITS_ABBREVIATIONS,
 )
 
@@ -138,7 +139,11 @@ def _verbalize_time_period(period: typing.Optional[str]):
 
 
 def _verbalize_time(
-    hour: str, minute: str, period: typing.Optional[str], o_clock: str = "oh clock"
+    hour: str,
+    minute: str,
+    period: typing.Optional[str],
+    zone: typing.Optional[str],
+    o_clock: str = "oh clock",
 ) -> str:
     """Verbalize a time (e.g. "10:04PM", "2:13 a.m.").
 
@@ -150,17 +155,19 @@ def _verbalize_time(
     """
     minute = o_clock if minute == "00" else _num2words(minute)
     period = _verbalize_time_period(period)
-    return " ".join((s for s in (_num2words(hour), minute, period) if len(s) > 0))
+    zone = TIME_ZONES[zone.lower()] if zone else ""
+    return " ".join((s for s in (_num2words(hour), minute, period, zone) if len(s) > 0))
 
 
-def _verbalize_abbreviated_time(hour: str, period: str) -> str:
+def _verbalize_abbreviated_time(hour: str, period: str, zone: typing.Optional[str]) -> str:
     """Verbalize a abbreviated time (e.g. "10PM", "10 p.m.").
 
     Args:
         hours (e.g. "10")
         period (e.g. "PM", "a.m.")
     """
-    return f"{_num2words(hour)} {_verbalize_time_period(period)}"
+    zone = " " + TIME_ZONES[zone.lower()] if zone else ""
+    return f"{_num2words(hour)} {_verbalize_time_period(period)}{zone}"
 
 
 _LETTER_PATTERN = re.compile(r"[A-Za-z]")
@@ -382,10 +389,10 @@ def _verbalize_abbreviation(abbr: str) -> str:
     return GENERAL_ABBREVIATIONS[key] if key in GENERAL_ABBREVIATIONS else abbr
 
 
-_TIME_PERIOD = r"(\s?[ap]\.?m\b(?:\.\B)?)"  # Time period (e.g. AM, PM, a.m., p.m., am, pm)
+_TIME_PERIOD = r"( ?[ap]\.?m\b(?:\.\B)?)"  # Time period (e.g. AM, PM, a.m., p.m., am, pm)
 # TODO: Handle the various thousand separators, like dots or spaces.
 _DIGIT = r"\d(?:\d|\,\d)*(?:\.)?[\d]*"
-_NUMBER_RANGE_SUFFIX = rf"(?:\s?[{_reg_ex_or(HYPHENS, '')}]\s?{_DIGIT})"
+_NUMBER_RANGE_SUFFIX = rf"(?: ?[{_reg_ex_or(HYPHENS, '')}] ?{_DIGIT})"
 _MAYBE_NUMBER_RANGE = rf"(?:{_DIGIT}{_NUMBER_RANGE_SUFFIX}?)"
 _NUMBER_RANGE = rf"(?:{_DIGIT}{_NUMBER_RANGE_SUFFIX})"
 _COUNTRY_CODE = r"\+?\b\d{1,2}[-. ]*"
@@ -413,11 +420,14 @@ class RegExPatterns:
         r"\b(\d{1,2})"  # GROUP 1: Hours
         r":"
         r"([0-5]{1}[0-9]{1})"  # GROUP 2: Minutes
-        rf"(?:{_TIME_PERIOD}|\b)",  # GROUP 3 (Optional): Time period
+        rf"(?:{_TIME_PERIOD}|\b)"  # GROUP 3 (Optional): Time period
+        rf"(?: \(?({_reg_ex_or(TIME_ZONES)})(?:\)\B)?|\b)?",  # GROUP 4 (Optional): Time zone
         flags=re.IGNORECASE,
     )
     ABBREVIATED_TIMES: typing.Final[typing.Pattern[str]] = re.compile(
-        r"\b(\d{1,2})" rf"{_TIME_PERIOD}",  # GROUP 1: Hours, GROUP 2: Time period
+        r"\b(\d{1,2})"  # GROUP 1: Hours
+        rf"{_TIME_PERIOD}"  # GROUP 2: Time period
+        rf"(?: \(?({_reg_ex_or(TIME_ZONES)})(?:\)\B)?|\b)?",  # GROUP 3 (Optional): Time zone
         flags=re.IGNORECASE,
     )
     # TODO: A phone number could have up to 15 characters

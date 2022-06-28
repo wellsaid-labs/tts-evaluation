@@ -178,6 +178,11 @@ _tests_times = [
         "They should be arriving between 9:45 and 11:00 tomorrow night!",
         "They should be arriving between nine forty-five and eleven oh clock tomorrow night!",
     ),
+    (
+        "The all-hands meeting will be held at 2:15pm est, or 11:15 PM (PST)",
+        "The all-hands meeting will be held at two fifteen PM eastern standard time, "
+        "or eleven fifteen PM pacific standard time",
+    ),
 ]
 
 
@@ -190,7 +195,12 @@ _tests_abbreviated_times = [
     (
         "Don't forget to feed him at 9AM, 1 p.m., and 5 pm!",
         "Don't forget to feed him at nine AM, one PM, and five PM!",
-    )
+    ),
+    (
+        "The all-hands meeting will be held at 2pm est, or 11 PM (PST)",
+        "The all-hands meeting will be held at two PM eastern standard time, "
+        "or eleven PM pacific standard time",
+    ),
 ]
 
 
@@ -604,6 +614,10 @@ _tests_measurement_abbreviations = [
         "per second over one second, then its constant acceleration is three meters per "
         "second squared.",
     ),
+    (
+        "The space is approximately 2ms in length.",
+        "The space is approximately two milliseconds in length.",
+    ),
 ]
 
 
@@ -863,7 +877,7 @@ def test_verbalize_text():
         ),
         (
             "Is 2ms Response Time Good for Gaming",
-            "Is two ms Response Time Good for Gaming",
+            "Is two milliseconds Response Time Good for Gaming",
         ),
     ]
     for text_in, text_out in tests:

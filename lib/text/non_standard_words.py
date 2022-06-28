@@ -95,7 +95,6 @@ ORDINAL_SUFFIXES: typing.Final[typing.Tuple[str, ...]] = ("st", "nd", "rd", "th"
 #   MONEY  #
 ############
 
-
 _CURRENCIES: typing.Final[typing.Dict[str, typing.Tuple[str, str, str, str]]] = {
     "$": ("dollar", "dollars", "cent", "cents"),
     "US$": ("US dollar", "US dollars", "cent", "cents"),
@@ -132,6 +131,26 @@ MONEY_ABBREVIATIONS: typing.Final[typing.Dict[str, str]] = {
     "BB": MONEY_SUFFIX[3],
     "T": MONEY_SUFFIX[4],
     "TT": MONEY_SUFFIX[4],
+}
+
+################
+# MEASUREMENTS #
+################
+
+# NOTE: These abbreviations must follow a time so as not to be confused with alternative
+# abbreviations such as "established" (est) or "piedmont" (pdt).
+
+TIME_ZONES: typing.Final[typing.Dict[str, str]] = {
+    # TODO: include global timezones
+    "est": "eastern standard time",
+    "cst": "central standard time",
+    "mst": "mountain standard time",
+    "pst": "pacific standard time",
+    "edt": "eastern daylight time",
+    "cdt": "central daylight time",
+    "mdt": "mountain daylight time",
+    "pdt": "pacific daylight time",
+    "gmt": "greenwich mean time",
 }
 
 ################
@@ -240,8 +259,10 @@ MEMORY: typing.Final[typing.Dict[str, typing.Tuple[str, str]]] = {
 }
 
 TIME: typing.Final[typing.Dict[str, typing.Tuple[str, str]]] = {
+    "ms": ("millisecond", "milliseconds"),
     "sec": ("second", "seconds"),
     "min": ("minute", "minutes"),
+    "h": ("hour", "hours"),
     "hr": ("hour", "hours"),
     "wk": ("week", "weeks"),
     "mo": ("month", "months"),
@@ -273,7 +294,6 @@ SUPERSCRIPT: typing.Final[typing.Dict[str, typing.Tuple[str, str]]] = {
     "m/s²": ("meter per second squared", "meters per second squared"),
     "ft/s²": ("foot per second squared", "feet per second squared"),
 }
-
 
 OTHER: typing.Final[typing.Dict[str, typing.Tuple[str, str]]] = {
     # '"': ("inch", "inches"),              # Too vague, quotes are often used for emphasis instead.
@@ -311,7 +331,6 @@ _PLUS_OR_MINUS_PREFIX = {
 }
 PLUS_OR_MINUS_PREFIX: typing.Final[typing.Dict[str, str]]
 PLUS_OR_MINUS_PREFIX = {_norm(k): v for k, v in _PLUS_OR_MINUS_PREFIX.items()}
-
 
 #################
 # ABBREVIATIONS #
@@ -433,7 +452,6 @@ _OTHER_ABBREVIATIONS: typing.Final[typing.Dict[str, str]] = {
     "trig": "trigonometry",
     "vs": "versus",
 }
-
 
 _GENERAL_ABBREVIATIONS: typing.Final[typing.Dict[str, str]] = {}
 for dict_ in (
