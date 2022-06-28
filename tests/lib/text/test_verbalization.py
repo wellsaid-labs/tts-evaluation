@@ -760,12 +760,24 @@ _tests_verbalize_abbreviations = [
         "The ceremony will be held Nov. sixteenth.",
         "The ceremony will be held november sixteenth.",
     ),
+    (
+        "We will speak with sen stanley shortley.",
+        "We will speak with Senator stanley shortley.",
+    ),
+    # DO NOT VERBALIZE: ensure the following abbreviations are not caught by verbalization
+    (
+        "The acronym gen-ed., stands for “General Education”.",
+        'The acronym gen-ed., stands for "General Education".',
+    ),
 ]
 
 
 def test__verbalize_abbreviations():
     assert_verbalized(
-        _tests_verbalize_abbreviations, RegExPatterns.ABBREVIATIONS, _verbalize_abbreviation
+        _tests_verbalize_abbreviations,
+        RegExPatterns.ABBREVIATIONS,
+        _verbalize_abbreviation,
+        space_out=True,
     )
 
 

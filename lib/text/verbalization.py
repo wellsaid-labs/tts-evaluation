@@ -386,6 +386,7 @@ def _verbalize_abbreviation(abbr: str) -> str:
     Args:
         abbr (e.g. "Mr", "Ms", etc.)
     """
+    abbr = abbr.strip()
     key = (abbr[:-1] if abbr[-1] == "." else abbr).lower()
     return GENERAL_ABBREVIATIONS[key] if key in GENERAL_ABBREVIATIONS else abbr
 
@@ -521,7 +522,7 @@ class RegExPatterns:
         rf"({_reg_ex_or(UNITS_ABBREVIATIONS.keys(), right=True)})"
     )
     ABBREVIATIONS: typing.Final[typing.Pattern[str]] = re.compile(
-        rf"\b({_reg_ex_or(GENERAL_ABBREVIATIONS.keys())}(?:\.|\b))"
+        rf"(?:\s|^)({_reg_ex_or(GENERAL_ABBREVIATIONS.keys())}(?:\.|\s|$))"
     )
     ISOLATED_GENERIC_DIGIT: typing.Final[typing.Pattern[str]] = re.compile(rf"\b({_DIGIT})\b")
     GENERIC_DIGIT: typing.Final[typing.Pattern[str]] = re.compile(rf"({_DIGIT})")
@@ -576,7 +577,7 @@ def verbalize_text(text: str) -> str:
         sent = _apply(sent, RegExPatterns.ABBREVIATED_TIMES, _verbalize_abbreviated_time)
         sent = _apply(sent, RegExPatterns.FRACTIONS, _verbalize_fraction)
         sent = _apply(sent, RegExPatterns.ACRONYMS, _verbalize_acronym)
-        sent = _apply(sent, RegExPatterns.ABBREVIATIONS, _verbalize_abbreviation)
+        sent = _apply(sent, RegExPatterns.ABBREVIATIONS, _verbalize_abbreviation, space_out=True)
         sent = _apply(sent, RegExPatterns.ISOLATED_GENERIC_DIGIT, _verbalize_generic_number)
         sent = _apply(sent, RegExPatterns.GENERIC_DIGIT, _verbalize_generic_number, space_out=True)
         # NOTE: A period at the end of a sentence might get eaten.

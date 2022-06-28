@@ -345,13 +345,13 @@ TITLES_PERSON_PRX: typing.Final[typing.Dict[str, str]] = {
     "rev": "Reverend",
     "fr": "Father",
     "pr": "Pastor",
-    "br": "Brother",
+    # "br": "Brother",  # Rare, 'br' is more commonly denoting "Brazil"
     # "sr": "Sister",   # Rare, 'sr' is more commonly denoting 'Senior'
     # "st": "Saint",    # Rare, 'st' is more commonly denoting 'street'
     "pres": "President",
     "vp": "Vice President",
     "hon": "Honorable",
-    "rep": "Representative",
+    # "rep": "Representative",  # rep is a common word used in fitness
     "sen": "Senator",
     "adm": "Admiral",
     "capt": "Captain",
