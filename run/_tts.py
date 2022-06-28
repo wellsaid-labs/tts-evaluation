@@ -23,7 +23,12 @@ import torch
 from lib.environment import PT_EXTENSION, load
 from lib.utils import get_chunks, tqdm_
 from run import train
-from run._config import CHECKPOINTS_PATH, load_spacy_nlp, normalize_vo_script, verbalize_text
+from run._config import (
+    CHECKPOINTS_PATH,
+    load_spacy_nlp,
+    normalize_vo_script,
+    normalize_and_verbalize_text,
+)
 from run._models.signal_model import SignalModel, generate_waveform
 from run._models.spectrogram_model import (
     Inputs,
@@ -195,9 +200,10 @@ def process_tts_inputs(
     nlp: spacy.language.Language, package: TTSPackage, script: str, session: Session
 ) -> typing.Tuple[Inputs, PreprocessedInputs]:
     """Process TTS `script`, `speaker` and `session` for use with the model(s)."""
-    normalized = normalize_vo_script(script, session[0].language)
     if session[0].language is Language.ENGLISH:
-        normalized = verbalize_text(normalized, Language.ENGLISH)
+        normalized = normalize_and_verbalize_text(script, Language.ENGLISH)
+    else:
+        normalized = normalize_vo_script(script, session[0].language)
     if len(normalized) == 0:
         raise PublicTextValueError("Text cannot be empty.")
 

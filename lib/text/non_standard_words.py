@@ -108,6 +108,9 @@ _CURRENCIES: typing.Final[typing.Dict[str, typing.Tuple[str, str, str, str]]] = 
     "CHF": ("Swiss franc", "Swiss francs", "centime", "centimes"),
     "HK$": ("Hong Kong dollar", "Hong Kong dollars", "cent", "cents"),
     "NZ$": ("New Zealand dollar", "New Zealand dollars", "cent", "cents"),
+    "MX$": ("Mexican Peso", "Mexican Pesos", "centavo", "centavos"),
+    "DEM": ("Deutsche Mark", "Deutsche Marks", "pfennig", "pfennigs"),
+    "R$": ("Brazilian real", "Brazilian real", "centavo", "centavos"),
 }
 
 CURRENCIES: typing.Final[typing.Dict[str, typing.Tuple[str, str, str, str]]]

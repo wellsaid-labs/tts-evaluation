@@ -1,23 +1,5 @@
 """
 TODO: Utilize spaCy 3.0 for entity identification [inconsistent, unreliable in 2.0 so far]
-TODO: Handle...
-  * Fractions ?
-  * Nominals (digits, identification, zip codes?)
-  * Generic, final catch-all numeral case
-  * Abbreviations
-      * Measurements/units ✔
-      * Addresses/streets
-  * Symbols
-      * # (hashtag)
-      * / (silent, slash, context)
-      * @ (at)
-      * : (to - ratio context ?)
-TODO: Group together all the text related modules. For example, we could create a folder to
-incapsulate `text.py`, `text_utils.py` and `non_standard_words.py`? Or we could just add everything
-to `text.py`?
-TODO: First, run a sentencizer before classifying and normalizing the text. This should help ensure
-that end of sentence punctuation marks are preserved. For example, this will help in scenarios
-where a dotted phone number or abbreviation is at the end of a sentence.
 TODO: Add a classifier which checks if a string has any non-standard words. This should be
 helpful for finding test cases, and ensuring that nothing was missed. For example, it could look
 for the presence of numbers.
@@ -505,11 +487,12 @@ class RegExPatterns:
         r"\b"
     )
     FRACTIONS: typing.Final[typing.Pattern[str]] = re.compile(
-        r"(\B\-|\b)?"  # GROUP 1 (Optional): Minus sign or boundary
+        r"(\B\-|\b)"  # GROUP 1: Minus sign or boundary
         r"(\d+ )?"  # GROUP 2 (Optional): Whole Number
         r"(\d+)"  # GROUP 3: Numerator
         r"\/"
         r"(\d+)"  # GROUP 4: Denominator
+        r"\b"
     )
     ISOLATED_GENERIC_DIGIT: typing.Final[typing.Pattern[str]] = re.compile(rf"\b({_DIGIT})\b")
     GENERIC_DIGIT: typing.Final[typing.Pattern[str]] = re.compile(rf"({_DIGIT})")

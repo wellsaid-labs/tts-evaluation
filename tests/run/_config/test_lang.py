@@ -1,11 +1,16 @@
 import functools
 
-from run._config import is_sound_alike, verbalize_text
+from run._config import (
+    is_normalized_vo_script,
+    is_sound_alike,
+    normalize_and_verbalize_text,
+    normalize_vo_script,
+)
 from run.data._loader import Language
 
 
 def test_is_sound_alike():
-    """Test `is_sound_alike` if determines if two phrase sound-alike."""
+    """Test `is_sound_alike` determines if two phrases sound-alike."""
     _isa = functools.partial(is_sound_alike, language=Language.ENGLISH)
     assert not _isa("Hello", "Hi")
     assert _isa("financingA", "financing a")
@@ -23,7 +28,7 @@ def test_is_sound_alike():
 
 
 def test_is_sound_alike__de():
-    """Test `is_sound_alike` if determines if two phrase sound-alike in German cases."""
+    """Test `is_sound_alike` determines if two phrases sound-alike in German cases."""
     _isa = functools.partial(is_sound_alike, language=Language.GERMAN)
     assert not _isa("Hänsel", "Gretel")
     assert _isa("Pimpel, Schlafmütz und -- Seppl", "pimpel schlafmütz und seppl")
@@ -31,8 +36,52 @@ def test_is_sound_alike__de():
     assert _isa("fließen die Straße", "fliessen die Strasse")
 
 
-def text_verbalize_text():
-    """Test `verbalize_text` given the English langauge parameter."""
+def test_normalize_vo_script():
+    """Test `normalize_vo_script` normalizes scripts appropriately for each language."""
+    tests = {
+        Language.ENGLISH: (
+            "I always refer to my résumé so the hiring manager doesn't assume my responses are "
+            "just a façade and can be confident in offering me a 50€/hr wage 🤩.",
+            "I always refer to my résumé so the hiring manager doesn't assume my responses are "
+            "just a façade and can be confident in offering me a 50EUR/hr wage.",
+        ),
+        Language.GERMAN: (
+            "»…die Straße, Wir gehen am Dienstag.«",
+            '"...die Straße, Wir gehen am Dienstag."',
+        ),
+        Language.SPANISH: (
+            "¿Pueden los niños unirse al círculo de juego?",
+            "¿Pueden los niños unirse al círculo de juego?",
+        ),
+        Language.PORTUGUESE: (
+            "As crianças podem participar do círculo do jogo?",
+            "As crianças podem participar do círculo do jogo?",
+        ),
+    }
+
+    assert all(
+        (text_out == normalize_vo_script(text_in, lang) for text_in, text_out in texts)
+        for lang, texts in tests.items()
+    )
+
+
+def test_is_normalized_vo_script():
+    """Test `is_normalized_vo_script` handles all languages."""
+    tests = {
+        Language.ENGLISH: "I always refer to my résumé so the hiring manager doesn't assume my "
+        "responses are just a façade and can be confident in offering me a 50€/hr wage 🤩.",
+        Language.GERMAN: "»…die Straße, Wir gehen am Dienstag.«",
+        Language.SPANISH: "¿Pueden los niños unirse al círculo de juego?",
+        Language.PORTUGUESE: "As crianças podem participar do círculo do jogo?",
+    }
+    assert all(
+        is_normalized_vo_script(normalize_vo_script(text, lang), lang)
+        for lang, text in tests.items()
+    )
+
+
+def text_normalize_and_verbalize_text():
+    """Test `normalize_and_verbalize_text` given the English langauge parameter."""
     text_in, text_out = (
         "7:25AM. Run 13mi, eat 2,000cal, nap for 10-15 minutes, and eat dinner with Dr. "
         "Amelia Fern at 7:00 tonight.",
@@ -40,4 +89,4 @@ def text_verbalize_text():
         "fifteen minutes, and eat dinner with Doctor Amelia Fern at seven oh clock tonight.",
     )
 
-    assert text_out == verbalize_text(text_in, Language.ENGLISH)
+    assert text_out == normalize_and_verbalize_text(text_in, Language.ENGLISH)

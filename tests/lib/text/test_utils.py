@@ -429,6 +429,11 @@ def test_normalize_vo_script():
             ]
         ]
     )
+    # TODO: Need to Fix. Currently failing because 12½ normalizes to 121/2 instead of 12 1/2.
+    # assert (
+    #     normalize_vo_script("It's 12½ km² in area.", frozenset(), strip=False)
+    #     == "It's 12 1/2 km2 in area."
+    # )
     assert (
         normalize_vo_script("‹Wir gehen am Dienstag.›", frozenset(), strip=False)
         == "'Wir gehen am Dienstag.'"
@@ -439,7 +444,7 @@ def test_normalize_vo_script():
 NON_ASCII_CHAR = frozenset([
     'Á', 'Ñ', '¡', 'Í', 'á', 'û', 'Ç', 'É', 'Ô', 'ß', 'ó', 'è', 'ú', 'Ì', 'Ù', 'Ó', 'ô', 'ù', 'ã',
     'Ú', 'õ', 'ï', 'â', 'Ï', 'ò', 'À', 'é', 'à', 'ö', 'ü', 'ì', 'Ü', 'ç', 'Û', 'È', 'ë', 'ä', 'Ä',
-    'Ö', 'Â', 'Ò', 'Î', 'Õ', 'Ê', 'î', '¿', 'Ë', 'ñ', 'ê', 'Ã', 'í'
+    'Ö', 'Â', 'Ò', 'Î', 'Õ', 'Ê', 'î', '¿', 'Ë', 'ñ', 'ê', 'Ã', 'í',
 ])
 # fmt: on
 
