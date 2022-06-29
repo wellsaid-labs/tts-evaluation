@@ -408,7 +408,7 @@ GEOGRAPHY_ABBREVIATIONS: typing.Final[typing.Dict[str, str]] = {
     "hwy": "highway",
     "fwy": "freeway",
     "rte": "route",
-    "apt": "apartment",
+    # "apt": "apartment",  'apt' is an English word
     # "no": "number",
 }
 
