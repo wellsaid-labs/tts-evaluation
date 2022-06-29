@@ -784,6 +784,10 @@ _tests_verbalize_abbreviations = [
     ),
     # DO NOT VERBALIZE: ensure the following abbreviations are not caught by verbalization
     (
+        "The term doc-fig should not be verbalized to document-figure.",
+        "The term doc-fig should not be verbalized to document-figure.",
+    ),
+    (
         "The acronym gen-ed., stands for “General Education”.",
         'The acronym gen-ed., stands for "General Education".',
     ),
