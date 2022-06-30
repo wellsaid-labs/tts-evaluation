@@ -57,43 +57,50 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
    ```zsh
    VM_NAME=$USER"-dataset-processing" # EXAMPLE: michaelp-dataset-processing
    # NOTE: Pick a zone that's closest to the GCS bucket `wellsaid_labs_datasets`.
-   VM_ZONE=us-central1-a # EXAMPLE: us-central1-a
-
+   GCP_USER=$USER
+   TYPE='preemptible'
    PROJECT=voice-research-255602
    VM_MACHINE_TYPE=n1-standard-2
-   gcloud config set project $PROJECT
-   gcloud auth application-default set-quota-project $PROJECT
    ```
 
-1. Create a VM, like so...
+2. Create a VM, like so...
 
    ```zsh
-   gcloud compute instances create $VM_NAME \
-      --zone=$VM_ZONE \
+   python -m run.utils.gcp $TYPE make-instance \
+      --name=$NAME \
       --machine-type=$VM_MACHINE_TYPE \
-      --boot-disk-size=512GB \
-      --boot-disk-type=pd-ssd \
-      --scopes=https://www.googleapis.com/auth/cloud-platform \
+      --disk-size=512 \
+      --disk-type='pd-ssd' \
       --image-family=ubuntu-2004-lts \
       --image-project=ubuntu-os-cloud
    ```
 
    ❓ NOTE: 24-hours of "n1-standard-2" VM usage can cost up to 3$.
 
-1. From your local machine, `ssh` into your new VM instance, like so...
+3. From your local machine, `ssh` into your new VM instance, like so...
 
    ```zsh
-   gcloud compute ssh --zone=$VM_ZONE $VM_NAME --command="sudo chmod -R a+rwx /opt"
-   gcloud compute ssh --zone=$VM_ZONE $VM_NAME --command="mkdir /opt/wellsaid-labs"
+   VM_NAME=$(python -m run.utils.gcp $TYPE most-recent --name $NAME)
+   echo "VM_NAME=$VM_NAME"
+   VM_ZONE=$(python -m run.utils.gcp zone --name $VM_NAME)
    gcloud compute ssh --zone=$VM_ZONE $VM_NAME
    ```
 
    These commands may exit with the return code 255, if so, try again.
 
-1. In another terminal window, run `lsyncd` to sync your local files to your virtual machine...
+4. Make the repo directory
+
+  ```zsh
+  sudo chmod -R 777 /opt
+  mkdir /opt/wellsaid-labs
+  ```
+
+5. In another terminal window, run `lsyncd` to sync your local files to your virtual machine...
 
    ```zsh
-   VM_NAME=$(python -m run.utils.gcp most-recent --filter "dataset-processing")
+   NAME=$USER"-dataset-processing"
+   TYPE='preemptible'
+   VM_NAME=$(python -m run.utils.gcp $TYPE most-recent --name $NAME) echo "VM_NAME=$VM_NAME"
    VM_ZONE=$(python -m run.utils.gcp zone --name $VM_NAME)
    VM_IP=$(python -m run.utils.gcp ip --name $VM_NAME --zone=$VM_ZONE)
    VM_USER=$(python -m run.utils.gcp user --name $VM_NAME --zone=$VM_ZONE)
@@ -106,7 +113,7 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
                                     --identity-file ~/.ssh/google_compute_engine
    ```
 
-1. Back on the VM, install dependencies, like so...
+6. Back on the VM, install dependencies, like so...
 
    ```bash
    cd /opt/wellsaid-labs/Text-to-Speech
@@ -114,7 +121,7 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
    . run/utils/apt_install.sh
    ```
 
-1. Create a virtual environment for processing and install Python dependencies onto the VM,
+7. Create a virtual environment for processing and install Python dependencies onto the VM,
    like so...
 
    ```bash
@@ -208,7 +215,7 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
    ```
 
    💡 TIP: Learn more about `2>&1 | tee`, here:
-   https://stackoverflow.com/questions/418896/how-to-redirect-output-to-a-file-and-stdout
+   <https://stackoverflow.com/questions/418896/how-to-redirect-output-to-a-file-and-stdout>
 
 1. (Optional) Review dataset audio file format(s) for inconsistencies...
 
