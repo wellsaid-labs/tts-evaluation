@@ -58,7 +58,7 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
    VM_NAME=$USER"-dataset-processing" # EXAMPLE: michaelp-dataset-processing
    # NOTE: Pick a zone that's closest to the GCS bucket `wellsaid_labs_datasets`.
    GCP_USER=$USER
-   TYPE='preemptible'
+   TYPE='persistent'
    PROJECT=voice-research-255602
    VM_MACHINE_TYPE=n1-standard-2
    ```
@@ -80,30 +80,20 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
 3. From your local machine, `ssh` into your new VM instance, like so...
 
    ```zsh
-   VM_NAME=$(python -m run.utils.gcp $TYPE most-recent --name $NAME)
-   echo "VM_NAME=$VM_NAME"
-   VM_ZONE=$(python -m run.utils.gcp zone --name $VM_NAME)
-   gcloud compute ssh --zone=$VM_ZONE $VM_NAME
+   gcloud compute ssh --zone=$ZONE $NAME --command="sudo chmod -R a+rwx /opt"
+   gcloud compute ssh --zone=$ZONE $NAME --command="mkdir /opt/wellsaid-labs"
+   gcloud compute ssh --zone=$ZONE $NAME
    ```
 
    These commands may exit with the return code 255, if so, try again.
 
-4. Make the repo directory
-
-  ```zsh
-  sudo chmod -R 777 /opt
-  mkdir /opt/wellsaid-labs
-  ```
-
-5. In another terminal window, run `lsyncd` to sync your local files to your virtual machine...
+4. In another terminal window, run `lsyncd` to sync your local files to your virtual machine...
 
    ```zsh
-   NAME=$USER"-dataset-processing"
-   TYPE='preemptible'
-   VM_NAME=$(python -m run.utils.gcp $TYPE most-recent --name $NAME) echo "VM_NAME=$VM_NAME"
-   VM_ZONE=$(python -m run.utils.gcp zone --name $VM_NAME)
-   VM_IP=$(python -m run.utils.gcp ip --name $VM_NAME --zone=$VM_ZONE)
-   VM_USER=$(python -m run.utils.gcp user --name $VM_NAME --zone=$VM_ZONE)
+   NAME=$(python -m run.utils.gcp $TYPE most-recent --name $NAME) echo "NAME=$NAME"
+   ZONE=$(python -m run.utils.gcp zone --name $NAME)
+   VM_IP=$(python -m run.utils.gcp ip --name $NAME --zone=$ZONE)
+   VM_USER=$(python -m run.utils.gcp user --name $NAME --zone=$ZONE)
    ```
 
    ```zsh
@@ -113,7 +103,7 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
                                     --identity-file ~/.ssh/google_compute_engine
    ```
 
-6. Back on the VM, install dependencies, like so...
+5. Back on the VM, install dependencies, like so...
 
    ```bash
    cd /opt/wellsaid-labs/Text-to-Speech
@@ -121,7 +111,7 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
    . run/utils/apt_install.sh
    ```
 
-7. Create a virtual environment for processing and install Python dependencies onto the VM,
+6. Create a virtual environment for processing and install Python dependencies onto the VM,
    like so...
 
    ```bash
