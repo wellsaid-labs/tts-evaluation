@@ -332,9 +332,11 @@ _PLUS_OR_MINUS_PREFIX = {
 PLUS_OR_MINUS_PREFIX: typing.Final[typing.Dict[str, str]]
 PLUS_OR_MINUS_PREFIX = {_norm(k): v for k, v in _PLUS_OR_MINUS_PREFIX.items()}
 
-#################
-# ABBREVIATIONS #
-#################
+#########################
+# GENERAL ABBREVIATIONS #
+#########################
+# NOTE: All General Abbreviations require a succeeding '.' in the regex to be considered a match.
+# "prof" will not verbalize to "professor", "prof." will. This should prevent
 
 TITLES_PERSON_PRX: typing.Final[typing.Dict[str, str]] = {
     "mr": "Mister",
@@ -436,10 +438,10 @@ _OTHER_ABBREVIATIONS: typing.Final[typing.Dict[str, str]] = {
     "dept": "department",
     "dept": "department",
     "dict": "dictionary",
-    "doc": "document",
-    "docs": "documents",
+    # "doc": "document",  # Commonly spoken as 'doc'
+    # "docs": "documents",  # Commonly spoken as 'docs'
     # "ed": "edition",  # Ed is a person's name
-    "eds": "editions",
+    # "eds": "editions",
     "est": "established",
     "etc": "et cetera",
     "fig": "figure",

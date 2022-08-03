@@ -522,7 +522,7 @@ class RegExPatterns:
         rf"({_reg_ex_or(UNITS_ABBREVIATIONS.keys(), right=True)})"
     )
     ABBREVIATIONS: typing.Final[typing.Pattern[str]] = re.compile(
-        rf"(?<!-)\b({_reg_ex_or(GENERAL_ABBREVIATIONS.keys())}(?:\.|\b))(?!-)"
+        rf"\b({_reg_ex_or(GENERAL_ABBREVIATIONS.keys())}(?:\.))\B"
     )
     ISOLATED_GENERIC_DIGIT: typing.Final[typing.Pattern[str]] = re.compile(rf"\b({_DIGIT})\b")
     GENERIC_DIGIT: typing.Final[typing.Pattern[str]] = re.compile(rf"({_DIGIT})")
@@ -555,7 +555,9 @@ def verbalize_text(text: str) -> str:
     nlp = load_en_english()
     nlp.add_pipe("sentencizer")
     sents = []
-    for span in nlp(text).sents:
+    nlp_sents = nlp(text).sents
+    print(nlp_sents)
+    for span in nlp_sents:
         sent = span.text
         sent = _apply(sent, RegExPatterns.MONEY, _verbalize_money)
         sent = _apply(sent, RegExPatterns.ORDINALS, _verbalize_ordinal)
@@ -581,6 +583,8 @@ def verbalize_text(text: str) -> str:
         sent = _apply(sent, RegExPatterns.GENERIC_DIGIT, _verbalize_generic_number, space_out=True)
         sent = _apply(sent, RegExPatterns.ISOLATED_GENERIC_DIGIT, _verbalize_generic_number)
         # NOTE: A period at the end of a sentence might get eaten.
+        # if span.text[-1] == "." and sent[-1] != ".":
+        #     print(f"{span.text} // ADDING END OF SENTENCE PERIOD")
         sent = sent + "." if span.text[-1] == "." and sent[-1] != "." else sent
         sents.extend([sent, span[-1].whitespace_])
     return "".join(sents)
