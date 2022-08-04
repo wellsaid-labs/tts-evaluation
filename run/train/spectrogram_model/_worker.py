@@ -533,7 +533,8 @@ def _visualize_select_cases(state: _State, dataset_type: DatasetType, cadence: C
         return
 
     model = typing.cast(SpectrogramModel, state.model.module)
-    inputs, preds = cf.partial(_utils.process_select_cases)(model, model.session_embed.vocab, **kw)
+    sesh_vocab = model.session_embed.get_vocab()
+    inputs, preds = cf.partial(_utils.process_select_cases)(model, sesh_vocab, **kw)
 
     for item in range(len(inputs.doc)):
         text_length = int(preds.num_tokens[item].item())
