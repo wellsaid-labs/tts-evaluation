@@ -546,6 +546,15 @@ def _apply(
     return text
 
 
+def fix_swallowed_periods(sent: str, span_text: str) -> str:
+    """A period at the end of a sentence might get eaten. Instead of globally fixing at the end,
+    There are only a handful of cases this should be implemented: After verbalizing TIMES,
+    ABBREVIATED TIMES, and ACRONYMS."""
+    if span_text[-1] == "." and sent[-1] != ".":
+        print(f"{span_text} // ADDING END OF SENTENCE PERIOD")
+    return sent + "." if span_text[-1] == "." and sent[-1] != "." else sent
+
+
 def verbalize_text(text: str) -> str:
     """Takes in a text string and, in an intentional and controlled manner, verbalizes numerals and
     non-standard-words in plain English. The order of events is important. Normalizing generic
@@ -562,6 +571,7 @@ def verbalize_text(text: str) -> str:
         sent = _apply(sent, RegExPatterns.MONEY, _verbalize_money)
         sent = _apply(sent, RegExPatterns.ORDINALS, _verbalize_ordinal)
         sent = _apply(sent, RegExPatterns.TIMES, _verbalize_time)
+        sent = fix_swallowed_periods(sent, span.text)
         sent = _apply(sent, RegExPatterns.PHONE_NUMBERS, _verbalize_phone_number)
         sent = _apply(sent, RegExPatterns.TOLL_FREE_PHONE_NUMBERS, _verbalize_phone_number)
         sent = _apply(
@@ -577,14 +587,13 @@ def verbalize_text(text: str) -> str:
             sent, RegExPatterns.MEASUREMENT_ABBREVIATIONS, _verbalize_measurement_abbreviation
         )
         sent = _apply(sent, RegExPatterns.ABBREVIATED_TIMES, _verbalize_abbreviated_time)
+        sent = fix_swallowed_periods(sent, span.text)
         sent = _apply(sent, RegExPatterns.FRACTIONS, _verbalize_fraction)
         sent = _apply(sent, RegExPatterns.ACRONYMS, _verbalize_acronym)
+        sent = fix_swallowed_periods(sent, span.text)
         sent = _apply(sent, RegExPatterns.ABBREVIATIONS, _verbalize_abbreviation)
         sent = _apply(sent, RegExPatterns.GENERIC_DIGIT, _verbalize_generic_number, space_out=True)
         sent = _apply(sent, RegExPatterns.ISOLATED_GENERIC_DIGIT, _verbalize_generic_number)
-        # NOTE: A period at the end of a sentence might get eaten.
-        # if span.text[-1] == "." and sent[-1] != ".":
-        #     print(f"{span.text} // ADDING END OF SENTENCE PERIOD")
-        sent = sent + "." if span.text[-1] == "." and sent[-1] != "." else sent
+
         sents.extend([sent, span[-1].whitespace_])
     return "".join(sents)

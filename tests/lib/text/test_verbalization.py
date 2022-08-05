@@ -159,6 +159,8 @@ def test___ordinals():
 _tests_times = [
     ("Today at 12:44 PM", "Today at twelve forty-four PM"),
     # TODO: Should this be "seven PM" instead of "seven oh clock PM"?
+    # Rhyan's opinion: Keep 'oh clock' rule because users can always type 7PM if they prefer it out.
+    # But omitting it will force users to type 7 oh clock PM if they prefer it in.
     (
         "set session times for 7:00 p.m. but show up hours later",
         "set session times for seven oh clock PM but show up hours later",
@@ -321,6 +323,7 @@ _tests_phone_numbers = [
         "Largest Hotel Chain, call one, eight hundred, Western today.",
     ),
     # TODO: Support phone numbers with spaces?
+    # NOTE: v10 sees all caps as intialisms, should we lower case if words are found in phone #s?
     # (
     #     "Discover New York. Call 1-800-I LOVE NY.",
     #     "Discover New York. Call one, eight hundred, I LOVE NY.",
@@ -398,7 +401,7 @@ def test___years():
     """Test `RegExPatterns.YEARS` and `_verbalize_year` verbalization.
 
     TODO: With more robust year searches, include additional test cases, especially around more
-    historic periods.
+    historic periods. Terms like "c. 300 BCE" -> "circa 300 BCE", etc.
     """
     assert_verbalized(_tests_years, RegExPatterns.YEARS, _verbalize_year)
 
@@ -741,7 +744,7 @@ _tests_verbalize_abbreviations = [
     #     "when Stonehenge began to be constructed (c. 3000 BCE).",
     #     "when Stonehenge began to be constructed (circa 3000 BCE).",
     # ),
-    # TODO: Support ordinal abbreviations.
+    # TODO: Support ordinal abbreviations. Rhyan's opinion: this is too ambiguous to support.
     # (
     #     "Q4 is the last quarter of the fiscal year for companies.",
     #     "Fourth quarter is the last quarter of the fiscal year for companies.",
@@ -752,20 +755,19 @@ _tests_verbalize_abbreviations = [
         "Reverend Silvester Beaman offered a benediction at the inauguration of President "
         "Biden.",
     ),
-    # TODO: Fix spaCy sentencizer so it is not confused on abbreviations!
-    # (
-    #     "William Simmons, Sr. and Billy Simmons, Jr. arrived late.",
-    #     "William Simmons Senior and Billy Simmons Junior arrived late.",
-    # ),
-    # ("I didn't see Capt. Clark at the ceremony", "I didn't see Captain Clark at the ceremony"),
-    # (
-    #     "I live at three hundred and twenty-four south st. in lincoln, nebraska.",
-    #     "I live at three hundred and twenty-four south street in lincoln, nebraska.",
-    # ),
-    # (
-    #     "We will speak with sen. stanley shortly.",
-    #     "We will speak with Senator stanley shortly.",
-    # ),
+    (
+        "William Simmons, Sr. and Billy Simmons, Jr. arrived late.",
+        "William Simmons, Senior and Billy Simmons, Junior arrived late.",
+    ),
+    ("I didn't see Capt. Clark at the ceremony", "I didn't see Captain Clark at the ceremony"),
+    (
+        "I live at three hundred and twenty-four south st. in lincoln, nebraska.",
+        "I live at three hundred and twenty-four south street in lincoln, nebraska.",
+    ),
+    (
+        "We will speak with sen. stanley shortly.",
+        "We will speak with Senator stanley shortly.",
+    ),
     (
         "Mr. and Mrs. Frizzle are out for the day.",
         "Mister and Missus Frizzle are out for the day.",
@@ -904,10 +906,9 @@ def test_verbalize_text():
         ),
         # TODO: This is incorrectly classified as a year. Fix this!
         ("1127 days", "eleven twenty-seven days"),
-        # TODO: The sentencizer incorrectly parses this sentence.
         (
             "William Simmons Sr. and Billy Simmons Jr. arrived late.",
-            "William Simmons Senior. and Billy Simmons Junior arrived late.",
+            "William Simmons Senior and Billy Simmons Junior arrived late.",
         ),
         ("1-800 flowers", "one, eight hundred, flowers"),
         (
