@@ -323,7 +323,7 @@ def _verbalize_measurement_abbreviation(prefix: typing.Optional[str], value: str
 
 
 def _verbalize_fraction(
-    minus: typing.Optional[str],
+    prefix: typing.Optional[str],
     whole: typing.Optional[str],
     numerator: str,
     denominator: str,
@@ -342,30 +342,15 @@ def _verbalize_fraction(
         numerator (e.g. "1")
         denominator (e.g. "2")
     """
-    minus = "minus " if minus == "-" else ""
+    prefix = "" if prefix is None else prefix
+    prefix = PLUS_OR_MINUS_PREFIX[prefix] + " " if prefix in PLUS_OR_MINUS_PREFIX else prefix
     verbalized = "" if whole is None else f"{_num2words(whole)} and "
     key = (whole is not None, numerator, denominator)
     if key in special_cases:
-        return f"{minus}{verbalized}{special_cases[key]}".strip()
+        return f"{prefix}{verbalized}{special_cases[key]}".strip()
     verbalized += f"{_num2words(numerator)} {_num2words(denominator, ordinal=True)}"
     verbalized += "s" if int(numerator) > 1 else ""
-    return f"{minus}{verbalized.strip()}"
-
-
-def _verbalize_generic_number(
-    numbers: str, connector: str = "to", special_cases: typing.List[str] = ["50-50"]
-) -> str:
-    """Verbalize a range of numbers.
-
-    TODO: Handle special cases like 7-11 and 9-11, they are commonly spoken without 'to'?
-
-    Args:
-        numbers (e.g. "1", "10-15", "35-75", "125-300", "50-50")
-        ...
-    """
-    connector = " " if numbers in special_cases else " %s " % connector
-    partial = functools.partial(_num2words, ignore_zeros=False)
-    return connector.join(list(map(partial, _get_digits(numbers))))
+    return f"{prefix}{verbalized.strip()}"
 
 
 def _verbalize_acronym(acronym: str) -> str:
@@ -389,6 +374,33 @@ def _verbalize_abbreviation(abbr: str) -> str:
     abbr = abbr.strip()
     key = (abbr[:-1] if abbr[-1] == "." else abbr).lower()
     return GENERAL_ABBREVIATIONS[key] if key in GENERAL_ABBREVIATIONS else abbr
+
+
+def _verbalize_generic_number(
+    prefix: typing.Optional[str],
+    numbers: str,
+    connector: str = "to",
+    special_cases: typing.List[str] = ["50-50"]
+) -> str:
+    """Verbalize a range of numbers.
+
+    TODO: Handle special cases like 7-11 and 9-11, they are commonly spoken without 'to'?
+
+    Args:
+        numbers (e.g. "1", "10-15", "35-75", "125-300", "50-50", "-9.2")
+        ...
+    """
+    prefix = "" if prefix is None else prefix
+    prefix = PLUS_OR_MINUS_PREFIX[prefix] + " " if prefix in PLUS_OR_MINUS_PREFIX else prefix
+    connector = " " if numbers in special_cases else " %s " % connector
+    partial = functools.partial(_num2words, ignore_zeros=False)
+    return f"{prefix}{connector.join(list(map(partial, _get_digits(numbers))))}"
+
+
+def _verbalize_generic_symbol(symbols: str) -> str:
+    for s in list(symbols):
+        assert s in SYMBOLS_VERBALIZED.keys(), f"Unknown symbol found: {s}"
+    return " ".join(SYMBOLS_VERBALIZED[s] for s in list(symbols))
 
 
 _TIME_PERIOD = r"( ?[ap]\.?m\b(?:\.\B)?)"  # Time period (e.g. AM, PM, a.m., p.m., am, pm)
@@ -483,7 +495,10 @@ class RegExPatterns:
     # fmt: on
     PERCENTS: typing.Final[typing.Pattern[str]] = re.compile(rf"\b({_MAYBE_NUMBER_RANGE}%\B)")
     NUMBER_SIGNS: typing.Final[typing.Pattern[str]] = re.compile(rf"(\B#{_MAYBE_NUMBER_RANGE}\b)")
-    NUMBER_RANGE: typing.Final[typing.Pattern[str]] = re.compile(rf"(\b{_NUMBER_RANGE}\b)")
+    NUMBER_RANGE: typing.Final[typing.Pattern[str]] = re.compile(
+        rf"(\B{_reg_ex_or(PLUS_OR_MINUS_PREFIX.keys())})?"  # GROUP 1 (Optional): Prefix symbol
+        rf"(\b{_NUMBER_RANGE}\b)"  # GROUP 2: Number Range
+    )
     URLS: typing.Final[typing.Pattern[str]] = re.compile(
         # NOTE: Learn more about the autonomy of a URL here:
         # https://developer.mozilla.org/en-US/docs/Learn/Common_questions/What_is_a_URL
@@ -499,7 +514,7 @@ class RegExPatterns:
         r"\b"
     )
     FRACTIONS: typing.Final[typing.Pattern[str]] = re.compile(
-        r"(\B\-|\b)"  # GROUP 1: Minus sign or boundary
+        rf"(\B{_reg_ex_or(PLUS_OR_MINUS_PREFIX.keys())})?"  # GROUP 1 (Optional): Prefix symbol
         r"(\d+ )?"  # GROUP 2 (Optional): Whole Number
         r"(\d+)"  # GROUP 3: Numerator
         r"\/"
@@ -514,8 +529,7 @@ class RegExPatterns:
     )
     # fmt: on
     MEASUREMENT_ABBREVIATIONS: typing.Final[typing.Pattern[str]] = re.compile(
-        # GROUP 1 (Optional): Prefix symbol
-        rf"(\B{_reg_ex_or(PLUS_OR_MINUS_PREFIX.keys())})?"
+        rf"(\B{_reg_ex_or(PLUS_OR_MINUS_PREFIX.keys())})?"  # GROUP 1 (Optional): Prefix symbol
         rf"(\b{_DIGIT})"  # GROUP 2: Number
         r"[ -]{0,}"  # Delimiter
         # GROUP 3: Unit
@@ -524,8 +538,15 @@ class RegExPatterns:
     ABBREVIATIONS: typing.Final[typing.Pattern[str]] = re.compile(
         rf"\b({_reg_ex_or(GENERAL_ABBREVIATIONS.keys())}(?:\.))\B"
     )
-    ISOLATED_GENERIC_DIGIT: typing.Final[typing.Pattern[str]] = re.compile(rf"\b({_DIGIT})\b")
-    GENERIC_DIGIT: typing.Final[typing.Pattern[str]] = re.compile(rf"({_DIGIT})")
+    GENERIC_DIGIT: typing.Final[typing.Pattern[str]] = re.compile(
+        rf"(\B{_reg_ex_or(PLUS_OR_MINUS_PREFIX.keys())})?"  # GROUP 1 (Optional): Prefix symbol
+        rf"({_DIGIT})"  # GROUP 2: Number
+    )
+    ISOLATED_GENERIC_DIGIT: typing.Final[typing.Pattern[str]] = re.compile(
+        rf"(\B{_reg_ex_or(PLUS_OR_MINUS_PREFIX.keys())})?"  # GROUP 1 (Optional): Prefix symbol
+        rf"\b({_DIGIT})\b"  # GROUP 2: Number
+    )
+    GENERIC_SYMBOL: typing.Final[typing.Pattern[str]] = re.compile(r"\B([\#\$\/\\\%\+\*@=])\B")
 
 
 def _apply(
@@ -581,7 +602,7 @@ def verbalize_text(text: str) -> str:
         sent = _apply(sent, RegExPatterns.YEARS, _verbalize_year)
         sent = _apply(sent, RegExPatterns.PERCENTS, _verbalize_percent)
         sent = _apply(sent, RegExPatterns.NUMBER_SIGNS, _verbalize_number_sign)
-        sent = _apply(sent, RegExPatterns.NUMBER_RANGE, _verbalize_generic_number)
+        sent = _apply(sent, RegExPatterns.NUMBER_RANGE, _verbalize_generic_number, space_out=True)
         sent = _apply(sent, RegExPatterns.URLS, _verbalize_url)
         sent = _apply(
             sent, RegExPatterns.MEASUREMENT_ABBREVIATIONS, _verbalize_measurement_abbreviation
@@ -593,7 +614,11 @@ def verbalize_text(text: str) -> str:
         sent = fix_swallowed_periods(sent, span.text)
         sent = _apply(sent, RegExPatterns.ABBREVIATIONS, _verbalize_abbreviation)
         sent = _apply(sent, RegExPatterns.GENERIC_DIGIT, _verbalize_generic_number, space_out=True)
-        sent = _apply(sent, RegExPatterns.ISOLATED_GENERIC_DIGIT, _verbalize_generic_number)
+        sent = _apply(
+            sent, RegExPatterns.ISOLATED_GENERIC_DIGIT, _verbalize_generic_number, space_out=True
+        )
+        sent = _apply(sent, RegExPatterns.GENERIC_SYMBOL, _verbalize_generic_symbol, space_out=True)
+        print(sent)
 
         sents.extend([sent, span[-1].whitespace_])
     return "".join(sents)

@@ -12,6 +12,7 @@ from lib.text.verbalization import (
     _verbalize_decade,
     _verbalize_fraction,
     _verbalize_generic_number,
+    _verbalize_generic_symbol,
     _verbalize_measurement_abbreviation,
     _verbalize_money,
     _verbalize_number_sign,
@@ -718,6 +719,7 @@ _tests_generic_numbers = [
         "I will leave my layer setting at zero point two millilitres -- the same as the base.",
     ),
     ("credit9.", "credit nine."),
+    ("we were -9.2 on the scale", "we were minus nine point two on the scale")
 ]
 
 
@@ -728,6 +730,32 @@ def test___generic_numbers():
         _tests_generic_numbers,
         RegExPatterns.GENERIC_DIGIT,
         _verbalize_generic_number,
+        space_out=True,
+    )
+
+
+_tests_generic_symbols = [
+    ("/", "slash"),
+    ("$", "dollar"),
+    ("$#/", "dollar hash slash"),
+    ("# *", "hash asterisk"),
+    (
+        "we thought about what % of items should be included",
+        "we thought about what percent of items should be included"
+    ),
+    ("you can reach me @ the office!", "you can reach me at the office!"),
+    # NOT A MATCH
+    ("...he said, \"But why!?\"", "...he said, \"But why!?\"")
+]
+
+
+def test___generic_symbols():
+    """Test `RegExPatterns.GENERIC_SYMBOLS` matching and `_verbalize_generic_symbol` verbalization
+    for leftover, standalone symbol cases."""
+    assert_verbalized(
+        _tests_generic_symbols,
+        RegExPatterns.GENERIC_SYMBOL,
+        _verbalize_generic_symbol,
         space_out=True,
     )
 
@@ -862,11 +890,12 @@ def test_verbalize_text():
             "when Doctor Ruth Kinton became the first woman to take over the prestigious position "
             "of CEO.",
         ),
+        # TODO: Support mathematical equations: "*" becomes "times"
         (
             "For example, if you have a current of 2 A and a voltage of 5 V, the power is "
             "2A * 5V = 10W.",
             "For example, if you have a current of two A and a voltage of five V, the power is "
-            "two A * five V = ten W.",
+            "two A asterisk five V equals ten W.",
         ),
         # TODO: Support mixed alphanumeric/symbol cases (like serial numbers). The 'hyphen' may
         # or may not be verbalized here as 'dash' or '', but shouldn't be in the result as '-'.
