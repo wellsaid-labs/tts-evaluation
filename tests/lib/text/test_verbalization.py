@@ -13,8 +13,10 @@ from lib.text.verbalization import (
     _verbalize_fraction,
     _verbalize_generic_number,
     _verbalize_generic_symbol,
+    _verbalize_isolated_generic_symbol,
     _verbalize_measurement_abbreviation,
     _verbalize_money,
+    _verbalize_money__reversed,
     _verbalize_number_sign,
     _verbalize_ordinal,
     _verbalize_percent,
@@ -106,9 +108,32 @@ _tests_money = [
 ]
 
 
+_tests_money__reversed = [
+    ("it will cost us 4$.", "it will cost us four dollars."),
+    (
+        "212,512£ was spent on management last year",
+        "two hundred and twelve thousand, five hundred and twelve pounds was spent on "
+        "management last year",
+    ),
+    (
+        "And it's only 1.01€ for general admission and 3.00 € for the weekend pass.",
+        "And it's only one euro and one cent for general admission and three euros for the "
+        "weekend pass.",
+    ),
+    (
+        "The team will accrue 150M¥ to 180M¥ this month.",
+        "The team will accrue one hundred and fifty million yen to one hundred and eighty million "
+        "yen this month.",
+    ),
+]
+
+
 def test__money():
     """Test `RegExPatterns.MONEY` matching and `_verbalize_money` verbalization."""
     assert_verbalized(_tests_money, RegExPatterns.MONEY, _verbalize_money)
+    assert_verbalized(
+        _tests_money__reversed, RegExPatterns.MONEY_REVERSED, _verbalize_money__reversed
+    )
 
 
 _tests_ordinals = [
@@ -516,6 +541,10 @@ _tests_urls = [
         "slash to slash myfile dot html question mark key one equals value one hash "
         "SomewhereInTheFile",
     ),
+    (
+        "https://www.FDLE.state.fl.us",
+        "h t t p s colon slash slash w w w dot FDLE dot state dot fl dot us"
+    )
 ]
 
 
@@ -734,7 +763,7 @@ def test___generic_numbers():
     )
 
 
-_tests_generic_symbols = [
+_tests_isolated_generic_symbols = [
     ("/", "slash"),
     ("$", "dollar"),
     ("$#/", "dollar hash slash"),
@@ -745,7 +774,35 @@ _tests_generic_symbols = [
     ),
     ("you can reach me @ the office!", "you can reach me at the office!"),
     # NOT A MATCH
-    ("...he said, \"But why!?\"", "...he said, \"But why!?\"")
+    ("...he said, \"But why!?\"", "...he said, \"But why!?\""),
+]
+
+
+def test___isolated_generic_symbols():
+    """Test `RegExPatterns.GENERIC_SYMBOLS` matching and `_verbalize_generic_symbol` verbalization
+    for leftover, standalone symbol cases."""
+    assert_verbalized(
+        _tests_isolated_generic_symbols,
+        RegExPatterns.ISOLATED_GENERIC_SYMBOL,
+        _verbalize_isolated_generic_symbol,
+        space_out=True,
+    )
+
+
+_tests_generic_symbols = [
+    ("and/or", "and slash or"),
+    ("#Adele", "hashtag Adele"),
+    (
+        "If you see any changes in the people you are supporting, report them to your supervisor "
+        "and/or the nurse.",
+        "If you see any changes in the people you are supporting, report them to your supervisor "
+        "and slash or the nurse."
+    ),
+    (
+        "https://www.FDLE.state.f l .u s/Background-Checks/Vechs-Process-and-Forms.",
+        "https:slash slash www.FDLE.state.f l .u s slash Background-Checks "
+        "slash Vechs-Process-and-Forms."
+    )
 ]
 
 
@@ -949,6 +1006,7 @@ def test_verbalize_text():
             "Is 2ms Response Time Good for Gaming",
             "Is two milliseconds Response Time Good for Gaming",
         ),
+        ("#Adele30", "hashtag Adele thirty")
     ]
     for text_in, text_out in tests:
         assert verbalize_text(_norm(text_in)) == text_out

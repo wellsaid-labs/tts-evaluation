@@ -30,6 +30,7 @@ from lib.text.non_standard_words import (
     MONEY_SUFFIX,
     ORDINAL_SUFFIXES,
     PLUS_OR_MINUS_PREFIX,
+    SOCIAL_SYMBOLS_VERBALIZED,
     SYMBOLS_VERBALIZED,
     TIME_ZONES,
     UNITS_ABBREVIATIONS,
@@ -117,6 +118,23 @@ def _verbalize_money(
         normalized += " and " + _num2words(str(cents))
         normalized += " " + CURRENCIES[currency][2 if cents == 1 else 3]
     return normalized
+
+
+def _verbalize_money__reversed(
+    money: str, abbr: typing.Optional[str], trail: typing.Optional[str], currency: str
+) -> str:
+    """Verbalize a monetary value (e.g. $1.2 trillion, $5, £2.36, ¥1MM).
+
+    NOTE: Some folks write dollar amounts with the currency trailing. This verbalizes those matches.
+    Example: 24$, 4.2MM¥
+
+    Args:
+        money (e.g. 1.2, 15,000)
+        abbr (e.g. M, K, k, BB)
+        trail (e.g. trillion)
+        currency (e.g. $, €, NZ$)
+    """
+    return _verbalize_money(currency.strip(), money, abbr, trail)
 
 
 _NON_DIGIT_PATTERN = re.compile(r"\D")
@@ -397,10 +415,18 @@ def _verbalize_generic_number(
     return f"{prefix}{connector.join(list(map(partial, _get_digits(numbers))))}"
 
 
-def _verbalize_generic_symbol(symbols: str) -> str:
+def _verbalize_isolated_generic_symbol(symbols: str) -> str:
     for s in list(symbols):
         assert s in SYMBOLS_VERBALIZED.keys(), f"Unknown symbol found: {s}"
     return " ".join(SYMBOLS_VERBALIZED[s] for s in list(symbols))
+
+
+def _verbalize_generic_symbol(symbols: str) -> str:
+    # TODO: include special cases
+    # special_cases: typing.List[str] = ["and/or", "if/when", "if/then", "either/or"]
+    for s in list(symbols):
+        assert s in SOCIAL_SYMBOLS_VERBALIZED.keys(), f"Unknown symbol found: {s}"
+    return " ".join(SOCIAL_SYMBOLS_VERBALIZED[s] for s in list(symbols))
 
 
 _TIME_PERIOD = r"( ?[ap]\.?m\b(?:\.\B)?)"  # Time period (e.g. AM, PM, a.m., p.m., am, pm)
@@ -424,6 +450,15 @@ class RegExPatterns:
         # GROUP 4 (Optional): Currency suffix
         rf"(\b\s(?:{_reg_ex_or(MONEY_SUFFIX + LARGE_NUMBERS + LARGE_FICTIOUS_NUMBERS)}))?"
         r"\b",  # Word boundary
+        flags=re.IGNORECASE,
+    )
+
+    MONEY_REVERSED: typing.Final[typing.Pattern[str]] = re.compile(
+        rf"({_DIGIT})"  # GROUP 1: Numerical value
+        r"([kmbt]{0,2})"  # GROUP 2: Unit
+        # GROUP 3 (Optional): Currency suffix
+        rf"(\b\s(?:{_reg_ex_or(MONEY_SUFFIX + LARGE_NUMBERS + LARGE_FICTIOUS_NUMBERS)}))?"
+        rf"( ?{_reg_ex_or(CURRENCIES.keys(), right=True)})",  # GROUP 4: Currency, optional space
         flags=re.IGNORECASE,
     )
     ORDINALS: typing.Final[typing.Pattern[str]] = re.compile(
@@ -546,7 +581,10 @@ class RegExPatterns:
         rf"(\B{_reg_ex_or(PLUS_OR_MINUS_PREFIX.keys())})?"  # GROUP 1 (Optional): Prefix symbol
         rf"\b({_DIGIT})\b"  # GROUP 2: Number
     )
-    GENERIC_SYMBOL: typing.Final[typing.Pattern[str]] = re.compile(r"\B([\#\$\/\\\%\+\*@=])\B")
+    ISOLATED_GENERIC_SYMBOL: typing.Final[typing.Pattern[str]] = re.compile(
+        r"\B([\#\$\/\\\%\+\*@=])\B"
+    )
+    GENERIC_SYMBOL: typing.Final[typing.Pattern[str]] = re.compile(r"([\#\$\/\&@_])")
 
 
 def _apply(
@@ -586,10 +624,10 @@ def verbalize_text(text: str) -> str:
     nlp.add_pipe("sentencizer")
     sents = []
     nlp_sents = nlp(text).sents
-    print(nlp_sents)
     for span in nlp_sents:
         sent = span.text
         sent = _apply(sent, RegExPatterns.MONEY, _verbalize_money)
+        sent = _apply(sent, RegExPatterns.MONEY_REVERSED, _verbalize_money__reversed)
         sent = _apply(sent, RegExPatterns.ORDINALS, _verbalize_ordinal)
         sent = _apply(sent, RegExPatterns.TIMES, _verbalize_time)
         sent = fix_swallowed_periods(sent, span.text)
@@ -617,8 +655,15 @@ def verbalize_text(text: str) -> str:
         sent = _apply(
             sent, RegExPatterns.ISOLATED_GENERIC_DIGIT, _verbalize_generic_number, space_out=True
         )
-        sent = _apply(sent, RegExPatterns.GENERIC_SYMBOL, _verbalize_generic_symbol, space_out=True)
-        print(sent)
+        sent = _apply(
+            sent,
+            RegExPatterns.ISOLATED_GENERIC_SYMBOL,
+            _verbalize_isolated_generic_symbol,
+            space_out=True
+        )
+        sent = _apply(
+            sent, RegExPatterns.GENERIC_SYMBOL, _verbalize_generic_symbol, space_out=True
+        )
 
         sents.extend([sent, span[-1].whitespace_])
     return "".join(sents)

@@ -614,4 +614,15 @@ _SYMBOLS_VERBALIZED: typing.Final[typing.Dict[str, str]] = {
 SYMBOLS_VERBALIZED: typing.Final[typing.Dict[str, str]]
 SYMBOLS_VERBALIZED = {_norm(k): v for k, v in _SYMBOLS_VERBALIZED.items()}
 
+_SOCIAL_SYMBOLS_VERBALIZED: typing.Final[typing.Dict[str, str]] = {
+    "@": "at",
+    "#": "hashtag",
+    "$": "dollar",
+    "&": "and",
+    "_": "underscore",
+    "/": "slash",
+}
+SOCIAL_SYMBOLS_VERBALIZED: typing.Final[typing.Dict[str, str]]
+SOCIAL_SYMBOLS_VERBALIZED = {_norm(k): v for k, v in _SOCIAL_SYMBOLS_VERBALIZED.items()}
+
 HYPHENS: typing.Tuple[str, ...] = tuple(_norm(t) for t in ("-", "—", "–"))
