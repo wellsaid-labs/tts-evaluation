@@ -455,6 +455,13 @@ def test_normalize_vo_script__non_ascii():
         assert lib.text.utils.normalize_vo_script(char, non_ascii=NON_ASCII_CHAR) == char
 
 
+def test_normalize_vo_script__invisible_chars():
+    """Test `lib.text.utils.normalize_vo_script` unidecodes invisible whitespace characters."""
+    inv_chars = ["\u200b", "\xa0", "\u202f"]
+    for char in inv_chars:
+        assert lib.text.utils.normalize_vo_script(char, non_ascii=NON_ASCII_CHAR) not in inv_chars
+
+
 def test_is_normalized_vo_script():
     """Test `lib.text.utils.is_normalized_vo_script` handles all characters from 0 - 128."""
     assert all(

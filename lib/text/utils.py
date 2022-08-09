@@ -583,7 +583,7 @@ def normalize_vo_script(text: str, non_ascii: frozenset, strip: bool = True) -> 
     text = _normalize_whitespace(text)
     text = _normalize_guillemets(text)
     text = "".join(
-        [c if c.isspace() or c in non_ascii else str(unidecode.unidecode(c)) for c in text]
+        [c if c == " " or c in non_ascii else str(unidecode.unidecode(c)) for c in text]
     )
     text = re.compile(r" +").sub(" ", text)
     if strip:
