@@ -521,7 +521,8 @@ _tests_urls = [
     ("staging.wellsaidlabs.com", "staging dot wellsaidlabs dot com"),
     (
         "you just need to visit www.ArizonaGuide.com to see for yourself",
-        "you just need to visit w w w dot ArizonaGuide dot com to see for yourself",
+        "you just need to visit ::DUH-buh-yoo-DUH-buh-yoo-DUH-buh-yoo:: dot ArizonaGuide dot com "
+        "to see for yourself",
     ),
     ("find us at Dianetics.org", "find us at Dianetics dot org"),
     (
@@ -533,17 +534,25 @@ _tests_urls = [
         "and many more activities are listed at visitdallas dot com slash things dash to "
         "dash do",
     ),
-    ("www.gov.nf.ca/tourism", "w w w dot gov dot nf dot ca slash tourism"),
-    ("https://www.foxwoods.com", "h t t p s colon slash slash w w w dot foxwoods dot com"),
+    (
+        "www.gov.nf.ca/tourism",
+        "::DUH-buh-yoo-DUH-buh-yoo-DUH-buh-yoo:: dot gov dot nf dot ca slash tourism"
+    ),
+    (
+        "https://www.foxwoods.com",
+        "::AYCH-tee-tee-pee-EHS:: colon slash slash ::DUH-buh-yoo-DUH-buh-yoo-DUH-buh-yoo:: dot "
+        "foxwoods dot com"
+    ),
     (
         "http://www.example.com:80/path/to/myfile.html?key1=value1#SomewhereInTheFile",
-        "h t t p colon slash slash w w w dot example dot com colon eight zero slash path "
-        "slash to slash myfile dot html question mark key one equals value one hash "
-        "SomewhereInTheFile",
+        "::AYCH-tee-tee-PEE:: colon slash slash ::DUH-buh-yoo-DUH-buh-yoo-DUH-buh-yoo:: dot "
+        "example dot com colon eight zero slash path slash to slash myfile dot html question mark "
+        "key one equals value one hash SomewhereInTheFile",
     ),
     (
         "https://www.FDLE.state.fl.us",
-        "h t t p s colon slash slash w w w dot FDLE dot state dot fl dot us"
+        "::AYCH-tee-tee-pee-EHS:: colon slash slash ::DUH-buh-yoo-DUH-buh-yoo-DUH-buh-yoo:: dot "
+        "FDLE dot state dot fl dot us"
     )
 ]
 
@@ -902,7 +911,8 @@ def test_verbalize_text():
             "Do you want to learn how to turn $200 into a grand!? Call 1-800-MONEY-4-ME now or "
             "visit www.money4me.com/now!",
             "Do you want to learn how to turn two hundred dollars into a grand!? Call one, eight "
-            "hundred, MONEY, four, ME now or visit w w w dot money four me dot com slash now!",
+            "hundred, MONEY, four, ME now or visit ::DUH-buh-yoo-DUH-buh-yoo-DUH-buh-yoo:: dot "
+            "money four me dot com slash now!",
         ),
         (
             "It is estimated that by 2010, $1.2 trillion will be spent on education reform for "

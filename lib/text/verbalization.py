@@ -320,6 +320,15 @@ def _verbalize_url(
     for char in digits:
         return_ = return_.replace(char, f" {_num2words(char)} ")
 
+    # Rely on respellings for HTTP, HTTPS, WWW:
+    respellings = {
+        "h t t p s": "::AYCH-tee-tee-pee-EHS::",
+        "h t t p": "::AYCH-tee-tee-PEE::",
+        "w w w": "::DUH-buh-yoo-DUH-buh-yoo-DUH-buh-yoo::"
+    }
+    for s in respellings.keys():
+        return_ = return_.replace(s, respellings[s])
+
     return _WHITE_SPACES.sub(" ", return_).strip()
 
 
