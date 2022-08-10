@@ -811,7 +811,7 @@ def test___generic_symbols():
     for leftover, standalone symbol cases."""
     assert_verbalized(
         _tests_generic_symbols,
-        RegExPatterns.GENERIC_SYMBOL,
+        RegExPatterns.GENERIC_SOCIAL_SYMBOL,
         _verbalize_generic_symbol,
         space_out=True,
     )

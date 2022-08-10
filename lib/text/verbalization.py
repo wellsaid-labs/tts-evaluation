@@ -584,7 +584,8 @@ class RegExPatterns:
     ISOLATED_GENERIC_SYMBOL: typing.Final[typing.Pattern[str]] = re.compile(
         r"\B([\#\$\/\\\%\+\*@=])\B"
     )
-    GENERIC_SYMBOL: typing.Final[typing.Pattern[str]] = re.compile(r"([\#\$\/\&@_])")
+    GENERIC_SOCIAL_SYMBOL: typing.Final[typing.Pattern[str]] = re.compile(
+        rf"({_reg_ex_or(SOCIAL_SYMBOLS_VERBALIZED.keys())})")
 
 
 def _apply(
@@ -662,7 +663,7 @@ def verbalize_text(text: str) -> str:
             space_out=True
         )
         sent = _apply(
-            sent, RegExPatterns.GENERIC_SYMBOL, _verbalize_generic_symbol, space_out=True
+            sent, RegExPatterns.GENERIC_SOCIAL_SYMBOL, _verbalize_generic_symbol, space_out=True
         )
 
         sents.extend([sent, span[-1].whitespace_])
