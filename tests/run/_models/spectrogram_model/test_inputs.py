@@ -87,16 +87,17 @@ def test__preprocess():
     assert processed.token_metadata[1] == [context]
     vocab: spacy.vocab.Vocab = nlp.vocab
     length = nlp.meta["vectors"]["width"]
+    # NOTE: The word embeddings are case sensitive.
     embeddings = [
-        torch.from_numpy(vocab["in"].vector).unsqueeze(0).repeat(2, 1),
+        torch.from_numpy(vocab["In"].vector).unsqueeze(0).repeat(2, 1),
         torch.zeros(1, length),
         torch.from_numpy(vocab["1968"].vector).unsqueeze(0).repeat(4, 1),
         torch.zeros(1, length),
         torch.from_numpy(vocab["the"].vector).unsqueeze(0).repeat(3, 1),
         torch.zeros(1, length),
-        torch.from_numpy(vocab["u.s."].vector).unsqueeze(0).repeat(4, 1),
+        torch.from_numpy(vocab["U.S."].vector).unsqueeze(0).repeat(4, 1),
         torch.zeros(1, length),
-        torch.from_numpy(vocab["army"].vector).unsqueeze(0).repeat(4, 1),
+        torch.from_numpy(vocab["Army"].vector).unsqueeze(0).repeat(4, 1),
     ]
     token_embeddings = torch.cat(embeddings)
     assert len(processed.token_embeddings) == 1

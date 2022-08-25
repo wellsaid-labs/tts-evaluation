@@ -16,12 +16,12 @@ Afterwards, please install other system dependencies, like so:
 ```zsh
 brew install git
 brew install python@3.8
+setopt interactivecomments
 brew install sox # Audio processing
 brew install ffmpeg # Audio processing
 brew install espeak # Speech synthesizer
 brew install rsync lsyncd # File transfer
 brew install jq # Bash JSON parser
-setopt interactivecomments # Bash style comments
 ```
 
 ## 2. Clone the Repository
@@ -41,6 +41,8 @@ On May 20th, these flags would reduce the repository size by 80%
 Install Python dependencies, like so:
 
 ```zsh
+cd Text-to-Speech/
+
 # Start a virtual environment, learn more:
 # https://realpython.com/python-virtual-environments-a-primer/
 python3 -m venv venv
