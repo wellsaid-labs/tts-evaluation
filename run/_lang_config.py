@@ -32,6 +32,7 @@ ENGLISH_PHONETIC_CHARACTERS = (
     'ə', 'əl', 'ɚ', 'ɛ', 'ɛɹ', 'ɜː', 'ɡ', 'ɣ', 'ɪ', 'ɪɹ', 'ɫ', 'ɹ', 'ɾ', 'ʃ', 'ʊ', 'ʊɹ', 'ʌ',
     'ʒ', 'ʔ', 'ˈ', 'ˌ', 'θ', 'ᵻ', 'ɬ'
 )
+# fmt: on
 
 _NON_ASCII_CHARS: typing.Dict[Language, frozenset] = {
     # Resources:
@@ -50,7 +51,6 @@ _NON_ASCII_CHARS: typing.Dict[Language, frozenset] = {
     # src: https://en.wikipedia.org/wiki/Spanish_orthography
     Language.SPANISH_CO: frozenset(list("áÁéÉíÍóÓúÚñÑüÜ")),
 }
-# fmt: on
 _NON_ASCII_MARKS: typing.Dict[Language, frozenset] = {
     Language.ENGLISH: frozenset(),
     Language.GERMAN: frozenset(),
