@@ -62,8 +62,10 @@ def get_dataset(
         items = [load(s, d, add_tqdm=True) for s, d in datasets.items()]
 
     prepared_dataset = {k: v for k, v in items if len(v) > 0}
-    _omitted = datasets.keys() - prepared_dataset.keys()
-    logger.warning("Omitted %d Speakers: %s", len(_omitted), _omitted)
+    kept = prepared_dataset.keys()
+    omitted = datasets.keys() - kept
+    logger.info("Kept %d Speakers: %s", len(kept), kept)
+    logger.warning("Omitted %d Speakers: %s", len(omitted), omitted)
     return prepared_dataset
 
 
@@ -222,11 +224,14 @@ def split_dataset(
             train[speaker] = rest
 
     for spkr in dataset.keys():
-        assert _passages_len(train.get(spkr, [])) > 0, "The `train` dataset has no data."
+        train_len = _passages_len(train.get(spkr, []))
+        dev_len = _passages_len(dev.get(spkr, []))
+        assert train_len > 0, f"{spkr} `train` dataset has no data."
         if spkr in dev_speakers:
-            message = "The `dev` dataset is larger than the `train` dataset."
-            assert _passages_len(train.get(spkr, [])) >= _passages_len(dev.get(spkr, [])), message
-            assert _passages_len(dev.get(spkr, [])) > 0, "The `dev` dataset has no data."
+            message = "The `dev` dataset is larger than the "
+            message += f"`train` dataset ({dev_len} >= {train_len})."
+            assert train_len >= dev_len, message
+            assert dev_len > 0, f"{spkr} `dev` dataset has no data."
 
     _is_duplicate.cache_clear()
     return train, dev
