@@ -177,6 +177,7 @@ class Checkpoints(enum.Enum):
 
     """
     These checkpoints include the UneeQ X ASB [updated] custom voice.
+
     Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/386
     Spectrogram Model Experiment (Step: 163,722):
     https://www.comet.ml/wellsaid-labs/v9-custom-voices/c9b857ba7d2f4cce9545bec429bd52be
@@ -188,6 +189,7 @@ class Checkpoints(enum.Enum):
 
     """
     These checkpoints include the StudySync custom voice.
+
     Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/386
     Spectrogram Model Experiment (Step: 681, 340):
     https://www.comet.ml/wellsaid-labs/v9-custom-voices/db8d706b02e14d47be79d9966c57b959
@@ -199,6 +201,7 @@ class Checkpoints(enum.Enum):
 
     """
     These checkpoints include the Five9 custom voice.
+
     Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/386
     Spectrogram Model Experiment (Step: 830,467):
     https://www.comet.ml/wellsaid-labs/v9-custom-voices/d38734aa992a414db482f36fb5e8a961
@@ -210,6 +213,7 @@ class Checkpoints(enum.Enum):
 
     """
     These checkpoints include the StudySync custom voice (version 2).
+
     Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/386
     Spectrogram Model Experiment (Step: 681, 340):
     https://www.comet.ml/wellsaid-labs/v9-custom-voices/db8d706b02e14d47be79d9966c57b959
@@ -221,6 +225,7 @@ class Checkpoints(enum.Enum):
 
     """
     These checkpoints include the UneeQ X ASB (V3) final custom voice.
+
     Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/386
     Spectrogram Model Experiment (Step: 861,875):
     https://www.comet.ml/wellsaid-labs/uneeq-asb-experiments/360480297ec9416dbefec838c508c139
@@ -260,6 +265,7 @@ class Checkpoints(enum.Enum):
 
     """
     These checkpoints include the Five9 German custom voice.
+
     Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/###
     Spectrogram Model Experiment (Step: 790,150):
     https://www.comet.ml/wellsaid-labs/train-v9-new-languages/5e41dc39f5854b16b36989e06ea8e09f
@@ -271,6 +277,7 @@ class Checkpoints(enum.Enum):
 
     """
     These checkpoints include the Five9 Spanish (Columbian) custom voice.
+
     Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/###
     Spectrogram Model Experiment (Step: 900,750):
     https://www.comet.ml/wellsaid-labs/train-v9-new-languages/732f3e6920a445a597f84a0783f9ab62
@@ -282,6 +289,7 @@ class Checkpoints(enum.Enum):
 
     """
     These checkpoints include the Five9 Portuguese (Brazilian) voice.
+
     Spectrogram Model Experiment (Step: 826,452):
     https://www.comet.ml/wellsaid-labs/train-v9-new-languages/264ad5e013584ceebf9c25333458ae89
     Signal Model Experiment (Step: 1,193,764):
@@ -292,6 +300,7 @@ class Checkpoints(enum.Enum):
 
     """
     These checkpoints include the SelectQuote custom voice.
+
     Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/###
     Spectrogram Model Experiment (Step: 790,150):
     https://www.comet.ml/wellsaid-labs/train-v9-new-languages/5e41dc39f5854b16b36989e06ea8e09f
@@ -308,6 +317,7 @@ class Checkpoints(enum.Enum):
                     Kari N., Marcus P., Philip J., Roxy T., Terra G., Zoey O.
     Promo:          Charlie Z., Tobin A., Ava M.
     Conversational: Tobin A.
+
     Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/###
     Spectrogram Model Experiment (Step: 876,102):
     https://www.comet.ml/wellsaid-labs/v9-marketplace-voices/49d43e2b12cd4c77ab79148e079e071a
@@ -321,6 +331,7 @@ class Checkpoints(enum.Enum):
 
     """
     These checkpoints include the Mitel French Custom Voice.
+
     Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/***
     Spectrogram Model Experiment (Step: 719,900):
     https://www.comet.ml/wellsaid-labs/train-v9-new-languages/c2159e182975457887f24fe556438140
