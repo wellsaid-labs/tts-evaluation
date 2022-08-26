@@ -405,7 +405,7 @@ def encode_tts_inputs(
 
     # TODO: The grapheme encoder will error if it encounters a character is hasn't seen before,
     # even though it's not used in TTS.
-    decoded = DecodedInput("", tokens, speaker, (speaker, session))
+    decoded = DecodedInput("e", tokens, speaker, (speaker, session))
     token_encoder = input_encoder.token_encoder
     try:
         token_encoder.encode(decoded.tokens)
@@ -480,9 +480,9 @@ def batch_text_to_speech(
         en_tokens = typing.cast(typing.List[str], grapheme_to_phoneme(docs))
     # TODO: The grapheme encoder will error if it encounters a character is hasn't seen before,
     # even though it's not used in TTS.
-    decoded = [DecodedInput("", sc, sp, (sp, se)) for sc, sp, se in inputs]
+    decoded = [DecodedInput("e", sc, sp, (sp, se)) for sc, sp, se in inputs]
     for (i, (_, speaker, session)), tokens in zip(en_inputs, en_tokens):
-        decoded[i] = DecodedInput("", tokens, speaker, (speaker, session))
+        decoded[i] = DecodedInput("e", tokens, speaker, (speaker, session))
 
     encoded = [(i, package.input_encoder.encode(d)) for i, d in enumerate(decoded)]
     encoded = sorted(encoded, key=lambda i: i[1].tokens.numel())
