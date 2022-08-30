@@ -38,6 +38,5 @@
   "python.linting.mypyEnabled": false,
   "reflow.preferredLineLength": 100,
   "git.autofetch": true,
-  "eslint.run": "onSave",
   "python.analysis.autoImportCompletions": false
 }

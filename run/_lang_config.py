@@ -32,38 +32,30 @@ ENGLISH_PHONETIC_CHARACTERS = (
     'ə', 'əl', 'ɚ', 'ɛ', 'ɛɹ', 'ɜː', 'ɡ', 'ɣ', 'ɪ', 'ɪɹ', 'ɫ', 'ɹ', 'ɾ', 'ʃ', 'ʊ', 'ʊɹ', 'ʌ',
     'ʒ', 'ʔ', 'ˈ', 'ˌ', 'θ', 'ᵻ', 'ɬ'
 )
+# fmt: on
 
 _NON_ASCII_CHARS: typing.Dict[Language, frozenset] = {
     # Resources:
     # https://en.wikipedia.org/wiki/English_terms_with_diacritical_marks
     # https://en-academic.com/dic.nsf/enwiki/3894487
-    Language.ENGLISH: frozenset([
-        "â", "Â", "à", "À", "á", "Á", "ê", "Ê", "é", "É", "è", "È", "ë", "Ë", "î", "Î", "ï", "Ï",
-        "ô", "Ô", "ù", "Ù", "û", "Û", "ç", "Ç", "ä", "ö", "ü", "Ä", "Ö", "Ü", "ñ", "Ñ",
-    ]),
-    Language.GERMAN: frozenset(["ß", "ä", "ö", "ü", "Ä", "Ö", "Ü"]),
+    Language.ENGLISH: frozenset(list("âÂàÀáÁêÊéÉèÈëËîÎïÏôÔùÙûÛçÇäöüÄÖÜñÑ")),
+    Language.GERMAN: frozenset(list("ßäöüÄÖÜ")),
     # Portuguese makes use of five diacritics: the cedilla (ç), acute accent (á, é, í, ó, ú),
     # circumflex accent (â, ê, ô), tilde (ã, õ), and grave accent (à, and rarely è, ì, ò, and ù).
     # src: https://en.wikipedia.org/wiki/Portuguese_orthography
-    Language.PORTUGUESE_BR: frozenset([
-        "á", "Á", "é", "É", "í", "Í", "ó", "Ó", "ú", "Ú", "ç", "Ç", "â", "Â", "ê", "Ê", "ô", "Ô",
-        "ã", "Ã", "õ", "Õ", "à", "À", "è", "È", "ì", "Ì", "ò", "Ò", "ù", "Ù"
-    ]),
+    Language.PORTUGUESE_BR: frozenset(list("áÁéÉíÍóÓúÚçÇâÂêÊôÔãÃõÕàÀèÈìÌòÒùÙ")),
     # Spanish uses only the acute accent, over any vowel: ⟨á é í ó ú⟩. The only other diacritics
     # used are the tilde on the letter ⟨ñ⟩ and the diaeresis used in the sequences ⟨güe⟩ and ⟨güi⟩.
     # The special characters required are ⟨á⟩, ⟨é⟩, ⟨í⟩, ⟨ó⟩, ⟨ú⟩, ⟨ñ⟩, ⟨Ñ⟩, ⟨ü⟩, ⟨Ü⟩, ⟨¿⟩, ⟨¡⟩
     # and the uppercase ⟨Á⟩, ⟨É⟩, ⟨Í⟩, ⟨Ó⟩, and ⟨Ú⟩.
     # src: https://en.wikipedia.org/wiki/Spanish_orthography
-    Language.SPANISH_CO: frozenset([
-        "á", "Á", "é", "É", "í", "Í", "ó", "Ó", "ú", "Ú", "ñ", "Ñ", "ü", "Ü"
-    ]),
+    Language.SPANISH_CO: frozenset(list("áÁéÉíÍóÓúÚñÑüÜ")),
 }
-# fmt: on
 _NON_ASCII_MARKS: typing.Dict[Language, frozenset] = {
     Language.ENGLISH: frozenset(),
     Language.GERMAN: frozenset(),
     Language.PORTUGUESE_BR: frozenset(),
-    Language.SPANISH_CO: frozenset(["¿", "¡"]),
+    Language.SPANISH_CO: frozenset(list("¿¡")),
 }
 _NON_ASCII_ALL = {l: _NON_ASCII_CHARS[l].union(_NON_ASCII_MARKS[l]) for l in Language}
 

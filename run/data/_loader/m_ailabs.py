@@ -101,7 +101,8 @@ def m_ailabs_speech_dataset(
 
     metadata_paths = list(directory.glob(metadata_pattern))
     downloaded_books = set([_metadata_path_to_book(p, directory, language) for p in metadata_paths])
-    assert len(set(books) - downloaded_books) == 0, "Unable to find every book in `books`."
+    missing_books = set(books) - downloaded_books
+    assert len(missing_books) == 0, f"Unable to find `{missing_books}` `books`."
 
     passages: typing.List[typing.List[UnprocessedPassage]] = []
     for book in books:

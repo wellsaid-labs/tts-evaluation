@@ -177,6 +177,7 @@ class Checkpoints(enum.Enum):
 
     """
     These checkpoints include the UneeQ X ASB [updated] custom voice.
+
     Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/386
     Spectrogram Model Experiment (Step: 163,722):
     https://www.comet.ml/wellsaid-labs/v9-custom-voices/c9b857ba7d2f4cce9545bec429bd52be
@@ -188,6 +189,7 @@ class Checkpoints(enum.Enum):
 
     """
     These checkpoints include the StudySync custom voice.
+
     Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/386
     Spectrogram Model Experiment (Step: 681, 340):
     https://www.comet.ml/wellsaid-labs/v9-custom-voices/db8d706b02e14d47be79d9966c57b959
@@ -199,6 +201,7 @@ class Checkpoints(enum.Enum):
 
     """
     These checkpoints include the Five9 custom voice.
+
     Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/386
     Spectrogram Model Experiment (Step: 830,467):
     https://www.comet.ml/wellsaid-labs/v9-custom-voices/d38734aa992a414db482f36fb5e8a961
@@ -210,6 +213,7 @@ class Checkpoints(enum.Enum):
 
     """
     These checkpoints include the StudySync custom voice (version 2).
+
     Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/386
     Spectrogram Model Experiment (Step: 681, 340):
     https://www.comet.ml/wellsaid-labs/v9-custom-voices/db8d706b02e14d47be79d9966c57b959
@@ -221,6 +225,7 @@ class Checkpoints(enum.Enum):
 
     """
     These checkpoints include the UneeQ X ASB (V3) final custom voice.
+
     Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/386
     Spectrogram Model Experiment (Step: 861,875):
     https://www.comet.ml/wellsaid-labs/uneeq-asb-experiments/360480297ec9416dbefec838c508c139
@@ -257,6 +262,84 @@ class Checkpoints(enum.Enum):
     """
 
     V9_2022_Q1_MARKETPLACE_EXPANSION: typing.Final = "v9_2022_q1_marketplace_expansion"
+
+    """
+    These checkpoints include the Five9 German custom voice.
+
+    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/###
+    Spectrogram Model Experiment (Step: 790,150):
+    https://www.comet.ml/wellsaid-labs/train-v9-new-languages/5e41dc39f5854b16b36989e06ea8e09f
+    Signal Model Experiment (Step: 932,377):
+    https://www.comet.ml/wellsaid-labs/train-v9-new-languages-signal/194897dcbd634a2b95846de5145e6add
+    """
+
+    V9_2022_3_04_FIVENINE_DE_CUSTOM_VOICE: typing.Final = "v9_2022_3_04_fivenine_de_custom_voice"
+
+    """
+    These checkpoints include the Five9 Spanish (Columbian) custom voice.
+
+    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/###
+    Spectrogram Model Experiment (Step: 900,750):
+    https://www.comet.ml/wellsaid-labs/train-v9-new-languages/732f3e6920a445a597f84a0783f9ab62
+    Signal Model Experiment (Step: 1,080,900):
+    https://www.comet.ml/wellsaid-labs/train-v9-new-languages-signal/232de3c3c65f47c1a3ae977e5ac5a566
+    """
+
+    V9_2022_3_04_FIVENINE_ES_CUSTOM_VOICE: typing.Final = "v9_2022_3_04_fivenine_es_custom_voice"
+
+    """
+    These checkpoints include the Five9 Portuguese (Brazilian) voice.
+
+    Spectrogram Model Experiment (Step: 826,452):
+    https://www.comet.ml/wellsaid-labs/train-v9-new-languages/264ad5e013584ceebf9c25333458ae89
+    Signal Model Experiment (Step: 1,193,764):
+    https://www.comet.ml/wellsaid-labs/train-v9-new-languages-signal/06f4b780d3a040fe89f7f7623b83517a
+    """
+
+    V9_2022_3_04_FIVENINE_PT_CUSTOM_VOICE: typing.Final = "v9_2022_3_04_fivenine_pt_custom_voice"
+
+    """
+    These checkpoints include the SelectQuote custom voice.
+
+    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/###
+    Spectrogram Model Experiment (Step: 790,150):
+    https://www.comet.ml/wellsaid-labs/train-v9-new-languages/5e41dc39f5854b16b36989e06ea8e09f
+    Signal Model Experiment (Step: 932,377):
+    https://www.comet.ml/wellsaid-labs/train-v9-new-languages-signal/194897dcbd634a2b95846de5145e6add
+    """
+
+    V9_2022_3_04_SELECTQUOTE_CUSTOM_VOICE: typing.Final = "v9_2022_3_04_selectquote_custom_voice"
+
+    """
+    These checkpoints include the Diacritic fix to all existing voices as well as the
+    2022 Q2 Marketplace Expansion (17) voice variants:
+    Narration:      Alan T., Diarmid C., Donna W. , Elizabeth U., Fiona H., Greg G., Jordan T.,
+                    Kari N., Marcus P., Philip J., Roxy T., Terra G., Zoey O.
+    Promo:          Charlie Z., Tobin A., Ava M.
+    Conversational: Tobin A.
+
+    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/###
+    Spectrogram Model Experiment (Step: 876,102):
+    https://www.comet.ml/wellsaid-labs/v9-marketplace-voices/49d43e2b12cd4c77ab79148e079e071a
+    Signal Model Experiment (Step: 1,108,182):
+    https://www.comet.ml/wellsaid-labs/v9-marketplace-voices/8ec9a1695e574eeda8f14a92db7cb3c8
+    """
+
+    V9_2022_Q2_DIACRITCS_MARKETPLACE_EXPANSION: typing.Final = (
+        "v9_2022_q2_diacritics_marketplace_expansion"
+    )
+
+    """
+    These checkpoints include the Mitel French Custom Voice.
+
+    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/***
+    Spectrogram Model Experiment (Step: 719,900):
+    https://www.comet.ml/wellsaid-labs/train-v9-new-languages/c2159e182975457887f24fe556438140
+    Signal Model Experiment (Step: 863,880):
+    https://www.comet.ml/wellsaid-labs/train-v9-new-languages-signal/3d000841945c4f7daec1b04ad7f6bd84
+    """
+
+    V9_2022_5_24_MITEL_FR_CUSTOM_VOICE: typing.Final = "v9_2022_5_24_mitel_fr_custom_voice"
 
 
 _GCS_PATH = "gs://wellsaid_labs_checkpoints/"
@@ -331,7 +414,9 @@ def encode_tts_inputs(
     if len(tokens) == 0:
         raise PublicTextValueError(f'Invalid text: "{script}"')
 
-    decoded = DecodedInput(normalized, tokens, speaker, (speaker, session))
+    # TODO: The grapheme encoder will error if it encounters a character is hasn't seen before,
+    # even though it's not used in TTS.
+    decoded = DecodedInput("e", tokens, speaker, (speaker, session))
     token_encoder = input_encoder.token_encoder
     try:
         token_encoder.encode(decoded.tokens)
@@ -404,9 +489,11 @@ def batch_text_to_speech(
     if len(en_inputs) > 0:
         docs: typing.List[spacy.tokens.Doc] = list(nlp.pipe([i[1][0] for i in en_inputs]))
         en_tokens = typing.cast(typing.List[str], grapheme_to_phoneme(docs))
-    decoded = [DecodedInput(sc, sc, sp, (sp, se)) for sc, sp, se in inputs]
-    for (i, (script, speaker, session)), tokens in zip(en_inputs, en_tokens):
-        decoded[i] = DecodedInput(script, tokens, speaker, (speaker, session))
+    # TODO: The grapheme encoder will error if it encounters a character is hasn't seen before,
+    # even though it's not used in TTS.
+    decoded = [DecodedInput("e", sc, sp, (sp, se)) for sc, sp, se in inputs]
+    for (i, (_, speaker, session)), tokens in zip(en_inputs, en_tokens):
+        decoded[i] = DecodedInput("e", tokens, speaker, (speaker, session))
 
     encoded = [(i, package.input_encoder.encode(d)) for i, d in enumerate(decoded)]
     encoded = sorted(encoded, key=lambda i: i[1].tokens.numel())

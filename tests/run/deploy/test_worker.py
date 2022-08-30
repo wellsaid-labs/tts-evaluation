@@ -86,6 +86,6 @@ def test_validate_and_unpack():
     encoded = validate_(request_args, speaker_id_to_speaker=speaker_id_to_speaker)  # type: ignore
     decoded = input_encoder.decode(encoded)
     # NOTE: The emoji is removed because there is no unicode equivilent.
-    assert decoded.graphemes == "exposé"
+    assert decoded.graphemes == "e"
     assert decoded.speaker == speaker
     assert decoded.session == (speaker, session)
