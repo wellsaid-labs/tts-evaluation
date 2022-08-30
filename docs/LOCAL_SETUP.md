@@ -41,6 +41,8 @@ On May 20th, these flags would reduce the repository size by 80%
 Install Python dependencies, like so:
 
 ```zsh
+cd Text-to-Speech/
+
 # Start a virtual environment, learn more:
 # https://realpython.com/python-virtual-environments-a-primer/
 python3 -m venv venv

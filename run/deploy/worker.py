@@ -63,7 +63,7 @@ from run._tts import (
     process_tts_inputs,
     text_to_speech_ffmpeg_generator,
 )
-from run.data._loader import Language, Session, Speaker, english
+from run.data._loader import Language, Session, Speaker, english, german, portuguese, spanish
 
 if "NUM_CPU_THREADS" in os.environ:
     torch.set_num_threads(int(os.environ["NUM_CPU_THREADS"]))
@@ -179,11 +179,15 @@ _SPEAKER_ID_TO_SESSION: typing.Dict[int, typing.Tuple[Speaker, str]] = {
         english.wsl.THE_EXPLANATION_COMPANY__CUSTOM_VOICE,
         "is_it_possible_to_become_invisible",
     ),
-    61137774: (english.wsl.ENERGY_INDUSTRY_ACADEMY__CUSTOM_VOICE, "sample_script_2"),
-    30610881: (english.wsl.VIACOM__CUSTOM_VOICE, "kelsey_speech_synthesis_section1"),
-    50481197: (english.wsl.HOUR_ONE_NBC__BB_CUSTOM_VOICE, "hour_one_nbc_dataset_5"),
-    77552139: (english.wsl.STUDY_SYNC__CUSTOM_VOICE, "fernandes_audio_5"),
-    25502195: (english.wsl.FIVE_NINE__CUSTOM_VOICE, "wsl_five9_audio_3"),
+    61137774: (english.wsl.ENERGY_INDUSTRY_ACADEMY__CUSTOM_VOICE, "sample_script_2.wav"),
+    30610881: (english.wsl.VIACOM__CUSTOM_VOICE, "kelsey_speech_synthesis_section1.wav"),
+    50481197: (english.wsl.HOUR_ONE_NBC__BB_CUSTOM_VOICE, "hour_one_nbc_dataset_5.wav"),
+    77552139: (english.wsl.STUDY_SYNC__CUSTOM_VOICE, "fernandes_audio_5.wav"),
+    25502195: (english.wsl.FIVE_NINE__CUSTOM_VOICE, "wsl_five9_audio_3.wav"),
+    81186157: (german.wsl.FIVE9_CUSTOM_VOICE__DE_DE, "janina_five9_script8.wav"),
+    29363869: (spanish.wsl.FIVE_NINE__CUSTOM_VOICE__ES_CO, "five9_spanish_script_8.wav"),
+    34957054: (portuguese.wsl.FIVE_NINE__CUSTOM_VOICE__PT_BR, "five9_portuguese_script_3.wav"),
+    45105608: (english.wsl.SELECTQUOTE__CUSTOM_VOICE, "SelectQuote_Script2.wav"),
 }
 SPEAKER_ID_TO_SESSION: typing.Dict[int, Session]
 SPEAKER_ID_TO_SESSION = {k: Session(args) for k, args in _SPEAKER_ID_TO_SESSION.items()}
