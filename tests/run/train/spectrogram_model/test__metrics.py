@@ -224,7 +224,8 @@ def test_get_power_rms_level_sum():
     rms = _metrics.get_power_rms_level_sum(
         db_spectrogram, window=window, window_correction_factor=None
     )
-    assert_almost_equal(rms / db_spectrogram.shape[0], torch.tensor([1.0000001, 0.500006]))
+    expected = torch.tensor([1.0000001, 0.500006])
+    assert_almost_equal(rms / db_spectrogram.shape[0], expected, decimal=6)
 
 
 def test_get_power_rms_level_sum__precise():

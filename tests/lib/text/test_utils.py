@@ -409,7 +409,7 @@ def test_normalize_vo_script():
         ")", "*", "+", ",", "-", ".", "/", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", ":",
         ";", "<", "=", ">", "?", "@", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L",
         "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z", "[", "\\", "]", "^",
-        "_", "`", "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p",
+        "_", "'", "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p",
         "q", "r", "s", "t", "u", "v", "w", "x", "y", "z", "{", "|", "}", "~", ""
     ]
     # fmt: on
@@ -495,7 +495,7 @@ def test_is_normalized_vo_script__unnormalized():
         ("G", True), ("H", True), ("I", True), ("J", True), ("K", True), ("L", True), ("M", True),
         ("N", True), ("O", True), ("P", True), ("Q", True), ("R", True), ("S", True), ("T", True),
         ("U", True), ("V", True), ("W", True), ("X", True), ("Y", True), ("Z", True), ("[", True),
-        ("\\", True), ("]", True), ("^", True), ("_", True), ("`", True), ("a", True), ("b", True),
+        ("\\", True), ("]", True), ("^", True), ("_", True), ("`", False), ("a", True), ("b", True),
         ("c", True), ("d", True), ("e", True), ("f", True), ("g", True), ("h", True), ("i", True),
         ("j", True), ("k", True), ("l", True), ("m", True), ("n", True), ("o", True), ("p", True),
         ("q", True), ("r", True), ("s", True), ("t", True), ("u", True), ("v", True), ("w", True),
@@ -512,7 +512,7 @@ def test_is_voiced():
     assert lib.text.utils.is_voiced("ABC", frozenset())
     for char in "@#$%&+=*".split():
         assert lib.text.utils.is_voiced(char, frozenset())
-    assert not lib.text.utils.is_voiced("!^()_{[}]:;\"'<>?/~`|\\", frozenset())
+    assert not lib.text.utils.is_voiced("!^()_{[}]:;\"'<>?/~|\\", frozenset())
     assert not lib.text.utils.is_voiced("", frozenset())
 
 
@@ -561,8 +561,8 @@ def test_add_space_between_sentences():
 
 
 def test_add_space_between_sentences__new_lines():
-    """Test `lib.text.utils.add_space_between_sentences` adds a space between sentences while handling
-    newlines."""
+    """Test `lib.text.utils.add_space_between_sentences` adds a space between sentences while
+    handling newlines."""
     nlp = lib.text.utils.load_en_core_web_sm()
     script = """
     The neuroscience of creativity looks at the operation of the brain during creative behaviour.

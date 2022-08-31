@@ -695,7 +695,11 @@ def _make_backward_compatible_model(params: Params, stop_threshold=0.5):
 
 
 def test_spectrogram_model__version():
-    """Test `spectrogram_model.SpectrogramModel` has not changed since it was last tested."""
+    """Test `spectrogram_model.SpectrogramModel` has not changed since it was last tested.
+
+    TODO: This test won't pass on M1 MacBooks until PyTorch fixes some bugs:
+    https://github.com/pytorch/pytorch/issues/84030
+    """
     torch.set_printoptions(precision=6, linewidth=100)
 
     with fork_rng(123):

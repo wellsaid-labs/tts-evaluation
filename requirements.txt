@@ -21,7 +21,7 @@ nltk
 # Audio Library
 librosa==0.8.1
 pyloudnorm
-torchaudio
+torchaudio==0.11.0
 
 # Visualization Library
 matplotlib
