@@ -26,8 +26,8 @@ from run import train
 from run._config import (
     CHECKPOINTS_PATH,
     load_spacy_nlp,
-    normalize_vo_script,
     normalize_and_verbalize_text,
+    normalize_vo_script,
 )
 from run._models.signal_model import SignalModel, generate_waveform
 from run._models.spectrogram_model import (
@@ -39,7 +39,7 @@ from run._models.spectrogram_model import (
     norm_respellings,
     preprocess_inputs,
 )
-from run.data._loader import Language, Session, Span
+from run.data._loader import Session, Span
 
 logger = logging.getLogger(__name__)
 
@@ -200,10 +200,7 @@ def process_tts_inputs(
     nlp: spacy.language.Language, package: TTSPackage, script: str, session: Session
 ) -> typing.Tuple[Inputs, PreprocessedInputs]:
     """Process TTS `script`, `speaker` and `session` for use with the model(s)."""
-    if session[0].language is Language.ENGLISH:
-        normalized = normalize_and_verbalize_text(script, Language.ENGLISH)
-    else:
-        normalized = normalize_vo_script(script, session[0].language)
+    normalized = normalize_and_verbalize_text(script, session[0].language)
     if len(normalized) == 0:
         raise PublicTextValueError("Text cannot be empty.")
 
