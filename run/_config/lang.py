@@ -61,6 +61,15 @@ def is_voiced(text: str, language: Language) -> bool:
     return lib.text.is_voiced(text, _NON_ASCII_CHARS[language])
 
 
+def normalize_and_verbalize_text(text: str, language: Language) -> str:
+    text = normalize_vo_script(text, language)
+    if language == Language.ENGLISH:
+        # TODO: Given that `verbalize_text` is language specific and it's WSL specific, I'd consider
+        # moving it to `run` instead of `lib`.
+        return lib.text.verbalize_text(text)
+    return text
+
+
 _PUNCT_REGEXES = {l: re.compile(r"[^\w\s" + "".join(_NON_ASCII_CHARS[l]) + r"]") for l in Language}
 
 

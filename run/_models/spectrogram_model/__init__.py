@@ -11,6 +11,7 @@ from run._models.spectrogram_model.containers import Preds
 from run._models.spectrogram_model.inputs import Inputs as PreprocessedInputs
 from run._models.spectrogram_model.inputs import InputsWrapper as Inputs
 from run._models.spectrogram_model.inputs import (
+    RespellingError,
     norm_respellings,
     preprocess_inputs,
     preprocess_spans,
@@ -35,4 +36,5 @@ __all__ = [
     "preprocess_inputs",
     "preprocess_spans",
     "norm_respellings",
+    "RespellingError",
 ]
