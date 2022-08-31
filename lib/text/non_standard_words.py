@@ -103,7 +103,7 @@ _CURRENCIES: typing.Final[typing.Dict[str, typing.Tuple[str, str, str, str]]] = 
     "£": ("pound", "pounds", "pence", "pence"),
     "A$": ("Australian dollar", "Australian dollars", "cent", "cents"),
     "C$": ("Canadian dollar", "Canadian dollars", "cent", "cents"),
-    "元": ("Renminbi", "Renminbi", "jiao", "jiao"),
+    "元": ("yuan", "yuan", "yuan", "yuan"),
     "CHF": ("Swiss franc", "Swiss francs", "centime", "centimes"),
     "HK$": ("Hong Kong dollar", "Hong Kong dollars", "cent", "cents"),
     "NZ$": ("New Zealand dollar", "New Zealand dollars", "cent", "cents"),
@@ -113,7 +113,7 @@ _CURRENCIES: typing.Final[typing.Dict[str, typing.Tuple[str, str, str, str]]] = 
 }
 
 CURRENCIES: typing.Final[typing.Dict[str, typing.Tuple[str, str, str, str]]]
-CURRENCIES = {_norm(k): v for k, v in _CURRENCIES.items()}
+CURRENCIES = {_norm(k).lower(): v for k, v in _CURRENCIES.items()}
 
 MONEY_SUFFIX: typing.Final[typing.Tuple[str, ...]] = (
     "hundred",
@@ -276,23 +276,27 @@ ETCETERA: typing.Final[typing.Dict[str, typing.Tuple[str, str]]] = {
     "dB": ("decibel", "decibels"),
 }
 
+_SUPERSCRIPT: typing.Final[typing.Dict[typing.Tuple[str, str], typing.Tuple[str, str]]] = {
+    ("in2", "in^2"): ("square inch", "square inches"),
+    ("ft2", "ft^2"): ("square foot", "square feet"),
+    ("yd2", "yd^2"): ("square yard", "square yards"),
+    ("mi2", "mi^2"): ("square mile", "square miles"),
+    ("cm2", "cm^2"): ("square centimeter", "square centimeters"),
+    ("m2", "m^2"): ("square meter", "square meters"),
+    ("km2", "km^2"): ("square kilometer", "square kilometers"),
+    ("mi3", "mi^3"): ("cubic mile", "cubic miles"),
+    ("yd3", "yd^3"): ("cubic yard", "cubic yards"),
+    ("ft3", "ft^3"): ("cubic foot", "cubic feet"),
+    ("in3", "in^3"): ("cubic inch", "cubic inches"),
+    ("cm3", "cm^3"): ("cubic centimeter", "cubic centimeters"),
+    ("m3", "m^3"): ("cubic meter", "cubic meters"),
+    ("km3", "km^3"): ("cubic kilometer", "cubic kilometers"),
+    ("m/s2", "m/s^2"): ("meter per second squared", "meters per second squared"),
+    ("ft/s2", "ft/s^2"): ("foot per second squared", "feet per second squared"),
+}
+
 SUPERSCRIPT: typing.Final[typing.Dict[str, typing.Tuple[str, str]]] = {
-    "in²": ("square inch", "square inches"),
-    "ft²": ("square foot", "square feet"),
-    "yd²": ("square yard", "square yards"),
-    "mi²": ("square mile", "square miles"),
-    "cm²": ("square centimeter", "square centimeters"),
-    "m²": ("square meter", "square meters"),
-    "km²": ("square kilometer", "square kilometers"),
-    "mi³": ("cubic mile", "cubic miles"),
-    "yd³": ("cubic yard", "cubic yards"),
-    "ft³": ("cubic foot", "cubic feet"),
-    "in³": ("cubic inch", "cubic inches"),
-    "cm³": ("cubic centimeter", "cubic centimeters"),
-    "m³": ("cubic meter", "cubic meters"),
-    "km³": ("cubic kilometer", "cubic kilometers"),
-    "m/s²": ("meter per second squared", "meters per second squared"),
-    "ft/s²": ("foot per second squared", "feet per second squared"),
+    k: values for keys, values in _SUPERSCRIPT.items() for k in keys
 }
 
 OTHER: typing.Final[typing.Dict[str, typing.Tuple[str, str]]] = {
@@ -629,6 +633,10 @@ _VERBALIZED_SYMBOLS_VERBALIZED: typing.Final[typing.Dict[str, str]] = {
     "±": "plus or minus",
     "~": "tilde",
     "^": "carat",
+    ">": "greater than",  # NOTE: These are rarely used as parentheses too.
+    "<": "less than",
+    ">=": "greater than or equal to",
+    "<=": "less than or equal to",
 }
 VERBALIZED_SYMBOLS_VERBALIZED: typing.Final[typing.Dict[str, str]]
 VERBALIZED_SYMBOLS_VERBALIZED = {_norm(k): v for k, v in _VERBALIZED_SYMBOLS_VERBALIZED.items()}

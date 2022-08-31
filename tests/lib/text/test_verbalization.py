@@ -1008,6 +1008,78 @@ def test_verbalize_text():
             "Is two milliseconds Response Time Good for Gaming",
         ),
         ("#Adele30", "hashtag Adele thirty"),
+        (
+            "The use of a longer needle may help ensure intramuscular injection for those with a "
+            'body mass index > 30 kilograms per milliliter of cab "L" "A".',
+            "The use of a longer needle may help ensure intramuscular injection for those with a "
+            'body mass index greater than thirty kilograms per milliliter of cab "L" "A".',
+        ),
+        (
+            "Including 300 billion yuan in new infrastructure spending and an extension of "
+            "borrowing to local governments worth 500 billion yuan.",
+            "Including three hundred billion yuan in new infrastructure spending and an extension "
+            "of borrowing to local governments worth five hundred billion yuan.",
+        ),
+        (
+            "Number 5. Dilbar | 511 feet",
+            "Number five. Dilbar | five hundred and eleven feet",
+        ),
+        # NOTE: < as a parenthesis is not supported due to it's rarity.
+        (
+            "hen, one day I get an email from her: From: Christie <xxxxxxxxxxxx@yahoo.com> ",
+            "hen, one day I get an email from her: From: Christie less than xxxxxxxxxxxx at "
+            "yahoo dot com greater than",
+        ),
+        # NOTE: Ranges with `~` are not supported due to their rarity.
+        (
+            "The oil temperature should be around 210~250°F / 100°C~120°C.",
+            "The oil temperature should be around two hundred and ten tilde two hundred and fifty "
+            "degrees Fahrenheit slash one hundred degrees Celsius tilde one hundred and twenty "
+            "degrees Celsius.",
+        ),
+        # NOTE: Guessestimates with `~` are not supported due to their rarity.
+        (
+            "This update follows the news that Ben just listed his Palisades home for a "
+            "casual ~$30 million (at a $10 million profit).",
+            "This update follows the news that Ben just listed his Palisades home for a "
+            "casual tilde thirty million dollars (at a ten million dollars profit)."
+        ),
+        # NOTE: Arrows with "->" are not supported due to their rarity.
+        (
+            "C L I window can be opened viar CMU G U I  (Mobile Gateway menu -> C L I Window, "
+            "choose either You-p-Ef Console or SMF Console)",
+            "C L I window can be opened viar CMU G U I (Mobile Gateway menu -greater than "
+            "C L I Window, choose either You-p-Ef Console or SMF Console)",
+        ),
+        # NOTE: Inches are not supported due to the complexity in differentiating quotes.
+        (
+            "U-MAX Greenhouse Polycarbonate Outdoor Garden Greenhouse Walk-in Portable "
+            "6'(L) x6'(W) x6.6'(H)",
+            "U-MAX Greenhouse Polycarbonate Outdoor Garden Greenhouse Walk-in Portable "
+            "six'(L) x six'(W) x six point six'(H)"
+        ),
+        # NOTE: This is a regression test that error'd in production.
+        (
+            "large surface of 3.24㎡ can accommodate a considerable number of plants",
+            "large surface of three point two four square meters can accommodate a considerable "
+            "number of plants",
+        ),
+        # NOTE: This is a regression test that error'd in production.
+        (
+            "Expectations From `Tidy Floor’:\nI consider www.tidyfloor.com to be my brain child.",
+            "Expectations From 'Tidy Floor':\nI consider ::DUH-buh-yoo-DUH-buh-yoo-DUH-buh-yoo:: "
+            "dot tidyfloor dot com to be my brain child.",
+        ),
+        # NOTE: This is a regression test that error'd in production.
+        (
+            "4PS 4Ps",
+            "four pounds four pounds"
+        ),
+        # NOTE: This is a regression test that error'd in production.
+        (
+            "diastolic blood pressure of ≥ 90 mm Hg",
+            "diastolic blood pressure of greater than equals ninety millimeters Hg"
+        )
     ]
     for text_in, text_out in tests:
         assert verbalize_text(_norm(text_in)) == text_out

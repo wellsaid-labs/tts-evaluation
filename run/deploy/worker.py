@@ -179,15 +179,15 @@ _SPEAKER_ID_TO_SESSION: typing.Dict[int, typing.Tuple[Speaker, str]] = {
         english.wsl.THE_EXPLANATION_COMPANY__CUSTOM_VOICE,
         "is_it_possible_to_become_invisible",
     ),
-    61137774: (english.wsl.ENERGY_INDUSTRY_ACADEMY__CUSTOM_VOICE, "sample_script_2.wav"),
-    30610881: (english.wsl.VIACOM__CUSTOM_VOICE, "kelsey_speech_synthesis_section1.wav"),
-    50481197: (english.wsl.HOUR_ONE_NBC__BB_CUSTOM_VOICE, "hour_one_nbc_dataset_5.wav"),
-    77552139: (english.wsl.STUDY_SYNC__CUSTOM_VOICE, "fernandes_audio_5.wav"),
-    25502195: (english.wsl.FIVE_NINE__CUSTOM_VOICE, "wsl_five9_audio_3.wav"),
-    81186157: (german.wsl.FIVE9_CUSTOM_VOICE__DE_DE, "janina_five9_script8.wav"),
-    29363869: (spanish.wsl.FIVE_NINE__CUSTOM_VOICE__ES_CO, "five9_spanish_script_8.wav"),
-    34957054: (portuguese.wsl.FIVE_NINE__CUSTOM_VOICE__PT_BR, "five9_portuguese_script_3.wav"),
-    45105608: (english.wsl.SELECTQUOTE__CUSTOM_VOICE, "SelectQuote_Script2.wav"),
+    61137774: (english.wsl.ENERGY_INDUSTRY_ACADEMY__CUSTOM_VOICE, "sample_script_2"),
+    30610881: (english.wsl.VIACOM__CUSTOM_VOICE, "kelsey_speech_synthesis_section1"),
+    50481197: (english.wsl.HOUR_ONE_NBC__BB_CUSTOM_VOICE, "hour_one_nbc_dataset_5"),
+    77552139: (english.wsl.STUDY_SYNC__CUSTOM_VOICE, "fernandes_audio_5"),
+    25502195: (english.wsl.FIVE_NINE__CUSTOM_VOICE, "wsl_five9_audio_3"),
+    81186157: (german.wsl.FIVE9_CUSTOM_VOICE__DE_DE, "janina_five9_script8"),
+    29363869: (spanish.wsl.FIVE_NINE__CUSTOM_VOICE__ES_CO, "five9_spanish_script_8"),
+    34957054: (portuguese.wsl.FIVE_NINE__CUSTOM_VOICE__PT_BR, "five9_portuguese_script_3"),
+    45105608: (english.wsl.SELECTQUOTE__CUSTOM_VOICE, "SelectQuote_Script2"),
 }
 SPEAKER_ID_TO_SESSION: typing.Dict[int, Session]
 SPEAKER_ID_TO_SESSION = {k: Session(args) for k, args in _SPEAKER_ID_TO_SESSION.items()}
@@ -297,7 +297,7 @@ def validate_and_unpack(
             code="INVALID_TEXT",
         )
     except BaseException:
-        app.logger.exception("Invalid text: %r", text)
+        app.logger.exception("Unknown error text: %r", text)
         raise FlaskException("Unknown error.", code="UNKNOWN_ERROR")
 
 
@@ -369,10 +369,13 @@ if __name__ == "__main__" or "GUNICORN" in os.environ:
 
     for session in SPEAKER_ID_TO_SESSION.values():
         if session not in vocab:
-            app.logger.warning(f"Session not found in model vocab: {session}")
-            avail_sessions = [s[1] for s in vocab if s[0] == session[0]]
-            if len(avail_sessions) > 0:
-                app.logger.warning(f"Sessions available: {avail_sessions}")
+            if not any(session[0] is sesh[0] for sesh in vocab):
+                app.logger.warning(f"Speaker not found in model vocab: {session[0]}")
+            else:
+                app.logger.warning(f"Session not found in model vocab: {session}")
+                avail_sessions = [s[1] for s in vocab if s[0] == session[0]]
+                if len(avail_sessions) > 0:
+                    app.logger.warning(f"Sessions available: {avail_sessions}")
 
     languages = set(s[0].language for s in vocab)
     LANGUAGE_TO_SPACY = {l: load_spacy_nlp(l) for l in languages}

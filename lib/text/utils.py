@@ -527,8 +527,9 @@ def strip(text: str) -> typing.Tuple[str, str, str]:
 
 
 def _normalize_whitespace(text: str) -> str:
-    """Normalize whitespace variations into standard characters. Formfeed `f` and carriage return `r`
-    should be replace with new line `\n` and tab `\t` should be replaced with two spaces `  `."""
+    """Normalize whitespace variations into standard characters. Formfeed `f` and carriage return
+    `r` should be replace with new line `\n` and tab `\t` should be replaced with two spaces
+    `  `."""
     text = text.replace("\f", "\n")
     text = text.replace("\t", "  ")
     return text
@@ -564,6 +565,10 @@ def normalize_vo_script(text: str, non_ascii: frozenset, strip: bool = True) -> 
     TODO: Clarify that some characters like `«` will be normalized regardless of being in the
           `non_ascii` set.
     NOTE: `non_ascii` needs to be explicitly set so that text isn't processed incorrecly accidently.
+    TODO: Double check datasets for ambigiously verbalized characters like "<" which can be
+          "greater than" or "silent".
+    TODO: This removes characters like ℃.
+    TODO: Research the impact of normalizing backticks to single quotes.
 
     References:
     - Generic package for text cleaning: https://github.com/jfilter/clean-text
@@ -582,6 +587,7 @@ def normalize_vo_script(text: str, non_ascii: frozenset, strip: bool = True) -> 
     text = ftfy.fix_text(text)
     text = _normalize_whitespace(text)
     text = _normalize_guillemets(text)
+    text = text.replace("`", "'")  # NOTE: Normalize backticks to single quotes
     text = "".join(
         [c if c == " " or c in non_ascii else str(unidecode.unidecode(c)) for c in text]
     )
