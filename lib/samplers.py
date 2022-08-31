@@ -1,5 +1,6 @@
 # type: ignore
 import math
+import typing
 
 from torch.utils.data.sampler import BatchSampler, SubsetRandomSampler
 from torchnlp.samplers.sorted_sampler import SortedSampler
@@ -16,7 +17,12 @@ class BucketBatchSampler(BatchSampler):
     """
 
     def __init__(
-        self, sampler, batch_size, drop_last, sort_key=identity, bucket_size_multiplier=100
+        self,
+        sampler,
+        batch_size,
+        drop_last,
+        sort_key: typing.Callable = identity,
+        bucket_size_multiplier=100
     ):
         super().__init__(sampler, batch_size, drop_last)
         self.sort_key = sort_key

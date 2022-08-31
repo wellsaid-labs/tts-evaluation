@@ -36,11 +36,10 @@
   "python.linting.flake8Enabled": true,
   "python.linting.pylintEnabled": false,
   "python.linting.mypyEnabled": false,
-  "reflow.preferredLineLength": 100,
   "git.autofetch": true,
-  "eslint.run": "onSave",
   "python.analysis.autoImportCompletions": false,
   "editor.bracketPairColorization.enabled": true,
   "editor.guides.bracketPairs": true,
-  "python.analysis.diagnosticMode": "workspace"
+  "python.analysis.diagnosticMode": "workspace",
+  "reflowMarkdown.preferredLineLength": 100
 }

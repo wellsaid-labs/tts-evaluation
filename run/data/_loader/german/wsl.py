@@ -10,6 +10,13 @@ MITEL_GERMAN__CUSTOM_VOICE = structures.Speaker(
     "Mitel (German Custom Voice)",
     "mitel__custom_voice__de_de",
 )
+FIVE9_CUSTOM_VOICE__DE_DE = structures.Speaker(
+    "five_nine__custom_voice__de_de",
+    structures.Style.OTHER,
+    structures.Dialect.DE_DE,
+    "Five9 (German Custom Voice)",
+    "five_nine__custom_voice__de_de",
+)
 
 
 _wsl_speakers = [s for s in locals().values() if isinstance(s, structures.Speaker)]

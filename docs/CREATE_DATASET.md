@@ -58,9 +58,10 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
    VM_NAME=$USER"-dataset-processing" # EXAMPLE: michaelp-dataset-processing
    # NOTE: Pick a zone that's closest to the GCS bucket `wellsaid_labs_datasets`.
    VM_ZONE=us-central1-a # EXAMPLE: us-central1-a
-
    PROJECT=voice-research-255602
    VM_MACHINE_TYPE=n1-standard-2
+   # NOTE: If you have changed projects since your original setup, make sure you are using the
+   # right project.
    gcloud config set project $PROJECT
    gcloud auth application-default set-quota-project $PROJECT
    ```
@@ -93,7 +94,7 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
 1. In another terminal window, run `lsyncd` to sync your local files to your virtual machine...
 
    ```zsh
-   VM_NAME=$(python -m run.utils.gcp most-recent --filter "dataset-processing")
+   VM_NAME=$USER"-dataset-processing" # EXAMPLE: michaelp-dataset-processing
    VM_ZONE=$(python -m run.utils.gcp zone --name $VM_NAME)
    VM_IP=$(python -m run.utils.gcp ip --name $VM_NAME --zone=$VM_ZONE)
    VM_USER=$(python -m run.utils.gcp user --name $VM_NAME --zone=$VM_ZONE)
@@ -208,7 +209,7 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
    ```
 
    💡 TIP: Learn more about `2>&1 | tee`, here:
-   https://stackoverflow.com/questions/418896/how-to-redirect-output-to-a-file-and-stdout
+   <https://stackoverflow.com/questions/418896/how-to-redirect-output-to-a-file-and-stdout>
 
 1. (Optional) Review dataset audio file format(s) for inconsistencies...
 

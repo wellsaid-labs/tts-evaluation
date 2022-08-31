@@ -27,11 +27,14 @@ def _chart_framed_rms_level(framed_rms_level: np.ndarray, frame_hop: int, sample
     samples = [i * frame_hop + frame_hop // 2 for i in range(len(rms_level_db))]
     seconds = [sample_to_sec(s, sample_rate) for s in samples]
     return (
-        alt.Chart(pd.DataFrame({"Seconds": seconds, "Decibels": rms_level_db}))
+        alt.Chart(pd.DataFrame({"Seconds": seconds, "Decibels": rms_level_db}))  # type: ignore
         .mark_area()
         .encode(
-            x=alt.X("Seconds", type="quantitative"),
-            y=alt.Y("Decibels", scale=alt.Scale(domain=(-100.0, 0)), type="quantitative"),
+            x=alt.X("Seconds", type="quantitative"),  # type: ignore
+            y=alt.Y(
+                "Decibels",  # type: ignore
+                scale=alt.Scale(domain=(-100.0, 0)), type="quantitative"  # type: ignore
+            ),
         )
     )
 

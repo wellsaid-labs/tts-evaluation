@@ -114,7 +114,7 @@ def _chart_alignments_and_non_speech_segments(
         "end": [s[1] for s in non_speech_segments],
     }
     chart = (
-        alt.Chart(pd.DataFrame(source))
+        alt.Chart(pd.DataFrame(source))  # type: ignore
         .mark_bar(stroke="#000", strokeWidth=1, strokeOpacity=0.3)  # type: ignore
         .encode(x="start", x2="end", y="interval", color="interval")
     )
@@ -138,11 +138,14 @@ def _chart_db_rms(seconds: np.ndarray, rms_level_db: np.ndarray):
     """
     st.write("**dB RMS**")
     return (
-        alt.Chart(pd.DataFrame({"seconds": seconds, "decibels": rms_level_db}))
+        alt.Chart(pd.DataFrame({"seconds": seconds, "decibels": rms_level_db}))  # type: ignore
         .mark_area()
         .encode(
-            x=alt.X("seconds", type="quantitative"),
-            y=alt.Y("decibels", scale=alt.Scale(domain=(-200.0, 0)), type="quantitative"),
+            x=alt.X("seconds", type="quantitative"),  # type: ignore
+            y=alt.Y(
+                "decibels",  # type: ignore
+                scale=alt.Scale(domain=(-200.0, 0)), type="quantitative"  # type: ignore
+            ),
         )
     )
 
