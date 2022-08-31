@@ -83,15 +83,20 @@ LANGUAGE_TO_SPACY: typing.Dict[Language, spacy.language.Language]
 SPACY: English
 # NOTE: The keys need to stay the same for backwards compatibility.
 _SESSIONS = [
+    # NOTE: These 3 are open-source voices that didn't consent to be on our platform.
     (english.m_ailabs.JUDY_BIEBER, ""),
     (english.m_ailabs.MARY_ANN, ""),
     (english.lj_speech.LINDA_JOHNSON, ""),
     (english.wsl.ALANA_B, "script_3"),
     (english.wsl.RAMONA_J, "7"),
     (english.wsl.RAMONA_J__CUSTOM, "sukutdental_021819"),
+    # NOTE: This is open-source voice that didn't consent to be on our platform.
+    # NOTE: This speaker was released twice on accident with different ids, so it's in this list
+    # twice.
     (english.lj_speech.LINDA_JOHNSON, ""),
     (english.wsl.WADE_C, "102-107"),
     (english.wsl.SOFIA_H, "14"),
+    # NOTE: David asked for his voice to be removed from the platform.
     (english.wsl.DAVID_D, ""),
     (english.wsl.VANESSA_N, "76-81"),
     (english.wsl.ISABEL_V, "heather_4-21_a"),
@@ -118,14 +123,12 @@ _SESSIONS = [
     (english.wsl.KAI_M__MANUAL_POST, "wsl_jackrutkowski_enthusiastic_script_27-processed"),
     (english.wsl.JUDE_D__EN_GB, "enthusiastic_script_5_davis"),
     (english.wsl.ERIC_S__EN_IE__PROMO, "promo_script_7_diamond"),
-    # Test in staging due to low quality # TODO: Remove comment?
     (english.wsl.CHASE_J__PROMO, "promo_script_5_daniels"),
-    # Test in staging due to low quality # TODO: Remove comment?
+    # TODO: The avatars name should be used instead.
     (english.wsl.DAN_FURCA__PROMO, "furca_audio_part3"),
     (english.wsl.STEVE_B__PROMO, "promo_script_1_cupit_02"),
     (english.wsl.BELLA_B__PROMO, "promo_script_5_tugman"),
     (english.wsl.TILDA_C__PROMO, "promo_script_6_mckell"),
-    # Do not release till paid # TODO: Remove comment?
     (english.wsl.CHARLIE_Z__PROMO, "promo_script_5_alexander"),
     (english.wsl.PAUL_B__PROMO, "promo_script_9_williams"),
     (english.wsl.SOFIA_H__CONVO, "conversational_script_5_walker"),
