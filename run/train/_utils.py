@@ -896,7 +896,7 @@ class Metrics(lib.distributed.DictStore, typing.Generic[MetricsKeyTypeVar]):
         self, key: MetricsKeyTypeVar, select: MetricsSelect, op: MetricsReduceOp = sum
     ) -> float:
         """Reduce `self.data[key]` measurements to a float."""
-        flat = flatten_2d(select(self.data)[key] if key in self.data else [])
+        flat: typing.List[float] = flatten_2d(select(self.data)[key] if key in self.data else [])
         assert all(not math.isnan(val) for val in flat), f"Encountered NaN value for metric {key}."
         return math.nan if len(flat) == 0 else op(flat)
 

@@ -301,12 +301,12 @@ def make_signal_chart(
     assert frames.shape[0] == envelope.shape[0]
     ticks = np.arange(0, envelope.shape[0] * ratio / sample_rate, ratio / sample_rate)
     return (
-        alt.Chart(pd.DataFrame({x: ticks, y[0]: -envelope, y[1]: envelope}))
+        alt.Chart(pd.DataFrame({x: ticks, y[0]: -envelope, y[1]: envelope}))  # type: ignore
         .mark_area()
         .encode(
-            x=alt.X(x, type="quantitative"),
-            y=alt.Y(y[0], scale=alt.Scale(domain=(-1.0, 1.0)), type="quantitative"),
-            y2=alt.Y2(y[1]),
+            x=alt.X(x, type="quantitative"),  # type: ignore
+            y=alt.Y(y[0], scale=alt.Scale(domain=(-1.0, 1.0)), type="quantitative"),  # type: ignore
+            y2=alt.Y2(y[1]),  # type: ignore
         )
     )
 
@@ -323,7 +323,7 @@ def make_interval_chart(
     """Make `altair.Chart` for the `intervals`."""
     source = {"x_min": [i[0] for i in intervals], "x_max": [i[1] for i in intervals]}
     return (
-        alt.Chart(pd.DataFrame(source))
+        alt.Chart(pd.DataFrame(source))  # type: ignore
         .mark_rect(
             fillOpacity=fillOpacity,  # type: ignore
             color=color,  # type: ignore
@@ -332,7 +332,7 @@ def make_interval_chart(
             strokeOpacity=strokeOpacity,  # type: ignore
             **kwargs,
         )
-        .encode(x=alt.X("x_min", type="quantitative"), x2=alt.X2("x_max"))
+        .encode(x=alt.X("x_min", type="quantitative"), x2=alt.X2("x_max"))  # type: ignore
     )
 
 

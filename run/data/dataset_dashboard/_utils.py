@@ -110,12 +110,12 @@ def bucket_and_chart(
     # "[Warning] Cannot project a selection on encoding channel "y" as it uses an aggregate
     #  function ("sum")."
     return (
-        alt.Chart(df)
+        alt.Chart(df)  # type: ignore
         .mark_bar(opacity=opacity)  # type: ignore
         .encode(
-            x=alt.X("bucket", type="quantitative", title=x + " (binned)"),
-            y=alt.Y(field="count", type="quantitative", title=y, stack=stack),
-            color=alt.Color(field="label", type="nominal", title="Label"),
+            x=alt.X("bucket", type="quantitative", title=x + " (binned)"),  # type: ignore
+            y=alt.Y(field="count", type="quantitative", title=y, stack=stack),  # type: ignore
+            color=alt.Color(field="label", type="nominal", title="Label"),  # type: ignore
             tooltip=["label", "bucket", "count"],
         )
         .interactive()
