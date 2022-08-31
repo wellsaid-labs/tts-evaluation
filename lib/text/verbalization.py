@@ -30,10 +30,11 @@ from lib.text.non_standard_words import (
     MONEY_SUFFIX,
     ORDINAL_SUFFIXES,
     PLUS_OR_MINUS_PREFIX,
-    SOCIAL_SYMBOLS_VERBALIZED,
     SYMBOLS_VERBALIZED,
     TIME_ZONES,
     UNITS_ABBREVIATIONS,
+    VERBALIZED_SYMBOLS_VERBALIZED,
+    WEB_INITIALISMS,
 )
 
 logger = logging.getLogger(__name__)
@@ -123,10 +124,7 @@ def _verbalize_money(
 def _verbalize_money__reversed(
     money: str, abbr: typing.Optional[str], trail: typing.Optional[str], currency: str
 ) -> str:
-    """Verbalize a monetary value (e.g. $1.2 trillion, $5, £2.36, ¥1MM).
-
-    NOTE: Some folks write dollar amounts with the currency trailing. This verbalizes those matches.
-    Example: 24$, 4.2MM¥
+    """Verbalize a monetary value with the currency trailing (e.g. 24$, 4.2MM¥).
 
     Args:
         money (e.g. 1.2, 15,000)
@@ -134,7 +132,7 @@ def _verbalize_money__reversed(
         trail (e.g. trillion)
         currency (e.g. $, €, NZ$)
     """
-    return _verbalize_money(currency.strip(), money, abbr, trail)
+    return _verbalize_money(currency, money, abbr, trail)
 
 
 _NON_DIGIT_PATTERN = re.compile(r"\D")
@@ -164,12 +162,13 @@ def _verbalize_time(
     zone: typing.Optional[str],
     o_clock: str = "oh clock",
 ) -> str:
-    """Verbalize a time (e.g. "10:04PM", "2:13 a.m.").
+    """Verbalize a time (e.g. "10:04PM", "2:13 a.m.", "11:15 PM (PST)").
 
     Args:
         hours (e.g. "10")
         minute (e.g. "04")
         period (e.g. "PM", "a.m.")
+        zone (e.g. "PST")
         o_clock: Phrasing preference of 'o'clock' for on-the-hour times.
     """
     minute = o_clock if minute == "00" else _num2words(minute)
@@ -179,7 +178,7 @@ def _verbalize_time(
 
 
 def _verbalize_abbreviated_time(hour: str, period: str, zone: typing.Optional[str]) -> str:
-    """Verbalize a abbreviated time (e.g. "10PM", "10 p.m.").
+    """Verbalize a abbreviated time (e.g. "10PM", "10 p.m.", "10PM PST").
 
     Args:
         hours (e.g. "10")
@@ -320,14 +319,9 @@ def _verbalize_url(
     for char in digits:
         return_ = return_.replace(char, f" {_num2words(char)} ")
 
-    # Rely on respellings for HTTP, HTTPS, WWW:
-    respellings = {
-        "h t t p s": "::AYCH-tee-tee-pee-EHS::",
-        "h t t p": "::AYCH-tee-tee-PEE::",
-        "w w w": "::DUH-buh-yoo-DUH-buh-yoo-DUH-buh-yoo::"
-    }
-    for s in respellings.keys():
-        return_ = return_.replace(s, respellings[s])
+    # Pronounce "HTTP", "HTTPS", "WWW"
+    for s in WEB_INITIALISMS.keys():
+        return_ = return_.replace(s, WEB_INITIALISMS[s])
 
     return _WHITE_SPACES.sub(" ", return_).strip()
 
@@ -407,9 +401,9 @@ def _verbalize_generic_number(
     prefix: typing.Optional[str],
     numbers: str,
     connector: str = "to",
-    special_cases: typing.List[str] = ["50-50"]
+    special_cases: typing.List[str] = ["50-50"],
 ) -> str:
-    """Verbalize a range of numbers.
+    """Verbalize a generic number or range of numbers.
 
     TODO: Handle special cases like 7-11 and 9-11, they are commonly spoken without 'to'?
 
@@ -424,21 +418,19 @@ def _verbalize_generic_number(
     return f"{prefix}{connector.join(list(map(partial, _get_digits(numbers))))}"
 
 
-def _verbalize_isolated_generic_symbol(symbols: str) -> str:
-    for s in list(symbols):
-        assert s in SYMBOLS_VERBALIZED.keys(), f"Unknown symbol found: {s}"
-    return " ".join(SYMBOLS_VERBALIZED[s] for s in list(symbols))
-
-
 def _verbalize_generic_symbol(symbols: str) -> str:
-    # TODO: include special cases
-    # special_cases: typing.List[str] = ["and/or", "if/when", "if/then", "either/or"]
-    for s in list(symbols):
-        assert s in SOCIAL_SYMBOLS_VERBALIZED.keys(), f"Unknown symbol found: {s}"
-    return " ".join(SOCIAL_SYMBOLS_VERBALIZED[s] for s in list(symbols))
+    """Verbalize a generic symbol.
+
+    TODO: Handle special cases like "and/or", "if/when", "if/then", "either/or"?
+
+    Args:
+        symbols (e.g. "@", "&")
+    """
+    return " ".join(VERBALIZED_SYMBOLS_VERBALIZED[s] for s in list(symbols))
 
 
 _TIME_PERIOD = r"( ?[ap]\.?m\b(?:\.\B)?)"  # Time period (e.g. AM, PM, a.m., p.m., am, pm)
+_TIME_ZONE = rf"(?: \(?({_reg_ex_or(TIME_ZONES)})(?:\)\B)?|\b)"  # Time period (PST, GST)
 # TODO: Handle the various thousand separators, like dots or spaces.
 _DIGIT = r"\d(?:\d|\,\d)*(?:\.[\d]+)?"
 _NUMBER_RANGE_SUFFIX = rf"(?: ?[{_reg_ex_or(HYPHENS, '')}] ?{_DIGIT})"
@@ -461,13 +453,11 @@ class RegExPatterns:
         r"\b",  # Word boundary
         flags=re.IGNORECASE,
     )
-
     MONEY_REVERSED: typing.Final[typing.Pattern[str]] = re.compile(
-        rf"({_DIGIT})"  # GROUP 1: Numerical value
-        r"([kmbt]{0,2})"  # GROUP 2: Unit
+        rf"({_DIGIT})" r"([kmbt]{0,2})"  # GROUP 1: Numerical value  # GROUP 2: Unit
         # GROUP 3 (Optional): Currency suffix
         rf"(\b\s(?:{_reg_ex_or(MONEY_SUFFIX + LARGE_NUMBERS + LARGE_FICTIOUS_NUMBERS)}))?"
-        rf"( ?{_reg_ex_or(CURRENCIES.keys(), right=True)})",  # GROUP 4: Currency, optional space
+        rf" ?({_reg_ex_or(CURRENCIES.keys(), right=True)})",  # GROUP 4: Currency, optional space
         flags=re.IGNORECASE,
     )
     ORDINALS: typing.Final[typing.Pattern[str]] = re.compile(
@@ -479,13 +469,13 @@ class RegExPatterns:
         r":"
         r"([0-5]{1}[0-9]{1})"  # GROUP 2: Minutes
         rf"(?:{_TIME_PERIOD}|\b)"  # GROUP 3 (Optional): Time period
-        rf"(?: \(?({_reg_ex_or(TIME_ZONES)})(?:\)\B)?|\b)?",  # GROUP 4 (Optional): Time zone
+        rf"{_TIME_ZONE}?",  # GROUP 4 (Optional): Time zone
         flags=re.IGNORECASE,
     )
     ABBREVIATED_TIMES: typing.Final[typing.Pattern[str]] = re.compile(
         r"\b(\d{1,2})"  # GROUP 1: Hours
         rf"{_TIME_PERIOD}"  # GROUP 2: Time period
-        rf"(?: \(?({_reg_ex_or(TIME_ZONES)})(?:\)\B)?|\b)?",  # GROUP 3 (Optional): Time zone
+        rf"{_TIME_ZONE}?",  # GROUP 3 (Optional): Time zone
         flags=re.IGNORECASE,
     )
     # TODO: A phone number could have up to 15 characters
@@ -559,7 +549,7 @@ class RegExPatterns:
     )
     FRACTIONS: typing.Final[typing.Pattern[str]] = re.compile(
         rf"(\B{_reg_ex_or(PLUS_OR_MINUS_PREFIX.keys())})?"  # GROUP 1 (Optional): Prefix symbol
-        r"(\d+ )?"  # GROUP 2 (Optional): Whole Number
+        r"\b(\d+ )?"  # GROUP 2 (Optional): Whole Number
         r"(\d+)"  # GROUP 3: Numerator
         r"\/"
         r"(\d+)"  # GROUP 4: Denominator
@@ -590,11 +580,9 @@ class RegExPatterns:
         rf"(\B{_reg_ex_or(PLUS_OR_MINUS_PREFIX.keys())})?"  # GROUP 1 (Optional): Prefix symbol
         rf"\b({_DIGIT})\b"  # GROUP 2: Number
     )
-    ISOLATED_GENERIC_SYMBOL: typing.Final[typing.Pattern[str]] = re.compile(
-        r"\B([\#\$\/\\\%\+\*@=])\B"
+    GENERIC_VERBALIZED_SYMBOL: typing.Final[typing.Pattern[str]] = re.compile(
+        rf"({_reg_ex_or(VERBALIZED_SYMBOLS_VERBALIZED.keys())})"
     )
-    GENERIC_SOCIAL_SYMBOL: typing.Final[typing.Pattern[str]] = re.compile(
-        rf"({_reg_ex_or(SOCIAL_SYMBOLS_VERBALIZED.keys())})")
 
 
 def _apply(
@@ -609,18 +597,21 @@ def _apply(
         verbalized = verbalize(*match.groups(), **kw)
         left, right = text[: match.start()], text[match.end() :]
         if space_out:
+            # TODO: `isalnum` in this case is playing the role of determining if a character is
+            # voiced or not. It allows us to seperate out voiced characters. With that in mind,
+            # should `lib.text.is_voiced` be used instead. Furthermore, since this verbalization, is
+            # English centric, should it be moved into the `run` folder?
             left = left + " " if len(left) > 0 and left[-1].isalnum() else left
             right = " " + right if len(right) > 0 and right[0].isalnum() else right
         text = f"{left}{verbalized}{right}"
     return text
 
 
-def fix_swallowed_periods(sent: str, span_text: str) -> str:
-    """A period at the end of a sentence might get eaten. Instead of globally fixing at the end,
-    There are only a handful of cases this should be implemented: After verbalizing TIMES,
-    ABBREVIATED TIMES, and ACRONYMS."""
-    if span_text[-1] == "." and sent[-1] != ".":
-        print(f"{span_text} // ADDING END OF SENTENCE PERIOD")
+def ensure_period(sent: str, span_text: str) -> str:
+    """Add a period to `span_text` if it doesn't have one and `sent` does.
+
+    TODO: Incorperate spaCy more deeply so we know the intent of a period.
+    """
     return sent + "." if span_text[-1] == "." and sent[-1] != "." else sent
 
 
@@ -640,7 +631,7 @@ def verbalize_text(text: str) -> str:
         sent = _apply(sent, RegExPatterns.MONEY_REVERSED, _verbalize_money__reversed)
         sent = _apply(sent, RegExPatterns.ORDINALS, _verbalize_ordinal)
         sent = _apply(sent, RegExPatterns.TIMES, _verbalize_time)
-        sent = fix_swallowed_periods(sent, span.text)
+        sent = ensure_period(sent, span.text)
         sent = _apply(sent, RegExPatterns.PHONE_NUMBERS, _verbalize_phone_number)
         sent = _apply(sent, RegExPatterns.TOLL_FREE_PHONE_NUMBERS, _verbalize_phone_number)
         sent = _apply(
@@ -650,29 +641,21 @@ def verbalize_text(text: str) -> str:
         sent = _apply(sent, RegExPatterns.YEARS, _verbalize_year)
         sent = _apply(sent, RegExPatterns.PERCENTS, _verbalize_percent)
         sent = _apply(sent, RegExPatterns.NUMBER_SIGNS, _verbalize_number_sign)
-        sent = _apply(sent, RegExPatterns.NUMBER_RANGE, _verbalize_generic_number, space_out=True)
+        sent = _apply(sent, RegExPatterns.NUMBER_RANGE, _verbalize_generic_number)
         sent = _apply(sent, RegExPatterns.URLS, _verbalize_url)
         sent = _apply(
             sent, RegExPatterns.MEASUREMENT_ABBREVIATIONS, _verbalize_measurement_abbreviation
         )
         sent = _apply(sent, RegExPatterns.ABBREVIATED_TIMES, _verbalize_abbreviated_time)
-        sent = fix_swallowed_periods(sent, span.text)
+        sent = ensure_period(sent, span.text)
         sent = _apply(sent, RegExPatterns.FRACTIONS, _verbalize_fraction)
         sent = _apply(sent, RegExPatterns.ACRONYMS, _verbalize_acronym)
-        sent = fix_swallowed_periods(sent, span.text)
+        sent = ensure_period(sent, span.text)
         sent = _apply(sent, RegExPatterns.ABBREVIATIONS, _verbalize_abbreviation)
-        sent = _apply(sent, RegExPatterns.GENERIC_DIGIT, _verbalize_generic_number, space_out=True)
+        sent = _apply(sent, RegExPatterns.GENERIC_DIGIT, _verbalize_generic_number, True)
+        sent = _apply(sent, RegExPatterns.ISOLATED_GENERIC_DIGIT, _verbalize_generic_number, True)
         sent = _apply(
-            sent, RegExPatterns.ISOLATED_GENERIC_DIGIT, _verbalize_generic_number, space_out=True
-        )
-        sent = _apply(
-            sent,
-            RegExPatterns.ISOLATED_GENERIC_SYMBOL,
-            _verbalize_isolated_generic_symbol,
-            space_out=True
-        )
-        sent = _apply(
-            sent, RegExPatterns.GENERIC_SOCIAL_SYMBOL, _verbalize_generic_symbol, space_out=True
+            sent, RegExPatterns.GENERIC_VERBALIZED_SYMBOL, _verbalize_generic_symbol, True
         )
 
         sents.extend([sent, span[-1].whitespace_])

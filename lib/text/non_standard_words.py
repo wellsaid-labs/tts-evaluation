@@ -335,8 +335,8 @@ PLUS_OR_MINUS_PREFIX = {_norm(k): v for k, v in _PLUS_OR_MINUS_PREFIX.items()}
 #########################
 # GENERAL ABBREVIATIONS #
 #########################
-# NOTE: All General Abbreviations require a succeeding '.' in the regex to be considered a match.
-# "prof" will not verbalize to "professor", "prof." will. This should prevent
+# NOTE: All General Abbreviations require a succeeding '.' so as not to be confused with words
+# or initialisms. "prof" should not be verbalized as "professor", "prof." should be.
 
 TITLES_PERSON_PRX: typing.Final[typing.Dict[str, str]] = {
     "mr": "Mister",
@@ -614,15 +614,36 @@ _SYMBOLS_VERBALIZED: typing.Final[typing.Dict[str, str]] = {
 SYMBOLS_VERBALIZED: typing.Final[typing.Dict[str, str]]
 SYMBOLS_VERBALIZED = {_norm(k): v for k, v in _SYMBOLS_VERBALIZED.items()}
 
-_SOCIAL_SYMBOLS_VERBALIZED: typing.Final[typing.Dict[str, str]] = {
+_VERBALIZED_SYMBOLS_VERBALIZED: typing.Final[typing.Dict[str, str]] = {
     "@": "at",
     "#": "hashtag",
     "$": "dollar",
     "&": "and",
     "_": "underscore",
     "/": "slash",
+    "\\": "backslash",
+    "=": "equals",
+    "*": "asterisk",
+    "+": "plus",
+    "%": "percent",
+    "±": "plus or minus",
+    "~": "tilde",
+    "^": "carat",
 }
-SOCIAL_SYMBOLS_VERBALIZED: typing.Final[typing.Dict[str, str]]
-SOCIAL_SYMBOLS_VERBALIZED = {_norm(k): v for k, v in _SOCIAL_SYMBOLS_VERBALIZED.items()}
+VERBALIZED_SYMBOLS_VERBALIZED: typing.Final[typing.Dict[str, str]]
+VERBALIZED_SYMBOLS_VERBALIZED = {_norm(k): v for k, v in _VERBALIZED_SYMBOLS_VERBALIZED.items()}
 
 HYPHENS: typing.Tuple[str, ...] = tuple(_norm(t) for t in ("-", "—", "–"))
+
+
+###################
+# INITIALISMS #
+###################
+
+# NOTE: This doesn't depend on the respelling implementation because pronunciation is independent
+# from verbalization. This, similar to users, relies on our data pipeline.
+WEB_INITIALISMS: typing.Final[typing.Dict[str, str]] = {
+    "h t t p s": "::AYCH-tee-tee-pee-EHS::",
+    "h t t p": "::AYCH-tee-tee-PEE::",
+    "w w w": "::DUH-buh-yoo-DUH-buh-yoo-DUH-buh-yoo::",
+}

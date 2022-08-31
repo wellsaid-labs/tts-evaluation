@@ -13,7 +13,6 @@ from lib.text.verbalization import (
     _verbalize_fraction,
     _verbalize_generic_number,
     _verbalize_generic_symbol,
-    _verbalize_isolated_generic_symbol,
     _verbalize_measurement_abbreviation,
     _verbalize_money,
     _verbalize_money__reversed,
@@ -51,6 +50,7 @@ def test__num2words():
         (".00", "point zero zero"),
         ("00.00", "zero zero point zero zero"),
         ("0.3", "zero point three"),
+        (".3", "point three"),
         ("003", "zero zero three"),
         ("003.", "zero zero three point"),
         ("003.00", "zero zero three point zero zero"),
@@ -108,6 +108,11 @@ _tests_money = [
 ]
 
 
+def test__money():
+    """Test `RegExPatterns.MONEY` matching and `_verbalize_money` verbalization."""
+    assert_verbalized(_tests_money, RegExPatterns.MONEY, _verbalize_money)
+
+
 _tests_money__reversed = [
     ("it will cost us 4$.", "it will cost us four dollars."),
     (
@@ -128,9 +133,9 @@ _tests_money__reversed = [
 ]
 
 
-def test__money():
-    """Test `RegExPatterns.MONEY` matching and `_verbalize_money` verbalization."""
-    assert_verbalized(_tests_money, RegExPatterns.MONEY, _verbalize_money)
+def test__money_reversed():
+    """Test `RegExPatterns.MONEY_REVERSED` matching and `_verbalize_money__reversed`
+    verbalization."""
     assert_verbalized(
         _tests_money__reversed, RegExPatterns.MONEY_REVERSED, _verbalize_money__reversed
     )
@@ -185,8 +190,8 @@ def test___ordinals():
 _tests_times = [
     ("Today at 12:44 PM", "Today at twelve forty-four PM"),
     # TODO: Should this be "seven PM" instead of "seven oh clock PM"?
-    # Rhyan's opinion: Keep 'oh clock' rule because users can always type 7PM if they prefer it out.
-    # But omitting it will force users to type 7 oh clock PM if they prefer it in.
+    # NOTE: For now, we've kept it as is, because if users want "seven PM", it's easy to get by
+    # typing "7 PM".
     (
         "set session times for 7:00 p.m. but show up hours later",
         "set session times for seven oh clock PM but show up hours later",
@@ -349,7 +354,8 @@ _tests_phone_numbers = [
         "Largest Hotel Chain, call one, eight hundred, Western today.",
     ),
     # TODO: Support phone numbers with spaces?
-    # NOTE: v10 sees all caps as intialisms, should we lower case if words are found in phone #s?
+    # TODO: Given that caps are usually initialisms, consider lower casing caps found in phone
+    # numbers.
     # (
     #     "Discover New York. Call 1-800-I LOVE NY.",
     #     "Discover New York. Call one, eight hundred, I LOVE NY.",
@@ -536,12 +542,12 @@ _tests_urls = [
     ),
     (
         "www.gov.nf.ca/tourism",
-        "::DUH-buh-yoo-DUH-buh-yoo-DUH-buh-yoo:: dot gov dot nf dot ca slash tourism"
+        "::DUH-buh-yoo-DUH-buh-yoo-DUH-buh-yoo:: dot gov dot nf dot ca slash tourism",
     ),
     (
         "https://www.foxwoods.com",
         "::AYCH-tee-tee-pee-EHS:: colon slash slash ::DUH-buh-yoo-DUH-buh-yoo-DUH-buh-yoo:: dot "
-        "foxwoods dot com"
+        "foxwoods dot com",
     ),
     (
         "http://www.example.com:80/path/to/myfile.html?key1=value1#SomewhereInTheFile",
@@ -552,8 +558,8 @@ _tests_urls = [
     (
         "https://www.FDLE.state.fl.us",
         "::AYCH-tee-tee-pee-EHS:: colon slash slash ::DUH-buh-yoo-DUH-buh-yoo-DUH-buh-yoo:: dot "
-        "FDLE dot state dot fl dot us"
-    )
+        "FDLE dot state dot fl dot us",
+    ),
 ]
 
 
@@ -757,7 +763,7 @@ _tests_generic_numbers = [
         "I will leave my layer setting at zero point two millilitres -- the same as the base.",
     ),
     ("credit9.", "credit nine."),
-    ("we were -9.2 on the scale", "we were minus nine point two on the scale")
+    ("we were -9.2 on the scale", "we were minus nine point two on the scale"),
 ]
 
 
@@ -772,46 +778,31 @@ def test___generic_numbers():
     )
 
 
-_tests_isolated_generic_symbols = [
+_tests_generic_symbols = [
     ("/", "slash"),
     ("$", "dollar"),
-    ("$#/", "dollar hash slash"),
-    ("# *", "hash asterisk"),
+    ("$#/", "dollar hashtag slash"),
+    ("# *", "hashtag asterisk"),
+    ("#Adele", "hashtag Adele"),
     (
         "we thought about what % of items should be included",
-        "we thought about what percent of items should be included"
+        "we thought about what percent of items should be included",
     ),
     ("you can reach me @ the office!", "you can reach me at the office!"),
-    # NOT A MATCH
-    ("...he said, \"But why!?\"", "...he said, \"But why!?\""),
-]
-
-
-def test___isolated_generic_symbols():
-    """Test `RegExPatterns.GENERIC_SYMBOLS` matching and `_verbalize_generic_symbol` verbalization
-    for leftover, standalone symbol cases."""
-    assert_verbalized(
-        _tests_isolated_generic_symbols,
-        RegExPatterns.ISOLATED_GENERIC_SYMBOL,
-        _verbalize_isolated_generic_symbol,
-        space_out=True,
-    )
-
-
-_tests_generic_symbols = [
     ("and/or", "and slash or"),
-    ("#Adele", "hashtag Adele"),
     (
         "If you see any changes in the people you are supporting, report them to your supervisor "
         "and/or the nurse.",
         "If you see any changes in the people you are supporting, report them to your supervisor "
-        "and slash or the nurse."
+        "and slash or the nurse.",
     ),
     (
         "https://www.FDLE.state.f l .u s/Background-Checks/Vechs-Process-and-Forms.",
         "https:slash slash www.FDLE.state.f l .u s slash Background-Checks "
-        "slash Vechs-Process-and-Forms."
-    )
+        "slash Vechs-Process-and-Forms.",
+    ),
+    # NOTE: This shouldn't match.
+    ('...he said, "But why!?"', '...he said, "But why!?"'),
 ]
 
 
@@ -820,7 +811,7 @@ def test___generic_symbols():
     for leftover, standalone symbol cases."""
     assert_verbalized(
         _tests_generic_symbols,
-        RegExPatterns.GENERIC_SOCIAL_SYMBOL,
+        RegExPatterns.GENERIC_VERBALIZED_SYMBOL,
         _verbalize_generic_symbol,
         space_out=True,
     )
@@ -838,7 +829,7 @@ _tests_verbalize_abbreviations = [
     #     "when Stonehenge began to be constructed (c. 3000 BCE).",
     #     "when Stonehenge began to be constructed (circa 3000 BCE).",
     # ),
-    # TODO: Support ordinal abbreviations. Rhyan's opinion: this is too ambiguous to support.
+    # TODO: Support ordinal abbreviations, however, it might be too ambiguous to support.
     # (
     #     "Q4 is the last quarter of the fiscal year for companies.",
     #     "Fourth quarter is the last quarter of the fiscal year for companies.",
@@ -879,7 +870,7 @@ _tests_verbalize_abbreviations = [
         "Spokesperson: “Mr. Snyder has not refused to appear” before Congress",
         'Spokesperson: "Mister Snyder has not refused to appear" before Congress',
     ),
-    # DO NOT VERBALIZE: ensure the following abbreviations are not caught by verbalization
+    # NOTE: This shouldn't be verbalized.
     (
         "The term doc-fig should not be verbalized to document-figure.",
         "The term doc-fig should not be verbalized to document-figure.",
@@ -1016,7 +1007,7 @@ def test_verbalize_text():
             "Is 2ms Response Time Good for Gaming",
             "Is two milliseconds Response Time Good for Gaming",
         ),
-        ("#Adele30", "hashtag Adele thirty")
+        ("#Adele30", "hashtag Adele thirty"),
     ]
     for text_in, text_out in tests:
         assert verbalize_text(_norm(text_in)) == text_out
