@@ -58,7 +58,6 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
    VM_NAME=$USER"-dataset-processing" # EXAMPLE: michaelp-dataset-processing
    # NOTE: Pick a zone that's closest to the GCS bucket `wellsaid_labs_datasets`.
    VM_ZONE=us-central1-a # EXAMPLE: us-central1-a
-   GCP_USER=$USER
    PROJECT=voice-research-255602
    VM_MACHINE_TYPE=n1-standard-2
    # NOTE: If you have changed projects since your original setup, make sure you are using the
