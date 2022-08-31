@@ -47,6 +47,7 @@ RUN apt-get update --fix-missing \
   tqdm \
   spacy==3.2.3 \
   pythonic-config==0.6.14 \
+  num2words \
   git+https://github.com/PetrochukM/PyTorch-NLP.git \
   # TODO: Automatically fetch the languages a model has, and install those.
   && venv/bin/spacy download en_core_web_md \

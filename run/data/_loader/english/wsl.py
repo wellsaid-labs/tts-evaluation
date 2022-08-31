@@ -66,14 +66,14 @@ JUDE_D__EN_GB = narr(
 )
 GIA_V = narr("gia_v", "Gia V", "alessandra_ruiz")
 ANTONY_A = narr("antony_a", "Antony A", "alex_marrero")
-JARVIS_H = narr("jarvis_h", "Alexander Hill Knight (en_GB)", "alexander_hill_knight", Dia.EN_UK)
+JARVIS_H = narr("jarvis_h", "Alexander Hill Knight (en_UK)", "alexander_hill_knight", Dia.EN_UK)
 JODI_P = narr("jodi_p", "Jodi P", "dana_hurley")
 RAINE_B = narr("raine_b", "Raine B", "diontae_black")
 OWEN_C = narr("owen_c", "Owen C", "marc_white")
 THEO_K = narr("theo_k", "Theo K (en_AU)", "piotr_kohnke", Dia.EN_AU)
 ZACH_E = narr("zach_e", "Zach E", "seth_jones")
 GENEVIEVE_M = narr("genevieve_m", "Genevieve M", "sophie_reppert")
-JAMES_B = narr("james_b", "James B (en_GB)", "steve_newman", Dia.EN_UK)
+JAMES_B = narr("james_b", "James B (en_UK)", "steve_newman", Dia.EN_UK)
 
 # 2022 Q2 NARRATION
 TERRA_G = narr("terra_g", "Celeste Parrish", "celeste_parrish")
@@ -180,6 +180,7 @@ HOUR_ONE_NBC__BB_CUSTOM_VOICE = custom(
 )
 STUDY_SYNC__CUSTOM_VOICE = custom("studysync__custom_voice", "StudySync (Custom Voice)")
 FIVE_NINE__CUSTOM_VOICE = custom("fivenine__custom_voice", "Five9 (Custom Voice)")
+SELECTQUOTE__CUSTOM_VOICE = custom("select_quote__custom_voice", "SelectQuote (Custom Voice)")
 
 _wsl_speakers = [s for s in locals().values() if isinstance(s, struc.Speaker)]
 WSL_DATASETS = {s: partial(wsl_gcs_dataset_loader, speaker=s) for s in _wsl_speakers}

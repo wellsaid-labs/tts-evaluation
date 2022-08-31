@@ -10,6 +10,7 @@ from run._models.spectrogram_model.inputs import (
     Context,
     InputsWrapper,
     Pronunciation,
+    RespellingError,
     _preprocess,
     preprocess_inputs,
     preprocess_spans,
@@ -227,31 +228,31 @@ def test__preprocess_invalid_respelling():
     """Test that `_preprocess` handles errors if respelling is invalid."""
     nlp = load_spacy_nlp(Language.ENGLISH)
 
-    with pytest.raises(AssertionError):
+    with pytest.raises(RespellingError):
         doc = nlp("|\\\\|")  # Zero length
         _preprocess([(make_session(), doc, doc)])
 
-    with pytest.raises(AssertionError):
+    with pytest.raises(RespellingError):
         doc = nlp("|\\\\MOH\\|")  # Invalid prefix
         _preprocess([(make_session(), doc, doc)])
 
-    with pytest.raises(AssertionError):
+    with pytest.raises(RespellingError):
         doc = nlp("|\\MOH\\\\|")  # Invalid suffix
         _preprocess([(make_session(), doc, doc)])
 
-    with pytest.raises(AssertionError):
+    with pytest.raises(RespellingError):
         doc = nlp("|\\MOH tər\\|")  # Invalid character
         _preprocess([(make_session(), doc, doc)])
 
-    with pytest.raises(AssertionError):
+    with pytest.raises(RespellingError):
         doc = nlp("|\\MOH5tər\\|")  # Invalid character
         _preprocess([(make_session(), doc, doc)])
 
-    with pytest.raises(AssertionError):
+    with pytest.raises(RespellingError):
         doc = nlp("|\\MOH|tər\\|")  # Invalid character
         _preprocess([(make_session(), doc, doc)])
 
-    with pytest.raises(AssertionError):
+    with pytest.raises(RespellingError):
         doc = nlp("|\\Moh\\|")  # Mix capitalization
         _preprocess([(make_session(), doc, doc)])
 

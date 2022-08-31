@@ -55,7 +55,7 @@ from spacy.lang.en import English
 
 from lib.environment import load, set_basic_logging_config
 from run._config import TTS_PACKAGE_PATH, configure, load_spacy_nlp
-from run._models.spectrogram_model import Inputs, PreprocessedInputs
+from run._models.spectrogram_model import Inputs, PreprocessedInputs, RespellingError
 from run._tts import (
     PublicSpeakerValueError,
     PublicTextValueError,
@@ -63,7 +63,7 @@ from run._tts import (
     process_tts_inputs,
     text_to_speech_ffmpeg_generator,
 )
-from run.data._loader import Language, Session, Speaker, english
+from run.data._loader import Language, Session, Speaker, english, german, portuguese, spanish
 
 if "NUM_CPU_THREADS" in os.environ:
     torch.set_num_threads(int(os.environ["NUM_CPU_THREADS"]))
@@ -184,6 +184,10 @@ _SPEAKER_ID_TO_SESSION: typing.Dict[int, typing.Tuple[Speaker, str]] = {
     50481197: (english.wsl.HOUR_ONE_NBC__BB_CUSTOM_VOICE, "hour_one_nbc_dataset_5"),
     77552139: (english.wsl.STUDY_SYNC__CUSTOM_VOICE, "fernandes_audio_5"),
     25502195: (english.wsl.FIVE_NINE__CUSTOM_VOICE, "wsl_five9_audio_3"),
+    81186157: (german.wsl.FIVE9_CUSTOM_VOICE__DE_DE, "janina_five9_script8"),
+    29363869: (spanish.wsl.FIVE_NINE__CUSTOM_VOICE__ES_CO, "five9_spanish_script_8"),
+    34957054: (portuguese.wsl.FIVE_NINE__CUSTOM_VOICE__PT_BR, "five9_portuguese_script_3"),
+    45105608: (english.wsl.SELECTQUOTE__CUSTOM_VOICE, "SelectQuote_Script2"),
 }
 SPEAKER_ID_TO_SESSION: typing.Dict[int, Session]
 SPEAKER_ID_TO_SESSION = {k: Session(args) for k, args in _SPEAKER_ID_TO_SESSION.items()}
@@ -287,10 +291,14 @@ def validate_and_unpack(
     except PublicTextValueError as error:
         app.logger.exception("Invalid text: %r", text)
         raise FlaskException(str(error), code="INVALID_TEXT")
+    except RespellingError:
+        raise FlaskException(
+            "Please format your respelling correctly (help.wellsaidlabs.com/respellings)",
+            code="INVALID_TEXT",
+        )
     except BaseException:
-        # TODO: Create public facing errors for respelling mistakes.
-        app.logger.exception("Invalid text: %r", text)
-        raise FlaskException("Unable to parse text.", code="INVALID_TEXT")
+        app.logger.exception("Unknown error text: %r", text)
+        raise FlaskException("Unknown error.", code="UNKNOWN_ERROR")
 
 
 @app.route("/healthy", methods=["GET"])
@@ -361,10 +369,13 @@ if __name__ == "__main__" or "GUNICORN" in os.environ:
 
     for session in SPEAKER_ID_TO_SESSION.values():
         if session not in vocab:
-            app.logger.warning(f"Session not found in model vocab: {session}")
-            avail_sessions = [s[1] for s in vocab if s[0] == session[0]]
-            if len(avail_sessions) > 0:
-                app.logger.warning(f"Sessions available: {avail_sessions}")
+            if not any(session[0] is sesh[0] for sesh in vocab):
+                app.logger.warning(f"Speaker not found in model vocab: {session[0]}")
+            else:
+                app.logger.warning(f"Session not found in model vocab: {session}")
+                avail_sessions = [s[1] for s in vocab if s[0] == session[0]]
+                if len(avail_sessions) > 0:
+                    app.logger.warning(f"Sessions available: {avail_sessions}")
 
     languages = set(s[0].language for s in vocab)
     LANGUAGE_TO_SPACY = {l: load_spacy_nlp(l) for l in languages}

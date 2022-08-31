@@ -1,8 +1,8 @@
 {
   "env": "staging",
-  "model": "v10",
-  "version": "5",
-  "image": "gcr.io/voice-service-2-313121/speech-api-worker@sha256:e500e826172dd23c92c9bfd9c70edad13bebfe9c04b45076d60f80bf14dc0e83",
+  "model": "v9-2022-q2-diacritics-marketplace-expansion",
+  "version": "2",
+  "image": "gcr.io/voice-service-2-313121/speech-api-worker@sha256:1c1a72da70396903c730b9389c0e0f213661fa123b0eecbf5495c2e30df4be9f",
   "imageEntrypoint": "run.deploy.worker:app",
   "provideApiKeyAuthForLegacyContainerSupport": "true",
   "stream": {
@@ -23,7 +23,7 @@
   },
   "traffic": [
     {
-      "tag": "5",
+      "tag": "2",
       "percent": 100
     }
   ]

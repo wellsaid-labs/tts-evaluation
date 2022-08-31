@@ -7,7 +7,7 @@ from unittest import mock
 import pytest
 
 import lib
-from lib.text import (
+from lib.text.utils import (
     RESPELLING_ALPHABET,
     RESPELLINGS,
     _remove_arpabet_markings,
@@ -61,7 +61,7 @@ def test_grapheme_to_phoneme__unique_separator():
         grapheme_to_phoneme(["Hello World"], separator="ə")
 
 
-@mock.patch("lib.text.logger.warning")
+@mock.patch("lib.text.utils.logger.warning")
 def test_grapheme_to_phoneme__language_switching(mock_warning):
     """Test `grapheme_to_phoneme` logs a warning if the language is switched."""
     assert grapheme_to_phoneme(["mon dieu"], separator="|") == ["m|ˈ|ɑː|n| |d|j|ˈ|ø"]
@@ -210,9 +210,9 @@ _ _ɹ_ˌ_oʊ_m_ə_n_ _f_ˈ_oːɹ_ _ɪ_l_ˌ_uː_m_ᵻ_n_ˈ_eɪ_ʃ_ə_n""",
 
 
 def test_load_cmudict_syl():
-    """Test `lib.text.load_cmudict_syl` loads the dictionary."""
-    dictionary = lib.text.load_cmudict_syl()
-    arpabet: typing.Set[lib.text.ARPAbet] = set()
+    """Test `lib.text.utils.load_cmudict_syl` loads the dictionary."""
+    dictionary = lib.text.utils.load_cmudict_syl()
+    arpabet: typing.Set[lib.text.utils.ARPAbet] = set()
     characters = set()
     for word, pronunciations in dictionary.items():
         for pronunciation in pronunciations:
@@ -220,12 +220,12 @@ def test_load_cmudict_syl():
             assert len(word) > 0
             arpabet.update([code for syllable in pronunciation for code in syllable])
             characters.update(list(word))
-    assert arpabet == set(get_args(lib.text.ARPAbet))
+    assert arpabet == set(get_args(lib.text.utils.ARPAbet))
     assert characters == set(list(string.ascii_uppercase) + ["'"])
 
 
 def _check_pronunciation(word: str, expected: typing.Optional[str] = None):
-    result = lib.text.get_pronunciation(word, lib.text.load_cmudict_syl())
+    result = lib.text.utils.get_pronunciation(word, lib.text.utils.load_cmudict_syl())
     if expected is None:
         assert result is expected
     else:
@@ -233,31 +233,33 @@ def _check_pronunciation(word: str, expected: typing.Optional[str] = None):
 
 
 def test_get_pronunciation():
-    """Test `lib.text.get_pronunciation` on basic scenarios."""
+    """Test `lib.text.utils.get_pronunciation` on basic scenarios."""
     expectations = {
         "zebra": (("Z", "IY1"), ("B", "R", "AH0")),
         "motorcycle": (("M", "OW1"), ("T", "ER0"), ("S", "AY2"), ("K", "AH0", "L")),
         "suspicious": (("S", "AH0"), ("S", "P", "IH1"), ("SH", "AH0", "S")),
     }
-    for word, pronunciation in expectations.items():
-        assert pronunciation == lib.text.get_pronunciation(word, lib.text.load_cmudict_syl())
+    for word, expected in expectations.items():
+        pronunication = lib.text.utils.get_pronunciation(word, lib.text.utils.load_cmudict_syl())
+        assert expected == pronunication
 
 
 def test_get_pronunciation__out_of_vocabulary():
-    """Test `lib.text.get_pronunciation` doesn't handle words outside it's vocabulary."""
+    """Test `lib.text.utils.get_pronunciation` doesn't handle words outside it's vocabulary."""
     _check_pronunciation("abcdefg", expected=None)
     _check_pronunciation(" ", expected=None)
     _check_pronunciation("\t", expected=None)
 
 
 def test_get_pronunciation__apostrophes():
-    """Test `lib.text.get_pronunciation` handles apostrophes at the end and beginning of a word."""
+    """Test `lib.text.utils.get_pronunciation` handles apostrophes at the end and beginning of
+    a word."""
     _check_pronunciation("accountants'", expected="AH0 - K AW1 N - T AH0 N T S")
     _check_pronunciation("'bout", expected=None)
 
 
 def test_get_pronunciation__variations():
-    """Test `lib.text.get_pronunciation` doesn't return if the pronunciation is ambigious."""
+    """Test `lib.text.utils.get_pronunciation` doesn't return if the pronunciation is ambigious."""
     # NOTE: Base case with no variations to choose from.
     _check_pronunciation("fly", expected="F L AY1")
 
@@ -270,7 +272,7 @@ def test_get_pronunciation__variations():
 
 
 def test_get_pronunciation__non_standard_words():
-    """Test `lib.text.get_pronunciation` returns `None` given non-standard words."""
+    """Test `lib.text.utils.get_pronunciation` returns `None` given non-standard words."""
     _check_pronunciation("I B M", expected=None)
     _check_pronunciation("I.B.M.", expected=None)
     _check_pronunciation("able-bodied", expected=None)
@@ -278,7 +280,7 @@ def test_get_pronunciation__non_standard_words():
 
 
 def test_respell():
-    """Test `lib.text.respell` on basic scenarios."""
+    """Test `lib.text.utils.respell` on basic scenarios."""
     expectations = {
         "zebra": "ZEE-bruh",
         "motorcycle": "MOH-tur-sy-kuhl",  # NOTE: Secondary is lowercase if primary is uppercase.
@@ -300,11 +302,11 @@ def test_respell():
         "storyboard": "STOH-ree-bord",  # Testing AO - r : AW-r -> OH-r and AO R : awr -> or
     }
     for word, pronunciation in expectations.items():
-        assert pronunciation == lib.text.respell(word, lib.text.load_cmudict_syl())
+        assert pronunciation == lib.text.utils.respell(word, lib.text.utils.load_cmudict_syl())
 
 
 def test_respell__vowels():
-    """Test `lib.text.respell` on various vowels."""
+    """Test `lib.text.utils.respell` on various vowels."""
     vowel_expectations = {
         "bat": "BAT",
         "father": "FAH-dhur",
@@ -324,11 +326,11 @@ def test_respell__vowels():
         "site": "SYT",
     }
     for word, pronunciation in vowel_expectations.items():
-        assert pronunciation == lib.text.respell(word, lib.text.load_cmudict_syl())
+        assert pronunciation == lib.text.utils.respell(word, lib.text.utils.load_cmudict_syl())
 
 
 def test_respell__consonant():
-    """Test `lib.text.respell` on various consonant."""
+    """Test `lib.text.utils.respell` on various consonant."""
     consonant_expectations = {
         "bunk": "BUHNK",
         "dusters": "DUH-sturz",
@@ -356,11 +358,11 @@ def test_respell__consonant():
         "measure": "MEH-zhur",
     }
     for word, pronunciation in consonant_expectations.items():
-        assert pronunciation == lib.text.respell(word, lib.text.load_cmudict_syl())
+        assert pronunciation == lib.text.utils.respell(word, lib.text.utils.load_cmudict_syl())
 
 
 def test_respell_initialism():
-    """Test `lib.text.respell_initialism` on initialisms and acronyms."""
+    """Test `lib.text.utils.respell_initialism` on initialisms and acronyms."""
     expectations = {
         "FBI": "ehf-bee-Y",
         "RSVP": "ar-ehs-vee-PEE",
@@ -370,12 +372,12 @@ def test_respell_initialism():
         "FSW": "ehf-ehs-DUH-buhl-yoo",  # Test final W does not have all capitalized syllables
     }
     for initialism, pronunciation in expectations.items():
-        assert pronunciation == lib.text.respell_initialism(initialism)
+        assert pronunciation == lib.text.utils.respell_initialism(initialism)
 
 
 def test_respellings():
     """Test to ensure `RESPELLINGS` covers all of `ARPAbet`."""
-    assert all(_remove_arpabet_markings(a) in RESPELLINGS for a in get_args(lib.text.ARPAbet))
+    assert all(_remove_arpabet_markings(a) in RESPELLINGS for a in get_args(lib.text.utils.ARPAbet))
 
 
 def test_respellings_alphabet():
@@ -384,25 +386,25 @@ def test_respellings_alphabet():
 
 
 def test_natural_keys():
-    """Test `lib.text.natural_keys` sorts naturally."""
+    """Test `lib.text.utils.natural_keys` sorts naturally."""
     list_ = ["name 0", "name 1", "name 10", "name 11"]
-    assert sorted(list_, key=lib.text.natural_keys) == list_
+    assert sorted(list_, key=lib.text.utils.natural_keys) == list_
 
 
 def test_strip():
-    """Test `lib.text.strip` handles various white space scenarios."""
-    assert lib.text.strip("  Hello World  ") == ("Hello World", "  ", "  ")
-    assert lib.text.strip("Hello World  ") == ("Hello World", "", "  ")
-    assert lib.text.strip("  Hello World") == ("Hello World", "  ", "")
-    assert lib.text.strip(" \n Hello World \n ") == ("Hello World", " \n ", " \n ")
-    assert lib.text.strip(" \n\n Hello World \n\n ") == ("Hello World", " \n\n ", " \n\n ")
+    """Test `lib.text.utils.strip` handles various white space scenarios."""
+    assert lib.text.utils.strip("  Hello World  ") == ("Hello World", "  ", "  ")
+    assert lib.text.utils.strip("Hello World  ") == ("Hello World", "", "  ")
+    assert lib.text.utils.strip("  Hello World") == ("Hello World", "  ", "")
+    assert lib.text.utils.strip(" \n Hello World \n ") == ("Hello World", " \n ", " \n ")
+    assert lib.text.utils.strip(" \n\n Hello World \n\n ") == ("Hello World", " \n\n ", " \n\n ")
 
 
 def test_normalize_vo_script():
-    """Test `lib.text.normalize_vo_script` handles all characters from 0 - 128."""
+    """Test `lib.text.utils.normalize_vo_script` handles all characters from 0 - 128."""
     # fmt: off
     assert list(normalize_vo_script(chr(i), frozenset(), strip=False) for i in range(0, 128)) == [
-        "", "", "", "", "", "", "", "", "", "  ", "\n", "", "\n", "\n", "", "", "", "", "", "", "",
+        "", "", "", "", "", "", "", "", "", " ", "\n", "", "\n", "\n", "", "", "", "", "", "", "",
         "", "", "", "", "", "", "", "", "", "", "", " ", "!", '"', "#", "$", "%", "&", "'", "(",
         ")", "*", "+", ",", "-", ".", "/", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", ":",
         ";", "<", "=", ">", "?", "@", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L",
@@ -415,7 +417,7 @@ def test_normalize_vo_script():
     # Cover whitespace normalization, common whitespace issues
     assert normalize_vo_script("\r\n", frozenset(), strip=False) == "\n"
     assert normalize_vo_script("\f", frozenset(), strip=False) == "\n"
-    assert normalize_vo_script("\thello\t", frozenset(), strip=False) == "  hello  "
+    assert normalize_vo_script("\thello\t", frozenset(), strip=False) == " hello "
 
     # Cover guillemet and quotation normalization
     assert all(
@@ -427,6 +429,11 @@ def test_normalize_vo_script():
             ]
         ]
     )
+    # TODO: Need to Fix. Currently failing because 12½ normalizes to 121/2 instead of 12 1/2.
+    assert (
+        normalize_vo_script("It's 12½ km² in area.", frozenset(), strip=False)
+        == "It's 12 1/2 km2 in area."
+    )
     assert (
         normalize_vo_script("‹Wir gehen am Dienstag.›", frozenset(), strip=False)
         == "'Wir gehen am Dienstag.'"
@@ -437,19 +444,26 @@ def test_normalize_vo_script():
 NON_ASCII_CHAR = frozenset([
     'Á', 'Ñ', '¡', 'Í', 'á', 'û', 'Ç', 'É', 'Ô', 'ß', 'ó', 'è', 'ú', 'Ì', 'Ù', 'Ó', 'ô', 'ù', 'ã',
     'Ú', 'õ', 'ï', 'â', 'Ï', 'ò', 'À', 'é', 'à', 'ö', 'ü', 'ì', 'Ü', 'ç', 'Û', 'È', 'ë', 'ä', 'Ä',
-    'Ö', 'Â', 'Ò', 'Î', 'Õ', 'Ê', 'î', '¿', 'Ë', 'ñ', 'ê', 'Ã', 'í'
+    'Ö', 'Â', 'Ò', 'Î', 'Õ', 'Ê', 'î', '¿', 'Ë', 'ñ', 'ê', 'Ã', 'í',
 ])
 # fmt: on
 
 
 def test_normalize_vo_script__non_ascii():
-    """Test `lib.text.normalize_vo_script` allows through select non-ascii characters."""
+    """Test `lib.text.utils.normalize_vo_script` allows through select non-ascii characters."""
     for char in NON_ASCII_CHAR:
-        assert lib.text.normalize_vo_script(char, non_ascii=NON_ASCII_CHAR) == char
+        assert lib.text.utils.normalize_vo_script(char, non_ascii=NON_ASCII_CHAR) == char
+
+
+def test_normalize_vo_script__invisible_chars():
+    """Test `lib.text.utils.normalize_vo_script` unidecodes invisible whitespace characters."""
+    inv_chars = ["\u200b", "\xa0", "\u202f"]
+    for char in inv_chars:
+        assert lib.text.utils.normalize_vo_script(char, non_ascii=NON_ASCII_CHAR) not in inv_chars
 
 
 def test_is_normalized_vo_script():
-    """Test `lib.text.is_normalized_vo_script` handles all characters from 0 - 128."""
+    """Test `lib.text.utils.is_normalized_vo_script` handles all characters from 0 - 128."""
     assert all(
         is_normalized_vo_script(normalize_vo_script(chr(i), frozenset(), strip=False), frozenset())
         for i in range(0, 128)
@@ -457,13 +471,13 @@ def test_is_normalized_vo_script():
 
 
 def test_is_normalized_vo_script__non_ascii():
-    """Test `lib.text.is_normalized_vo_script` handles non-ascii characters."""
+    """Test `lib.text.utils.is_normalized_vo_script` handles non-ascii characters."""
     for char in NON_ASCII_CHAR:
-        assert lib.text.is_normalized_vo_script(char, non_ascii=NON_ASCII_CHAR)
+        assert lib.text.utils.is_normalized_vo_script(char, non_ascii=NON_ASCII_CHAR)
 
 
 def test_is_normalized_vo_script__unnormalized():
-    """Test `lib.text.is_normalized_vo_script` fails for unnormalized characters."""
+    """Test `lib.text.utils.is_normalized_vo_script` fails for unnormalized characters."""
     # fmt: off
     assert [(chr(i), is_normalized_vo_script(chr(i), frozenset())) for i in range(0, 128)] == [
         ("\x00", False), ("\x01", False), ("\x02", False), ("\x03", False), ("\x04", False),
@@ -492,47 +506,47 @@ def test_is_normalized_vo_script__unnormalized():
 
 
 def test_is_voiced():
-    """Test `lib.text.is_voiced` handles all characters and an empty string."""
-    assert lib.text.is_voiced("123", frozenset())
-    assert lib.text.is_voiced("abc", frozenset())
-    assert lib.text.is_voiced("ABC", frozenset())
+    """Test `lib.text.utils.is_voiced` handles all characters and an empty string."""
+    assert lib.text.utils.is_voiced("123", frozenset())
+    assert lib.text.utils.is_voiced("abc", frozenset())
+    assert lib.text.utils.is_voiced("ABC", frozenset())
     for char in "@#$%&+=*".split():
-        assert lib.text.is_voiced(char, frozenset())
-    assert not lib.text.is_voiced("!^()_{[}]:;\"'<>?/~`|\\", frozenset())
-    assert not lib.text.is_voiced("", frozenset())
+        assert lib.text.utils.is_voiced(char, frozenset())
+    assert not lib.text.utils.is_voiced("!^()_{[}]:;\"'<>?/~`|\\", frozenset())
+    assert not lib.text.utils.is_voiced("", frozenset())
 
 
 def test_is_voiced__non_ascii():
-    """Test `lib.text.is_voiced` handles non-ascii characters."""
+    """Test `lib.text.utils.is_voiced` handles non-ascii characters."""
     for char in NON_ASCII_CHAR:
-        assert lib.text.is_voiced(char, non_ascii=NON_ASCII_CHAR)
+        assert lib.text.utils.is_voiced(char, non_ascii=NON_ASCII_CHAR)
 
 
 def test_has_digit():
-    """Test `lib.text.has_digit` handles basic cases."""
-    assert lib.text.has_digit("123")
-    assert lib.text.has_digit("123abc")
-    assert lib.text.has_digit("1")
-    assert not lib.text.has_digit("abc")
-    assert not lib.text.has_digit("")
+    """Test `lib.text.utils.has_digit` handles basic cases."""
+    assert lib.text.utils.has_digit("123")
+    assert lib.text.utils.has_digit("123abc")
+    assert lib.text.utils.has_digit("1")
+    assert not lib.text.utils.has_digit("abc")
+    assert not lib.text.utils.has_digit("")
 
 
 def test_get_spoken_chars():
     """Test `get_spoken_chars` removes marks, spaces and casing."""
     pattern = re.compile(r"[^\w\s]")
-    assert lib.text.get_spoken_chars("123 abc !.?", pattern) == "123abc"
-    assert lib.text.get_spoken_chars("Hello. You've", pattern) == "helloyouve"
-    assert lib.text.get_spoken_chars("Hello. \n\fYou've", pattern) == "helloyouve"
+    assert lib.text.utils.get_spoken_chars("123 abc !.?", pattern) == "123abc"
+    assert lib.text.utils.get_spoken_chars("Hello. You've", pattern) == "helloyouve"
+    assert lib.text.utils.get_spoken_chars("Hello. \n\fYou've", pattern) == "helloyouve"
 
 
 def test_add_space_between_sentences():
-    """Test `lib.text.add_space_between_sentences` adds a space between sentences."""
-    nlp = lib.text.load_en_core_web_sm()
+    """Test `lib.text.utils.add_space_between_sentences` adds a space between sentences."""
+    nlp = lib.text.utils.load_en_core_web_sm()
     script = (
         "Business was involved in slavery, colonialism, and the cold war.The term "
         "'business ethics' came into common use in the United States in the early 1970s."
     )
-    assert lib.text.add_space_between_sentences(nlp(script)) == (
+    assert lib.text.utils.add_space_between_sentences(nlp(script)) == (
         "Business was involved in slavery, colonialism, and the cold war. The term "
         "'business ethics' came into common use in the United States in the early 1970s."
     )
@@ -540,16 +554,16 @@ def test_add_space_between_sentences():
         "Mix and match the textured shades for a funky effect.Hang on "
         "to these fuzzy hangers from Domis."
     )
-    assert lib.text.add_space_between_sentences(nlp(script)) == (
+    assert lib.text.utils.add_space_between_sentences(nlp(script)) == (
         "Mix and match the textured shades for a funky effect. Hang on "
         "to these fuzzy hangers from Domis."
     )
 
 
 def test_add_space_between_sentences__new_lines():
-    """Test `lib.text.add_space_between_sentences` adds a space between sentences while handling
+    """Test `lib.text.utils.add_space_between_sentences` adds a space between sentences while handling
     newlines."""
-    nlp = lib.text.load_en_core_web_sm()
+    nlp = lib.text.utils.load_en_core_web_sm()
     script = """
     The neuroscience of creativity looks at the operation of the brain during creative behaviour.
     It has been addressed in the article "Creative Innovation: Possible Brain Mechanisms."
@@ -576,21 +590,21 @@ def test_add_space_between_sentences__new_lines():
     frontal lobe. Thus, the frontal lobe appears to be the part of the cortex that is most important
     for creativity.
     """
-    assert lib.text.add_space_between_sentences(nlp(script)) == expected
+    assert lib.text.utils.add_space_between_sentences(nlp(script)) == expected
 
 
 def test_add_space_between_sentences__one_word():
-    """Test `lib.text.add_space_between_sentences` handles one word."""
-    nlp = lib.text.load_en_core_web_sm()
-    assert lib.text.add_space_between_sentences(nlp("Hi")) == "Hi"
-    assert lib.text.add_space_between_sentences(nlp("Hi  ")) == "Hi  "
-    assert lib.text.add_space_between_sentences(nlp("Hi.  ")) == "Hi.  "
+    """Test `lib.text.utils.add_space_between_sentences` handles one word."""
+    nlp = lib.text.utils.load_en_core_web_sm()
+    assert lib.text.utils.add_space_between_sentences(nlp("Hi")) == "Hi"
+    assert lib.text.utils.add_space_between_sentences(nlp("Hi  ")) == "Hi  "
+    assert lib.text.utils.add_space_between_sentences(nlp("Hi.  ")) == "Hi.  "
 
 
 def test_add_space_between_sentences__regression():
-    """Test `lib.text.add_space_between_sentences` handles these regression tests on Hilary's
+    """Test `lib.text.utils.add_space_between_sentences` handles these regression tests on Hilary's
     data."""
-    nlp = lib.text.load_en_core_web_sm()
+    nlp = lib.text.utils.load_en_core_web_sm()
     fixed = [
         (
             "The business' actions and decisions should be primarily ethical before it happens to "
@@ -635,37 +649,37 @@ def test_add_space_between_sentences__regression():
         ),
     ]
     for script in fixed:
-        assert lib.text.add_space_between_sentences(nlp(script)) == script
+        assert lib.text.utils.add_space_between_sentences(nlp(script)) == script
 
 
 def _align_and_format(tokens, other, **kwargs):
-    cost, alignment = lib.text.align_tokens(tokens, other, **kwargs)
-    return lib.text.format_alignment(tokens, other, alignment)
+    cost, alignment = lib.text.utils.align_tokens(tokens, other, **kwargs)
+    return lib.text.utils.format_alignment(tokens, other, alignment)
 
 
 def test_align_tokens__empty():
-    """Test `lib.text.align_tokens` aligns empty text correctly."""
-    assert lib.text.align_tokens("", "")[0] == 0
-    assert lib.text.align_tokens("a", "")[0] == 1
-    assert lib.text.align_tokens("", "a")[0] == 1
-    assert lib.text.align_tokens("abc", "")[0] == 3
-    assert lib.text.align_tokens("", "abc")[0] == 3
-    assert lib.text.align_tokens("", "abc", window_length=1)[0] == 3
+    """Test `lib.text.utils.align_tokens` aligns empty text correctly."""
+    assert lib.text.utils.align_tokens("", "")[0] == 0
+    assert lib.text.utils.align_tokens("a", "")[0] == 1
+    assert lib.text.utils.align_tokens("", "a")[0] == 1
+    assert lib.text.utils.align_tokens("abc", "")[0] == 3
+    assert lib.text.utils.align_tokens("", "abc")[0] == 3
+    assert lib.text.utils.align_tokens("", "abc", window_length=1)[0] == 3
 
 
 def test_align_tokens__one_letter():
-    """Test `lib.text.align_tokens` aligns one letter correctly."""
+    """Test `lib.text.utils.align_tokens` aligns one letter correctly."""
     # Should just add "a" to the beginning.
-    assert lib.text.align_tokens("abc", "bc", window_length=1)[0] == 1
-    assert lib.text.align_tokens("abc", "bc", allow_substitution=lambda a, b: False)[0] == 1
+    assert lib.text.utils.align_tokens("abc", "bc", window_length=1)[0] == 1
+    assert lib.text.utils.align_tokens("abc", "bc", allow_substitution=lambda a, b: False)[0] == 1
     assert _align_and_format("abc", "bc") == (
         "a b c",
         "  b c",
     )
 
     # Should just add I to the beginning.
-    assert lib.text.align_tokens("islander", "slander")[0] == 1
-    assert lib.text.align_tokens("islander", "slander", window_length=1)[0] == 1
+    assert lib.text.utils.align_tokens("islander", "slander")[0] == 1
+    assert lib.text.utils.align_tokens("islander", "slander", window_length=1)[0] == 1
     assert _align_and_format("islander", "slander") == (
         "i s l a n d e r",
         "  s l a n d e r",
@@ -673,43 +687,43 @@ def test_align_tokens__one_letter():
 
 
 def test_align_tokens__deletion():
-    """Test `lib.text.align_tokens` deletion."""
+    """Test `lib.text.utils.align_tokens` deletion."""
     # Should delete 4 letters FOOT at the beginning.
-    assert lib.text.align_tokens("football", "foot")[0] == 4
+    assert lib.text.utils.align_tokens("football", "foot")[0] == 4
 
 
 def test_align_tokens__substitution():
-    """Test `lib.text.align_tokens` substitution."""
+    """Test `lib.text.utils.align_tokens` substitution."""
     # Needs to substitute the first 5 chars: INTEN by EXECU
-    assert lib.text.align_tokens("intention", "execution")[0] == 5
+    assert lib.text.utils.align_tokens("intention", "execution")[0] == 5
 
 
 def test_align_tokens__multi_operation_alignments():
-    """Test `lib.text.align_tokens` substitution, insertion, and deletion."""
+    """Test `lib.text.utils.align_tokens` substitution, insertion, and deletion."""
     # Needs to substitute M by K, T by M and add an A to the end
-    assert lib.text.align_tokens("mart", "karma")[0] == 3
+    assert lib.text.utils.align_tokens("mart", "karma")[0] == 3
 
     # Needs to substitute K by M, M by T, and delete A from the end
-    assert lib.text.align_tokens("karma", "mart")[0] == 3
+    assert lib.text.utils.align_tokens("karma", "mart")[0] == 3
 
     # Substitute K by S, E by I and add a G at the end.
-    assert lib.text.align_tokens("kitten", "sitting")[0] == 3
+    assert lib.text.utils.align_tokens("kitten", "sitting")[0] == 3
 
 
 def test_align_tokens__window_lengths():
-    """Test `lib.text.align_tokens` handles various window lengths."""
-    assert lib.text.align_tokens("ball", "football")[0] == 4
-    assert lib.text.align_tokens("ball", "football", window_length=1)[0] == 7
+    """Test `lib.text.utils.align_tokens` handles various window lengths."""
+    assert lib.text.utils.align_tokens("ball", "football")[0] == 4
+    assert lib.text.utils.align_tokens("ball", "football", window_length=1)[0] == 7
     assert _align_and_format("ball", "football", window_length=1) == (
         "b a l       l",
         "f o o t b a l",
     )
-    assert lib.text.align_tokens("ball", "football", window_length=2)[0] == 6
+    assert lib.text.utils.align_tokens("ball", "football", window_length=2)[0] == 6
     assert _align_and_format("ball", "football", window_length=2) == (
         "b a         l l",
         "f o o t b a l l",
     )
-    assert lib.text.align_tokens("ball", "football", window_length=3)[0] == 4
+    assert lib.text.utils.align_tokens("ball", "football", window_length=3)[0] == 4
     assert _align_and_format("ball", "football", window_length=3) == (
         "        b a l l",
         "f o o t b a l l",
@@ -717,15 +731,15 @@ def test_align_tokens__window_lengths():
 
 
 def test_align_tokens__word_subtitution():
-    """Test `lib.text.align_tokens` substitutes words."""
-    assert lib.text.align_tokens(["Hey", "There"], ["Hey", "There"])[0] == 0
-    assert lib.text.align_tokens(["Hey", "There"], ["Hi", "There"])[0] == 2
-    assert lib.text.align_tokens(["Hey", "There"], ["Hi", "The"])[0] == 4
+    """Test `lib.text.utils.align_tokens` substitutes words."""
+    assert lib.text.utils.align_tokens(["Hey", "There"], ["Hey", "There"])[0] == 0
+    assert lib.text.utils.align_tokens(["Hey", "There"], ["Hi", "There"])[0] == 2
+    assert lib.text.utils.align_tokens(["Hey", "There"], ["Hi", "The"])[0] == 4
 
 
 def test_align_tokens__word_deletion():
-    """Test `lib.text.align_tokens` deletes words."""
-    assert lib.text.align_tokens(["Hey", "There", "You"], ["Hey", ",", "There"])[0] == 4
+    """Test `lib.text.utils.align_tokens` deletes words."""
+    assert lib.text.utils.align_tokens(["Hey", "There", "You"], ["Hey", ",", "There"])[0] == 4
     assert _align_and_format(["Hey", "There", "You"], ["Hey", ",", "There"]) == (
         "Hey   There",
         "Hey , There",

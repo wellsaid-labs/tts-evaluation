@@ -507,7 +507,7 @@ def natural_keys(text: str) -> typing.List[typing.Union[str, int]]:
 
 def numbers_then_natural_keys(text: str) -> typing.List[typing.List[typing.Union[str, int]]]:
     """Returns keys (`list`) for sorting with numbers first, and then natural keys."""
-    return [[int(i) for i in re.findall(r"\d+", text)], lib.text.natural_keys(text)]
+    return [[int(i) for i in re.findall(r"\d+", text)], natural_keys(text)]
 
 
 def strip(text: str) -> typing.Tuple[str, str, str]:
@@ -527,8 +527,9 @@ def strip(text: str) -> typing.Tuple[str, str, str]:
 
 
 def _normalize_whitespace(text: str) -> str:
-    """Normalize whitespace variations into standard characters. Formfeed `f` and carriage return `r`
-    should be replace with new line `\n` and tab `\t` should be replaced with two spaces `  `."""
+    """Normalize whitespace variations into standard characters. Formfeed `f` and carriage return
+    `r` should be replace with new line `\n` and tab `\t` should be replaced with two spaces
+    `  `."""
     text = text.replace("\f", "\n")
     text = text.replace("\t", "  ")
     return text
@@ -564,6 +565,10 @@ def normalize_vo_script(text: str, non_ascii: frozenset, strip: bool = True) -> 
     TODO: Clarify that some characters like `«` will be normalized regardless of being in the
           `non_ascii` set.
     NOTE: `non_ascii` needs to be explicitly set so that text isn't processed incorrecly accidently.
+    TODO: Double check datasets for ambigiously verbalized characters like "<" which can be
+          "greater than" or "silent".
+    TODO: This removes characters like ℃.
+    TODO: Research the impact of normalizing backticks to single quotes.
 
     References:
     - Generic package for text cleaning: https://github.com/jfilter/clean-text
@@ -582,7 +587,11 @@ def normalize_vo_script(text: str, non_ascii: frozenset, strip: bool = True) -> 
     text = ftfy.fix_text(text)
     text = _normalize_whitespace(text)
     text = _normalize_guillemets(text)
-    text = "".join([c if c in non_ascii else str(unidecode.unidecode(c)) for c in text])
+    text = text.replace("`", "'")  # NOTE: Normalize backticks to single quotes
+    text = "".join(
+        [c if c == " " or c in non_ascii else str(unidecode.unidecode(c)) for c in text]
+    )
+    text = re.compile(r" +").sub(" ", text)
     if strip:
         text = text.strip()
     return text
@@ -686,7 +695,6 @@ def load_en_core_web_sm(*args, **kwargs):
     return load_spacy_nlp("en_core_web_sm", *args, **kwargs)
 
 
-@functools.lru_cache(maxsize=None)
 def load_en_english(*args, **kwargs) -> Language:
     """Load and cache in memory a spaCy `Language` object."""
     return spacy_en.English(*args, **kwargs)
