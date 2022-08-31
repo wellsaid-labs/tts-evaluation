@@ -23,6 +23,9 @@ logger = logging.getLogger(__name__)
 
 LANGUAGE = Language.ENGLISH
 
+# TODO: We should consider adding other valid characters like "£" which can be found readily
+# when using the English language much like "$".
+
 _NON_ASCII_CHARS: typing.Dict[Language, frozenset] = {
     # Resources:
     # https://en.wikipedia.org/wiki/English_terms_with_diacritical_marks
