@@ -368,7 +368,7 @@ if __name__ == "__main__" or "GUNICORN" in os.environ:
     TTS_PACKAGE = typing.cast(TTSPackage, load(TTS_PACKAGE_PATH, DEVICE))
 
     vocab = set(TTS_PACKAGE.session_vocab())
-    app.logger.info("Loaded speakers: %s", set(s for s, _ in vocab))
+    app.logger.info("Loaded speakers: %s", "\n".join(list(set(str(s) for s, _ in vocab))))
 
     for session in SPEAKER_ID_TO_SESSION.values():
         if session not in vocab:
