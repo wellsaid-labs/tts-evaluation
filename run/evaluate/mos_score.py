@@ -58,44 +58,45 @@ def st_bar_chart(
     """Create a bar chart from `df` with `bucket_columns` as the x-axis and `metric_column` as the
     y-axis.
     """
-    scale = alt.Scale(domain=[min_val, max_val])   # type: ignore
+    scale = alt.Scale(domain=[min_val, max_val])  # type: ignore
     aggregated_column = "Mean of " + metric_column
     agg_def = alt.AggregatedFieldDef(
         field=metric_column,  # type: ignore
-        op="mean", **{"as": aggregated_column}   # type: ignore
+        op="mean",  # type: ignore
+        **{"as": aggregated_column},  # type: ignore
     )
     bar_chart = (
-        alt.Chart(df)   # type: ignore
+        alt.Chart(df)  # type: ignore
         .transform_aggregate(
             [agg_def],  # type: ignore
             groupby=[bucket_columns[0]],  # type: ignore
         )
         .mark_bar()
         .encode(
-            x=alt.X(field=bucket_columns[0], type="nominal", title=""),   # type: ignore
-            y=alt.Y(field=aggregated_column, type="quantitative", scale=scale),   # type: ignore
-            color=alt.X(field=bucket_columns[0], type="nominal"),   # type: ignore
-            tooltip=[alt.Tooltip(field=aggregated_column, type="quantitative")],   # type: ignore
+            x=alt.X(field=bucket_columns[0], type="nominal", title=""),  # type: ignore
+            y=alt.Y(field=aggregated_column, type="quantitative", scale=scale),  # type: ignore
+            color=alt.X(field=bucket_columns[0], type="nominal"),  # type: ignore
+            tooltip=[alt.Tooltip(field=aggregated_column, type="quantitative")],  # type: ignore
         )
     )
     error_bar_chart = (
-        alt.Chart(df)   # type: ignore
+        alt.Chart(df)  # type: ignore
         .mark_errorbar(extent="ci", clip=True)  # type: ignore
         .encode(
-            x=alt.X(field=bucket_columns[0], type="nominal"),   # type: ignore
-            y=alt.Y(field=metric_column, type="quantitative", scale=scale),   # type: ignore
+            x=alt.X(field=bucket_columns[0], type="nominal"),  # type: ignore
+            y=alt.Y(field=metric_column, type="quantitative", scale=scale),  # type: ignore
         )
     )
     chart = bar_chart + error_bar_chart
     if len(bucket_columns) == 2:
         chart = chart.facet(
             column=alt.Column(
-                field=bucket_columns[1],   # type: ignore
-                type="nominal",   # type: ignore
-                title="",   # type: ignore
+                field=bucket_columns[1],  # type: ignore
+                type="nominal",  # type: ignore
+                title="",  # type: ignore
                 # NOTE: Learn more:
                 # https://stackoverflow.com/questions/61134669/rotated-column-headers-in-altair-have-uneven-offset
-                header=alt.Header(labelAngle=-90, labelAlign="right"),   # type: ignore
+                header=alt.Header(labelAngle=-90, labelAlign="right"),  # type: ignore
             ),
         )
     st.altair_chart(chart)

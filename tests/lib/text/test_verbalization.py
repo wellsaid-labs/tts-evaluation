@@ -1042,7 +1042,7 @@ def test_verbalize_text():
             "This update follows the news that Ben just listed his Palisades home for a "
             "casual ~$30 million (at a $10 million profit).",
             "This update follows the news that Ben just listed his Palisades home for a "
-            "casual tilde thirty million dollars (at a ten million dollars profit)."
+            "casual tilde thirty million dollars (at a ten million dollars profit).",
         ),
         # NOTE: Arrows with "->" are not supported due to their rarity.
         (
@@ -1056,7 +1056,7 @@ def test_verbalize_text():
             "U-MAX Greenhouse Polycarbonate Outdoor Garden Greenhouse Walk-in Portable "
             "6'(L) x6'(W) x6.6'(H)",
             "U-MAX Greenhouse Polycarbonate Outdoor Garden Greenhouse Walk-in Portable "
-            "six'(L) x six'(W) x six point six'(H)"
+            "six'(L) x six'(W) x six point six'(H)",
         ),
         # NOTE: This is a regression test that error'd in production.
         (
@@ -1071,21 +1071,18 @@ def test_verbalize_text():
             "dot tidyfloor dot com to be my brain child.",
         ),
         # NOTE: This is a regression test that error'd in production.
-        (
-            "4PS 4Ps",
-            "four pounds four pounds"
-        ),
+        ("4PS 4Ps", "four pounds four pounds"),
         # NOTE: This is a regression test that error'd in production.
         (
             "diastolic blood pressure of ≥ 90 mm Hg",
-            "diastolic blood pressure of greater than equals ninety millimeters Hg"
+            "diastolic blood pressure of greater than equals ninety millimeters Hg",
         ),
         # TODO: `num2words` is unable to handle precise floats. They get truncated.
         (
             "3.141592653589793238462643383279502884",
             "three point one four one five nine two six five three five eight nine seven nine "
             "three",
-        )
+        ),
     ]
     for text_in, text_out in tests:
         assert verbalize_text(_norm(text_in)) == text_out

@@ -107,7 +107,7 @@ def make_spectrogram_model_train_config(
         # NOTE: In May 2022, we found that halfing the learning rate had a significant performance
         # improvement on the loudness and pausing of the model.
         torch.optim.AdamW: cf.Args(
-            eps=10 ** -6,
+            eps=10**-6,
             weight_decay=0.01,
             lr=5e-4,
             amsgrad=False,
@@ -184,7 +184,7 @@ def make_signal_model_train_config(
             prefetch_factor=2 if debug else 16,
         ),
         _State._get_optimizers: cf.Args(
-            optimizer=partial(torch.optim.Adam, lr=10 ** -4, amsgrad=False, betas=(0.9, 0.999)),
+            optimizer=partial(torch.optim.Adam, lr=10**-4, amsgrad=False, betas=(0.9, 0.999)),
             # NOTE: We employ a small warmup because the model can be unstable
             # at the start of it's training.
             lr_multiplier_schedule=partial(
@@ -195,7 +195,7 @@ def make_signal_model_train_config(
         _State._get_discrims: cf.Args(
             args=[(p["fft_length"], p["num_mel_bins"]) for p in signal_to_spectrogram_params]
         ),
-        _State._get_discrim_optimizers: cf.Args(optimizer=partial(torch.optim.Adam, lr=10 ** -3)),
+        _State._get_discrim_optimizers: cf.Args(optimizer=partial(torch.optim.Adam, lr=10**-3)),
         _worker._run_discriminator: cf.Args(real_label=real_label, fake_label=fake_label),
         signal_model._metrics.Metrics.get_discrim_values: cf.Args(
             real_label=real_label, fake_label=fake_label, threshold=threshold

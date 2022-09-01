@@ -38,7 +38,7 @@ pytest-xdist
 
 # Static-analysis
 flake8
-black==21.12b0
+black
 isort
 
 # Utils

@@ -33,14 +33,15 @@ def _chart_framed_rms_level(framed_rms_level: np.ndarray, frame_hop: int, sample
             x=alt.X("Seconds", type="quantitative"),  # type: ignore
             y=alt.Y(
                 "Decibels",  # type: ignore
-                scale=alt.Scale(domain=(-100.0, 0)), type="quantitative"  # type: ignore
+                scale=alt.Scale(domain=(-100.0, 0)),  # type: ignore
+                type="quantitative",  # type: ignore
             ),
         )
     )
 
 
 def main():
-    pyplot.style.use("dark_background")
+    pyplot.style.use("dark_background")  # type: ignore
     st.markdown("# Audio Features Workbook")
     run._config.configure(overwrite=True)
 

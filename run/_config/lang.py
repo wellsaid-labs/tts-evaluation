@@ -106,7 +106,7 @@ except ImportError:
     logger.info("Ignoring optional `google` import.")
 
 
-@lru_cache(maxsize=2 ** 20)
+@lru_cache(maxsize=2**20)
 def _grapheme_to_phoneme(grapheme: str) -> str:
     """Fast grapheme to phoneme implementation where punctuation is ignored.
 
@@ -133,7 +133,7 @@ def _remove_letter_casing(a: str) -> str:
     return a.lower()
 
 
-@lru_cache(maxsize=2 ** 20)
+@lru_cache(maxsize=2**20)
 def _is_sound_alike(a: str, b: str, language: Language) -> bool:
     a = normalize_vo_script(a, language)
     b = normalize_vo_script(b, language)
