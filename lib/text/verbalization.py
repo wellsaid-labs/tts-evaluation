@@ -448,7 +448,8 @@ class RegExPatterns:
     MONEY: typing.Final[typing.Pattern[str]] = re.compile(
         rf"({_reg_ex_or(CURRENCIES.keys(), left=True)})"  # GROUP 1: Currency prefix
         rf"({_DIGIT})"  # GROUP 2: Numerical value
-        rf"([{_reg_ex_or(MONEY_ABBREVIATIONS.keys())}]"r"{0,1})"  # GROUP 3: Unit
+        rf"([{_reg_ex_or(MONEY_ABBREVIATIONS.keys())}]"
+        r"{0,1})"  # GROUP 3: Unit
         # GROUP 4 (Optional): Currency suffix
         rf"(\b\s(?:{_reg_ex_or(MONEY_SUFFIX + LARGE_NUMBERS + LARGE_FICTIOUS_NUMBERS)}))?"
         r"\b",  # Word boundary
@@ -456,7 +457,8 @@ class RegExPatterns:
     )
     MONEY_REVERSED: typing.Final[typing.Pattern[str]] = re.compile(
         rf"({_DIGIT})"  # GROUP 1: Numerical value
-        rf"([{_reg_ex_or(MONEY_ABBREVIATIONS.keys())}]"r"{0,1})"  # GROUP 2: Unit
+        rf"([{_reg_ex_or(MONEY_ABBREVIATIONS.keys())}]"
+        r"{0,1})"  # GROUP 2: Unit
         # GROUP 3 (Optional): Currency suffix
         rf"(\b\s(?:{_reg_ex_or(MONEY_SUFFIX + LARGE_NUMBERS + LARGE_FICTIOUS_NUMBERS)}))?"
         rf" ?({_reg_ex_or(CURRENCIES.keys(), right=True)})",  # GROUP 4: Currency, optional space

@@ -84,7 +84,7 @@ def test_validate_and_unpack():
         validate_({**args, "text": ""})  # type: ignore
 
     with pytest.raises(FlaskException):  # `speaker_id` must be in `speaker_id_to_session`
-        validate_({**args, "speaker_id": 2 ** 31})  # type: ignore
+        validate_({**args, "speaker_id": 2**31})  # type: ignore
 
     with pytest.raises(FlaskException):  # `speaker_id` must be positive
         validate_({**args, "speaker_id": -1})  # type: ignore

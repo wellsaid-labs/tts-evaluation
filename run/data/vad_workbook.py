@@ -144,7 +144,8 @@ def _chart_db_rms(seconds: np.ndarray, rms_level_db: np.ndarray):
             x=alt.X("seconds", type="quantitative"),  # type: ignore
             y=alt.Y(
                 "decibels",  # type: ignore
-                scale=alt.Scale(domain=(-200.0, 0)), type="quantitative"  # type: ignore
+                scale=alt.Scale(domain=(-200.0, 0)),  # type: ignore
+                type="quantitative",  # type: ignore
             ),
         )
     )
