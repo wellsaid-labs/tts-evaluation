@@ -1,8 +1,11 @@
+import functools
 import pathlib
 import subprocess
 import typing
 import urllib.request
+from unittest import mock
 
+import config as cf
 import numpy
 import pytest
 import torch
@@ -14,6 +17,13 @@ TEST_DATA_PATH = lib.environment.ROOT_PATH / "tests" / "_test_data"
 
 def assert_almost_equal(a: torch.Tensor, b: torch.Tensor, **kwargs):
     numpy.testing.assert_almost_equal(a.cpu().detach().numpy(), b.cpu().detach().numpy(), **kwargs)
+
+
+def config_partial_side_effect(func, *args, **kwargs):
+    """Mock `config.partial` to handle mocks."""
+    if isinstance(func, mock.MagicMock):
+        return functools.partial(func, *args, **kwargs)
+    return cf.partial(func, *args, **kwargs)
 
 
 def first_parameter_url_side_effect(url: str, *_, **__):

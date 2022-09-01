@@ -13,15 +13,15 @@ Usage:
 Use gcloud port-forwarding to interact via your local browser:
 ```
 VM_NAME="name-of-remote-machine"
-ZONE="zone-of-remote-machine"
+VM_ZONE="zone-of-remote-machine"
 PROJECT_ID=voice-research-255602
 LOCAL_PORT=2222
 REMOTE_PORT=8501
 
 gcloud compute ssh $VM_NAME \
     --project $PROJECT_ID \
-    --zone $ZONE \
-    -- -NL $LOCAL_PORT:localhost:$REMOTE_PORT
+    --zone $VM_ZONE \
+    -- -NL $LOCAL_PORT":localhost:"$REMOTE_PORT
 ```
 """
 import functools
@@ -39,14 +39,12 @@ import run
 from lib.environment import PT_EXTENSION, ROOT_PATH, load
 from lib.text import natural_keys
 from run import train
-from run._config import SIGNAL_MODEL_EXPERIMENTS_PATH, SPECTROGRAM_MODEL_EXPERIMENTS_PATH
-from run._streamlit import (
+from run._config import (
     DEFAULT_SCRIPT,
-    audio_to_web_path,
-    paths_to_html_download_link,
-    st_html,
-    web_path_to_url,
+    SIGNAL_MODEL_EXPERIMENTS_PATH,
+    SPECTROGRAM_MODEL_EXPERIMENTS_PATH,
 )
+from run._streamlit import audio_to_web_path, paths_to_html_download_link, st_html, web_path_to_url
 from run._tts import TTSPackage, text_to_speech
 
 st.set_page_config(layout="wide")
@@ -64,7 +62,7 @@ def st_select_paths(label: str, dir: pathlib.Path, suffix: str) -> typing.List[p
         key=lambda x: natural_keys(str(x)),
         reverse=True,
     )
-    paths = st.multiselect(label, options=options, format_func=path_label)
+    paths = st.multiselect(label, options=options, format_func=path_label)  # type: ignore
     paths = cast(typing.List[pathlib.Path], paths)
     paths = [f for p in paths for f in ([p] if p.is_file() else list(p.glob(f"**/*{suffix}")))]
     if len(paths) > 0:
@@ -91,7 +89,7 @@ def main():
         "Use this workbook to find the best permutation of a "
         "set of model(s), a speaker, a recording session, and a script."
     )
-    run._config.configure()
+    run._config.configure(overwrite=True)
 
     get_paths = functools.partial(st_select_paths, suffix=PT_EXTENSION)
     sig_paths = get_paths("Signal Checkpoints(s)", SIGNAL_MODEL_EXPERIMENTS_PATH)
@@ -123,17 +121,17 @@ def main():
     paths = []
     bar = st.progress(0)
     sessions: typing.List[typing.Tuple[run.data._loader.Speaker, run.data._loader.Session]]
-    sessions = list(set(s for c in spec_ckpts for s in c.input_encoder.session_encoder.vocab))
+    sessions = list(set(s for c in spec_ckpts for s in c.model.session_embed.vocab.keys()))
     sessions_sample = get_sample_sessions(speakers, sessions, max_sessions)
     iter_ = list(itertools.product(sessions_sample, spec_export, sig_export, scripts))
     for i, (
         (speaker, session),
-        ((input_encoder, spec_model), spec_path),
+        (spec_model, spec_path),
         (sig_model, sig_path),
         script,
     ) in enumerate(iter_):
-        package = TTSPackage(input_encoder, spec_model, sig_model)
-        audio = text_to_speech(package, script, speaker, session)
+        package = TTSPackage(spec_model, sig_model)
+        audio = text_to_speech(package, script, session)
         sesh = str(session).replace("/", "__")
         name = f"i={i},spec={spec_path.stem},sig={sig_path.stem},spk={speaker.label},"
         name += f"sesh={sesh},script={id(script)}.wav"

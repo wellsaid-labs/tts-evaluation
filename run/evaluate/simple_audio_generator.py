@@ -10,6 +10,7 @@ import streamlit as st
 import lib
 import run
 from lib.text import natural_keys
+from run._config import DEFAULT_SCRIPT
 from run._streamlit import (
     audio_to_web_path,
     load_tts,
@@ -17,45 +18,34 @@ from run._streamlit import (
     st_html,
     web_path_to_url,
 )
-from run._tts import CHECKPOINTS_LOADERS, Checkpoints, batch_text_to_speech
+from run._tts import CHECKPOINTS_LOADERS, batch_text_to_speech
 from run.data._loader import Session, Speaker
-
-DEFAULT_SCRIPT = (
-    "Your creative life will evolve in ways that you can’t possibly imagine. Trust"
-    " your gut. Don’t overthink it. And allow yourself a little room to play."
-)
 
 
 def main():
     st.markdown("# Simple Audio Generator")
     st.markdown("Use this workbook to generate audio for quick evaluation.")
-    run._config.configure()
+    run._config.configure(overwrite=True)
 
-    options = list(CHECKPOINTS_LOADERS.keys())
-    format_: typing.Callable[[Checkpoints], str] = lambda s: s.value
-    checkpoints_key = st.selectbox("Checkpoints", options=options, format_func=format_)
-    checkpoints_key = typing.cast(Checkpoints, checkpoints_key)
+    options = [k.name for k in CHECKPOINTS_LOADERS.keys()]
+    checkpoint = typing.cast(str, st.selectbox("Checkpoints", options=options))
 
     with st.spinner("Loading checkpoint(s)..."):
-        tts = load_tts(checkpoints_key)
+        tts = load_tts(checkpoint)
 
     format_speaker: typing.Callable[[Speaker], str] = lambda s: s.label
-    speakers = sorted(tts.input_encoder.speaker_encoder.index_to_token)
-    speaker = st.selectbox("Speaker", options=speakers, format_func=format_speaker)
+    speakers = sorted(sesh[0] for sesh in tts.session_vocab())
+    speaker = st.selectbox("Speaker", options=speakers, format_func=format_speaker)  # type: ignore
     speaker = typing.cast(Speaker, speaker)
     assert speaker.name is not None
     speaker_name = speaker.name.split()[0].lower()
 
-    spk_sesh: typing.List[typing.Tuple[Speaker, Session]]
-    spk_sesh = tts.input_encoder.session_encoder.index_to_token
+    spk_sesh = tts.session_vocab()
     sessions = sorted([sesh for spk, sesh in spk_sesh if spk == speaker], key=natural_keys)
 
     all_sessions: bool = st.checkbox("Sample all %d sessions" % len(sessions))
-    if all_sessions:
-        selected_sessions = sessions
-    else:
-        selected_sessions = st.multiselect("Session(s)", options=sessions)
-        selected_sessions = typing.cast(typing.List[Session], selected_sessions)
+    selected_sessions = sessions if all_sessions else st.multiselect("Session(s)", options=sessions)
+    selected_sessions = [Session((speaker, name)) for name in selected_sessions]
 
     if len(selected_sessions) == 0:
         return
@@ -71,11 +61,11 @@ def main():
 
     paths = []
     with st.spinner("Generating audio..."):
-        inputs = [(script, speaker, s) for s in selected_sessions]
+        inputs = [(script, s) for s in selected_sessions]
         inputs = [i for i in inputs for _ in range(num_clips)]
         for i, generated in enumerate(batch_text_to_speech(tts, inputs)):
             clip_num = i % num_clips + 1
-            sesh = inputs[i][-1]
+            sesh = inputs[i][-1][1]
             sesh = sesh[:-4] if (sesh.endswith(".wav") or sesh.endswith(".mp3")) else sesh
             if clip_num == 1:
                 st.markdown(f"##### Session: **{sesh}**")

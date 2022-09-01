@@ -6,23 +6,25 @@ Usage:
 import copy
 import logging
 import multiprocessing
+import multiprocessing.synchronize
 import pathlib
 import threading
 import time
 import typing
 
-import hparams.hparams
+import config as cf
 import requests
 import streamlit as st
-from flask import Flask, Response, request
+from flask import Flask, request
+from flask.wrappers import Response
 
 import lib
 import run
 from lib.audio import get_audio_metadata
 from lib.text import natural_keys
+from run._config import DEFAULT_SCRIPT
 from run._streamlit import (
     WebPath,
-    get_session_state,
     load_en_core_web_md,
     load_tts,
     make_temp_web_dir,
@@ -31,18 +33,14 @@ from run._streamlit import (
 )
 from run._tts import (
     CHECKPOINTS_LOADERS,
-    Checkpoints,
-    EncodedInput,
+    Inputs,
+    PreprocessedInputs,
     TTSPackage,
-    encode_tts_inputs,
+    process_tts_inputs,
     text_to_speech_ffmpeg_generator,
 )
-from run.data._loader import Speaker
+from run.data._loader import Session, Speaker
 
-DEFAULT_SCRIPT = (
-    "Your creative life will evolve in ways that you can’t possibly imagine. Trust"
-    " your gut. Don’t overthink it. And allow yourself a little room to play."
-)
 STREAMING_SERVICE_PORT = 5000
 STREAMING_SERVICE_ENDPOINT = f"http://localhost:{STREAMING_SERVICE_PORT}"
 
@@ -59,11 +57,15 @@ class _State(typing.TypedDict, total=False):
 
 
 def _generation_service(
-    input: EncodedInput, tts: TTSPackage, file_path: pathlib.Path, is_streaming: Event
+    input: Inputs,
+    preprocessed: PreprocessedInputs,
+    tts: TTSPackage,
+    file_path: pathlib.Path,
+    is_streaming: Event,
 ):
     """Generate a voice over from `input` using `tts` and store the results in `file_path`."""
     with file_path.open("ab") as file_:
-        for bytes_ in text_to_speech_ffmpeg_generator(tts, input):
+        for bytes_ in text_to_speech_ffmpeg_generator(tts, input, preprocessed, **cf.get()):
             if len(bytes_) > 0:
                 file_.write(bytes_)
     is_streaming.clear()
@@ -83,7 +85,7 @@ def _stream_file_contents(file_path: pathlib.Path, is_streaming: Event):
 
 
 def _streaming_service(
-    config: typing.Dict,
+    configuration: cf.Config,
     file_path: pathlib.Path,
     is_streaming: Event,
     *args,
@@ -94,7 +96,7 @@ def _streaming_service(
     NOTE: This starts a seperate thread for generation, so that, the generator continues to generate
     even if the result isn't being consumed.
     """
-    hparams.hparams._configuration = config
+    cf.add(configuration)
     app = Flask(__name__)
 
     @app.route("/healthy", methods=["GET"])
@@ -103,7 +105,9 @@ def _streaming_service(
 
     @app.route("/shutdown")
     def shutdown():
-        request.environ.get("werkzeug.server.shutdown")()
+        shutdown = request.environ.get("werkzeug.server.shutdown")
+        assert shutdown is not None
+        shutdown()
         return "Server shutting down..."
 
     @app.route("/stream.mp3")
@@ -136,26 +140,25 @@ def wait_until_first_byte(service: Container, web_path: WebPath):
 
 
 def main():
-    st.markdown("# Stream Generation ")
+    st.markdown("# Stream Generation")
     st.markdown("Use this workbook to stream clip generation.")
-    run._config.configure()
+    run._config.configure(overwrite=True)
 
-    state = typing.cast(_State, get_session_state())
+    options = [k.name for k in CHECKPOINTS_LOADERS.keys()]
+    checkpoint = typing.cast(str, st.selectbox("Checkpoints", options=options))
 
-    options = list(CHECKPOINTS_LOADERS.keys())
-    format_: typing.Callable[[Checkpoints], str] = lambda s: s.value
-    checkpoints_key: Checkpoints = st.selectbox("Checkpoints", options=options, format_func=format_)
+    with st.spinner(f"Loading `{checkpoint}` checkpoint(s)..."):
+        tts = load_tts(checkpoint)
 
-    with st.spinner(f"Loading `{checkpoints_key.value}` checkpoint(s)..."):
-        tts = load_tts(checkpoints_key)
+    format_speaker: typing.Callable[[Speaker], str] = lambda s: str(s)
+    speakers = sorted((s[0] for s in tts.session_vocab()), key=lambda k: str(k))
+    speaker = st.selectbox("Speaker", options=speakers, format_func=format_speaker)  # type: ignore
 
-    format_speaker: typing.Callable[[Speaker], str] = lambda s: s.label
-    speakers = sorted(tts.input_encoder.speaker_encoder.index_to_token)
-    speaker = st.selectbox("Speaker", options=speakers, format_func=format_speaker)
-
-    sessions = tts.input_encoder.session_encoder.index_to_token
-    sessions = sorted([sesh for spk, sesh in sessions if spk == speaker], key=natural_keys)
-    session = st.selectbox("Session", options=sessions)
+    sessions = tts.session_vocab()
+    format_session: typing.Callable[[Session], str] = lambda s: s[1]
+    sessions = sorted((s for s in sessions if s[0] == speaker), key=lambda s: natural_keys(s[1]))
+    session = st.selectbox("Session", options=sessions, format_func=format_session)  # type: ignore
+    session = typing.cast(Session, session)
     script = st.text_area("Script", value=DEFAULT_SCRIPT, height=300)
     use_process = st.checkbox("Multiprocessing")
     st.info(f"The script has {len(script):,} character(s).")
@@ -169,22 +172,22 @@ def main():
         nlp = load_en_core_web_md(disable=("parser", "ner"))
 
     with st.spinner("Processing inputs..."):
-        inputs = encode_tts_inputs(nlp, tts.input_encoder, script, speaker, session)
-        st.info(f"{inputs.tokens.shape[0]:,} token(s) were inputted.")
+        inputs = process_tts_inputs(nlp, tts, script, session)
+        st.info(f"{len(inputs[1].tokens[0]):,} token(s) were inputted.")
 
-    if "service" in state and state["service"].is_alive():
+    if "service" in st.session_state and st.session_state["service"].is_alive():
         logger.info("Shutting down streaming service...")
         requests.get(f"{STREAMING_SERVICE_ENDPOINT}/shutdown")
-        state["service"].join()
-        del state["service"]
+        st.session_state["service"].join()
+        del st.session_state["service"]
 
     web_path = make_temp_web_dir() / "audio.mp3"
     with st.spinner("Starting streaming service..."):
         is_streaming = (multiprocessing.Event if use_process else threading.Event)()
-        args = (copy.deepcopy(hparams.hparams.get_config()), web_path, is_streaming, inputs, tts)
+        args = (copy.deepcopy(cf.export()), web_path, is_streaming, *inputs, tts)
         container = multiprocessing.Process if use_process else threading.Thread
-        state["service"] = container(target=_streaming_service, args=args, daemon=True)
-        state["service"].start()
+        st.session_state["service"] = container(target=_streaming_service, args=args, daemon=True)
+        st.session_state["service"].start()
         wait_until_healthy()
 
     # NOTE: `v={time.time()}` is used for cache busting, learn more:
@@ -192,7 +195,7 @@ def main():
     endpoint = f"{STREAMING_SERVICE_ENDPOINT}/stream.mp3?v={time.time()}"
     st_html(f'<audio controls src="{endpoint}"></audio>')
     start_time = time.time()
-    wait_until_first_byte(state["service"], web_path)
+    wait_until_first_byte(st.session_state["service"], web_path)
     assert is_streaming.is_set()
 
     url = web_path_to_url(web_path)
@@ -201,7 +204,7 @@ def main():
     ttfb = time.time() - start_time
     start_time = time.time()
     stats = st.empty()
-    while state["service"].is_alive() and web_path.exists() and is_streaming.is_set():
+    while st.session_state["service"].is_alive() and web_path.exists() and is_streaming.is_set():
         seconds_generated = get_audio_metadata(web_path).length
         elapsed = time.time() - start_time
 

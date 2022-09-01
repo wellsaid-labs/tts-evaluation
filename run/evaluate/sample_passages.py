@@ -9,11 +9,13 @@ Usage:
     $ python -m run.evaluate.sample_passages
 """
 import io
+import itertools
 import logging
 import pathlib
 import random
 import zipfile
 
+import config as cf
 import pandas
 import typer
 
@@ -50,18 +52,15 @@ def main(
         typer.echo(f"The directory {path.parent} doesn't exist.")
         raise typer.Exit()
 
-    run._config.configure()
+    run._config.configure(overwrite=True)
+    train_dataset, dev_dataset = run._utils.get_datasets(debug)
+    train_dataset = {} if use_dev_dataset else train_dataset
 
-    _datasets = {k: v for k, v in list(run._config.DATASETS.items())[:1]}
-    dataset = run._utils.get_dataset(**({"datasets": _datasets} if debug else {}))
-    if use_dev_dataset:
-        _, dataset = run._utils.split_dataset(dataset)
-
-    sessions = {spk: sesh for spk, sesh in run.deploy.worker.SPEAKER_ID_TO_SPEAKER.values()}
+    sessions = {sesh[0]: sesh for sesh in run.deploy.worker.SPEAKER_ID_TO_SESSION.values()}
     data = []
     logger.info(f"Writing Zip file to {path}")
     with zipfile.ZipFile(path, "w") as file_:
-        for speaker, passages in dataset.items():
+        for speaker, passages in itertools.chain(train_dataset.items(), dev_dataset.items()):
             if speaker not in run._config.DEV_SPEAKERS and only_dev_speakers:
                 continue
             if filter_on_session:
@@ -72,7 +71,7 @@ def main(
                 file_name = f"spk={speaker.label},sesh={sesh},id={i}.wav"
                 data.append({file_name_column_name: file_name, script_column_name: passage.script})
                 mock_file_ = io.BytesIO()
-                lib.audio.write_audio(mock_file_, passage[:].audio())
+                cf.partial(lib.audio.write_audio)(mock_file_, passage[:].audio())
                 file_.writestr(file_name, mock_file_.read())
         file_.writestr(csv_name, pandas.DataFrame(data).to_csv(index=False))
     logger.info(f"Finished! {lib.utils.mazel_tov()}")

@@ -1,146 +1,114 @@
 import collections
 import collections.abc
-import itertools
+import dataclasses
 import math
 import typing
 from functools import partial
+from operator import add
 
+import config as cf
 import torch
 import torch.distributed
 import torch.nn
 import torch.optim
 import torch.utils
 import torch.utils.data
-from hparams import HParam, configurable
 
 import lib
-import run
-from lib.audio import power_to_db
+from lib.audio import power_spectrogram_to_framed_rms, power_to_db
 from lib.distributed import is_master
 from run._config import GetLabel, get_dataset_label, get_model_label
+from run._models.spectrogram_model import Preds, SpectrogramModel
+from run.data._loader import Speaker
 from run.train import _utils
-from run.train._utils import CometMLExperiment, MetricsValues, Timer
+from run.train._utils import Timer
 from run.train.spectrogram_model._data import Batch
 
 
-def get_num_skipped(
-    alignments: torch.Tensor,
-    token_mask: typing.Optional[torch.Tensor],
-    spectrogram_mask: typing.Optional[torch.Tensor],
-) -> torch.Tensor:
+def get_num_skipped(preds: Preds) -> torch.Tensor:
     """Given `alignments` from frames to tokens, this computes the number of tokens that were
     skipped.
 
     NOTE: This function assumes a token is attended to if it has the most focus of all the other
     tokens for some frame.
 
-    Args:
-        alignments (torch.FloatTensor [num_frames, batch_size, num_tokens])
-        token_mask (torch.BoolTensor [num_tokens, batch_size])
-        spectrogram_mask (torch.BoolTensor [num_frames, batch_size])
-
     Returns:
         torch.FloatTensor [batch_size]
     """
-    if alignments.numel() == 0:
-        return torch.zeros(alignments.shape[1], device=alignments.device)
+    if preds.alignments.numel() == 0:
+        return torch.zeros(preds.alignments.shape[1], device=preds.alignments.device)
 
-    indices = alignments.max(dim=2, keepdim=True).indices
-    device = alignments.device
-    one = torch.ones(*alignments.shape, device=device, dtype=torch.long)
+    indices = preds.alignments.max(dim=2, keepdim=True).indices
+    device = preds.alignments.device
+    one = torch.ones(*preds.alignments.shape, device=device, dtype=torch.long)
     # [num_frames, batch_size, num_tokens]
-    num_skipped = torch.zeros(*alignments.shape, device=device, dtype=torch.long)
+    num_skipped = torch.zeros(*preds.alignments.shape, device=device, dtype=torch.long)
     num_skipped = num_skipped.scatter(dim=2, index=indices, src=one)
     # [num_frames, batch_size, num_tokens] → [batch_size, num_tokens]
-    if spectrogram_mask is not None:
-        num_skipped = num_skipped.masked_fill(~spectrogram_mask.unsqueeze(-1), 0)
+    num_skipped = num_skipped.masked_fill(~preds.frames_mask.transpose(0, 1).unsqueeze(-1), 0)
     num_skipped = num_skipped.sum(dim=0)
-    if token_mask is not None:
-        num_skipped = num_skipped.masked_fill(~token_mask.transpose(0, 1), -1)
+    num_skipped = num_skipped.masked_fill(~preds.tokens_mask, -1)
     return (num_skipped == 0).float().sum(dim=1)
 
 
-def get_num_jumps(
-    alignments: torch.Tensor, tokens_mask: torch.Tensor, spectrogram_mask: torch.Tensor
-) -> torch.Tensor:
+def get_num_jumps(preds: Preds) -> torch.Tensor:
     """Given `alignments` from frames to tokens, the computes the number of "jumps" between frame
     to frame, that would skip at least one token.
-
-    Args:
-        alignments (torch.FloatTensor [num_frames, batch_size, num_tokens])
-        token_mask (torch.BoolTensor [num_tokens, batch_size])
-        spectrogram_mask (torch.BoolTensor [num_frames, batch_size])
 
     Returns:
         torch.FloatTensor [batch_size]
     """
-    if alignments.numel() == 0:
-        return torch.zeros(alignments.shape[1], device=alignments.device)
+    if preds.alignments.numel() == 0:
+        return torch.zeros(preds.alignments.shape[1], device=preds.alignments.device)
 
-    alignments = alignments.masked_fill(~tokens_mask.transpose(0, 1).unsqueeze(0), 0)
+    alignments = preds.alignments.masked_fill(~preds.tokens_mask.unsqueeze(0), 0)
     # [num_frames, batch_size, num_tokens] → [num_frames, batch_size]
     indices = alignments.max(dim=2).indices
     start = torch.cat([torch.zeros(1, alignments.shape[1], device=alignments.device), indices[:-1]])
     skip_size = indices - start
-    skip_size = skip_size.masked_fill(~spectrogram_mask, 0)
+    skip_size = skip_size.masked_fill(~preds.frames_mask.transpose(0, 1), 0)
     num_jumps = (skip_size.abs() > 1).float()
     return num_jumps.sum(dim=0)
 
 
-@configurable
-def get_num_small_max(
-    alignments: torch.Tensor,
-    tokens_mask: torch.Tensor,
-    spectrogram_mask: torch.Tensor,
-    threshold: float = HParam(),
-) -> torch.Tensor:
+def get_num_small_max(preds: Preds, threshold: float) -> torch.Tensor:
     """Given `alignments` from frames to tokens, this computes the number of alignments where no
     token gets no more than `threshold` focus.
 
     Args:
-        alignments (torch.FloatTensor [num_frames, batch_size, num_tokens])
-        token_mask (torch.BoolTensor [num_tokens, batch_size])
-        spectrogram_mask (torch.BoolTensor [num_frames, batch_size])
+        preds
         threshold: The percentage focus a token gets.
 
     Returns:
         torch.FloatTensor [batch_size]
     """
-    if alignments.numel() == 0:
-        return torch.zeros(alignments.shape[1], device=alignments.device)
+    if preds.alignments.numel() == 0:
+        return torch.zeros(preds.alignments.shape[1], device=preds.alignments.device)
 
-    alignments = alignments.masked_fill(~tokens_mask.transpose(0, 1).unsqueeze(0), 0)
+    alignments = preds.alignments.masked_fill(~preds.tokens_mask.unsqueeze(0), 0)
     # [num_frames, batch_size, num_tokens] → [num_frames, batch_size]
     values = alignments.max(dim=2).values
     values = (values < threshold).float()
-    values = values.masked_fill(~spectrogram_mask, 0)
+    values = values.masked_fill(~preds.frames_mask.transpose(0, 1), 0)
     return values.sum(dim=0)
 
 
-@configurable
-def get_num_repeated(
-    alignments: torch.Tensor,
-    tokens_mask: torch.Tensor,
-    spectrogram_mask: torch.Tensor,
-    threshold: float = HParam(),
-) -> torch.Tensor:
+def get_num_repeated(preds: Preds, threshold: float) -> torch.Tensor:
     """Given `alignments` from frames to tokens, this gets the number of tokens that get more
     focus than `threshold`.
 
     Args:
-        alignments (torch.FloatTensor [num_frames, batch_size, num_tokens])
-        token_mask (torch.BoolTensor [num_tokens, batch_size])
-        spectrogram_mask (torch.BoolTensor [num_frames, batch_size])
+        preds
         threshold: The percentage focus a token gets.
 
     Returns:
         torch.FloatTensor [batch_size]
     """
-    if alignments.numel() == 0:
-        return torch.zeros(alignments.shape[1], device=alignments.device)
+    if preds.alignments.numel() == 0:
+        return torch.zeros(preds.alignments.shape[1], device=preds.alignments.device)
 
-    alignments = alignments.masked_fill(~tokens_mask.transpose(0, 1).unsqueeze(0), 0)
-    alignments = alignments.masked_fill(~spectrogram_mask.unsqueeze(2), 0)
+    alignments = preds.alignments.masked_fill(~preds.tokens_mask.unsqueeze(0), 0)
+    alignments = alignments.masked_fill(~preds.frames_mask.transpose(0, 1).unsqueeze(2), 0)
     # [num_frames, batch_size, num_tokens] → [batch_size, num_tokens]
     values = alignments.sum(dim=0)
     values = (values > threshold).float()
@@ -183,7 +151,7 @@ def get_power_rms_level_sum(
 
     Args:
         db_spectrogram (torch.FloatTensor [num_frames, batch_size, frame_channels])
-        mask (torch.FloatTensor [num_frames, batch_size])
+        mask (torch.FloatTensor [batch_size, num_frames])
         **kwargs: Additional key word arguments passed to `power_spectrogram_to_framed_rms`.
 
     Returns:
@@ -191,43 +159,42 @@ def get_power_rms_level_sum(
     """
     spectrogram = typing.cast(torch.Tensor, lib.audio.db_to_power(db_spectrogram.transpose(0, 1)))
     # [batch_size, num_frames, frame_channels] → [batch_size, num_frames]
-    rms = lib.audio.power_spectrogram_to_framed_rms(spectrogram, **kwargs)
-    return (rms if mask is None else rms * mask.transpose(0, 1)).pow(2).sum(dim=1)
+    rms = cf.partial(power_spectrogram_to_framed_rms)(spectrogram, **kwargs)
+    return (rms if mask is None else rms * mask).pow(2).sum(dim=1)
 
 
 def get_average_db_rms_level(
-    db_spectrogram: torch.Tensor, mask: typing.Optional[torch.Tensor] = None, **kwargs
+    db_spectrogram: torch.Tensor, mask: typing.Optional[torch.Tensor] = None
 ) -> torch.Tensor:
     """Get the average, over spectrogram frames, RMS level (dB) for each spectrogram.
 
     Args:
         db_spectrogram (torch.FloatTensor [num_frames, batch_size, frame_channels])
-        mask (torch.FloatTensor [num_frames, batch_size])
+        mask (torch.FloatTensor [batch_size, num_frames])
         **kwargs: Additional key word arguments passed to `get_power_rms_level_sum`.
 
     Returns:
         torch.FloatTensor [batch_size]
     """
-    num_elements = db_spectrogram.shape[0] if mask is None else mask.sum(dim=0)
-    cumulative_power_rms_level = get_power_rms_level_sum(db_spectrogram, mask, **kwargs)
-    return power_to_db(cumulative_power_rms_level / num_elements)
+    num_elements = db_spectrogram.shape[0] if mask is None else mask.sum(dim=1)
+    cum_power_rms_level = get_power_rms_level_sum(db_spectrogram, mask)
+    return power_to_db(cum_power_rms_level / num_elements)
 
 
-@configurable
 def get_num_pause_frames(
     db_spectrogram: torch.Tensor,
     mask: typing.Optional[torch.Tensor],
-    max_loudness: float = HParam(),
-    min_length: float = HParam(),
-    frame_hop: int = HParam(),
-    sample_rate: int = HParam(),
+    max_loudness: float,
+    min_length: float,
+    frame_hop: int,
+    sample_rate: int,
     **kwargs,
 ) -> typing.List[int]:
     """Count the number of frames inside a pause.
 
     Args:
         db_spectrogram (torch.FloatTensor [num_frames, batch_size, frame_channels])
-        mask (torch.FloatTensor [num_frames, batch_size])
+        mask (torch.FloatTensor [batch_size, num_frames])
         max_loudness: The maximum loudness a pause can be.
         min_length: The minimum length for a pause to be considered a pause.
         ...
@@ -235,9 +202,9 @@ def get_num_pause_frames(
     # [num_frames, batch_size, frame_channels] → [batch_size, num_frames, frame_channels]
     power_spec = lib.audio.db_to_power(db_spectrogram).transpose(0, 1)
     # [batch_size, num_frames, frame_channels] → [batch_size, num_frames]
-    framed_rms_level = lib.audio.power_spectrogram_to_framed_rms(power_spec, **kwargs)
+    framed_rms_level = cf.partial(power_spectrogram_to_framed_rms)(power_spec, **kwargs)
     is_silent = framed_rms_level < lib.audio.db_to_amp(max_loudness)  # [batch_size, num_frames]
-    is_silent = is_silent if mask is None else is_silent * mask.transpose(0, 1)
+    is_silent = is_silent if mask is None else is_silent * mask
     frames_threshold = min_length * sample_rate / frame_hop
     batch_size = is_silent.shape[0]
     num_frames = [0] * batch_size
@@ -249,58 +216,86 @@ def get_num_pause_frames(
     return num_frames
 
 
-def get_alignment_norm(
-    alignments: torch.Tensor,
-    tokens_mask: typing.Optional[torch.Tensor],
-    spectrogram_mask: typing.Optional[torch.Tensor],
-) -> torch.Tensor:
+def get_max_pause(
+    db_spectrogram: torch.Tensor,
+    mask: typing.Optional[torch.Tensor],
+    max_loudness: float,
+    min_speech_segment: float,
+    frame_hop: int,
+    sample_rate: int,
+    **kwargs,
+) -> typing.List[int]:
+    """Get the maximum pause length.
+
+    TODO: Incorperate this into training.
+    TODO: Test this function.
+
+    Args:
+        db_spectrogram (torch.FloatTensor [num_frames, batch_size, frame_channels])
+        mask (torch.FloatTensor [batch_size, num_frames])
+        max_loudness: The maximum loudness a pause can be.
+        min_speech_segment: The minimum length that a speech segment must be.
+        ...
+    """
+    # [num_frames, batch_size, frame_channels] → [batch_size, num_frames, frame_channels]
+    power_spec = lib.audio.db_to_power(db_spectrogram).transpose(0, 1)
+    # [batch_size, num_frames, frame_channels] → [batch_size, num_frames]
+    framed_rms_level = cf.partial(power_spectrogram_to_framed_rms)(power_spec, **kwargs)
+    is_silent = framed_rms_level < lib.audio.db_to_amp(max_loudness)  # [batch_size, num_frames]
+    is_silent = is_silent if mask is None else is_silent * mask
+    batch_size = is_silent.shape[0]
+    ss_threshold = min_speech_segment * sample_rate / frame_hop
+    max_frames = [0] * batch_size
+    for i in range(batch_size):
+        _is_silent, inverse, count = torch.unique_consecutive(
+            is_silent[i], return_counts=True, return_inverse=True
+        )
+        _is_silent[count < ss_threshold] = True
+        is_silent[i] = torch.gather(_is_silent, 0, inverse)
+        _is_silent, count = torch.unique_consecutive(is_silent[i], return_counts=True)
+        max_frames[i] = int((_is_silent.float() * count).max().item())
+    return max_frames
+
+
+def get_alignment_norm(preds: Preds) -> torch.Tensor:
     """The inf-norm of an alignment. The more focused an alignment is the higher this metric. The
     metric is bounded at [0, 1].
 
-    Args:
-        alignments (torch.FloatTensor [num_frames, batch_size, num_tokens])
-        token_mask (torch.BoolTensor [num_tokens, batch_size])
-        spectrogram_mask (torch.BoolTensor [num_frames, batch_size])
-
     Returns:
         torch.FloatTensor [batch_size]
     """
-    if tokens_mask is not None:
-        alignments = alignments.masked_fill(~tokens_mask.transpose(0, 1).unsqueeze(0), 0)
-    alignments = alignments.norm(dim=2, p=math.inf)
-    if spectrogram_mask is not None:
-        alignments = alignments.masked_fill(~spectrogram_mask, 0)
+    alignments = preds.alignments.masked_fill(~preds.tokens_mask.unsqueeze(0), 0)
+    alignments = alignments.norm(dim=2, p=math.inf)  # type: ignore
+    alignments = alignments.masked_fill(~preds.frames_mask.transpose(0, 1), 0)
     return alignments.sum(dim=0)
 
 
-def get_alignment_std(
-    alignments: torch.Tensor,
-    tokens_mask: typing.Optional[torch.Tensor],
-    spectrogram_mask: typing.Optional[torch.Tensor],
-) -> torch.Tensor:
+def get_alignment_std(preds: Preds) -> torch.Tensor:
     """This metric measures the standard deviation of an alignment. As the alignment is more
     focused, this metrics goes to zero.
-
-    Args:
-        alignments (torch.FloatTensor [num_frames, batch_size, num_tokens])
-        token_mask (torch.BoolTensor [num_tokens, batch_size])
-        spectrogram_mask (torch.BoolTensor [num_frames, batch_size])
 
     Returns:
         torch.FloatTensor [batch_size]
     """
-    if tokens_mask is not None:
-        alignments = alignments.masked_fill(~tokens_mask.transpose(0, 1).unsqueeze(0), 0)
+    alignments = preds.alignments.masked_fill(~preds.tokens_mask.unsqueeze(0), 0)
     alignments = lib.utils.get_weighted_std(alignments, dim=2)
-    if spectrogram_mask is not None:
-        alignments = alignments.masked_fill(~spectrogram_mask, 0)
+    alignments = alignments.masked_fill(~preds.frames_mask.transpose(0, 1), 0)
     return alignments.sum(dim=0)
 
 
 _GetMetrics = typing.Dict[GetLabel, float]
 
 
-class Metrics(_utils.Metrics):
+@dataclasses.dataclass(frozen=True)
+class MetricsKey(_utils.MetricsKey):
+    speaker: typing.Optional[Speaker] = None
+    text_length_bucket: typing.Optional[int] = None
+
+
+MetricsValues = typing.Dict[MetricsKey, float]
+
+
+class Metrics(_utils.Metrics[MetricsKey]):
     """
     Vars:
         ...
@@ -391,149 +386,123 @@ class Metrics(_utils.Metrics):
 
     TEXT_LENGTH_BUCKET_SIZE = 25
 
-    def __init__(
-        self,
-        comet: CometMLExperiment,
-        speakers: typing.List[run.data._loader.Speaker],
-        **kwargs,
-    ):
-        super().__init__(comet, **kwargs)
-        self.comet = comet
-        self.speakers = speakers
+    @staticmethod
+    def _make_values():
+        values: MetricsValues = collections.defaultdict(float)
+
+        def _reduce(
+            label: str,
+            speaker: typing.Optional[Speaker] = None,
+            text_length_bucket: typing.Optional[int] = None,
+            v: float = 0,
+            op: typing.Callable[[float, float], float] = add,
+        ):
+            key = MetricsKey(label, speaker, text_length_bucket)
+            value = v if key not in values and op in (min, max) else values[key]
+            values[key] = op(value, v)
+
+        return values, _reduce
 
     def get_dataset_values(
-        self, batch: Batch, reached_max: typing.Optional[torch.Tensor] = None
+        self, batch: Batch, model: SpectrogramModel, preds: Preds
     ) -> MetricsValues:
         """
-        TODO: Get dataset metrics on OOV words (spaCy and AmEPD) in our dataset.
+        TODO: Get dataset metrics on OOV words (spaCy and pronunciation dictionary) in our dataset.
         TODO: Create a `streamlit` for measuring coverage in our dataset, and other datasets.
         TODO: Measure the difference between punctuation in the phonetic vs grapheme phrases.
         Apart from unique cases, they should have the same punctuation.
         """
-        values: typing.Dict[str, float] = collections.defaultdict(float)
+        values, _reduce = self._make_values()
 
-        for span, num_frames, num_tokens, has_reached_max in zip(
+        for span, num_frames, slice, has_reached_max in zip(
             batch.spans,
             self._to_list(batch.spectrogram.lengths),
-            self._to_list(batch.encoded_tokens.lengths),
-            itertools.repeat(False) if reached_max is None else self._to_list(reached_max),
+            batch.inputs.slices,
+            self._to_list(preds.reached_max),
         ):
+            num_tokens = slice.stop - slice.start
+
             # NOTE: Create a key for `self.NUM_SPANS` so a value exists, even if zero.
-            values[self.NUM_SPANS] += float(not has_reached_max)
-            values[f"{self.NUM_SPANS}/{span.speaker.label}"] += float(not has_reached_max)
+            _reduce(self.NUM_SPANS, v=float(not has_reached_max))
+            _reduce(self.NUM_SPANS, span.speaker, v=float(not has_reached_max))
 
-            if not has_reached_max:
+            # NOTE: Remove predictions that diverged (reached max) as to not skew other metrics.
+            if model.training or not has_reached_max:
                 index = int(len(span.script) // self.TEXT_LENGTH_BUCKET_SIZE)
-                values[f"{self.NUM_SPANS_PER_TEXT_LENGTH}/{index}"] += 1
-                values[self.NUM_FRAMES_MAX] = max(num_frames, values[self.NUM_FRAMES_MAX])
+                _reduce(self.NUM_SPANS_PER_TEXT_LENGTH, text_length_bucket=index, v=1)
+                _reduce(self.NUM_FRAMES_MAX, v=num_frames, op=max)
 
-                assert span.speaker in self.speakers
-                for suffix in ["", f"/{span.speaker.label}"]:
-                    format_ = lambda s: f"{s}{suffix}"
-                    values[format_(self.NUM_FRAMES)] += num_frames
-                    values[format_(self.NUM_SECONDS)] += span.audio_length
-                    values[format_(self.NUM_TOKENS)] += num_tokens
-                    label = format_(self.MAX_FRAMES_PER_TOKEN)
-                    ratio = num_frames / num_tokens
-                    values[label] = max(ratio, values[label]) if label in values else ratio
+                speaker: typing.Optional[Speaker]
+                for speaker in [None, span.speaker]:
+                    _reduce(self.NUM_FRAMES, speaker, v=num_frames)
+                    _reduce(self.NUM_SECONDS, speaker, v=span.audio_length)
+                    _reduce(self.NUM_TOKENS, speaker, v=num_tokens)
+                    _reduce(self.MAX_FRAMES_PER_TOKEN, speaker, v=num_frames / num_tokens, op=max)
 
         return dict(values)
 
     def get_alignment_values(
-        self,
-        batch: Batch,
-        alignments: torch.Tensor,
-        spectrogram_lengths: torch.Tensor,
-        spectrogram_mask: torch.Tensor,
-        reached_max: typing.Optional[torch.Tensor] = None,
+        self, batch: Batch, model: SpectrogramModel, preds: Preds
     ) -> MetricsValues:
-        """
-        Args:
-            ...
-            alignments (torch.FloatTensor [num_frames, batch_size, num_tokens])
-            spectrogram_lengths (torch.LongTensor [1, batch_size])
-            spectrogram_mask (torch.BoolTensor [num_frames, batch_size])
-            reached_max (torch.BoolTensor [batch_size]): Remove predictions that diverged
-                (reached max) as to not skew other metrics.
-        """
-        values: typing.Dict[str, float] = collections.defaultdict(float)
-        tokens_mask = batch.encoded_tokens_mask.tensor
+        values, _reduce = self._make_values()
+
         for span, skipped, jumps, std, norm, small_max, repeated, length, has_reached_max in zip(
             batch.spans,
-            self._to_list(get_num_skipped(alignments, tokens_mask, spectrogram_mask)),
-            self._to_list(get_num_jumps(alignments, tokens_mask, spectrogram_mask)),
-            self._to_list(get_alignment_std(alignments, tokens_mask, spectrogram_mask)),
-            self._to_list(get_alignment_norm(alignments, tokens_mask, spectrogram_mask)),
-            self._to_list(get_num_small_max(alignments, tokens_mask, spectrogram_mask)),
-            self._to_list(get_num_repeated(alignments, tokens_mask, spectrogram_mask)),
-            self._to_list(spectrogram_lengths),
-            itertools.repeat(False) if reached_max is None else self._to_list(reached_max),
+            self._to_list(get_num_skipped(preds)),
+            self._to_list(get_num_jumps(preds)),
+            self._to_list(get_alignment_std(preds)),
+            self._to_list(get_alignment_norm(preds)),
+            self._to_list(get_num_small_max(preds, **cf.get())),
+            self._to_list(get_num_repeated(preds, **cf.get())),
+            self._to_list(preds.num_frames),
+            self._to_list(preds.reached_max),
         ):
-            assert span.speaker in self.speakers
-            values[self.NUM_REACHED_MAX] += has_reached_max
-            values[f"{self.NUM_REACHED_MAX}/{span.speaker.label}"] += has_reached_max
+            _reduce(self.NUM_REACHED_MAX, v=has_reached_max)
+            _reduce(self.NUM_REACHED_MAX, span.speaker, v=has_reached_max)
 
-            if not has_reached_max:
-                for suffix in ["", f"/{span.speaker.label}"]:
-                    format_ = lambda s: f"{s}{suffix}"
-                    values[format_(self.ALIGNMENT_NORM_SUM)] += norm
-                    values[format_(self.ALIGNMENT_NUM_SMALL_MAX)] += small_max
-                    values[format_(self.ALIGNMENT_NUM_REPEATED)] += repeated
-                    values[format_(self.ALIGNMENT_NUM_SKIPS)] += skipped
-                    values[format_(self.ALIGNMENT_NUM_JUMPS)] += jumps
-                    values[format_(self.ALIGNMENT_STD_SUM)] += std
-                    values[format_(self.NUM_FRAMES_PREDICTED)] += length
+            if model.training or not has_reached_max:
+                speaker: typing.Optional[Speaker]
+                for speaker in [None, span.speaker]:
+                    _reduce(self.ALIGNMENT_NORM_SUM, speaker, v=norm)
+                    _reduce(self.ALIGNMENT_NUM_SMALL_MAX, speaker, v=small_max)
+                    _reduce(self.ALIGNMENT_NUM_REPEATED, speaker, v=repeated)
+                    _reduce(self.ALIGNMENT_NUM_SKIPS, speaker, v=skipped)
+                    _reduce(self.ALIGNMENT_NUM_JUMPS, speaker, v=jumps)
+                    _reduce(self.ALIGNMENT_STD_SUM, speaker, v=std)
+                    _reduce(self.NUM_FRAMES_PREDICTED, speaker, v=length)
 
         return dict(values)
 
     def get_loudness_values(
-        self,
-        batch: Batch,
-        predicted_spectrogram: torch.Tensor,
-        spectrogram_mask: torch.Tensor,
-        reached_max: typing.Optional[torch.Tensor] = None,
+        self, batch: Batch, model: SpectrogramModel, preds: Preds
     ) -> MetricsValues:
-        """
-        Args:
-            ...
-            predicted (torch.FloatTensor [num_frames, batch_size, frame_channels])
-            reached_max (torch.BoolTensor [batch_size])
-            spectrogram_mask (torch.FloatTensor [num_frames, batch_size])
-            **kwargs: Additional key word arguments passed to `get_power_rms_level_sum`.
-        """
-        values: typing.Dict[str, float] = collections.defaultdict(float)
-        loudness = get_power_rms_level_sum(batch.spectrogram.tensor, batch.spectrogram_mask.tensor)
+        values, _reduce = self._make_values()
+
+        spectrogram_mask = batch.spectrogram_mask.tensor.transpose(0, 1)
+        loudness = get_power_rms_level_sum(batch.spectrogram.tensor, spectrogram_mask)
         for span, loudness, pred_loudness, num_pause, num_pause_pred, has_reached_max in zip(
             batch.spans,
             self._to_list(loudness),
-            self._to_list(get_power_rms_level_sum(predicted_spectrogram, spectrogram_mask)),
-            get_num_pause_frames(batch.spectrogram.tensor, batch.spectrogram_mask.tensor),
-            get_num_pause_frames(predicted_spectrogram, spectrogram_mask),
-            itertools.repeat(False) if reached_max is None else self._to_list(reached_max),
+            self._to_list(get_power_rms_level_sum(preds.frames, preds.frames_mask)),
+            get_num_pause_frames(batch.spectrogram.tensor, spectrogram_mask, **cf.get()),
+            get_num_pause_frames(preds.frames, preds.frames_mask, **cf.get()),
+            self._to_list(preds.reached_max),
         ):
-            if not has_reached_max:
-                assert span.speaker in self.speakers
-                for suffix in ["", f"/{span.speaker.label}"]:
-                    format_ = lambda s: f"{s}{suffix}"
-                    values[format_(self.RMS_SUM_PREDICTED)] += pred_loudness
-                    values[format_(self.RMS_SUM)] += loudness
-                    values[format_(self.NUM_PAUSE_FRAMES)] += num_pause
-                    values[format_(self.NUM_PAUSE_FRAMES_PREDICTED)] += num_pause_pred
+            if model.training or not has_reached_max:
+                for speaker in [None, span.speaker]:
+                    _reduce(self.RMS_SUM_PREDICTED, speaker, v=pred_loudness)
+                    _reduce(self.RMS_SUM, speaker, v=loudness)
+                    _reduce(self.NUM_PAUSE_FRAMES, speaker, v=num_pause)
+                    _reduce(self.NUM_PAUSE_FRAMES_PREDICTED, speaker, v=num_pause_pred)
 
         return dict(values)
 
     def get_stop_token_values(
-        self, batch: Batch, predicted_logits: torch.Tensor, stop_threshold: float
+        self, batch: Batch, model: SpectrogramModel, preds: Preds
     ) -> MetricsValues:
-        """
-        Args:
-            ...
-            predicted_logits (torch.FloatTensor [num_frames, batch_size])
-            ...
-        """
-        bool_ = lambda t: (t > stop_threshold).masked_select(batch.spectrogram_mask.tensor)
-        is_correct = bool_(batch.stop_token.tensor) == bool_(torch.sigmoid(predicted_logits))
-        return {self.NUM_CORRECT_STOP_TOKEN: float(is_correct.sum().item())}
+        bool_ = lambda t: (t > model.stop_threshold).masked_select(batch.spectrogram_mask.tensor)
+        is_correct = bool_(batch.stop_token.tensor) == bool_(torch.sigmoid(preds.stop_tokens))
+        return {MetricsKey(self.NUM_CORRECT_STOP_TOKEN): float(is_correct.sum().item())}
 
     def _iter_permutations(self, select: _utils.MetricsSelect, is_verbose: bool = True):
         """Iterate over permutations of metric names and return convenience operations.
@@ -541,18 +510,18 @@ class Metrics(_utils.Metrics):
         Args:
             is_verbose: If `True`, iterate over more permutations.
         """
-        for speaker in itertools.chain([None], self.speakers if is_verbose else []):
-            suffix = "" if speaker is None else f"/{speaker.label}"
-            format_ = lambda s: f"{s}{suffix}" if isinstance(s, str) else s
+        speakers = set(key.speaker for key in self.data.keys())
+        for speaker in speakers if is_verbose else [None]:
             reduce_: typing.Callable[[str], float]
-            reduce_ = lambda a, **k: self._reduce(format_(a), select=select, **k)
+            reduce_ = lambda a, **k: self._reduce(MetricsKey(a, speaker), select=select, **k)
+            process: typing.Callable[[typing.Union[float, str]], typing.Union[float, MetricsKey]]
+            process = lambda a: a if isinstance(a, float) else MetricsKey(a, speaker)
             div: typing.Callable[[typing.Union[float, str], typing.Union[float, str]], float]
-            div = lambda n, d, **k: self._div(format_(n), format_(d), select=select, **k)
+            div = lambda n, d, **k: self._div(process(n), process(d), select=select, **k)
             yield speaker, reduce_, div
 
-    @configurable
     def _get_model_metrics(
-        self, select: _utils.MetricsSelect, is_verbose: bool, num_frame_channels=HParam()
+        self, select: _utils.MetricsSelect, is_verbose: bool, num_frame_channels: int
     ) -> _GetMetrics:
         metrics = {}
         for speaker, reduce, div in self._iter_permutations(select, is_verbose):
@@ -584,8 +553,8 @@ class Metrics(_utils.Metrics):
         `_pad_and_trim_signal`. "elizabeth_klett", "mary_ann" and "judy_bieber" tend to need
         significantly more trimming than other speakers.
         """
-        reduce = partial(self._reduce, select=select)
-        metrics = {
+        reduce = lambda *a, **k: self._reduce(MetricsKey(*a), select=select, **k)
+        metrics: _GetMetrics = {
             self.MAX_NUM_FRAMES: reduce(self.NUM_FRAMES_MAX, op=max),
             self.MIN_DATA_LOADER_QUEUE_SIZE: reduce(self.DATA_QUEUE_SIZE, op=min),
         }
@@ -606,12 +575,12 @@ class Metrics(_utils.Metrics):
         if is_verbose:
             total_spans = reduce(self.NUM_SPANS)
             for key in self.data.keys():
-                if f"{self.NUM_SPANS_PER_TEXT_LENGTH}/" not in key:
+                if self.NUM_SPANS_PER_TEXT_LENGTH is not key.label:
                     continue
 
-                bucket = int(key.split("/")[-1])
-                lower = bucket * self.TEXT_LENGTH_BUCKET_SIZE
-                upper = (bucket + 1) * self.TEXT_LENGTH_BUCKET_SIZE
+                assert isinstance(key.text_length_bucket, int), "Invariant error"
+                lower = key.text_length_bucket * self.TEXT_LENGTH_BUCKET_SIZE
+                upper = (key.text_length_bucket + 1) * self.TEXT_LENGTH_BUCKET_SIZE
                 get_label = partial(self.FREQUENCY_TEXT_LENGTH, lower=lower, upper=upper)
                 metrics[get_label] = reduce(key) / total_spans
 
@@ -653,7 +622,7 @@ class Metrics(_utils.Metrics):
             record_event = lambda e: None if timer is None else timer.record_event(e)
             record_event(Timer.REDUCE_METRICS)
             metrics = {
-                **self._get_model_metrics(select=select, is_verbose=is_verbose),
+                **self._get_model_metrics(select=select, is_verbose=is_verbose, **cf.get()),
                 **self._get_dataset_metrics(select=select, is_verbose=is_verbose),
                 **self._get_loudness_metrics(select=select, is_verbose=is_verbose),
             }

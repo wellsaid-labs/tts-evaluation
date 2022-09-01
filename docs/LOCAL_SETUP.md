@@ -61,12 +61,14 @@ a team member to create you an account.
 With your new account, you'll need to create a `.comet.config` file in this repositories root
 level directory with these configurations:
 
-```
+```txt
 [comet]
 workspace=wellsaid-labs
 api_key=<api_key>
 rest_api_key=<rest_api_key>
 disable_auto_logging=1
+url_override=https://www.comet-ml.com/clientlib/
+optimizer_url=http://www.comet-ml.com/optimizer/
 ```
 
 Learn more about where to find the `api_key` and `rest_api_key` configurations on
@@ -75,7 +77,7 @@ Learn more about where to find the `api_key` and `rest_api_key` configurations o
 ## 5. Google Cloud
 
 This repository relies on GCP, and you'll need to ask team member to get access to our GCP projects,
-"Voice Research" and "Voice Service".
+"Voice Research" and "Voice Service 2".
 
 Afterwards, install [Google Cloud SDK](https://cloud.google.com/sdk/docs/quickstart) with these
 [installation scripts](https://cloud.google.com/sdk/docs/downloads-interactive) and authorize
@@ -91,6 +93,9 @@ gcloud auth login
 # NOTE: Authorize Google client libraries, learn more:
 # https://cloud.google.com/sdk/gcloud/reference/auth/application-default
 gcloud auth application-default login
+
+# NOTE: Most likely, you'll be using the "Voice Research" project.
+gcloud config set project voice-research-255602
 ```
 
 ## Good job! 🎉

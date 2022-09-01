@@ -1,26 +1,35 @@
 import collections
+import dataclasses
 import itertools
 import math
 import typing
 from functools import partial
+from operator import add
 
 import torch
 import torch.distributed
-from hparams import HParam, configurable
 
 import lib
-import run
 from lib.distributed import is_master
-from run._config import GetLabel, get_dataset_label, get_model_label
+from run._config import GetLabel, get_dataset_label, get_signal_model_label
+from run.data._loader import Speaker
 from run.train import _utils
-from run.train._utils import CometMLExperiment, MetricsValues, Timer
+from run.train._utils import Timer
 from run.train.signal_model._data import Batch
 
 _GetMetrics = typing.Dict[GetLabel, float]
-_prefix = "{fft_length}_fft_length/"
 
 
-class Metrics(_utils.Metrics):
+@dataclasses.dataclass(frozen=True)
+class MetricsKey(_utils.MetricsKey):
+    speaker: typing.Optional[Speaker] = None
+    fft_length: typing.Optional[int] = None
+
+
+MetricsValues = typing.Dict[MetricsKey, float]
+
+
+class Metrics(_utils.Metrics[MetricsKey]):
     """
     Vars:
         ...
@@ -62,29 +71,34 @@ class Metrics(_utils.Metrics):
     FREQUENCY_NUM_SAMPLES = partial(get_dataset_label, "frequency/num_samples")
     FREQUENCY_NUM_SECONDS = partial(get_dataset_label, "frequency/num_seconds")
 
-    DISCRIM_FAKE_ACCURACY = partial(get_model_label, f"{_prefix}discriminator_fake_accuracy")
-    DISCRIM_REAL_ACCURACY = partial(get_model_label, f"{_prefix}discriminator_real_accuracy")
-    DISCRIM_FAKE_LOSS = partial(get_model_label, f"{_prefix}discriminator_fake_loss")
-    DISCRIM_REAL_LOSS = partial(get_model_label, f"{_prefix}discriminator_real_loss")
-    GENERATOR_LOSS = partial(get_model_label, f"{_prefix}generator_loss")
-    GENERATOR_ACCURACY = partial(get_model_label, f"{_prefix}generator_accuracy")
-    L1_LOSS = partial(get_model_label, f"{_prefix}l1_loss")
-    MSE_LOSS = partial(get_model_label, f"{_prefix}mse_loss")
+    DISCRIM_FAKE_ACCURACY = partial(get_signal_model_label, "discriminator_fake_accuracy")
+    DISCRIM_REAL_ACCURACY = partial(get_signal_model_label, "discriminator_real_accuracy")
+    DISCRIM_FAKE_LOSS = partial(get_signal_model_label, "discriminator_fake_loss")
+    DISCRIM_REAL_LOSS = partial(get_signal_model_label, "discriminator_real_loss")
+    GENERATOR_LOSS = partial(get_signal_model_label, "generator_loss")
+    GENERATOR_ACCURACY = partial(get_signal_model_label, "generator_accuracy")
+    L1_LOSS = partial(get_signal_model_label, "l1_loss")
+    MSE_LOSS = partial(get_signal_model_label, "mse_loss")
 
-    @configurable
-    def __init__(
-        self,
-        comet: CometMLExperiment,
-        speakers: typing.List[run.data._loader.Speaker],
-        fft_lengths: typing.List[int] = HParam(),
-        **kwargs,
-    ):
-        super().__init__(comet, **kwargs)
-        self.speakers = speakers
-        self.fft_lengths = fft_lengths
+    @staticmethod
+    def _make_values():
+        values: MetricsValues = collections.defaultdict(float)
+
+        def _reduce(
+            label: str,
+            speaker: typing.Optional[Speaker] = None,
+            fft_length: typing.Optional[int] = None,
+            v: float = 0,
+            op: typing.Callable[[float, float], float] = add,
+        ):
+            key = MetricsKey(label, speaker, fft_length)
+            value = v if key not in values and op in (min, max) else values[key]
+            values[key] = op(value, v)
+
+        return values, _reduce
 
     def get_dataset_values(self, batch: Batch) -> MetricsValues:
-        values: typing.Dict[str, float] = collections.defaultdict(float)
+        values, _reduce = self._make_values()
 
         for index, num_samples, num_frames in zip(
             batch.indicies,
@@ -92,18 +106,14 @@ class Metrics(_utils.Metrics):
             self._to_list(batch.spectrogram.lengths),
         ):
             span = batch.batch.spans[index]
-            assert span.speaker in self.speakers
-            for suffix in ["", f"/{span.speaker.label}"]:
-                format_ = lambda s: f"{s}{suffix}"
-                values[format_(self.NUM_FRAMES)] += num_frames
-                values[format_(self.NUM_SAMPLES)] += num_samples
-                values[format_(self.NUM_SLICES)] += 1
-                label = format_(self.NUM_SAMPLES_MIN_)
-                values[label] = min(values[label], num_samples) if label in values else num_samples
+            for speaker in [None, span.speaker]:
+                _reduce(self.NUM_FRAMES, speaker, v=num_frames)
+                _reduce(self.NUM_SAMPLES, speaker, v=num_samples)
+                _reduce(self.NUM_SLICES, speaker, v=1)
+                _reduce(self.NUM_SAMPLES_MIN_, speaker, v=num_samples, op=min)
 
         return dict(values)
 
-    @configurable
     def get_discrim_values(
         self,
         fft_length: int,
@@ -114,9 +124,9 @@ class Metrics(_utils.Metrics):
         discrim_real_losses: torch.Tensor,
         discrim_fake_losses: torch.Tensor,
         generator_losses: torch.Tensor,
-        real_label: bool = HParam(),
-        fake_label: bool = HParam(),
-        threshold: float = HParam(),
+        real_label: bool,
+        fake_label: bool,
+        threshold: float,
     ) -> MetricsValues:
         """
         Args:
@@ -138,9 +148,8 @@ class Metrics(_utils.Metrics):
             fake_label: The boolean value assigned to fake inputs.
             threshold: Given a probability, this threshold decides if the input is real or fake.
         """
-        values: typing.Dict[str, float] = collections.defaultdict(float)
-        assert fft_length in self.fft_lengths
-        prefixes = ["", f"{fft_length}/"]
+        values, _reduce = self._make_values()
+
         for index, fake_pred, real_pred, gen_pred, real_loss, fake_loss, gen_loss in zip(
             batch.indicies,
             self._to_list(torch.sigmoid(fake_logits) > threshold),
@@ -151,15 +160,13 @@ class Metrics(_utils.Metrics):
             self._to_list(generator_losses),
         ):
             span = batch.batch.spans[index]
-            assert span.speaker in self.speakers
-            for prefix, suffix in itertools.product(prefixes, ["", f"/{span.speaker.label}"]):
-                format_ = lambda s: f"{prefix}{s}{suffix}"
-                values[format_(self.DISCRIM_NUM_FAKE_CORRECT)] += fake_pred == fake_label
-                values[format_(self.DISCRIM_FAKE_LOSS_SUM)] += fake_loss
-                values[format_(self.DISCRIM_NUM_REAL_CORRECT)] += real_pred == real_label
-                values[format_(self.DISCRIM_REAL_LOSS_SUM)] += real_loss
-                values[format_(self.GENERATOR_NUM_CORRECT)] += gen_pred == fake_label
-                values[format_(self.GENERATOR_LOSS_SUM)] += gen_loss
+            for args in itertools.product([None, span.speaker], [None, fft_length]):
+                _reduce(self.DISCRIM_NUM_FAKE_CORRECT, *args, v=fake_pred == fake_label)
+                _reduce(self.DISCRIM_FAKE_LOSS_SUM, *args, v=fake_loss)
+                _reduce(self.DISCRIM_NUM_REAL_CORRECT, *args, v=real_pred == real_label)
+                _reduce(self.DISCRIM_REAL_LOSS_SUM, *args, v=real_loss)
+                _reduce(self.GENERATOR_NUM_CORRECT, *args, v=gen_pred == fake_label)
+                _reduce(self.GENERATOR_LOSS_SUM, *args, v=gen_loss)
 
         return dict(values)
 
@@ -179,20 +186,16 @@ class Metrics(_utils.Metrics):
             mse_losses (torch.FloatTensor [batch_size]): The squared difference between the
                 predicted and target spectrogram.
         """
-        values: typing.Dict[str, float] = collections.defaultdict(float)
-        assert fft_length in self.fft_lengths
-        prefixes = ["", f"{fft_length}/"]
+        values, _reduce = self._make_values()
         for index, l1_loss, mse_loss in zip(
             batch.indicies,
             self._to_list(l1_losses),
             self._to_list(mse_losses),
         ):
             span = batch.batch.spans[index]
-            assert span.speaker in self.speakers
-            for prefix, suffix in itertools.product(prefixes, ["", f"/{span.speaker.label}"]):
-                format_ = lambda s: f"{prefix}{s}{suffix}"
-                values[format_(self.L1_LOSS_SUM)] += l1_loss
-                values[format_(self.MSE_LOSS_SUM)] += mse_loss
+            for args in itertools.product([None, span.speaker], [None, fft_length]):
+                _reduce(self.L1_LOSS_SUM, *args, v=l1_loss)
+                _reduce(self.MSE_LOSS_SUM, *args, v=mse_loss)
 
         return dict(values)
 
@@ -201,24 +204,30 @@ class Metrics(_utils.Metrics):
 
         Args:
             is_verbose: If `True`, iterate over more permutations.
+
+        Returns:
+            kwargs: Key-word arguments for formatting a metrics label.
+            num_slices: The total number of slices trained on.
+            reduce_: Wrapper around `self._reduce` with an update signature.
+            div: Wrapper around `self._div` with an update signature.
         """
-        speakers = itertools.chain([None], self.speakers if is_verbose else [])
-        fft_lengths = itertools.chain([None], self.fft_lengths)
-        for fft_length, speaker in itertools.product(fft_lengths, speakers):
-            suffix = "" if speaker is None else f"/{speaker.label}"
-            prefix = "" if fft_length is None else f"{fft_length}/"
-            format_ = lambda s: f"{prefix}{s}{suffix}" if isinstance(s, str) else s
+        speakers = set(key.speaker for key in self.data.keys()) if is_verbose else [None]
+        fft_lengths = set(key.fft_length for key in self.data.keys())
+        num_lengths = sum(1 for l in fft_lengths if isinstance(l, int))
+        for args in itertools.product(speakers, fft_lengths):
             reduce_: typing.Callable[[str], float]
-            reduce_ = lambda k: self._reduce(format_(k), select=select)
+            reduce_ = lambda a, **k: self._reduce(MetricsKey(a, *args), select=select, **k)
+            process: typing.Callable[[typing.Union[float, str]], typing.Union[float, MetricsKey]]
+            process = lambda a: a if isinstance(a, float) else MetricsKey(a, *args)
             div: typing.Callable[[typing.Union[float, str], typing.Union[float, str]], float]
-            div = lambda n, d: self._div(format_(n), format_(d), select=select)
-            yield fft_length, speaker, suffix, reduce_, div
+            div = lambda n, d, **k: self._div(process(n), process(d), select=select, **k)
+            num_slices = self._reduce(MetricsKey(self.NUM_SLICES, args[0]), select=select)
+            num_slices = num_lengths * num_slices if args[1] is None else num_slices
+            yield dict(speaker=args[0], fft_length=args[1]), num_slices, reduce_, div
 
     def _get_discrim_metrics(self, select: _utils.MetricsSelect, is_verbose: bool) -> _GetMetrics:
         metrics = {}
-        for fft_length, speaker, suffix, _, div in self._iter_permutations(select, is_verbose):
-            num_slices = self._reduce(f"{self.NUM_SLICES}{suffix}", select=select)
-            num_slices = len(self.fft_lengths) * num_slices if fft_length is None else num_slices
+        for kwargs, num_slices, _, div in self._iter_permutations(select, is_verbose):
             update = {
                 self.DISCRIM_FAKE_ACCURACY: div(self.DISCRIM_NUM_FAKE_CORRECT, num_slices),
                 self.DISCRIM_REAL_ACCURACY: div(self.DISCRIM_NUM_REAL_CORRECT, num_slices),
@@ -227,7 +236,6 @@ class Metrics(_utils.Metrics):
                 self.GENERATOR_LOSS: div(self.GENERATOR_LOSS_SUM, num_slices),
                 self.GENERATOR_ACCURACY: div(self.GENERATOR_NUM_CORRECT, num_slices),
             }
-            kwargs = dict(speaker=speaker, fft_length="multi" if fft_length is None else fft_length)
             metrics.update({partial(k, **kwargs): v for k, v in update.items()})
         return metrics
 
@@ -239,33 +247,34 @@ class Metrics(_utils.Metrics):
         how would that impact our normalization approach?
         """
         metrics = {}
-        for fft_length, speaker, suffix, _, div in self._iter_permutations(select, is_verbose):
-            num_slices = self._reduce(f"{self.NUM_SLICES}{suffix}", select=select)
-            num_slices = len(self.fft_lengths) * num_slices if fft_length is None else num_slices
+        for kwargs, num_slices, _, div in self._iter_permutations(select, is_verbose):
             update = {
                 self.L1_LOSS: div(self.L1_LOSS_SUM, num_slices),
                 self.MSE_LOSS: div(self.MSE_LOSS_SUM, num_slices),
             }
-            kwargs = dict(speaker=speaker, fft_length="multi" if fft_length is None else fft_length)
             metrics.update({partial(k, **kwargs): v for k, v in update.items()})
         return metrics
 
     def _get_dataset_metrics(self, select: _utils.MetricsSelect, is_verbose: bool) -> _GetMetrics:
-        reduce = partial(self._reduce, select=select)
-        metrics = {
+        reduce = lambda *a, **k: self._reduce(MetricsKey(*a), select=select, **k)
+
+        metrics: _GetMetrics = {
             self.MIN_DATA_LOADER_QUEUE_SIZE: reduce(self.DATA_QUEUE_SIZE, op=min),
             self.MIN_NUM_SAMPLES: reduce(self.NUM_SAMPLES_MIN_, op=min),
-            self.AVERAGE_NUM_SAMPLES: self._div(self.NUM_SAMPLES, self.NUM_SLICES, select=select),
+            self.AVERAGE_NUM_SAMPLES: self._div(
+                MetricsKey(self.NUM_SAMPLES), MetricsKey(self.NUM_SLICES), select=select
+            ),
         }
 
         total_frames = reduce(self.NUM_FRAMES)
         total_seconds = reduce(self.NUM_SAMPLES)
-        for _, speaker, _, _reduce, _ in self._iter_permutations(select, is_verbose):
+        for kwargs, _, _reduce, _ in self._iter_permutations(select, is_verbose):
             update = {
                 self.FREQUENCY_NUM_SAMPLES: _reduce(self.NUM_FRAMES) / total_frames,
                 self.FREQUENCY_NUM_SECONDS: _reduce(self.NUM_SAMPLES) / total_seconds,
             }
-            metrics.update({partial(k, speaker=speaker): v for k, v in update.items()})
+            metrics.update({partial(k, **kwargs): v for k, v in update.items()})
+
         return metrics
 
     def log(

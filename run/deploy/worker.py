@@ -42,26 +42,28 @@ Example (Gunicorn):
 """
 import gc
 import os
+import pprint
 import typing
-import warnings
 
-import en_core_web_sm
+import config as cf
+import spacy
 import torch
 import torch.backends.mkl
-from flask import Flask, Response, jsonify, request
+from flask import Flask, jsonify, request
+from flask.wrappers import Response
 from spacy.lang.en import English
 
 from lib.environment import load, set_basic_logging_config
-from run._config import TTS_PACKAGE_PATH, configure
+from run._config import TTS_PACKAGE_PATH, configure, load_spacy_nlp
+from run._models.spectrogram_model import Inputs, PreprocessedInputs, RespellingError
 from run._tts import (
     PublicSpeakerValueError,
     PublicTextValueError,
     TTSPackage,
-    encode_tts_inputs,
+    process_tts_inputs,
     text_to_speech_ffmpeg_generator,
 )
-from run.data._loader import Session, Speaker, english, german, portuguese, spanish
-from run.train.spectrogram_model._data import EncodedInput, InputEncoder
+from run.data._loader import Language, Session, Speaker, english, german, portuguese, spanish
 
 if "NUM_CPU_THREADS" in os.environ:
     torch.set_num_threads(int(os.environ["NUM_CPU_THREADS"]))
@@ -72,130 +74,133 @@ if __name__ == "__main__":
     set_basic_logging_config()
 
 app = Flask(__name__)
+pprinter = pprint.PrettyPrinter(indent=2)
 
 DEVICE = torch.device("cpu")
 MAX_CHARS = 10000
 TTS_PACKAGE: TTSPackage
+LANGUAGE_TO_SPACY: typing.Dict[Language, spacy.language.Language]
 SPACY: English
 # NOTE: The keys need to stay the same for backwards compatibility.
-_SPEAKER_ID_TO_SPEAKER: typing.Dict[int, typing.Tuple[Speaker, str]] = {
-    0: (english.JUDY_BIEBER, "emerald_city_of_oz/wavs/emerald_city_of_oz_06"),
-    1: (english.MARY_ANN, "northandsouth/wavs/northandsouth_09"),
-    2: (english.LINDA_JOHNSON, "LJ003"),
-    3: (english.HILARY_NORIEGA, "script_3.wav"),
-    4: (english.BETH_CAMERON, "7.wav"),
-    5: (english.BETH_CAMERON__CUSTOM, "sukutdental_021819.wav"),
-    6: (english.LINDA_JOHNSON, "LJ003"),
-    7: (english.SAM_SCHOLL, "102-107.wav"),
-    8: (english.ADRIENNE_WALKER_HELLER, "14.wav"),
-    9: (english.FRANK_BONACQUISTI, "copy_of_wsl-_script_022-027.wav"),
-    10: (english.SUSAN_MURPHY, "76-81.wav"),
-    11: (english.HEATHER_DOE, "heather_4-21_a.wav"),
-    12: (english.ALICIA_HARRIS, "well_said_script_16-21.wav"),
-    13: (english.GEORGE_DRAKE_JR, "copy_of_drake_jr-script_46-51.wav"),
-    14: (english.MEGAN_SINCLAIR, "copy_of_wsl_-_megansinclairscript40-45.wav"),
-    15: (english.ELISE_RANDALL, "wsl_elise_randall_enthusiastic_script-16.wav"),
-    16: (english.HANUMAN_WELCH, "wsl_hanuman_welch_enthusiastic_script-7.wav"),
-    17: (english.JACK_RUTKOWSKI, "wsl_jackrutkowski_enthusiastic_script_24.wav"),
-    18: (english.MARK_ATHERLAY, "wsl_markatherlay_diphone_script-4.wav"),
-    19: (english.STEVEN_WAHLBERG, "WSL_StevenWahlberg_DIPHONE_Script-6.wav"),
-    20: (english.ADRIENNE_WALKER_HELLER__PROMO, "promo_script_3_walker.wav"),
-    21: (english.DAMON_PAPADOPOULOS__PROMO, "promo_script_2_papadopoulos.wav"),
-    22: (english.DANA_HURLEY__PROMO, "promo_script_8_hurley.wav"),
-    23: (english.ED_LACOMB__PROMO, "promo_script_1_la_comb.wav"),
-    24: (english.LINSAY_ROUSSEAU__PROMO, "promo_script_1_rousseau.wav"),
-    25: (english.MARI_MONGE__PROMO, "promo_script_1_monge.wav"),
-    26: (english.SAM_SCHOLL__PROMO, "promo_script_3_scholl.wav"),
-    27: (english.JOHN_HUNERLACH__NARRATION, "johnhunerlach_enthusiastic_21.wav"),
-    28: (english.JOHN_HUNERLACH__RADIO, "johnhunerlach_diphone_1.wav"),
-    29: (english.OTIS_JIRY__STORY, "otis-jiry_the_happening_at_crossroads.wav"),
-    30: (english.SAM_SCHOLL__MANUAL_POST, "70-75.wav"),
-    31: (english.ALICIA_HARRIS__MANUAL_POST, "copy_of_well_said_script_40-45-processed.wav"),
-    32: (
-        english.JACK_RUTKOWSKI__MANUAL_POST,
-        "wsl_jackrutkowski_enthusiastic_script_27-processed.wav",
-    ),
-    33: (english.ALISTAIR_DAVIS__EN_GB, "enthusiastic_script_5_davis.wav"),
-    34: (english.BRIAN_DIAMOND__EN_IE__PROMO, "promo_script_7_diamond.wav"),
-    35: (
-        english.CHRISTOPHER_DANIELS__PROMO,
-        "promo_script_5_daniels.wav",
-    ),  # Test in staging due to low quality
-    36: (english.DAN_FURCA__PROMO, "furca_audio_part3.wav"),  # Test in staging due to low quality
-    37: (english.DARBY_CUPIT__PROMO, "promo_script_1_cupit_02.wav"),
-    38: (english.IZZY_TUGMAN__PROMO, "promo_script_5_tugman.wav"),
-    39: (english.NAOMI_MERCER_MCKELL__PROMO, "promo_script_6_mckell.wav"),
-    40: (
-        english.SHARON_GAULD_ALEXANDER__PROMO,
-        "promo_script_5_alexander.wav",
-    ),  # Do not release till paid
-    41: (english.SHAWN_WILLIAMS__PROMO, "promo_script_9_williams.wav"),
-    42: (english.ADRIENNE_WALKER__CONVO, "conversational_script_5_walker.wav"),
-    43: (english.ALICIA_HARRIS__CONVO, "conversational_script_6_harris.wav"),
-    44: (english.JACK_RUTKOWSKI__CONVO, "conversational_script_3_rutkowski.wav"),
-    45: (english.MEGAN_SINCLAIR__CONVO, "conversational_script_1_sinclair.wav"),
-    46: (english.SAM_SCHOLL__CONVO, "conversational_script_2_scholl.wav"),
-    47: (english.STEVEN_WAHLBERG__CONVO, "conversational_script_3_wahlberg.wav"),
-    48: (english.SUSAN_MURPHY__CONVO, "conversational_script_4_murphy.wav"),
-    49: (english.ALESSANDRA_RUIZ, "narration_script_5_ruiz.wav"),
-    50: (english.ALEX_MARRERO, "narration_script_3_marrero.wav"),
-    51: (english.DANA_HURLEY, "narration_script_2_hurley.wav"),
-    52: (english.DIONTAE_BLACK, "narration_script_5_black.wav"),
-    53: (english.MARC_WHITE, "narration_script_5_white.wav"),
-    54: (english.SETH_JONES, "narration_script_5_jones.wav"),
-    55: (english.SOPHIE_REPPERT, "narration_script_2_reppert.wav"),
-    56: (english.ALEXANDER_HILL_KNIGHT, "narration_script_5_hillknight.wav"),
-    57: (english.PIOTR_KOHNKE, "narration_script_8_kohnke.wav"),
-    58: (english.STEVE_NEWMAN, "newman_final_page_13.wav"),
-    59: (english.CELESTE_PARRISH, "narration_script_1_parrish.wav"),
-    60: (english.CHRIS_ANDERSON, "anderson_narration_script-rx_loud_01.wav"),
-    61: (english.DAN_FURCA, "furca_audio_part1.wav"),
-    62: (english.DANIELLE_WHITESIDE, "narration_script_1_whiteside_processed.wav"),
-    63: (english.DONNLA_HUGHES, "hughes_narration_script_1.wav"),
-    64: (english.EMMA_TOPPING, "topping_narration_script_4processed.wav"),
-    65: (english.ERICA_BROOKHYSER, "brookhyser_narration_script_1.wav"),
-    66: (english.GLEN_LLOYD, "lloyd_narration_script_1.wav"),
-    67: (english.HELEN_MARION_ROWE, "helen_marion-rowe_script_1_processed.wav"),
-    68: (english.KARA_NOBLE, "noble_narration_script_1.wav"),
-    69: (english.KEVIN_CHERRY, "cherry_narration_script_1.wav"),
-    70: (english.SUZI_STRINGER, "naration_script_6_stringer.wav"),
-    71: (english.TOMAS_FRAZER, "narration_script_1_frazer.wav"),
-    72: (english.ALICIA_HARRIS__PROMO, "promo_script_1_harris.wav"),
-    73: (english.HANUMAN_WELCH__PROMO, "promo_script_1_welch_processed.wav"),
-    74: (english.HANUMAN_WELCH__CONVO, "conversational_script_1_welch_processed.wav"),
-    # NOTE: Custom voice IDs are random numbers larger than 10,000...
-    # TODO: Retrain some of these voices, and reconfigure them.
-    11541: (english.LINCOLN__CUSTOM, ""),
-    13268907: (english.JOSIE__CUSTOM, ""),
-    95313811: (english.JOSIE__CUSTOM__MANUAL_POST, ""),
-    50794582: (english.UNEEQ__ASB_CUSTOM_VOICE, "script-20-enthusiastic.wav"),
-    50794583: (english.UNEEQ__ASB_CUSTOM_VOICE_COMBINED, "script-28-enthusiastic.wav"),
-    78252076: (english.VERITONE__CUSTOM_VOICE, ""),
-    70695443: (english.SUPER_HI_FI__CUSTOM_VOICE, "promo_script_5_superhifi.wav"),
-    64197676: (english.US_PHARMACOPEIA__CUSTOM_VOICE, "enthusiastic_script-22.wav"),
-    41935205: (english.HAPPIFY__CUSTOM_VOICE, "anna_long_emotional_clusters_1st_half_clean.wav"),
+_SESSIONS = [
+    # NOTE: These 3 are open-source voices that didn't consent to be on our platform.
+    (english.m_ailabs.JUDY_BIEBER, ""),
+    (english.m_ailabs.MARY_ANN, ""),
+    (english.lj_speech.LINDA_JOHNSON, ""),
+    (english.wsl.ALANA_B, "script_3"),
+    (english.wsl.RAMONA_J, "7"),
+    (english.wsl.RAMONA_J__CUSTOM, "sukutdental_021819"),
+    # NOTE: This is open-source voice that didn't consent to be on our platform.
+    # NOTE: This speaker was released twice on accident with different ids, so it's in this list
+    # twice.
+    (english.lj_speech.LINDA_JOHNSON, ""),
+    (english.wsl.WADE_C, "102-107"),
+    (english.wsl.SOFIA_H, "14"),
+    # NOTE: David asked for his voice to be removed from the platform.
+    (english.wsl.DAVID_D, ""),
+    (english.wsl.VANESSA_N, "76-81"),
+    (english.wsl.ISABEL_V, "heather_4-21_a"),
+    (english.wsl.AVA_M, "well_said_script_16-21"),
+    (english.wsl.JEREMY_G, "copy_of_drake_jr-script_46-51"),
+    (english.wsl.NICOLE_L, "copy_of_wsl_-_megansinclairscript40-45"),
+    (english.wsl.PAIGE_L, "wsl_elise_randall_enthusiastic_script-16"),
+    (english.wsl.TOBIN_A, "wsl_hanuman_welch_enthusiastic_script-7"),
+    (english.wsl.KAI_M, "wsl_jackrutkowski_enthusiastic_script_24"),
+    (english.wsl.TRISTAN_F, "wsl_markatherlay_diphone_script-4"),
+    (english.wsl.PATRICK_K, "WSL_StevenWahlberg_DIPHONE_Script-6"),
+    (english.wsl.SOFIA_H__PROMO, "promo_script_3_walker"),
+    (english.wsl.DAMIAN_P__PROMO, "promo_script_2_papadopoulos"),
+    (english.wsl.JODI_P__PROMO, "promo_script_8_hurley"),
+    (english.wsl.LEE_M__PROMO, "promo_script_1_la_comb"),
+    (english.wsl.SELENE_R__PROMO, "promo_script_1_rousseau"),
+    (english.wsl.MARI_MONGE__PROMO, "promo_script_1_monge"),
+    (english.wsl.WADE_C__PROMO, "promo_script_3_scholl"),
+    (english.wsl.JOE_F__NARRATION, "johnhunerlach_enthusiastic_21"),
+    (english.wsl.JOE_F__RADIO, "johnhunerlach_diphone_1"),
+    (english.wsl.GARRY_J__STORY, "otis-jiry_the_happening_at_crossroads"),
+    (english.wsl.WADE_C__MANUAL_POST, "70-75"),
+    (english.wsl.AVA_M__MANUAL_POST, "copy_of_well_said_script_40-45-processed"),
+    (english.wsl.KAI_M__MANUAL_POST, "wsl_jackrutkowski_enthusiastic_script_27-processed"),
+    (english.wsl.JUDE_D__EN_GB, "enthusiastic_script_5_davis"),
+    (english.wsl.ERIC_S__EN_IE__PROMO, "promo_script_7_diamond"),
+    (english.wsl.CHASE_J__PROMO, "promo_script_5_daniels"),
+    # TODO: The avatars name should be used instead.
+    (english.wsl.DAN_FURCA__PROMO, "furca_audio_part3"),
+    (english.wsl.STEVE_B__PROMO, "promo_script_1_cupit_02"),
+    (english.wsl.BELLA_B__PROMO, "promo_script_5_tugman"),
+    (english.wsl.TILDA_C__PROMO, "promo_script_6_mckell"),
+    (english.wsl.CHARLIE_Z__PROMO, "promo_script_5_alexander"),
+    (english.wsl.PAUL_B__PROMO, "promo_script_9_williams"),
+    (english.wsl.SOFIA_H__CONVO, "conversational_script_5_walker"),
+    (english.wsl.AVA_M__CONVO, "conversational_script_6_harris"),
+    (english.wsl.KAI_M__CONVO, "conversational_script_3_rutkowski"),
+    (english.wsl.NICOLE_L__CONVO, "conversational_script_1_sinclair"),
+    (english.wsl.WADE_C__CONVO, "conversational_script_2_scholl"),
+    (english.wsl.PATRICK_K__CONVO, "conversational_script_3_wahlberg"),
+    (english.wsl.VANESSA_N__CONVO, "conversational_script_4_murphy"),
+    (english.wsl.GIA_V, "narration_script_5_ruiz"),
+    (english.wsl.ANTONY_A, "narration_script_3_marrero"),
+    (english.wsl.JODI_P, "narration_script_2_hurley"),
+    (english.wsl.RAINE_B, "narration_script_5_black"),
+    (english.wsl.OWEN_C, "narration_script_5_white"),
+    (english.wsl.ZACH_E, "narration_script_5_jones"),
+    (english.wsl.GENEVIEVE_M, "narration_script_2_reppert"),
+    (english.wsl.JARVIS_H, "narration_script_5_hillknight"),
+    (english.wsl.THEO_K, "narration_script_8_kohnke"),
+    (english.wsl.JAMES_B, "newman_final_page_13"),
+    (english.wsl.TERRA_G, "narration_script_1_parrish"),
+    (english.wsl.PHILIP_J, "anderson_narration_script-rx_loud_01"),
+    (english.wsl.MARCUS_G, "furca_audio_part1"),
+    (english.wsl.JORDAN_T, "narration_script_1_whiteside_processed"),
+    (english.wsl.FIONA_H, "hughes_narration_script_1"),
+    (english.wsl.ROXY_T, "topping_narration_script_1processed"),
+    (english.wsl.DONNA_W, "brookhyser_narration_script_1"),
+    (english.wsl.GREG_G, "lloyd_narration_script_1"),
+    (english.wsl.ZOEY_O, "helen_marion-rowe_script_1_processed"),
+    (english.wsl.KARI_N, "noble_narration_script_1"),
+    (english.wsl.DIARMID_C, "cherry_narration_script_1"),
+    (english.wsl.ELIZABETH_U, "naration_script_6_stringer"),
+    (english.wsl.ALAN_T, "narration_script_1_frazer"),
+    (english.wsl.AVA_M__PROMO, "promo_script_1_harris"),
+    (english.wsl.TOBIN_A__PROMO, "promo_script_1_welch_processed"),
+    (english.wsl.TOBIN_A__CONVO, "conversational_script_1_welch_processed"),
+]
+_SPEAKER_ID_TO_SESSION: typing.Dict[int, typing.Tuple[Speaker, str]] = {
+    **{i: s for i, s in enumerate(_SESSIONS)},
+    # NOTE: As a weak security measure, we assign random large numbers to custom voices, so
+    # that they are hard to discover by querying the API.
+    11541: (english.wsl_archive.LINCOLN__CUSTOM, ""),
+    13268907: (english.wsl_archive.JOSIE__CUSTOM, ""),
+    95313811: (english.wsl_archive.JOSIE__CUSTOM__MANUAL_POST, ""),
+    50794582: (english.wsl.UNEEQ__ASB_CUSTOM_VOICE, "script-20-enthusiastic"),
+    50794583: (english.wsl.UNEEQ__ASB_CUSTOM_VOICE_COMBINED, "script-28-enthusiastic"),
+    78252076: (english.wsl.VERITONE__CUSTOM_VOICE, ""),
+    70695443: (english.wsl.SUPER_HI_FI__CUSTOM_VOICE, "promo_script_5_superhifi"),
+    64197676: (english.wsl.US_PHARMACOPEIA__CUSTOM_VOICE, "enthusiastic_script-22"),
+    41935205: (english.wsl.HAPPIFY__CUSTOM_VOICE, "anna_long_emotional_clusters_1st_half_clean"),
     42400423: (
-        english.THE_EXPLANATION_COMPANY__CUSTOM_VOICE,
-        "is_it_possible_to_become_invisible.wav",
+        english.wsl.THE_EXPLANATION_COMPANY__CUSTOM_VOICE,
+        "is_it_possible_to_become_invisible",
     ),
-    61137774: (english.ENERGY_INDUSTRY_ACADEMY__CUSTOM_VOICE, "sample_script_2.wav"),
-    30610881: (english.VIACOM__CUSTOM_VOICE, "kelsey_speech_synthesis_section1.wav"),
-    50481197: (english.HOUR_ONE_NBC__BB_CUSTOM_VOICE, "hour_one_nbc_dataset_5.wav"),
-    77552139: (english.STUDY_SYNC__CUSTOM_VOICE, "fernandes_audio_5.wav"),
-    25502195: (english.FIVE_NINE__CUSTOM_VOICE, "wsl_five9_audio_3.wav"),
-    81186157: (german.FIVE9_CUSTOM_VOICE__DE_DE, "janina_five9_script8.wav"),
-    29363869: (spanish.FIVE_NINE__CUSTOM_VOICE__ES_CO, "five9_spanish_script_8.wav"),
-    34957054: (portuguese.FIVE_NINE__CUSTOM_VOICE__PT_BR, "five9_portuguese_script_3.wav"),
-    45105608: (english.SELECTQUOTE__CUSTOM_VOICE, "SelectQuote_Script2.wav"),
+    61137774: (english.wsl.ENERGY_INDUSTRY_ACADEMY__CUSTOM_VOICE, "sample_script_2"),
+    30610881: (english.wsl.VIACOM__CUSTOM_VOICE, "kelsey_speech_synthesis_section1"),
+    50481197: (english.wsl.HOUR_ONE_NBC__BB_CUSTOM_VOICE, "hour_one_nbc_dataset_5"),
+    77552139: (english.wsl.STUDY_SYNC__CUSTOM_VOICE, "fernandes_audio_5"),
+    25502195: (english.wsl.FIVE_NINE__CUSTOM_VOICE, "wsl_five9_audio_3"),
+    81186157: (german.wsl.FIVE9_CUSTOM_VOICE__DE_DE, "janina_five9_script8"),
+    29363869: (spanish.wsl.FIVE_NINE__CUSTOM_VOICE__ES_CO, "five9_spanish_script_8"),
+    34957054: (portuguese.wsl.FIVE_NINE__CUSTOM_VOICE__PT_BR, "five9_portuguese_script_3"),
+    45105608: (english.wsl.SELECTQUOTE__CUSTOM_VOICE, "SelectQuote_Script2"),
 }
-SPEAKER_ID_TO_SPEAKER = {
-    k: (spk, Session(sesh)) for k, (spk, sesh) in _SPEAKER_ID_TO_SPEAKER.items()
-}
+SPEAKER_ID_TO_SESSION: typing.Dict[int, Session]
+SPEAKER_ID_TO_SESSION = {k: Session(args) for k, args in _SPEAKER_ID_TO_SESSION.items()}
 
 
 class FlaskException(Exception):
     """
     Inspired by http://flask.pocoo.org/docs/1.0/patterns/apierrors/
+
+    TODO: Create an `enum` with all the error codes
 
     Args:
         message
@@ -233,17 +238,6 @@ def handle_invalid_usage(error: FlaskException):
     return response
 
 
-@app.before_first_request
-def before_first_request():
-    # NOTE: Remove this warning after this is fixed...
-    # https://github.com/PetrochukM/HParams/issues/6
-    warnings.filterwarnings(
-        "ignore",
-        module=r".*hparams",
-        message=r".*The decorator was not executed immediately before*",
-    )
-
-
 class RequestArgs(typing.TypedDict):
     speaker_id: int
     text: str
@@ -251,11 +245,11 @@ class RequestArgs(typing.TypedDict):
 
 def validate_and_unpack(
     request_args: RequestArgs,
-    input_encoder: InputEncoder,
-    nlp: English,
+    tts: TTSPackage,
+    language_to_spacy: typing.Dict[Language, spacy.language.Language],
     max_chars: int = MAX_CHARS,
-    speaker_id_to_speaker: typing.Dict[int, typing.Tuple[Speaker, Session]] = SPEAKER_ID_TO_SPEAKER,
-) -> EncodedInput:
+    speaker_id_to_session: typing.Dict[int, Session] = SPEAKER_ID_TO_SESSION,
+) -> typing.Tuple[Inputs, PreprocessedInputs]:
     """Validate and unpack the request object."""
 
     if not ("speaker_id" in request_args and "text" in request_args):
@@ -279,29 +273,35 @@ def validate_and_unpack(
         message = f"Text must be a string under {max_chars} characters and more than 0 characters."
         raise FlaskException(message, code="INVALID_TEXT_LENGTH_EXCEEDED")
 
-    min_speaker_id = min(speaker_id_to_speaker.keys())
-    max_speaker_id = max(speaker_id_to_speaker.keys())
+    min_speaker_id = min(speaker_id_to_session.keys())
+    max_speaker_id = max(speaker_id_to_session.keys())
 
     if not (
         (speaker_id >= min_speaker_id and speaker_id <= max_speaker_id)
-        and speaker_id in speaker_id_to_speaker
+        and speaker_id in speaker_id_to_session
     ):
         raise FlaskException("Speaker ID is invalid.", code="INVALID_SPEAKER_ID")
 
-    speaker, session = speaker_id_to_speaker[speaker_id]
+    session = speaker_id_to_session[speaker_id]
 
     gc.collect()
 
     try:
-        return encode_tts_inputs(nlp, input_encoder, text, speaker, session)
+        return process_tts_inputs(language_to_spacy[session[0].language], tts, text, session)
     except PublicSpeakerValueError as error:
         app.logger.exception("Invalid speaker: %r", text)
         raise FlaskException(str(error), code="INVALID_SPEAKER_ID")
     except PublicTextValueError as error:
         app.logger.exception("Invalid text: %r", text)
         raise FlaskException(str(error), code="INVALID_TEXT")
-    except Exception as error:
-        raise FlaskException(str(error), code="UNKNOWN_ERROR")
+    except RespellingError:
+        raise FlaskException(
+            "Please format your respelling correctly (help.wellsaidlabs.com/respellings)",
+            code="INVALID_TEXT",
+        )
+    except BaseException:
+        app.logger.exception("Unknown error text: %r", text)
+        raise FlaskException("Unknown error.", code="UNKNOWN_ERROR")
 
 
 @app.route("/healthy", methods=["GET"])
@@ -324,7 +324,7 @@ def get_input_validated():
     """
     request_args = request.get_json() if request.method == "POST" else request.args
     request_args = typing.cast(RequestArgs, request_args)
-    validate_and_unpack(request_args, TTS_PACKAGE.input_encoder, SPACY)
+    validate_and_unpack(request_args, TTS_PACKAGE, LANGUAGE_TO_SPACY)
     return jsonify({"message": "OK"})
 
 
@@ -335,11 +335,14 @@ def get_stream():
     NOTE: Consider the scenario where the requester isn't consuming the stream quickly, the
     worker would need to wait for the requester.
 
+    Usage:
+        http://192.168.50.19:8000/api/text_to_speech/stream?speaker_id=46&text="Hello there"
+
     Returns: `audio/mpeg` streamed in chunks given that the arguments are valid.
     """
     request_args = request.get_json() if request.method == "POST" else request.args
     request_args = typing.cast(RequestArgs, request_args)
-    input = validate_and_unpack(request_args, TTS_PACKAGE.input_encoder, SPACY)
+    input = validate_and_unpack(request_args, TTS_PACKAGE, LANGUAGE_TO_SPACY)
     headers = {
         "Cache-Control": "no-cache, no-store, must-revalidate",
         "Pragma": "no-cache",
@@ -347,7 +350,7 @@ def get_stream():
     }
     output_flags = ("-f", "mp3", "-b:a", "192k")
     generator = text_to_speech_ffmpeg_generator(
-        TTS_PACKAGE, input, app.logger, output_flags=output_flags
+        TTS_PACKAGE, *input, **cf.get(), logger=app.logger, output_flags=output_flags
     )
     return Response(generator, headers=headers, mimetype="audio/mpeg")
 
@@ -356,21 +359,29 @@ if __name__ == "__main__" or "GUNICORN" in os.environ:
     app.logger.info("PyTorch version: %s", torch.__version__)
     app.logger.info("Found MKL: %s", torch.backends.mkl.is_available())
     app.logger.info("Threads: %s", torch.get_num_threads())
+    app.logger.info("Speaker Ids: %s", pprinter.pformat(SPEAKER_ID_TO_SESSION))
 
     configure()
 
     # NOTE: These models are cached globally to enable sharing between processes, learn more:
     # https://github.com/benoitc/gunicorn/issues/2007
     TTS_PACKAGE = typing.cast(TTSPackage, load(TTS_PACKAGE_PATH, DEVICE))
-    app.logger.info("Loaded speakers: %s", TTS_PACKAGE.input_encoder.speaker_encoder.vocab)
 
-    for (speaker, session) in SPEAKER_ID_TO_SPEAKER.values():
-        if speaker in TTS_PACKAGE.input_encoder.speaker_encoder.token_to_index:
-            message = f"Speaker ({speaker}) recording session not found."
-            lookup = TTS_PACKAGE.input_encoder.session_encoder.token_to_index
-            assert (speaker, session) in lookup, message
+    vocab = set(TTS_PACKAGE.session_vocab())
+    app.logger.info("Loaded speakers: %s", "\n".join(list(set(str(s) for s, _ in vocab))))
 
-    SPACY = en_core_web_sm.load(disable=("parser", "ner"))
+    for session in SPEAKER_ID_TO_SESSION.values():
+        if session not in vocab:
+            if not any(session[0] is sesh[0] for sesh in vocab):
+                app.logger.warning(f"Speaker not found in model vocab: {session[0]}")
+            else:
+                app.logger.warning(f"Session not found in model vocab: {session}")
+                avail_sessions = [s[1] for s in vocab if s[0] == session[0]]
+                if len(avail_sessions) > 0:
+                    app.logger.warning(f"Sessions available: {avail_sessions}")
+
+    languages = set(s[0].language for s in vocab)
+    LANGUAGE_TO_SPACY = {l: load_spacy_nlp(l) for l in languages}
     app.logger.info("Loaded spaCy.")
 
     # NOTE: In order to support copy-on-write, we freeze all the objects tracked by `gc`, learn

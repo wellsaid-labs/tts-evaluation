@@ -2,6 +2,7 @@
 TODO: Add tests for every function.
 """
 
+import dataclasses
 import enum
 import functools
 import logging
@@ -14,28 +15,31 @@ from queue import SimpleQueue
 from subprocess import PIPE
 
 import numpy
+import spacy
+import spacy.language
+import spacy.tokens
 import torch
-from hparams import HParam, configurable
-from spacy.lang.en import English
-from third_party import LazyLoader
-from torchnlp.encoders.text import stack_and_pad_tensors
-from torchnlp.utils import lengths_to_mask
 
 from lib.environment import PT_EXTENSION, load
-from lib.signal_model import SignalModel, generate_waveform
-from lib.spectrogram_model import Infer, Mode, Params, SpectrogramModel
-from lib.text import grapheme_to_phoneme, load_en_core_web_md
 from lib.utils import get_chunks, tqdm_
 from run import train
-from run._config import CHECKPOINTS_PATH
-from run._lang_config import GRAPHEME_TO_PHONEME_RESTRICTED, normalize_vo_script
-from run.data._loader import Language, Session, Span, Speaker
-from run.train.spectrogram_model._data import DecodedInput, EncodedInput, InputEncoder
-
-if typing.TYPE_CHECKING:  # pragma: no cover
-    import spacy.tokens
-else:
-    spacy = LazyLoader("spacy", globals(), "spacy")
+from run._config import (
+    CHECKPOINTS_PATH,
+    load_spacy_nlp,
+    normalize_and_verbalize_text,
+    normalize_vo_script,
+)
+from run._models.signal_model import SignalModel, generate_waveform
+from run._models.spectrogram_model import (
+    Inputs,
+    Mode,
+    Preds,
+    PreprocessedInputs,
+    SpectrogramModel,
+    norm_respellings,
+    preprocess_inputs,
+)
+from run.data._loader import Session, Span
 
 logger = logging.getLogger(__name__)
 
@@ -94,252 +98,50 @@ class Checkpoints(enum.Enum):
 
     You can upload a new checkpoint, for example, like so:
 
-        $ gsutil -m cp -r disk/checkpoints/2021_7_30_custom_voices \
-                        gs://wellsaid_labs_checkpoints/v9_2021_6_30_custom_voices
+        $ gsutil -m cp -r disk/checkpoints/v10_2022_06_15_staging \
+                        gs://wellsaid_labs_checkpoints/v10_2022_06_15_staging
     """
 
     """
-    These checkpoints were deployed into production as Version 9.
+    These checkpoints were deployed into staging as version "10.beta.1".
 
-    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/302
-    Spectrogram Model Experiment (Step: 569,580):
-    https://www.comet.ml/wellsaid-labs/1-stft-mike-2020-12/f52cc3ca9a394367a13bd06f26d78832
-    Signal Model Experiment (Step: 770,733):
-    https://www.comet.ml/wellsaid-labs/1-wav-mike-2021-03/0f4a4de9937c445bb7292d2a8f719fe1
+    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/409
+    Spectrogram Model Experiment (Step: 527,553):
+    https://www.comet.ml/wellsaid-labs/michael-spectrogram-model-03-2022/669e69f9a8db4dd3aa20386a4b195150
+    Signal Model Experiment (Step: 827,151):
+    https://www.comet.ml/wellsaid-labs/michael-signal-model-2022-04/a2d2e4b313e7490098ca2f3b4935f6d6
     """
 
-    V9: typing.Final = "v9"
+    V10_2022_05_03_STAGING: typing.Final = "v10_2022_05_03_staging"
 
     """
-    These checkpoints include the Energy Industry Academy and The Explanation Company custom voices.
+    These checkpoints were deployed into staging as version "10.beta.2".
 
-    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/334
-    Spectrogram Model Experiment (Step: 649,128):
-    https://www.comet.ml/wellsaid-labs/1-stft-mike-2020-12/881cea24682e470480786d1b2e20596b
-    Signal Model Experiment (Step: 1,030,968):
-    https://www.comet.ml/wellsaid-labs/1-wav-mike-2021-03/07a194f3bb99489d83061d3f2331536d
+    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/389
+    Spectrogram Model Experiment (Step: 885,735):
+    https://www.comet.ml/wellsaid-labs/michael-spectrogram-model-03-2022/f43e617f5ab74eddb2eb8239b5fc10f0
+    Signal Model Experiment (Step: 1,331,883):
+    https://www.comet.ml/wellsaid-labs/michael-signal-model-2022-04/db35cf6b0e07463692af2a90c80724bb
     """
 
-    V9_2021_6_30_CUSTOM_VOICES: typing.Final = "v9_2021_6_30_custom_voices"
+    V10_2022_06_08_STAGING: typing.Final = "v10_2022_06_08_staging"
 
     """
-    These checkpoints include V9 versions of the following custom voices:
-    Energy Industry Academy, Happify, Super HiFi, The Explanation Company, US Pharmacopeia, Veritone
+    These checkpoints were deployed into staging as version "10.beta.3".
 
-    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/356
-    Spectrogram Model Experiment (Step: 597,312):
-    https://www.comet.ml/wellsaid-labs/v9-custom-voices/17289f19e0294d919bad9267cab4d5a0
-    Signal Model Experiment (Step: 1,054,080):
-    https://www.comet.ml/wellsaid-labs/v9-custom-voices/03ca7b7191c84fc7bd6bd348343e3d9e
+    NOTE: This is the model that also went into production. We discovered late into the testing
+    process that `v10_2022_06_08_staging` had consistently faint mic pops at the end of clips. We
+    decided to pick a different model, that was somewhat worse on other metrics, but it had less
+    mic pops.
+
+    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/389
+    Spectrogram Model Experiment (Step: 1,843,641):
+    https://www.comet.ml/wellsaid-labs/michael-spectrogram-model-03-2022/bc51533a6c874938ae0043b6b0e56d59
+    Signal Model Experiment (Step: 1,331,883):
+    https://www.comet.ml/wellsaid-labs/michael-signal-model-2022-04/db35cf6b0e07463692af2a90c80724bb
     """
 
-    V9_2021_8_03_CUSTOM_VOICES: typing.Final = "v9_2021_8_03_custom_voices"
-
-    """
-    These checkpoints include the Viacom custom voice.
-
-    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/357
-    Spectrogram Model Experiment (Step: 722,352):
-    https://www.comet.ml/wellsaid-labs/v9-custom-voices/abf7e103ef824b7ab45bdfb35d07d6b3
-    Signal Model Experiment (Step: 722,352):
-    https://www.comet.ml/wellsaid-labs/v9-custom-voices/b8f3a52f181f4d67b245a85476fe5b0c
-    """
-
-    V9_2021_8_09_UPDATE_EIA_TEC_CUSTOM_VOICES: typing.Final = (
-        "v9_2021_8_09_update_eia_tec_custom_voices"
-    )
-
-    """
-    These checkpoints include the Viacom custom voice.
-
-    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/355
-    Spectrogram Model Experiment (Step: 590,423):
-    https://www.comet.ml/wellsaid-labs/train-v9-viacom/eb24e3fb70f74f9c9a9490aa96d96f55
-    Signal Model Experiment (Step: 734,542):
-    https://www.comet.ml/wellsaid-labs/train-v9-viacom/df670689773b48608dd1ebb3dd6d7ea0
-    """
-
-    V9_2021_8_05_VIACOM_CUSTOM_VOICE: typing.Final = "v9_2021_8_05_viacom_custom_voice"
-
-    """
-    These checkpoints include the Hour One X NBC custom voice.
-
-    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/358
-    Spectrogram Model Experiment (Step: 901,518):
-    https://www.comet.ml/wellsaid-labs/v9-custom-voices/17289f19e0294d919bad9267cab4d5a0
-    Signal Model Experiment (Step: 868,989):
-    https://www.comet.ml/wellsaid-labs/v9-custom-voices/e016a01e44904fe083401e0bf83eaf36
-    """
-
-    V9_2021_8_11_HOUR_ONE_X_NBC_CUSTOM_VOICE: typing.Final = (
-        "v9_2021_8_11_hour_one_x_nbc_custom_voice"
-    )
-
-    """
-    These checkpoints include the UneeQ X ASB [updated] custom voice.
-
-    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/386
-    Spectrogram Model Experiment (Step: 163,722):
-    https://www.comet.ml/wellsaid-labs/v9-custom-voices/c9b857ba7d2f4cce9545bec429bd52be
-    Signal Model Experiment (Step: 944,550):
-    https://www.comet.ml/wellsaid-labs/v9-custom-voices/a9261ebef9d04f85b069365a049123e6
-    """
-
-    V9_2021_10_06_UNEEQ_X_ASB_CUSTOM_VOICE: typing.Final = "v9_2021_10_06_uneeq_x_asb_custom_voice"
-
-    """
-    These checkpoints include the StudySync custom voice.
-
-    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/386
-    Spectrogram Model Experiment (Step: 681, 340):
-    https://www.comet.ml/wellsaid-labs/v9-custom-voices/db8d706b02e14d47be79d9966c57b959
-    Signal Model Experiment (Step: 1,191,300):
-    https://www.comet.ml/wellsaid-labs/v9-custom-voices/fbb56cfd643e416699047c7383eee9cf
-    """
-
-    V9_2021_11_04_STUDYSYNC_CUSTOM_VOICE: typing.Final = "v9_2021_11_04_studysync_custom_voice"
-
-    """
-    These checkpoints include the Five9 custom voice.
-
-    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/386
-    Spectrogram Model Experiment (Step: 830,467):
-    https://www.comet.ml/wellsaid-labs/v9-custom-voices/d38734aa992a414db482f36fb5e8a961
-    Signal Model Experiment (Step: 1,114,691):
-    https://www.comet.ml/wellsaid-labs/v9-custom-voices/86c687102eba456da504a11093ee7366
-    """
-
-    V9_2021_11_09_FIVENINE_CUSTOM_VOICE: typing.Final = "v9_2021_11_09_fivenine_custom_voice"
-
-    """
-    These checkpoints include the StudySync custom voice (version 2).
-
-    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/386
-    Spectrogram Model Experiment (Step: 681, 340):
-    https://www.comet.ml/wellsaid-labs/v9-custom-voices/db8d706b02e14d47be79d9966c57b959
-    Signal Model Experiment (Step: 748,220):
-    https://www.comet.ml/wellsaid-labs/v9-custom-voices/7e5aef579ce54539aff1668bfb4a9022
-    """
-
-    V9_2021_12_01_STUDYSYNC_CUSTOM_VOICE: typing.Final = "v9_2021_12_01_studysync_custom_voice"
-
-    """
-    These checkpoints include the UneeQ X ASB (V3) final custom voice.
-
-    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/386
-    Spectrogram Model Experiment (Step: 861,875):
-    https://www.comet.ml/wellsaid-labs/uneeq-asb-experiments/360480297ec9416dbefec838c508c139
-    Signal Model Experiment (Step: 796,250):
-    https://www.comet.ml/wellsaid-labs/uneeq-asb-experiments/cf02f0011fcb44438be5a363721a991e
-    """
-
-    V9_2021_12_16_UNEEQ_X_ASB_CUSTOM_VOICE: typing.Final = "v9_2021_12_16_uneeq_x_asb_custom_voice"
-
-    """
-    These checkpoints include the 2021 Q4 Marketplace Expansion voices:
-    Steve B, Paul B, Eric S, Marcus G, Chase J, Jude D, Charlie Z, Bella B, Tilda C
-
-    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/374
-    Spectrogram Model Experiment (Step: 703,927):
-    https://www.comet.ml/wellsaid-labs/v9-marketplace-voices/011893b50e4947ba9480cd0bc6d4dd1e
-    Signal Model Experiment (Step: 958,209):
-    https://www.comet.ml/wellsaid-labs/v9-marketplace-voices/90a55cdfc1174a9d8399e014fcee5fc8
-    """
-
-    V9_2021_Q4_MARKETPLACE_EXPANSION: typing.Final = "v9_2021_q4_marketplace_expansion"
-
-    """
-    These checkpoints include the 2022 Q1 Marketplace Expansion voices:
-    Conversational: Patrick K, Kai M, Nicole L, Ava M, Vanessa N, Wade C, Sofia H
-    Narration:      Jodi P, Gia V, Antony A, Raine B, Owen C, Genevieve M, Jarvis H, Theo K, James B
-    Promo:          Zach E
-
-    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/386
-    Spectrogram Model Experiment (Step: 736,392):
-    https://www.comet.ml/wellsaid-labs/v9-marketplace-voices/d17cdb86c9314b678468d20921e5f4f2
-    Signal Model Experiment (Step: 746,452):
-    https://www.comet.ml/wellsaid-labs/v9-marketplace-voices/4d87bd1990c648baa9ba9d9340ca41dc
-    """
-
-    V9_2022_Q1_MARKETPLACE_EXPANSION: typing.Final = "v9_2022_q1_marketplace_expansion"
-
-    """
-    These checkpoints include the Five9 German custom voice.
-
-    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/###
-    Spectrogram Model Experiment (Step: 790,150):
-    https://www.comet.ml/wellsaid-labs/train-v9-new-languages/5e41dc39f5854b16b36989e06ea8e09f
-    Signal Model Experiment (Step: 932,377):
-    https://www.comet.ml/wellsaid-labs/train-v9-new-languages-signal/194897dcbd634a2b95846de5145e6add
-    """
-
-    V9_2022_3_04_FIVENINE_DE_CUSTOM_VOICE: typing.Final = "v9_2022_3_04_fivenine_de_custom_voice"
-
-    """
-    These checkpoints include the Five9 Spanish (Columbian) custom voice.
-
-    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/###
-    Spectrogram Model Experiment (Step: 900,750):
-    https://www.comet.ml/wellsaid-labs/train-v9-new-languages/732f3e6920a445a597f84a0783f9ab62
-    Signal Model Experiment (Step: 1,080,900):
-    https://www.comet.ml/wellsaid-labs/train-v9-new-languages-signal/232de3c3c65f47c1a3ae977e5ac5a566
-    """
-
-    V9_2022_3_04_FIVENINE_ES_CUSTOM_VOICE: typing.Final = "v9_2022_3_04_fivenine_es_custom_voice"
-
-    """
-    These checkpoints include the Five9 Portuguese (Brazilian) voice.
-
-    Spectrogram Model Experiment (Step: 826,452):
-    https://www.comet.ml/wellsaid-labs/train-v9-new-languages/264ad5e013584ceebf9c25333458ae89
-    Signal Model Experiment (Step: 1,193,764):
-    https://www.comet.ml/wellsaid-labs/train-v9-new-languages-signal/06f4b780d3a040fe89f7f7623b83517a
-    """
-
-    V9_2022_3_04_FIVENINE_PT_CUSTOM_VOICE: typing.Final = "v9_2022_3_04_fivenine_pt_custom_voice"
-
-    """
-    These checkpoints include the SelectQuote custom voice.
-
-    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/###
-    Spectrogram Model Experiment (Step: 790,150):
-    https://www.comet.ml/wellsaid-labs/train-v9-new-languages/5e41dc39f5854b16b36989e06ea8e09f
-    Signal Model Experiment (Step: 932,377):
-    https://www.comet.ml/wellsaid-labs/train-v9-new-languages-signal/194897dcbd634a2b95846de5145e6add
-    """
-
-    V9_2022_3_04_SELECTQUOTE_CUSTOM_VOICE: typing.Final = "v9_2022_3_04_selectquote_custom_voice"
-
-    """
-    These checkpoints include the Diacritic fix to all existing voices as well as the
-    2022 Q2 Marketplace Expansion (17) voice variants:
-    Narration:      Alan T., Diarmid C., Donna W. , Elizabeth U., Fiona H., Greg G., Jordan T.,
-                    Kari N., Marcus P., Philip J., Roxy T., Terra G., Zoey O.
-    Promo:          Charlie Z., Tobin A., Ava M.
-    Conversational: Tobin A.
-
-    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/###
-    Spectrogram Model Experiment (Step: 876,102):
-    https://www.comet.ml/wellsaid-labs/v9-marketplace-voices/49d43e2b12cd4c77ab79148e079e071a
-    Signal Model Experiment (Step: 1,108,182):
-    https://www.comet.ml/wellsaid-labs/v9-marketplace-voices/8ec9a1695e574eeda8f14a92db7cb3c8
-    """
-
-    V9_2022_Q2_DIACRITCS_MARKETPLACE_EXPANSION: typing.Final = (
-        "v9_2022_q2_diacritics_marketplace_expansion"
-    )
-
-    """
-    These checkpoints include the Mitel French Custom Voice.
-
-    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/***
-    Spectrogram Model Experiment (Step: 719,900):
-    https://www.comet.ml/wellsaid-labs/train-v9-new-languages/c2159e182975457887f24fe556438140
-    Signal Model Experiment (Step: 863,880):
-    https://www.comet.ml/wellsaid-labs/train-v9-new-languages-signal/3d000841945c4f7daec1b04ad7f6bd84
-    """
-
-    V9_2022_5_24_MITEL_FR_CUSTOM_VOICE: typing.Final = "v9_2022_5_24_mitel_fr_custom_voice"
+    V10_2022_06_15_STAGING: typing.Final = "v10_2022_06_15_staging"
 
 
 _GCS_PATH = "gs://wellsaid_labs_checkpoints/"
@@ -349,25 +151,31 @@ CHECKPOINTS_LOADERS = {
 }
 
 
-class TTSPackage(typing.NamedTuple):
+@dataclasses.dataclass(frozen=True)
+class TTSPackage:
     """A package of Python objects required to run TTS in inference mode.
 
     Args:
         ...
-        spectrogram_model_comet_experiment_key: In order to identify the model origin, the
+        spec_model_comet_experiment_key: In order to identify the model origin, the
             comet ml experiment key is required.
-        spectrogram_model_step: In order to identify the model origin, the checkpoint step which
+        spec_model_step: In order to identify the model origin, the checkpoint step which
             corresponds to the comet ml experiment is required.
         ...
     """
 
-    input_encoder: InputEncoder
-    spectrogram_model: SpectrogramModel
+    spec_model: SpectrogramModel
     signal_model: SignalModel
-    spectrogram_model_comet_experiment_key: typing.Optional[str] = None
-    spectrogram_model_step: typing.Optional[int] = None
+    spec_model_comet_experiment_key: typing.Optional[str] = None
+    spec_model_step: typing.Optional[int] = None
     signal_model_comet_experiment_key: typing.Optional[str] = None
     signal_model_step: typing.Optional[int] = None
+
+    def session_vocab(self) -> typing.Set[Session]:
+        """Get the sessions these models are familiar with."""
+        sesh = set(self.signal_model.session_embed.vocab.keys())
+        inter = set(self.spec_model.session_embed.vocab.keys()).intersection(sesh)
+        return set(typing.cast(Session, s) for s in inter if isinstance(s, tuple))
 
 
 def package_tts(
@@ -376,10 +184,10 @@ def package_tts(
 ):
     """Package together objects required for running TTS inference."""
     return TTSPackage(
-        *spectrogram_checkpoint.export(),
+        spectrogram_checkpoint.export(),
         signal_checkpoint.export(),
-        spectrogram_model_comet_experiment_key=spectrogram_checkpoint.comet_experiment_key,
-        spectrogram_model_step=spectrogram_checkpoint.step,
+        spec_model_comet_experiment_key=spectrogram_checkpoint.comet_experiment_key,
+        spec_model_step=spectrogram_checkpoint.step,
         signal_model_comet_experiment_key=signal_checkpoint.comet_experiment_key,
         signal_model_step=signal_checkpoint.step,
     )
@@ -393,75 +201,52 @@ class PublicSpeakerValueError(ValueError):
     pass
 
 
-def encode_tts_inputs(
-    nlp: English, input_encoder: InputEncoder, script: str, speaker: Speaker, session: Session
-) -> EncodedInput:
-    """Encode TTS `script`, `speaker` and `session` for use with the model(s) with friendly errors
-    for common issues.
-    """
-    normalized = normalize_vo_script(script, speaker.language)
+def process_tts_inputs(
+    nlp: spacy.language.Language, package: TTSPackage, script: str, session: Session
+) -> typing.Tuple[Inputs, PreprocessedInputs]:
+    """Process TTS `script`, `speaker` and `session` for use with the model(s)."""
+    normalized = normalize_and_verbalize_text(script, session[0].language)
     if len(normalized) == 0:
         raise PublicTextValueError("Text cannot be empty.")
 
-    if speaker.language == Language.ENGLISH:
-        for substring in GRAPHEME_TO_PHONEME_RESTRICTED:
-            if substring in normalized:
-                raise PublicTextValueError(f"Text cannot contain these characters: {substring}")
-        tokens = typing.cast(str, grapheme_to_phoneme(nlp(normalized)))
-    else:
-        tokens = normalized
+    inputs = Inputs([session], [nlp(norm_respellings(normalized))])
+    preprocessed = preprocess_inputs(inputs)
 
-    if len(tokens) == 0:
-        raise PublicTextValueError(f'Invalid text: "{script}"')
-
-    # TODO: The grapheme encoder will error if it encounters a character is hasn't seen before,
-    # even though it's not used in TTS.
-    decoded = DecodedInput("e", tokens, speaker, (speaker, session))
-    token_encoder = input_encoder.token_encoder
-    try:
-        token_encoder.encode(decoded.tokens)
-    except ValueError:
-        vocab = set(token_encoder.vocab)
-        difference = set(token_encoder.tokenize(decoded.tokens)).difference(vocab)
-        difference = ", ".join([repr(c)[1:-1] for c in sorted(list(difference))])
+    tokens = typing.cast(typing.List[str], set(preprocessed.tokens[0]))
+    excluded = [t for t in tokens if t not in package.spec_model.token_embed.vocab]
+    if len(excluded) > 0:
+        difference = ", ".join([repr(c)[1:-1] for c in sorted(set(excluded))])
         raise PublicTextValueError("Text cannot contain these characters: %s" % difference)
 
-    try:
-        input_encoder.speaker_encoder.encode(decoded.speaker)
-        input_encoder.session_encoder.encode(decoded.session)
-    except ValueError:
+    if session not in package.session_vocab():
         # NOTE: We do not expose speaker information in the `ValueError` because this error
         # is passed on to the public via the API.
         raise PublicSpeakerValueError("Speaker is not available.")
 
-    return input_encoder.encode(decoded)
+    return inputs, preprocessed
 
 
 def text_to_speech(
     package: TTSPackage,
     script: str,
-    speaker: Speaker,
     session: Session,
     split_size: int = 32,
 ) -> numpy.ndarray:
     """Run TTS end-to-end with friendly errors."""
-    nlp = load_en_core_web_md(disable=("parser", "ner"))
-    encoded = encode_tts_inputs(nlp, package.input_encoder, script, speaker, session)
-    params = Params(tokens=encoded.tokens, speaker=encoded.speaker, session=encoded.session)
-    preds = typing.cast(Infer, package.spectrogram_model(params=params, mode=Mode.INFER))
+    nlp = load_spacy_nlp(session[0].language)
+    inputs, preprocessed_inputs = process_tts_inputs(nlp, package, script, session)
+    preds = package.spec_model(inputs=preprocessed_inputs, mode=Mode.INFER)
     splits = preds.frames.split(split_size)
-    predicted = list(
-        generate_waveform(package.signal_model, splits, encoded.speaker, encoded.session)
-    )
-    predicted = typing.cast(torch.Tensor, torch.cat(predicted, dim=-1))
-    return predicted.detach().numpy()
+    generator = generate_waveform(package.signal_model, splits, inputs.session)
+    wave = typing.cast(torch.Tensor, torch.cat(list(generator), dim=-1))
+    return wave.squeeze(0).detach().numpy()
 
 
 class TTSInputOutput(typing.NamedTuple):
     """Text-to-speech input and output."""
 
-    params: Params
-    spec_model: Infer
+    inputs: Inputs
+    spec_model: Preds
     sig_model: numpy.ndarray
 
 
@@ -471,64 +256,60 @@ def batch_span_to_speech(
     """
     NOTE: This method doesn't consider `Span` context for TTS generation.
     """
-    inputs = [(s.script, s.speaker, s.session) for s in spans]
+    inputs = [(s.script, s.session) for s in spans]
     return batch_text_to_speech(package, inputs, **kwargs)
+
+
+def _multilingual_spacy_pipe(
+    inputs: typing.List[typing.Tuple[str, Session]]
+) -> typing.List[typing.Tuple[spacy.tokens.doc.Doc, Session]]:
+    """Efficiently pipe `inputs` through spaCy with batching per language."""
+    seshs = [s for _, s in inputs]
+    langs = set(s[0].language for s in seshs)
+    result: typing.List[typing.Optional[spacy.tokens.doc.Doc]] = [None] * len(inputs)
+    for lang in langs:
+        nlp = load_spacy_nlp(lang)
+        scripts = [(i, s) for i, (s, sesh) in enumerate(inputs) if sesh[0].language is lang]
+        docs = nlp.pipe(s for _, s in scripts)
+        for (i, _), doc in zip(scripts, docs):
+            result[i] = doc
+    return list(zip(typing.cast(typing.List[spacy.tokens.doc.Doc], result), seshs))
 
 
 def batch_text_to_speech(
     package: TTSPackage,
-    inputs: typing.List[typing.Tuple[str, Speaker, Session]],
+    inputs: typing.List[typing.Tuple[str, Session]],
     batch_size: int = 8,
 ) -> typing.List[TTSInputOutput]:
     """Run TTS end-to-end quickly with a verbose output."""
-    nlp = load_en_core_web_md(disable=("parser", "ner"))
-    inputs = [(normalize_vo_script(sc, sp.language), sp, se) for sc, sp, se in inputs]
-
-    en_inputs = [(i, t) for i, t in enumerate(inputs) if t[1].language == Language.ENGLISH]
-    en_tokens = []
-    if len(en_inputs) > 0:
-        docs: typing.List[spacy.tokens.Doc] = list(nlp.pipe([i[1][0] for i in en_inputs]))
-        en_tokens = typing.cast(typing.List[str], grapheme_to_phoneme(docs))
-    # TODO: The grapheme encoder will error if it encounters a character is hasn't seen before,
-    # even though it's not used in TTS.
-    decoded = [DecodedInput("e", sc, sp, (sp, se)) for sc, sp, se in inputs]
-    for (i, (_, speaker, session)), tokens in zip(en_inputs, en_tokens):
-        decoded[i] = DecodedInput("e", tokens, speaker, (speaker, session))
-
-    encoded = [(i, package.input_encoder.encode(d)) for i, d in enumerate(decoded)]
-    encoded = sorted(encoded, key=lambda i: i[1].tokens.numel())
-
+    inputs = [(normalize_vo_script(script, sesh[0].language), sesh) for script, sesh in inputs]
+    logger.info(f"Processing {len(inputs)} examples with spaCy...")
+    inputs_ = list(enumerate(_multilingual_spacy_pipe(inputs)))
+    inputs_ = sorted(inputs_, key=lambda i: len(str(i[1][0])))
     results: typing.Dict[int, TTSInputOutput] = {}
-    for batch in tqdm_(list(get_chunks(encoded, batch_size))):
-        tokens = stack_and_pad_tensors([e.tokens for _, e in batch], dim=1)
-        params = Params(
-            tokens=tokens.tensor,
-            speaker=torch.stack([e.speaker for _, e in batch]).view(1, len(batch)),
-            session=torch.stack([e.session for _, e in batch]).view(1, len(batch)),
-            num_tokens=tokens.lengths,
-        )
-        preds = typing.cast(Infer, package.spectrogram_model(params=params, mode=Mode.INFER))
+    logger.info(f"Processing {len(inputs)} examples with TTS models...")
+    for batch in tqdm_(list(get_chunks(inputs_, batch_size))):
+        batch_input = Inputs(doc=[i[1][0] for i in batch], session=[i[1][1] for i in batch])
+        preds = package.spec_model(inputs=batch_input, mode=Mode.INFER)
         spectrogram = preds.frames.transpose(0, 1)
-        spectrogram_mask = lengths_to_mask(preds.lengths)
-        signals = package.signal_model(
-            spectrogram, params.speaker, params.session, spectrogram_mask
-        )
-        lengths = preds.lengths * package.signal_model.upscale_factor
+        signals = package.signal_model(spectrogram, batch_input.session, preds.frames_mask)
+        num_samples = preds.num_frames * package.signal_model.upscale_factor
         more_results = {
             j: TTSInputOutput(
-                Params(
-                    tokens=batch[i][1].tokens,
-                    speaker=batch[i][1].speaker,
-                    session=batch[i][1].session,
+                inputs=Inputs(doc=[batch_input.doc[i]], session=[batch_input.session[i]]),
+                spec_model=Preds(
+                    frames=preds.frames[: preds.num_frames[i], i : i + 1],
+                    stop_tokens=preds.stop_tokens[: preds.num_frames[i], i : i + 1],
+                    alignments=preds.alignments[
+                        : preds.num_frames[i], i : i + 1, : preds.num_tokens[i]
+                    ],
+                    num_frames=preds.num_frames[i : i + 1],
+                    frames_mask=preds.frames_mask[i : i + 1, : preds.num_frames[i]],
+                    num_tokens=preds.num_tokens[i : i + 1],
+                    tokens_mask=preds.tokens_mask[i : i + 1, : preds.num_tokens[i]],
+                    reached_max=preds.reached_max[i : i + 1],
                 ),
-                Infer(
-                    frames=preds.frames[: preds.lengths[:, i], i],
-                    stop_tokens=preds.stop_tokens[: preds.lengths[:, i], i],
-                    alignments=preds.alignments[: preds.lengths[:, i], i, : tokens.lengths[:, i]],
-                    lengths=preds.lengths[:, i],
-                    reached_max=preds.reached_max[:, i],
-                ),
-                signals[i][: lengths[:, i]].detach().numpy(),
+                sig_model=signals[0][i : i + 1, : num_samples[i]].detach().numpy(),
             )
             for i, (j, _) in zip(range(len(batch)), batch)
         }
@@ -548,12 +329,12 @@ def _dequeue(queue: SimpleQueue) -> typing.Generator[bytes, None, None]:
         yield queue.get_nowait()
 
 
-@configurable
 def text_to_speech_ffmpeg_generator(
     package: TTSPackage,
-    input: EncodedInput,
-    logger_: logging.Logger = logger,
-    sample_rate: int = HParam(),
+    inputs: Inputs,
+    preprocessed_inputs: PreprocessedInputs,
+    sample_rate: int,
+    logger: logging.Logger = logger,
     input_flags: typing.Tuple[str, ...] = ("-f", "f32le", "-acodec", "pcm_f32le", "-ac", "1"),
     output_flags: typing.Tuple[str, ...] = ("-f", "mp3", "-b:a", "192k"),
 ) -> typing.Generator[bytes, None, None]:
@@ -573,11 +354,10 @@ def text_to_speech_ffmpeg_generator(
     """
 
     def get_spectrogram():
-        params = Params(tokens=input.tokens, speaker=input.speaker, session=input.session)
-        for pred in package.spectrogram_model(params=params, mode=Mode.GENERATE):
-            # [num_frames, batch_size (optional), num_frame_channels] →
-            # [batch_size (optional), num_frames, num_frame_channels]
-            yield pred.frames.transpose(0, 1) if pred.frames.dim() == 3 else pred.frames
+        for pred in package.spec_model(preprocessed_inputs, mode=Mode.GENERATE):
+            # [num_frames, batch_size, num_frame_channels] →
+            # [batch_size, num_frames, num_frame_channels]
+            yield pred.frames.transpose(0, 1)
 
     command = (
         ["ffmpeg", "-hide_banner", "-loglevel", "error", "-ar", str(sample_rate)]
@@ -590,23 +370,24 @@ def text_to_speech_ffmpeg_generator(
     thread = threading.Thread(target=_enqueue, args=(pipe.stdout, queue), daemon=True)
 
     def close():
+        assert pipe.stdin is not None
         pipe.stdin.close()
         pipe.wait()
         thread.join()
+        assert pipe.stdout is not None
         pipe.stdout.close()
 
     try:
         thread.start()
-        logger_.info("Generating waveform...")
+        logger.info("Generating waveform...")
         generator = get_spectrogram()
-        for waveform in generate_waveform(
-            package.signal_model, generator, input.speaker, input.session
-        ):
-            pipe.stdin.write(waveform.cpu().numpy().tobytes())
+        for waveform in generate_waveform(package.signal_model, generator, inputs.session):
+            assert pipe.stdin is not None
+            pipe.stdin.write(waveform.squeeze(0).cpu().numpy().tobytes())
             yield from _dequeue(queue)
         close()
         yield from _dequeue(queue)
-        logger_.info("Finished waveform generation.")
+        logger.info("Finished waveform generation.")
     except BaseException:
         close()
-        logger_.exception("Abrupt stop to waveform generation...")
+        logger.exception("Abrupt stop to waveform generation...")

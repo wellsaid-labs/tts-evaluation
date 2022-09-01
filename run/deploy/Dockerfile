@@ -41,14 +41,16 @@ RUN apt-get update --fix-missing \
   && venv/bin/pip install --no-cache-dir numpy \
   flask \
   gunicorn \
-  torch==1.8.1+cpu -f https://download.pytorch.org/whl/torch_stable.html \
+  torch==1.11.0+cpu -f https://download.pytorch.org/whl/torch_stable.html \
   unidecode \
   ftfy \
   tqdm \
-  spacy==2.2.4 \
-  https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-2.2.5/en_core_web_sm-2.2.5.tar.gz#egg=en_core_web_sm \
-  git+https://github.com/PetrochukM/HParams.git@354150b4f62b96c82f9965738d7bc7b6d5a2a6e0 \
+  spacy==3.2.3 \
+  pythonic-config==0.6.14 \
+  num2words \
   git+https://github.com/PetrochukM/PyTorch-NLP.git \
+  # TODO: Automatically fetch the languages a model has, and install those.
+  && venv/bin/spacy download en_core_web_md \
   && mkdir disk/other \
   && venv/bin/pip uninstall -y pip \
   && rm -rf venv/lib/python3.8/site-packages/torch/test \
@@ -181,8 +183,6 @@ RUN apt-get update --fix-missing \
   && apt-get install -y \
   # NOTE: ffmpeg dependency (mp3 encoding, see --enable-libmp3lame flag)
   lame \
-  # NOTE: To avoid manually copying `espeak`'s dependencies, we install `espeak` outside of builder.
-  espeak \
   && rm -rf /var/lib/apt/lists/*
 
 LABEL maintainer="michael@wellsaidlabs.com"

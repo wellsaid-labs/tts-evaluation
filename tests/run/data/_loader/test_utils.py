@@ -11,8 +11,8 @@ import pytest
 import lib
 from lib.utils import flatten_2d
 from run.data import _loader
-from run.data._loader.data_structures import Alignment
-from run.data._loader.english import HILARY_NORIEGA
+from run.data._loader.english.wsl import ALANA_B
+from run.data._loader.structures import Alignment
 from run.data._loader.utils import SpanGenerator, get_non_speech_segments_and_cache
 from tests._utils import (
     TEST_DATA_PATH,
@@ -20,20 +20,10 @@ from tests._utils import (
     get_audio_metadata_side_effect,
     subprocess_run_side_effect,
 )
-from tests.run._utils import make_passage
+from tests.run._utils import make_alignments_1d, make_passage
 
 TEST_DATA_LJ = TEST_DATA_PATH / "audio" / "bit(rate(lj_speech,24000),32).wav"
 TEST_DATA_LJ_16_BIT = TEST_DATA_PATH / "audio" / "rate(lj_speech,24000).wav"
-
-
-def _make_alignment(script=(0, 0), transcript=(0, 0), audio=(0.0, 0.0)):
-    """Make an `Alignment` for testing."""
-    return Alignment(script, audio, transcript)
-
-
-def _make_alignments(alignments=typing.Tuple[typing.Tuple[int, int]]) -> lib.utils.Tuple[Alignment]:
-    """Make a tuple of `Alignment`(s) for testing."""
-    return Alignment.stow([_make_alignment(a, a, a) for a in alignments])
 
 
 def test_read_audio():
@@ -111,15 +101,11 @@ def test_get_non_speech_segments_and_cache():
 def test__maybe_normalize_audio_and_cache():
     """Test that `_maybe_normalize_audio_and_cache` uses the cache."""
     metadata = lib.audio.get_audio_metadata(TEST_DATA_LJ)
-    kwargs = dict(
+    kwargs: typing.Dict[str, typing.Any] = dict(
         suffix=".wav",
         data_type=lib.audio.AudioDataType.FLOATING_POINT,
         bits=16,
-        sample_rate=metadata.sample_rate,
-        num_channels=metadata.num_channels,
-        encoding=metadata.encoding,
-        bit_rate=metadata.bit_rate,
-        precision=metadata.precision,
+        format_=metadata.format,
     )
     path = _loader.utils.maybe_normalize_audio_and_cache(metadata, **kwargs)
     assert path == metadata.path
@@ -137,7 +123,7 @@ def test__maybe_normalize_audio_and_cache():
 
 def test_span_generator():
     """Test `SpanGenerator` samples uniformly given a uniform distribution of alignments."""
-    dataset = [make_passage(_make_alignments(((0, 1), (1, 2), (2, 3))))]
+    dataset = [make_passage(make_alignments_1d(((0, 1), (1, 2), (2, 3))))]
     iterator = SpanGenerator(dataset, max_seconds=10, max_pause=math.inf)
     counter: typing.Counter[Alignment] = Counter()
     for _ in range(10000):
@@ -156,9 +142,9 @@ def test_span_generator__empty():
 def test_span_generator__zero():
     """Test `SpanGenerator` handles alignments of zero length."""
     dataset = [
-        make_passage(_make_alignments(((0, 1),))),
-        make_passage(_make_alignments(((1, 1),))),
-        make_passage(_make_alignments(((1, 2),))),
+        make_passage(make_alignments_1d(((0, 1),))),
+        make_passage(make_alignments_1d(((1, 1),))),
+        make_passage(make_alignments_1d(((1, 2),))),
     ]
     iterator = SpanGenerator(dataset, max_seconds=10, max_pause=math.inf)
     counter: typing.Counter[Alignment] = Counter()
@@ -175,9 +161,9 @@ def test_span_generator__singular():
     """Test `SpanGenerator` handles multiple passages with a singular alignment of varying
     lengths."""
     dataset = [
-        make_passage(_make_alignments(((0, 1),))),
-        make_passage(_make_alignments(((0, 10),))),
-        make_passage(_make_alignments(((0, 5),))),
+        make_passage(make_alignments_1d(((0, 1),))),
+        make_passage(make_alignments_1d(((0, 10),))),
+        make_passage(make_alignments_1d(((0, 5),))),
     ]
     iterator = SpanGenerator(dataset, max_seconds=10, max_pause=math.inf)
     counter: typing.Counter[Alignment] = Counter()
@@ -192,8 +178,8 @@ def test_span_generator__singular():
 def test_span_generator__multiple_multiple():
     """Test `SpanGenerator` handles multiple scripts with a uniform alignment distribution."""
     dataset = [
-        make_passage(_make_alignments(((0, 1), (1, 2), (2, 3)))),
-        make_passage(_make_alignments(((3, 4), (4, 5), (5, 6)))),
+        make_passage(make_alignments_1d(((0, 1), (1, 2), (2, 3)))),
+        make_passage(make_alignments_1d(((3, 4), (4, 5), (5, 6)))),
     ]
     iterator = SpanGenerator(dataset, max_seconds=10, max_pause=math.inf)
     counter: typing.Counter[Alignment] = Counter()
@@ -207,7 +193,7 @@ def test_span_generator__multiple_multiple():
 
 def test_span_generator__pause():
     """Test `SpanGenerator` samples uniformly despite a large pause."""
-    dataset = [make_passage(_make_alignments(((0, 1), (1, 2), (2, 3), (20, 21), (40, 41))))]
+    dataset = [make_passage(make_alignments_1d(((0, 1), (1, 2), (2, 3), (20, 21), (40, 41))))]
     iterator = SpanGenerator(dataset, max_seconds=4, max_pause=math.inf)
     counter: typing.Counter[Alignment] = Counter()
     for _ in range(10000):
@@ -219,7 +205,7 @@ def test_span_generator__pause():
 
 def test_span_generator__ignore_pause():
     """Test `SpanGenerator` `max_pause` can ignore pauses."""
-    dataset = [make_passage(_make_alignments(((0, 1), (1, 2), (2, 3), (20, 21), (40, 41))))]
+    dataset = [make_passage(make_alignments_1d(((0, 1), (1, 2), (2, 3), (20, 21), (40, 41))))]
     iterator = SpanGenerator(dataset, max_seconds=50, max_pause=1)
     for _ in range(1000):
         span = next(iterator)
@@ -238,8 +224,8 @@ def test_span_generator__multiple_unequal_passages__large_max_seconds():
     NOTE: With a large enough `max_seconds`, the entire passage should be sampled most of the time.
     """
     dataset = [
-        make_passage(_make_alignments(((0, 1),))),
-        make_passage(_make_alignments(((3, 4), (4, 5), (5, 6)))),
+        make_passage(make_alignments_1d(((0, 1),))),
+        make_passage(make_alignments_1d(((3, 4), (4, 5), (5, 6)))),
     ]
     iterator = SpanGenerator(dataset, max_seconds=1000000, max_pause=math.inf)
 
@@ -264,7 +250,7 @@ def test_span_generator__multiple_unequal_passages__large_max_seconds():
 
 def test_span_generator__unequal_alignment_sizes():
     """Test `SpanGenerator` samples uniformly despite unequal alignment sizes."""
-    dataset = [make_passage(_make_alignments(((0, 1), (1, 5), (5, 20))))]
+    dataset = [make_passage(make_alignments_1d(((0, 1), (1, 5), (5, 20))))]
     iterator = SpanGenerator(dataset, max_seconds=20, max_pause=math.inf)
     counter: typing.Counter[Alignment] = Counter()
     for _ in range(10000):
@@ -280,7 +266,7 @@ def test_span_generator__unequal_alignment_sizes__boundary_bias():
     NOTE: The `max_seconds` filtering introduces bias by predominately filtering out this sequence:
     `[(1, 2), (2, 3), (3, 11), (11, 12)]`. That leads to an oversampling of `(11, 12)`.
     """
-    dataset = [make_passage(_make_alignments(((0, 1), (1, 2), (2, 3), (3, 11), (11, 12))))]
+    dataset = [make_passage(make_alignments_1d(((0, 1), (1, 2), (2, 3), (3, 11), (11, 12))))]
     iterator = SpanGenerator(dataset, max_seconds=10, max_pause=math.inf)
     counter: typing.Counter[Alignment] = Counter()
     for _ in range(10000):
@@ -297,12 +283,7 @@ def test_dataset_loader(mock_run, mock_get_audio_metadata):
     """Test `_loader.dataset_loader` loads a dataset."""
     mock_get_audio_metadata.side_effect = get_audio_metadata_side_effect
     mock_run.side_effect = functools.partial(subprocess_run_side_effect, _command="gsutil")
-    passages = _loader.dataset_loader(
-        TEST_DATA_PATH / "datasets",
-        "hilary_noriega",
-        "",
-        HILARY_NORIEGA,
-    )
+    passages = _loader.dataset_loader(TEST_DATA_PATH / "datasets", "hilary_noriega", "", ALANA_B)
     alignments = [
         Alignment(a[0], a[1], a[2])
         for a in [
@@ -335,7 +316,7 @@ def test_dataset_loader(mock_run, mock_get_audio_metadata):
     assert passages[0].audio_file.sample_rate == 24000
     assert passages[0].audio_file.encoding == lib.audio.AudioEncoding.PCM_FLOAT_32_BIT
     assert path.stem in passages[0].audio_file.path.stem
-    assert passages[0].speaker == HILARY_NORIEGA
+    assert passages[0].speaker == ALANA_B
     assert passages[0].script == "Author of the danger trail, Philip Steels, etc."
     assert passages[0].transcript == (
         "author of the danger Trail Philip Steels Etc. Not at this particular case Tom "

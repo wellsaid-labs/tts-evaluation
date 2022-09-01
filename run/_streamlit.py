@@ -1,6 +1,7 @@
 import functools
 import logging
 import multiprocessing
+import multiprocessing.pool
 import os
 import pathlib
 import pickle
@@ -9,15 +10,16 @@ import tempfile
 import typing
 import zipfile
 
+import config as cf
 import numpy as np
 import tqdm
 from streamlit.server.server import Server
-from third_party import LazyLoader, session_state
+from third_party import LazyLoader
 
 import lib
 import run
-from run._config import Dataset
 from run._tts import CHECKPOINTS_LOADERS, Checkpoints, package_tts
+from run._utils import Dataset
 from run.data._loader import Passage
 
 if typing.TYPE_CHECKING:  # pragma: no cover
@@ -46,12 +48,6 @@ STREAMLIT_STATIC_PRIVATE_PATH = STREAMLIT_STATIC_PATH / "_wsl_tts"
 STREAMLIT_STATIC_TEMP_PATH = STREAMLIT_STATIC_PRIVATE_PATH / "temp"
 STREAMLIT_STATIC_SYMLINK_PATH = STREAMLIT_STATIC_PRIVATE_PATH / "symlink"
 
-# NOTE: This is a default script that can be used with Streamlit apps, if need be.
-DEFAULT_SCRIPT = (
-    "Your creative life will evolve in ways that you can’t possibly imagine. Trust"
-    " your gut. Don’t overthink it. And allow yourself a little room to play."
-)
-
 
 def is_streamlit_running() -> bool:
     """Check if `streamlit` server has been initialized."""
@@ -60,15 +56,6 @@ def is_streamlit_running() -> bool:
         return True
     except RuntimeError:
         return False
-
-
-def get_session_state() -> dict:
-    """Get a reference to a session state represented as a `dict`.
-
-    TODO: Upgrade to `streamlit`s official `session_state` implementation, learn more:
-    https://blog.streamlit.io/session-state-for-streamlit/
-    """
-    return session_state.get(cache={})
 
 
 _WrappedFunction = typing.TypeVar("_WrappedFunction", bound=typing.Callable[..., typing.Any])
@@ -88,11 +75,17 @@ def pickle_cache(func: _WrappedFunction = None, **kwargs) -> _WrappedFunction:
 
     @functools.wraps(func)
     def decorator(*args, **kwargs):
+        logger.info(f"Pickling `{func.__qualname__}` arguments...")
         key = (pickle.dumps(args), pickle.dumps(kwargs))
         if key in cache:
-            return pickle.loads(cache[key])
+            logger.info(f"Loading `{func.__qualname__}` cache...")
+            loaded = pickle.loads(cache[key])
+            logger.info(f"Loaded `{func.__qualname__}` cache!")
+            return loaded
         result = func(*args, **kwargs)
+        logger.info(f"Saving `{func.__qualname__}` cache...")
         cache[key] = pickle.dumps(result)
+        logger.info(f"Saved `{func.__qualname__}` cache!")
         return result
 
     def cache_clear():
@@ -124,6 +117,8 @@ def session_cache(func: None = None, **kwargs) -> SessionCache:
 def session_cache(func: typing.Optional[typing.Callable] = None, **kwargs):
     """`lru_cache` wrapper for `streamlit` that caches accross reruns.
 
+    NOTE: `session_cache` will trigger an import of `streamlit`.
+
     Learn more: https://github.com/streamlit/streamlit/issues/2382
     """
     if not func:
@@ -132,23 +127,25 @@ def session_cache(func: typing.Optional[typing.Callable] = None, **kwargs):
     if not is_streamlit_running():
         return func
 
-    session_state = get_session_state()
-    if func.__qualname__ not in session_state["cache"]:
-        logger.info("Creating `%s` cache.", func.__qualname__)
-        session_state["cache"][func.__qualname__] = pickle_cache(**kwargs)(func)
+    if "cache" not in st.session_state:
+        st.session_state["cache"] = {}
 
-    return session_state["cache"][func.__qualname__]
+    if func.__qualname__ not in st.session_state["cache"]:
+        logger.info("Creating `%s` cache.", func.__qualname__)
+        st.session_state["cache"][func.__qualname__] = pickle_cache(**kwargs)(func)
+
+    return st.session_state["cache"][func.__qualname__]
 
 
 def clear_session_cache():
     """Clear the cache for `session_cache`."""
     logger.info("Clearing cache...")
-    [v.cache_clear() for v in get_session_state()["cache"].values()]
+    [v.cache_clear() for v in st.session_state["cache"].values()]
 
 
 @session_cache(maxsize=None)
-def load_tts(checkpoints_key: Checkpoints):
-    return package_tts(*CHECKPOINTS_LOADERS[checkpoints_key]())
+def load_tts(checkpoints_key: str):
+    return package_tts(*CHECKPOINTS_LOADERS[Checkpoints[checkpoints_key]]())
 
 
 @session_cache(maxsize=None)
@@ -196,7 +193,7 @@ def path_to_web_path(path: pathlib.Path) -> WebPath:
 
 def audio_to_web_path(audio: np.ndarray, name: str = "audio.wav", **kwargs) -> WebPath:
     web_path = make_temp_web_dir() / name
-    lib.audio.write_audio(web_path, audio, **kwargs)
+    cf.partial(lib.audio.write_audio)(web_path, audio, **kwargs)
     return web_path
 
 
@@ -225,13 +222,15 @@ def paths_to_html_download_link(
 
 _MapInputVar = typing.TypeVar("_MapInputVar")
 _MapReturnVar = typing.TypeVar("_MapReturnVar")
+_cpu_count = os.cpu_count()
+assert _cpu_count is not None
 
 
 def map_(
     list_: typing.List[_MapInputVar],
     func: typing.Callable[[_MapInputVar], _MapReturnVar],
     chunk_size: int = 8,
-    max_parallel: int = os.cpu_count() * 3,
+    max_parallel: int = _cpu_count * 3,
     progress_bar: bool = True,
 ) -> typing.List[_MapReturnVar]:
     """Apply `func` to `list_` in parallel."""
@@ -255,33 +254,33 @@ def span_audio(span: run.data._loader.Span) -> np.ndarray:
 
 def passage_audio(passage: run.data._loader.Passage) -> np.ndarray:
     """Get `span` audio using cached `read_wave_audio`."""
-    start = passage.first.audio[0]
-    return read_wave_audio(passage.audio_file, start, passage.aligned_audio_length())
+    length = passage.segmented_audio_length()
+    return read_wave_audio(passage.audio_file, passage.audio_start, length)
 
 
 @session_cache(maxsize=None)
-def get_dataset(speaker_labels: typing.FrozenSet[str]) -> run._config.Dataset:
+def get_dataset(speaker_labels: typing.FrozenSet[str]) -> Dataset:
     """Load dataset subset, and cache."""
     logger.info("Loading dataset...")
     with st.spinner(f"Loading dataset(s): {','.join(list(speaker_labels))}"):
         datasets = {k: v for k, v in run._config.DATASETS.items() if k.label in speaker_labels}
-        dataset = run._utils.get_dataset(datasets)
+        dataset = cf.call(run._utils.get_dataset, datasets=datasets, _overwrite=True)
         logger.info(f"Finished loading {set(speaker_labels)} dataset(s)! {lib.utils.mazel_tov()}")
     return dataset
 
 
 @session_cache(maxsize=None)
-def get_dev_dataset() -> run._config.Dataset:
+def get_dev_dataset() -> Dataset:
     """Load dev dataset, and cache."""
     with st.spinner("Loading dataset..."):
-        _, dev_dataset = run._utils.split_dataset(run._utils.get_dataset())
+        _, dev_dataset = run._utils.get_datasets(False)
     return dev_dataset
 
 
 @session_cache(maxsize=None)
 def fast_grapheme_to_phoneme(text: str):
     """Fast grapheme to phoneme, cached."""
-    return lib.text._line_grapheme_to_phoneme([text], separator="|")[0]
+    return lib.text.grapheme_to_phoneme([text], separator="|")[0]
 
 
 def make_signal_chart(
@@ -302,12 +301,12 @@ def make_signal_chart(
     assert frames.shape[0] == envelope.shape[0]
     ticks = np.arange(0, envelope.shape[0] * ratio / sample_rate, ratio / sample_rate)
     return (
-        alt.Chart(pd.DataFrame({x: ticks, y[0]: -envelope, y[1]: envelope}))
+        alt.Chart(pd.DataFrame({x: ticks, y[0]: -envelope, y[1]: envelope}))  # type: ignore
         .mark_area()
         .encode(
-            x=alt.X(x, type="quantitative"),
-            y=alt.Y(y[0], scale=alt.Scale(domain=(-1.0, 1.0)), type="quantitative"),
-            y2=alt.Y2(y[1]),
+            x=alt.X(x, type="quantitative"),  # type: ignore
+            y=alt.Y(y[0], scale=alt.Scale(domain=(-1.0, 1.0)), type="quantitative"),  # type: ignore
+            y2=alt.Y2(y[1]),  # type: ignore
         )
     )
 
@@ -324,16 +323,16 @@ def make_interval_chart(
     """Make `altair.Chart` for the `intervals`."""
     source = {"x_min": [i[0] for i in intervals], "x_max": [i[1] for i in intervals]}
     return (
-        alt.Chart(pd.DataFrame(source))
+        alt.Chart(pd.DataFrame(source))  # type: ignore
         .mark_rect(
-            fillOpacity=fillOpacity,
-            color=color,
-            stroke=stroke,
-            strokeWidth=strokeWidth,
-            strokeOpacity=strokeOpacity,
+            fillOpacity=fillOpacity,  # type: ignore
+            color=color,  # type: ignore
+            stroke=stroke,  # type: ignore
+            strokeWidth=strokeWidth,  # type: ignore
+            strokeOpacity=strokeOpacity,  # type: ignore
             **kwargs,
         )
-        .encode(x=alt.X("x_min", type="quantitative"), x2=alt.X2("x_max"))
+        .encode(x=alt.X("x_min", type="quantitative"), x2=alt.X2("x_max"))  # type: ignore
     )
 
 
@@ -345,7 +344,7 @@ def dataset_passages(dataset: Dataset) -> typing.Iterator[Passage]:
 
 @session_cache(maxsize=None)
 def load_en_core_web_md(*args, **kwargs):
-    return lib.text.load_en_core_web_md(*args, **kwargs)
+    return lib.text.load_spacy_nlp("en_core_web_md", *args, **kwargs)
 
 
 def st_data_frame(df: pd.DataFrame):

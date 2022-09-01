@@ -2,7 +2,7 @@ import tempfile
 import time
 from pathlib import Path
 
-import hparams
+import config as cf
 import pytest
 import torch
 import torch.distributed
@@ -11,21 +11,21 @@ from matplotlib import pyplot
 
 import lib
 import run
-from run._config import Cadence, DatasetType, get_dataset_label
-from run.data._loader import Alignment, make_en_speaker
+from run._config import Cadence, DatasetType, Label, get_dataset_label
+from run.data._loader import Alignment
 from tests._utils import TEST_DATA_PATH
-from tests.run._utils import make_passage
+from tests.run._utils import make_passage, make_session, make_speaker
 
 TEST_DATA_PATH = TEST_DATA_PATH / "audio"
 TEST_DATA_LJ = TEST_DATA_PATH / "bit(rate(lj_speech,24000),32).wav"
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(autouse=True, scope="module")
 def run_around_tests():
     """Set a basic configuration."""
     run._config.configure()
     yield
-    hparams.clear_config()
+    cf.purge()
 
 
 def test__maybe_make_experiment_directories(capsys):
@@ -84,9 +84,9 @@ def test__maybe_make_experiment_directories_from_checkpoint(capsys):
 def test__get_dataset_stats():
     """Test `run.train._utils.get_dataset_stats` measures dataset statistics correctly."""
     _alignment = lambda a, b: Alignment((a, b), (a * 10, b * 10), (a, b))
-    _passage = lambda a, b, s: make_passage(Alignment.stow([_alignment(a, b)]), s)
-    a = make_en_speaker("a")
-    b = make_en_speaker("b")
+    _passage = lambda a, b, s: make_passage(alignments=[_alignment(a, b)], speaker=s)
+    a = make_speaker("a")
+    b = make_speaker("b")
     train = {a: [_passage(0, 2, a), _passage(0, 2, a)], b: [_passage(0, 1, a)]}
     stats = run.train._utils._get_dataset_stats(train, {})
     static = Cadence.STATIC
@@ -116,7 +116,7 @@ def test_comet_ml_experiment():
     execute."""
     comet = run.train._utils.CometMLExperiment(disabled=True)
     with comet.context_manager(run.train._utils.Context.TRAIN):
-        assert comet.context == str(run.train._utils.Context.TRAIN)
+        assert comet.context == str(run.train._utils.Context.TRAIN.value)
         comet.set_step(None)
         comet.set_step(0)
         comet.set_step(0)
@@ -124,12 +124,15 @@ def test_comet_ml_experiment():
         comet.log_html_audio(
             metadata="random metadata",
             audio={"predicted_audio": torch.rand(100), "gold_audio": torch.rand(100)},
-            speaker=make_en_speaker(""),
+            session=make_session(""),
         )
-        comet.log_npy("random", make_en_speaker(""), torch.rand(100))
+        comet.log_npy("random", make_speaker(""), torch.rand(100))
         figure = pyplot.figure()
         pyplot.close(figure)
         comet.log_figures({run._config.Label("figure"): figure})
+        comet.log_parameters(
+            {Label("a"): test_comet_ml_experiment, Label("b"): ["1"] * 1000, Label("c"): "c"}
+        )
         comet.log_current_epoch(0)
         comet.log_epoch_end(0)
         comet.set_name("name")
@@ -140,7 +143,7 @@ def test_set_context():
     """Test `run.train._utils.set_context` updates comet, module, and grad context."""
     comet = run.train._utils.CometMLExperiment(disabled=True)
     rnn = torch.nn.LSTM(10, 20, 2).eval()
-    ema = lib.optimizers.ExponentialMovingParameterAverage(rnn.parameters())
+    ema = lib.optimizers.ExponentialMovingParameterAverage(rnn.parameters(), **cf.get())
 
     assert not rnn.training
     with run.train._utils.set_context(run.train._utils.Context.TRAIN, comet, rnn, ema=ema):
@@ -157,28 +160,6 @@ def test_set_context():
         output, _ = rnn(torch.randn(5, 3, 10))
         assert not output.requires_grad
         assert len(ema.backup) > 0
-
-
-def test__nested_to_flat_config():
-    """Test `_nested_to_flat_config` flattens nested dicts, including edge cases with
-    an empty dict."""
-    assert (
-        run.train._utils._nested_to_flat_config(
-            {
-                "a": {
-                    "b": "c",
-                    "d": {
-                        "e": "f",
-                    },
-                },
-                "g": "h",
-                "i": {},
-                "j": [],
-            },
-            delimitator=".",
-        )
-        == {"a.b": "c", "a.d.e": "f", "g": "h", "j": []}
-    )
 
 
 def test_timer():
