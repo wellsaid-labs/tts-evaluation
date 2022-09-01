@@ -1079,6 +1079,12 @@ def test_verbalize_text():
         (
             "diastolic blood pressure of ≥ 90 mm Hg",
             "diastolic blood pressure of greater than equals ninety millimeters Hg"
+        ),
+        # TODO: `num2words` is unable to handle precise floats. They get truncated.
+        (
+            "3.141592653589793238462643383279502884",
+            "three point one four one five nine two six five three five eight nine seven nine "
+            "three",
         )
     ]
     for text_in, text_out in tests:

@@ -43,6 +43,9 @@ logger = logging.getLogger(__name__)
 def _num2words(num: str, ignore_zeros: bool = True, **kwargs) -> str:
     """Normalize `num` into standard words.
 
+    TODO: In addition to the below work arounds, `num2words` cannot handle precise numbers like
+    `3.141592653589793238462643383279502884`. It uses `float` internally for representing numbers.
+
     Args:
         ...
         ignore_zeros: If `False`, this verbalizes the leading and trailing zeros, as well.
