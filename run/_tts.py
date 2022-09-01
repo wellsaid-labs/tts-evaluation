@@ -129,6 +129,11 @@ class Checkpoints(enum.Enum):
     """
     These checkpoints were deployed into staging as version "10.beta.3".
 
+    NOTE: This is the model that also went into production. We discovered late into the testing
+    process that `v10_2022_06_08_staging` had consistently faint mic pops at the end of clips. We
+    decided to pick a different model, that was somewhat worse on other metrics, but it had less
+    mic pops.
+
     Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/389
     Spectrogram Model Experiment (Step: 1,843,641):
     https://www.comet.ml/wellsaid-labs/michael-spectrogram-model-03-2022/bc51533a6c874938ae0043b6b0e56d59
