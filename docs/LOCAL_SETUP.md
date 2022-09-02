@@ -16,12 +16,12 @@ Afterwards, please install other system dependencies, like so:
 ```zsh
 brew install git
 brew install python@3.8
+setopt interactivecomments # Bash style comments
 brew install sox # Audio processing
 brew install ffmpeg # Audio processing
 brew install espeak # Speech synthesizer
 brew install rsync lsyncd # File transfer
 brew install jq # Bash JSON parser
-setopt interactivecomments # Bash style comments
 ```
 
 ## 2. Clone the Repository

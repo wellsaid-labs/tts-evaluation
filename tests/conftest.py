@@ -17,6 +17,8 @@ import lib  # noqa: E402
 
 lib.environment.set_basic_logging_config()
 
+# TODO: Support doctests, so our documentation remains accurate.
+
 
 @pytest.fixture(autouse=True, scope="session")
 def run_around_session():
