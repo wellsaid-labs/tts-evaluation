@@ -5,7 +5,7 @@
 Welcome to WellSaid Lab's Text-to-Speech platform. This software allows you to: process and evaluate
 data; train and deploy models; manage our infrastructure.
 
-## Install 🐾
+## Install :paw_prints:
 
 You'll first need to setup your local development environment. Please
 [click here](./docs/LOCAL_SETUP.md) to read how to do so.
@@ -29,9 +29,9 @@ To contribute to this platform, please read through these docs:
 - [Software design considerations](./docs/SOFTWARE_DESIGN_CONSIDERATIONS.md)
 - [Contribution guidelines](./docs/CONTRIBUTING.md)
 
-## Help ❓
+## Help :question:
 
-Here are the core contributors to this repo :clap: Please feel free to reach out to them if you
+Here are the core contributors to this repo. Please feel free to reach out to them if you
 have a question.
 
 - **Michael Petrochuk**: Michael created the initial code base and has been responsible for it overall

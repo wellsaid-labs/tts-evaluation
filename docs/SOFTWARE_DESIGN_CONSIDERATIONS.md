@@ -1,11 +1,11 @@
-# Software Design Considerations :nail_care
+# Software Design Considerations  :nail_care:
 
-At a high-level, here are some of the considerations we made when designing this software. To help
-keep this software consistent, please adhere to these guidelines
+At a high-level, here are some of the considerations we made when designing this
+software. To help keep this software consistent, please adhere to these guidelines
 
 ## Architecture
 
-["Functional Core, Imperative Shell"](https://www.destroyallsoftware.com/screencasts/catalog/functional-core-imperative-shell),
+["Functional Core, Imperative Shell"](https://www.destroyallsoftware.com/screencasts/catalog/functional-core-imperative-shell)
 is our guiding principle for architecting our code base.
 
 In our case, `lib` is the functional core of our application and `run` is the imperative shell that
@@ -25,9 +25,8 @@ Learn more:
 
 ### Services `run`
 
-Within run, we categorize our modules. The modules with underscores are not runnable. For examples,
-our utility functions are not runnable. On the other hand, our training scripts, that don't
-have underscores, are runnable using the terminal.
+Within run, we categorize our modules. The modules with underscores `_` are not runnable, they
+are utility modules.
 
 For us it's particularly important to document our assumptions, we do so in the `_config` module.
 This module allows us to configure hyperparameters across the board from our data processing
@@ -35,25 +34,29 @@ to training.
 
 ### Library `lib`
 
-The functions in `lib` reliable and well-tested as they constitute a functional core that
+The functions in `lib` are reliable and well-tested as they constitute a functional core that
 the rest of the application relies on.
+
+### Third Party `third_party`
+
+This is a great place to throw any copy-pasted code from external repositories.
 
 ## Dataset Invariants
 
 To model text-to-speech, we rely on our datasets to be consistent. We assume that there is a
 one-to-one transformation from text to speech that the model can learn. Our hope is to create
-a text-to-speech that is akin to a piano, it's intuitive to use and beautiful to listen to.
+a text-to-speech that is akin to a piano, it's intuitive to use and beautiful to listen to. :notes:
 
 With that in mind, we have defined a couple of invariants that we rely on...
 
-(Keep in mind that many of these invariants were created for English)
+*Keep in mind that many of these invariants were created for English*
 
 ### Language Invariants
 
 While building this software, we have thought about language as a tool for creating voice-over.
 In doing so, we have restricted some of the ways we interpret written text.
 
-#### Progression
+#### Progression :chart_with_upwards_trend
 
 We have restricted our model to read left-to-right without skipping around the text. To support
 this, we have also normalized our scripts to verbalize phrases like "$5 million" which is
@@ -71,7 +74,7 @@ within a script correspond to capital letters in the transcript. Also, we consid
 non-standard words that are verbalized into standard words (i.e. "NCAA" to "NC double A"). We
 have also created datasets that have only initialisms, and no acronyms.
 
-#### Alphabet
+#### Alphabet :a:
 
 We have decided to restrict the alphabet to only ASCII characters, with a few exceptions.
 The terminology that we like to use internally is "readable characters". We hope that
