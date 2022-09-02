@@ -2,32 +2,50 @@
 
 <h1 align="center">Text-to-Speech</h3>
 
-WellSaid Lab's TrueVoice deep neural network architecture.
-
-![PyPI - Python Version](https://img.shields.io/badge/python-3.8-blue.svg)
+Welcome to WellSaid Lab's Text-to-Speech platform. This software allows you to: process and evaluate
+data; train and deploy models; manage our infrastructure.
 
 ## Get Started
 
-You might be interested in:
+You'll first need to setup your local development environment. Please
+[click here](./docs/LOCAL_SETUP.md) to read how to do so.
 
-- [Learning about our engineering processes](./docs/ENGINEERING_PROCESSES.md)
-- [Setting up a local development environment](./docs/LOCAL_SETUP.md)
-- [Training a spectrogram or signal model on GCP](./docs/TRAIN_MODEL_GCP.md)
+## Usage
+
+To use this platform, we have documented these workflows:
+
 - [Creating a new dataset](./docs/CREATE_DATASET.md)
-- [See some tips and tricks](./docs/TIPS_AND_TRICKS.md)
+- [Training a spectrogram or signal model on GCP](./docs/TRAIN_MODEL_GCP.md)
 - [Learn how to build our service locally](./docs/BUILD.md)
-- [Learn about our deployments & infrastructure](./ops/README.md)
+- [Learn how to deploy our service](./ops/run/README.md)
+- [See some tips and tricks we've picked up](./docs/TIPS_AND_TRICKS.md)
 
-## Architecture: Functional Core, Imperative Shell
+Additionally, there are a number of CLI and Streamlit tools in the `run` folder.
 
-Our library (`lib`) is the functional core of our application. Our services are
-defined in `run` as part of the imperative shell. The imperative shell interacts
-with the the external world.
+## Contributing
 
-Learn more:
+To contribute to this platform, please read through these docs:
 
-- https://www.destroyallsoftware.com/talks/boundaries
-- https://www.destroyallsoftware.com/screencasts/catalog/functional-core-imperative-shell
-- https://www.javiercasas.com/articles/functional-programming-patterns-functional-core-imperative-shell
-- https://github.com/kbilsted/Functional-core-imperative-shell/blob/master/README.md
-- https://en.wikipedia.org/wiki/Pure_function
+- [Learning about our software design considerations](./docs/SOFTWARE_DESIGN_CONSIDERATIONS.md)
+- [Things to keep in mind when contributing code](./docs/CONTRIBUTING.md)
+
+## Questions?
+
+Here are the core contributors to this repo :clap: Please feel free to reach out to them if you
+have a question.
+
+**Michael Petrochuk** - Michael created the initial code base and has been responsible for it overall
+from design to documentation. Michael has implemented a majority of the data processing and modeling
+so far.
+
+**Rhyan Johnson** - Rhyan is a linguist and data engineer. She has built much of our language
+processing including non-English support, respellings pronunciation, and text verbalization. She
+has also been involved in creating all our datasets so far. She has been integral to training
+and evaluating more models than anyone else.
+
+**Neil Harlow** - Neil, working with Sam Skjonsberg, has implemented the majority of our
+infrastructure. Neil and Rhyan frequently collaborate in order to launch additional voices to our
+Studio.
+
+*Please feel free to add your self to this list after you have contributed, so people know who
+they can talk to!*
