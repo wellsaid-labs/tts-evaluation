@@ -45,7 +45,7 @@ This is a great place to throw any copy-pasted code from external repositories.
 
 To model text-to-speech, we rely on our datasets to be consistent. We assume that there is a
 one-to-one transformation from text to speech that the model can learn. Our hope is to create
-a text-to-speech that is akin to a piano, it's intuitive to use and beautiful to listen to. :notes:
+a text-to-speech that is akin to a piano, it's intuitive to use and beautiful to listen to.
 
 With that in mind, we have defined a couple of invariants that we rely on...
 
@@ -56,7 +56,7 @@ With that in mind, we have defined a couple of invariants that we rely on...
 While building this software, we have thought about language as a tool for creating voice-over.
 In doing so, we have restricted some of the ways we interpret written text.
 
-#### Progression :chart_with_upwards_trend
+#### Progression :chart_with_upwards_trend:
 
 We have restricted our model to read left-to-right without skipping around the text. To support
 this, we have also normalized our scripts to verbalize phrases like "$5 million" which is
@@ -66,13 +66,11 @@ With that in mind, we expect that the voice-over stops after the last letter is 
 
 #### Letter Casing
 
-We have decided, in order to reduce ambiguity, that capital letters should only be used to represent
-initialisms.
-
-There are a couple ways that this has been implemented. For example, we check if any capital letters
-within a script correspond to capital letters in the transcript. Also, we consider acronyms to be
-non-standard words that are verbalized into standard words (i.e. "NCAA" to "NC double A"). We
-have also created datasets that have only initialisms, and no acronyms.
+We have decided, in order to reduce ambiguity, that uppercase letters should only be used to
+represent initialisms. For example, we remove non-initialisms by comparing the letter casing in the
+transcript with the voice-over script. Also, we consider acronyms to be non-standard words that are
+verbalized into standard words (i.e. "NCAA" to "NC double A"). We have also created datasets that
+have only initialisms and no acronyms to help enforce this invariant.
 
 #### Alphabet :a:
 
@@ -86,20 +84,22 @@ normalizing some rarely used characters like backticks, curly braces, etc.
 We verbalize or remove non-standard words from our training data, this includes slashes,
 numbers, ampersands, etc.
 
-Slashes (i.e. "us lash") have a particularly notorious history at WellSaid Labs. We didn't
-realize that slashes can both be voiced or silent depending on the context. All in all, our
-model learned to stay silent, even when our users wrote out the word "slash".
+:eyes: Story Time! Slashes, or "us lash" have history. Awhile back, we didn't realize that slashes
+can both be voiced or silent depending on the context. Short story, our model learned to stay silent
+even when our users wrote out the word "slash". So, after a lot of back and forth, we figured out
+that if users typed in "us lash", the model would hesitantly say "slash".
 
 ### Voice-Over Invariants
 
 #### Pauses & Breaks
 
 We have decided that the longest meaningful pause is around 1 second long. If a pause is longer
-than that, we consider that pause to be a break.
+than that, we consider that pause to be a break instead.
 
 We use a couple of different methods for identifying pauses or breaks:
 
-- We look for audio segments that are quieter than -50 db. We are sometimes more restrictive.
+- We look for audio segments that are quieter than -50 db. We are sometimes more restrictive to
+  increase data quality.
 - We start looking 50 or more milliseconds after a speech segment. This accounts for unvoiced
   speech sounds at the end of a word, like "s".
 - We look for audio segments that are untranscribable.
@@ -107,13 +107,9 @@ We use a couple of different methods for identifying pauses or breaks:
 #### Segmentation
 
 We segment audio based on speech segments. A speech segment starts and ends with a pause. Also,
-a speech segment starts and ends on a word delimiter.
-
-Keep in mind, that a speaker may sometimes blend words together, so we avoid segmenting at a word-
-level.
-
-The smallest segment we consider is 0.1 to 0.2 seconds. The smallest segment Google STT considers is
-0.1 seconds.
+a speech segment starts and ends on a word delimiter. Keep in mind, that a speaker may sometimes
+blend words together, so we avoid segmenting at a word-level. The smallest segment we consider is
+0.1 to 0.2 seconds. The smallest segment Google STT considers is 0.1 seconds.
 
 #### Stops
 
@@ -122,23 +118,19 @@ voiced sound. The model relies on this consistency to learn when to stop generat
 
 #### Speed
 
-To help monitor for errors, we like to define the slowest reading speed. In English, aside from
-edge cases, this usually turns out to be around 0.2 seconds per character.
-
-The fastest reading speed that we accept is 0.04 seconds per character.
+To help monitor for errors, we like to define the slowest reading speed to be around
+0.2 seconds per character. The fastest reading speed that we accept is 0.04 seconds per character.
 
 #### Sessions
 
 We recognize that each voice-over session has a distinct sound. Even within the same voice-over
-session, a voice actor may sound different at the beginning and ending of the session.
-
-To help increase consistency, we limit sessions to 15-minutes in length. To help the model, model
-the unique aspects of each session, we give the model session context.
+session, a voice actor may sound different at the beginning and ending of the session. To help
+increase consistency, we limit sessions to 15-minutes in length and give the model session context.
 
 #### Frequency
 
-We work in a limited range of frequencies, 20 hz and 20,000 hz based on the range of human hearing,
-[learn more here](https://en.wikipedia.org/wiki/Hearing_range).
+We work in a limited range of frequencies, 20 hz and 20,000 hz, based on the range of human hearing.
+[Learn more here](https://en.wikipedia.org/wiki/Hearing_range).
 
 #### Yes / No Questions
 
