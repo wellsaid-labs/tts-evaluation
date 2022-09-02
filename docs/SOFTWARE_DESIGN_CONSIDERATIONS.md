@@ -1,7 +1,7 @@
-# Software Design Considerations
+# Software Design Considerations :nail_care
 
 At a high-level, here are some of the considerations we made when designing this software. To help
-keep this software consistent, please adhere to these guidelines :nail_care:
+keep this software consistent, please adhere to these guidelines
 
 ## Architecture
 

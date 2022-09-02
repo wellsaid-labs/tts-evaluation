@@ -5,12 +5,12 @@
 Welcome to WellSaid Lab's Text-to-Speech platform. This software allows you to: process and evaluate
 data; train and deploy models; manage our infrastructure.
 
-## Install
+## Install 🐾
 
 You'll first need to setup your local development environment. Please
 [click here](./docs/LOCAL_SETUP.md) to read how to do so.
 
-## Usage
+## Use
 
 To use this platform, we have documented these workflows:
 
@@ -22,14 +22,14 @@ To use this platform, we have documented these workflows:
 Additionally, there are a number of CLI and Streamlit tools in the `run` folder. Last but not least,
 we've documented some [tips and tricks here](./docs/TIPS_AND_TRICKS.md).
 
-## Contributing
+## Contribute
 
 To contribute to this platform, please read through these docs:
 
 - [Software design considerations](./docs/SOFTWARE_DESIGN_CONSIDERATIONS.md)
 - [Contribution guidelines](./docs/CONTRIBUTING.md)
 
-## Questions?
+## Help ❓
 
 Here are the core contributors to this repo :clap: Please feel free to reach out to them if you
 have a question.
