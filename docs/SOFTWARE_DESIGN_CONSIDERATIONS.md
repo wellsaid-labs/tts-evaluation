@@ -52,4 +52,4 @@ With that in mind, we have defined a couple of invariants that we rely on...
 - [Language Invariants](/docs/LANGUAGE_INVARIANTS.md)
 - [Voice-Over Invariants](/docs/VOICE_OVER_INVARIANTS.md)
 
-*Keep in mind that many of these invariants were created for English*
+*Keep in mind that many of these invariants were created for English.*

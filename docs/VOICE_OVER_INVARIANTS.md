@@ -37,11 +37,6 @@ We recognize that each voice-over session has a distinct sound. Even within the 
 session, a voice actor may sound different at the beginning and ending of the session. To help
 increase consistency, we limit sessions to 15-minutes in length and give the model session context.
 
-## Frequency
-
-We work in a limited range of frequencies, 20 hz and 20,000 hz, based on the range of human hearing.
-[Learn more here](https://en.wikipedia.org/wiki/Hearing_range).
-
 ## Yes / No Questions
 
 To help us better model question inflection, we decided that yes / no questions should have
