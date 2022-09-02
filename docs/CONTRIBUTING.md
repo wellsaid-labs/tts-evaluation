@@ -1,4 +1,4 @@
-# Engineering Processes
+# Contribution Guidelines
 
 Here are a couple things to keep in mind when submitting a pull request to this repo. We're
 excited to see what you have in mind :relaxed:
