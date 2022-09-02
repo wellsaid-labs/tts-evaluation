@@ -49,7 +49,7 @@ a text-to-speech that is akin to a piano, it's intuitive to use and beautiful to
 
 With that in mind, we have defined a couple of invariants that we rely on...
 
-- [Language Invariants](docs/LANGUAGE_INVARIANTS.md)
-- [Voice-Over Invariants](docs/VOICE_OVER_INVARIANTS.md)
+- [Language Invariants](/docs/LANGUAGE_INVARIANTS.md)
+- [Voice-Over Invariants](/docs/VOICE_OVER_INVARIANTS.md)
 
 *Keep in mind that many of these invariants were created for English*
