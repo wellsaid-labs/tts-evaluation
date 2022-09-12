@@ -45,7 +45,8 @@ from run._config import (
     SPECTROGRAM_MODEL_EXPERIMENTS_PATH,
 )
 from run._streamlit import audio_to_web_path, paths_to_html_download_link, st_html, web_path_to_url
-from run._tts import TTSPackage, text_to_speech
+from run._tts import TTSPackage, get_session_vocab, text_to_speech
+from run.data._loader import Session, Speaker
 
 st.set_page_config(layout="wide")
 
@@ -71,10 +72,8 @@ def st_select_paths(label: str, dir: pathlib.Path, suffix: str) -> typing.List[p
 
 
 def get_sample_sessions(
-    speakers: typing.List[run.data._loader.Speaker],
-    sessions: typing.List[typing.Tuple[run.data._loader.Speaker, run.data._loader.Session]],
-    max_sessions: int,
-) -> typing.List[typing.Tuple[run.data._loader.Speaker, run.data._loader.Session]]:
+    speakers: typing.List[Speaker], sessions: typing.Set[Session], max_sessions: int
+) -> typing.List[Session]:
     """For each `speaker` randomly sample `max_sessions`."""
     sessions_sample = []
     for speaker in speakers:
@@ -98,11 +97,11 @@ def main():
     form = st.form("data_form")
     speakers = sorted(list(run._config.DATASETS.keys()))
     is_all = st.sidebar.checkbox("Select all speakers by default")
-    format_: typing.Callable[[run.data._loader.Speaker], str] = lambda s: s.label
+    format_: typing.Callable[[Speaker], str] = lambda s: s.label
     default = speakers if is_all else speakers[:1]
     label = "Speaker(s)"
     speakers = form.multiselect(label, options=speakers, format_func=format_, default=default)
-    speakers = cast(typing.List[run.data._loader.Speaker], speakers)
+    speakers = cast(typing.List[Speaker], speakers)
     max_sessions = form.number_input("Maximum Recording Sessions", min_value=1, value=1, step=1)
     max_sessions = cast(int, max_sessions)
     scripts = form.text_area("Script(s)", value=DEFAULT_SCRIPT)
@@ -120,12 +119,11 @@ def main():
     rows = []
     paths = []
     bar = st.progress(0)
-    sessions: typing.List[typing.Tuple[run.data._loader.Speaker, run.data._loader.Session]]
-    sessions = list(set(s for c in spec_ckpts for s in c.model.session_embed.vocab.keys()))
+    sessions = get_session_vocab(*tuple(c.model for c in spec_ckpts + sig_ckpts))
     sessions_sample = get_sample_sessions(speakers, sessions, max_sessions)
     iter_ = list(itertools.product(sessions_sample, spec_export, sig_export, scripts))
     for i, (
-        (speaker, session),
+        session,
         (spec_model, spec_path),
         (sig_model, sig_path),
         script,
@@ -133,15 +131,15 @@ def main():
         package = TTSPackage(spec_model, sig_model)
         audio = text_to_speech(package, script, session)
         sesh = str(session).replace("/", "__")
-        name = f"i={i},spec={spec_path.stem},sig={sig_path.stem},spk={speaker.label},"
+        name = f"i={i},spec={spec_path.stem},sig={sig_path.stem},spk={session[0].label},"
         name += f"sesh={sesh},script={id(script)}.wav"
         audio_web_path = audio_to_web_path(audio, name=name)
         row = {
             "Audio": f'<audio controls src="{web_path_to_url(audio_web_path)}"></audio>',
             "Spectrogam Model": path_label(spec_path),
             "Signal Model": path_label(sig_path),
-            "Speaker": speaker.label,
-            "Session": session,
+            "Speaker": session[0].label,
+            "Session": session[1],
             "Script": f"'{script[:25]}...'",
         }
         rows.append(row)

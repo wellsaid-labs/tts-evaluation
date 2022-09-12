@@ -146,6 +146,11 @@ CHECKPOINTS_LOADERS = {
 }
 
 
+def get_session_vocab(*models: typing.Union[SpectrogramModel, SignalModel]) -> typing.Set[Session]:
+    """Given a list of models find sessions that they all support."""
+    return set.intersection(*tuple(set(m.session_embed.get_vocab()) for m in models))
+
+
 @dataclasses.dataclass(frozen=True)
 class TTSPackage:
     """A package of Python objects required to run TTS in inference mode.
@@ -168,9 +173,7 @@ class TTSPackage:
 
     def session_vocab(self) -> typing.Set[Session]:
         """Get the sessions these models are familiar with."""
-        sesh = set(self.signal_model.session_embed.vocab.keys())
-        inter = set(self.spec_model.session_embed.vocab.keys()).intersection(sesh)
-        return set(typing.cast(Session, s) for s in inter if isinstance(s, tuple))
+        return get_session_vocab(self.spec_model, self.signal_model)
 
 
 def package_tts(
@@ -231,7 +234,7 @@ def text_to_speech(
     nlp = load_spacy_nlp(session[0].language)
     inputs, preprocessed_inputs = process_tts_inputs(nlp, package, script, session)
     preds = package.spec_model(inputs=preprocessed_inputs, mode=Mode.INFER)
-    splits = preds.frames.split(split_size)
+    splits = preds.frames.transpose(0, 1).split(split_size)
     generator = generate_waveform(package.signal_model, splits, inputs.session)
     wave = typing.cast(torch.Tensor, torch.cat(list(generator), dim=-1))
     return wave.squeeze(0).detach().numpy()
