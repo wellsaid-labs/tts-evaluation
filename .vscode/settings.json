@@ -41,5 +41,8 @@
   "editor.bracketPairColorization.enabled": true,
   "editor.guides.bracketPairs": true,
   "python.analysis.diagnosticMode": "workspace",
-  "reflowMarkdown.preferredLineLength": 100
+  "reflowMarkdown.preferredLineLength": 100,
+  "markdownlint.config": {
+    "no-trailing-punctuation": false
+  }
 }
