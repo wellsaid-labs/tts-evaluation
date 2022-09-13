@@ -22,7 +22,7 @@ class BucketBatchSampler(BatchSampler):
         batch_size,
         drop_last,
         sort_key: typing.Callable = identity,
-        bucket_size_multiplier=100
+        bucket_size_multiplier=100,
     ):
         super().__init__(sampler, batch_size, drop_last)
         self.sort_key = sort_key

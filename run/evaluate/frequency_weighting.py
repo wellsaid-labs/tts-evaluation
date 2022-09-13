@@ -30,7 +30,7 @@ if __name__ == "__main__":  # pragma: no cover
     }
     frequencies = np.linspace(min_frequency, max_frequency, num_points, endpoint=True)
 
-    pyplot.style.use("ggplot")
+    pyplot.style.use("ggplot")  # type: ignore
     weighting = k_weighting(frequencies, sample_rate)
     pyplot.plot(frequencies, weighting, **plot_kwargs, label="K-Weighting")
     pyplot.plot(frequencies, a_weighting(frequencies), **plot_kwargs, label="A-Weighting")

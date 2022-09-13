@@ -588,9 +588,7 @@ def normalize_vo_script(text: str, non_ascii: frozenset, strip: bool = True) -> 
     text = _normalize_whitespace(text)
     text = _normalize_guillemets(text)
     text = text.replace("`", "'")  # NOTE: Normalize backticks to single quotes
-    text = "".join(
-        [c if c == " " or c in non_ascii else str(unidecode.unidecode(c)) for c in text]
-    )
+    text = "".join([c if c == " " or c in non_ascii else str(unidecode.unidecode(c)) for c in text])
     text = re.compile(r" +").sub(" ", text)
     if strip:
         text = text.strip()
@@ -637,7 +635,7 @@ def has_digit(text: str) -> bool:
 SPACES_REGEX = re.compile(r"\s+")
 
 
-@functools.lru_cache(maxsize=2 ** 20)
+@functools.lru_cache(maxsize=2**20)
 def get_spoken_chars(text: str, punc_regex: re.Pattern) -> str:
     """Remove all unspoken characters from string including spaces, marks, casing, etc.
 
