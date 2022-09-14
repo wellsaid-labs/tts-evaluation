@@ -59,7 +59,7 @@ def _get_spans(dataset: Dataset, num_samples: int) -> typing.List[Span]:
     """Generate spans from our datasets."""
     logger.info("Generating spans...")
     generator = cf.partial(run._utils.SpanGenerator)(
-        dataset, **cf.get(), include_span=lambda *_: True, max_pause=math.inf
+        dataset, include_span=lambda *_: True, max_pause=math.inf
     )
     with fork_rng(123):
         spans = [next(generator) for _ in tqdm.tqdm(range(num_samples), total=num_samples)]
@@ -553,7 +553,7 @@ def _analyze_filtered_spans(
 
 
 def main():
-    run._config.configure()
+    run._config.configure(overwrite=True)
 
     st.title("Dataset Dashboard")
     st.write("The dataset dashboard is an effort to understand our dataset and dataset processing.")

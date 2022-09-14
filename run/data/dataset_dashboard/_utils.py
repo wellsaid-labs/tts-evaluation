@@ -35,7 +35,7 @@ ALIGNMENT_PRECISION = 0.1
 
 @contextlib.contextmanager
 def st_expander(label):
-    with st.beta_expander(label):
+    with st.expander(label):
         start = time.time()
         try:
             logger.info("Visualizing '%s'...", label)
