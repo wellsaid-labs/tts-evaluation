@@ -62,7 +62,11 @@ def _get_spans(dataset: Dataset, num_samples: int) -> typing.List[Span]:
         dataset, include_span=lambda *_: True, max_pause=math.inf
     )
     with fork_rng(123):
-        spans = [next(generator) for _ in tqdm.tqdm(range(num_samples), total=num_samples)]
+        try:
+            spans = [next(generator) for _ in tqdm.tqdm(range(num_samples), total=num_samples)]
+        except ValueError:
+            logger.error("ValueError: Dataset is empty.")
+            spans = []
     logger.info(f"Finished generating spans! {mazel_tov()}")
     return spans
 
