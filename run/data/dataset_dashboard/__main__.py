@@ -65,7 +65,7 @@ def _get_spans(dataset: Dataset, num_samples: int) -> typing.List[Span]:
         try:
             spans = [next(generator) for _ in tqdm.tqdm(range(num_samples), total=num_samples)]
         except ValueError:
-            logger.warning("ValueError: Dataset is empty or omitted.")
+            logger.warning("ValueError: All selected datasets are empty or omitted.")
             spans = []
     logger.info(f"Finished generating spans! {mazel_tov()}")
     return spans
