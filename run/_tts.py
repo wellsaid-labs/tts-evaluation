@@ -143,6 +143,25 @@ class Checkpoints(enum.Enum):
 
     V10_2022_06_15_STAGING: typing.Final = "v10_2022_06_15_staging"
 
+    """
+    These checkpoints were deployed as the 2022 Q3 Marketplace Expansion:
+    Ben D - NEW male, South African English avatar, narration style
+    Michael V - NEW male, "Mountain" US English avatar, narration style
+    Gray L - NEW non-binary US English avatar, narration style
+      **NOTE: After training, the name Gray L was changed to Cameron S
+    Paula R - NEW female US Mexican English avatar, narration style
+    Bella B - existing avatar; NEW narration style
+    Marcus G - existing avatar; NEW conversational style
+
+    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/###
+    Spectrogram Model Experiment (Step: 965,415):
+    https://www.comet.com/wellsaid-labs/v10-marketplace-spectrogram/5d6229fcaae14411b88ec4745a30db2
+    Signal Model Experiment (Step: 1,158,498):
+    https://www.comet.com/wellsaid-labs/v10-marketplace-signal/a65d0aea88324ba8bd4957fadc2030a8
+    """
+
+    V10_2022_09_14_Q3_EXPANSION: typing.Final = "v10_2022_q3_marketplace_expansion"
+
 
 _GCS_PATH = "gs://wellsaid_labs_checkpoints/"
 CHECKPOINTS_LOADERS = {
@@ -236,8 +255,6 @@ def text_to_speech(
     split_size: int = 32,
 ) -> numpy.ndarray:
     """Run TTS end-to-end with friendly errors."""
-    print(session)
-    print(session[0])
     nlp = load_spacy_nlp(session[0].language)
     inputs, preprocessed_inputs = process_tts_inputs(nlp, package, script, session)
     preds = package.spec_model(inputs=preprocessed_inputs, mode=Mode.INFER)

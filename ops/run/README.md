@@ -218,22 +218,13 @@ interface. You may need to follow the guide for
 
 ```bash
 # Assumes staging environment
-curl https://tts.wellsaidlabs.com/api/text_to_speech/stream \
+curl https://staging.tts.wellsaidlabs.com/api/text_to_speech/stream \
   -H "X-Api-Key: $API_KEY" \
-  -H "Accept-Version: v10" \
+  -H "Accept-Version: $MODEL" \
   -H "Content-Type: application/json" \
-  -X POST --data '{"speaker_id":"7","text":"Including 300 billion yuan in new infrastructure spending and an extension of borrowing to local governments worth 500 billion yuan.","consumerId":"id","consumerSource":"source"}' \
-  -o Wade_Yuan.mp3
+  -X POST --data '{"speaker_id":"4","text":"Lorem ipsum","consumerId":"id","consumerSource":"source"}' \
+  -o sample.mp3
 ```
-
-curl --location --request POST 'https://api.wellsaidlabs.com/v1/tts/stream' \
---header 'X-Api-Key: $API_KEY' \
---header 'Accept: audio/mpeg' \
---header 'Content-Type: application/json' \
---data-raw '{
-  "text": "Hello world!",
-  "speaker_id": "3"
-}' > hello_world.mp3
 
 You may also access specific model revisions via the `Accept-Version` header.
 For example, given the following deployment configuration:

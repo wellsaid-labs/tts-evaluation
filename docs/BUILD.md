@@ -18,9 +18,9 @@ Set image variables and build Docker image:
 
 ```bash
 PROJECT_ID="voice-service-2-313121"
-CHECKPOINTS="v10_2022_06_15_staging" # Example: "v9" (see list of Checkpoints in [run/_tts.py](/run/_tts.py)])
+CHECKPOINTS="" # Example: "v9" (see list of Checkpoints in [run/_tts.py](/run/_tts.py)])
 TTS_PACKAGE_PATH=$(python -m run.deploy.package_tts $CHECKPOINTS)
-IMAGE_TAG="v10-test-yuan" # Example: v9.00
+IMAGE_TAG="" # Example: v9.00
 
 docker build -f run/deploy/Dockerfile \
     --build-arg TTS_PACKAGE_PATH=${TTS_PACKAGE_PATH} \
@@ -50,8 +50,8 @@ In a new terminal window, generate an audio sample like so:
 ```bash
 curl http://localhost:8000/api/text_to_speech/stream \
   -H "Content-Type: application/json" \
-  -X POST --data '{"speaker_id":"7","text":"Including 300 billion yuan in new infrastructure spending and an extension of borrowing to local governments worth 500 billion yuan."}' \
-  -o yuan.mp3
+  -X POST --data '{"speaker_id":"4","text":"Lorem ipsum"}' \
+  -o sample.mp3
 ```
 
 If this fails and you need to rebuild your Docker image, first remove the tag:
@@ -67,7 +67,7 @@ Then fix, and rebuild from the top ^^
 Prior to pushing the docker image, ensure the proper GKE context is set:
 
 ```bash
-CLUSTER_NAME="prod" # Example: "staging"
+CLUSTER_NAME="" # Example: "staging"
 gcloud config set project $PROJECT_ID
 gcloud config set container/cluster $CLUSTER_NAME
 gcloud container clusters get-credentials $CLUSTER_NAME --region=us-central1

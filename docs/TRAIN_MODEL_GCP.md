@@ -52,18 +52,18 @@ Setup your local development environment by following [these instructions](LOCAL
 1. Create an instance for training...
 
    ```zsh
-python -m run.utils.gcp $TYPE make-instance \
-  --name=$NAME \
-  --machine-type='n1-highmem-32' \
-  --gpu-type='nvidia-tesla-t4' \
-  --gpu-count=4 \
-  --disk-size=1024 \
-  --disk-type='pd-balanced' \
-  --image-project=$IMAGE_PROJECT \
-  --image-family=$IMAGE_FAMILY \
-  --metadata="startup-script-user=$GCP_USER" \
-  --metadata="train-script-path=$TRAIN_SCRIPT_PATH" \
-  --metadata-from-file="startup-script=run/utils/gcp/resume_training_on_start_up.sh"
+   python -m run.utils.gcp $TYPE make-instance \
+      --name=$NAME \
+      --machine-type='n1-highmem-32' \
+      --gpu-type='nvidia-tesla-t4' \
+      --gpu-count=4 \
+      --disk-size=1024 \
+      --disk-type='pd-balanced' \
+      --image-project=$IMAGE_PROJECT \
+      --image-family=$IMAGE_FAMILY \
+      --metadata="startup-script-user=$GCP_USER" \
+      --metadata="train-script-path=$TRAIN_SCRIPT_PATH" \
+      --metadata-from-file="startup-script=run/utils/gcp/resume_training_on_start_up.sh"
    ```
 
    ❓ LEARN MORE: See our machine type benchmarks [here](./TRAIN_MODEL_GCP_BENCHMARKS.md).
@@ -78,7 +78,7 @@ python -m run.utils.gcp $TYPE make-instance \
    VM_NAME=$(python -m run.utils.gcp $TYPE most-recent --name $NAME)
    echo "VM_NAME=$VM_NAME"
    VM_ZONE=$(python -m run.utils.gcp zone --name $VM_NAME)
-   gcloud compute ssh --zone=$ZONE $NAME
+   gcloud compute ssh --zone=$VM_ZONE $VM_NAME
    ```
 
    Continue to run this command until it succeeds.
