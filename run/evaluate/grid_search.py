@@ -97,7 +97,7 @@ def main():
     form = st.form("data_form")
     speakers = sorted(list(run._config.DATASETS.keys()))
     is_all = st.sidebar.checkbox("Select all speakers by default")
-    format_: typing.Callable[[Speaker], str] = lambda s: s.label
+    format_: typing.Callable[[Speaker], str] = lambda s: f"{s.label} ({s.style.value})"
     default = speakers if is_all else speakers[:1]
     label = "Speaker(s)"
     speakers = form.multiselect(label, options=speakers, format_func=format_, default=default)
