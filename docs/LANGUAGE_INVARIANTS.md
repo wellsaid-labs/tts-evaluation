@@ -37,7 +37,7 @@ words in their scripts.
 :eyes: Story Time! Slashes, or "us lash" have history. Awhile back, we didn't realize that slashes
 can both be voiced or silent depending on the context. Short story, our model learned to stay silent
 even when our users wrote out the word "slash". So, after a lot of back and forth, we figured out
-that if users typed in "us lash", the model would hesitantly say "slash".
+that if users typed in "us lash", the model would hesitantly say "a slash". This was a helpful solution in one case, but did not solve the universal need for a pronunciation of "slash" as a single word in other contexts.
 
 ## Scripts
 
