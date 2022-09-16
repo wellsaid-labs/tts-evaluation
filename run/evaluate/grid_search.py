@@ -131,14 +131,15 @@ def main():
         package = TTSPackage(spec_model, sig_model)
         audio = text_to_speech(package, script, session)
         sesh = str(session).replace("/", "__")
-        name = f"i={i},spec={spec_path.stem},sig={sig_path.stem},spk={session[0].label},"
+        speaker = session[0]
+        name = f"i={i},spec={spec_path.stem},sig={sig_path.stem},spk={speaker.label},"
         name += f"sesh={sesh},script={id(script)}.wav"
         audio_web_path = audio_to_web_path(audio, name=name)
         row = {
             "Audio": f'<audio controls src="{web_path_to_url(audio_web_path)}"></audio>',
             "Spectrogam Model": path_label(spec_path),
             "Signal Model": path_label(sig_path),
-            "Speaker": session[0].label,
+            "Speaker": speaker.label,
             "Session": session[1],
             "Script": f"'{script[:25]}...'",
         }
