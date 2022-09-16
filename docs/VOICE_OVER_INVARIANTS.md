@@ -14,6 +14,9 @@ We use a couple of different methods for identifying pauses or breaks:
   speech sounds at the end of a word, like "s".
 - We look for audio segments that are untranscribable.
 
+With regards to recording datasets, we ask voice-actors that their silences are quieter than -60 db.
+Ideally, they are more like -70 db or lower.
+
 ## Segmentation
 
 We segment audio based on speech segments. A speech segment starts and ends with a pause. Also,
@@ -37,6 +40,11 @@ We recognize that each voice-over session has a distinct sound. Even within the 
 session, a voice actor may sound different at the beginning and ending of the session. To help
 increase consistency, we limit sessions to 15-minutes in length and give the model session context.
 
+A voice-actor, even during a session, may not be consistent. We also have some datasets with much
+longer sessions. We have some work to-do to resolve this inconsistency. We've found, sometimes,
+that longer sessions indicates that the voice-actor stitched together multiple files from seperate
+recording sessions.
+
 ## Yes / No Questions
 
 To help us better model question inflection, we decided that yes / no questions should have
@@ -58,6 +66,10 @@ Unfortunately, this isn't an exact science, so we are interested in finding simp
 such an integral component of our model.
 
 ## Loudness
+
+We expect that our datasets are normalized to -22 LUFS. That means, on average, with silences
+included, the loudness is -22 LUFS. This helps ensure that our voices are at an industry standard
+loudness.
 
 Loudness is also difficult to define due to the peculiarities in human-hearing. Depending
 on the application, we use different algorithms, including:
