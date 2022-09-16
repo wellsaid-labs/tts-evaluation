@@ -34,11 +34,6 @@ voiced sound. The model relies on this consistency to learn when to stop generat
 To help monitor for errors, we like to define the slowest reading speed to be around
 0.2 seconds per character. The fastest reading speed that we accept is 0.04 seconds per character.
 
-## Loudness
-
-We expect that our datasets are normalized to -22 LUFS. That means, on average, with silences
-included, the loudness is -22 LUFS. This helps ensure that our voices are at an industry standard loudness.
-
 ## Sessions
 
 We recognize that each voice-over session has a distinct sound. Even within the same voice-over
@@ -46,7 +41,9 @@ session, a voice actor may sound different at the beginning and ending of the se
 increase consistency, we limit sessions to 15-minutes in length and give the model session context.
 
 A voice-actor, even during a session, may not be consistent. We also have some datasets with much
-longer sessions. We have some work to-do to resolve this inconsistency.
+longer sessions. We have some work to-do to resolve this inconsistency. We've found, sometimes,
+that longer sessions indicates that the voice-actor stitched together multiple files from seperate
+recording sessions.
 
 ## Yes / No Questions
 
@@ -69,6 +66,10 @@ Unfortunately, this isn't an exact science, so we are interested in finding simp
 such an integral component of our model.
 
 ## Loudness
+
+We expect that our datasets are normalized to -22 LUFS. That means, on average, with silences
+included, the loudness is -22 LUFS. This helps ensure that our voices are at an industry standard
+loudness.
 
 Loudness is also difficult to define due to the peculiarities in human-hearing. Depending
 on the application, we use different algorithms, including:

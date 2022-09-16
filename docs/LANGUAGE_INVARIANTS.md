@@ -42,13 +42,17 @@ that if users typed in "us lash", the model would hesitantly say "slash".
 ## Scripts
 
 We generally expect a voice-over script to be at most a couple paragraphs in length, and we refer
-to this as a "Passage". There needs to be multiple "Passages" in a dataset.
+to this as a "Passage". There needs to be multiple "Passages" in a dataset. A "Passage" should be
+one consistent piece of writing on a single topic.
 
 This is a constraint for a couple of reasons. First of all, the model is unable to model long-range
 context, so any more will not be helpful during training. This is also helpful for performance.
 It's much easier to pre-process many shorter passages rather than one longer passage. Lastly, we
 need to split the dataset for evaluation purposes. In order to do that, there needs to be
 multiple scripts, some that can be used for evaluation and some that can be used for training.
+
+Additionally, we've had issues in the past, that long scripts are, in reality, are multiple scripts
+that have been accidentally added together.
 
 ## Pronunciation
 
