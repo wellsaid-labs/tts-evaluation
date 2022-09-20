@@ -2,6 +2,7 @@ import math
 import pathlib
 import tempfile
 import typing
+from collections import defaultdict
 
 import numpy
 import pytest
@@ -30,6 +31,104 @@ def test_random_sample():
         assert lib.utils.random_sample([1, 2, 3, 4], 0) == []
         assert lib.utils.random_sample([1, 2, 3, 4], 2) == [4, 1]
         assert lib.utils.random_sample([1, 2, 3, 4], 5) == [1, 4, 3, 2]
+
+
+def test_random_nonoverlapping_intervals():
+    """Test `lib.utils.random_nonoverlapping_intervals` handles the basic case(s)."""
+    assert lib.utils.random_nonoverlapping_intervals(2, 1) == ((0, 1),)
+    assert lib.utils.random_nonoverlapping_intervals(2, 0) == tuple()
+
+
+def test_random_nonoverlapping_intervals__distribution():
+    """Test `lib.utils.random_nonoverlapping_intervals` has the correct distribution."""
+    with fork_rng(1234):
+        total_intervals = 0
+        total_interval_length = 0
+        no_intervals = 0
+        distribution = defaultdict(int)
+        num_bounds = 30
+        buckets = [0] * (num_bounds - 1)
+        passes = 1000
+        for _ in range(passes):
+            intervals = lib.utils.random_nonoverlapping_intervals(num_bounds, 3)
+            no_intervals += len(intervals) == 0
+            total_intervals += len(intervals)
+            total_interval_length += sum(b - a for a, b in intervals)
+            for a, b in intervals:
+                distribution[b - a] += 1
+                assert b - a > 0
+                for i in range(a, b):
+                    buckets[i] += 1
+
+        assert no_intervals == 27  # NOTE: Only 3% of the time there are no annotations
+        # NOTE: Like expected, there are 3 annotations on average
+        assert total_intervals / passes == 2.957
+        assert total_interval_length / passes == 9.637
+        # NOTE: Around 86% of our annotations would be 1 to 5 units long. There is certainly a
+        # bias toward shorter segments.
+        assert distribution == {
+            1: 1526,
+            2: 498,
+            3: 257,
+            4: 155,
+            5: 109,
+            6: 61,
+            7: 58,
+            8: 50,
+            9: 30,
+            10: 29,
+            11: 17,
+            12: 23,
+            13: 16,
+            14: 12,
+            15: 8,
+            16: 12,
+            17: 13,
+            18: 8,
+            19: 9,
+            20: 3,
+            21: 5,
+            22: 2,
+            23: 1,
+            24: 5,
+            25: 7,
+            26: 2,
+            27: 3,
+            28: 2,
+            29: 36,
+        }
+        # NOTE: There is an equal probability that each bucket of data is found inside an interval.
+        assert buckets == [
+            318,
+            330,
+            332,
+            332,
+            333,
+            347,
+            319,
+            333,
+            327,
+            337,
+            345,
+            341,
+            336,
+            327,
+            331,
+            325,
+            324,
+            319,
+            337,
+            344,
+            323,
+            324,
+            340,
+            353,
+            335,
+            331,
+            330,
+            329,
+            335,
+        ]
 
 
 def test_mean():

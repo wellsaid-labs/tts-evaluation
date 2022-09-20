@@ -47,6 +47,36 @@ def random_sample(
     return random.sample(list_, min(len(list_), sample_size))
 
 
+def random_nonoverlapping_intervals(
+    num_bounds: int, avg_intervals: int
+) -> typing.Tuple[typing.Tuple[int, int], ...]:
+    """Generate a random set of non-overlapping intervals.
+
+    NOTE:
+    - This tends to bias toward smaller intervals.
+    - This has no preference for a particular bucket, and samples from the entire sequence equally.
+
+    Args:
+        num_bounds: The number of interval boundaries to sample from.
+        avg_intervals: The average number of intervals to return.
+
+    Returns: A tuple of non-overlapping intervals that start and end on a boundary. This may
+        return no intervals in some cases.
+    """
+    assert avg_intervals >= 0, "The average intervals must be a non-negative number."
+    assert num_bounds >= 2, "There must be at least a starting and ending boundary."
+    num_cuts = random.randint(0, num_bounds - 2)
+    max_intervals = num_cuts + 1
+    prob = avg_intervals / max_intervals
+
+    if num_cuts == 0:
+        return ((0, num_bounds - 1),) if random.random() < prob else tuple()
+
+    bounds = list(range(num_bounds))
+    cuts = bounds[:1] + sorted(random.sample(bounds[1:-1], num_cuts)) + bounds[-1:]
+    return tuple([(a, b) for a, b in zip(cuts, cuts[1:]) if random.random() < prob])
+
+
 def mean(list_: typing.Iterable[float]) -> float:
     """Mean function that does not return an error if `list_` is empty."""
     list_ = list(list_)
