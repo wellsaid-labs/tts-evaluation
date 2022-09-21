@@ -112,7 +112,7 @@ def main():
     end = datetime.utcnow()
     start = end - option[1]
 
-    cols = st.beta_columns([1, 1])
+    cols = st.columns([1, 1])
     label = "Query Limit"
     query_limit = cols[0].number_input(label, value=st.session_state.get("query_limit", 100))
     st.session_state["query_limit"] = query_limit
@@ -121,7 +121,7 @@ def main():
     fraction = cols[1].number_input(label, min_value=0.0, value=fraction, max_value=1.0, step=0.01)
     st.session_state["fraction"] = fraction
 
-    cols = st.beta_columns([1, 1])
+    cols = st.columns([1, 1])
     regex = cols[0].text_input("Text Payload Regex", value=st.session_state.get("regex", ""))
     st.session_state["regex"] = regex
     group = cols[1].number_input("Regex Group", min_value=0, value=st.session_state.get("group", 0))
