@@ -48,7 +48,7 @@ def subprocess_run_side_effect(command, *args, _command: str = "", _func=subproc
 
 def make_metadata(
     path: pathlib.Path = pathlib.Path("."),
-    sample_rate=1,
+    sample_rate=100,
     num_channels=0,
     encoding=lib.audio.AudioEncoding.PCM_INT_8_BIT,
     bit_rate="",

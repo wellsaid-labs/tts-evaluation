@@ -120,6 +120,9 @@ alignment_dtype = np.dtype(_alignment_dtype)
 class Alignment(typing.NamedTuple):
     """An aligned `script`, `audio` and `transcript` slice.
 
+    NOTE: Consecutive alignments may overlap since there is no distinct boundaries between words,
+    the script and transcript may not overlap between two consecutive alignments.
+
     Args:
         script: The start and end of a script slice in characters.
         audio: The start and end of a audio recording slice in seconds.
@@ -287,7 +290,8 @@ class Passage:
     TODO: The `Passage` object is difficult to test. It takes awhile to initialize. It's not
     consistent (i.e. some fields include data about the entire audio file). There is some data
     processing functions in `_data.py` that might be helpful to include in `Passage`, what data
-    processing is included in `Passage`, and what is not?
+    processing is included in `Passage`, and what is not? We need a `make_passage` function that
+    is fairly complicated in `tests.run._utils` to create the object.
 
     TODO: Create a `ConventionalPassage` or `ConventionalSpan` for storing tens of thousands
     of single alignment pre-cut spans. We could more efficiently and accurately handle script

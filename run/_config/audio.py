@@ -115,6 +115,8 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
     }
     cf.add(config, overwrite)
 
+    # NOTE: The `DeMan` loudness implementation of ITU-R BS.1770 is sample rate independent.
+    filter_class = "DeMan"
     config = {
         lib.visualize.plot_spectrogram: Args(frame_hop=FRAME_HOP),
         lib.visualize.plot_mel_spectrogram: Args(frame_hop=FRAME_HOP, **hertz_bounds),
@@ -161,8 +163,7 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
             momentum=0.0,
             **hertz_bounds,
         ),
-        # NOTE: The `DeMan` loudness implementation of ITU-R BS.1770 is sample rate independent.
-        lib.audio.get_pyloudnorm_meter: Args(filter_class="DeMan"),
+        lib.audio.get_pyloudnorm_meter: Args(filter_class=filter_class),
         run._models.spectrogram_model.wrapper.SpectrogramModelWrapper: Args(
             # NOTE: This is based on one of the slowest legitimate alignments in
             # `dataset_dashboard`. With a sample size of 8192, we found that 0.18 seconds per token
@@ -210,9 +211,23 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
             format_=format_,
         ),
         run.data._loader.utils.SpanGenerator: Args(max_pause=too_long_pause_length),
+        # NOTE: `min_no_intervals_prob` was set at 10% to ensure the model is exposed to some
+        # data that has no annotations; however, our preference is for the model to train with
+        # more annotations because it should "stabalize" it. As in, the model would not need to
+        # guess as much which creates an easier training environment.
+        run.train.spectrogram_model._data._random_nonoverlapping_alignments: cf.Args(
+            min_no_intervals_prob=0.1, avg_alignments=3
+        ),
         # NOTE: A 0.400 `block_size` is standard for ITU-R BS.1770.
-        run.train.spectrogram_model._data._get_loudness: Args(block_size=0.400, precision=0),
-        run.train.spectrogram_model._data._random_loudness_annotations: Args(max_annotations=10),
+        # NOTE: A useful general reference is that the just noticeable difference in sound
+        # intensity for the human ear is about 1 decibel. For more intense sounds, this can be
+        # as low as 1/2 or 1/3.
+        # http://physics.gmu.edu/~dmaria/phys260summer03/sound/DB.HTML#c4
+        # NOTE: The LUFS range is approximately from 0 to -80 db so a offset and compression of 50
+        # will bring that range from roughly 1 to -1.
+        run.train.spectrogram_model._data._get_loudness: Args(
+            block_size=0.400, precision=0, offset=50, compression=50, filter_class=filter_class
+        ),
         run.train.spectrogram_model._data._random_speed_annotations: Args(
             max_annotations=10, precision=2
         ),

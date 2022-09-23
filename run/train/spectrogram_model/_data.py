@@ -24,7 +24,7 @@ import run
 from lib.audio import sec_to_sample
 from lib.distributed import get_rank, get_world_size, is_initialized
 from lib.samplers import BucketBatchSampler
-from lib.utils import Tuple, flatten_2d, lengths_to_mask
+from lib.utils import Tuple, flatten_2d, lengths_to_mask, random_nonoverlapping_intervals
 from run._models.spectrogram_model import preprocess_spans
 from run._models.spectrogram_model.model import Inputs
 from run.data._loader.structures import Alignment, Span, Speaker
@@ -42,41 +42,39 @@ logger = logging.getLogger(__name__)
 
 
 def _random_nonoverlapping_alignments(
-    alignments: Tuple[Alignment], max_alignments: int
+    alignments: Tuple[Alignment], avg_alignments: int, min_no_intervals_prob: float
 ) -> typing.Tuple[Alignment, ...]:
-    """Generate a random set of non-overlapping alignments, such that every point in the
-    time-series has an equal probability of getting sampled inside an alignment.
+    """Generate a random set of non-overlapping alignments.
 
-    NOTE: The length of the sampled alignments is non-uniform.
+    TODO: Alignments do overlap sometimes in practice, measure how often this impacts this
+    algorithm.
+    TODO: Should we consider a minimum interval length to ensure the alignment produced is
+    accurate?
+    TODO: Review the data generated.
 
     Args:
         alignments
-        max_alignments: The maximum number of alignments to generate.
+        avg_alignments: The average number of alignments to return.
+        min_no_intervals_prob: The minimum probability for sampling no intervals. In practice,
+            no intervals will be sampled at a slightly higher rate due to the implementation.
+
+    Returns: A tuple of non-overlapping alignments that start and end on a boundary. This may
+        return no intervals in some cases.
     """
+    if random.random() < min_no_intervals_prob:
+        return tuple()
+
     get_ = lambda a, i: tuple([getattr(a, f)[i] for f in Alignment._fields])
     # NOTE: Each of these is a synchronization point along which we can match up the script
     # character, transcript character, and audio sample. We can use any of these points for
     # cutting.
     bounds = flatten_2d([[get_(a, 0), get_(a, -1)] for a in alignments])
-    num_cuts = random.randint(0, int(lib.utils.clamp(max_alignments, min_=0, max_=len(bounds) - 1)))
-
-    if num_cuts == 0:
-        return tuple()
-
-    if num_cuts == 1:
-        tuple_ = lambda i: (bounds[0][i], bounds[-1][i])
-        alignment = Alignment(tuple_(0), tuple_(1), tuple_(2))
-        return tuple([alignment]) if random.choice((True, False)) else tuple()
-
-    # NOTE: Functionally, this is similar to a 50% dropout on intervals.
-    # NOTE: Each alignment is expected to be included half of the time.
-    intervals = bounds[:1] + random.sample(bounds[1:-1], num_cuts - 1) + bounds[-1:]
-    return_ = [
-        Alignment((a[0], b[0]), (a[1], b[1]), (a[2], b[2]))
-        for a, b in zip(intervals, intervals[1:])
-        if random.choice((True, False))
-    ]
-    return tuple(return_)
+    indicies = random_nonoverlapping_intervals(len(bounds), avg_alignments)
+    intervals = [(bounds[a], bounds[b]) for (a, b) in indicies]
+    # NOTE: Alignments may have overlapping audio segments, we remove those.
+    return tuple(
+        Alignment((a[0], b[0]), (a[1], b[1]), (a[2], b[2])) for a, b in intervals if a[1] < b[1]
+    )
 
 
 def _get_loudness(
@@ -85,43 +83,54 @@ def _get_loudness(
     alignment: Alignment,
     block_size: float,
     precision: int,
+    offset: int = 0,
+    compression: int = 1,
     **kwargs,
 ) -> typing.Optional[float]:
     """Get the loudness in LUFS for an `alignment` in `audio`.
 
-    TODO: `integrated_loudness` filters our quiet sections from the loudness computations.
-    Should this be disabled?
+    NOTE: `integrated_loudness` filters our quiet sections from the loudness computations.
+    NOTE: The minimum audio length for calculating loudness is the `block_size` which is typically
+    around 400ms.
+    NOTE: Usually, for training, it's helpful if the data is within a range of -1 to 1. This
+    function provides a `offset` and `compression` parameter to adjust the LUFS range as needed.
 
     Args:
         ...
         precision: The number of decimal places to round LUFS.
         ...
+        offset: The additive used to offset the LUFS range.
+        compression: The demoninator used to compress the LUFS range.
     """
     meter = lib.audio.get_pyloudnorm_meter(sample_rate, block_size=block_size, **kwargs)
     sec_to_sample_ = functools.partial(sec_to_sample, sample_rate=sample_rate)
     slice_ = audio[sec_to_sample_(alignment.audio[0]) : sec_to_sample_(alignment.audio[1])]
     if slice_.shape[0] >= sec_to_sample_(block_size):
-        return round(meter.integrated_loudness(slice_), precision)
+        return (round(meter.integrated_loudness(slice_), precision) + offset) / compression
     return None
 
 
-def _random_loudness_annotations(
-    span: Span, signal: numpy.ndarray, max_annotations: int
-) -> typing.Tuple[torch.Tensor, torch.Tensor]:
-    """
-    Args:
-        ...
-        max_annotations: The maximum expected loudness intervals within a text segment.
+def _random_loudness_annotations(span: Span, signal: numpy.ndarray) -> torch.Tensor:
+    """Get a tensor that represents the loudness for some characters in `span.script`.
+
+    Returns:
+        annotation: This consists of two stacked sequences. The first sequence represents
+            loudness values. The second sequence represents the start and stop of the loudness
+            measurement. The annotations are marked with 1 or -1, alternating. 0 is used to denonate
+            that there is no annotation.
     """
     loudness = torch.zeros(len(span.script))
-    loudness_mask = torch.zeros(len(span.script), dtype=torch.bool)
-    for alignment in _random_nonoverlapping_alignments(span.alignments, max_annotations):
+    loudness_mask = torch.zeros(len(span.script))
+    start = 1.0
+    alignments = cf.partial(_random_nonoverlapping_alignments)(span.alignments)
+    for alignment in alignments:
         slice_ = slice(alignment.script[0], alignment.script[1])
-        loudness_ = _get_loudness(signal, span.audio_file.sample_rate, alignment, **cf.get())
+        loudness_ = cf.partial(_get_loudness)(signal, span.audio_file.sample_rate, alignment)
         if loudness_ is not None:
             loudness[slice_] = loudness_
-            loudness_mask[slice_] = True
-    return loudness, loudness_mask
+            loudness_mask[slice_] = start
+            start *= -1
+    return torch.stack((loudness, loudness_mask), dim=1)
 
 
 def _random_speed_annotations(
@@ -322,8 +331,11 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6, respell_prob: flo
     assert len(spans) > 0, "Batch must have at least one item."
 
     with futures.ThreadPoolExecutor(max_workers=min(max_workers, len(spans))) as pool:
+        # TODO: Should `audio` be cached so that we do not need to pass it around? It is a slightly
+        # redunant to pass it around.
         signals_ = list(pool.map(lambda s: s.audio(), spans))
         signals_ = typing.cast(typing.List[numpy.ndarray], signals_)
+    loudness = [_random_loudness_annotations(s, a) for s, a in zip(spans, signals_)]
     signals = [_pad_and_trim_signal(s) for s in signals_]
     spectrogram, spectrogram_mask = _signals_to_spectrograms(signals)
 
