@@ -271,6 +271,24 @@ class IsLinked(typing.NamedTuple):
 class Passage:
     """A voiced passage.
 
+    The `Passage` object represents a voice-over along with its script and transcript. It has
+    the corresponding alignments between the these three sequences. Lastly, it supports segmentation
+    through `speech_segments` and `Span`s.
+
+    NOTE: The `Passage` object was inspired by the spaCy `Doc` object. spaCy's innovative design
+    pattern made it easy for users to get access to any data related to a document through one core
+    object. This pattern has been replicated over and over again in other libraries. With a similar
+    idea in mind, we hope that the `Passage` object is used throughout this code base as a
+    centralized hub for voice-over data.
+
+    NOTE: This data structure has a number of invariants. Please review `check_invariants` to
+    learn more about invariants that are being enforced.
+
+    TODO: The `Passage` object is difficult to test. It takes awhile to initialize. It's not
+    consistent (i.e. some fields include data about the entire audio file). There is some data
+    processing functions in `_data.py` that might be helpful to include in `Passage`, what data
+    processing is included in `Passage`, and what is not?
+
     TODO: Create a `ConventionalPassage` or `ConventionalSpan` for storing tens of thousands
     of single alignment pre-cut spans. We could more efficiently and accurately handle script
     and audio updates. We could more efficiently create a `ConventionalSpan`.
@@ -279,8 +297,11 @@ class Passage:
         audio_file: A voice-over of the `script`.
         session: A label used to group passages recorded together.
         script: The `script` the `speaker` was reading from.
-        transcript: The `transcript` of the `audio`.
+        transcript: The `transcript` of the `audio_file`.
         alignments: Alignments (sorted) that align the `script`, `transcript` and `audio`.
+        other_metadata: Additional metadata associated with this passage.
+        is_linked: A flag indicating if this `Passage` is a continuation of the previous and
+            next passage.
         nonalignments: Nonalignments are alignments, in between, alignments. For example,
             in between two valid alignments, there may be a misalignment between the script
             and transcript. Also, a nonalignment may strech beyond the edges of the `Passage`.
@@ -290,13 +311,20 @@ class Passage:
             https://en.wikipedia.org/wiki/Speech_segmentation
             https://english.stackexchange.com/questions/365470/do-you-take-a-break-between-words-when-pronouncing
             https://en.wikipedia.org/wiki/detect_voice_activity
-        other_metadata: Additional metadata associated with this passage.
+        non_speech_segments: A `Timeline` of intervals representing `non_speech_segments`
+            (i.e. pauses within the audio file). Unlike other variables, this represents the
+            entire audio file rather than just the `Passage`.
+        first: A fast access copy of the first alignment in `alignments`.
+        last: A fast access copy of the last alignment in `alignments`.
+        passages: A ordered list of `Passage`s.
+        index: The index of this `Passage` in `passages`.
     """
 
     audio_file: AudioMetadata
     session: Session
     script: str
     transcript: str
+    # NOTE: `Tuple` is more space efficient but less performant than `tuple`.
     alignments: Tuple[Alignment]
     other_metadata: typing.Dict = field(default_factory=dict, compare=False)
     is_linked: IsLinked = field(default_factory=IsLinked)
