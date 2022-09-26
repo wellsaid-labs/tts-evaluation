@@ -49,7 +49,9 @@ def test__len_of_dups():
 
 @mock.patch("random.shuffle", return_value=None)
 def test_split_dataset__deduplication(_):
-    """Test `run._utils.split_dataset` handles deduplication accross multiple speakers."""
+    """Test `run._utils.split_dataset` handles deduplication across multiple speakers,
+    so that the same passage is not in both dev and train sets.
+    """
     speaker_a = make_speaker("a")
     speaker_b = make_speaker("b")
     speaker_c = make_speaker("c")
@@ -220,7 +222,8 @@ def test_split_dataset__speaker_in_multiple_groups(_):
 
 @mock.patch("random.shuffle", return_value=None)
 def test_split_dataset__exact_similarity(_):
-    """Test `run._utils.split_dataset` does not deduplicate loose matches when min_sim=1.
+    """Test `run._utils.split_dataset` does not deduplicate loose matches when min_sim=1,
+    so near-duplicate passages remain across the dev and train sets.
 
     0.903226 min_sim: "This is a test." / "This is my test."
     0.914286 min_sim: "I'm testing this." / "I'm testing these."
@@ -257,7 +260,9 @@ def test_split_dataset__exact_similarity(_):
 
 @mock.patch("random.shuffle", return_value=None)
 def test_split_dataset__loose_similarity(_):
-    """Test `run._utils.split_dataset` deduplicates loose matches when min_sim=0.9.
+    """Test `run._utils.split_dataset` deduplicates loose matches when min_sim=0.9,
+    so near-duplicate passages are grouped together in either the dev or train set,
+    rather than having the model train on passages it already saw in development.
 
     0.903226 min_sim: "This is a test." / "This is my test."
     0.914286 min_sim: "I'm testing this." / "I'm testing these."
@@ -293,10 +298,11 @@ def test_split_dataset__loose_similarity(_):
 
 
 @mock.patch("random.shuffle", return_value=None)
-def test_split_dataset__split_duplicates_for_dev_speaker(_):
-    """Test `run._utils.split_dataset` splits duplicates for a dev speaker.
+def test_split_dataset__dev_duplicates_for_dev_speakers(_):
+    """Test `run._utils.split_dataset` keeps duplicates for dev speakers in the dev set.
 
-    Since speaker_a and speaker_b are both dev speakers, split the duplicate "This is a test."
+    Since speaker_a and speaker_b are both dev speakers, keep the duplicate passages of
+    "This is a test." and group them within the dev set.
     """
     speaker_a = make_speaker("a")
     speaker_b = make_speaker("b")
