@@ -301,7 +301,7 @@ def test_split_dataset__loose_similarity(_):
 def test_split_dataset__dev_duplicates_for_dev_speakers(_):
     """Test `run._utils.split_dataset` keeps duplicates for dev speakers in the dev set.
 
-    Since speaker_a and speaker_b are both dev speakers, keep the duplicate passages of
+    Since `speaker_a` and `speaker_b` are both dev speakers, keep the duplicate passages of
     "This is a test." and group them within the dev set.
     """
     speaker_a = make_speaker("a")
