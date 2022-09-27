@@ -349,7 +349,7 @@ def _analyze_alignments(passages: typing.List[Passage], max_rows: int, run_all: 
             raise GeneratorExit()
 
         for span in utils.random_sample(trigrams, max_rows):
-            cols = st.beta_columns([2, 1, 1])
+            cols = st.columns([2, 1, 1])
             cols[0].altair_chart(utils.span_visualize_signal(span), use_container_width=True)
             cols[1].markdown(
                 f"- Script: **{span.script}**\n"
