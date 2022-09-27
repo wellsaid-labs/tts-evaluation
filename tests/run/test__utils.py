@@ -222,7 +222,7 @@ def test_split_dataset__speaker_in_multiple_groups(_):
 
 @mock.patch("random.shuffle", return_value=None)
 def test_split_dataset__exact_similarity(_):
-    """Test `run._utils.split_dataset` does not deduplicate loose matches when min_sim=1,
+    """Test `run._utils.split_dataset` does not deduplicate loose matches when `min_sim=1`,
     so near-duplicate passages remain across the dev and train sets.
 
     0.903226 min_sim: "This is a test." / "This is my test."
