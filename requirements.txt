@@ -51,6 +51,7 @@ typer
 watchdog
 threadpoolctl
 pip-licenses
+lxml
 
 # Web
 flask

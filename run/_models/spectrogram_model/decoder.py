@@ -193,6 +193,10 @@ class Decoder(torch.nn.Module):
         ) = hidden_state
 
         # NOTE: Shift target frames backwards one step to be the source frames.
+        # TODO: For training in context, `last_frame` could be a real audio frame. The only
+        # issue with that is that during inference we do not have a prior audio frame, so,
+        # we would need to make sure that during training `last_frame` is sometimes an initial
+        # frame.
         frames = (
             last_frame if target_frames is None else torch.cat([last_frame, target_frames[0:-1]])
         )
