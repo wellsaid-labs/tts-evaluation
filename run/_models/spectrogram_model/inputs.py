@@ -1,22 +1,17 @@
 import dataclasses
 import enum
-import random
-import re
-import string
 import typing
 
-import config as cf
 import numpy as np
 import spacy
 import spacy.tokens
 import torch
 
-from lib.text import load_cmudict_syl, respell
 from lib.utils import lengths_to_mask
 from run.data._loader import structures as struc
 
 
-class Pronunciation(enum.Enum):
+class Pronun(enum.Enum):
 
     NORMAL: typing.Final = "normal"
     RESPELLING: typing.Final = "respelling"
@@ -29,6 +24,13 @@ class Casing(enum.Enum):
     NO_CASING: typing.Final = "no casing"
 
 
+def _get_case(c: str) -> Casing:
+    assert len(c) == 1
+    if c.isupper():
+        return Casing.UPPER
+    return Casing.LOWER if c.islower() else Casing.NO_CASING
+
+
 class Context(enum.Enum):
     """Knowing that the model has to use context words differently from the script, we use this
     to deliminate context words from the voice-over script."""
@@ -39,114 +41,6 @@ class Context(enum.Enum):
 
 class RespellingError(ValueError):
     pass
-
-
-@dataclasses.dataclass(frozen=True)
-class Token:
-    token: spacy.tokens.token.Token
-    is_context: bool
-    is_whitespace: bool
-    try_to_respell: bool
-    text: str = dataclasses.field(init=False, repr=False)
-    pronun: Pronunciation = dataclasses.field(init=False, repr=False)
-    # TODO: Should these be added to configuration?
-    # NOTE: These prefixes and suffixes are choosen based on spaCy's tokenizer. This ensures that
-    # |\\mother\\in\\law\\|" is treated as one token instead of being tokenized.
-    prefix: typing.ClassVar[str] = "|\\"
-    suffix: typing.ClassVar[str] = "\\|"
-    delim: typing.ClassVar[str] = "\\"
-    # TODO: Configure the allowable characters based on language.
-    valid_chars: typing.ClassVar[str] = string.ascii_lowercase
-
-    def __post_init__(self):
-        if not self._is_respelled():
-            if self.prefix in self.token.text:
-                raise RespellingError("Invalid token with prefix outside of respelling.")
-            if self.suffix in self.token.text:
-                raise RespellingError("Invalid token with suffix outside of respelling.")
-        pronun, text = self._get_text()
-        object.__setattr__(self, "text", text)
-        object.__setattr__(self, "pronun", pronun)
-
-    def _is_respelled(self):
-        """Is the `self.token.text` already respelled?"""
-        text = self.token.text
-        is_respelled = text.startswith(self.prefix) and text.endswith(self.suffix)
-        text = text[len(self.prefix) : -len(self.suffix)]
-        if is_respelled:
-            if len(text) == 0:
-                raise RespellingError("Found no text.")
-            if text[0].lower() not in self.valid_chars:
-                raise RespellingError("First respelling character is invalid.")
-            if text[-1].lower() not in self.valid_chars:
-                raise RespellingError("Last respelling character is invalid.")
-            if len(set(text.lower()) - set(list(self.valid_chars + self.delim))) != 0:
-                raise RespellingError("Found invalid characters in respelling.")
-            if not all(
-                len(set(self._get_case(c) for c in syllab)) == 1
-                for syllab in text.split(self.delim)
-            ):
-                raise RespellingError("Found invalid capitalization in respelling.")
-        return is_respelled
-
-    def _try_respelling(self) -> typing.Optional[str]:
-        """Get a respelling of `self.token.text` if possible."""
-        return respell(self.token.text, load_cmudict_syl(), self.delim)
-
-    def _get_text(self) -> typing.Tuple[Pronunciation, str]:
-        """Get the text that represents `token` which maybe respelled."""
-        if self.is_whitespace:
-            return (Pronunciation.NORMAL, self.token.whitespace_)
-        if self._is_respelled():
-            return (Pronunciation.RESPELLING, self.token.text[len(self.prefix) : -len(self.suffix)])
-        if self.try_to_respell:
-            repselling = self._try_respelling()
-            if repselling is not None:
-                return (Pronunciation.RESPELLING, repselling)
-        return (Pronunciation.NORMAL, self.token.text)
-
-    @property
-    def embed(self):
-        """Get an embedding for this token."""
-        assert self.token.tensor is not None
-        # TODO: At the moment, if a pronunciation exists, then we don't have data on the original
-        # word and it's meaning. In the future, when the original word is not lost
-        # we can preserve the original word vector.
-        # NOTE: Contextual word-vectors would likely be more informative than word-vectors; however,
-        # they are likely not as robust in the presence of OOV words due to intentional
-        # misspellings. Our users intentionally misspell words to adjust the pronunciation. For that
-        # reason, using contextual word-vectors is risky.
-        if self.pronun is Pronunciation.RESPELLING or self.is_whitespace:
-            return np.zeros(self.token.tensor.shape[0] + self.token.vector.shape[0])
-        return np.concatenate((self.token.vector, self.token.tensor))  # type: ignore
-
-    @staticmethod
-    def _get_case(c: str) -> Casing:
-        assert len(c) == 1
-        if c.isupper():
-            return Casing.UPPER
-        return Casing.LOWER if c.islower() else Casing.NO_CASING
-
-    @property
-    def casing(self):
-        return [(self.pronun, Token._get_case(c)) for c in self.text]
-
-    def __len__(self):
-        return len(self.text)
-
-    @classmethod
-    def norm_respellings(
-        cls, script: str, prefix: str = "::", suffix: str = "::", delim: str = "-"
-    ):
-        """Preprocess respellings from one prefix, suffix, delim to the another."""
-        valid_chars = re.escape(f"{cls.valid_chars}{cls.valid_chars.upper()}{delim}")
-        for match in re.findall(f"{re.escape(prefix)}[{valid_chars}]+{re.escape(suffix)}", script):
-            updated = match[len(prefix) : -len(suffix)].replace(delim, cls.delim)
-            updated = f"{cls.prefix}{updated}{cls.suffix}"
-            script = script.replace(match, updated)
-        if prefix in script:
-            raise RespellingError("Found hanging prefix.")
-        return script
 
 
 @dataclasses.dataclass(frozen=True)
@@ -189,83 +83,152 @@ class Inputs:
         object.__setattr__(self, "num_tokens", num_tokens_)
         object.__setattr__(self, "tokens_mask", lengths_to_mask(num_tokens, device=self.device))
 
-    def reconstruct_text(self, i: int) -> str:
-        """Reconstruct text from uncased text, and casing labels."""
-        text = typing.cast(typing.List[str], self.tokens[i])
-        casing = typing.cast(
-            typing.List[typing.Tuple[Pronunciation, Casing]], self.token_metadata[0][i]
-        )
-        return "".join([t.upper() if c == Casing.UPPER else t for t, (_, c) in zip(text, casing)])
-
 
 SpanDoc = typing.Union[spacy.tokens.span.Span, spacy.tokens.doc.Doc]
 
 
-def _token_to_tokens(
-    token: spacy.tokens.token.Token, span: SpanDoc, respell_prob: float
-) -> typing.Tuple[Token, Token]:
-    """Convert `token` into `Token`s.
+InputsWrapperTypeVar = typing.TypeVar("InputsWrapperTypeVar")
 
-    Args:
-        token
-        span
-        respell_prob: The probability of respellings any particular spaCy token, as long as, that
-            word is in the pronunciation dictionary and doesn't have any punctuation
-            (e.g. hyphenation).
-    """
-    is_context = token not in span
-    is_whitespace_context = True if token == span[-1] else is_context
-    try_to_respell = not is_context and random.random() < respell_prob
 
-    last_token = None if token.i == 0 else token.doc[token.i - 1]
-    if last_token is not None and len(last_token.whitespace_) == 0 and not last_token.is_punct:
-        try_to_respell = False
+@dataclasses.dataclass(frozen=True)
+class InputsWrapper:
+    """The model inputs."""
 
-    # NOTE: `try_to_respell` handles only basic scenarios. A more complex scenario, for example,
-    # is apostrophes. spaCy, by default, splits some (not all) words on apostrophes while our
-    # pronunciation dictionary does not; therefore, those words will not be found in it.
-    next_token = None if len(token.doc) - 1 == token.i else token.doc[token.i + 1]
-    if next_token is not None and len(token.whitespace_) == 0 and not next_token.is_punct:
-        try_to_respell = False
+    # Batch of recording sessions
+    session: typing.List[struc.Session]
 
-    return (
-        Token(token, is_context, False, try_to_respell),
-        Token(token, is_whitespace_context, True, False),
+    # Batch of sequences
+    span: typing.List[SpanDoc]
+
+    context: typing.List[SpanDoc]
+
+    # Batch of annotations per sequence
+    loudness: typing.List[typing.List[typing.Tuple[slice, int]]]
+
+    rate: typing.List[typing.List[typing.Tuple[slice, float]]]
+
+    respellings: typing.List[typing.List[typing.Tuple[slice, str]]]
+
+    respell_map: typing.List[typing.Dict[spacy.tokens.token.Token, str]] = dataclasses.field(
+        init=False, repr=False, compare=False
     )
 
+    def __post_init__(self):
+        """
+        TODO: Double check invariants before this is inputted into the model...
+            - The respellings need to be correctly formatted
+            - The respellings need to line up with tokens in `span`.
+            - The annotations are sorted.
+            - The annotations have no overlaps, at all.
+            - The annotations should only be for the `span` object not the `context` object.
+            - The annotations should also line up with tokens.
+            -
+        """
+        pass
 
-def _preprocess(
-    batch: typing.List[typing.Tuple[struc.Session, SpanDoc, SpanDoc]],
+    def to_xml(self, session_vocab: typing.Dict[struc.Session, int]) -> str:
+        """Generate XML from model inputs.
+
+        TODO: Implement to help stringify `InputsWrapper` during training.
+        """
+        return ""
+
+    @classmethod
+    def from_xml(
+        cls: typing.Type[InputsWrapperTypeVar], session_vocab: typing.Dict[struc.Session, int]
+    ) -> InputsWrapperTypeVar:
+        """Parse XML into compatible model inputs.
+
+        TODO: Instead of a `session_vocab`, we could consider having an interface where users
+        can submit their own session objects, even, custom ones. While this might be slightly
+        more generalizable, it has a number of challenges. For example, the `Session` objects
+        have sensitive information, we'd need to desensitize it first.
+        """
+        return InputsWrapper()
+
+
+def embed_annotations(
+    length: int,
+    anno: typing.List[typing.Tuple[slice, typing.Union[int, float]]],
+    idx_offset: int = 0,
+    val_offset: float = 0,
+    val_compression: float = 1,
+) -> torch.Tensor:
+    """Given annotations for a sequence of `length`, this returns an embedding.
+
+    NOTE: The mask uses 1, -1, and 0. The non-zero values represent an annotation. We cycle between
+          1 and -1 to indicate that the annotation has changed.
+
+    Args:
+        length: The length of the annotated sequence.
+        anno: A list of annotations.
+        idx_offset: Offset the annotation indicies.
+        val_offset: Offset the annotation values so that they are easier to model.
+        val_compression: Compress the annotation values so that they are easier to model.
+
+    Returns:
+        torch.FloatTensor [length, 2]
+    """
+    vals = torch.zeros(length)
+    mask = torch.zeros(length)
+    mask_val = 1.0
+    for slice_, val in anno:
+        slice_ = slice(slice_.start + idx_offset, slice_.stop + idx_offset, slice_.step)
+        vals[slice_] = val
+        mask[slice_] = mask_val
+        mask_val *= -1
+    vals = (vals + val_offset) / val_compression
+    return torch.stack((vals, mask), dim=1)
+
+
+def preprocess(
+    wrap: InputsWrapper,
+    loudness_kwargs: typing.Dict,
+    rate_kwargs: typing.Dict,
     device: torch.device = torch.device("cpu"),
-    respell_prob: float = 0.0,
+    loudness_offset: float = 50,
+    loudness_compression: float = 50,
+    rate_offset: float = 0.1,
+    rate_compression: float = 0.1,
 ) -> Inputs:
     """Preprocess `batch` into model `Inputs`.
 
-    NOTE: Preprocess as much as possible here so the model is as fast as possible.
+    NOTE: This preprocessing layer can be run in a seperate process to prepare data for model
+          training.
+    NOTE: Contextual word-vectors would likely be more informative than word-vectors; however,
+          they are likely not as robust in the presence of OOV words due to intentional
+          misspellings. Our users intentionally misspell words to adjust the pronunciation. For that
+          reason, using contextual word-vectors is risky.
 
     TODO: Instead of using `zero` embeddings, what if we tried training a vector, instead?
+    TODO: Add offset and compression parameters to config.
+
+    Args:
+        batch: A row of data in the batch consists of a Session, the script with context, the
+            script without context, and any related annotations expressed as a Tensor.
     """
     inputs = Inputs([], [], [[], []], [], [], device)
-    for sesh, context_span, span in batch:
-        tokens = [t for token in context_span for t in _token_to_tokens(token, span, respell_prob)]
-
+    iter_ = zip(wrap.session, wrap.span, wrap.context, wrap.loudness, wrap.rate, wrap.respell_map)
+    for sesh, span, context, loudness, rate, respell_map in iter_:
         seq_metadata = [sesh[0].label, sesh, sesh[0].dialect, sesh[0].style, sesh[0].language]
-        for i, data in enumerate(seq_metadata):
-            if len(inputs.seq_metadata) == i:
-                inputs.seq_metadata.append([])
-            inputs.seq_metadata[i].append(data)
+        inputs.seq_metadata.extend([[] for _ in seq_metadata])
+        [inputs.seq_metadata[i].append(data) for i, data in enumerate(seq_metadata)]
 
-        if len(tokens) > 0:
-            start_index = next(i for i, t in enumerate(tokens) if not t.is_context)
-            start_char = sum(len(t.text) for t in tokens[:start_index])
-            end_char = start_char + sum(len(t) for t in tokens if not t.is_context)
-        else:
-            start_char, end_char = 0, 0
+        start_char = next((t.start_char for t in context if t not in span), 0)
+        end_char = (len(span.text) + start_char) - len(context.text)
         inputs.slices.append(slice(start_char, end_char))
 
-        chars = [c for t in tokens for c in t.text]
+        is_respelled = [t in respell_map for t in context]
+        tokens = [(respell_map[t] if r else t.text) for t, r in zip(context, is_respelled)]
+        chars = [c for t in tokens for c in t]
+        casing = [_get_case(c) for c in chars]
+        pronun = [
+            Pronun.RESPELLING if r else Pronun.NORMAL
+            for t, r in zip(tokens, is_respelled)
+            for _ in t
+        ]
         inputs.tokens.append([c.lower() for c in chars])
-        inputs.token_metadata[0].append([c for t in tokens for c in t.casing])
+        inputs.token_metadata[0].append(list(zip(pronun, casing)))
         inputs.token_metadata[1].append([Context.CONTEXT for _ in chars])
         for i in range(*inputs.slices[-1].indices(len(chars))):
             inputs.token_metadata[1][-1][i] = Context.SCRIPT
@@ -273,32 +236,19 @@ def _preprocess(
         if len(tokens) == 0:
             embed = torch.zeros(0, 0, device=device)
         else:
-            embed = [torch.tensor(t.embed, device=device, dtype=torch.float32) for t in tokens]
+            embed = [np.concatenate((t.vector, t.tensor)) for t in context]
+            embed = [torch.tensor(t, device=device, dtype=torch.float32) for t in embed]
             embed = [e.unsqueeze(0).repeat(len(t), 1) for e, t in zip(embed, tokens)]
             embed = torch.cat(embed)
+
+        loudness_embed = embed_annotations(len(chars), loudness, start_char, *loudness_kwargs)
+        rate_embed = embed_annotations(len(chars), rate, start_char, *rate_kwargs)
+        # rate_embed (torch.FloatTensor [num_tokens, 2])
+        # loudness_embed (torch.FloatTensor [num_tokens, 2])
+        # embed (torch.FloatTensor [num_tokens, embedding_size]) →
+        # [num_tokens, embedding_size + 4]
+        embed = torch.cat((embed, rate_embed, loudness_embed), dim=1)
         typing.cast(list, inputs.token_embeddings).append(embed)
 
     token_embeddings = torch.nn.utils.rnn.pad_sequence(inputs.token_embeddings, batch_first=True)
     return dataclasses.replace(inputs, token_embeddings=token_embeddings)
-
-
-def norm_respellings(script: str) -> str:
-    return Token.norm_respellings(script)
-
-
-def preprocess_spans(spans: typing.List[struc.Span], **kw) -> Inputs:
-    return _preprocess([(s.session, cf.partial(s.spacy_context)(), s.spacy) for s in spans], **kw)
-
-
-class InputsWrapper(typing.NamedTuple):
-    """The model inputs."""
-
-    # Batch of recording sessions per speaker
-    session: typing.List[struc.Session]
-
-    # Batch of sequences of `Span` which include `Doc` context
-    doc: typing.List[spacy.tokens.doc.Doc]
-
-
-def preprocess_inputs(inputs: InputsWrapper, **kw) -> Inputs:
-    return _preprocess([(s, d, d) for s, d in zip(inputs.session, inputs.doc)], **kw)

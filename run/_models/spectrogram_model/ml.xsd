@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+
+<!-- TODO: The respellings alphabet should we configured based on language. -->
+
+<xs:attribute name="respelling">
+  <xs:simpleType>
+    <xs:restriction base="xs:string">
+      <xs:pattern value="((([A-Z]+|[a-z]+)-)+)?([A-Z]+|[a-z]+)"/>
+    </xs:restriction>
+  </xs:simpleType>
+</xs:attribute>
+
+<xs:complexType name="pronunciation">
+  <xs:simpleContent>
+    <xs:extension base="xs:string">
+      <xs:attribute ref="respelling" use="required" />
+    </xs:extension>
+  </xs:simpleContent>
+</xs:complexType>
+
+<xs:complexType name="prosody" mixed="true">
+  <xs:sequence minOccurs="0" maxOccurs="unbounded">
+    <xs:choice>
+      <xs:element name="prosody" type="prosody" />
+      <xs:element name="pronunciation" type="pronunciation" />
+    </xs:choice>
+  </xs:sequence>
+  <xs:attribute name="loudness" type="xs:string" />
+  <xs:attribute name="rate" type="xs:string" />
+</xs:complexType>
+
+<xs:element name="speak">
+  <xs:complexType mixed="true">
+    <xs:sequence minOccurs="0" maxOccurs="unbounded">
+      <xs:choice>
+        <xs:element name="prosody" type="prosody" />
+        <xs:element name="pronunciation" type="pronunciation" />
+      </xs:choice>
+    </xs:sequence>
+    <xs:attribute name="avatar" type="xs:int" use="required" />
+  </xs:complexType>
+</xs:element>
+
+</xs:schema>

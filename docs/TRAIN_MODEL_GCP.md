@@ -277,4 +277,4 @@ Setup your local development environment by following [these instructions](LOCAL
    ```
 
    When you're ready to begin signal model training, start from the top of these instructions and
-   use your `$IMAGE_FAMILY` envrionment variable to build your new instance!
+   use your `$IMAGE_FAMILY` environment variable to build your new instance!
