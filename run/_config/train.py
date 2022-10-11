@@ -49,8 +49,6 @@ def make_spectrogram_model_train_config(
 
     return {
         run.train._utils.set_run_seed: cf.Args(seed=RANDOM_SEED),
-        # NOTE: We expect users to respell approx 5 - 10% of words.
-        spectrogram_model._data.make_batch: cf.Args(respell_prob=0.1),
         spectrogram_model._worker._State._get_optimizers: cf.Args(
             lr_multiplier_schedule=partial(
                 lib.optimizers.warmup_lr_multiplier_schedule, warmup=500

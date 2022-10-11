@@ -308,5 +308,7 @@ def configure(overwrite: bool = False):
         run.train.spectrogram_model._data._random_tempo_annotations: cf.Args(
             max_annotations=10, precision=2
         ),
+        # NOTE: We expect users to respell approx 5 - 10% of words.
+        run.train.spectrogram_model._data._random_respelling_annotations: cf.Args(prob=0.1),
     }
     cf.add(config, overwrite)

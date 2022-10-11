@@ -1,5 +1,6 @@
 import logging
 import re
+import string
 import typing
 from functools import lru_cache, partial
 
@@ -185,5 +186,12 @@ def configure(overwrite: bool = False):
     config = {
         run._utils._get_debug_datasets: cf.Args(speakers=debug_speakers),
         run._utils.get_dataset: cf.Args(language=LANGUAGE),
+        # TODO: In the future, we may add respelling support based on language, for now,
+        # this only support `ascii_lowercase`
+        run._models.spectrogram_model.inputs.InputsWrapper.check_invariants: cf.Args(
+            valid_respelling_chars=string.ascii_lowercase,
+            respelling_delim="-",
+        ),
+        run.train.spectrogram_model._data._random_respelling_annotations: cf.Args(delim="-"),
     }
     cf.add(config, overwrite)

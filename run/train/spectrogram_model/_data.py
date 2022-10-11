@@ -322,7 +322,7 @@ class Batch(_utils.Batch):
         return len(self.spans)
 
 
-def make_batch(spans: typing.List[Span], max_workers: int = 6, respell_prob: float = 0.0) -> Batch:
+def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
     """
     NOTE: In Janurary 2020, this function profiled like so:
     - 27% for `_signals_to_spectrograms`

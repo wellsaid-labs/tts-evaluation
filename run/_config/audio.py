@@ -227,6 +227,16 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
             # compression of 0.1 will bring that range from roughly 1 to -1.
             rate_kwargs=dict(val_offset=0.1, val_compression=0.1),
         ),
+        run._models.spectrogram_model.inputs.InputsWrapper.check_invariants: Args(
+            # NOTE: The LUFS range is approximately from -15 to -70 db, this gives a bit more
+            # wiggle room.
+            min_loudness=-100,
+            max_loudness=0,
+            # NOTE: The rate range is approximately from 0.04 to 0.2 sec per char, this gives a bit
+            # more wiggle room.
+            min_rate=0.025,
+            max_rate=1,
+        ),
         run.train.spectrogram_model._data._make_stop_token: Args(
             # NOTE: The stop token uncertainty was approximated by a fully trained model that
             # learned the stop token distribution. The distribution looked like a gradual increase

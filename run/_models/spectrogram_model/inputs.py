@@ -2,12 +2,14 @@ import dataclasses
 import enum
 import typing
 
+import config as cf
 import numpy as np
 import spacy
 import spacy.tokens
 import torch
 
 from lib.utils import lengths_to_mask
+from run._config.lang import is_voiced
 from run.data._loader import structures as struc
 
 
@@ -37,10 +39,6 @@ class Context(enum.Enum):
 
     CONTEXT: typing.Final = "context"
     SCRIPT: typing.Final = "script"
-
-
-class RespellingError(ValueError):
-    pass
 
 
 @dataclasses.dataclass(frozen=True)
@@ -93,6 +91,10 @@ SpanAnnotations = typing.List[SpanAnnotation]
 TokenAnnotations = typing.Dict[spacy.tokens.token.Token, str]
 
 
+class AnnotationError(ValueError):
+    pass
+
+
 @dataclasses.dataclass(frozen=True)
 class InputsWrapper:
     """The model inputs.
@@ -124,18 +126,65 @@ class InputsWrapper:
     respellings: typing.List[TokenAnnotations]
 
     def __post_init__(self):
-        """
-        TODO: Double check invariants before this is inputted into the model...
-            - The respellings need to be correctly formatted
-              (with the correct delim, we should sync XSD together with this)
-            - The respellings need to line up with tokens in `span`.
-            - The annotations are sorted.
-            - The annotations have no overlaps, at all.
-            - The annotations should only be for the `span` object not the `context` object.
-            - The annotations should also line up with tokens.
-            -
-        """
-        pass
+        cf.partial(self.check_invariants)()
+
+    def check_invariants(
+        self,
+        min_loudness: float,
+        max_loudness: float,
+        min_rate: float,
+        max_rate: float,
+        valid_respelling_chars: str,
+        respelling_delim: str,
+    ):
+        # NOTE: That model recieves public data through this interface, so, we need to have
+        # robust verification and clear error messages for API developers.
+        # NOTE: `assert` is used for non-public errors, related to using this object.
+        # `AnnotationError`s are used for public-facing errors.
+        batch_len = len(self.session)
+        for items in (self.span, self.context, self.loudness, self.rate, self.respellings):
+            assert len(items) == batch_len
+        for token in self.context:
+            assert token in self.span
+        for batch_span_annotations in (self.loudness, self.rate):
+            for sesh, span_, annotations in zip(self.session, self.span, batch_span_annotations):
+                for prev, annotation in zip([None] + annotations, annotations):
+                    # NOTE: The only annotations that are acceptable are non-voiced characters
+                    # for pauses or spans for speaking rate.
+                    is_pause = not is_voiced(span_.text[annotation[0]], sesh[0].language)
+                    is_valid_span = (
+                        span_.char_span(annotation[0].start, annotation[0].stop) is not None
+                    )
+                    if not is_valid_span and not is_pause:
+                        raise AnnotationError("The annotations must wrap words fully.")
+                    if prev is not None:
+                        assert prev[0].stop < annotation[0].start
+        if not all(a[1] >= min_loudness and a[1] <= max_loudness for b in self.loudness for a in b):
+            message = "The loudness annotations must be between "
+            raise AnnotationError(f"{message} {min_loudness} and {max_loudness} db.")
+        if not all(a[1] >= min_rate and a[1] <= max_rate for b in self.rate for a in b):
+            message = "The rate annotations must be between "
+            raise AnnotationError(f"{message} {min_rate} and {max_rate} seconds per character.")
+        for span_, token_annotations in zip(self.span, self.respellings):
+            for token, annotation in token_annotations.items():
+                assert token in span_
+                if len(annotation) == 0:
+                    raise AnnotationError("Respelling has no text.")
+                if (
+                    annotation[0].lower() not in valid_respelling_chars
+                    or annotation[-1].lower() not in valid_respelling_chars
+                ):
+                    message = "Respellings must start and end with one of these chars:"
+                    raise AnnotationError(f"{message} {valid_respelling_chars}")
+                all_chars = set(list(valid_respelling_chars + respelling_delim))
+                if len(set(annotation.lower()) - all_chars) != 0:
+                    message = "Respellings must have these chars only:"
+                    raise AnnotationError(f"{message} {''.join(all_chars)}")
+                if not all(
+                    len(set(_get_case(c) for c in syllab)) == 1
+                    for syllab in annotation.split(respelling_delim)
+                ):
+                    raise AnnotationError("Respelling must be capitalized correctly.")
 
     def to_xml(self, session_vocab: typing.Dict[struc.Session, int]) -> str:
         """Generate XML from model inputs.
