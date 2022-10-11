@@ -24,9 +24,15 @@ import run
 from lib.audio import sec_to_sample
 from lib.distributed import get_rank, get_world_size, is_initialized
 from lib.samplers import BucketBatchSampler
+from lib.text import load_cmudict_syl, respell
 from lib.utils import Tuple, flatten_2d, lengths_to_mask, random_nonoverlapping_intervals
-from run._models.spectrogram_model import preprocess_spans
-from run._models.spectrogram_model.model import Inputs
+from run._models.spectrogram_model import (
+    Inputs,
+    PreprocessedInputs,
+    SpanAnnotations,
+    TokenAnnotations,
+    preprocess,
+)
 from run.data._loader.structures import Alignment, Span, Speaker
 from run.train import _utils
 
@@ -47,16 +53,15 @@ def _random_nonoverlapping_alignments(
     """Generate a random set of non-overlapping alignments.
 
     TODO: Alignments do overlap sometimes in practice, measure how often this impacts this
-    algorithm.
-    TODO: Should we consider a minimum interval length to ensure the alignment produced is
-    accurate?
+          algorithm.
     TODO: Review the data generated.
 
     Args:
         alignments
         avg_alignments: The average number of alignments to return.
         min_no_intervals_prob: The minimum probability for sampling no intervals. In practice,
-            no intervals will be sampled at a slightly higher rate due to the implementation.
+            no intervals will be sampled at a slightly higher rate due to the implementation
+            quirks.
 
     Returns: A tuple of non-overlapping alignments that start and end on a boundary. This may
         return no intervals in some cases.
@@ -69,6 +74,7 @@ def _random_nonoverlapping_alignments(
     # character, transcript character, and audio sample. We can use any of these points for
     # cutting.
     bounds = flatten_2d([[get_(a, 0), get_(a, -1)] for a in alignments])
+    # NOTE: Depending on the parameters, this has some probability of generating no intervals.
     indicies = random_nonoverlapping_intervals(len(bounds), avg_alignments)
     intervals = [(bounds[a], bounds[b]) for (a, b) in indicies]
     # NOTE: Alignments may have overlapping audio segments, we remove those.
@@ -77,14 +83,12 @@ def _random_nonoverlapping_alignments(
     )
 
 
-def _get_loudness(
+def _get_loudness_annotation(
     audio: numpy.ndarray,
     sample_rate: int,
     alignment: Alignment,
     block_size: float,
     precision: int,
-    offset: int = 0,
-    compression: int = 1,
     **kwargs,
 ) -> typing.Optional[float]:
     """Get the loudness in LUFS for an `alignment` in `audio`.
@@ -92,68 +96,75 @@ def _get_loudness(
     NOTE: `integrated_loudness` filters our quiet sections from the loudness computations.
     NOTE: The minimum audio length for calculating loudness is the `block_size` which is typically
     around 400ms.
-    NOTE: Usually, for training, it's helpful if the data is within a range of -1 to 1. This
-    function provides a `offset` and `compression` parameter to adjust the LUFS range as needed.
 
     Args:
         ...
         precision: The number of decimal places to round LUFS.
-        ...
-        offset: The additive used to offset the LUFS range.
-        compression: The demoninator used to compress the LUFS range.
     """
     meter = lib.audio.get_pyloudnorm_meter(sample_rate, block_size=block_size, **kwargs)
     sec_to_sample_ = functools.partial(sec_to_sample, sample_rate=sample_rate)
     slice_ = audio[sec_to_sample_(alignment.audio[0]) : sec_to_sample_(alignment.audio[1])]
     if slice_.shape[0] >= sec_to_sample_(block_size):
-        return (round(meter.integrated_loudness(slice_), precision) + offset) / compression
+        return round(meter.integrated_loudness(slice_), precision)
     return None
 
 
-def _random_loudness_annotations(span: Span, signal: numpy.ndarray) -> torch.Tensor:
-    """Get a tensor that represents the loudness for some characters in `span.script`.
-
-    Returns:
-        annotation: This consists of two stacked sequences. The first sequence represents
-            loudness values. The second sequence represents the start and stop of the loudness
-            measurement. The annotations are marked with 1 or -1, alternating. 0 is used to denonate
-            that there is no annotation.
-    """
-    loudness = torch.zeros(len(span.script))
-    loudness_mask = torch.zeros(len(span.script))
-    start = 1.0
+def _random_loudness_annotations(span: Span, signal: numpy.ndarray) -> SpanAnnotations:
+    """Create random annotations that represent the loudness in `span.script`."""
+    annotations: SpanAnnotations = []
     alignments = cf.partial(_random_nonoverlapping_alignments)(span.alignments)
     for alignment in alignments:
         slice_ = slice(alignment.script[0], alignment.script[1])
-        loudness_ = cf.partial(_get_loudness)(signal, span.audio_file.sample_rate, alignment)
+        loudness_ = cf.partial(_get_loudness_annotation)(
+            signal, span.audio_file.sample_rate, alignment
+        )
         if loudness_ is not None:
-            loudness[slice_] = loudness_
-            loudness_mask[slice_] = start
-            start *= -1
-    return torch.stack((loudness, loudness_mask), dim=1)
+            annotations.append((slice_, loudness_))
+    return annotations
 
 
-def _random_speed_annotations(
-    span: Span, max_annotations: int, precision: int
-) -> typing.Tuple[torch.Tensor, torch.Tensor]:
-    """
+def _random_tempo_annotations(span: Span, precision: int) -> SpanAnnotations:
+    """Create random annotations that represent the speaking rate in `span.script`.
+
+    TODO: We should investigate a more accurate speech tempo, there are a couple options here:
+    https://en.wikipedia.org/wiki/Speech_tempo
+
+    TODO: We should investiage the correlation of speech tempo to audio length depending on the
+    audio length. Are there thresholds for which it is more likely to be incorrect?
+
     Args:
         span
-        max_annotations: The maximum expected speed intervals within a text segment.
         precision: The number of decimal places to round phonemes per second.
     """
-    speed = torch.zeros(len(span.script))
-    speed_mask = torch.zeros(len(span.script), dtype=torch.bool)
-    for alignment in _random_nonoverlapping_alignments(span.alignments, max_annotations):
+    annotations: SpanAnnotations = []
+    alignments = cf.partial(_random_nonoverlapping_alignments)(span.alignments)
+    for alignment in alignments:
         slice_ = slice(alignment.script[0], alignment.script[1])
-        # TODO: Instead of using characters per second, we could estimate the number of phonemes
-        # with `grapheme_to_phoneme`. This might be slow, so we'd need to do so in a batch.
-        # `grapheme_to_phoneme` can only estimate the number of phonemes because we can't
-        # incorporate sufficient context to get the actual phonemes pronounced by the speaker.
         second_per_char = (alignment.audio[1] - alignment.audio[0]) / (slice_.stop - slice_.start)
-        speed[slice_] = round(second_per_char, precision)
-        speed_mask[slice_] = True
-    return speed, speed_mask
+        annotations.append((slice_, round(second_per_char, precision)))
+    return annotations
+
+
+def _random_respelling_annotations(span: Span, prob: float, delim: str) -> TokenAnnotations:
+    """Create random annotations for different respellings in `span.script`.
+
+    NOTE: We annotate only basic scenarios. A more complex scenario, for example,
+          is apostrophes. spaCy, by default, splits some (not all) words on apostrophes while our
+          pronunciation dictionary does not; therefore, those words will not be found in it.
+    """
+    annotations: TokenAnnotations = {}
+    tokens = list(span.spacy)
+    for prev, token, next_ in zip([None] + tokens[:-1], span.spacy, tokens[1:] + [None]):
+        if random.random() > prob:
+            continue
+        if prev is not None and len(prev.whitespace_) == 0 and not prev.is_punct:
+            continue
+        if next_ is not None and len(next_.whitespace_) == 0 and not next_.is_punct:
+            continue
+        respelling = respell(token.text, load_cmudict_syl(), delim)
+        if respelling is not None:
+            annotations[token] = respelling
+    return annotations
 
 
 def _pad_and_trim_signal(signal: numpy.ndarray) -> torch.Tensor:
@@ -295,7 +306,9 @@ class Batch(_utils.Batch):
     # SequenceBatch[torch.FloatTensor [num_frames, batch_size], torch.LongTensor [1, batch_size])
     stop_token: SequenceBatch
 
-    inputs: Inputs
+    pre_inputs: Inputs
+
+    inputs: PreprocessedInputs
 
     def apply(self, call: typing.Callable[[torch.Tensor], torch.Tensor]) -> "Batch":
         batch: Batch = super().apply(call)
@@ -335,9 +348,16 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6, respell_prob: flo
         # redunant to pass it around.
         signals_ = list(pool.map(lambda s: s.audio(), spans))
         signals_ = typing.cast(typing.List[numpy.ndarray], signals_)
-    loudness = [_random_loudness_annotations(s, a) for s, a in zip(spans, signals_)]
     signals = [_pad_and_trim_signal(s) for s in signals_]
     spectrogram, spectrogram_mask = _signals_to_spectrograms(signals)
+    inputs = Inputs(
+        session=[s.session for s in spans],
+        span=[s.spacy for s in spans],
+        context=[cf.partial(s.spacy_context)() for s in spans],
+        loudness=[cf.partial(_random_loudness_annotations)(s, a) for s, a in zip(spans, signals_)],
+        rate=[cf.partial(_random_tempo_annotations)(s) for s in spans],
+        respellings=[cf.partial(_random_respelling_annotations)(s) for s in spans],
+    )
 
     return Batch(
         # NOTE: Prune unused attributes from `Passage` by creating a new `Passage`, in order to
@@ -347,7 +367,8 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6, respell_prob: flo
         spectrogram=spectrogram,
         spectrogram_mask=spectrogram_mask,
         stop_token=cf.partial(_make_stop_token)(spectrogram),
-        inputs=preprocess_spans(spans, respell_prob=respell_prob),
+        pre_inputs=inputs,
+        inputs=cf.partial(preprocess)(inputs),
     )
 
 

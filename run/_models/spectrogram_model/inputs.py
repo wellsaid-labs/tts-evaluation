@@ -88,11 +88,25 @@ SpanDoc = typing.Union[spacy.tokens.span.Span, spacy.tokens.doc.Doc]
 
 
 InputsWrapperTypeVar = typing.TypeVar("InputsWrapperTypeVar")
+SpanAnnotation = typing.Tuple[slice, float]
+SpanAnnotations = typing.List[SpanAnnotation]
+TokenAnnotations = typing.Dict[spacy.tokens.token.Token, str]
 
 
 @dataclasses.dataclass(frozen=True)
 class InputsWrapper:
-    """The model inputs."""
+    """The model inputs.
+
+    TODO: This does not allow annotations for context, yet. In the future, depending on the
+          purpose of context, it might be helpful to either remove it, or align it with the voiced
+          text span. For now, the context is only used during training, to help the model
+          with pronunciation. It's not used during inference. This creates a discrepency
+          between model usage during inference and training that should be resolved. Either way,
+          we should have examples without context, so that the model has some examples that
+          directly mimic training. This discrepency could explain why the model struggles more
+          with phrases than it does full-sentences (i.e. it may not train on many examples of
+          phrases without context).
+    """
 
     # Batch of recording sessions
     session: typing.List[struc.Session]
@@ -103,20 +117,17 @@ class InputsWrapper:
     context: typing.List[SpanDoc]
 
     # Batch of annotations per sequence
-    loudness: typing.List[typing.List[typing.Tuple[slice, int]]]
+    loudness: typing.List[typing.List[SpanAnnotation]]
 
-    rate: typing.List[typing.List[typing.Tuple[slice, float]]]
+    rate: typing.List[typing.List[SpanAnnotation]]
 
-    respellings: typing.List[typing.List[typing.Tuple[slice, str]]]
-
-    respell_map: typing.List[typing.Dict[spacy.tokens.token.Token, str]] = dataclasses.field(
-        init=False, repr=False, compare=False
-    )
+    respellings: typing.List[TokenAnnotations]
 
     def __post_init__(self):
         """
         TODO: Double check invariants before this is inputted into the model...
             - The respellings need to be correctly formatted
+              (with the correct delim, we should sync XSD together with this)
             - The respellings need to line up with tokens in `span`.
             - The annotations are sorted.
             - The annotations have no overlaps, at all.
@@ -158,6 +169,9 @@ def embed_annotations(
 
     NOTE: The mask uses 1, -1, and 0. The non-zero values represent an annotation. We cycle between
           1 and -1 to indicate that the annotation has changed.
+    NOTE: Usually, for training, it's helpful if the data is within a range of -1 to 1. This
+          function provides a `val_offset` and `val_compression` parameter to adjust the annotation
+          range as needed.
 
     Args:
         length: The length of the annotated sequence.
@@ -186,10 +200,6 @@ def preprocess(
     loudness_kwargs: typing.Dict,
     rate_kwargs: typing.Dict,
     device: torch.device = torch.device("cpu"),
-    loudness_offset: float = 50,
-    loudness_compression: float = 50,
-    rate_offset: float = 0.1,
-    rate_compression: float = 0.1,
 ) -> Inputs:
     """Preprocess `batch` into model `Inputs`.
 
@@ -201,14 +211,13 @@ def preprocess(
           reason, using contextual word-vectors is risky.
 
     TODO: Instead of using `zero` embeddings, what if we tried training a vector, instead?
-    TODO: Add offset and compression parameters to config.
 
     Args:
         batch: A row of data in the batch consists of a Session, the script with context, the
             script without context, and any related annotations expressed as a Tensor.
     """
     inputs = Inputs([], [], [[], []], [], [], device)
-    iter_ = zip(wrap.session, wrap.span, wrap.context, wrap.loudness, wrap.rate, wrap.respell_map)
+    iter_ = zip(wrap.session, wrap.span, wrap.context, wrap.loudness, wrap.rate, wrap.respellings)
     for sesh, span, context, loudness, rate, respell_map in iter_:
         seq_metadata = [sesh[0].label, sesh, sesh[0].dialect, sesh[0].style, sesh[0].language]
         inputs.seq_metadata.extend([[] for _ in seq_metadata])

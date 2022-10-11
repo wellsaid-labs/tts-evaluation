@@ -6,7 +6,6 @@ import config as cf
 
 import lib
 import run
-from run._models.spectrogram_model.inputs import norm_respellings
 from run.data import _loader
 from run.data._loader import structures as struc
 
@@ -146,6 +145,7 @@ def _include_span(span: struc.Span):
     return True
 
 
+# TODO: We need to convert these test cases to XML.
 ENGLISH_TEST_CASES = [
     # NOTE: These statements have a mix of heteronyms, initialisms, hard words (locations,
     # medical terms, technical terms), etc for testing pronunciation.
@@ -273,7 +273,7 @@ ENGLISH_TEST_CASES = [
     "::po-lahn-co::",
     "::fran-SIH-skoh::",
 ]
-TEST_CASES = [(struc.Language.ENGLISH, norm_respellings(t)) for t in ENGLISH_TEST_CASES]
+TEST_CASES = [(struc.Language.ENGLISH, t) for t in ENGLISH_TEST_CASES]
 
 
 def configure(overwrite: bool = False):
@@ -297,6 +297,16 @@ def configure(overwrite: bool = False):
         run._utils.SpanGenerator: cf.Args(max_seconds=15, include_span=_include_span),
         run.train._utils.process_select_cases: cf.Args(
             cases=TEST_CASES, speakers=DEV_SPEAKERS, num_cases=15
+        ),
+        # NOTE: `min_no_intervals_prob` was set at 10% to ensure the model is exposed to some
+        # data that has no annotations; however, our preference is for the model to train with
+        # more annotations because it should "stabalize" it. As in, the model would not need to
+        # guess as much which creates an easier training environment.
+        run.train.spectrogram_model._data._random_nonoverlapping_alignments: cf.Args(
+            min_no_intervals_prob=0.1, avg_alignments=3
+        ),
+        run.train.spectrogram_model._data._random_tempo_annotations: cf.Args(
+            max_annotations=10, precision=2
         ),
     }
     cf.add(config, overwrite)

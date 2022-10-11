@@ -211,25 +211,21 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
             format_=format_,
         ),
         run.data._loader.utils.SpanGenerator: Args(max_pause=too_long_pause_length),
-        # NOTE: `min_no_intervals_prob` was set at 10% to ensure the model is exposed to some
-        # data that has no annotations; however, our preference is for the model to train with
-        # more annotations because it should "stabalize" it. As in, the model would not need to
-        # guess as much which creates an easier training environment.
-        run.train.spectrogram_model._data._random_nonoverlapping_alignments: cf.Args(
-            min_no_intervals_prob=0.1, avg_alignments=3
-        ),
         # NOTE: A 0.400 `block_size` is standard for ITU-R BS.1770.
         # NOTE: A useful general reference is that the just noticeable difference in sound
         # intensity for the human ear is about 1 decibel. For more intense sounds, this can be
         # as low as 1/2 or 1/3.
         # http://physics.gmu.edu/~dmaria/phys260summer03/sound/DB.HTML#c4
-        # NOTE: The LUFS range is approximately from 0 to -80 db so a offset and compression of 50
-        # will bring that range from roughly 1 to -1.
-        run.train.spectrogram_model._data._get_loudness: Args(
-            block_size=0.400, precision=0, offset=50, compression=50, filter_class=filter_class
+        run.train.spectrogram_model._data._get_loudness_annotation: Args(
+            block_size=0.400, precision=0, filter_class=filter_class
         ),
-        run.train.spectrogram_model._data._random_speed_annotations: Args(
-            max_annotations=10, precision=2
+        run._models.spectrogram_model.inputs.preprocess: Args(
+            # NOTE: The LUFS range is approximately from 0 to -80 db so a offset and compression of
+            # 50 will bring that range from roughly 1 to -1.
+            loudness_kwargs=dict(val_offset=50, val_compression=50),
+            # NOTE: The tempo range is approximately from 0.04 to 0.2 sec per char so a offset and
+            # compression of 0.1 will bring that range from roughly 1 to -1.
+            rate_kwargs=dict(val_offset=0.1, val_compression=0.1),
         ),
         run.train.spectrogram_model._data._make_stop_token: Args(
             # NOTE: The stop token uncertainty was approximated by a fully trained model that
