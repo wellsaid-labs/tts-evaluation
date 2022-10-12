@@ -124,7 +124,7 @@ def _random_loudness_annotations(span: Span, signal: numpy.ndarray) -> SpanAnnot
 
 
 def _random_tempo_annotations(span: Span, precision: int) -> SpanAnnotations:
-    """Create random annotations that represent the speaking rate in `span.script`.
+    """Create random annotations that represent the speaking tempo in `span.script`.
 
     TODO: We should investigate a more accurate speech tempo, there are a couple options here:
     https://en.wikipedia.org/wiki/Speech_tempo
@@ -355,7 +355,7 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
         span=[s.spacy for s in spans],
         context=[cf.partial(s.spacy_context)() for s in spans],
         loudness=[cf.partial(_random_loudness_annotations)(s, a) for s, a in zip(spans, signals_)],
-        rate=[cf.partial(_random_tempo_annotations)(s) for s in spans],
+        tempo=[cf.partial(_random_tempo_annotations)(s) for s in spans],
         respellings=[cf.partial(_random_respelling_annotations)(s) for s in spans],
     )
 

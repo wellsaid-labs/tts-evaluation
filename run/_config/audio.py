@@ -225,17 +225,17 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
             loudness_kwargs=dict(val_offset=50, val_compression=50),
             # NOTE: The tempo range is approximately from 0.04 to 0.2 sec per char so a offset and
             # compression of 0.1 will bring that range from roughly 1 to -1.
-            rate_kwargs=dict(val_offset=0.1, val_compression=0.1),
+            tempo_kwargs=dict(val_offset=0.1, val_compression=0.1),
         ),
         run._models.spectrogram_model.inputs.InputsWrapper.check_invariants: Args(
             # NOTE: The LUFS range is approximately from -15 to -70 db, this gives a bit more
             # wiggle room.
             min_loudness=-100,
             max_loudness=0,
-            # NOTE: The rate range is approximately from 0.04 to 0.2 sec per char, this gives a bit
+            # NOTE: The tempo range is approximately from 0.04 to 0.2 sec per char, this gives a bit
             # more wiggle room.
-            min_rate=0.025,
-            max_rate=1,
+            min_tempo=0.025,
+            max_tempo=1,
         ),
         run.train.spectrogram_model._data._make_stop_token: Args(
             # NOTE: The stop token uncertainty was approximated by a fully trained model that
