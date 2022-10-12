@@ -39,7 +39,7 @@
         <xs:element name="respell" type="respell" />
       </xs:choice>
     </xs:sequence>
-    <xs:attribute name="avatar" type="xs:int" use="required" />
+    <xs:attribute name="value" type="xs:int" use="required" />
   </xs:complexType>
 </xs:element>
 

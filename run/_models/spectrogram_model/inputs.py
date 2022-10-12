@@ -150,6 +150,10 @@ class InputsWrapper:
         # robust verification and clear error messages for API developers.
         # NOTE: `assert` is used for non-public errors, related to using this object.
         # `AnnotationError`s are used for public-facing errors.
+        for context, span in zip(self.context, self.span):
+            no_context = isinstance(span, spacy.tokens.doc.Doc)
+            has_context = context != span
+            assert has_context or no_context
         batch_len = len(self.session)
         for items in (self.span, self.context, self.loudness, self.tempo, self.respellings):
             assert len(items) == batch_len
@@ -197,12 +201,39 @@ class InputsWrapper:
                 ):
                     raise AnnotationError("Respelling must be capitalized correctly.")
 
-    def to_xml(self, session_vocab: typing.Dict[struc.Session, int]) -> str:
+    def to_xml(
+        self, i: int, session_vocab: typing.Dict[struc.Session, int], include_context: bool = False
+    ) -> str:
         """Generate XML from model inputs.
 
-        TODO: Implement to help stringify `InputsWrapper` during training.
+        NOTE: Due to the possibility of an overlap, `from_xml` and `to_xml` will not nessecarily
+              generate the same XML. There is more than one way to achieve the same outcome in XML.
+
+        Args:
+            i: The index of `InputsWrapper` to choose.
+            session_vocab: A vocabulary mapping avatar IDs in XML to sessions.
+            include_context: A convience method for including additional context surrounding
+                the XML. Keep in mind, this will invalidate the XML.
+
+        Returns: An XML string.
         """
-        return ""
+        span = self.span[i]
+        context = self.context[i]
+        annotations = [(f"<loudness value='{a}'>", s.start) for s, a in self.loudness[i]]
+        annotations += [("</loudness>", s.stop) for s, _ in self.loudness[i]]
+        annotations += [(f"<tempo value='{a}'>", s.start) for s, a in self.tempo[i]]
+        annotations += [("</tempo>", s.stop) for s, _ in self.tempo[i]]
+        annotations += [(f"<respell value='{a}'>", t.idx) for t, a in self.respellings[i].items()]
+        annotations += [("</respell>", t.idx + len(t)) for t, _ in self.respellings[i].items()]
+        annotations = sorted(annotations, key=lambda k: k[1], reverse=True)
+        text = span.text
+        for annotation, idx in annotations:
+            text = text[:idx] + annotation + text[idx:]
+        text = f"<speak value='{session_vocab[self.session[i]]}'>{text}</speak>"
+        if include_context and isinstance(span, spacy.tokens.span.Span):
+            start_char = next((t.idx for t in context if t not in span), 0)
+            text = f"{context.text[:start_char]}{text}{context.text[start_char + len(span.text):]}"
+        return text
 
     @classmethod
     def from_xml(
@@ -218,6 +249,7 @@ class InputsWrapper:
         more generalizable, it has a number of challenges. For example, the `Session` objects
         have sensitive information, we'd need to desensitize it first.
         TODO: Verify if the XML errors are interpertable.
+        TODO: Per convention, should we ignore new lines directly following a end tag?
 
         Args:
             xml: The original annotated XML.
@@ -241,7 +273,7 @@ class InputsWrapper:
         for event, elem in parser.read_events():
             if event == "start":
                 if elem.tag == "speak":
-                    session = session_vocab[elem.get("avatar")]
+                    session = session_vocab[elem.get("value")]
                 elif elem.tag is not None and elem.get("value") is not None:
                     annotations[elem.tag].append(([len(elem.text)], elem.get("value")))
                 if elem.text:
@@ -252,7 +284,7 @@ class InputsWrapper:
                 if elem.tail:
                     text += elem.tail
 
-        assert text == span.text, "The `Span` must have the same text as the XML."
+        assert text.strip() == span.text, "The `Span` must have the same text as the XML."
         assert session is not None
 
         return cls(
@@ -325,12 +357,16 @@ def preprocess(
     """
     inputs = Inputs([], [], [[], []], [], [], device)
     iter_ = zip(wrap.session, wrap.span, wrap.context, wrap.loudness, wrap.tempo, wrap.respellings)
+    Item = typing.Tuple[
+        struc.Session, SpanDoc, SpanDoc, SpanAnnotations, SpanAnnotations, TokenAnnotations
+    ]
+    iter_ = typing.cast(typing.Iterator[Item], iter_)
     for sesh, span, context, loudness, tempo, respell_map in iter_:
         seq_metadata = [sesh[0].label, sesh, sesh[0].dialect, sesh[0].style, sesh[0].language]
         inputs.seq_metadata.extend([[] for _ in seq_metadata])
         [inputs.seq_metadata[i].append(data) for i, data in enumerate(seq_metadata)]
 
-        start_char = next((t.start_char for t in context if t not in span), 0)
+        start_char = next((t.idx for t in context if t not in span), 0)
         end_char = (len(span.text) + start_char) - len(context.text)
         inputs.slices.append(slice(start_char, end_char))
 
