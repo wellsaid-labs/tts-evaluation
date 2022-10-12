@@ -11,10 +11,10 @@
   </xs:simpleType>
 </xs:attribute>
 
-<xs:complexType name="pronunciation">
+<xs:complexType name="respell">
   <xs:simpleContent>
     <xs:extension base="xs:string">
-      <xs:attribute ref="respelling" use="required" />
+      <xs:attribute name="value" ref="respelling" use="required" />
     </xs:extension>
   </xs:simpleContent>
 </xs:complexType>
@@ -22,20 +22,21 @@
 <xs:complexType name="prosody" mixed="true">
   <xs:sequence minOccurs="0" maxOccurs="unbounded">
     <xs:choice>
-      <xs:element name="prosody" type="prosody" />
-      <xs:element name="pronunciation" type="pronunciation" />
+      <xs:element name="tempo" type="prosody" />
+      <xs:element name="loudness" type="prosody" />
+      <xs:element name="respell" type="respell" />
     </xs:choice>
   </xs:sequence>
-  <xs:attribute name="loudness" type="xs:string" />
-  <xs:attribute name="rate" type="xs:string" />
+  <xs:attribute name="value" type="xs:string" use="required" />
 </xs:complexType>
 
 <xs:element name="speak">
   <xs:complexType mixed="true">
     <xs:sequence minOccurs="0" maxOccurs="unbounded">
       <xs:choice>
-        <xs:element name="prosody" type="prosody" />
-        <xs:element name="pronunciation" type="pronunciation" />
+        <xs:element name="tempo" type="prosody" />
+        <xs:element name="loudness" type="prosody" />
+        <xs:element name="respell" type="respell" />
       </xs:choice>
     </xs:sequence>
     <xs:attribute name="avatar" type="xs:int" use="required" />

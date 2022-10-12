@@ -1,5 +1,7 @@
 import dataclasses
 import enum
+import functools
+import re
 import typing
 
 import config as cf
@@ -7,6 +9,7 @@ import numpy as np
 import spacy
 import spacy.tokens
 import torch
+from lxml import etree
 
 from lib.utils import lengths_to_mask
 from run._config.lang import is_voiced
@@ -95,6 +98,12 @@ class AnnotationError(ValueError):
     pass
 
 
+@functools.lru_cache()
+def get_xml_schema():
+    xml_schema_doc = etree.parse("schema.xsd", None)
+    return etree.XMLSchema(xml_schema_doc)
+
+
 @dataclasses.dataclass(frozen=True)
 class InputsWrapper:
     """The model inputs.
@@ -119,9 +128,9 @@ class InputsWrapper:
     context: typing.List[SpanDoc]
 
     # Batch of annotations per sequence
-    loudness: typing.List[typing.List[SpanAnnotation]]
+    loudness: typing.List[SpanAnnotations]
 
-    rate: typing.List[typing.List[SpanAnnotation]]
+    tempo: typing.List[SpanAnnotations]
 
     respellings: typing.List[TokenAnnotations]
 
@@ -142,15 +151,15 @@ class InputsWrapper:
         # NOTE: `assert` is used for non-public errors, related to using this object.
         # `AnnotationError`s are used for public-facing errors.
         batch_len = len(self.session)
-        for items in (self.span, self.context, self.loudness, self.rate, self.respellings):
+        for items in (self.span, self.context, self.loudness, self.tempo, self.respellings):
             assert len(items) == batch_len
         for token in self.context:
             assert token in self.span
-        for batch_span_annotations in (self.loudness, self.rate):
+        for batch_span_annotations in (self.loudness, self.tempo):
             for sesh, span_, annotations in zip(self.session, self.span, batch_span_annotations):
                 for prev, annotation in zip([None] + annotations, annotations):
                     # NOTE: The only annotations that are acceptable are non-voiced characters
-                    # for pauses or spans for speaking rate.
+                    # for pauses or spans for speaking tempo.
                     is_pause = not is_voiced(span_.text[annotation[0]], sesh[0].language)
                     is_valid_span = (
                         span_.char_span(annotation[0].start, annotation[0].stop) is not None
@@ -162,11 +171,13 @@ class InputsWrapper:
         if not all(a[1] >= min_loudness and a[1] <= max_loudness for b in self.loudness for a in b):
             message = "The loudness annotations must be between "
             raise AnnotationError(f"{message} {min_loudness} and {max_loudness} db.")
-        if not all(a[1] >= min_rate and a[1] <= max_rate for b in self.rate for a in b):
-            message = "The rate annotations must be between "
+        if not all(a[1] >= min_rate and a[1] <= max_rate for b in self.tempo for a in b):
+            message = "The tempo annotations must be between "
             raise AnnotationError(f"{message} {min_rate} and {max_rate} seconds per character.")
         for span_, token_annotations in zip(self.span, self.respellings):
             for token, annotation in token_annotations.items():
+                if token is None:
+                    raise AnnotationError("Respelling must wrap a word.")
                 assert token in span_
                 if len(annotation) == 0:
                     raise AnnotationError("Respelling has no text.")
@@ -195,7 +206,10 @@ class InputsWrapper:
 
     @classmethod
     def from_xml(
-        cls: typing.Type[InputsWrapperTypeVar], session_vocab: typing.Dict[struc.Session, int]
+        cls: typing.Type[InputsWrapperTypeVar],
+        xml: str,
+        span: SpanDoc,
+        session_vocab: typing.Dict[int, struc.Session],
     ) -> InputsWrapperTypeVar:
         """Parse XML into compatible model inputs.
 
@@ -203,8 +217,52 @@ class InputsWrapper:
         can submit their own session objects, even, custom ones. While this might be slightly
         more generalizable, it has a number of challenges. For example, the `Session` objects
         have sensitive information, we'd need to desensitize it first.
+        TODO: Verify if the XML errors are interpertable.
+
+        Args:
+            xml: The original annotated XML.
+            span: The spaCy document built on text from that XML.
+            session_vocab: A vocabulary mapping avatar IDs in XML to sessions.
         """
-        return InputsWrapper()
+        xml_schema = get_xml_schema()
+        root = etree.fromstring(xml, None)
+        try:
+            xml_schema.assertValid(root)
+        except etree.DocumentInvalid as xml_errors:
+            raise AnnotationError(f"XML is invalid:\n{xml_errors.error_log}")
+
+        parser = etree.XMLPullParser(events=("start", "end"))
+        parser.feed(xml)
+
+        annotations = {"loudness": [], "respell": [], "tempo": []}
+        session: typing.Optional[struc.Session] = None
+        text: str = ""
+
+        for event, elem in parser.read_events():
+            if event == "start":
+                if elem.tag == "speak":
+                    session = session_vocab[elem.get("avatar")]
+                elif elem.tag is not None and elem.get("value") is not None:
+                    annotations[elem.tag].append(([len(elem.text)], elem.get("value")))
+                if elem.text:
+                    text += elem.text
+            elif event == "end":
+                if elem.tag is not None and elem.tag != "speak":
+                    annotations[elem.tag][-1][0].append(len(elem.text))
+                if elem.tail:
+                    text += elem.tail
+
+        assert text == span.text, "The `Span` must have the same text as the XML."
+        assert session is not None
+
+        return cls(
+            session=[session],
+            span=[span],
+            context=[span],
+            loudness=[[(slice(*tuple(s)), float(v)) for s, v in annotations["loudness"]]],
+            tempo=[[(slice(*tuple(s)), float(v)) for s, v in annotations["tempo"]]],
+            respellings=[{span.char_span(*tuple(s)): v for s, v in annotations["respell"]}],
+        )
 
 
 def embed_annotations(
@@ -247,7 +305,7 @@ def embed_annotations(
 def preprocess(
     wrap: InputsWrapper,
     loudness_kwargs: typing.Dict,
-    rate_kwargs: typing.Dict,
+    tempo_kwargs: typing.Dict,
     device: torch.device = torch.device("cpu"),
 ) -> Inputs:
     """Preprocess `batch` into model `Inputs`.
@@ -266,8 +324,8 @@ def preprocess(
             script without context, and any related annotations expressed as a Tensor.
     """
     inputs = Inputs([], [], [[], []], [], [], device)
-    iter_ = zip(wrap.session, wrap.span, wrap.context, wrap.loudness, wrap.rate, wrap.respellings)
-    for sesh, span, context, loudness, rate, respell_map in iter_:
+    iter_ = zip(wrap.session, wrap.span, wrap.context, wrap.loudness, wrap.tempo, wrap.respellings)
+    for sesh, span, context, loudness, tempo, respell_map in iter_:
         seq_metadata = [sesh[0].label, sesh, sesh[0].dialect, sesh[0].style, sesh[0].language]
         inputs.seq_metadata.extend([[] for _ in seq_metadata])
         [inputs.seq_metadata[i].append(data) for i, data in enumerate(seq_metadata)]
@@ -300,7 +358,7 @@ def preprocess(
             embed = torch.cat(embed)
 
         loudness_embed = embed_annotations(len(chars), loudness, start_char, *loudness_kwargs)
-        rate_embed = embed_annotations(len(chars), rate, start_char, *rate_kwargs)
+        rate_embed = embed_annotations(len(chars), tempo, start_char, *tempo_kwargs)
         # rate_embed (torch.FloatTensor [num_tokens, 2])
         # loudness_embed (torch.FloatTensor [num_tokens, 2])
         # embed (torch.FloatTensor [num_tokens, embedding_size]) →
