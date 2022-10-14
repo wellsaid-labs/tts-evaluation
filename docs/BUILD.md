@@ -7,7 +7,7 @@ directory.
 
 ## Building the Docker image
 
-_Naming Convention_: voiceModel.deployment.version # Example v9.viacom.00
+_Naming Convention_: `voiceModel.deployment.version # Example v9.viacom.00`
 _Hint_: See precedence for image tagging by running
 
 ```bash
