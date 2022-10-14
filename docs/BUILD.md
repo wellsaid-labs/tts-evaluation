@@ -11,6 +11,7 @@ _Naming Convention_: voiceModel.deployment.version # Example v9.viacom.00
 _Hint_: See precedence for image tagging by running
 
 ```bash
+PROJECT_ID="voice-service-2-313121"
 gcloud container images list-tags gcr.io/${PROJECT_ID}/speech-api-worker
 ```
 
@@ -67,6 +68,7 @@ Then fix, and rebuild from the top ^^
 Prior to pushing the docker image, ensure the proper GKE context is set:
 
 ```bash
+PROJECT_ID="voice-service-2-313121"
 CLUSTER_NAME="" # Example: "staging"
 gcloud config set project $PROJECT_ID
 gcloud config set container/cluster $CLUSTER_NAME
