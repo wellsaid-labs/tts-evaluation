@@ -19,9 +19,9 @@ Set image variables and build Docker image:
 
 ```bash
 PROJECT_ID="voice-service-2-313121"
-CHECKPOINTS="" # Example: "v9" (see list of Checkpoints in [run/_tts.py](/run/_tts.py)])
+CHECKPOINTS="" # Example: "v10_2022_q3_marketplace_expansion" (see list of Checkpoints in [run/_tts.py](/run/_tts.py)])
 TTS_PACKAGE_PATH=$(python -m run.deploy.package_tts $CHECKPOINTS)
-IMAGE_TAG="" # Example: v9.00
+IMAGE_TAG="" # Example: v10.marketplace-2022-q3.00
 
 docker build -f run/deploy/Dockerfile \
     --build-arg TTS_PACKAGE_PATH=${TTS_PACKAGE_PATH} \
