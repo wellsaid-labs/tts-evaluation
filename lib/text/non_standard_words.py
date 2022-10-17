@@ -650,6 +650,8 @@ HYPHENS: typing.Tuple[str, ...] = tuple(_norm(t) for t in ("-", "—", "–"))
 
 # NOTE: This doesn't depend on the respelling implementation because pronunciation is independent
 # from verbalization. This, similar to users, relies on our data pipeline.
+# TODO: These should be converted to respellings, with that in mind, "HTTPS" needs to be kept
+# together.
 WEB_INITIALISMS: typing.Final[typing.Dict[str, str]] = {
     "h t t p s": "::AYCH-tee-tee-pee-EHS::",
     "h t t p": "::AYCH-tee-tee-PEE::",

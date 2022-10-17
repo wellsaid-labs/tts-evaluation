@@ -627,6 +627,9 @@ def verbalize_text(text: str) -> str:
     non-standard-words in plain English. The order of events is important. Normalizing generic
     digits before normalizing money cases specifically, for example, will yield incomplete and
     inaccurate results.
+
+    TODO: To support XML, we should split up the strings by HTML tags, and if that causes issues,
+          there is an easy resolution for the user.
     """
     nlp = load_en_english()
     nlp.add_pipe("sentencizer")
