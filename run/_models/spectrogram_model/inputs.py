@@ -103,6 +103,14 @@ def get_xml_schema():
     return etree.XMLSchema(xml_schema_doc)
 
 
+XML_TAG = re.compile("<.*?>")
+
+
+def xml_to_text(xml: str) -> str:
+    """Remove XML tags from xml and return the text only."""
+    return re.sub(XML_TAG, "", xml)
+
+
 @dataclasses.dataclass(frozen=True)
 class InputsWrapper:
     """The model inputs before processing.
@@ -245,7 +253,7 @@ class InputsWrapper:
         return text
 
     @classmethod
-    def from_xml(
+    def from_strict_xml(
         cls: typing.Type[InputsWrapperTypeVar],
         xml: str,
         span: SpanDoc,
@@ -296,13 +304,34 @@ class InputsWrapper:
         assert text.strip() == span.text, "The `Span` must have the same text as the XML."
         assert session is not None
 
+        respellings = {}
+        for slice_, value in annotations["respell"]:
+            token = span.char_span(*tuple(slice_))
+            if len(token) != 1:
+                raise AnnotationError("Respelling must wrap a single word.")
+            respellings[token[0]] = value
+
         return cls(
             session=[session],
             span=[span],
             context=[span],
             loudness=[[(slice(*tuple(s)), float(v)) for s, v in annotations["loudness"]]],
             tempo=[[(slice(*tuple(s)), float(v)) for s, v in annotations["tempo"]]],
-            respellings=[{span.char_span(*tuple(s)): v for s, v in annotations["respell"]}],
+            respellings=[respellings],
+        )
+
+    @classmethod
+    def from_xml(
+        cls: typing.Type[InputsWrapperTypeVar],
+        xml: str,
+        span: SpanDoc,
+        session: struc.Session,
+    ) -> InputsWrapperTypeVar:
+        """Parse XML (with no root element) into compatible model inputs."""
+        xml = f"<speak value='{0}'>{xml}</speak>"
+        session_vocab = {0: session}
+        return typing.cast(
+            InputsWrapperTypeVar, InputsWrapper.from_strict_xml(xml, span, session_vocab)
         )
 
 
