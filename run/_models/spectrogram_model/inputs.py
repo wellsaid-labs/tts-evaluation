@@ -1,7 +1,6 @@
 import dataclasses
 import enum
 import functools
-import re
 import typing
 
 import config as cf
@@ -106,7 +105,10 @@ def get_xml_schema():
 
 @dataclasses.dataclass(frozen=True)
 class InputsWrapper:
-    """The model inputs.
+    """The model inputs before processing.
+
+    This wrapper is an interface for model inputs before they are further processed. It can be
+    directly created from XML. It can also be stringified back into XML.
 
     TODO: This does not allow annotations for context, yet. In the future, depending on the
           purpose of context, it might be helpful to either remove it, or align it with the voiced
@@ -209,6 +211,11 @@ class InputsWrapper:
         NOTE: Due to the possibility of an overlap, `from_xml` and `to_xml` will not nessecarily
               generate the same XML. There is more than one way to achieve the same outcome in XML.
 
+        NOTE: There are options for creating XML with Python programatically; however, they are
+              not much better than string concatenation, in this case:
+              https://www.geeksforgeeks.org/create-xml-documents-using-python/
+              For example, we would still need to use strings to identify the tags.
+
         Args:
             i: The index of `InputsWrapper` to choose.
             session_vocab: A vocabulary mapping avatar IDs in XML to sessions.
@@ -219,17 +226,19 @@ class InputsWrapper:
         """
         span = self.span[i]
         context = self.context[i]
-        annotations = [(f"<loudness value='{a}'>", s.start) for s, a in self.loudness[i]]
-        annotations += [("</loudness>", s.stop) for s, _ in self.loudness[i]]
-        annotations += [(f"<tempo value='{a}'>", s.start) for s, a in self.tempo[i]]
-        annotations += [("</tempo>", s.stop) for s, _ in self.tempo[i]]
-        annotations += [(f"<respell value='{a}'>", t.idx) for t, a in self.respellings[i].items()]
-        annotations += [("</respell>", t.idx + len(t)) for t, _ in self.respellings[i].items()]
+        open_ = lambda tag, value: f"<{tag} value='{value}'>"
+        close = lambda tag: f"</{tag}>"
+        annotations = [(open_("loudness", a), s.start) for s, a in self.loudness[i]]
+        annotations += [(close("loudness"), s.stop) for s, _ in self.loudness[i]]
+        annotations += [(open_("tempo", a), s.start) for s, a in self.tempo[i]]
+        annotations += [(close("tempo"), s.stop) for s, _ in self.tempo[i]]
+        annotations += [(open_("respell", a), t.idx) for t, a in self.respellings[i].items()]
+        annotations += [(close("respell"), t.idx + len(t)) for t, _ in self.respellings[i].items()]
         annotations = sorted(annotations, key=lambda k: k[1], reverse=True)
         text = span.text
         for annotation, idx in annotations:
             text = text[:idx] + annotation + text[idx:]
-        text = f"<speak value='{session_vocab[self.session[i]]}'>{text}</speak>"
+        text = f"{open_('speak', session_vocab[self.session[i]])}{text}{close('speak')}"
         if include_context and isinstance(span, spacy.tokens.span.Span):
             start_char = next((t.idx for t in context if t not in span), 0)
             text = f"{context.text[:start_char]}{text}{context.text[start_char + len(span.text):]}"
@@ -388,7 +397,7 @@ def preprocess(
         if len(tokens) == 0:
             embed = torch.zeros(0, 0, device=device)
         else:
-            embed = [np.concatenate((t.vector, t.tensor)) for t in context]
+            embed = [np.concatenate((t.vector, t.tensor)) for t in context]  # type: ignore
             embed = [torch.tensor(t, device=device, dtype=torch.float32) for t in embed]
             embed = [e.unsqueeze(0).repeat(len(t), 1) for e, t in zip(embed, tokens)]
             embed = torch.cat(embed)
