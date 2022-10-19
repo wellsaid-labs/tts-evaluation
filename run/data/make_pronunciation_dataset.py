@@ -22,6 +22,7 @@ TODO:
 - Consider, randomly, repeating some words, several times in a list, to teach the model to be
   consistent.
 - GCP may, even if the word is lower case, pronounce it, as an initialism.
+- Add dots in between letters as part of this dataset, also, to have more coverage over initialisms.
 
 Other resources:
 - https://nakanishi.kobegakuin-gc.jp/uploads/nakanishi/files/nakanishi/200910_Database.pdf
