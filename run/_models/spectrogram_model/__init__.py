@@ -8,14 +8,15 @@ from run._models.spectrogram_model import (
     wrapper,
 )
 from run._models.spectrogram_model.containers import Preds
+from run._models.spectrogram_model.inputs import AnnotationError
 from run._models.spectrogram_model.inputs import Inputs as PreprocessedInputs
 from run._models.spectrogram_model.inputs import InputsWrapper as Inputs
 from run._models.spectrogram_model.inputs import (
-    RespellingError,
     SpanAnnotation,
     SpanAnnotations,
     TokenAnnotations,
     preprocess,
+    xml_to_text,
 )
 from run._models.spectrogram_model.model import Generator, Mode
 from run._models.spectrogram_model.wrapper import SpectrogramModelWrapper as SpectrogramModel
@@ -34,9 +35,10 @@ __all__ = [
     "PreprocessedInputs",
     "Inputs",
     "SpectrogramModel",
-    "RespellingError",
+    "AnnotationError",
     "SpanAnnotation",
     "SpanAnnotations",
     "TokenAnnotations",
     "preprocess",
+    "xml_to_text",
 ]

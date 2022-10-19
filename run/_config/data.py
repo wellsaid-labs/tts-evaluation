@@ -242,22 +242,30 @@ ENGLISH_TEST_CASES = [
     "know him. Very strange strangers they were, too.",
     # NOTE: Test respellings
     # TODO: Adjust respellings based on latest conventions.
-    "I see in “Happening at ::se-FOHR-u::” I have two new brands requesting store-led events "
-    "for the same day.",
-    "Welcome to the ::su-LAHR-es:: Injury and Illness Prevention Program Training.",
-    "The ::pur-AY-toh:: principle was named after Italian economist Vilfredo ::pu-RAY-toh::.",
-    "We would like to nominate ::AY-vu:: for her phenomenal recordings.",
-    "To use your self-help AI, please enable the Affirmations feature on the ::KAHN-sohl:: so "
-    "that you can ::kuhn-SOHL:: yourself.",
-    "Too much sand? Tired of cacti? ::dee-ZURT:: the ::DEZ-urt:: now, with caravan adventures!",
-    "If you want to get the good food at the ::bu-FAY::, you have to be willing to "
-    "::BUF-et:: and punch your way to the front of the line.",
-    "Does ::BEE-u-loh-ZHEEK:: ::ru-SHURSH:: really work?",
+    "I see in “Happening at <respell value='se-FOHR-u'>Sephora</respell>” I have two new brands"
+    "requesting store-led events for the same day.",
+    "Welcome to the <respell value='su-LAHR-es'>Solares</respell> Injury and Illness Prevention "
+    "Program Training.",
+    "The <respell value='pur-AY-toh'>Pareto</respell> principle was named after Italian economist "
+    "Vilfredo <respell value='pu-RAY-toh'>Pareto</respell>.",
+    "We would like to nominate <respell value='AY-vu'>Avu</respell> for her phenomenal "
+    "recordings.",
+    "To use your self-help AI, please enable the Affirmations feature on the "
+    "<respell value='KAHN-sohl'>console</respell> so that you can "
+    "<respell value='kuhn-SOHL'>console</respell> yourself.",
+    "Too much sand? Tired of cacti? <respell value='dee-ZURT'>desert</respell> the "
+    "<respell value='DEZ-urt'>desert</respell> now, with caravan adventures!",
+    "If you want to get the good food at the <respell value='bu-FAY'>buffet</respell>, you have "
+    "to be willing to "
+    "<respell value='BUF-et'>buffet</respell> and punch your way to the front of the line.",
+    "Does <respell value='BEE-u-loh-ZHEEK'>biologique</respell> "
+    "<respell value='ru-SHURSH'>recherche</respell> really work?",
     # NOTE: Test v10 regressions
     # - Difficult acronyms
     "It took six Ph.Ds to design a VCR a five-year-old could use.",
     # - "Cape Cod" was repeated
-    "It is ironic that today's least ::PAH-pyuh-lay-tuhd:: town on Cape Cod",
+    "It is ironic that today's least "
+    "<respell value='PAH-pyuh-lay-tuhd'>|\\PAH\\pyuh\\lay\\tuhd\\|</respell> town on Cape Cod",
     # - Short sentences were cut off
     "Taking sides early - I feel like... I feel like that's a recipe for disaster. It is.",
     "manager. Egan",
@@ -270,8 +278,8 @@ ENGLISH_TEST_CASES = [
     # - This word was pronounced incorrectly
     "anemone",
     # - This word caused the model to overflow
-    "::po-lahn-co::",
-    "::fran-SIH-skoh::",
+    "<respell value='po-lahn-co'>|\\po\\lahn\\co|</respell>",
+    "<respell value='fran-SIH-skoh'>|\\fran\\SIH\\skoh|</respell>",
 ]
 TEST_CASES = [(struc.Language.ENGLISH, t) for t in ENGLISH_TEST_CASES]
 
