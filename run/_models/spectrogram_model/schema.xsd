@@ -3,18 +3,16 @@
 
 <!-- TODO: The respellings alphabet should we configured based on language. -->
 
-<xs:attribute name="respelling">
-  <xs:simpleType>
-    <xs:restriction base="xs:string">
-      <xs:pattern value="((([A-Z]+|[a-z]+)-)+)?([A-Z]+|[a-z]+)"/>
-    </xs:restriction>
-  </xs:simpleType>
-</xs:attribute>
-
 <xs:complexType name="respell">
   <xs:simpleContent>
     <xs:extension base="xs:string">
-      <xs:attribute name="value" ref="respelling" use="required" />
+      <xs:attribute name="value">
+        <xs:simpleType>
+          <xs:restriction base="xs:string">
+            <xs:pattern value="((([A-Z]+|[a-z]+)-)+)?([A-Z]+|[a-z]+)"/>
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:attribute>
     </xs:extension>
   </xs:simpleContent>
 </xs:complexType>
