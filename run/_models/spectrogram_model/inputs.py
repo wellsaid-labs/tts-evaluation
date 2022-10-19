@@ -155,15 +155,16 @@ class InputsWrapper:
         # `AnnotationError`s are used for public-facing errors.
         for field in dataclasses.fields(self):
             assert len(self.session) == len(getattr(self, field.name))
+
+        # NOTE: Check that `context` fully contains `span`...
         for context, span in zip(self.context, self.span):
             no_context = isinstance(span, spacy.tokens.doc.Doc)
             has_context = context != span
             assert has_context or no_context
-        batch_len = len(self.session)
-        for items in (self.span, self.context, self.loudness, self.tempo, self.respellings):
-            assert len(items) == batch_len
         for token in self.context:
             assert token in self.span
+
+        # NOTE: Check that annotations are sorted and wrap full words.
         for batch_span_annotations in (self.loudness, self.tempo):
             for sesh, span_, annotations in zip(self.session, self.span, batch_span_annotations):
                 for prev, annotation in zip([None] + annotations, annotations):
@@ -177,6 +178,8 @@ class InputsWrapper:
                         raise PublicAnnotationError("The annotations must wrap words fully.")
                     if prev is not None:
                         assert prev[0].stop < annotation[0].start
+
+        # NOTE: Check that the annotation values are in the right range.
         if not all(a[1] >= min_loudness and a[1] <= max_loudness for b in self.loudness for a in b):
             message = "The loudness annotations must be between "
             raise PublicAnnotationError(f"{message} {min_loudness} and {max_loudness} db.")
@@ -185,6 +188,8 @@ class InputsWrapper:
             raise PublicAnnotationError(
                 f"{message} {min_rate} and {max_rate} seconds per character."
             )
+
+        # NOTE: Check that respellings are correctly formatted and wrap words entirely.
         for span_, token_annotations in zip(self.span, self.respellings):
             for token, annotation in token_annotations.items():
                 if token is None:
