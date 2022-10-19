@@ -962,4 +962,4 @@ _XML_TAG = re.compile("<.*?>")
 
 def xml_to_text(xml: XMLType) -> str:
     """Remove XML tags from xml and return the text only."""
-    return re.sub(_XML_TAG, "", xml)
+    return re.sub(_XML_TAG, "", xml).strip()

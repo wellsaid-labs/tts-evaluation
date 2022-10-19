@@ -1,30 +1,218 @@
+import typing
+
 import config as cf
 import pytest
 import spacy.vocab
 import torch
+from thinc.types import FloatsXd
 
 import run
+from lib.text import load_en_english, xml_to_text
 from run._config import load_spacy_nlp
 from run._models.spectrogram_model.inputs import (
     Casing,
     Context,
     InputsWrapper,
-    Pronunciation,
-    RespellingError,
-    _preprocess,
-    preprocess_inputs,
-    preprocess_spans,
+    Pronun,
+    PublicAnnotationError,
+    XMLType,
+    _get_case,
+    _Schema,
+    embed_annotations,
+    preprocess,
 )
 from run.data._loader.structures import Language
-from tests.run._utils import make_passage, make_session
+from tests._utils import assert_almost_equal
+from tests.run._utils import make_session
 
 
 @pytest.fixture(autouse=True)
 def run_around_tests():
     """Set a basic configuration."""
     run._config.configure()
+    config = {
+        run._models.spectrogram_model.inputs.InputsWrapper.check_invariants: cf.Args(
+            min_loudness=-100, max_loudness=0, min_tempo=0.025, max_tempo=1
+        ),
+    }
+    cf.add(config, overwrite=True)
     yield
     cf.purge()
+
+
+def test_inputs_wrapper():
+    """Test `InputsWrapper` with no annotations."""
+    nlp = load_en_english()
+    script = "this is a test"
+    input = InputsWrapper(
+        session=[make_session()],
+        span=[nlp(script)],
+        context=[nlp(script)],
+        loudness=[[]],
+        tempo=[[]],
+        respellings=[{}],
+    )
+    assert len(input) == 1
+    assert input.get(0) == input
+    assert input.to_xml(0) == f"<{_Schema.SPEAK}>{script}</{_Schema.SPEAK}>"
+
+
+def test_inputs_wrapper__from_xml():
+    """Test `InputsWrapper.from_xml` with no annotations."""
+    nlp = load_en_english()
+    script = "this is a test"
+    xml = XMLType(f"<{_Schema.SPEAK}>{script}</{_Schema.SPEAK}>")
+    result = InputsWrapper.from_xml(xml, nlp(script), make_session())
+    expected = InputsWrapper(
+        session=[make_session()],
+        span=[nlp(script)],
+        context=[nlp(script)],
+        loudness=[[]],
+        tempo=[[]],
+        respellings=[{}],
+    )
+    assert result == expected
+
+
+def test_inputs_wrapper__from_xml_batch():
+    """Test `InputsWrapper.from_xml_batch` processes a batch correctly."""
+    nlp = load_en_english()
+    script = "this is a test"
+    xml = XMLType(f"<{_Schema.SPEAK}>{script}</{_Schema.SPEAK}>")
+    doc = nlp(script)
+    sesh = make_session()
+    result = InputsWrapper.from_xml_batch([xml, xml], [doc, doc], [sesh, sesh])
+    expected = InputsWrapper(
+        session=[make_session()],
+        span=[nlp(script)],
+        context=[nlp(script)],
+        loudness=[[]],
+        tempo=[[]],
+        respellings=[{}],
+    )
+    assert result.get(0) == expected
+    assert result.get(1) == expected
+
+
+def test_inputs_wrapper__from_xml__annotated():
+    """Test `InputsWrapper.from_xml` and `InputsWrapper.to_xml` with annotations."""
+    nlp = load_en_english()
+    script = "this is a test"
+    xml = f'<{_Schema.LOUDNESS} {_Schema._VALUE}="-20">Over the river and '
+    xml += f'<{_Schema.TEMPO} {_Schema._VALUE}="0.04">through the '
+    xml += f'<{_Schema.RESPELL} {_Schema._VALUE}="wuuds">woods</{_Schema.RESPELL}>'
+    xml += f"</{_Schema.TEMPO}>.</{_Schema.LOUDNESS}>"
+    xml = XMLType(xml)
+    script = xml_to_text(xml)
+    doc = nlp(script)
+    result = InputsWrapper.from_xml(xml, doc, make_session())
+    expected = InputsWrapper(
+        session=[make_session()],
+        span=[doc],
+        context=[doc],
+        loudness=[[(slice(0, len(xml)), -20)]],
+        tempo=[[(slice(len("Over the river and "), -len(".")), 0.04)]],
+        respellings=[{doc[-2]: "wuuds"}],
+    )
+    assert result == expected
+    assert expected.to_xml(0) == f'<{_Schema.SPEAK} {_Schema._VALUE}="-1">{xml}</{_Schema.SPEAK}>'
+
+
+def check_annotation(anno: _Schema, text: str, respelling: str, prefix: str = "", suffix: str = ""):
+    nlp = load_en_english()
+    xml = XMLType(f'{prefix}<{anno} {_Schema._VALUE}="{respelling}">{text}</{anno}>{suffix}')
+    InputsWrapper.from_xml(xml, nlp(text), make_session())
+
+
+def test__inputs_wrapper__from_xml__token_annotations():
+    """Test `InputsWrapper.from_xml` validates respellings."""
+    check_annotation(_Schema.RESPELL, "scientific", "SY-uhn-TIH-fihk")  # Valid
+
+    with pytest.raises(PublicAnnotationError):
+        check_annotation(_Schema.RESPELL, "scientific", "")  # No value
+
+    with pytest.raises(PublicAnnotationError):
+        check_annotation(_Schema.RESPELL, "", "SY-uhn-TIH-fihk")  # No text
+
+    with pytest.raises(PublicAnnotationError):
+        check_annotation(_Schema.RESPELL, "scientific", "-SY-uhn-TIH-fihk")  # Invalid prefix
+
+    with pytest.raises(PublicAnnotationError):
+        check_annotation(_Schema.RESPELL, "scientific", "SY-uhn-TIH-fihk-")  # Invalid suffix
+
+    with pytest.raises(PublicAnnotationError):
+        check_annotation(_Schema.RESPELL, "scientific", "SY uhn TIH fihk")  # Invalid character
+
+    with pytest.raises(PublicAnnotationError):
+        check_annotation(_Schema.RESPELL, "scientific", "SY1uhn2TIH3fihk")  # Invalid character
+
+    with pytest.raises(PublicAnnotationError):
+        check_annotation(_Schema.RESPELL, "scientific", "SY|uhn|TIH|fihk")  # Invalid character
+
+    with pytest.raises(PublicAnnotationError):
+        check_annotation(_Schema.RESPELL, "scientific", "Sy-uhn-TIH-fihk")  # Mix capitalization
+
+    with pytest.raises(PublicAnnotationError):
+        check_annotation(_Schema.RESPELL, "scientific-process", "SY-uhn-TIH-fihk")  # Multiple words
+
+    with pytest.raises(PublicAnnotationError):
+        check_annotation(_Schema.RESPELL, "entific", "SY-uhn-TIH-fihk", "sci")  # Prefix
+
+    with pytest.raises(PublicAnnotationError):
+        check_annotation(_Schema.RESPELL, "scienti", "SY-uhn-TIH-fihk", suffix="fic")  # Suffix
+
+
+def test__inputs_wrapper__from_xml__span_annotations():
+    """Test `InputsWrapper.from_xml` validates span annotations."""
+    check_annotation(_Schema.LOUDNESS, "scientific process", "-20")  # Valid
+    check_annotation(_Schema.TEMPO, "scientific process", "0.04")  # Valid
+
+    with pytest.raises(PublicAnnotationError):
+        check_annotation(_Schema.LOUDNESS, "scientific process", "")  # No value
+
+    with pytest.raises(PublicAnnotationError):
+        check_annotation(_Schema.LOUDNESS, "", "-20")  # No text
+
+    with pytest.raises(PublicAnnotationError):
+        check_annotation(_Schema.LOUDNESS, "scientific process", "NA")  # No number
+
+    with pytest.raises(PublicAnnotationError):
+        check_annotation(_Schema.LOUDNESS, "scientific process", "-1000")  # Too small
+
+    with pytest.raises(PublicAnnotationError):
+        check_annotation(_Schema.LOUDNESS, "scientific process", "1000")  # Too big
+
+    with pytest.raises(PublicAnnotationError):
+        check_annotation(_Schema.LOUDNESS, "entific process", "-20", "sci")  # Prefix
+
+    with pytest.raises(PublicAnnotationError):
+        check_annotation(_Schema.LOUDNESS, "scientific pro", "-20", suffix="cess")  # Suffix
+
+    with pytest.raises(PublicAnnotationError):
+        check_annotation(_Schema.TEMPO, "scientific process", "0")  # Too small
+
+    with pytest.raises(PublicAnnotationError):
+        check_annotation(_Schema.TEMPO, "scientific process", "1000")  # Too big
+
+
+def test_inputs_wrapper__to_xml__context():
+    """Test `InputsWrapper.to_xml` with context."""
+    nlp = load_en_english()
+    script = "this is a test"
+    doc = nlp(script)
+    span = doc[1:-1]
+    xml = f'<{_Schema.LOUDNESS} {_Schema._VALUE}="-20">{str(span)}</{_Schema.LOUDNESS}>'
+    xml = XMLType(xml)
+    input = InputsWrapper(
+        session=[make_session()],
+        span=[span],
+        context=[doc],
+        loudness=[[(slice(0, len(xml)), -20)]],
+        tempo=[[]],
+        respellings=[{}],
+    )
+    expected = f'this <{_Schema.SPEAK} {_Schema._VALUE}="-1">{xml}</{_Schema.SPEAK}> test'
+    assert input.to_xml(0) == expected
 
 
 def test__preprocess():
@@ -32,34 +220,34 @@ def test__preprocess():
     nlp = load_spacy_nlp(Language.ENGLISH)
     script, sesh = "In 1968 the U.S. Army", make_session()
     doc = nlp(script)
-    processed = _preprocess([(sesh, doc, doc[:-1])])
-    assert processed.reconstruct_text(0) == script
+    input_ = InputsWrapper.from_xml(XMLType(script), doc, sesh)
+    processed = preprocess(input_, {}, {})
     assert processed.tokens == [list(script.lower())]
     assert processed.seq_metadata[0] == [sesh[0].label]
     assert processed.seq_metadata[1] == [sesh]
     assert script[processed.slices[0]] == str(doc[:-1])
     casing = [
-        (Pronunciation.NORMAL, Casing.UPPER),  # I
-        (Pronunciation.NORMAL, Casing.LOWER),  # n
-        (Pronunciation.NORMAL, Casing.NO_CASING),
-        (Pronunciation.NORMAL, Casing.NO_CASING),  # 1
-        (Pronunciation.NORMAL, Casing.NO_CASING),  # 9
-        (Pronunciation.NORMAL, Casing.NO_CASING),  # 6
-        (Pronunciation.NORMAL, Casing.NO_CASING),  # 8
-        (Pronunciation.NORMAL, Casing.NO_CASING),
-        (Pronunciation.NORMAL, Casing.LOWER),  # t
-        (Pronunciation.NORMAL, Casing.LOWER),  # h
-        (Pronunciation.NORMAL, Casing.LOWER),  # e
-        (Pronunciation.NORMAL, Casing.NO_CASING),
-        (Pronunciation.NORMAL, Casing.UPPER),  # u
-        (Pronunciation.NORMAL, Casing.NO_CASING),  # .
-        (Pronunciation.NORMAL, Casing.UPPER),  # s
-        (Pronunciation.NORMAL, Casing.NO_CASING),  # .
-        (Pronunciation.NORMAL, Casing.NO_CASING),
-        (Pronunciation.NORMAL, Casing.UPPER),  # A
-        (Pronunciation.NORMAL, Casing.LOWER),  # r
-        (Pronunciation.NORMAL, Casing.LOWER),  # m
-        (Pronunciation.NORMAL, Casing.LOWER),  # y
+        (Pronun.NORMAL, Casing.UPPER),  # I
+        (Pronun.NORMAL, Casing.LOWER),  # n
+        (Pronun.NORMAL, Casing.NO_CASING),
+        (Pronun.NORMAL, Casing.NO_CASING),  # 1
+        (Pronun.NORMAL, Casing.NO_CASING),  # 9
+        (Pronun.NORMAL, Casing.NO_CASING),  # 6
+        (Pronun.NORMAL, Casing.NO_CASING),  # 8
+        (Pronun.NORMAL, Casing.NO_CASING),
+        (Pronun.NORMAL, Casing.LOWER),  # t
+        (Pronun.NORMAL, Casing.LOWER),  # h
+        (Pronun.NORMAL, Casing.LOWER),  # e
+        (Pronun.NORMAL, Casing.NO_CASING),
+        (Pronun.NORMAL, Casing.UPPER),  # u
+        (Pronun.NORMAL, Casing.NO_CASING),  # .
+        (Pronun.NORMAL, Casing.UPPER),  # s
+        (Pronun.NORMAL, Casing.NO_CASING),  # .
+        (Pronun.NORMAL, Casing.NO_CASING),
+        (Pronun.NORMAL, Casing.UPPER),  # A
+        (Pronun.NORMAL, Casing.LOWER),  # r
+        (Pronun.NORMAL, Casing.LOWER),  # m
+        (Pronun.NORMAL, Casing.LOWER),  # y
     ]
     assert processed.token_metadata[0] == [casing]
     context = [
@@ -87,74 +275,115 @@ def test__preprocess():
     ]
     assert processed.token_metadata[1] == [context]
     vocab: spacy.vocab.Vocab = nlp.vocab
-    length = nlp.meta["vectors"]["width"]
+    word_embedding_length = nlp.meta["vectors"]["width"]
     # NOTE: The word embeddings are case sensitive.
-    embeddings = [
+    word_embeddings = [
         torch.from_numpy(vocab["In"].vector).unsqueeze(0).repeat(2, 1),
-        torch.zeros(1, length),
+        torch.zeros(1, word_embedding_length),
         torch.from_numpy(vocab["1968"].vector).unsqueeze(0).repeat(4, 1),
-        torch.zeros(1, length),
+        torch.zeros(1, word_embedding_length),
         torch.from_numpy(vocab["the"].vector).unsqueeze(0).repeat(3, 1),
-        torch.zeros(1, length),
+        torch.zeros(1, word_embedding_length),
         torch.from_numpy(vocab["U.S."].vector).unsqueeze(0).repeat(4, 1),
-        torch.zeros(1, length),
+        torch.zeros(1, word_embedding_length),
         torch.from_numpy(vocab["Army"].vector).unsqueeze(0).repeat(4, 1),
     ]
-    token_embeddings = torch.cat(embeddings)
+    contextual_embedding_length = typing.cast(FloatsXd, doc[0].tensor).shape[0]
+    contextual_embeddings = [
+        torch.from_numpy(doc[0].tensor).unsqueeze(0).repeat(2, 1),
+        torch.zeros(1, contextual_embedding_length),
+        torch.from_numpy(doc[1].tensor).unsqueeze(0).repeat(4, 1),
+        torch.zeros(1, contextual_embedding_length),
+        torch.from_numpy(doc[2].tensor).unsqueeze(0).repeat(3, 1),
+        torch.zeros(1, contextual_embedding_length),
+        torch.from_numpy(doc[3].tensor).unsqueeze(0).repeat(4, 1),
+        torch.zeros(1, contextual_embedding_length),
+        torch.from_numpy(doc[4].tensor).unsqueeze(0).repeat(4, 1),
+    ]
+    stack = (
+        torch.cat(word_embeddings),
+        torch.cat(contextual_embeddings),
+        torch.zeros(len(script), 4),
+    )
+    token_embeddings = torch.stack(stack, dim=1)
     assert len(processed.token_embeddings) == 1
-    assert torch.allclose(processed.token_embeddings[0][:, :length], token_embeddings)
+    assert torch.allclose(processed.token_embeddings[0], token_embeddings)
+
+
+def test__get_case():
+    """Test `_get_case` on basic cases."""
+    assert _get_case("A") == Casing.UPPER
+    assert _get_case("a") == Casing.LOWER
+    assert _get_case("1") == Casing.NO_CASING
+    with pytest.raises(AssertionError):
+        _get_case("")
+
+
+def test_embed_annotations():
+    """Test `embed_annotations` on basic cases."""
+    annotations = [(slice(0, 2), 20), (slice(4, 5), -10), (slice(7, 9), 0.99)]
+
+    embedding = embed_annotations(9, annotations)
+    expected = torch.tensor([[20, 20, 0, -10, 0, 0, 0.99, 0.99, 0], [1, 1, 0, -1, 0, 0, 1, 1, 0]])
+    assert torch.equal(embedding, expected)
+
+    embedding = embed_annotations(9, annotations, 1, 1, 10)
+    expected = torch.tensor([[0, 2, 2, 0, -1, 0, 0, 0.099, 0.099], [0, 1, 1, 0, -1, 0, 0, 1, 1]])
+    assert torch.equal(embedding, expected)
 
 
 def test__preprocess_respelling():
     """Test that `_preprocess` handles apostrophes, dashes, initialisms and existing respellings."""
     nlp = load_spacy_nlp(Language.ENGLISH)
-    script, sesh = "Don't |\\PEE\\puhl\\| from EDGE catch-the-flu?", make_session()
+    script = "Don't <respell value='PEE-puhl'>people</respell> from EDGE "
+    script += "<respell value='KATCH'>catch</respell>-the-<respell value='FLOO'>flu</respell>?"
+    sesh = make_session()
     doc = nlp(script)
-    processed = _preprocess([(sesh, doc, doc[1:-1])], respell_prob=1.0)
-    assert processed.reconstruct_text(0) == "Don't PEE\\puhl from EDGE KACH-the-FLOO?"
+    input_ = InputsWrapper.from_xml(XMLType(script), doc[1:-1], sesh, doc)
+    processed = preprocess(input_, {}, {})
     casing = [
-        (Pronunciation.NORMAL, Casing.UPPER),  # D
-        (Pronunciation.NORMAL, Casing.LOWER),  # o
-        (Pronunciation.NORMAL, Casing.LOWER),  # n
-        (Pronunciation.NORMAL, Casing.NO_CASING),  # '
-        (Pronunciation.NORMAL, Casing.LOWER),  # t
-        (Pronunciation.NORMAL, Casing.NO_CASING),
-        (Pronunciation.RESPELLING, Casing.UPPER),  # P
-        (Pronunciation.RESPELLING, Casing.UPPER),  # E
-        (Pronunciation.RESPELLING, Casing.UPPER),  # E
-        (Pronunciation.RESPELLING, Casing.NO_CASING),  # \
-        (Pronunciation.RESPELLING, Casing.LOWER),  # p
-        (Pronunciation.RESPELLING, Casing.LOWER),  # u
-        (Pronunciation.RESPELLING, Casing.LOWER),  # h
-        (Pronunciation.RESPELLING, Casing.LOWER),  # l
-        (Pronunciation.NORMAL, Casing.NO_CASING),
-        (Pronunciation.NORMAL, Casing.LOWER),  # f
-        (Pronunciation.NORMAL, Casing.LOWER),  # r
-        (Pronunciation.NORMAL, Casing.LOWER),  # o
-        (Pronunciation.NORMAL, Casing.LOWER),  # m
-        (Pronunciation.NORMAL, Casing.NO_CASING),
-        (Pronunciation.NORMAL, Casing.UPPER),  # E
-        (Pronunciation.NORMAL, Casing.UPPER),  # D
-        (Pronunciation.NORMAL, Casing.UPPER),  # G
-        (Pronunciation.NORMAL, Casing.UPPER),  # E
-        (Pronunciation.NORMAL, Casing.NO_CASING),
-        (Pronunciation.RESPELLING, Casing.UPPER),  # K
-        (Pronunciation.RESPELLING, Casing.UPPER),  # A
-        (Pronunciation.RESPELLING, Casing.UPPER),  # C
-        (Pronunciation.RESPELLING, Casing.UPPER),  # H
-        (Pronunciation.NORMAL, Casing.NO_CASING),
-        (Pronunciation.NORMAL, Casing.LOWER),  # t
-        (Pronunciation.NORMAL, Casing.LOWER),  # h
-        (Pronunciation.NORMAL, Casing.LOWER),  # e
-        (Pronunciation.NORMAL, Casing.NO_CASING),
-        (Pronunciation.RESPELLING, Casing.UPPER),  # F
-        (Pronunciation.RESPELLING, Casing.UPPER),  # L
-        (Pronunciation.RESPELLING, Casing.UPPER),  # O
-        (Pronunciation.RESPELLING, Casing.UPPER),  # O
-        (Pronunciation.NORMAL, Casing.NO_CASING),  # ?
+        (Pronun.NORMAL, Casing.UPPER),  # D
+        (Pronun.NORMAL, Casing.LOWER),  # o
+        (Pronun.NORMAL, Casing.LOWER),  # n
+        (Pronun.NORMAL, Casing.NO_CASING),  # '
+        (Pronun.NORMAL, Casing.LOWER),  # t
+        (Pronun.NORMAL, Casing.NO_CASING),
+        (Pronun.RESPELLING, Casing.UPPER),  # P
+        (Pronun.RESPELLING, Casing.UPPER),  # E
+        (Pronun.RESPELLING, Casing.UPPER),  # E
+        (Pronun.RESPELLING, Casing.NO_CASING),  # -
+        (Pronun.RESPELLING, Casing.LOWER),  # p
+        (Pronun.RESPELLING, Casing.LOWER),  # u
+        (Pronun.RESPELLING, Casing.LOWER),  # h
+        (Pronun.RESPELLING, Casing.LOWER),  # l
+        (Pronun.NORMAL, Casing.NO_CASING),
+        (Pronun.NORMAL, Casing.LOWER),  # f
+        (Pronun.NORMAL, Casing.LOWER),  # r
+        (Pronun.NORMAL, Casing.LOWER),  # o
+        (Pronun.NORMAL, Casing.LOWER),  # m
+        (Pronun.NORMAL, Casing.NO_CASING),
+        (Pronun.NORMAL, Casing.UPPER),  # E
+        (Pronun.NORMAL, Casing.UPPER),  # D
+        (Pronun.NORMAL, Casing.UPPER),  # G
+        (Pronun.NORMAL, Casing.UPPER),  # E
+        (Pronun.NORMAL, Casing.NO_CASING),
+        (Pronun.RESPELLING, Casing.UPPER),  # K
+        (Pronun.RESPELLING, Casing.UPPER),  # A
+        (Pronun.RESPELLING, Casing.UPPER),  # C
+        (Pronun.RESPELLING, Casing.UPPER),  # H
+        (Pronun.NORMAL, Casing.NO_CASING),
+        (Pronun.NORMAL, Casing.LOWER),  # t
+        (Pronun.NORMAL, Casing.LOWER),  # h
+        (Pronun.NORMAL, Casing.LOWER),  # e
+        (Pronun.NORMAL, Casing.NO_CASING),
+        (Pronun.RESPELLING, Casing.UPPER),  # F
+        (Pronun.RESPELLING, Casing.UPPER),  # L
+        (Pronun.RESPELLING, Casing.UPPER),  # O
+        (Pronun.RESPELLING, Casing.UPPER),  # O
+        (Pronun.NORMAL, Casing.NO_CASING),  # ?
     ]
     assert processed.token_metadata[0] == [casing]
-    tokens = "n't pee\\puhl from edge kach-the-floo"
+    tokens = "n't pee-puhl from edge kach-the-floo"
     assert "".join(processed.tokens[0][processed.slices[0]]) == tokens  # type: ignore
     context = [
         Context.CONTEXT,  # D
@@ -166,7 +395,7 @@ def test__preprocess_respelling():
         Context.SCRIPT,  # P
         Context.SCRIPT,  # E
         Context.SCRIPT,  # E
-        Context.SCRIPT,  # \
+        Context.SCRIPT,  # -
         Context.SCRIPT,  # p
         Context.SCRIPT,  # u
         Context.SCRIPT,  # h
@@ -198,7 +427,9 @@ def test__preprocess_respelling():
         Context.CONTEXT,  # ?
     ]
     assert processed.token_metadata[1] == [context]
-    assert processed.token_embeddings[0][-5:-1].sum().item() == 0.0  # FLOO
+    expected = torch.from_numpy(nlp.vocab["flu"].vector)  # FLOO
+    for idx in range(-5, -1):
+        assert_almost_equal(processed.token_embeddings[0][idx], expected)
     assert processed.token_embeddings[0][:3].sum().item() != 0.0  # n't
 
 
@@ -207,72 +438,10 @@ def test__preprocess_zero_length():
     nlp = load_spacy_nlp(Language.ENGLISH)
     script, sesh = "", make_session()
     doc = nlp(script)
-    processed = _preprocess([(sesh, doc, doc)], respell_prob=1.0)
-    assert processed.reconstruct_text(0) == ""
+    input_ = InputsWrapper.from_xml(XMLType(script), doc, sesh)
+    processed = preprocess(input_, {}, {})
     assert "".join(processed.tokens[0][processed.slices[0]]) == ""  # type: ignore
     assert processed.token_metadata[0] == [[]]
     assert processed.token_metadata[1] == [[]]
     assert processed.slices[0] == slice(0, 0)
     assert processed.token_embeddings[0].shape == (0, 0)
-
-
-def test__preprocess_schwa():
-    """Test that `_preprocess` handles the special character schwa."""
-    nlp = load_spacy_nlp(Language.ENGLISH)
-    script, sesh = "motorcycle", make_session()
-    doc = nlp(script)
-    processed = _preprocess([(sesh, doc, doc)], respell_prob=1.0)
-    assert processed.reconstruct_text(0) == "MOH\\tur\\sy\\kuhl"
-
-
-def test__preprocess_invalid_respelling():
-    """Test that `_preprocess` handles errors if respelling is invalid."""
-    nlp = load_spacy_nlp(Language.ENGLISH)
-
-    with pytest.raises(RespellingError):
-        doc = nlp("|\\\\|")  # Zero length
-        _preprocess([(make_session(), doc, doc)])
-
-    with pytest.raises(RespellingError):
-        doc = nlp("|\\\\MOH\\|")  # Invalid prefix
-        _preprocess([(make_session(), doc, doc)])
-
-    with pytest.raises(RespellingError):
-        doc = nlp("|\\MOH\\\\|")  # Invalid suffix
-        _preprocess([(make_session(), doc, doc)])
-
-    with pytest.raises(RespellingError):
-        doc = nlp("|\\MOH tər\\|")  # Invalid character
-        _preprocess([(make_session(), doc, doc)])
-
-    with pytest.raises(RespellingError):
-        doc = nlp("|\\MOH5tər\\|")  # Invalid character
-        _preprocess([(make_session(), doc, doc)])
-
-    with pytest.raises(RespellingError):
-        doc = nlp("|\\MOH|tər\\|")  # Invalid character
-        _preprocess([(make_session(), doc, doc)])
-
-    with pytest.raises(RespellingError):
-        doc = nlp("|\\Moh\\|")  # Mix capitalization
-        _preprocess([(make_session(), doc, doc)])
-
-
-def test_preprocess_inputs_and_spans():
-    """Test that `preprocess_spans` and `preprocess_inputs` function similarly."""
-    nlp = load_spacy_nlp(Language.ENGLISH)
-    script = "In 1968 the U.S. Army"
-    passage = make_passage(script=script)
-    pre_span = preprocess_spans([passage[1:-1]])
-    inputs = InputsWrapper(session=[passage.session], doc=[nlp(passage[1:-1].script)])
-    pre_doc = preprocess_inputs(inputs)
-    assert pre_doc.seq_metadata == pre_span.seq_metadata
-    assert pre_doc.tokens[0] == pre_span.tokens[0][3:-5]
-    assert pre_doc.token_metadata == [[s[3:-5] for s in m] for m in pre_span.token_metadata]
-    length = nlp.meta["vectors"]["width"]
-    assert torch.allclose(
-        pre_doc.token_embeddings[0][:, :length],
-        pre_span.token_embeddings[0][3:-5][:, :length],
-    )
-    doc_slice, span_slice = pre_doc.slices[0], pre_span.slices[0]
-    assert doc_slice.stop - doc_slice.start == span_slice.stop - span_slice.start

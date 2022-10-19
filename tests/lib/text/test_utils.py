@@ -10,10 +10,12 @@ import lib
 from lib.text.utils import (
     RESPELLING_ALPHABET,
     RESPELLINGS,
+    XMLType,
     _remove_arpabet_markings,
     grapheme_to_phoneme,
     is_normalized_vo_script,
     normalize_vo_script,
+    xml_to_text,
 )
 
 
@@ -744,3 +746,9 @@ def test_align_tokens__word_deletion():
         "Hey   There",
         "Hey , There",
     )
+
+
+def test_xml_to_text():
+    """Test `lib.text.utils.xml_to_text` removes XML."""
+    xml = "<Tomato juicy='True'>\nLet's call <Potato>the whole thing off\n</Potato></Tomato>"
+    assert xml_to_text(XMLType(xml)) == "Let's call the whole thing off"

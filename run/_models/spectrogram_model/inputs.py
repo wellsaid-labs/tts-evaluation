@@ -104,12 +104,18 @@ def get_xml_schema():
     return etree.XMLSchema(xml_schema_doc)
 
 
-class _Schema:
-    respell: typing.Final = "respell"
-    loudness: typing.Final = "loudness"
-    tempo: typing.Final = "tempo"
-    value: typing.Final = "value"
-    speak: typing.Final = "speak"
+class _Schema(enum.Enum):
+    # NOTE: Schema tag names
+    RESPELL: typing.Final = "respell"
+    LOUDNESS: typing.Final = "loudness"
+    TEMPO: typing.Final = "tempo"
+    SPEAK: typing.Final = "speak"
+
+    # NOTE: Schema attribute names
+    _VALUE: typing.Final = "value"
+
+    def __str__(self):
+        return str(self.value)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -251,22 +257,22 @@ class InputsWrapper:
         """
         span = self.span[i]
         context = self.context[i]
-        open_ = lambda tag, value: f"<{tag} {_Schema.value}='{value}'>"
+        open_ = lambda tag, value: f"<{tag} {_Schema._VALUE}='{value}'>"
         close = lambda tag: f"</{tag}>"
         annotations = [(open_(self.loudness, a), s.start) for s, a in self.loudness[i]]
-        annotations += [(close(_Schema.loudness), s.stop) for s, _ in self.loudness[i]]
-        annotations += [(open_(_Schema.tempo, a), s.start) for s, a in self.tempo[i]]
-        annotations += [(close(_Schema.tempo), s.stop) for s, _ in self.tempo[i]]
-        annotations += [(open_(_Schema.respell, a), t.idx) for t, a in self.respellings[i].items()]
+        annotations += [(close(_Schema.LOUDNESS), s.stop) for s, _ in self.loudness[i]]
+        annotations += [(open_(_Schema.TEMPO, a), s.start) for s, a in self.tempo[i]]
+        annotations += [(close(_Schema.TEMPO), s.stop) for s, _ in self.tempo[i]]
+        annotations += [(open_(_Schema.RESPELL, a), t.idx) for t, a in self.respellings[i].items()]
         annotations += [
-            (close(_Schema.respell), t.idx + len(t)) for t, _ in self.respellings[i].items()
+            (close(_Schema.RESPELL), t.idx + len(t)) for t, _ in self.respellings[i].items()
         ]
         annotations = sorted(annotations, key=lambda k: k[1], reverse=True)
         text = span.text
         for annotation, idx in annotations:
             text = text[:idx] + annotation + text[idx:]
-        root = open_(_Schema.speak, session_vocab[self.session[i]] if session_vocab else -1)
-        text = f"{root}{text}{close(_Schema.speak)}"
+        root = open_(_Schema.SPEAK, session_vocab[self.session[i]] if session_vocab else -1)
+        text = f"{root}{text}{close(_Schema.SPEAK)}"
         if include_context and isinstance(span, spacy.tokens.span.Span):
             start_char = next((t.idx for t in context if t not in span), 0)
             text = f"{context.text[:start_char]}{text}{context.text[start_char + len(span.text):]}"
@@ -283,6 +289,7 @@ class InputsWrapper:
         xml: XMLType,
         span: SpanDoc,
         session_vocab: typing.Dict[int, struc.Session],
+        context: typing.Optional[SpanDoc] = None,
     ) -> InputsWrapperTypeVar:
         """Parse XML into compatible model inputs.
 
@@ -291,7 +298,6 @@ class InputsWrapper:
         more generalizable, it has a number of challenges. For example, the `Session` objects
         have sensitive information, we'd need to desensitize it first.
         TODO: Verify if the XML errors are interpertable.
-        TODO: Per convention, should we ignore new lines directly following a end tag?
 
         Args:
             xml: The original annotated XML.
@@ -308,29 +314,32 @@ class InputsWrapper:
         parser = etree.XMLPullParser(events=("start", "end"))
         parser.feed(xml)
 
-        annotations = {_Schema.loudness: [], _Schema.respell: [], _Schema.tempo: []}
+        annotations = {_Schema.LOUDNESS: [], _Schema.RESPELL: [], _Schema.TEMPO: []}
         session: typing.Optional[struc.Session] = None
         text: str = ""
 
         for event, elem in parser.read_events():
             if event == "start":
-                if elem.tag == _Schema.speak:
-                    session = session_vocab[elem.get(_Schema.value)]
-                elif elem.tag is not None and elem.get(_Schema.value) is not None:
-                    annotations[elem.tag].append(([len(elem.text)], elem.get(_Schema.value)))
-                if elem.text:
+                if elem.tag == _Schema.SPEAK:
+                    session = session_vocab[elem.get(_Schema._VALUE)]
+                elif elem.tag is not None and elem.get(_Schema._VALUE) is not None:
+                    annotations[elem.tag].append(([len(elem.text)], elem.get(_Schema._VALUE)))
+                if elem.text and len(text) == 0:
+                    text += typing.cast(str, elem.text).lstrip()
+                elif elem.text:
                     text += elem.text
             elif event == "end":
-                if elem.tag is not None and elem.tag != _Schema.speak:
+                if elem.tag is not None and elem.tag != _Schema.SPEAK:
                     annotations[elem.tag][-1][0].append(len(elem.text))
                 if elem.tail:
                     text += elem.tail
 
-        assert text.strip() == span.text, "The `Span` must have the same text as the XML."
+        text = text.strip()
+        assert text == span.text, "The `Span` must have the same text as the XML."
         assert session is not None
 
         respellings = {}
-        for slice_, value in annotations[_Schema.respell]:
+        for slice_, value in annotations[_Schema.RESPELL]:
             token = span.char_span(*tuple(slice_))
             if len(token) != 1:
                 raise PublicAnnotationError("Respelling must wrap a single word.")
@@ -339,9 +348,9 @@ class InputsWrapper:
         return cls(
             session=[session],
             span=[span],
-            context=[span],
-            loudness=[[(slice(*tuple(s)), float(v)) for s, v in annotations[_Schema.loudness]]],
-            tempo=[[(slice(*tuple(s)), float(v)) for s, v in annotations[_Schema.tempo]]],
+            context=[span if context is None else context],
+            loudness=[[(slice(*tuple(s)), float(v)) for s, v in annotations[_Schema.LOUDNESS]]],
+            tempo=[[(slice(*tuple(s)), float(v)) for s, v in annotations[_Schema.TEMPO]]],
             respellings=[respellings],
         )
 
@@ -351,11 +360,12 @@ class InputsWrapper:
         xml: XMLType,
         span: SpanDoc,
         session: struc.Session,
+        context: typing.Optional[SpanDoc] = None,
     ) -> InputsWrapperTypeVar:
         """Parse XML into compatible model inputs, that may not have a root element."""
         if not xml.startswith("<"):
-            xml = XMLType(f"<{_Schema.speak} {_Schema.value}='{-1}'>{xml}</{_Schema.speak}>")
-        input_ = InputsWrapper.from_strict_xml(xml, span, {-1: session})
+            xml = XMLType(f"<{_Schema.SPEAK} {_Schema._VALUE}='{-1}'>{xml}</{_Schema.SPEAK}>")
+        input_ = InputsWrapper.from_strict_xml(xml, span, {-1: session}, context)
         return typing.cast(InputsWrapperTypeVar, input_)
 
     @classmethod
@@ -364,10 +374,11 @@ class InputsWrapper:
         xml: typing.List[XMLType],
         span: typing.List[SpanDoc],
         session: typing.List[struc.Session],
+        context: typing.Optional[typing.List[SpanDoc]] = None,
     ) -> InputsWrapperTypeVar:
         """Parse a batch of XML into compatible model inputs, that may not have a root element."""
         all_ = {f.name: [] for f in dataclasses.fields(InputsWrapper)}
-        for args in zip(xml, span, session):
+        for args in zip(xml, span, session, span if context is None else context):
             input_ = InputsWrapper.from_xml(*args)
             for key, val in all_.items():
                 val.append(getattr(input_, key))
@@ -470,8 +481,8 @@ def preprocess(
             embed = [e.unsqueeze(0).repeat(len(t), 1) for e, t in zip(embed, tokens)]
             embed = torch.cat(embed)
 
-        loudness_embed = embed_annotations(len(chars), loudness, start_char, *loudness_kwargs)
-        rate_embed = embed_annotations(len(chars), tempo, start_char, *tempo_kwargs)
+        loudness_embed = embed_annotations(len(chars), loudness, start_char, **loudness_kwargs)
+        rate_embed = embed_annotations(len(chars), tempo, start_char, **tempo_kwargs)
         # rate_embed (torch.FloatTensor [num_tokens, 2])
         # loudness_embed (torch.FloatTensor [num_tokens, 2])
         # embed (torch.FloatTensor [num_tokens, embedding_size]) →
