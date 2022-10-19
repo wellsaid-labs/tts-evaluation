@@ -1,6 +1,7 @@
 from lib.text import utils
 from lib.text.utils import (
     _UNICODE_NORMAL_FORM,
+    XMLType,
     add_space_between_sentences,
     align_tokens,
     get_spoken_chars,
@@ -16,11 +17,13 @@ from lib.text.utils import (
     normalize_vo_script,
     numbers_then_natural_keys,
     respell,
+    xml_to_text,
 )
 from lib.text.verbalization import verbalize_text
 
 __all__ = [
     "_UNICODE_NORMAL_FORM",
+    "XMLType",
     "add_space_between_sentences",
     "align_tokens",
     "get_spoken_chars",
@@ -38,4 +41,5 @@ __all__ = [
     "respell",
     "utils",
     "verbalize_text",
+    "xml_to_text",
 ]

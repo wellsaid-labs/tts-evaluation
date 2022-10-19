@@ -489,8 +489,7 @@ def _visualize_inferred(args: _HandleBatchArgs, preds: Preds, pick: _Pick = _ran
         audio=audio,
         context=args.state.comet.context,
         text=args.batch.spans[item].script,
-        reconstructed_text=args.batch.inputs.reconstruct_text(item)[args.batch.inputs.slices[item]],
-        reconstructed_text_context=args.batch.inputs.reconstruct_text(item),
+        xml=args.batch.inputs.to_xml(item),
         session=args.batch.spans[item].session,
         predicted_loudness=get_average_db_rms_level(predicted_spectrogram.unsqueeze(1)).item(),
         gold_loudness=get_average_db_rms_level(gold_spectrogram.unsqueeze(1)).item(),
@@ -536,7 +535,7 @@ def _visualize_select_cases(state: _State, dataset_type: DatasetType, cadence: C
     sesh_vocab = model.session_embed.get_vocab()
     inputs, preds = cf.partial(_utils.process_select_cases)(model, sesh_vocab, **kw)
 
-    for item in range(len(inputs.doc)):
+    for item in range(len(inputs)):
         text_length = int(preds.num_tokens[item].item())
         num_frames_predicted = int(preds.num_frames[item].item())
         # spectrogram [num_frames, frame_channels]
@@ -560,7 +559,7 @@ def _visualize_select_cases(state: _State, dataset_type: DatasetType, cadence: C
             randomly_sampled_case=item,
             audio={"predicted_griffin_lim_audio": audio},
             context=state.comet.context,
-            text=str(inputs.doc[item]),
+            xml=str(inputs.to_xml(item)),
             session=inputs.session[item],
             predicted_loudness=get_average_db_rms_level(predicted_spectrogram.unsqueeze(1)).item(),
             dataset_type=dataset_type,

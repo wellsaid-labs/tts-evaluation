@@ -18,7 +18,7 @@ import typing
 
 from num2words import num2words
 
-from lib.text import load_en_english
+from lib.text import XMLType, load_en_english
 from lib.text.non_standard_words import (
     ACRONYMS,
     CURRENCIES,
@@ -622,7 +622,7 @@ def ensure_period(sent: str, span_text: str) -> str:
     return sent + "." if span_text[-1] == "." and sent[-1] != "." else sent
 
 
-def verbalize_text(text: str) -> str:
+def verbalize_text(text: XMLType) -> XMLType:
     """Takes in a text string and, in an intentional and controlled manner, verbalizes numerals and
     non-standard-words in plain English. The order of events is important. Normalizing generic
     digits before normalizing money cases specifically, for example, will yield incomplete and
@@ -669,4 +669,4 @@ def verbalize_text(text: str) -> str:
         )
 
         sents.extend([sent, span[-1].whitespace_])
-    return "".join(sents)
+    return XMLType("".join(sents))

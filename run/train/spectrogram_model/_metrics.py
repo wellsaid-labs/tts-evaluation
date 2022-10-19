@@ -417,7 +417,7 @@ class Metrics(_utils.Metrics[MetricsKey]):
         for span, num_frames, slice, has_reached_max in zip(
             batch.spans,
             self._to_list(batch.spectrogram.lengths),
-            batch.inputs.slices,
+            batch.processed.slices,
             self._to_list(preds.reached_max),
         ):
             num_tokens = slice.stop - slice.start

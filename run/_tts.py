@@ -14,6 +14,7 @@ import typing
 from queue import SimpleQueue
 from subprocess import PIPE
 
+import config as cf
 import numpy
 import spacy
 import spacy.language
@@ -21,6 +22,7 @@ import spacy.tokens
 import torch
 
 from lib.environment import PT_EXTENSION, load
+from lib.text import XMLType, xml_to_text
 from lib.utils import get_chunks, tqdm_
 from run import train
 from run._config import (
@@ -36,8 +38,7 @@ from run._models.spectrogram_model import (
     Preds,
     PreprocessedInputs,
     SpectrogramModel,
-    norm_respellings,
-    preprocess_inputs,
+    preprocess,
 )
 from run.data._loader import Session, Span
 
@@ -205,15 +206,15 @@ class PublicSpeakerValueError(ValueError):
 
 
 def process_tts_inputs(
-    nlp: spacy.language.Language, package: TTSPackage, script: str, session: Session
+    nlp: spacy.language.Language, package: TTSPackage, xml: XMLType, session: Session
 ) -> typing.Tuple[Inputs, PreprocessedInputs]:
     """Process TTS `script`, `speaker` and `session` for use with the model(s)."""
-    normalized = normalize_and_verbalize_text(script, session[0].language)
+    normalized = normalize_and_verbalize_text(xml, session[0].language)
     if len(normalized) == 0:
         raise PublicTextValueError("Text cannot be empty.")
 
-    inputs = Inputs([session], [nlp(norm_respellings(normalized))])
-    preprocessed = preprocess_inputs(inputs)
+    inputs = Inputs.from_xml(normalized, nlp(xml_to_text(normalized)), session)
+    preprocessed = cf.partial(preprocess)(inputs)
 
     tokens = typing.cast(typing.List[str], set(preprocessed.tokens[0]))
     excluded = [t for t in tokens if t not in package.spec_model.token_embed.vocab]
@@ -231,7 +232,7 @@ def process_tts_inputs(
 
 def text_to_speech(
     package: TTSPackage,
-    script: str,
+    script: XMLType,
     session: Session,
     split_size: int = 32,
 ) -> numpy.ndarray:
@@ -259,64 +260,65 @@ def batch_span_to_speech(
     """
     NOTE: This method doesn't consider `Span` context for TTS generation.
     """
-    inputs = [(s.script, s.session) for s in spans]
+    inputs = [(XMLType(s.script), s.session) for s in spans]
     return batch_text_to_speech(package, inputs, **kwargs)
 
 
-def _multilingual_spacy_pipe(
-    inputs: typing.List[typing.Tuple[str, Session]]
-) -> typing.List[typing.Tuple[spacy.tokens.doc.Doc, Session]]:
-    """Efficiently pipe `inputs` through spaCy with batching per language."""
+def _process_input_batch(
+    inputs: typing.List[typing.Tuple[XMLType, Session]]
+) -> typing.List[typing.Tuple[XMLType, spacy.tokens.doc.Doc, Session]]:
+    """Efficiently process text with spaCy and text normalization.
+
+    TODO: Should this support script verbalization?
+    """
+    logger.info(f"Processing {len(inputs)} examples with spaCy...")
     seshs = [s for _, s in inputs]
+    xmls = [x for x, _ in inputs]
     langs = set(s[0].language for s in seshs)
     result: typing.List[typing.Optional[spacy.tokens.doc.Doc]] = [None] * len(inputs)
     for lang in langs:
         nlp = load_spacy_nlp(lang)
         scripts = [(i, s) for i, (s, sesh) in enumerate(inputs) if sesh[0].language is lang]
-        docs = nlp.pipe(s for _, s in scripts)
+        normalized = (xml_to_text(XMLType(normalize_vo_script(s, lang))) for _, s in scripts)
+        docs = nlp.pipe(normalized)
         for (i, _), doc in zip(scripts, docs):
             result[i] = doc
-    return list(zip(typing.cast(typing.List[spacy.tokens.doc.Doc], result), seshs))
+    return list(zip(xmls, typing.cast(typing.List[spacy.tokens.doc.Doc], result), seshs))
 
 
 def batch_text_to_speech(
     package: TTSPackage,
-    inputs: typing.List[typing.Tuple[str, Session]],
+    inputs: typing.List[typing.Tuple[XMLType, Session]],
     batch_size: int = 8,
 ) -> typing.List[TTSInputOutput]:
     """Run TTS end-to-end quickly with a verbose output."""
-    inputs = [(normalize_vo_script(script, sesh[0].language), sesh) for script, sesh in inputs]
-    logger.info(f"Processing {len(inputs)} examples with spaCy...")
-    inputs_ = list(enumerate(_multilingual_spacy_pipe(inputs)))
-    inputs_ = sorted(inputs_, key=lambda i: len(str(i[1][0])))
+    inputs_ = _process_input_batch(inputs)
+    inputs_ = sorted(enumerate(inputs_), key=lambda i: len(str(i[1][0])))
+    batches = list(get_chunks(inputs_, batch_size))
     results: typing.Dict[int, TTSInputOutput] = {}
     logger.info(f"Processing {len(inputs)} examples with TTS models...")
-    for batch in tqdm_(list(get_chunks(inputs_, batch_size))):
-        batch_input = Inputs(doc=[i[1][0] for i in batch], session=[i[1][1] for i in batch])
-        preds = package.spec_model(inputs=batch_input, mode=Mode.INFER)
+    for batch in tqdm_(batches):
+        xmls, docs, seshs = zip(*[i[1] for i in batch])
+        batch_input = Inputs.from_xml_batch(xmls, docs, seshs)  # type: ignore
+        preds = package.spec_model(batch_input, mode=Mode.INFER)
         spectrogram = preds.frames.transpose(0, 1)
         signals = package.signal_model(spectrogram, batch_input.session, preds.frames_mask)
         num_samples = preds.num_frames * package.signal_model.upscale_factor
-        more_results = {
-            j: TTSInputOutput(
-                inputs=Inputs(doc=[batch_input.doc[i]], session=[batch_input.session[i]]),
-                spec_model=Preds(
-                    frames=preds.frames[: preds.num_frames[i], i : i + 1],
-                    stop_tokens=preds.stop_tokens[: preds.num_frames[i], i : i + 1],
-                    alignments=preds.alignments[
-                        : preds.num_frames[i], i : i + 1, : preds.num_tokens[i]
-                    ],
-                    num_frames=preds.num_frames[i : i + 1],
-                    frames_mask=preds.frames_mask[i : i + 1, : preds.num_frames[i]],
-                    num_tokens=preds.num_tokens[i : i + 1],
-                    tokens_mask=preds.tokens_mask[i : i + 1, : preds.num_tokens[i]],
-                    reached_max=preds.reached_max[i : i + 1],
-                ),
-                sig_model=signals[0][i : i + 1, : num_samples[i]].detach().numpy(),
+        for i, (j, _) in zip(range(len(batch)), batch):
+            idx = slice(i, i + 1)
+            input_ = batch_input.get(i)
+            preds_ = Preds(
+                frames=preds.frames[: preds.num_frames[i], idx],
+                stop_tokens=preds.stop_tokens[: preds.num_frames[i], idx],
+                alignments=preds.alignments[: preds.num_frames[i], idx, : preds.num_tokens[i]],
+                num_frames=preds.num_frames[idx],
+                frames_mask=preds.frames_mask[idx, : preds.num_frames[i]],
+                num_tokens=preds.num_tokens[idx],
+                tokens_mask=preds.tokens_mask[idx, : preds.num_frames[i]],
+                reached_max=preds.reached_max[idx],
             )
-            for i, (j, _) in zip(range(len(batch)), batch)
-        }
-        results.update(more_results)
+            sig = signals[0][idx, : num_samples[i]].detach().numpy()
+            results[j] = TTSInputOutput(inputs=input_, spec_model=preds_, sig_model=sig)
     return [results[i] for i in range(len(inputs))]
 
 

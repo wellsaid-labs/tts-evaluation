@@ -306,16 +306,16 @@ class Batch(_utils.Batch):
     # SequenceBatch[torch.FloatTensor [num_frames, batch_size], torch.LongTensor [1, batch_size])
     stop_token: SequenceBatch
 
-    pre_inputs: Inputs
+    inputs: Inputs
 
-    inputs: PreprocessedInputs
+    processed: PreprocessedInputs
 
     def apply(self, call: typing.Callable[[torch.Tensor], torch.Tensor]) -> "Batch":
         batch: Batch = super().apply(call)
-        assert isinstance(batch.inputs.token_embeddings, torch.Tensor)
-        object.__setattr__(batch.inputs, "token_embeddings", call(batch.inputs.token_embeddings))
-        object.__setattr__(batch.inputs, "num_tokens", call(batch.inputs.num_tokens))
-        object.__setattr__(batch.inputs, "tokens_mask", call(batch.inputs.tokens_mask))
+        assert isinstance(batch.processed.token_embeddings, torch.Tensor)
+        object.__setattr__(batch.inputs, "token_embeddings", call(batch.processed.token_embeddings))
+        object.__setattr__(batch.inputs, "num_tokens", call(batch.processed.num_tokens))
+        object.__setattr__(batch.inputs, "tokens_mask", call(batch.processed.tokens_mask))
         return batch
 
     def __len__(self):
@@ -367,8 +367,8 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
         spectrogram=spectrogram,
         spectrogram_mask=spectrogram_mask,
         stop_token=cf.partial(_make_stop_token)(spectrogram),
-        pre_inputs=inputs,
-        inputs=cf.partial(preprocess)(inputs),
+        inputs=inputs,
+        processed=cf.partial(preprocess)(inputs),
     )
 
 

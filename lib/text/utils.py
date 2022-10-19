@@ -953,3 +953,13 @@ def align_tokens(
         typing.cast(int, row_one[-1]),
         row_one_paths[-1][0],
     )
+
+
+XMLType = typing.NewType("XML", str)
+
+_XML_TAG = re.compile("<.*?>")
+
+
+def xml_to_text(xml: XMLType) -> str:
+    """Remove XML tags from xml and return the text only."""
+    return re.sub(_XML_TAG, "", xml)

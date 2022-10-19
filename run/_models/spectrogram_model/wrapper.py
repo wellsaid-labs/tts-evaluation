@@ -1,6 +1,7 @@
 import math
 import typing
 
+import config as cf
 import torch
 
 from lib.distributed import NumeralizePadEmbed
@@ -10,14 +11,13 @@ from run._models.spectrogram_model.inputs import (
     Context,
     Inputs,
     InputsWrapper,
-    Pronunciation,
-    preprocess_inputs,
-    preprocess_spans,
+    Pronun,
+    preprocess,
 )
 from run._models.spectrogram_model.model import Generator, Mode, SpectrogramModel
 from run.data._loader import structures as struc
 
-InputsTyping = typing.Union[InputsWrapper, typing.List[struc.Span], Inputs]
+InputsTyping = typing.Union[InputsWrapper, Inputs]
 
 
 class SpectrogramModelWrapper(SpectrogramModel):
@@ -45,7 +45,7 @@ class SpectrogramModelWrapper(SpectrogramModel):
                 max_styles,
                 max_languages,
             ),
-            max_token_meta_values=(len(Casing) * len(Pronunciation), len(Context)),
+            max_token_meta_values=(len(Casing) * len(Pronun), len(Context)),
             max_token_embed_size=max_token_embed_size,
             **kwargs,
         )
@@ -115,8 +115,6 @@ class SpectrogramModelWrapper(SpectrogramModel):
         **kwargs,
     ) -> typing.Union[Generator, Preds]:
         if isinstance(inputs, InputsWrapper):
-            inputs = preprocess_inputs(inputs, device=self.encoder.embed_token.weight.device)
-        elif isinstance(inputs, list):
-            inputs = preprocess_spans(inputs, device=self.encoder.embed_token.weight.device)
+            inputs = cf.partial(preprocess)(inputs, device=self.encoder.embed_token.weight.device)
 
         return super().__call__(inputs, *args, mode=mode, **kwargs)

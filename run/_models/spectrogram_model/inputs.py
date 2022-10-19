@@ -1,7 +1,6 @@
 import dataclasses
 import enum
 import functools
-import re
 import typing
 
 import config as cf
@@ -11,6 +10,7 @@ import spacy.tokens
 import torch
 from lxml import etree
 
+from lib.text import XMLType
 from lib.utils import lengths_to_mask
 from run._config.lang import is_voiced
 from run.data._loader import structures as struc
@@ -94,7 +94,7 @@ SpanAnnotations = typing.List[SpanAnnotation]
 TokenAnnotations = typing.Dict[spacy.tokens.token.Token, str]
 
 
-class AnnotationError(ValueError):
+class PublicAnnotationError(ValueError):
     pass
 
 
@@ -102,14 +102,6 @@ class AnnotationError(ValueError):
 def get_xml_schema():
     xml_schema_doc = etree.parse("schema.xsd", None)
     return etree.XMLSchema(xml_schema_doc)
-
-
-XML_TAG = re.compile("<.*?>")
-
-
-def xml_to_text(xml: str) -> str:
-    """Remove XML tags from xml and return the text only."""
-    return re.sub(XML_TAG, "", xml)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -161,6 +153,8 @@ class InputsWrapper:
         # robust verification and clear error messages for API developers.
         # NOTE: `assert` is used for non-public errors, related to using this object.
         # `AnnotationError`s are used for public-facing errors.
+        for field in dataclasses.fields(self):
+            assert len(self.session) == len(getattr(self, field.name))
         for context, span in zip(self.context, self.span):
             no_context = isinstance(span, spacy.tokens.doc.Doc)
             has_context = context != span
@@ -180,41 +174,49 @@ class InputsWrapper:
                         span_.char_span(annotation[0].start, annotation[0].stop) is not None
                     )
                     if not is_valid_span and not is_pause:
-                        raise AnnotationError("The annotations must wrap words fully.")
+                        raise PublicAnnotationError("The annotations must wrap words fully.")
                     if prev is not None:
                         assert prev[0].stop < annotation[0].start
         if not all(a[1] >= min_loudness and a[1] <= max_loudness for b in self.loudness for a in b):
             message = "The loudness annotations must be between "
-            raise AnnotationError(f"{message} {min_loudness} and {max_loudness} db.")
+            raise PublicAnnotationError(f"{message} {min_loudness} and {max_loudness} db.")
         if not all(a[1] >= min_rate and a[1] <= max_rate for b in self.tempo for a in b):
             message = "The tempo annotations must be between "
-            raise AnnotationError(f"{message} {min_rate} and {max_rate} seconds per character.")
+            raise PublicAnnotationError(
+                f"{message} {min_rate} and {max_rate} seconds per character."
+            )
         for span_, token_annotations in zip(self.span, self.respellings):
             for token, annotation in token_annotations.items():
                 if token is None:
-                    raise AnnotationError("Respelling must wrap a word.")
+                    raise PublicAnnotationError("Respelling must wrap a word.")
                 assert token in span_
                 if len(annotation) == 0:
-                    raise AnnotationError("Respelling has no text.")
+                    raise PublicAnnotationError("Respelling has no text.")
                 if (
                     annotation[0].lower() not in valid_respelling_chars
                     or annotation[-1].lower() not in valid_respelling_chars
                 ):
                     message = "Respellings must start and end with one of these chars:"
-                    raise AnnotationError(f"{message} {valid_respelling_chars}")
+                    raise PublicAnnotationError(f"{message} {valid_respelling_chars}")
                 all_chars = set(list(valid_respelling_chars + respelling_delim))
                 if len(set(annotation.lower()) - all_chars) != 0:
                     message = "Respellings must have these chars only:"
-                    raise AnnotationError(f"{message} {''.join(all_chars)}")
+                    raise PublicAnnotationError(f"{message} {''.join(all_chars)}")
                 if not all(
                     len(set(_get_case(c) for c in syllab)) == 1
                     for syllab in annotation.split(respelling_delim)
                 ):
-                    raise AnnotationError("Respelling must be capitalized correctly.")
+                    raise PublicAnnotationError("Respelling must be capitalized correctly.")
+
+    def __len__(self):
+        return len(self.session)
 
     def to_xml(
-        self, i: int, session_vocab: typing.Dict[struc.Session, int], include_context: bool = False
-    ) -> str:
+        self,
+        i: int,
+        session_vocab: typing.Optional[typing.Dict[struc.Session, int]] = None,
+        include_context: bool = False,
+    ) -> XMLType:
         """Generate XML from model inputs.
 
         NOTE: Due to the possibility of an overlap, `from_xml` and `to_xml` will not nessecarily
@@ -227,7 +229,8 @@ class InputsWrapper:
 
         Args:
             i: The index of `InputsWrapper` to choose.
-            session_vocab: A vocabulary mapping avatar IDs in XML to sessions.
+            session_vocab: A vocabulary mapping avatar IDs in XML to sessions. If `session_vocab`
+                is not provided, -1 is used for the avatar id, as a null value.
             include_context: A convience method for including additional context surrounding
                 the XML. Keep in mind, this will invalidate the XML.
 
@@ -247,16 +250,22 @@ class InputsWrapper:
         text = span.text
         for annotation, idx in annotations:
             text = text[:idx] + annotation + text[idx:]
-        text = f"{open_('speak', session_vocab[self.session[i]])}{text}{close('speak')}"
+        root = open_("speak", session_vocab[self.session[i]] if session_vocab else -1)
+        text = f"{root}{text}{close('speak')}"
         if include_context and isinstance(span, spacy.tokens.span.Span):
             start_char = next((t.idx for t in context if t not in span), 0)
             text = f"{context.text[:start_char]}{text}{context.text[start_char + len(span.text):]}"
-        return text
+        return XMLType(text)
+
+    def get(self, i: int):
+        """Get the ith item in `self`."""
+        fields = dataclasses.fields(self)
+        return self.__class__(**{f.name: getattr(self, f.name)[i] for f in fields})
 
     @classmethod
     def from_strict_xml(
         cls: typing.Type[InputsWrapperTypeVar],
-        xml: str,
+        xml: XMLType,
         span: SpanDoc,
         session_vocab: typing.Dict[int, struc.Session],
     ) -> InputsWrapperTypeVar:
@@ -279,7 +288,7 @@ class InputsWrapper:
         try:
             xml_schema.assertValid(root)
         except etree.DocumentInvalid as xml_errors:
-            raise AnnotationError(f"XML is invalid:\n{xml_errors.error_log}")
+            raise PublicAnnotationError(f"XML is invalid:\n{xml_errors.error_log}")
 
         parser = etree.XMLPullParser(events=("start", "end"))
         parser.feed(xml)
@@ -309,7 +318,7 @@ class InputsWrapper:
         for slice_, value in annotations["respell"]:
             token = span.char_span(*tuple(slice_))
             if len(token) != 1:
-                raise AnnotationError("Respelling must wrap a single word.")
+                raise PublicAnnotationError("Respelling must wrap a single word.")
             respellings[token[0]] = value
 
         return cls(
@@ -324,16 +333,29 @@ class InputsWrapper:
     @classmethod
     def from_xml(
         cls: typing.Type[InputsWrapperTypeVar],
-        xml: str,
+        xml: XMLType,
         span: SpanDoc,
         session: struc.Session,
     ) -> InputsWrapperTypeVar:
-        """Parse XML (with no root element) into compatible model inputs."""
-        xml = f"<speak value='{0}'>{xml}</speak>"
-        session_vocab = {0: session}
-        return typing.cast(
-            InputsWrapperTypeVar, InputsWrapper.from_strict_xml(xml, span, session_vocab)
-        )
+        """Parse XML into compatible model inputs, that may not have a root element."""
+        xml = xml if xml.startswith("<") else XMLType(f"<speak value='{-1}'>{xml}</speak>")
+        input_ = InputsWrapper.from_strict_xml(xml, span, {-1: session})
+        return typing.cast(InputsWrapperTypeVar, input_)
+
+    @classmethod
+    def from_xml_batch(
+        cls: typing.Type[InputsWrapperTypeVar],
+        xml: typing.List[XMLType],
+        span: typing.List[SpanDoc],
+        session: typing.List[struc.Session],
+    ) -> InputsWrapperTypeVar:
+        """Parse a batch of XML into compatible model inputs, that may not have a root element."""
+        all_ = {f.name: [] for f in dataclasses.fields(InputsWrapper)}
+        for args in zip(xml, span, session):
+            input_ = InputsWrapper.from_xml(*args)
+            for key, val in all_.items():
+                val.append(getattr(input_, key))
+        return cls(**all_)
 
 
 def embed_annotations(
