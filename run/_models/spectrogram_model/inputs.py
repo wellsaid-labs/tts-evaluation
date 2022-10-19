@@ -104,6 +104,14 @@ def get_xml_schema():
     return etree.XMLSchema(xml_schema_doc)
 
 
+class _Schema:
+    respell: typing.Final = "respell"
+    loudness: typing.Final = "loudness"
+    tempo: typing.Final = "tempo"
+    value: typing.Final = "value"
+    speak: typing.Final = "speak"
+
+
 @dataclasses.dataclass(frozen=True)
 class InputsWrapper:
     """The model inputs before processing.
@@ -243,20 +251,22 @@ class InputsWrapper:
         """
         span = self.span[i]
         context = self.context[i]
-        open_ = lambda tag, value: f"<{tag} value='{value}'>"
+        open_ = lambda tag, value: f"<{tag} {_Schema.value}='{value}'>"
         close = lambda tag: f"</{tag}>"
-        annotations = [(open_("loudness", a), s.start) for s, a in self.loudness[i]]
-        annotations += [(close("loudness"), s.stop) for s, _ in self.loudness[i]]
-        annotations += [(open_("tempo", a), s.start) for s, a in self.tempo[i]]
-        annotations += [(close("tempo"), s.stop) for s, _ in self.tempo[i]]
-        annotations += [(open_("respell", a), t.idx) for t, a in self.respellings[i].items()]
-        annotations += [(close("respell"), t.idx + len(t)) for t, _ in self.respellings[i].items()]
+        annotations = [(open_(self.loudness, a), s.start) for s, a in self.loudness[i]]
+        annotations += [(close(_Schema.loudness), s.stop) for s, _ in self.loudness[i]]
+        annotations += [(open_(_Schema.tempo, a), s.start) for s, a in self.tempo[i]]
+        annotations += [(close(_Schema.tempo), s.stop) for s, _ in self.tempo[i]]
+        annotations += [(open_(_Schema.respell, a), t.idx) for t, a in self.respellings[i].items()]
+        annotations += [
+            (close(_Schema.respell), t.idx + len(t)) for t, _ in self.respellings[i].items()
+        ]
         annotations = sorted(annotations, key=lambda k: k[1], reverse=True)
         text = span.text
         for annotation, idx in annotations:
             text = text[:idx] + annotation + text[idx:]
-        root = open_("speak", session_vocab[self.session[i]] if session_vocab else -1)
-        text = f"{root}{text}{close('speak')}"
+        root = open_(_Schema.speak, session_vocab[self.session[i]] if session_vocab else -1)
+        text = f"{root}{text}{close(_Schema.speak)}"
         if include_context and isinstance(span, spacy.tokens.span.Span):
             start_char = next((t.idx for t in context if t not in span), 0)
             text = f"{context.text[:start_char]}{text}{context.text[start_char + len(span.text):]}"
@@ -298,20 +308,20 @@ class InputsWrapper:
         parser = etree.XMLPullParser(events=("start", "end"))
         parser.feed(xml)
 
-        annotations = {"loudness": [], "respell": [], "tempo": []}
+        annotations = {_Schema.loudness: [], _Schema.respell: [], _Schema.tempo: []}
         session: typing.Optional[struc.Session] = None
         text: str = ""
 
         for event, elem in parser.read_events():
             if event == "start":
-                if elem.tag == "speak":
-                    session = session_vocab[elem.get("value")]
-                elif elem.tag is not None and elem.get("value") is not None:
-                    annotations[elem.tag].append(([len(elem.text)], elem.get("value")))
+                if elem.tag == _Schema.speak:
+                    session = session_vocab[elem.get(_Schema.value)]
+                elif elem.tag is not None and elem.get(_Schema.value) is not None:
+                    annotations[elem.tag].append(([len(elem.text)], elem.get(_Schema.value)))
                 if elem.text:
                     text += elem.text
             elif event == "end":
-                if elem.tag is not None and elem.tag != "speak":
+                if elem.tag is not None and elem.tag != _Schema.speak:
                     annotations[elem.tag][-1][0].append(len(elem.text))
                 if elem.tail:
                     text += elem.tail
@@ -320,7 +330,7 @@ class InputsWrapper:
         assert session is not None
 
         respellings = {}
-        for slice_, value in annotations["respell"]:
+        for slice_, value in annotations[_Schema.respell]:
             token = span.char_span(*tuple(slice_))
             if len(token) != 1:
                 raise PublicAnnotationError("Respelling must wrap a single word.")
@@ -330,8 +340,8 @@ class InputsWrapper:
             session=[session],
             span=[span],
             context=[span],
-            loudness=[[(slice(*tuple(s)), float(v)) for s, v in annotations["loudness"]]],
-            tempo=[[(slice(*tuple(s)), float(v)) for s, v in annotations["tempo"]]],
+            loudness=[[(slice(*tuple(s)), float(v)) for s, v in annotations[_Schema.loudness]]],
+            tempo=[[(slice(*tuple(s)), float(v)) for s, v in annotations[_Schema.tempo]]],
             respellings=[respellings],
         )
 
@@ -343,7 +353,8 @@ class InputsWrapper:
         session: struc.Session,
     ) -> InputsWrapperTypeVar:
         """Parse XML into compatible model inputs, that may not have a root element."""
-        xml = xml if xml.startswith("<") else XMLType(f"<speak value='{-1}'>{xml}</speak>")
+        if not xml.startswith("<"):
+            xml = XMLType(f"<{_Schema.speak} {_Schema.value}='{-1}'>{xml}</{_Schema.speak}>")
         input_ = InputsWrapper.from_strict_xml(xml, span, {-1: session})
         return typing.cast(InputsWrapperTypeVar, input_)
 
