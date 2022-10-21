@@ -84,7 +84,7 @@ def test_split_dataset__deduplication(_):
             passage("This is a test!", speaker_a),  # NOTE: Non-dev set duplicate passage
         ],
     }
-    train, dev = split_dataset(dataset, dev_speakers, dev_length, 0.9, groups)
+    train, dev = split_dataset(dataset, dev_speakers, dev_length, 0.9, groups, 3)
     assert train == {
         speaker_a: [
             passage("More training data testing!", speaker_a),
@@ -135,8 +135,8 @@ def test_split_dataset__order(_):
     other_dataset[speaker_a] = dataset[speaker_a]
     assert list(other_dataset.keys()) != list(dataset.keys())
 
-    train, dev = split_dataset(dataset, dev_speakers, dev_length, 0.9, groups)
-    other_train, other_dev = split_dataset(other_dataset, dev_speakers, dev_length, 0.9, groups)
+    train, dev = split_dataset(dataset, dev_speakers, dev_length, 0.9, groups, 3)
+    other_train, other_dev = split_dataset(other_dataset, dev_speakers, dev_length, 0.9, groups, 3)
     assert train == other_train
     assert dev == other_dev
 
@@ -161,7 +161,7 @@ def test_split_dataset__groups(_):
         passage("I'm testing this.", speaker_b),
         passage("This is a test!", speaker_b),
     ]
-    train, dev = split_dataset(dataset, dev_speakers, dev_length, 0.9, groups)
+    train, dev = split_dataset(dataset, dev_speakers, dev_length, 0.9, groups, 3)
     assert train == {
         speaker_a: [passage("I'm testing this.", speaker_a)],
         speaker_b: [passage("This is a test!", speaker_b)],
@@ -193,7 +193,7 @@ def test_split_dataset__speaker_not_in_group(_):
         passage("Finally there is a last test.", speaker_b),
     ]
     with pytest.raises(AssertionError):
-        train, dev = split_dataset(dataset, dev_speakers, dev_length, 1, groups)
+        train, dev = split_dataset(dataset, dev_speakers, dev_length, 1, groups, 3)
 
 
 @mock.patch("random.shuffle", return_value=None)
@@ -217,7 +217,7 @@ def test_split_dataset__speaker_in_multiple_groups(_):
         passage("Finally there is a last test.", speaker_b),
     ]
     with pytest.raises(AssertionError):
-        train, dev = split_dataset(dataset, dev_speakers, dev_length, 1, groups)
+        train, dev = split_dataset(dataset, dev_speakers, dev_length, 1, groups, 3)
 
 
 @mock.patch("random.shuffle", return_value=None)
@@ -247,7 +247,7 @@ def test_split_dataset__exact_similarity(_):
         passage("I'm testing these.", speaker_b),
         passage("This is my test.", speaker_b),
     ]
-    train, dev = split_dataset(dataset, dev_speakers, dev_length, 1, groups)
+    train, dev = split_dataset(dataset, dev_speakers, dev_length, 1, groups, 3)
     assert train == {
         speaker_a: [passage("I'm testing this.", speaker_a)],
         speaker_b: [passage("This is my test.", speaker_b)],
@@ -286,7 +286,7 @@ def test_split_dataset__loose_similarity(_):
         passage("I'm testing these.", speaker_b),
         passage("This is my test.", speaker_b),
     ]
-    train, dev = split_dataset(dataset, dev_speakers, dev_length, 0.9, groups)
+    train, dev = split_dataset(dataset, dev_speakers, dev_length, 0.9, groups, 3)
     assert train == {
         speaker_a: [passage("I'm testing this.", speaker_a)],
         speaker_b: [passage("I'm testing these.", speaker_b)],
@@ -321,7 +321,7 @@ def test_split_dataset__dev_duplicates_for_dev_speakers(_):
         passage("This is a test.", speaker_b),
         passage("Here is another test.", speaker_b),
     ]
-    train, dev = split_dataset(dataset, dev_speakers, dev_length, 0.9, groups)
+    train, dev = split_dataset(dataset, dev_speakers, dev_length, 0.9, groups, 3)
     assert train == {
         speaker_a: [passage("I'm testing this.", speaker_a)],
         speaker_b: [passage("Here is another test.", speaker_b)],
@@ -355,7 +355,7 @@ def test_split_dataset__discard_duplicates_for_nondev_speaker(_):
         passage("This is a test.", speaker_b),
         passage("Here is another test.", speaker_b),
     ]
-    train, dev = split_dataset(dataset, dev_speakers, dev_length, 0.9, groups)
+    train, dev = split_dataset(dataset, dev_speakers, dev_length, 0.9, groups, 3)
     assert train == {
         speaker_a: [passage("I'm testing this.", speaker_a)],
         speaker_b: [passage("Here is another test.", speaker_b)],

@@ -31,10 +31,12 @@ import functools
 import logging
 import math
 import typing
+import warnings
 
 import altair as alt
 import config as cf
 import pandas as pd
+from spacy.language import Language
 import streamlit as st
 import tqdm
 from torchnlp.random import fork_rng
@@ -42,9 +44,16 @@ from torchnlp.random import fork_rng
 import lib
 import run
 from lib.utils import flatten_2d, mazel_tov, round_, seconds_to_str
-from run._config import is_voiced
-from run._streamlit import audio_to_html, clear_session_cache, get_dataset, map_, st_data_frame
-from run._utils import Dataset
+from run._config import configure, is_voiced
+from run._streamlit import (
+    audio_to_html,
+    clear_session_cache,
+    get_dataset,
+    load_en_core_web_md,
+    map_,
+    st_data_frame,
+)
+from run._utils import Dataset, split_dataset, _passages_len
 from run.data._loader import DATASETS, Passage, Span, has_a_mistranscription
 from run.data.dataset_dashboard import _utils as utils
 
@@ -161,6 +170,40 @@ def _span_metric(
                 other_columns = {"value": [r[1] for r in data]}
                 _write_span_table([r[0] for r in data], other_columns=other_columns)
                 st.text("")
+
+
+def _grouped_bar_chart(
+    df: pd.DataFrame,
+    x_feature: str,
+    y_feature: str,
+    color_feature: str,
+    column_feature: str,
+    x_label: str = "",
+    y_label: str = "",
+    **kwargs,
+):
+    """Visualize data, such as per-speaker data, in a grouped bar chart.
+
+    Args:
+        df: The dataframe to plot.
+        x_feature: The feature to be plotted on the x-axis.
+        y_feature: The feature to be plotted on the y-axis.
+        color_feature: The feature to be encoded by color.
+        column_feature: The feature to be encoded by column.
+        x_label: The x-axis label.
+        y_label: The y-axis label.
+    """
+    grouped_bar_chart = (
+        alt.Chart(df)
+        .mark_bar()
+        .encode(
+            x=alt.X(x_feature, title=x_label),
+            y=alt.Y(y_feature, title=y_label),
+            color=color_feature,
+            column=alt.Column(column_feature, header=alt.Header(labelAngle=-25, labelPadding=-50)),
+        )
+    )
+    st.altair_chart(grouped_bar_chart, use_container_width=False)
 
 
 @lib.utils.log_runtime
@@ -415,6 +458,66 @@ def _analyze_non_speech_segments(passages: typing.List[Passage], max_rows: int, 
 
 
 @lib.utils.log_runtime
+def _analyze_dataset_split(
+    dataset: Dataset, passages: typing.List[Passage], nlp: Language, max_rows: int, run_all: bool
+):
+    st.markdown("### Dataset Dev/Train Split Analysis")
+
+    if st.checkbox("Analyze", key="dataset-split-analysis-count", value=run_all):
+        warnings.filterwarnings("ignore")
+        configure(overwrite=True)
+        speakers = set([speaker for speaker in dataset])
+        train_dataset, dev_dataset = cf.partial(split_dataset)(
+            dataset, dev_speakers=speakers, groups=[speakers]
+        )
+        dev_train_data: typing.List[typing.Tuple[str, str, int, float, int]] = []
+        for i, s in enumerate(speakers):
+            s_display = f"{s.label} ({s.dialect.name}, {s.style.value})"
+            logger.info(f"Analyzing speaker {i+1}/{len(speakers)}: {s_display}...")
+            speaker_train: typing.List[Passage] = train_dataset[s] if s in train_dataset else []
+            speaker_dev: typing.List[Passage] = dev_dataset[s] if s in dev_dataset else []
+            for speaker_data, split_type in [(speaker_dev, "dev"), (speaker_train, "train")]:
+                num_p = len(speaker_data)
+                len_p = _passages_len(speaker_data)
+                word_count = sum(len(nlp(p.transcript)) for p in speaker_data)
+                dev_train_data.append((s_display, split_type, num_p, len_p, word_count))
+        dataset_split_df = pd.DataFrame(
+            dev_train_data,
+            columns=["speaker", "split", "num_passages", "len_passages", "word_count"],
+        )
+
+        with utils.st_expander("Number of Dev/Train Passages Per Speaker"):
+            _grouped_bar_chart(
+                dataset_split_df,
+                "split:N",
+                "num_passages:Q",
+                "split:N",
+                "speaker:N",
+                y_label="num_passages (discrete)",
+            )
+
+        with utils.st_expander("Length of Dev/Train Passages Per Speaker"):
+            _grouped_bar_chart(
+                dataset_split_df,
+                "split:N",
+                "len_passages:Q",
+                "split:N",
+                "speaker:N",
+                y_label="len_passages (seconds)",
+            )
+
+        with utils.st_expander("Word Count of Dev/Train Passages Per Speaker"):
+            _grouped_bar_chart(
+                dataset_split_df,
+                "split:N",
+                "word_count:Q",
+                "split:N",
+                "speaker:N",
+                y_label="word_count (discrete)",
+            )
+
+
+@lib.utils.log_runtime
 def _analyze_dataset(dataset: Dataset, **kwargs):
     logger.info("Analyzing dataset...")
     st.header("Raw Dataset Analysis")
@@ -440,11 +543,15 @@ def _analyze_dataset(dataset: Dataset, **kwargs):
         f"**{sum(len(p.alignments) for p in passages):,}** alignments..."
     )
 
+    with st.spinner("Loading spaCy..."):
+        nlp: Language = load_en_core_web_md(disable=("parser", "ner"))
+
     _analyze_alignments(passages, **kwargs)
     _analyze_nonalignments(passages, **kwargs)
     _analyze_speech_segments(passages, **kwargs)
     _analyze_alignment_speech_segments(passages, **kwargs)
     _analyze_non_speech_segments(passages, **kwargs)
+    _analyze_dataset_split(dataset, passages, nlp, **kwargs)
 
     logger.info(f"Finished analyzing dataset! {mazel_tov()}")
 
