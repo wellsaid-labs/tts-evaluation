@@ -10,6 +10,7 @@ from torchnlp.encoders.text import SequenceBatch
 
 import lib
 import run
+from run._models.spectrogram_model import SpanAnnotations, TokenAnnotations
 from run.data._loader import Alignment
 from run.train.spectrogram_model import _data
 from tests._utils import assert_almost_equal
@@ -69,7 +70,7 @@ def test__get_loudness():
     with torchnlp.random.fork_rng(1234):
         audio = np.random.rand(sample_rate * length) * 2 - 1
         alignment = Alignment((0, length), (0, length), (0, length))
-        loundess = _data._get_loudness(
+        loundess = _data._get_loudness_annotation(
             audio=audio,
             alignment=alignment,
             block_size=block_size,
@@ -90,7 +91,7 @@ def test__get_loudness__short_audio():
     with torchnlp.random.fork_rng(12345):
         audio = np.random.rand(int(sample_rate * length)) * 2 - 1
         alignment = Alignment((0, 1), (0, length), (0, 1))
-        loundess = _data._get_loudness(
+        loundess = _data._get_loudness_annotation(
             audio=audio,
             alignment=alignment,
             block_size=block_size,
@@ -109,24 +110,57 @@ def test__random_loudness_annotations():
         signal = np.random.rand(length) * 2 - 1
         out = _data._random_loudness_annotations(span, signal)
         # NOTE: These loudness values are irregular because the sample rate is so small.
-        expected = [
-            [53.0000, 1.0000],
-            [53.0000, 1.0000],
-            [53.0000, 1.0000],
-            [53.0000, 1.0000],
-            [12.9800, -1.0000],
-            [26.6800, 1.0000],
-            [26.6800, 1.0000],
-            [0.0000, 0.0000],
-            [13.4800, -1.0000],
-            [13.3000, 1.0000],
-            [0.0000, 0.0000],
-            [0.0000, 0.0000],
-            [0.0000, 0.0000],
-            [0.0000, 0.0000],
-            [0.0000, 0.0000],
+        expected: SpanAnnotations = [
+            (slice(0, 3), 53),
+            (slice(3, 4), 12.9800),
+            (slice(4, 6), 26.6800),
+            (slice(7, 8), 13.4800),
+            (slice(8, 9), 13.3000),
         ]
-        assert_almost_equal(out, torch.tensor(expected))
+        assert expected == out
+
+
+def test__random_tempo_annotations():
+    """Test `_data._random_tempo_annotations` on a basic case."""
+    with torchnlp.random.fork_rng(123456):
+        span = make_passage(script="This is a test.")[:]
+        out = _data._random_tempo_annotations(span, 2)
+        expected: SpanAnnotations = [
+            (slice(0, 3), 53),
+            (slice(3, 4), 12.9800),
+            (slice(4, 6), 26.6800),
+            (slice(7, 8), 13.4800),
+            (slice(8, 9), 13.3000),
+        ]
+        assert expected == out
+
+
+def test__random_respelling_annotations():
+    """Test `_random_respelling_annotations` on a basic case."""
+    with torchnlp.random.fork_rng(123456):
+        span = make_passage(script="Don't People from EDGE catch-the-flu?")[:]
+        annotations = _data._random_respelling_annotations(span, prob=1.0, delim="-")
+        expected: TokenAnnotations = {
+            span.spacy[1]: "PEE-puhl",
+            span.spacy[5]: "KATCH",
+            span.spacy[7]: "FLOO",
+        }
+        assert annotations == expected
+
+
+def test__random_respelling_annotations__prob_zero():
+    """Test `_random_respelling_annotations` respects `prob`."""
+    span = make_passage(script="Don't People from EDGE catch-the-flu?")[:]
+    annotations = _data._random_respelling_annotations(span, prob=0, delim="-")
+    assert annotations == {}
+
+
+def test__random_respelling_annotations__appostrophe():
+    """Test `_random_respelling_annotations` does not annotate a apostrophed word."""
+    with torchnlp.random.fork_rng(123456):
+        span = make_passage(script="Catch Catch's")[:]
+        annotations = _data._random_respelling_annotations(span, prob=1.0, delim="-")
+        assert annotations == {span.spacy[0]: "KATCH"}
 
 
 def test__signals_to_spectrograms():
