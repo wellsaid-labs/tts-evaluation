@@ -145,7 +145,6 @@ def _include_span(span: struc.Span):
     return True
 
 
-# TODO: We need to convert these test cases to XML.
 ENGLISH_TEST_CASES = [
     # NOTE: These statements have a mix of heteronyms, initialisms, hard words (locations,
     # medical terms, technical terms), etc for testing pronunciation.
@@ -310,6 +309,7 @@ def configure(overwrite: bool = False):
         # data that has no annotations; however, our preference is for the model to train with
         # more annotations because it should "stabalize" it. As in, the model would not need to
         # guess as much which creates an easier training environment.
+        # NOTE: We gueestimated that users would have around 3 annotations per clip in Studio.
         run.train.spectrogram_model._data._random_nonoverlapping_alignments: cf.Args(
             min_no_intervals_prob=0.1, avg_alignments=3
         ),

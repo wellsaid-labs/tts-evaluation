@@ -183,15 +183,18 @@ def configure(overwrite: bool = False):
     debug_speakers = set(
         s for s in run._config.DEV_SPEAKERS if LANGUAGE is None or s.language == LANGUAGE
     )
+    respelling_delim = "-"
     config = {
         run._utils._get_debug_datasets: cf.Args(speakers=debug_speakers),
         run._utils.get_dataset: cf.Args(language=LANGUAGE),
         # TODO: In the future, we may add respelling support based on language, for now,
-        # this only support `ascii_lowercase`
+        # we only support `ascii_lowercase` characters.
         run._models.spectrogram_model.inputs.InputsWrapper.check_invariants: cf.Args(
             valid_respelling_chars=string.ascii_lowercase,
-            respelling_delim="-",
+            respelling_delim=respelling_delim,
         ),
-        run.train.spectrogram_model._data._random_respelling_annotations: cf.Args(delim="-"),
+        run.train.spectrogram_model._data._random_respelling_annotations: cf.Args(
+            delim=respelling_delim
+        ),
     }
     cf.add(config, overwrite)

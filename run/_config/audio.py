@@ -212,7 +212,7 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
         ),
         run.data._loader.utils.SpanGenerator: Args(max_pause=too_long_pause_length),
         # NOTE: A 0.400 `block_size` is standard for ITU-R BS.1770.
-        # NOTE: A useful general reference is that the just noticeable difference in sound
+        # NOTE: We use `precision=0` because the just noticeable difference in sound
         # intensity for the human ear is about 1 decibel. For more intense sounds, this can be
         # as low as 1/2 or 1/3.
         # http://physics.gmu.edu/~dmaria/phys260summer03/sound/DB.HTML#c4
