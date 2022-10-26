@@ -154,12 +154,12 @@ def _random_respelling_annotations(span: Span, prob: float, delim: str) -> Token
     """
     annotations: TokenAnnotations = {}
     tokens = list(span.spacy)
-    for prev, token, next_ in zip([None] + tokens[:-1], span.spacy, tokens[1:] + [None]):
+    for prev, token, next_ in zip([None] + tokens[:-1], tokens, tokens[1:] + [None]):
         if random.random() > prob:
             continue
         if prev is not None and len(prev.whitespace_) == 0 and not prev.is_punct:
             continue
-        if next_ is not None and len(next_.whitespace_) == 0 and not next_.is_punct:
+        if next_ is not None and len(token.whitespace_) == 0 and not next_.is_punct:
             continue
         respelling = respell(token.text, load_cmudict_syl(), delim)
         if respelling is not None:

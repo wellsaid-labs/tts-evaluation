@@ -111,11 +111,11 @@ def test__random_loudness_annotations():
         out = _data._random_loudness_annotations(span, signal)
         # NOTE: These loudness values are irregular because the sample rate is so small.
         expected: SpanAnnotations = [
-            (slice(0, 3), 53),
-            (slice(3, 4), 12.9800),
-            (slice(4, 6), 26.6800),
-            (slice(7, 8), 13.4800),
-            (slice(8, 9), 13.3000),
+            (slice(0, 4, None), 2600.0),
+            (slice(4, 5, None), 599.0),
+            (slice(5, 7, None), 1284.0),
+            (slice(8, 9, None), 624.0),
+            (slice(9, 10, None), 615.0),
         ]
         assert expected == out
 
@@ -126,11 +126,11 @@ def test__random_tempo_annotations():
         span = make_passage(script="This is a test.")[:]
         out = _data._random_tempo_annotations(span, 2)
         expected: SpanAnnotations = [
-            (slice(0, 3), 53),
-            (slice(3, 4), 12.9800),
-            (slice(4, 6), 26.6800),
-            (slice(7, 8), 13.4800),
-            (slice(8, 9), 13.3000),
+            (slice(0, 4, None), 1.0),
+            (slice(4, 5, None), 1.0),
+            (slice(5, 7, None), 1.0),
+            (slice(8, 9, None), 1.0),
+            (slice(9, 10, None), 1.0),
         ]
         assert expected == out
 
@@ -141,9 +141,9 @@ def test__random_respelling_annotations():
         span = make_passage(script="Don't People from EDGE catch-the-flu?")[:]
         annotations = _data._random_respelling_annotations(span, prob=1.0, delim="-")
         expected: TokenAnnotations = {
-            span.spacy[1]: "PEE-puhl",
-            span.spacy[5]: "KATCH",
-            span.spacy[7]: "FLOO",
+            span.spacy[2]: "PEE-puhl",
+            span.spacy[5]: "KACH",
+            span.spacy[9]: "FLOO",
         }
         assert annotations == expected
 
@@ -160,7 +160,7 @@ def test__random_respelling_annotations__appostrophe():
     with torchnlp.random.fork_rng(123456):
         span = make_passage(script="Catch Catch's")[:]
         annotations = _data._random_respelling_annotations(span, prob=1.0, delim="-")
-        assert annotations == {span.spacy[0]: "KATCH"}
+        assert annotations == {span.spacy[0]: "KACH"}
 
 
 def test__signals_to_spectrograms():
