@@ -44,29 +44,30 @@ def test_inputs_wrapper():
     """Test `InputsWrapper` with no annotations."""
     nlp = load_en_english()
     script = "this is a test"
-    input = InputsWrapper(
+    span = nlp(script)
+    input_ = InputsWrapper(
         session=[make_session()],
-        span=[nlp(script)],
-        context=[nlp(script)],
+        span=[span],
+        context=[span],
         loudness=[[]],
         tempo=[[]],
         respellings=[{}],
     )
-    assert len(input) == 1
-    assert input.get(0) == input
-    assert input.to_xml(0) == f"<{_Schema.SPEAK}>{script}</{_Schema.SPEAK}>"
+    assert len(input_) == 1
+    assert input_.get(0) == input_
+    assert input_.to_xml(0) == f"<{_Schema.SPEAK} {_Schema._VALUE}='-1'>{script}</{_Schema.SPEAK}>"
 
 
 def test_inputs_wrapper__from_xml():
     """Test `InputsWrapper.from_xml` with no annotations."""
     nlp = load_en_english()
     script = "this is a test"
-    xml = XMLType(f"<{_Schema.SPEAK}>{script}</{_Schema.SPEAK}>")
-    result = InputsWrapper.from_xml(xml, nlp(script), make_session())
+    span = nlp(script)
+    result = InputsWrapper.from_xml(XMLType(script), span, make_session())
     expected = InputsWrapper(
         session=[make_session()],
-        span=[nlp(script)],
-        context=[nlp(script)],
+        span=[span],
+        context=[span],
         loudness=[[]],
         tempo=[[]],
         respellings=[{}],
@@ -78,14 +79,14 @@ def test_inputs_wrapper__from_xml_batch():
     """Test `InputsWrapper.from_xml_batch` processes a batch correctly."""
     nlp = load_en_english()
     script = "this is a test"
-    xml = XMLType(f"<{_Schema.SPEAK}>{script}</{_Schema.SPEAK}>")
     doc = nlp(script)
+    xml = XMLType(script)
     sesh = make_session()
     result = InputsWrapper.from_xml_batch([xml, xml], [doc, doc], [sesh, sesh])
     expected = InputsWrapper(
         session=[make_session()],
-        span=[nlp(script)],
-        context=[nlp(script)],
+        span=[doc],
+        context=[doc],
         loudness=[[]],
         tempo=[[]],
         respellings=[{}],
@@ -98,30 +99,31 @@ def test_inputs_wrapper__from_xml__annotated():
     """Test `InputsWrapper.from_xml` and `InputsWrapper.to_xml` with annotations."""
     nlp = load_en_english()
     script = "this is a test"
-    xml = f'<{_Schema.LOUDNESS} {_Schema._VALUE}="-20">Over the river and '
-    xml += f'<{_Schema.TEMPO} {_Schema._VALUE}="0.04">through the '
-    xml += f'<{_Schema.RESPELL} {_Schema._VALUE}="wuuds">woods</{_Schema.RESPELL}>'
+    xml = f"<{_Schema.LOUDNESS} {_Schema._VALUE}='-20'>Over the river and "
+    xml += f"<{_Schema.TEMPO} {_Schema._VALUE}='0.04'>through the "
+    xml += f"<{_Schema.RESPELL} {_Schema._VALUE}='wuuds'>woods</{_Schema.RESPELL}>"
     xml += f"</{_Schema.TEMPO}>.</{_Schema.LOUDNESS}>"
     xml = XMLType(xml)
     script = xml_to_text(xml)
     doc = nlp(script)
     result = InputsWrapper.from_xml(xml, doc, make_session())
+    tempo = slice(len("Over the river and "), len("Over the river and through the woods"))
     expected = InputsWrapper(
         session=[make_session()],
         span=[doc],
         context=[doc],
-        loudness=[[(slice(0, len(xml)), -20)]],
-        tempo=[[(slice(len("Over the river and "), -len(".")), 0.04)]],
+        loudness=[[(slice(0, len("Over the river and through the woods.")), -20)]],
+        tempo=[[(tempo, 0.04)]],
         respellings=[{doc[-2]: "wuuds"}],
     )
     assert result == expected
-    assert expected.to_xml(0) == f'<{_Schema.SPEAK} {_Schema._VALUE}="-1">{xml}</{_Schema.SPEAK}>'
+    assert expected.to_xml(0) == f"<{_Schema.SPEAK} {_Schema._VALUE}='-1'>{xml}</{_Schema.SPEAK}>"
 
 
 def check_annotation(anno: _Schema, text: str, respelling: str, prefix: str = "", suffix: str = ""):
     nlp = load_en_english()
     xml = XMLType(f'{prefix}<{anno} {_Schema._VALUE}="{respelling}">{text}</{anno}>{suffix}')
-    InputsWrapper.from_xml(xml, nlp(text), make_session())
+    InputsWrapper.from_xml(xml, nlp(prefix + text + suffix), make_session())
 
 
 def test__inputs_wrapper__from_xml__token_annotations():
@@ -203,7 +205,7 @@ def test_inputs_wrapper__to_xml__context():
     span = doc[1:-1]
     xml = f'<{_Schema.LOUDNESS} {_Schema._VALUE}="-20">{str(span)}</{_Schema.LOUDNESS}>'
     xml = XMLType(xml)
-    input = InputsWrapper(
+    input_ = InputsWrapper(
         session=[make_session()],
         span=[span],
         context=[doc],
@@ -212,7 +214,7 @@ def test_inputs_wrapper__to_xml__context():
         respellings=[{}],
     )
     expected = f'this <{_Schema.SPEAK} {_Schema._VALUE}="-1">{xml}</{_Schema.SPEAK}> test'
-    assert input.to_xml(0) == expected
+    assert input_.to_xml(0) == expected
 
 
 def test__preprocess():

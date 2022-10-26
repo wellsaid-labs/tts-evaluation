@@ -260,6 +260,7 @@ ENGLISH_TEST_CASES = [
     "Does <respell value='BEE-u-loh-ZHEEK'>biologique</respell> "
     "<respell value='ru-SHURSH'>recherche</respell> really work?",
     # NOTE: Test v10 regressions
+    # NOTE: Respellings are formatted like they were inputted in v10
     # - Difficult acronyms
     "It took six Ph.Ds to design a VCR a five-year-old could use.",
     # - "Cape Cod" was repeated
@@ -313,9 +314,7 @@ def configure(overwrite: bool = False):
         run.train.spectrogram_model._data._random_nonoverlapping_alignments: cf.Args(
             min_no_intervals_prob=0.1, avg_alignments=3
         ),
-        run.train.spectrogram_model._data._random_tempo_annotations: cf.Args(
-            max_annotations=10, precision=2
-        ),
+        run.train.spectrogram_model._data._random_tempo_annotations: cf.Args(precision=2),
         # NOTE: We expect users to respell approx 5 - 10% of words.
         run.train.spectrogram_model._data._random_respelling_annotations: cf.Args(prob=0.1),
     }

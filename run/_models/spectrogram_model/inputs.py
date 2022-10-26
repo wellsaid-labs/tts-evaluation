@@ -1,6 +1,7 @@
 import dataclasses
 import enum
 import functools
+import pathlib
 import typing
 
 import config as cf
@@ -100,7 +101,7 @@ class PublicAnnotationError(ValueError):
 
 @functools.lru_cache()
 def get_xml_schema():
-    xml_schema_doc = etree.parse("schema.xsd", None)
+    xml_schema_doc = etree.parse(pathlib.Path(__file__).parent / "schema.xsd", None)
     return etree.XMLSchema(xml_schema_doc)
 
 
@@ -158,8 +159,8 @@ class InputsWrapper:
         self,
         min_loudness: float,
         max_loudness: float,
-        min_rate: float,
-        max_rate: float,
+        min_tempo: float,
+        max_tempo: float,
         valid_respelling_chars: str,
         respelling_delim: str,
     ):
@@ -185,9 +186,8 @@ class InputsWrapper:
                     # NOTE: The only annotations that are acceptable are non-voiced characters
                     # for pauses or spans for speaking tempo.
                     is_pause = not is_voiced(span_.text[annotation[0]], sesh[0].language)
-                    is_valid_span = (
-                        span_.char_span(annotation[0].start, annotation[0].stop) is not None
-                    )
+                    indices = annotation[0].indices(len(span_.text))
+                    is_valid_span = span_.char_span(indices[0], indices[1]) is not None
                     if not is_valid_span and not is_pause:
                         raise PublicAnnotationError("The annotations must wrap words fully.")
                     if prev is not None:
@@ -197,10 +197,10 @@ class InputsWrapper:
         if not all(a[1] >= min_loudness and a[1] <= max_loudness for b in self.loudness for a in b):
             message = "The loudness annotations must be between "
             raise PublicAnnotationError(f"{message} {min_loudness} and {max_loudness} db.")
-        if not all(a[1] >= min_rate and a[1] <= max_rate for b in self.tempo for a in b):
+        if not all(a[1] >= min_tempo and a[1] <= max_tempo for b in self.tempo for a in b):
             message = "The tempo annotations must be between "
             raise PublicAnnotationError(
-                f"{message} {min_rate} and {max_rate} seconds per character."
+                f"{message} {min_tempo} and {max_tempo} seconds per character."
             )
 
         # NOTE: Check that respellings are correctly formatted and wrap words entirely.
@@ -259,7 +259,7 @@ class InputsWrapper:
         context = self.context[i]
         open_ = lambda tag, value: f"<{tag} {_Schema._VALUE}='{value}'>"
         close = lambda tag: f"</{tag}>"
-        annotations = [(open_(self.loudness, a), s.start) for s, a in self.loudness[i]]
+        annotations = [(open_(_Schema.LOUDNESS, a), s.start) for s, a in self.loudness[i]]
         annotations += [(close(_Schema.LOUDNESS), s.stop) for s, _ in self.loudness[i]]
         annotations += [(open_(_Schema.TEMPO, a), s.start) for s, a in self.tempo[i]]
         annotations += [(close(_Schema.TEMPO), s.stop) for s, _ in self.tempo[i]]
@@ -281,7 +281,7 @@ class InputsWrapper:
     def get(self, i: int):
         """Get the ith item in `self`."""
         fields = dataclasses.fields(self)
-        return self.__class__(**{f.name: getattr(self, f.name)[i] for f in fields})
+        return self.__class__(**{f.name: [getattr(self, f.name)[i]] for f in fields})
 
     @classmethod
     def from_strict_xml(
@@ -320,20 +320,20 @@ class InputsWrapper:
 
         for event, elem in parser.read_events():
             if event == "start":
-                if elem.tag == _Schema.SPEAK:
-                    session = session_vocab[elem.get(_Schema._VALUE)]
-                elif elem.tag is not None and elem.get(_Schema._VALUE) is not None:
-                    annotations[elem.tag].append(([len(elem.text)], elem.get(_Schema._VALUE)))
+                if elem.tag == str(_Schema.SPEAK):
+                    session = session_vocab[int(elem.get(str(_Schema._VALUE)))]
+                elif elem.tag is not None and elem.get(str(_Schema._VALUE)) is not None:
+                    annotation = ([len(text)], elem.get(str(_Schema._VALUE)))
+                    annotations[_Schema[elem.tag.upper()]].append(annotation)
                 if elem.text and len(text) == 0:
                     text += typing.cast(str, elem.text).lstrip()
                 elif elem.text:
                     text += elem.text
             elif event == "end":
-                if elem.tag is not None and elem.tag != _Schema.SPEAK:
-                    annotations[elem.tag][-1][0].append(len(elem.text))
+                if elem.tag is not None and elem.tag != str(_Schema.SPEAK):
+                    annotations[_Schema[elem.tag.upper()]][-1][0].append(len(text))
                 if elem.tail:
                     text += elem.tail
-
         text = text.strip()
         assert text == span.text, "The `Span` must have the same text as the XML."
         assert session is not None
@@ -341,7 +341,7 @@ class InputsWrapper:
         respellings = {}
         for slice_, value in annotations[_Schema.RESPELL]:
             token = span.char_span(*tuple(slice_))
-            if len(token) != 1:
+            if token is None or len(token) != 1:
                 raise PublicAnnotationError("Respelling must wrap a single word.")
             respellings[token[0]] = value
 
@@ -363,7 +363,7 @@ class InputsWrapper:
         context: typing.Optional[SpanDoc] = None,
     ) -> InputsWrapperTypeVar:
         """Parse XML into compatible model inputs, that may not have a root element."""
-        if not xml.startswith("<"):
+        if not xml.startswith(f"<{_Schema.SPEAK}"):
             xml = XMLType(f"<{_Schema.SPEAK} {_Schema._VALUE}='{-1}'>{xml}</{_Schema.SPEAK}>")
         input_ = InputsWrapper.from_strict_xml(xml, span, {-1: session}, context)
         return typing.cast(InputsWrapperTypeVar, input_)
@@ -381,7 +381,7 @@ class InputsWrapper:
         for args in zip(xml, span, session, span if context is None else context):
             input_ = InputsWrapper.from_xml(*args)
             for key, val in all_.items():
-                val.append(getattr(input_, key))
+                val.extend(getattr(input_, key))
         return cls(**all_)
 
 
