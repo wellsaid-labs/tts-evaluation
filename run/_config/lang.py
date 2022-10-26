@@ -52,6 +52,8 @@ _NON_ASCII_MARKS: typing.Dict[Language, frozenset] = {
 }
 _NON_ASCII_ALL = {l: _NON_ASCII_CHARS[l].union(_NON_ASCII_MARKS[l]) for l in Language}
 
+RESPELLING_DELIM = "-"
+
 
 def normalize_vo_script(text: str, language: Language) -> str:
     return lib.text.normalize_vo_script(text, _NON_ASCII_ALL[language])
@@ -183,7 +185,6 @@ def configure(overwrite: bool = False):
     debug_speakers = set(
         s for s in run._config.DEV_SPEAKERS if LANGUAGE is None or s.language == LANGUAGE
     )
-    respelling_delim = "-"
     config = {
         run._utils._get_debug_datasets: cf.Args(speakers=debug_speakers),
         run._utils.get_dataset: cf.Args(language=LANGUAGE),
@@ -191,10 +192,10 @@ def configure(overwrite: bool = False):
         # we only support `ascii_lowercase` characters.
         run._models.spectrogram_model.inputs.InputsWrapper.check_invariants: cf.Args(
             valid_respelling_chars=string.ascii_lowercase,
-            respelling_delim=respelling_delim,
+            respelling_delim=RESPELLING_DELIM,
         ),
         run.train.spectrogram_model._data._random_respelling_annotations: cf.Args(
-            delim=respelling_delim
+            delim=RESPELLING_DELIM
         ),
     }
     cf.add(config, overwrite)

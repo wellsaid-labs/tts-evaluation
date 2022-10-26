@@ -5,7 +5,7 @@ import config as cf
 import pytest
 
 import lib
-from run._models.spectrogram_model.inputs import Token
+from run._config import RESPELLING_DELIM
 from run.data._loader import Language, Session
 from run.data._loader.english.m_ailabs import JUDY_BIEBER
 from run.deploy.worker import FlaskException, validate_and_unpack
@@ -36,7 +36,7 @@ def test_validate_and_unpack():
     # TODO: Refactor this, so, it's a bit easier to create a `package` with a preset vocabulary.
     # Or the vocabulary is based off a dataset which can be used, also? That handles special
     # characters, also.
-    package.spec_model.token_embed.update_tokens(list(script.lower()) + [Token.delim])
+    package.spec_model.token_embed.update_tokens(list(script.lower()) + [RESPELLING_DELIM])
     package.spec_model.speaker_embed.update_tokens([sesh[0].label])
     package.spec_model.session_embed.update_tokens([sesh])
     package.spec_model.dialect_embed.update_tokens([sesh[0].dialect])

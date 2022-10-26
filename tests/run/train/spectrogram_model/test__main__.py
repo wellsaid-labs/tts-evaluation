@@ -65,7 +65,7 @@ def test_integration():
         assert state.step.item() == 1
 
         is_not_diff = lambda b, v: len(set(b) - set(v.keys())) == 0
-        characters = [c for s in batch.inputs.tokens for c in s]
+        characters = [c for s in batch.processed.tokens for c in s]
         assert is_not_diff(characters, model.token_embed.vocab)
         assert is_not_diff((s.speaker.label for s in batch.spans), model.speaker_embed.vocab)
         assert is_not_diff((s.session for s in batch.spans), model.session_embed.vocab)
@@ -83,7 +83,7 @@ def test_integration():
 
         max_frames = [[batch.spectrogram.lengths.max().item()]]
         num_frames = [[batch.spectrogram.lengths.sum().item()]]
-        num_tokens = [[sum(len(t) for t in batch.inputs.tokens)]]
+        num_tokens = [[sum(len(t) for t in batch.processed.tokens)]]
         num_seconds = [[sum(s.audio_length for s in batch.spans)]]
         bucket = len(batch.spans[0].script) // metrics.TEXT_LENGTH_BUCKET_SIZE
         values = {

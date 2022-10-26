@@ -7,7 +7,8 @@ import pytest
 from torchnlp.random import fork_rng
 
 import lib
-from run._models.spectrogram_model import Inputs, preprocess_inputs
+from lib.text import XMLType
+from run._models.spectrogram_model import Inputs, preprocess
 from run._tts import text_to_speech_ffmpeg_generator
 from tests.run._utils import make_mock_tts_package
 
@@ -28,8 +29,8 @@ def _make_args():
     script, session = passage.script, passage.session
     # NOTE: The script needs to be long enough to pass the below tests.
     script = " ".join([script] * 3)
-    inputs = Inputs([session], [nlp(script)])
-    preprocessed = preprocess_inputs(inputs)
+    inputs = Inputs.from_xml(XMLType(script), nlp(script), session)
+    preprocessed = preprocess(inputs, {}, {})
     package.spec_model.allow_unk_on_eval(True)
     package.signal_model.allow_unk_on_eval(True)
     return package, inputs, preprocessed

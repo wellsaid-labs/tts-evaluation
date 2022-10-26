@@ -354,7 +354,7 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
         session=[s.session for s in spans],
         span=[s.spacy for s in spans],
         context=[cf.partial(s.spacy_context)() for s in spans],
-        loudness=[cf.partial(_random_loudness_annotations)(s, a) for s, a in zip(spans, signals_)],
+        loudness=[_random_loudness_annotations(s, a) for s, a in zip(spans, signals_)],
         tempo=[cf.partial(_random_tempo_annotations)(s) for s in spans],
         respellings=[cf.partial(_random_respelling_annotations)(s) for s in spans],
     )
@@ -411,7 +411,7 @@ class DataProcessor(typing.Mapping[int, Batch]):
         return sys.maxsize
 
     def __getitem__(self, index) -> Batch:
-        return cf.partial(make_batch)(self.index_to_spans[index])
+        return make_batch(self.index_to_spans[index])
 
 
 def train_get_weight(speaker: Speaker, dataset_size: float):
