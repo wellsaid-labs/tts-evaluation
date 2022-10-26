@@ -95,7 +95,7 @@ SpanAnnotations = typing.List[SpanAnnotation]
 TokenAnnotations = typing.Dict[spacy.tokens.token.Token, str]
 
 
-class PublicAnnotationError(ValueError):
+class PublicValueError(ValueError):
     pass
 
 
@@ -171,13 +171,17 @@ class InputsWrapper:
         for field in dataclasses.fields(self):
             assert len(self.session) == len(getattr(self, field.name))
 
+        # NOTE: Check that `span` isn't zero.
+        for span in self.span:
+            if len(span) == 0:
+                raise PublicValueError("There must be text.")
+
         # NOTE: Check that `context` fully contains `span`...
         for context, span in zip(self.context, self.span):
             no_context = isinstance(span, spacy.tokens.doc.Doc)
-            has_context = context != span
+            has_context = context is not span
             assert has_context or no_context
-        for token in self.context:
-            assert token in self.span
+            assert all(token in context for token in span)
 
         # NOTE: Check that annotations are sorted and wrap full words.
         for batch_span_annotations in (self.loudness, self.tempo):
@@ -187,45 +191,45 @@ class InputsWrapper:
                     # for pauses or spans for speaking tempo.
                     is_pause = not is_voiced(span_.text[annotation[0]], sesh[0].language)
                     indices = annotation[0].indices(len(span_.text))
+                    if indices[1] - indices[0] == 0:
+                        raise PublicValueError("The annotations must wrap text.")
                     is_valid_span = span_.char_span(indices[0], indices[1]) is not None
                     if not is_valid_span and not is_pause:
-                        raise PublicAnnotationError("The annotations must wrap words fully.")
+                        raise PublicValueError("The annotations must wrap words fully.")
                     if prev is not None:
                         assert prev[0].stop < annotation[0].start
 
         # NOTE: Check that the annotation values are in the right range.
         if not all(a[1] >= min_loudness and a[1] <= max_loudness for b in self.loudness for a in b):
             message = "The loudness annotations must be between "
-            raise PublicAnnotationError(f"{message} {min_loudness} and {max_loudness} db.")
+            raise PublicValueError(f"{message} {min_loudness} and {max_loudness} db.")
         if not all(a[1] >= min_tempo and a[1] <= max_tempo for b in self.tempo for a in b):
             message = "The tempo annotations must be between "
-            raise PublicAnnotationError(
-                f"{message} {min_tempo} and {max_tempo} seconds per character."
-            )
+            raise PublicValueError(f"{message} {min_tempo} and {max_tempo} seconds per character.")
 
         # NOTE: Check that respellings are correctly formatted and wrap words entirely.
         for span_, token_annotations in zip(self.span, self.respellings):
             for token, annotation in token_annotations.items():
                 if token is None:
-                    raise PublicAnnotationError("Respelling must wrap a word.")
+                    raise PublicValueError("Respelling must wrap a word.")
                 assert token in span_
                 if len(annotation) == 0:
-                    raise PublicAnnotationError("Respelling has no text.")
+                    raise PublicValueError("Respelling has no text.")
                 if (
                     annotation[0].lower() not in valid_respelling_chars
                     or annotation[-1].lower() not in valid_respelling_chars
                 ):
                     message = "Respellings must start and end with one of these chars:"
-                    raise PublicAnnotationError(f"{message} {valid_respelling_chars}")
+                    raise PublicValueError(f"{message} {valid_respelling_chars}")
                 all_chars = set(list(valid_respelling_chars + respelling_delim))
                 if len(set(annotation.lower()) - all_chars) != 0:
                     message = "Respellings must have these chars only:"
-                    raise PublicAnnotationError(f"{message} {''.join(all_chars)}")
+                    raise PublicValueError(f"{message} {''.join(all_chars)}")
                 if not all(
                     len(set(_get_case(c) for c in syllab)) == 1
                     for syllab in annotation.split(respelling_delim)
                 ):
-                    raise PublicAnnotationError("Respelling must be capitalized correctly.")
+                    raise PublicValueError("Respelling must be capitalized correctly.")
 
     def __len__(self):
         return len(self.session)
@@ -274,7 +278,7 @@ class InputsWrapper:
         root = open_(_Schema.SPEAK, session_vocab[self.session[i]] if session_vocab else -1)
         text = f"{root}{text}{close(_Schema.SPEAK)}"
         if include_context and isinstance(span, spacy.tokens.span.Span):
-            start_char = next((t.idx for t in context if t not in span), 0)
+            start_char = next((t.idx for t in context if t in span), 0)
             text = f"{context.text[:start_char]}{text}{context.text[start_char + len(span.text):]}"
         return XMLType(text)
 
@@ -309,7 +313,7 @@ class InputsWrapper:
         try:
             xml_schema.assertValid(root)
         except etree.DocumentInvalid as xml_errors:
-            raise PublicAnnotationError(f"XML is invalid:\n{xml_errors.error_log}")
+            raise PublicValueError(f"XML is invalid:\n{xml_errors.error_log}")
 
         parser = etree.XMLPullParser(events=("start", "end"))
         parser.feed(xml)
@@ -342,15 +346,21 @@ class InputsWrapper:
         for slice_, value in annotations[_Schema.RESPELL]:
             token = span.char_span(*tuple(slice_))
             if token is None or len(token) != 1:
-                raise PublicAnnotationError("Respelling must wrap a single word.")
+                raise PublicValueError("Respelling must wrap a single word.")
             respellings[token[0]] = value
+
+        try:
+            loudness = [(s, float(v)) for s, v in annotations[_Schema.LOUDNESS]]
+            tempo = [(s, float(v)) for s, v in annotations[_Schema.TEMPO]]
+        except ValueError:
+            raise PublicValueError("The loudness and tempo annotations must be numerical.")
 
         return cls(
             session=[session],
             span=[span],
             context=[span if context is None else context],
-            loudness=[[(slice(*tuple(s)), float(v)) for s, v in annotations[_Schema.LOUDNESS]]],
-            tempo=[[(slice(*tuple(s)), float(v)) for s, v in annotations[_Schema.TEMPO]]],
+            loudness=[[(slice(*tuple(s)), v) for s, v in loudness]],
+            tempo=[[(slice(*tuple(s)), v) for s, v in tempo]],
             respellings=[respellings],
         )
 
@@ -385,7 +395,7 @@ class InputsWrapper:
         return cls(**all_)
 
 
-def embed_annotations(
+def _embed_annotations(
     length: int,
     anno: typing.List[typing.Tuple[slice, typing.Union[int, float]]],
     idx_offset: int = 0,
@@ -454,35 +464,44 @@ def preprocess(
         inputs.seq_metadata.extend([[] for _ in seq_metadata])
         [inputs.seq_metadata[i].append(data) for i, data in enumerate(seq_metadata)]
 
-        start_char = next((t.idx for t in context if t not in span), 0)
-        end_char = (len(span.text) + start_char) - len(context.text)
-        inputs.slices.append(slice(start_char, end_char))
+        tokens: typing.List[str] = []
+        pronun: typing.List[Pronun] = []
+        cntxt: typing.List[Context] = []
+        for tk in context:
+            pronun.append(Pronun.RESPELLING if tk in respell_map else Pronun.NORMAL)
+            tokens.append(respell_map[tk] if tk in respell_map else tk.text)
+            cntxt.append(Context.SCRIPT if tk in span else Context.CONTEXT)
+            pronun.append(Pronun.NORMAL)
+            tokens.append(tk.whitespace_)
+            cntxt.append(Context.SCRIPT if tk in span and tk != span[-1] else Context.CONTEXT)
 
-        is_respelled = [t in respell_map for t in context]
-        tokens = [(respell_map[t] if r else t.text) for t, r in zip(context, is_respelled)]
         chars = [c for t in tokens for c in t]
         casing = [_get_case(c) for c in chars]
-        pronun = [
-            Pronun.RESPELLING if r else Pronun.NORMAL
-            for t, r in zip(tokens, is_respelled)
-            for _ in t
-        ]
+        pronun = [p for t, p in zip(tokens, pronun) for _ in range(len(t))]
+        cntxt: typing.List[Context] = [c for t, c in zip(tokens, cntxt) for _ in range(len(t))]
+        start_char = next(i for i, c in enumerate(cntxt) if c is Context.SCRIPT)
+        end_char = start_char + cntxt.count(Context.SCRIPT)
+
+        inputs.slices.append(slice(start_char, end_char))
         inputs.tokens.append([c.lower() for c in chars])
+        # NOTE: We merge `pronun` and `casing` into one category for performance reasons. It's
+        # faster to have less unique categories. Furthermore, since casing and pronunication are
+        # so prevelant in the dataset, it shoudn't have a meaningful impact on the model to have
+        # these joined together.
+        # TODO: Consider merging `pronun`, `casing`, `cntxt`.
         inputs.token_metadata[0].append(list(zip(pronun, casing)))
-        inputs.token_metadata[1].append([Context.CONTEXT for _ in chars])
-        for i in range(*inputs.slices[-1].indices(len(chars))):
-            inputs.token_metadata[1][-1][i] = Context.SCRIPT
+        inputs.token_metadata[1].append(cntxt)  # type: ignore
 
-        if len(tokens) == 0:
-            embed = torch.zeros(0, 0, device=device)
-        else:
-            embed = [np.concatenate((t.vector, t.tensor)) for t in context]  # type: ignore
-            embed = [torch.tensor(t, device=device, dtype=torch.float32) for t in embed]
-            embed = [e.unsqueeze(0).repeat(len(t), 1) for e, t in zip(embed, tokens)]
-            embed = torch.cat(embed)
+        embed = []
+        for token in context:
+            assert token.tensor is not None
+            embed.append(np.concatenate((token.vector, token.tensor)))  # type: ignore
+            embed.append(np.zeros(token.vector.shape[0] + token.tensor.shape[0]))
+        embed = [torch.tensor(t, device=device, dtype=torch.float32) for t in embed]
+        embed = torch.cat([e.unsqueeze(0).repeat(len(t), 1) for e, t in zip(embed, tokens)])
 
-        loudness_embed = embed_annotations(len(chars), loudness, start_char, **loudness_kwargs)
-        rate_embed = embed_annotations(len(chars), tempo, start_char, **tempo_kwargs)
+        loudness_embed = _embed_annotations(len(chars), loudness, start_char, **loudness_kwargs)
+        rate_embed = _embed_annotations(len(chars), tempo, start_char, **tempo_kwargs)
         # rate_embed (torch.FloatTensor [num_tokens, 2])
         # loudness_embed (torch.FloatTensor [num_tokens, 2])
         # embed (torch.FloatTensor [num_tokens, embedding_size]) →

@@ -25,7 +25,7 @@
       <xs:element name="respell" type="respell" />
     </xs:choice>
   </xs:sequence>
-  <xs:attribute name="value" type="xs:string" use="required" />
+  <xs:attribute name="value" type="xs:float" use="required" />
 </xs:complexType>
 
 <xs:element name="speak">

@@ -11,7 +11,7 @@ from run._models.spectrogram_model.containers import Preds
 from run._models.spectrogram_model.inputs import Inputs as PreprocessedInputs
 from run._models.spectrogram_model.inputs import InputsWrapper as Inputs
 from run._models.spectrogram_model.inputs import (
-    PublicAnnotationError,
+    PublicValueError,
     SpanAnnotation,
     SpanAnnotations,
     TokenAnnotations,
@@ -34,7 +34,7 @@ __all__ = [
     "PreprocessedInputs",
     "Inputs",
     "SpectrogramModel",
-    "PublicAnnotationError",
+    "PublicValueError",
     "SpanAnnotation",
     "SpanAnnotations",
     "TokenAnnotations",

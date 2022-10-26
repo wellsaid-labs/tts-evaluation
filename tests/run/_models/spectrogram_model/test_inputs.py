@@ -14,11 +14,11 @@ from run._models.spectrogram_model.inputs import (
     Context,
     InputsWrapper,
     Pronun,
-    PublicAnnotationError,
+    PublicValueError,
     XMLType,
+    _embed_annotations,
     _get_case,
     _Schema,
-    embed_annotations,
     preprocess,
 )
 from run.data._loader.structures import Language
@@ -130,37 +130,40 @@ def test__inputs_wrapper__from_xml__token_annotations():
     """Test `InputsWrapper.from_xml` validates respellings."""
     check_annotation(_Schema.RESPELL, "scientific", "SY-uhn-TIH-fihk")  # Valid
 
-    with pytest.raises(PublicAnnotationError):
+    with pytest.raises(PublicValueError):
         check_annotation(_Schema.RESPELL, "scientific", "")  # No value
 
-    with pytest.raises(PublicAnnotationError):
+    with pytest.raises(PublicValueError):
         check_annotation(_Schema.RESPELL, "", "SY-uhn-TIH-fihk")  # No text
 
-    with pytest.raises(PublicAnnotationError):
+    with pytest.raises(PublicValueError):
+        check_annotation(_Schema.RESPELL, "", "SY-uhn-TIH-fihk", "scientific")  # No text
+
+    with pytest.raises(PublicValueError):
         check_annotation(_Schema.RESPELL, "scientific", "-SY-uhn-TIH-fihk")  # Invalid prefix
 
-    with pytest.raises(PublicAnnotationError):
+    with pytest.raises(PublicValueError):
         check_annotation(_Schema.RESPELL, "scientific", "SY-uhn-TIH-fihk-")  # Invalid suffix
 
-    with pytest.raises(PublicAnnotationError):
+    with pytest.raises(PublicValueError):
         check_annotation(_Schema.RESPELL, "scientific", "SY uhn TIH fihk")  # Invalid character
 
-    with pytest.raises(PublicAnnotationError):
+    with pytest.raises(PublicValueError):
         check_annotation(_Schema.RESPELL, "scientific", "SY1uhn2TIH3fihk")  # Invalid character
 
-    with pytest.raises(PublicAnnotationError):
+    with pytest.raises(PublicValueError):
         check_annotation(_Schema.RESPELL, "scientific", "SY|uhn|TIH|fihk")  # Invalid character
 
-    with pytest.raises(PublicAnnotationError):
+    with pytest.raises(PublicValueError):
         check_annotation(_Schema.RESPELL, "scientific", "Sy-uhn-TIH-fihk")  # Mix capitalization
 
-    with pytest.raises(PublicAnnotationError):
+    with pytest.raises(PublicValueError):
         check_annotation(_Schema.RESPELL, "scientific-process", "SY-uhn-TIH-fihk")  # Multiple words
 
-    with pytest.raises(PublicAnnotationError):
+    with pytest.raises(PublicValueError):
         check_annotation(_Schema.RESPELL, "entific", "SY-uhn-TIH-fihk", "sci")  # Prefix
 
-    with pytest.raises(PublicAnnotationError):
+    with pytest.raises(PublicValueError):
         check_annotation(_Schema.RESPELL, "scienti", "SY-uhn-TIH-fihk", suffix="fic")  # Suffix
 
 
@@ -169,31 +172,34 @@ def test__inputs_wrapper__from_xml__span_annotations():
     check_annotation(_Schema.LOUDNESS, "scientific process", "-20")  # Valid
     check_annotation(_Schema.TEMPO, "scientific process", "0.04")  # Valid
 
-    with pytest.raises(PublicAnnotationError):
+    with pytest.raises(PublicValueError):
         check_annotation(_Schema.LOUDNESS, "scientific process", "")  # No value
 
-    with pytest.raises(PublicAnnotationError):
+    with pytest.raises(PublicValueError):
         check_annotation(_Schema.LOUDNESS, "", "-20")  # No text
 
-    with pytest.raises(PublicAnnotationError):
+    with pytest.raises(PublicValueError):
+        check_annotation(_Schema.LOUDNESS, "", "-20", "scientific", "process")  # No text
+
+    with pytest.raises(PublicValueError):
         check_annotation(_Schema.LOUDNESS, "scientific process", "NA")  # No number
 
-    with pytest.raises(PublicAnnotationError):
+    with pytest.raises(PublicValueError):
         check_annotation(_Schema.LOUDNESS, "scientific process", "-1000")  # Too small
 
-    with pytest.raises(PublicAnnotationError):
+    with pytest.raises(PublicValueError):
         check_annotation(_Schema.LOUDNESS, "scientific process", "1000")  # Too big
 
-    with pytest.raises(PublicAnnotationError):
+    with pytest.raises(PublicValueError):
         check_annotation(_Schema.LOUDNESS, "entific process", "-20", "sci")  # Prefix
 
-    with pytest.raises(PublicAnnotationError):
+    with pytest.raises(PublicValueError):
         check_annotation(_Schema.LOUDNESS, "scientific pro", "-20", suffix="cess")  # Suffix
 
-    with pytest.raises(PublicAnnotationError):
+    with pytest.raises(PublicValueError):
         check_annotation(_Schema.TEMPO, "scientific process", "0")  # Too small
 
-    with pytest.raises(PublicAnnotationError):
+    with pytest.raises(PublicValueError):
         check_annotation(_Schema.TEMPO, "scientific process", "1000")  # Too big
 
 
@@ -203,7 +209,7 @@ def test_inputs_wrapper__to_xml__context():
     script = "this is a test"
     doc = nlp(script)
     span = doc[1:-1]
-    xml = f'<{_Schema.LOUDNESS} {_Schema._VALUE}="-20">{str(span)}</{_Schema.LOUDNESS}>'
+    xml = f"<{_Schema.LOUDNESS} {_Schema._VALUE}='-20'>{str(span)}</{_Schema.LOUDNESS}>"
     xml = XMLType(xml)
     input_ = InputsWrapper(
         session=[make_session()],
@@ -213,8 +219,8 @@ def test_inputs_wrapper__to_xml__context():
         tempo=[[]],
         respellings=[{}],
     )
-    expected = f'this <{_Schema.SPEAK} {_Schema._VALUE}="-1">{xml}</{_Schema.SPEAK}> test'
-    assert input_.to_xml(0) == expected
+    expected = f"this <{_Schema.SPEAK} {_Schema._VALUE}='-1'>{xml}</{_Schema.SPEAK}> test"
+    assert input_.to_xml(0, include_context=True) == expected
 
 
 def test__preprocess():
@@ -222,7 +228,7 @@ def test__preprocess():
     nlp = load_spacy_nlp(Language.ENGLISH)
     script, sesh = "In 1968 the U.S. Army", make_session()
     doc = nlp(script)
-    input_ = InputsWrapper.from_xml(XMLType(script), doc, sesh)
+    input_ = InputsWrapper.from_xml(XMLType(doc[:-1].text), doc[:-1], sesh, doc)
     processed = preprocess(input_, {}, {})
     assert processed.tokens == [list(script.lower())]
     assert processed.seq_metadata[0] == [sesh[0].label]
@@ -307,7 +313,7 @@ def test__preprocess():
         torch.cat(contextual_embeddings),
         torch.zeros(len(script), 4),
     )
-    token_embeddings = torch.stack(stack, dim=1)
+    token_embeddings = torch.cat(stack, dim=1)
     assert len(processed.token_embeddings) == 1
     assert torch.allclose(processed.token_embeddings[0], token_embeddings)
 
@@ -321,15 +327,15 @@ def test__get_case():
         _get_case("")
 
 
-def test_embed_annotations():
-    """Test `embed_annotations` on basic cases."""
+def test__embed_annotations():
+    """Test `_embed_annotations` on basic cases."""
     annotations = [(slice(0, 2), 20), (slice(4, 5), -10), (slice(7, 9), 0.99)]
 
-    embedding = embed_annotations(9, annotations)
+    embedding = _embed_annotations(9, annotations)
     expected = torch.tensor([[20, 20, 0, -10, 0, 0, 0.99, 0.99, 0], [1, 1, 0, -1, 0, 0, 1, 1, 0]])
     assert torch.equal(embedding, expected)
 
-    embedding = embed_annotations(9, annotations, 1, 1, 10)
+    embedding = _embed_annotations(9, annotations, 1, 1, 10)
     expected = torch.tensor([[0, 2, 2, 0, -1, 0, 0, 0.099, 0.099], [0, 1, 1, 0, -1, 0, 0, 1, 1]])
     assert torch.equal(embedding, expected)
 
@@ -337,11 +343,13 @@ def test_embed_annotations():
 def test__preprocess_respelling():
     """Test that `_preprocess` handles apostrophes, dashes, initialisms and existing respellings."""
     nlp = load_spacy_nlp(Language.ENGLISH)
-    script = "Don't <respell value='PEE-puhl'>people</respell> from EDGE "
-    script += "<respell value='KATCH'>catch</respell>-the-<respell value='FLOO'>flu</respell>?"
+    xml = "n't <respell value='PEE-puhl'>people</respell> from EDGE "
+    xml += "<respell value='KACH'>catch</respell>-the-<respell value='FLOO'>flu</respell>"
+    xml = XMLType(xml)
+    script = "Don't people from EDGE catch-the-flu?"
     sesh = make_session()
     doc = nlp(script)
-    input_ = InputsWrapper.from_xml(XMLType(script), doc[1:-1], sesh, doc)
+    input_ = InputsWrapper.from_xml(xml, doc[1:-1], sesh, doc)
     processed = preprocess(input_, {}, {})
     casing = [
         (Pronun.NORMAL, Casing.UPPER),  # D
@@ -384,6 +392,7 @@ def test__preprocess_respelling():
         (Pronun.RESPELLING, Casing.UPPER),  # O
         (Pronun.NORMAL, Casing.NO_CASING),  # ?
     ]
+    # TODO: We need to test if there is a space after span before context.
     assert processed.token_metadata[0] == [casing]
     tokens = "n't pee-puhl from edge kach-the-floo"
     assert "".join(processed.tokens[0][processed.slices[0]]) == tokens  # type: ignore
@@ -431,19 +440,7 @@ def test__preprocess_respelling():
     assert processed.token_metadata[1] == [context]
     expected = torch.from_numpy(nlp.vocab["flu"].vector)  # FLOO
     for idx in range(-5, -1):
-        assert_almost_equal(processed.token_embeddings[0][idx], expected)
-    assert processed.token_embeddings[0][:3].sum().item() != 0.0  # n't
-
-
-def test__preprocess_zero_length():
-    """Test that `_preprocess` handles a zero length script."""
-    nlp = load_spacy_nlp(Language.ENGLISH)
-    script, sesh = "", make_session()
-    doc = nlp(script)
-    input_ = InputsWrapper.from_xml(XMLType(script), doc, sesh)
-    processed = preprocess(input_, {}, {})
-    assert "".join(processed.tokens[0][processed.slices[0]]) == ""  # type: ignore
-    assert processed.token_metadata[0] == [[]]
-    assert processed.token_metadata[1] == [[]]
-    assert processed.slices[0] == slice(0, 0)
-    assert processed.token_embeddings[0].shape == (0, 0)
+        assert_almost_equal(processed.token_embeddings[0][idx][: expected.shape[0]], expected)
+    expected = torch.from_numpy(nlp.vocab["n't"].vector)
+    for idx in range(2, 4):
+        assert_almost_equal(processed.token_embeddings[0][idx][: expected.shape[0]], expected)
