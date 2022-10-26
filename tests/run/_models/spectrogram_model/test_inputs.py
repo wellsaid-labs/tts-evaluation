@@ -329,15 +329,15 @@ def test__get_case():
 
 def test__embed_annotations():
     """Test `_embed_annotations` on basic cases."""
-    annotations = [(slice(0, 2), 20), (slice(4, 5), -10), (slice(7, 9), 0.99)]
+    annotations = [(slice(0, 2), 20), (slice(3, 4), -10), (slice(6, 8), 0.99)]
 
     embedding = _embed_annotations(9, annotations)
     expected = torch.tensor([[20, 20, 0, -10, 0, 0, 0.99, 0.99, 0], [1, 1, 0, -1, 0, 0, 1, 1, 0]])
-    assert torch.equal(embedding, expected)
+    assert_almost_equal(embedding, expected.transpose(0, 1))
 
     embedding = _embed_annotations(9, annotations, 1, 1, 10)
-    expected = torch.tensor([[0, 2, 2, 0, -1, 0, 0, 0.099, 0.099], [0, 1, 1, 0, -1, 0, 0, 1, 1]])
-    assert torch.equal(embedding, expected)
+    expected = [[0.1, 2.1, 2.1, 0.1, -0.9, 0.1, 0.1, 0.199, 0.199], [0, 1, 1, 0, -1, 0, 0, 1, 1]]
+    assert_almost_equal(embedding, torch.tensor(expected).transpose(0, 1))
 
 
 def test__preprocess_respelling():
