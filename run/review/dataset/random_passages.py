@@ -6,7 +6,7 @@ on.
 
 Usage:
 
-    $ python -m run.evaluate.sample_passages
+    $ python -m run.review.dataset.random_passages
 """
 import io
 import itertools

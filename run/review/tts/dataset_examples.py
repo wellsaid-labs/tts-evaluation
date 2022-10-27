@@ -21,7 +21,7 @@ TODO: In addition to measuring the current metrics, add support for running spee
       gibbirsh by comparing the speech-to-text output with the original output.
 
 Usage:
-    $ PYTHONPATH=. streamlit run run/evaluate/batch_generate.py --runner.magicEnabled=false
+    $ PYTHONPATH=. streamlit run run/review/tts/dataset_examples.py --runner.magicEnabled=false
 """
 import pathlib
 import random

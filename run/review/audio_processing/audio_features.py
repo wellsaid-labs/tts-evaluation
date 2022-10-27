@@ -1,7 +1,7 @@
 """ Analyze an audio file by it's features.
 
 Usage:
-    $ PYTHONPATH=. streamlit run run/data/audio_features_workbook.py --runner.magicEnabled=false
+    $ PYTHONPATH=. streamlit run run/review/audio_processing/audio_features.py --runner.magicEnabled=false
 """
 import functools
 import pathlib

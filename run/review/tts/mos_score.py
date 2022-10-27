@@ -1,7 +1,7 @@
 """ Streamlit that runs a couple of analyses on opinion scores, including calculating the MOS.
 
 Usage:
-    $ PYTHONPATH=. streamlit run run/evaluate/mos_score.py --runner.magicEnabled=false
+    $ PYTHONPATH=. streamlit run run/review/tts/mos_score.py --runner.magicEnabled=false
 """
 import io
 import itertools
