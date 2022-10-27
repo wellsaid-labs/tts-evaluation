@@ -23,7 +23,8 @@ TODO:
     We could calculate pauses with `non_speech_segments` or `alignments`?
 
 Usage:
-    $ PYTHONPATH=. streamlit run run/review/dataset/dashboard/__main__.py --runner.magicEnabled=false
+    $ PYTHONPATH=. streamlit run run/review/dataset/dashboard/__main__.py \
+          --runner.magicEnabled=false
 """
 
 import collections
@@ -46,7 +47,7 @@ from run._config import is_voiced
 from run._streamlit import audio_to_html, clear_session_cache, get_dataset, map_, st_data_frame
 from run._utils import Dataset
 from run.data._loader import DATASETS, Passage, Span, has_a_mistranscription
-from run.data.dataset_dashboard import _utils as utils
+from run.review.dataset.dashboard import _utils as utils
 
 lib.environment.set_basic_logging_config(reset=True)
 alt.data_transformers.disable_max_rows()
