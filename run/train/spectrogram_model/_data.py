@@ -24,7 +24,7 @@ import run
 from lib.audio import sec_to_sample
 from lib.distributed import get_rank, get_world_size, is_initialized
 from lib.samplers import BucketBatchSampler
-from lib.text import load_cmudict_syl, respell
+from lib.text import XMLType, load_cmudict_syl, respell
 from lib.utils import Tuple, flatten_2d, lengths_to_mask, random_nonoverlapping_intervals
 from run._models.spectrogram_model import (
     Inputs,
@@ -306,16 +306,18 @@ class Batch(_utils.Batch):
     # SequenceBatch[torch.FloatTensor [num_frames, batch_size], torch.LongTensor [1, batch_size])
     stop_token: SequenceBatch
 
-    inputs: Inputs
+    xmls: typing.List[XMLType]
 
     processed: PreprocessedInputs
 
     def apply(self, call: typing.Callable[[torch.Tensor], torch.Tensor]) -> "Batch":
         batch: Batch = super().apply(call)
         assert isinstance(batch.processed.token_embeddings, torch.Tensor)
-        object.__setattr__(batch.inputs, "token_embeddings", call(batch.processed.token_embeddings))
-        object.__setattr__(batch.inputs, "num_tokens", call(batch.processed.num_tokens))
-        object.__setattr__(batch.inputs, "tokens_mask", call(batch.processed.tokens_mask))
+        object.__setattr__(
+            batch.processed, "token_embeddings", call(batch.processed.token_embeddings)
+        )
+        object.__setattr__(batch.processed, "num_tokens", call(batch.processed.num_tokens))
+        object.__setattr__(batch.processed, "tokens_mask", call(batch.processed.tokens_mask))
         return batch
 
     def __len__(self):
@@ -358,6 +360,9 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
         tempo=[cf.partial(_random_tempo_annotations)(s) for s in spans],
         respellings=[cf.partial(_random_respelling_annotations)(s) for s in spans],
     )
+    # NOTE: `inputs` has a spaCy `Span` which is difficult to `pickle`, so instead, we seralize
+    # `inputs` into XML.
+    xmls = [inputs.to_xml(i, include_context=True) for i in range(len(inputs))]
 
     return Batch(
         # NOTE: Prune unused attributes from `Passage` by creating a new `Passage`, in order to
@@ -367,7 +372,7 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
         spectrogram=spectrogram,
         spectrogram_mask=spectrogram_mask,
         stop_token=cf.partial(_make_stop_token)(spectrogram),
-        inputs=inputs,
+        xmls=xmls,
         processed=cf.partial(preprocess)(inputs),
     )
 

@@ -344,7 +344,7 @@ def _run_step(
     """
     args.timer.record_event(args.timer.MODEL_FORWARD)
     preds = args.state.model(
-        inputs=args.batch.inputs,
+        inputs=args.batch.processed,
         target_frames=args.batch.spectrogram.tensor,
         target_mask=args.batch.spectrogram_mask.tensor,
         mode=Mode.FORWARD,
@@ -489,7 +489,7 @@ def _visualize_inferred(args: _HandleBatchArgs, preds: Preds, pick: _Pick = _ran
         audio=audio,
         context=args.state.comet.context,
         text=args.batch.spans[item].script,
-        xml=args.batch.inputs.to_xml(item, include_context=True),
+        xml=args.batch.xmls[item],
         session=args.batch.spans[item].session,
         predicted_loudness=get_average_db_rms_level(predicted_spectrogram.unsqueeze(1)).item(),
         gold_loudness=get_average_db_rms_level(gold_spectrogram.unsqueeze(1)).item(),
@@ -507,7 +507,7 @@ def _run_inference(args: _HandleBatchArgs):
     """
     args.timer.record_event(args.timer.MODEL_FORWARD)
     model = typing.cast(SpectrogramModel, args.state.model.module)
-    preds = model(args.batch.inputs, mode=Mode.INFER)
+    preds = model(args.batch.processed, mode=Mode.INFER)
     preds = typing.cast(Preds, preds)
 
     if args.visualize:

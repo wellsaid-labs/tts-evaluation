@@ -120,9 +120,9 @@ def test_inputs_wrapper__from_xml__annotated():
     assert expected.to_xml(0) == f"<{_Schema.SPEAK} {_Schema._VALUE}='-1'>{xml}</{_Schema.SPEAK}>"
 
 
-def check_annotation(anno: _Schema, text: str, respelling: str, prefix: str = "", suffix: str = ""):
+def check_annotation(anno: _Schema, text: str, val: str, prefix: str = "", suffix: str = ""):
     nlp = load_en_english()
-    xml = XMLType(f'{prefix}<{anno} {_Schema._VALUE}="{respelling}">{text}</{anno}>{suffix}')
+    xml = XMLType(f'{prefix}<{anno} {_Schema._VALUE}="{val}">{text}</{anno}>{suffix}')
     InputsWrapper.from_xml(xml, nlp(prefix + text + suffix), make_session())
 
 
@@ -172,6 +172,10 @@ def test__inputs_wrapper__from_xml__span_annotations():
     check_annotation(_Schema.LOUDNESS, "scientific process", "-20")  # Valid
     check_annotation(_Schema.TEMPO, "scientific process", "0.04")  # Valid
 
+    # NOTE: Punctuation and spacing may be included in annotation.
+    check_annotation(_Schema.LOUDNESS, " scientific process ", "-20", "Yes", "No")  # Valid
+    check_annotation(_Schema.LOUDNESS, ", scientific process.", "-20")  # Valid
+
     with pytest.raises(PublicValueError):
         check_annotation(_Schema.LOUDNESS, "scientific process", "")  # No value
 
@@ -201,6 +205,16 @@ def test__inputs_wrapper__from_xml__span_annotations():
 
     with pytest.raises(PublicValueError):
         check_annotation(_Schema.TEMPO, "scientific process", "1000")  # Too big
+
+
+def test__inputs_wrapper__from_xml__span_annotations_back_to_back():
+    """Test `InputsWrapper.from_xml` validates back-to-back span annotations."""
+    nlp = load_en_english()
+    xml = f'<{_Schema.LOUDNESS} {_Schema._VALUE}="-20">This</{_Schema.LOUDNESS}>'
+    xml += f'<{_Schema.LOUDNESS} {_Schema._VALUE}="-20"> is a</{_Schema.LOUDNESS}>'
+    xml = XMLType(xml)
+    script = xml_to_text(xml)
+    InputsWrapper.from_xml(xml, nlp(script), make_session())
 
 
 def test_inputs_wrapper__to_xml__context():

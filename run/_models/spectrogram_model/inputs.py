@@ -191,21 +191,32 @@ class InputsWrapper:
                     # for pauses or spans for speaking tempo.
                     is_pause = not is_voiced(span_.text[annotation[0]], sesh[0].language)
                     indices = annotation[0].indices(len(span_.text))
-                    if indices[1] - indices[0] == 0:
+                    annotation_len = indices[1] - indices[0]
+                    if annotation_len == 0:
                         raise PublicValueError("The annotations must wrap text.")
-                    is_valid_span = span_.char_span(indices[0], indices[1]) is not None
+                    # NOTE: For these annotations we accept wrappings that include additional
+                    # punctuation on either side of a word; however, we don't accept partially
+                    # wrapped tokens.
+                    doc = span_.as_doc() if isinstance(span_, spacy.tokens.span.Span) else span_
+                    char_span = doc.char_span(indices[0], indices[1], alignment_mode="expand")
+                    is_valid_span = char_span is not None and len(char_span.text) <= annotation_len
                     if not is_valid_span and not is_pause:
-                        raise PublicValueError("The annotations must wrap words fully.")
+                        raise PublicValueError("The annotations must wrap words fully")
                     if prev is not None:
-                        assert prev[0].stop < annotation[0].start
+                        assert prev[0].stop <= annotation[0].start, f"{prev}, {annotation}"
 
         # NOTE: Check that the annotation values are in the right range.
-        if not all(a[1] >= min_loudness and a[1] <= max_loudness for b in self.loudness for a in b):
-            message = "The loudness annotations must be between "
-            raise PublicValueError(f"{message} {min_loudness} and {max_loudness} db.")
-        if not all(a[1] >= min_tempo and a[1] <= max_tempo for b in self.tempo for a in b):
-            message = "The tempo annotations must be between "
-            raise PublicValueError(f"{message} {min_tempo} and {max_tempo} seconds per character.")
+        for name, unit, annotations, min_, max_ in (
+            ("Loudness", "db", self.loudness, min_loudness, max_loudness),
+            ("Tempo", "seconds per character", self.tempo, min_tempo, max_tempo),
+        ):
+            min_seen = min(a[1] for b in annotations for a in b)
+            max_seen = max(a[1] for b in annotations for a in b)
+            message = f"{name} must be between {min_} and {max_} {unit}, got: "
+            if min_seen < min_:
+                raise PublicValueError(message + str(min_seen))
+            if max_seen > max_:
+                raise PublicValueError(message + str(max_seen))
 
         # NOTE: Check that respellings are correctly formatted and wrap words entirely.
         for span_, token_annotations in zip(self.span, self.respellings):
