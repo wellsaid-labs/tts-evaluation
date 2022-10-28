@@ -102,6 +102,44 @@ def test__get_loudness__short_audio():
         assert loundess is None
 
 
+def test__get_loudness__quiet_audio():
+    """Test `_data._get_loudness` handles quiet audio that is less than -70 LUFS."""
+    sample_rate = 1000
+    block_size = 0.4
+    audio = lib.audio.full_scale_sine_wave(sample_rate) / 10000
+    alignment = Alignment((0, 1), (0, block_size), (0, 1))
+    loundess = _data._get_loudness_annotation(
+        audio=audio,
+        alignment=alignment,
+        block_size=block_size,
+        precision=5,
+        sample_rate=sample_rate,
+        filter_class="DeMan",
+    )
+    assert loundess == -70
+
+
+def test__get_loudness__quieter_audio():
+    """Test `_data._get_loudness` handles quiet audio that is less than -70 LUFS.
+
+    NOTE: This tends to overflow, like described in:
+    https://github.com/csteinmetz1/pyloudnorm/issues/42
+    """
+    sample_rate = 1000
+    block_size = 0.4
+    audio = lib.audio.full_scale_sine_wave(sample_rate) / 100000
+    alignment = Alignment((0, 1), (0, block_size), (0, 1))
+    loundess = _data._get_loudness_annotation(
+        audio=audio,
+        alignment=alignment,
+        block_size=block_size,
+        precision=5,
+        sample_rate=sample_rate,
+        filter_class="DeMan",
+    )
+    assert loundess is None
+
+
 def test__random_loudness_annotations():
     """Test `_data._random_loudness_annotations` on a basic case."""
     with torchnlp.random.fork_rng(123456):

@@ -100,12 +100,24 @@ def _get_loudness_annotation(
     Args:
         ...
         precision: The number of decimal places to round LUFS.
+
+    Returns: The loundess in LUFS with a range of 0 to -70 LUFS in alignment with ITU-R BS.1770-4.
+        This returns `None` if the loundess cannot be computed.
     """
     meter = lib.audio.get_pyloudnorm_meter(sample_rate, block_size=block_size, **kwargs)
     sec_to_sample_ = functools.partial(sec_to_sample, sample_rate=sample_rate)
     slice_ = audio[sec_to_sample_(alignment.audio[0]) : sec_to_sample_(alignment.audio[1])]
     if slice_.shape[0] >= sec_to_sample_(block_size):
-        return round(meter.integrated_loudness(slice_), precision)
+        loudness = round(meter.integrated_loudness(slice_), precision)
+        # NOTE: This algorithm returns negative infinity if the loudness is less than -70 LUFS. We
+        # return -70 LUFS instead to keep the output finite.
+        # NOTE: This number is not parameterized because this specific number is specified in
+        # the LUFS algorithm specification, ITU-R BS.1770-4.
+        # NOTE: The loudness algorithm can sometimes overflow and return stange values that are
+        # significantly outside of the range like in:
+        # https://github.com/csteinmetz1/pyloudnorm/issues/42
+        loudness = -70 if numpy.isinf(loudness) and loudness < 0 else loudness
+        return None if loudness > 0 or loudness < -70 else loudness
     return None
 
 
