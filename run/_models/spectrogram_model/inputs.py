@@ -206,17 +206,19 @@ class InputsWrapper:
                         assert prev[0].stop <= annotation[0].start, f"{prev}, {annotation}"
 
         # NOTE: Check that the annotation values are in the right range.
-        for name, unit, annotations, min_, max_ in (
+        for name, unit, annotation_batch, min_, max_ in (
             ("Loudness", "db", self.loudness, min_loudness, max_loudness),
             ("Tempo", "seconds per character", self.tempo, min_tempo, max_tempo),
         ):
-            min_seen = min(a[1] for b in annotations for a in b)
-            max_seen = max(a[1] for b in annotations for a in b)
-            message = f"{name} must be between {min_} and {max_} {unit}, got: "
-            if min_seen < min_:
-                raise PublicValueError(message + str(min_seen))
-            if max_seen > max_:
-                raise PublicValueError(message + str(max_seen))
+            for annotations in annotation_batch:
+                if len(annotations) > 0:
+                    min_seen = min(a[1] for a in annotations)
+                    max_seen = max(a[1] for a in annotations)
+                    message = f"{name} must be between {min_} and {max_} {unit}, got: "
+                    if min_seen < min_:
+                        raise PublicValueError(message + str(min_seen))
+                    if max_seen > max_:
+                        raise PublicValueError(message + str(max_seen))
 
         # NOTE: Check that respellings are correctly formatted and wrap words entirely.
         for span_, token_annotations in zip(self.span, self.respellings):
