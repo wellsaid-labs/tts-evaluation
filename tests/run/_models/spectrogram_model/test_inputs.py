@@ -129,6 +129,10 @@ def check_annotation(anno: _Schema, text: str, val: str, prefix: str = "", suffi
 def test__inputs_wrapper__from_xml__token_annotations():
     """Test `InputsWrapper.from_xml` validates respellings."""
     check_annotation(_Schema.RESPELL, "scientific", "SY-uhn-TIH-fihk")  # Valid
+    check_annotation(_Schema.RESPELL, "S.C.I.E.N.T.I.F.I.C", "SY-uhn-TIH-fihk")  # Valid
+
+    with pytest.raises(PublicValueError):
+        check_annotation(_Schema.RESPELL, "don't", "dont")  # SpaCy considers this two tokens
 
     with pytest.raises(PublicValueError):
         check_annotation(_Schema.RESPELL, "scientific", "")  # No value
