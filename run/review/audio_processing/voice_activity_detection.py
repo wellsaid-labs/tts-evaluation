@@ -17,7 +17,8 @@ TODO:
 Usage:
     $ python -m pip install webrtcvad
     $ python -m pip install torchaudio torch==1.7.1
-    $ PYTHONPATH=. streamlit run run/review/audio_processing/voice_activity_detection.py --runner.magicEnabled=false
+    $ PYTHONPATH=. streamlit run run/review/audio_processing/voice_activity_detection.py \
+          --runner.magicEnabled=false
 """
 import logging
 import math
