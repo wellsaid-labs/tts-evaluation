@@ -44,7 +44,7 @@ import lib
 import run
 from lib.utils import flatten_2d, mazel_tov, round_, seconds_to_str
 from run._config import is_voiced
-from run._streamlit import audio_to_html, clear_session_cache, get_dataset, map_, st_data_frame
+from run._streamlit import audio_to_html, get_dataset, map_, st_data_frame
 from run._utils import Dataset
 from run.data._loader import DATASETS, Passage, Span, has_a_mistranscription
 from run.review.dataset.dashboard import _utils as utils
@@ -562,9 +562,6 @@ def main():
 
     st.title("Dataset Dashboard")
     st.write("The dataset dashboard is an effort to understand our dataset and dataset processing.")
-
-    if st.sidebar.button("Clear Session Cache"):
-        clear_session_cache()
 
     sidebar = st.sidebar
 

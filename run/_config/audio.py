@@ -228,14 +228,18 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
             tempo_kwargs=dict(val_offset=0.1, val_compression=0.1),
         ),
         run._models.spectrogram_model.inputs.InputsWrapper.check_invariants: Args(
+            # TODO: Consider adding filtering for outlier annotations and reducing the allowable
+            # range.
             # NOTE: The LUFS range is approximately from -15 to -70 db, this gives a bit more
             # wiggle room.
-            min_loudness=-100,
-            max_loudness=0,
+            # NOTE: LUFS by definition cannot be less than -70 db.
+            min_loudness=-70,
+            max_loudness=-10,
             # NOTE: The tempo range is approximately from 0.04 to 0.2 sec per char, this gives a bit
-            # more wiggle room.
-            min_tempo=0.025,
-            max_tempo=1,
+            # more wiggle room. In order to accomodate pausing, we need at least 1 second per
+            # character.
+            min_tempo=0.01,
+            max_tempo=2,
         ),
         run.train.spectrogram_model._data._make_stop_token: Args(
             # NOTE: The stop token uncertainty was approximated by a fully trained model that

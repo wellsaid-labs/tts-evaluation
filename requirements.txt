@@ -27,9 +27,10 @@ torchaudio==0.11.0
 matplotlib
 comet-ml[cpu_logging]==3.28.2
 tabulate
-streamlit==1.10.0
+streamlit==1.14.0
 altair
 git+https://github.com/wellsaid-labs/streamlit-mui-datatable
+streamlit-aggrid
 
 # Testing
 pytest

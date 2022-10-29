@@ -30,7 +30,7 @@ from lib.utils import log_runtime
 from lib.visualize import plot_alignments, plot_logits, plot_mel_spectrogram
 from run._config import Cadence, DatasetType, get_dataset_label, get_model_label
 from run._models.spectrogram_model import Mode, Preds, SpectrogramModel
-from run._utils import Dataset, SpanGeneratorGetWeight
+from run._utils import Dataset, SpanGenerator, SpanGeneratorGetWeight
 from run.data._loader.structures import Speaker
 from run.train import _utils
 from run.train._utils import (
@@ -236,6 +236,18 @@ def _worker_init_fn():
     set_run_seed(**cf.get())
 
 
+def _get_data_generator(
+    train_dataset: Dataset,
+    dev_dataset: Dataset,
+    train_get_weight: SpanGeneratorGetWeight,
+    dev_get_weight: SpanGeneratorGetWeight,
+):
+    """Initialize training and development data generators."""
+    train = cf.partial(SpanGenerator)(train_dataset, get_weight=train_get_weight)
+    dev = cf.partial(SpanGenerator)(dev_dataset, get_weight=dev_get_weight)
+    return train, dev
+
+
 def _get_data_loaders(
     state: _State,
     train_dataset: Dataset,
@@ -244,16 +256,16 @@ def _get_data_loaders(
     dev_batch_size: int,
     train_steps_per_epoch: int,
     dev_steps_per_epoch: int,
-    train_get_weight: SpanGeneratorGetWeight,
-    dev_get_weight: SpanGeneratorGetWeight,
     num_workers: int,
     prefetch_factor: int,
+    **kwargs,
 ) -> typing.Tuple[DataLoader[Batch], DataLoader[Batch]]:
     """Initialize training and development data loaders."""
     step = int(state.step.item())
-    train = DataProcessor(train_dataset, train_batch_size, step, get_weight=train_get_weight)
-    dev = DataProcessor(dev_dataset, dev_batch_size, step, get_weight=dev_get_weight)
-    kwargs: typing.Dict[str, typing.Any] = dict(
+    train_gen, dev_gen = cf.call(_get_data_generator, train_dataset, dev_dataset, **kwargs)
+    train = DataProcessor(train_gen, train_batch_size, step)
+    dev = DataProcessor(dev_gen, dev_batch_size, step)
+    kw: typing.Dict[str, typing.Any] = dict(
         num_workers=num_workers,
         device=state.device,
         prefetch_factor=prefetch_factor,
@@ -262,8 +274,8 @@ def _get_data_loaders(
     train = typing.cast(torch.utils.data.Dataset, train)
     dev = typing.cast(torch.utils.data.Dataset, dev)
     return (
-        DataLoader(train, num_steps_per_epoch=train_steps_per_epoch, **kwargs),
-        DataLoader(dev, num_steps_per_epoch=dev_steps_per_epoch, **kwargs),
+        DataLoader(train, num_steps_per_epoch=train_steps_per_epoch, **kw),
+        DataLoader(dev, num_steps_per_epoch=dev_steps_per_epoch, **kw),
     )
 
 

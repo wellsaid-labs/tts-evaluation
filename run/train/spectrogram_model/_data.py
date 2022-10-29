@@ -390,7 +390,7 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
 
 
 class DataProcessor(typing.Mapping[int, Batch]):
-    def __init__(self, dataset: run._utils.Dataset, batch_size: int, step: int = 0, **kwargs):
+    def __init__(self, generator: run._utils.SpanGenerator, batch_size: int, step: int = 0):
         """Given an index, generate the appropriate batch indefinitely.
 
         NOTE: Our training procedure is similar to BERT, the examples are randomly sampled
@@ -409,8 +409,7 @@ class DataProcessor(typing.Mapping[int, Batch]):
         - Checkpoint the random state of every worker, and use it to restart those workers. We'd
           likely need to setup a communication channel with workers, in order to implement this.
         """
-        iter_ = cf.partial(run._utils.SpanGenerator)(dataset, **kwargs)
-        iter_ = BucketBatchSampler(iter_, batch_size, False, self._data_iterator_sort_key)
+        iter_ = BucketBatchSampler(generator, batch_size, False, self._data_iterator_sort_key)
         iter_ = DeterministicSampler(iter_, run._config.RANDOM_SEED + step, cuda=False)
         if is_initialized():
             iter_ = DistributedBatchSampler(iter_, num_replicas=get_world_size(), rank=get_rank())

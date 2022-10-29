@@ -76,6 +76,10 @@ def make_spectrogram_model_train_config(
                 multiplier=0.001,
             ),
         ),
+        spectrogram_model._worker._get_data_generator: cf.Args(
+            train_get_weight=spectrogram_model._data.train_get_weight,
+            dev_get_weight=spectrogram_model._data.dev_get_weight,
+        ),
         spectrogram_model._worker._get_data_loaders: cf.Args(
             # SOURCE: Tacotron 2
             # To train the feature prediction network, we apply the standard maximum-likelihood
@@ -87,8 +91,6 @@ def make_spectrogram_model_train_config(
             dev_batch_size=dev_batch_size,
             train_steps_per_epoch=train_steps_per_epoch,
             dev_steps_per_epoch=int(dev_steps_per_epoch),
-            train_get_weight=spectrogram_model._data.train_get_weight,
-            dev_get_weight=spectrogram_model._data.dev_get_weight,
             num_workers=2,
             prefetch_factor=2 if debug else 10,
         ),

@@ -383,6 +383,9 @@ class Passage:
         docs = _config.load_spacy_nlp(self.speaker.language).pipe(s.script for s in self.passages)
         for passage, doc in zip(self.passages, docs):
             object.__setattr__(passage, "_doc", doc)
+            for alignment in passage.alignments:
+                # NOTE: Check that alignments line up with doc as an additional invariant.
+                assert doc.char_span(alignment.script[0], alignment.script[1]) is not None
         return self._doc
 
     def __getstate__(self):

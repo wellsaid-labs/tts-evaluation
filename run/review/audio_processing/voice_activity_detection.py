@@ -51,7 +51,6 @@ from lib.audio import (
 from lib.utils import Timeline, seconds_to_str
 from run._streamlit import (
     audio_to_html,
-    clear_session_cache,
     dataset_passages,
     get_dataset,
     make_interval_chart,
@@ -399,9 +398,6 @@ def main():
     st.title("Voice Activity Detection (VAD) Workbook")
     st.write("Analyze an audio file with voice activity detection (VAD).")
 
-    if st.sidebar.button("Clear Session Cache"):
-        clear_session_cache()
-
     label = "Max Passage Seconds"
     max_len = st.sidebar.number_input(label, 0.0, value=60.0, step=1.0)  # type: ignore
 
@@ -409,7 +405,7 @@ def main():
 
     speakers: typing.List[str] = [k.label for k in DATASETS.keys()]
     question = "Which dataset do you want to sample from?"
-    speaker = st.selectbox(question, speakers)
+    speaker = typing.cast(str, st.selectbox(question, speakers))
 
     with st.spinner("Loading dataset..."):
         dataset = get_dataset(frozenset([speaker]))
