@@ -39,8 +39,7 @@ def test_random_nonoverlapping_intervals():
     assert lib.utils.random_nonoverlapping_intervals(2, 0) == tuple()
 
 
-def test_random_nonoverlapping_intervals__distribution():
-    """Test `lib.utils.random_nonoverlapping_intervals` has the correct distribution."""
+def _get_distribution(**kwargs):
     with fork_rng(1234):
         total_intervals = 0
         total_interval_length = 0
@@ -50,7 +49,7 @@ def test_random_nonoverlapping_intervals__distribution():
         buckets = [0] * (num_bounds - 1)
         passes = 1000
         for _ in range(passes):
-            intervals = lib.utils.random_nonoverlapping_intervals(num_bounds, 3)
+            intervals = lib.utils.random_nonoverlapping_intervals(num_bounds, **kwargs)
             no_intervals += len(intervals) == 0
             total_intervals += len(intervals)
             total_interval_length += sum(b - a for a, b in intervals)
@@ -59,76 +58,177 @@ def test_random_nonoverlapping_intervals__distribution():
                 assert b - a > 0
                 for i in range(a, b):
                     buckets[i] += 1
+    return buckets, distribution, no_intervals, passes, total_interval_length, total_intervals
 
-        assert no_intervals == 27  # NOTE: Only 3% of the time there are no annotations
-        # NOTE: Like expected, there are 3 annotations on average
-        assert total_intervals / passes == 2.957
-        assert total_interval_length / passes == 9.637
-        # NOTE: Around 86% of our annotations would be 1 to 5 units long. There is certainly a
-        # bias toward shorter segments.
-        assert distribution == {
-            1: 1526,
-            2: 498,
-            3: 257,
-            4: 155,
-            5: 109,
-            6: 61,
-            7: 58,
-            8: 50,
-            9: 30,
-            10: 29,
-            11: 17,
-            12: 23,
-            13: 16,
-            14: 12,
-            15: 8,
-            16: 12,
-            17: 13,
-            18: 8,
-            19: 9,
-            20: 3,
-            21: 5,
-            22: 2,
-            23: 1,
-            24: 5,
-            25: 7,
-            26: 2,
-            27: 3,
-            28: 2,
-            29: 36,
-        }
-        # NOTE: There is an equal probability that each bucket of data is found inside an interval.
-        assert buckets == [
-            318,
-            330,
-            332,
-            332,
-            333,
-            347,
-            319,
-            333,
-            327,
-            337,
-            345,
-            341,
-            336,
-            327,
-            331,
-            325,
-            324,
-            319,
-            337,
-            344,
-            323,
-            324,
-            340,
-            353,
-            335,
-            331,
-            330,
-            329,
-            335,
-        ]
+
+def test_random_nonoverlapping_intervals__distribution():
+    """Test `lib.utils.random_nonoverlapping_intervals` has the correct distribution."""
+    (
+        buckets,
+        distribution,
+        no_intervals,
+        passes,
+        total_interval_length,
+        total_intervals,
+    ) = _get_distribution(avg_intervals=3)
+    assert no_intervals == 27  # NOTE: Only 3% of the time there are no annotations
+    # NOTE: Like expected, there are 3 annotations on average
+    assert total_intervals / passes == 2.957
+    assert total_interval_length / passes == 9.637
+    # NOTE: Around 86% of our annotations would be 1 to 5 units long. There is certainly a
+    # bias toward shorter segments.
+    assert distribution == {
+        1: 1526,
+        2: 498,
+        3: 257,
+        4: 155,
+        5: 109,
+        6: 61,
+        7: 58,
+        8: 50,
+        9: 30,
+        10: 29,
+        11: 17,
+        12: 23,
+        13: 16,
+        14: 12,
+        15: 8,
+        16: 12,
+        17: 13,
+        18: 8,
+        19: 9,
+        20: 3,
+        21: 5,
+        22: 2,
+        23: 1,
+        24: 5,
+        25: 7,
+        26: 2,
+        27: 3,
+        28: 2,
+        29: 36,
+    }
+    # NOTE: There is an equal probability that each bucket of data is found inside an interval.
+    assert buckets == [
+        318,
+        330,
+        332,
+        332,
+        333,
+        347,
+        319,
+        333,
+        327,
+        337,
+        345,
+        341,
+        336,
+        327,
+        331,
+        325,
+        324,
+        319,
+        337,
+        344,
+        323,
+        324,
+        340,
+        353,
+        335,
+        331,
+        330,
+        329,
+        335,
+    ]
+
+
+def test_random_nonoverlapping_intervals__adjusted_distribution():
+    """Test `lib.utils.random_nonoverlapping_intervals` has the correct distribution."""
+    (
+        buckets,
+        distribution,
+        no_intervals,
+        passes,
+        total_interval_length,
+        total_intervals,
+    ) = _get_distribution(avg_intervals=3, min_avg_intervals_length=3)
+    # NOTE: 1.5% of the time there are no annotations because on average there are less cuts
+    # with `min_avg_intervals_length`, so it's less likely for none of the cuts to be returned.
+    # For example, if `num_cuts=2` and `avg_intervals=1`, then there are 3 possible intervals
+    # returned. The likely hood of none of them being returned is `(2/3) ** 3 = 29.6%` while if
+    # `num_cuts=10` the likely hood of none of them being returned is `(10/11) ** 3 = 75%`.
+    assert no_intervals == 14
+    # NOTE: We are more likley to undershoot `avg_intervals` with the increase of
+    # `min_avg_intervals_length` because we are more likely to have less cuts than intervals. We
+    # have not corrected for this yet.
+    assert total_intervals / passes == 2.773
+    # NOTE: As expected, if we constrain the minimum average interval length, we cut off a majority
+    # of the shorter segments and we generate many more longer segments.
+    assert total_interval_length / passes == 18.241
+    assert distribution == {
+        1: 492,
+        2: 415,
+        3: 354,
+        4: 252,
+        5: 211,
+        6: 153,
+        7: 133,
+        8: 92,
+        9: 87,
+        10: 75,
+        11: 62,
+        12: 51,
+        13: 32,
+        14: 41,
+        15: 28,
+        16: 25,
+        17: 22,
+        18: 23,
+        19: 17,
+        20: 15,
+        21: 11,
+        22: 13,
+        23: 12,
+        24: 12,
+        25: 14,
+        26: 12,
+        27: 12,
+        28: 9,
+        29: 98,
+    }
+    # NOTE: There is an equal probability that each bucket of data is found inside an interval.
+    # NOTE: With more longer segments, you'll see each piece of data more often.
+    assert buckets == [
+        630,
+        630,
+        626,
+        624,
+        609,
+        626,
+        637,
+        633,
+        624,
+        618,
+        612,
+        618,
+        635,
+        642,
+        629,
+        632,
+        646,
+        624,
+        628,
+        628,
+        633,
+        624,
+        633,
+        626,
+        626,
+        632,
+        634,
+        642,
+        640,
+    ]
 
 
 def test_mean():

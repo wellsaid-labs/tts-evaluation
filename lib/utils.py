@@ -48,7 +48,7 @@ def random_sample(
 
 
 def random_nonoverlapping_intervals(
-    num_bounds: int, avg_intervals: int
+    num_bounds: int, avg_intervals: float, min_avg_intervals_length: int = 1
 ) -> typing.Tuple[typing.Tuple[int, int], ...]:
     """Generate a random set of non-overlapping intervals.
 
@@ -56,16 +56,24 @@ def random_nonoverlapping_intervals(
     - This tends to bias toward smaller intervals.
     - This has no preference for a particular bucket, and samples from the entire sequence equally.
 
+    TODO: This will undershoot `avg_intervals` in total because it does not properly account for
+        times when the `num_cuts` is less than `avg_intervals`.
+
     Args:
         num_bounds: The number of interval boundaries to sample from.
         avg_intervals: The average number of intervals to return.
+        min_avg_intervals_length: This is the minimum average length of the intervals returned
+            prior random sampling. Use this, if you want to avoid having, too many small intervals,
+            and you want the to bias the avg interval length to be larger.
 
     Returns: A tuple of non-overlapping intervals that start and end on a boundary. This may
         return no intervals in some cases.
     """
+    assert min_avg_intervals_length >= 1, "The smallest interval length is one."
     assert avg_intervals >= 0, "The average intervals must be a non-negative number."
     assert num_bounds >= 2, "There must be at least a starting and ending boundary."
-    num_cuts = random.randint(0, num_bounds - 2)
+    max_cuts = num_bounds - 2
+    num_cuts = random.randint(0, int(round(max_cuts / min_avg_intervals_length)))
     max_intervals = num_cuts + 1
     prob = avg_intervals / max_intervals
 
