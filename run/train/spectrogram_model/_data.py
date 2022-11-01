@@ -131,21 +131,27 @@ def _get_loudness_annotation(
     return None
 
 
-def _random_loudness_annotations(span: Span, signal: numpy.ndarray) -> SpanAnnotations:
+def _random_loudness_annotations(span: Span, signal: numpy.ndarray, **kwargs) -> SpanAnnotations:
     """Create random annotations that represent the loudness in `span.script`."""
     annotations: SpanAnnotations = []
     alignments = cf.partial(_random_nonoverlapping_alignments)(span.alignments)
     for alignment in alignments:
         slice_ = slice(alignment.script[0], alignment.script[1])
-        loudness_ = cf.partial(_get_loudness_annotation)(
-            signal, span.audio_file.sample_rate, alignment
-        )
+        sample_rate = span.audio_file.sample_rate
+        loudness_ = cf.call(_get_loudness_annotation, signal, sample_rate, alignment, **kwargs)
         if loudness_ is not None:
             annotations.append((slice_, loudness_))
     return annotations
 
 
-def _random_tempo_annotations(span: Span, precision: int) -> SpanAnnotations:
+def _get_tempo_annotation(alignment: Alignment, precision: int) -> float:
+    """Get a tempo annotation in seconds per character."""
+    slice_ = slice(alignment.script[0], alignment.script[1])
+    second_per_char = (alignment.audio[1] - alignment.audio[0]) / (slice_.stop - slice_.start)
+    return round(second_per_char, precision)
+
+
+def _random_tempo_annotations(span: Span, **kwargs) -> SpanAnnotations:
     """Create random annotations that represent the speaking tempo in `span.script`.
 
     TODO: We should investigate a more accurate speech tempo, there are a couple options here:
@@ -162,8 +168,7 @@ def _random_tempo_annotations(span: Span, precision: int) -> SpanAnnotations:
     alignments = cf.partial(_random_nonoverlapping_alignments)(span.alignments)
     for alignment in alignments:
         slice_ = slice(alignment.script[0], alignment.script[1])
-        second_per_char = (alignment.audio[1] - alignment.audio[0]) / (slice_.stop - slice_.start)
-        annotations.append((slice_, round(second_per_char, precision)))
+        annotations.append((slice_, cf.call(_get_tempo_annotation, alignment, **kwargs)))
     return annotations
 
 
