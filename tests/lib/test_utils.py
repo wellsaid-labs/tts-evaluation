@@ -151,15 +151,15 @@ def test_random_nonoverlapping_intervals__adjusted_distribution():
         passes,
         total_interval_length,
         total_intervals,
-    ) = _get_distribution(avg_intervals=3, min_avg_intervals_length=3)
+    ) = _get_distribution(avg_intervals=3, min_avg_interval_length=3)
     # NOTE: 1.5% of the time there are no annotations because on average there are less cuts
-    # with `min_avg_intervals_length`, so it's less likely for none of the cuts to be returned.
+    # with `min_avg_interval_length`, so it's less likely for none of the cuts to be returned.
     # For example, if `num_cuts=2` and `avg_intervals=1`, then there are 3 possible intervals
     # returned. The likely hood of none of them being returned is `(2/3) ** 3 = 29.6%` while if
     # `num_cuts=10` the likely hood of none of them being returned is `(10/11) ** 3 = 75%`.
     assert no_intervals == 14
     # NOTE: We are more likley to undershoot `avg_intervals` with the increase of
-    # `min_avg_intervals_length` because we are more likely to have less cuts than intervals. We
+    # `min_avg_interval_length` because we are more likely to have less cuts than intervals. We
     # have not corrected for this yet.
     assert total_intervals / passes == 2.773
     # NOTE: As expected, if we constrain the minimum average interval length, we cut off a majority
