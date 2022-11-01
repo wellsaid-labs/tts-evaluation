@@ -234,11 +234,11 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
             # wiggle room.
             # NOTE: LUFS by definition cannot be less than -70 db.
             min_loudness=-70,
-            max_loudness=-10,
+            max_loudness=-5,
             # NOTE: The tempo range is approximately from 0.04 to 0.2 sec per char, this gives a bit
             # more wiggle room. In order to accomodate pausing, we need at least 1 second per
             # character.
-            min_tempo=0.01,
+            min_tempo=0.04,
             max_tempo=2,
         ),
         run.train.spectrogram_model._data._make_stop_token: Args(

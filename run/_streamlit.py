@@ -17,7 +17,7 @@ import lib
 import run
 from run._tts import CHECKPOINTS_LOADERS, Checkpoints, package_tts
 from run._utils import Dataset
-from run.data._loader import Passage
+from run.data._loader import Alignment, Passage
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import altair as alt
@@ -162,13 +162,24 @@ def read_wave_audio(*args, **kwargs) -> np.ndarray:
 
 def span_audio(span: run.data._loader.Span) -> np.ndarray:
     """Get `span` audio using cached `read_wave_audio`."""
-    return read_wave_audio(span.passage.audio_file, span.audio_start, span.audio_length)
+    return read_wave_audio(span.audio_file, span.audio_start, span.audio_length)
 
 
 def passage_audio(passage: run.data._loader.Passage) -> np.ndarray:
     """Get `span` audio using cached `read_wave_audio`."""
     length = passage.segmented_audio_length()
     return read_wave_audio(passage.audio_file, passage.audio_start, length)
+
+
+def alignment_audio(
+    span: typing.Union[run.data._loader.Span, run.data._loader.Passage], alignment: Alignment
+) -> np.ndarray:
+    """Get `span` or `Passage` audio using cached `read_wave_audio`."""
+    return read_wave_audio(
+        span.audio_file,
+        span.audio_start + alignment.audio[0],
+        span.audio_start + alignment.audio[1],
+    )
 
 
 @st.experimental_singleton()
