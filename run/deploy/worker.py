@@ -94,18 +94,18 @@ _SESSIONS = [
     # NOTE: This speaker was released twice on accident with different ids, so it's in this list
     # twice.
     (english.lj_speech.LINDA_JOHNSON, ""),
-    (english.wsl.WADE_C, "102-107"),
+    (english.wsl.WADE_C, ""),
     (english.wsl.SOFIA_H, "14"),
     # NOTE: David asked for his voice to be removed from the platform.
     (english.wsl.DAVID_D, ""),
     (english.wsl.VANESSA_N, "76-81"),
     (english.wsl.ISABEL_V, "heather_4-21_a"),
-    (english.wsl.AVA_M, "well_said_script_16-21"),
+    (english.wsl.AVA_M, ""),
     (english.wsl.JEREMY_G, "copy_of_drake_jr-script_46-51"),
     (english.wsl.NICOLE_L, "copy_of_wsl_-_megansinclairscript40-45"),
     (english.wsl.PAIGE_L, "wsl_elise_randall_enthusiastic_script-16"),
     (english.wsl.TOBIN_A, "wsl_hanuman_welch_enthusiastic_script-7"),
-    (english.wsl.KAI_M, "wsl_jackrutkowski_enthusiastic_script_24"),
+    (english.wsl.KAI_M, ""),
     (english.wsl.TRISTAN_F, "wsl_markatherlay_diphone_script-4"),
     (english.wsl.PATRICK_K, "WSL_StevenWahlberg_DIPHONE_Script-6"),
     (english.wsl.SOFIA_H__PROMO, "promo_script_3_walker"),
