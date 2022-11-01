@@ -333,7 +333,7 @@ def configure(overwrite: bool = False):
             min_avg_interval_length=3,
             include_annotation=_include_annotation,
         ),
-        run.train.spectrogram_model._data._random_tempo_annotations: cf.Args(precision=2),
+        run.train.spectrogram_model._data._get_tempo_annotation: cf.Args(precision=2),
         # NOTE: We expect users to respell approx 5 - 10% of words.
         run.train.spectrogram_model._data._random_respelling_annotations: cf.Args(prob=0.1),
     }

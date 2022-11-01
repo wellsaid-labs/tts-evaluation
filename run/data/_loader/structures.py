@@ -739,7 +739,8 @@ class Span:
         assert self.slice.stop > self.slice.start, "`Span` must have `Alignments`."
         assert self.slice.stop <= len(self.passage_alignments) and self.slice.stop >= 0
         assert self.slice.start < len(self.passage_alignments) and self.slice.start >= 0
-        # NOTE: `self.audio_slice_` must partially contain all alignments.
+        # NOTE: `self.audio_slice_` must partially contain all alignments. This DOES NOT
+        # require that alignments are fully contained.
         assert self.audio_slice_ is None or (
             self.audio_slice_.stop > self.audio_slice_.start
             and self.audio_slice_.start <= self._first.audio[1]
