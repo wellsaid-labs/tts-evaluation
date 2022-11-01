@@ -145,6 +145,19 @@ def _include_span(span: struc.Span):
     return True
 
 
+def _include_annotation(annotation: struc.Alignment):
+    """Return `True` iff `annotation` should be included in the dataset."""
+    audio_len = annotation.audio[1] - annotation.audio[0]
+    if audio_len < 0.2:
+        return False
+
+    script_len = annotation.script[1] - annotation.script[0]
+    if audio_len / script_len < 0.04:
+        return False
+
+    return True
+
+
 ENGLISH_TEST_CASES = [
     # NOTE: These statements have a mix of heteronyms, initialisms, hard words (locations,
     # medical terms, technical terms), etc for testing pronunciation.
@@ -311,8 +324,14 @@ def configure(overwrite: bool = False):
         # more annotations because it should "stabalize" it. As in, the model would not need to
         # guess as much which creates an easier training environment.
         # NOTE: We gueestimated that users would have around 3 annotations per clip in Studio.
+        # NOTE: We guesstimated that the average interval length is likely going to be around
+        # 2 words which translates to 3 alignments. This parameter helps ensure that we don't
+        # get examples annotated only with short annotations.
         run.train.spectrogram_model._data._random_nonoverlapping_alignments: cf.Args(
-            min_no_intervals_prob=0.1, avg_alignments=3
+            min_no_intervals_prob=0.1,
+            avg_alignments=3,
+            min_avg_interval_length=3,
+            include_annotation=_include_annotation,
         ),
         run.train.spectrogram_model._data._random_tempo_annotations: cf.Args(precision=2),
         # NOTE: We expect users to respell approx 5 - 10% of words.

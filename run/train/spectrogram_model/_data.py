@@ -48,20 +48,28 @@ logger = logging.getLogger(__name__)
 
 
 def _random_nonoverlapping_alignments(
-    alignments: Tuple[Alignment], avg_alignments: int, min_no_intervals_prob: float
+    alignments: Tuple[Alignment],
+    avg_alignments: int,
+    min_no_intervals_prob: float,
+    min_avg_interval_length: int = 1,
+    include_annotation: typing.Callable[[Alignment], bool] = lambda a: True,
 ) -> typing.Tuple[Alignment, ...]:
     """Generate a random set of non-overlapping alignments.
 
-    TODO: Alignments do overlap sometimes in practice, measure how often this impacts this
-          algorithm.
-    TODO: Review the data generated.
+    NOTE: This will undershoot `avg_alignments` for several reasons:
+    - The alignments might overlap and be filtered out.
+    - There might not be enough alignments to satisfy both `min_avg_intervals_length` and
+      `avg_alignments`.
 
     Args:
         alignments
-        avg_alignments: The average number of alignments to return.
+        avg_alignments: The average number of alignments to return when alignments are returned.
         min_no_intervals_prob: The minimum probability for sampling no intervals. In practice,
             no intervals will be sampled at a slightly higher rate due to the implementation
             quirks.
+        min_avg_interval_length: This parameter ensures that the minimum average length of the
+            intervals returned is `min_avg_interval_length`. This helps ensure that for the most
+            part we don't only return short alignments.
 
     Returns: A tuple of non-overlapping alignments that start and end on a boundary. This may
         return no intervals in some cases.
@@ -75,12 +83,14 @@ def _random_nonoverlapping_alignments(
     # cutting.
     bounds = flatten_2d([[get_(a, 0), get_(a, -1)] for a in alignments])
     # NOTE: Depending on the parameters, this has some probability of generating no intervals.
-    indicies = random_nonoverlapping_intervals(len(bounds), avg_alignments)
+    indicies = random_nonoverlapping_intervals(len(bounds), avg_alignments, min_avg_interval_length)
     intervals = [(bounds[a], bounds[b]) for (a, b) in indicies]
-    # NOTE: Alignments may have overlapping audio segments, we remove those.
-    return tuple(
-        Alignment((a[0], b[0]), (a[1], b[1]), (a[2], b[2])) for a, b in intervals if a[1] < b[1]
-    )
+    # NOTE: Alignments may have overlapping audio segments, we remove those. In practice, this
+    # doesn't happen that often in our data, as reviewed in:
+    # `run/review/dataset_processing/span_annotation_generation.py`
+    ret_ = [Alignment((a[0], b[0]), (a[1], b[1]), (a[2], b[2])) for a, b in intervals]
+    ret_ = [a for a in ret_ if a.audio[0] < a.audio[1] and include_annotation(a)]
+    return tuple(ret_)
 
 
 def _get_loudness_annotation(
