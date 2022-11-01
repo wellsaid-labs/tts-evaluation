@@ -45,7 +45,6 @@ def _get_datasets_and_generators() -> typing.Tuple[Dataset, Dataset, SpanGenerat
 def _get_spans(
     _generator: SpanGenerator, num_spans: int
 ) -> typing.Tuple[typing.List[Span], typing.List[numpy.ndarray]]:
-    """Get a list"""
     with st.spinner("Making spans..."):
         bar = st.progress(0)
         spans = []
