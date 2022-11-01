@@ -114,7 +114,7 @@ def _include_span(span: struc.Span):
     """
     script = str(span.spacy_context(**cf.get()))
 
-    if "<" in script or ">" in script:
+    if "<" in script or ">" in script or "&" in script:
         return False
 
     # NOTE: Questions in `NARR` style voices tend to fall flat, largely due to the content
