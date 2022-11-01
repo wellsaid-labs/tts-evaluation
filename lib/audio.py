@@ -482,7 +482,9 @@ REFERENCE_SAMPLE_RATE = 48000
 
 
 def full_scale_sine_wave(
-    sample_rate: int = REFERENCE_SAMPLE_RATE, frequency: float = REFERENCE_FREQUENCY
+    sample_rate: int = REFERENCE_SAMPLE_RATE,
+    frequency: float = REFERENCE_FREQUENCY,
+    length: typing.Optional[int] = None,
 ) -> np.ndarray:
     """Full-scale sine wave is used to define the maximum peak level for a dBFS unit.
 
@@ -493,19 +495,21 @@ def full_scale_sine_wave(
     Returns:
         `np.ndarray` of length `sample_rate`
     """
-    x = np.arange(sample_rate, dtype=np.float32)  # type: ignore
+    x = np.arange(sample_rate if length is None else length, dtype=np.float32)  # type: ignore
     return np.sin(2 * np.pi * frequency * (x / sample_rate)).astype(np.float32)  # type: ignore
 
 
 def full_scale_square_wave(
-    sample_rate: int = REFERENCE_SAMPLE_RATE, frequency: float = REFERENCE_FREQUENCY
+    sample_rate: int = REFERENCE_SAMPLE_RATE,
+    frequency: float = REFERENCE_FREQUENCY,
+    length: typing.Optional[int] = None,
 ) -> np.ndarray:
     """Full-scale square wave is also used to define the maximum peak level for a dBFS unit.
 
     Returns:
         `np.ndarray` of length `sample_rate`
     """
-    x = np.arange(sample_rate, dtype=np.float32)  # type: ignore
+    x = np.arange(sample_rate if length is None else length, dtype=np.float32)  # type: ignore
     x = scipy_signal.square(2 * np.pi * frequency * (x / sample_rate))  # type: ignore
     return x.astype(np.float32)  # type: ignore
 
