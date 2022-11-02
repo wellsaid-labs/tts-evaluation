@@ -242,7 +242,7 @@ def _signals_to_spectrograms(
     signal_to_spectrogram = _get_signal_to_db_mel_spectrogram(**kwargs)
     signals_ = stack_and_pad_tensors(signals)
     db_mel_spectrogram = signal_to_spectrogram(signals_.tensor, aligned=True)
-    lengths = signals_.lengths // signal_to_spectrogram.frame_hop
+    lengths = torch.div(signals_.lengths, signal_to_spectrogram.frame_hop, rounding_mode="floor")
     mask = lengths_to_mask(lengths)
     db_mel_spectrogram = (db_mel_spectrogram * mask.unsqueeze(-1)).transpose(0, 1)
     return (

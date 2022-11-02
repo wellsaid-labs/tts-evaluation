@@ -164,6 +164,11 @@ class InputsWrapper:
         valid_respelling_chars: str,
         respelling_delim: str,
     ):
+        # TODO: This allows for overlapping XML tags to overlap like loudness tags overlapping with
+        # tempo tags, this is improper. While this would be easy to check for, the ideal resolution
+        # would be to provide a convient function to resolve this during instantiation, so the
+        # client does not need to worry about instantiating `InputsWrapper` in a strictly correct
+        # way.
         # NOTE: That model recieves public data through this interface, so, we need to have
         # robust verification and clear error messages for API developers.
         # NOTE: `assert` is used for non-public errors, related to using this object.
@@ -182,6 +187,7 @@ class InputsWrapper:
             has_context = context is not span
             assert has_context or no_context
             assert all(token in context for token in span)
+            assert sum(token in span for token in context) == len(span)
 
         # NOTE: Check that annotations are sorted and wrap full words.
         for batch_span_annotations in (self.loudness, self.tempo):
@@ -247,6 +253,12 @@ class InputsWrapper:
     def __len__(self):
         return len(self.session)
 
+    def _idx(self, span: SpanDoc, token: spacy.tokens.token.Token) -> int:
+        """Get the character offset for `token` relative to `span`."""
+        if isinstance(span, spacy.tokens.span.Span):
+            return token.idx - span.start_char
+        return token.idx
+
     def to_xml(
         self,
         i: int,
@@ -280,10 +292,10 @@ class InputsWrapper:
         annotations += [(close(_Schema.LOUDNESS), s.stop) for s, _ in self.loudness[i]]
         annotations += [(open_(_Schema.TEMPO, a), s.start) for s, a in self.tempo[i]]
         annotations += [(close(_Schema.TEMPO), s.stop) for s, _ in self.tempo[i]]
-        annotations += [(open_(_Schema.RESPELL, a), t.idx) for t, a in self.respellings[i].items()]
-        annotations += [
-            (close(_Schema.RESPELL), t.idx + len(t)) for t, _ in self.respellings[i].items()
-        ]
+        respellings = self.respellings[i].items()
+        idx_ = self._idx
+        annotations += [(open_(_Schema.RESPELL, a), idx_(span, t)) for t, a in respellings]
+        annotations += [(close(_Schema.RESPELL), idx_(span, t) + len(t)) for t, _ in respellings]
         annotations = sorted(annotations, key=lambda k: k[1], reverse=True)
         text = span.text
         for annotation, idx in annotations:
@@ -291,7 +303,7 @@ class InputsWrapper:
         root = open_(_Schema.SPEAK, session_vocab[self.session[i]] if session_vocab else -1)
         text = f"{root}{text}{close(_Schema.SPEAK)}"
         if include_context and isinstance(span, spacy.tokens.span.Span):
-            start_char = next((t.idx for t in context if t in span), 0)
+            start_char = next((idx_(context, t) for t in context if t in span), 0)
             text = f"{context.text[:start_char]}{text}{context.text[start_char + len(span.text):]}"
         return XMLType(text)
 
@@ -408,9 +420,10 @@ class InputsWrapper:
         return cls(**all_)
 
 
-def _embed_annotations(
+def _embed_anno(
     length: int,
     anno: typing.List[typing.Tuple[slice, typing.Union[int, float]]],
+    device: torch.device,
     idx_offset: int = 0,
     val_offset: float = 0,
     val_compression: float = 1,
@@ -433,8 +446,8 @@ def _embed_annotations(
     Returns:
         torch.FloatTensor [length, 2]
     """
-    vals = torch.zeros(length)
-    mask = torch.zeros(length)
+    vals = torch.zeros(length, device=device)
+    mask = torch.zeros(length, device=device)
     mask_val = 1.0
     for slice_, val in anno:
         slice_ = slice(slice_.start + idx_offset, slice_.stop + idx_offset, slice_.step)
@@ -513,8 +526,8 @@ def preprocess(
         embed = [torch.tensor(t, device=device, dtype=torch.float32) for t in embed]
         embed = torch.cat([e.unsqueeze(0).repeat(len(t), 1) for e, t in zip(embed, tokens)])
 
-        loudness_embed = _embed_annotations(len(chars), loudness, start_char, **loudness_kwargs)
-        rate_embed = _embed_annotations(len(chars), tempo, start_char, **tempo_kwargs)
+        loudness_embed = _embed_anno(len(chars), loudness, device, start_char, **loudness_kwargs)
+        rate_embed = _embed_anno(len(chars), tempo, device, start_char, **tempo_kwargs)
         # rate_embed (torch.FloatTensor [num_tokens, 2])
         # loudness_embed (torch.FloatTensor [num_tokens, 2])
         # embed (torch.FloatTensor [num_tokens, embedding_size]) →

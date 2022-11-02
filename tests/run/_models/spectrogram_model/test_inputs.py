@@ -16,7 +16,7 @@ from run._models.spectrogram_model.inputs import (
     Pronun,
     PublicValueError,
     XMLType,
-    _embed_annotations,
+    _embed_anno,
     _get_case,
     _Schema,
     preprocess,
@@ -345,15 +345,15 @@ def test__get_case():
         _get_case("")
 
 
-def test__embed_annotations():
-    """Test `_embed_annotations` on basic cases."""
+def test__embed_anno():
+    """Test `_embed_anno` on basic cases."""
     annotations = [(slice(0, 2), 20), (slice(3, 4), -10), (slice(6, 8), 0.99)]
 
-    embedding = _embed_annotations(9, annotations)
+    embedding = _embed_anno(9, annotations, torch.device("cpu"))
     expected = torch.tensor([[20, 20, 0, -10, 0, 0, 0.99, 0.99, 0], [1, 1, 0, -1, 0, 0, 1, 1, 0]])
     assert_almost_equal(embedding, expected.transpose(0, 1))
 
-    embedding = _embed_annotations(9, annotations, 1, 1, 10)
+    embedding = _embed_anno(9, annotations, torch.device("cpu"), 1, 1, 10)
     expected = [[0.1, 2.1, 2.1, 0.1, -0.9, 0.1, 0.1, 0.199, 0.199], [0, 1, 1, 0, -1, 0, 0, 1, 1]]
     assert_almost_equal(embedding, torch.tensor(expected).transpose(0, 1))
 
