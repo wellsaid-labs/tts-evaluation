@@ -220,12 +220,14 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
             block_size=0.400, precision=0, filter_class=filter_class
         ),
         run._models.spectrogram_model.inputs.preprocess: Args(
+            # NOTE: The average values were calculated through the `span_annotation_generation.py`
+            # workbook.
             # NOTE: The LUFS range is approximately from 0 to -80 db so a offset and compression of
             # 50 will bring that range from roughly 1 to -1.
-            loudness_kwargs=dict(val_offset=50, val_compression=50),
+            loudness_kwargs=dict(val_average=-21, val_compression=50),
             # NOTE: The tempo range is approximately from 0.04 to 0.2 sec per char so a offset and
             # compression of 0.1 will bring that range from roughly 1 to -1.
-            tempo_kwargs=dict(val_offset=0.1, val_compression=0.1),
+            tempo_kwargs=dict(val_average=0.07, val_compression=0.1),
         ),
         run._models.spectrogram_model.inputs.InputsWrapper.check_invariants: Args(
             # TODO: Consider adding filtering for outlier annotations and reducing the allowable

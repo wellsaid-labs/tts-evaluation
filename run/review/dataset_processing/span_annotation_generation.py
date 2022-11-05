@@ -75,7 +75,7 @@ def _bucket_and_visualize(values: typing.List[float]):
         "buckets": [i[0] for i in bucket_items],
         "counts": [i[1] for i in bucket_items],
     }
-    st.bar_chart(pandas.DataFrame(data), x="buckets", y="counts")
+    st.bar_chart(pandas.DataFrame(data), x="buckets", y="counts")  # type: ignore
 
 
 def _clip_audio(audio: numpy.ndarray, span: Span, alignment: Alignment):
@@ -125,7 +125,7 @@ def main():
                 "num_alignments": len(s.alignments),
                 "transcript": s.transcript[a.transcript[0] : a.transcript[1]],
                 "num_words": len(s.script[a.script[0] : a.script[1]].split()),
-                "audio_len": round(a.audio[1] - a.audio[0], 1),
+                "audio_len": round(a.audio[1] - a.audio[0], 2),
                 "script_len": a.script[1] - a.script[0],
                 "transcript_len": a.transcript[1] - a.transcript[0],
             }
@@ -186,6 +186,17 @@ def main():
     tempo_vals = [r["tempo"] for r in data]
 
     st.write(f"- Tempo range: {min(tempo_vals)} to {max(tempo_vals)} seconds per character")
+
+    total_audio = sum(r["audio_len"] for r in data)
+    total_tempo = sum(r["audio_len"] * r["tempo"] for r in data)
+    total_loudness = sum(r["audio_len"] * r["loudness"] for r in data if r["loudness"] is not None)
+    st.write(f"- Average loudness: {total_loudness / total_audio} db")
+    st.write(f"- Average tempo: {total_tempo / total_audio} seconds per character")
+
+    avg_loudness_len = sum(r["script_len"] for r in data if r["loudness"] is not None) / len(data)
+    st.write(f"- Average loudness annotation length: {avg_loudness_len} characters")
+    avg_tempo_len = sum(r["script_len"] for r in data) / len(data)
+    st.write(f"- Average tempo annotation length: {avg_tempo_len} characters")
 
     st.subheader("Loudness Annotation Values Distribution")
     _bucket_and_visualize(loudness_vals)

@@ -15,6 +15,8 @@ from third_party import LazyLoader
 
 import lib
 import run
+from lib.environment import ROOT_PATH
+from lib.text import natural_keys
 from run._tts import CHECKPOINTS_LOADERS, Checkpoints, package_tts
 from run._utils import Dataset
 from run.data._loader import Alignment, Passage
@@ -283,3 +285,27 @@ def st_data_frame(df: pd.DataFrame):
 def st_html(html: str):
     """Write HTML to streamlit app."""
     return st.markdown(html, unsafe_allow_html=True)
+
+
+def path_label(path: pathlib.Path) -> str:
+    """Get a short label for `path`."""
+    return str(path.relative_to(ROOT_PATH)) + "/" if path.is_dir() else str(path.name)
+
+
+def st_select_path(label: str, dir: pathlib.Path, suffix: str) -> pathlib.Path:
+    """Display a path selector for the directory `dir`."""
+    options = [p for p in dir.glob("**/*") if p.suffix == suffix]
+    options = sorted(options, key=lambda x: natural_keys(str(x)), reverse=True)
+    return typing.cast(pathlib.Path, st.selectbox(label, options=options, format_func=path_label))
+
+
+def st_select_paths(label: str, dir: pathlib.Path, suffix: str) -> typing.List[pathlib.Path]:
+    """Display a file and directory selector for the directory `dir`."""
+    options = [p for p in dir.glob("**/*") if p.suffix == suffix or p.is_dir()] + [dir]
+    options = sorted(options, key=lambda x: natural_keys(str(x)), reverse=True)
+    paths = [st.selectbox(label, options=options, format_func=path_label)]
+    paths = typing.cast(typing.List[pathlib.Path], paths)
+    paths = [f for p in paths for f in ([p] if p.is_file() else list(p.glob(f"**/*{suffix}")))]
+    if len(paths) > 0:
+        st.info(f"Selected {label}:\n" + "".join(["\n - " + path_label(p) for p in paths]))
+    return paths

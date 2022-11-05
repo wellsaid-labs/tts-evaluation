@@ -329,7 +329,7 @@ def test__preprocess():
     stack = (
         torch.cat(word_embeddings),
         torch.cat(contextual_embeddings),
-        torch.zeros(len(script), 4),
+        torch.zeros(len(script), 6),
     )
     token_embeddings = torch.cat(stack, dim=1)
     assert len(processed.token_embeddings) == 1
@@ -350,11 +350,19 @@ def test__embed_anno():
     annotations = [(slice(0, 2), 20), (slice(3, 4), -10), (slice(6, 8), 0.99)]
 
     embedding = _embed_anno(9, annotations, torch.device("cpu"))
-    expected = torch.tensor([[20, 20, 0, -10, 0, 0, 0.99, 0.99, 0], [1, 1, 0, -1, 0, 0, 1, 1, 0]])
-    assert_almost_equal(embedding, expected.transpose(0, 1))
+    expected = [
+        [20, 20, 0, -10, 0, 0, 0.99, 0.99, 0],
+        [1, 1, 0, -1, 0, 0, 1, 1, 0],
+        [1, 1, 0, 1, 0, 0, 1, 1, 0],
+    ]
+    assert_almost_equal(embedding, torch.tensor(expected).transpose(0, 1))
 
-    embedding = _embed_anno(9, annotations, torch.device("cpu"), 1, 1, 10)
-    expected = [[0.1, 2.1, 2.1, 0.1, -0.9, 0.1, 0.1, 0.199, 0.199], [0, 1, 1, 0, -1, 0, 0, 1, 1]]
+    embedding = _embed_anno(9, annotations, torch.device("cpu"), 1, -1, 10)
+    expected = [
+        [0, 2.1, 2.1, 0, -0.9, 0, 0, 0.199, 0.199],
+        [0, 1, 1, 0, -1, 0, 0, 1, 1],
+        [0, 1, 1, 0, 1, 0, 0, 1, 1],
+    ]
     assert_almost_equal(embedding, torch.tensor(expected).transpose(0, 1))
 
 

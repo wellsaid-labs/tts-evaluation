@@ -21,6 +21,7 @@ import spacy.language
 import spacy.tokens
 import torch
 
+from lib.audio import griffin_lim
 from lib.environment import PT_EXTENSION, load
 from lib.text import XMLType, xml_to_text
 from lib.utils import get_chunks, tqdm_
@@ -206,7 +207,11 @@ class PublicSpeakerValueError(ValueError):
 
 
 def process_tts_inputs(
-    nlp: spacy.language.Language, package: TTSPackage, xml: XMLType, session: Session
+    nlp: spacy.language.Language,
+    session_vocab: typing.Set[Session],
+    token_vocab: typing.Set[str],
+    xml: XMLType,
+    session: Session,
 ) -> typing.Tuple[Inputs, PreprocessedInputs]:
     """Process TTS `script`, `speaker` and `session` for use with the model(s)."""
     normalized = normalize_and_verbalize_text(xml, session[0].language)
@@ -217,17 +222,29 @@ def process_tts_inputs(
     preprocessed = cf.partial(preprocess)(inputs)
 
     tokens = typing.cast(typing.List[str], set(preprocessed.tokens[0]))
-    excluded = [t for t in tokens if t not in package.spec_model.token_embed.vocab]
+    excluded = [t for t in tokens if t not in token_vocab]
     if len(excluded) > 0:
         difference = ", ".join([repr(c)[1:-1] for c in sorted(set(excluded))])
         raise PublicTextValueError("Text cannot contain these characters: %s" % difference)
 
-    if session not in package.session_vocab():
+    if session not in session_vocab:
         # NOTE: We do not expose speaker information in the `ValueError` because this error
         # is passed on to the public via the API.
         raise PublicSpeakerValueError("Speaker is not available.")
 
     return inputs, preprocessed
+
+
+def griffin_lim_text_to_speech(
+    spec_model: SpectrogramModel, script: XMLType, session: Session
+) -> numpy.ndarray:
+    """Run TTS with griffin-lim."""
+    nlp = load_spacy_nlp(session[0].language)
+    session_vocab = set(spec_model.session_embed.vocab.keys())
+    token_vocab = set(spec_model.token_embed.vocab.keys())
+    _, preprocessed = process_tts_inputs(nlp, session_vocab, token_vocab, script, session)
+    preds = spec_model(inputs=preprocessed, mode=Mode.INFER)
+    return cf.partial(griffin_lim)(preds.frames.squeeze(1).detach().numpy())
 
 
 def text_to_speech(
@@ -238,8 +255,10 @@ def text_to_speech(
 ) -> numpy.ndarray:
     """Run TTS end-to-end with friendly errors."""
     nlp = load_spacy_nlp(session[0].language)
-    inputs, preprocessed_inputs = process_tts_inputs(nlp, package, script, session)
-    preds = package.spec_model(inputs=preprocessed_inputs, mode=Mode.INFER)
+    token_vocab = set(package.spec_model.token_embed.vocab.keys())
+    session_vocab = package.session_vocab()
+    inputs, preprocessed = process_tts_inputs(nlp, session_vocab, token_vocab, script, session)
+    preds = package.spec_model(inputs=preprocessed, mode=Mode.INFER)
     splits = preds.frames.transpose(0, 1).split(split_size)
     generator = generate_waveform(package.signal_model, splits, inputs.session)
     wave = typing.cast(torch.Tensor, torch.cat(list(generator), dim=-1))

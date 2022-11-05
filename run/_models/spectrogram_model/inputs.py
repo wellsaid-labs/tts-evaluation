@@ -425,26 +425,37 @@ def _embed_anno(
     anno: typing.List[typing.Tuple[slice, typing.Union[int, float]]],
     device: torch.device,
     idx_offset: int = 0,
-    val_offset: float = 0,
+    val_average: float = 0,
     val_compression: float = 1,
 ) -> torch.Tensor:
     """Given annotations for a sequence of `length`, this returns an embedding.
 
-    NOTE: The mask uses 1, -1, and 0. The non-zero values represent an annotation. We cycle between
-          1 and -1 to indicate that the annotation has changed.
     NOTE: Usually, for training, it's helpful if the data is within a range of -1 to 1. This
           function provides a `val_offset` and `val_compression` parameter to adjust the annotation
           range as needed.
+    NOTE: We set the average to zero for consistency, so, if there is no annotation, it's as if
+          it was annotated with the average.
+
+    TODO: How should we think about the length of the annotation? The longer the annotation, I'd
+          imagine, the more it can deviate from the annotationed value? So, in effect, it's similar
+          to a standard deviation? I am curious about adding some sort of annotation so that the
+          model has a good idea of the range of the annotation.
 
     Args:
         length: The length of the annotated sequence.
         anno: A list of annotations.
         idx_offset: Offset the annotation indicies.
-        val_offset: Offset the annotation values so that they are easier to model.
+        val_average: Offset the annotation values so that the average falls on zero.
         val_compression: Compress the annotation values so that they are easier to model.
 
     Returns:
-        torch.FloatTensor [length, 2]
+        torch.FloatTensor [length, 3]
+            vals: The annotated values (with offset and compression applied). A zero represents
+                  no annotation.
+            mask: The mask uses 1, -1, and 0. The non-zero values represent an annotation. We cycle
+                  between 1 and -1 to indicate that the annotation has changed.
+            mask.abs: The absolute version of the mask where 1 indicates an annotation and 0
+                  indicates no annotation.
     """
     vals = torch.zeros(length, device=device)
     mask = torch.zeros(length, device=device)
@@ -454,8 +465,8 @@ def _embed_anno(
         vals[slice_] = val
         mask[slice_] = mask_val
         mask_val *= -1
-    vals = (vals + val_offset) / val_compression
-    return torch.stack((vals, mask), dim=1)
+    vals = ((vals - val_average) / val_compression) * mask.abs()
+    return torch.stack((vals, mask, mask.abs()), dim=1)
 
 
 def preprocess(
@@ -527,12 +538,12 @@ def preprocess(
         embed = torch.cat([e.unsqueeze(0).repeat(len(t), 1) for e, t in zip(embed, tokens)])
 
         loudness_embed = _embed_anno(len(chars), loudness, device, start_char, **loudness_kwargs)
-        rate_embed = _embed_anno(len(chars), tempo, device, start_char, **tempo_kwargs)
-        # rate_embed (torch.FloatTensor [num_tokens, 2])
+        tempo_embed = _embed_anno(len(chars), tempo, device, start_char, **tempo_kwargs)
+        # tempo_embed (torch.FloatTensor [num_tokens, 2])
         # loudness_embed (torch.FloatTensor [num_tokens, 2])
         # embed (torch.FloatTensor [num_tokens, embedding_size]) →
         # [num_tokens, embedding_size + 4]
-        embed = torch.cat((embed, rate_embed, loudness_embed), dim=1)
+        embed = torch.cat((embed, tempo_embed, loudness_embed), dim=1)
         typing.cast(list, inputs.token_embeddings).append(embed)
 
     token_embeddings = torch.nn.utils.rnn.pad_sequence(inputs.token_embeddings, batch_first=True)
