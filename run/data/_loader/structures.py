@@ -177,6 +177,7 @@ class Dialect(Enum):
     EN_UK: typing.Final = (Language.ENGLISH, "English (United Kingdom)")
     EN_UNKNOWNN: typing.Final = (Language.ENGLISH, "English (Unknown)")
     EN_US: typing.Final = (Language.ENGLISH, "English (United States)")
+    EN_ZA: typing.Final = (Language.ENGLISH, "English (South Africa)")
     ES_CO: typing.Final = (Language.SPANISH, "Spanish (Colombia)")
     ES_ES: typing.Final = (Language.SPANISH, "Spanish (Spain)")
     PT_BR: typing.Final = (Language.PORTUGUESE, "Portuguese (Brazilian)")

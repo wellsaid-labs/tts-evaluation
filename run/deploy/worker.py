@@ -164,6 +164,12 @@ _SESSIONS = [
     (english.wsl.AVA_M__PROMO, "promo_script_1_harris"),
     (english.wsl.TOBIN_A__PROMO, "promo_script_1_welch_processed"),
     (english.wsl.TOBIN_A__CONVO, "conversational_script_1_welch_processed"),
+    (english.wsl.BEN_D, "daniel_barnett_narration_script-09-processed"),
+    (english.wsl.MICHAEL_V, "forsgren_narration_script-02-processed"),
+    (english.wsl.GRAY_L, "platis_narration_script-08-processed"),
+    (english.wsl.PAULA_R, "paula_narration_script-06-processed"),
+    (english.wsl.BELLA_B, "tugman_narration_script-05-processed"),
+    (english.wsl.MARCUS_G__CONVO, "marcus_g_conversational-03-processed")
 ]
 _SPEAKER_ID_TO_SESSION: typing.Dict[int, typing.Tuple[Speaker, str]] = {
     **{i: s for i, s in enumerate(_SESSIONS)},

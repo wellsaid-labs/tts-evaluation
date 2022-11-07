@@ -36,8 +36,10 @@ del DATASETS[_loader.portuguese.librivox.RND__LIBRIVOX__SANDRALUNA_PT]
 
 # TODO: Remove any non-production datasets from `WSL_DATASETS` so we don't evaluate on them.
 DEV_SPEAKERS = _loader.WSL_DATASETS.copy()
-# NOTE: The `MARI_MONGE__PROMO` dataset is too short for evaluation, at 15 minutes long.
+# NOTE: The `MARI_MONGE__PROMO` and `MARCUS_G__CONVO` datasets are too short for evaluation,
+# at 15 minutes and 60 minutes long, respectively.
 del DEV_SPEAKERS[_loader.english.wsl.MARI_MONGE__PROMO]
+del DEV_SPEAKERS[_loader.english.wsl.MARCUS_G__CONVO]
 # NOTE: The `AVA_M`, `KAI_M`, and `WADE_C` datasets are duplicate datasets.
 # There is an improved version of their datasets already in `dev_speakers`.
 del DEV_SPEAKERS[_loader.english.wsl.AVA_M]

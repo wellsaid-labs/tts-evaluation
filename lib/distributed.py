@@ -299,6 +299,26 @@ class NumeralizePadEmbed(torch.nn.Module, typing.Generic[_NumeralizePadEmbedVar]
         self._new_tokens = set()
         self._unk_tokens = set()  # NOTE: Track unknown tokens seen during evaluation
 
+    @typing.overload
+    def get_vocab(
+        self, special_tokens: typing.Literal[False] = False
+    ) -> typing.Set[_NumeralizePadEmbedVar]:
+        ...  # pragma: no cover
+
+    @typing.overload
+    def get_vocab(
+        self, special_tokens: typing.Literal[True] = True
+    ) -> typing.Set[typing.Union[_NumeralizePadEmbedVar, NumeralizePadEmbed._Tokens]]:
+        ...  # pragma: no cover
+
+    def get_vocab(self, special_tokens: bool = False):
+        """Get the vocabulary.
+        Args:
+            special_tokens: If `True`, include special tokens (i.e. null token, padding token, etc).
+        """
+        special = NumeralizePadEmbed._Tokens
+        return set(k for k in self.vocab.keys() if special_tokens or not isinstance(k, special))
+
     def _queue_new_tokens(self, sequences: typing.List[typing.List[_NumeralizePadEmbedVar]]):
         """Queue up tokens for a vocab update."""
         self._new_tokens.update([t for s in sequences for t in s if t not in self.vocab])

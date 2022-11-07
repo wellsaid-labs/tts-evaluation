@@ -578,7 +578,7 @@ def _visualize_select_cases(
 
     # NOTE: The `spectrogram_model` runs on CPU to conserve GPU memory.
     model = typing.cast(SignalModel, state.model.module)
-    sesh_vocab = model.session_embed.vocab
+    sesh_vocab = model.session_embed.get_vocab()
     inputs, preds = cf.partial(_utils.process_select_cases)(state.spec_model, sesh_vocab, **kw)
     splits = preds.frames.to(state.device).transpose(0, 1).split(split_size, dim=1)
     waves = list(generate_waveform(model, splits, inputs.session))
