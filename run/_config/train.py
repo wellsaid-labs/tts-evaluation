@@ -80,6 +80,10 @@ def make_spectrogram_model_train_config(
             train_get_weight=spectrogram_model._data.train_get_weight,
             dev_get_weight=spectrogram_model._data.dev_get_weight,
         ),
+        spectrogram_model._worker._get_data_processors: cf.Args(
+            train_batch_size=train_batch_size,
+            dev_batch_size=dev_batch_size,
+        ),
         spectrogram_model._worker._get_data_loaders: cf.Args(
             # SOURCE: Tacotron 2
             # To train the feature prediction network, we apply the standard maximum-likelihood
@@ -87,8 +91,6 @@ def make_spectrogram_model_train_config(
             # the decoder side, also referred to as teacher-forcing) with a batch size of 64 on a
             # single GPU.
             # NOTE: Batch size parameters set after experimentation on a 2 Px100 GPU.
-            train_batch_size=train_batch_size,
-            dev_batch_size=dev_batch_size,
             train_steps_per_epoch=train_steps_per_epoch,
             dev_steps_per_epoch=int(dev_steps_per_epoch),
             num_workers=2,
