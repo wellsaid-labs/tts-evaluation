@@ -352,16 +352,14 @@ def test__embed_anno():
     embedding = _embed_anno(9, annotations, torch.device("cpu"))
     expected = [
         [20, 20, 0, -10, 0, 0, 0.99, 0.99, 0],
-        [1, 1, 0, -1, 0, 0, 1, 1, 0],
-        [1, 1, 0, 1, 0, 0, 1, 1, 0],
+        [0.5, 0.5, 0, 1, 0, 0, 0.5, 0.5, 0],
     ]
     assert_almost_equal(embedding, torch.tensor(expected).transpose(0, 1))
 
     embedding = _embed_anno(9, annotations, torch.device("cpu"), 1, -1, 10)
     expected = [
         [0, 2.1, 2.1, 0, -0.9, 0, 0, 0.199, 0.199],
-        [0, 1, 1, 0, -1, 0, 0, 1, 1],
-        [0, 1, 1, 0, 1, 0, 0, 1, 1],
+        [0, 0.5, 0.5, 0, 1, 0, 0, 0.5, 0.5],
     ]
     assert_almost_equal(embedding, torch.tensor(expected).transpose(0, 1))
 
