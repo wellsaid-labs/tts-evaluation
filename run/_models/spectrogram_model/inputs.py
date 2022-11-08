@@ -80,7 +80,7 @@ class Inputs:
 
     # The size of the annotations added to `token_embeddings`.
     # NOTE: This is enforced during the construction of `Inputs` in `preprocess`.
-    anno_size: typing.ClassVar[int] = 3
+    anno_size: typing.ClassVar[int] = 2
     num_anno: typing.ClassVar[int] = 2
 
     def __post_init__(self):
@@ -301,6 +301,8 @@ class InputsWrapper:
         idx_ = self._idx
         annotations += [(open_(_Schema.RESPELL, a), idx_(span, t)) for t, a in respellings]
         annotations += [(close(_Schema.RESPELL), idx_(span, t) + len(t)) for t, _ in respellings]
+        # TODO: Create a workbook that allows us to dig into `Batch` data specifically and
+        # see what is in the preprocessed and XML data, and make sure it's correct.
         annotations = sorted(annotations, key=lambda k: k[1], reverse=True)
         text = span.text
         for annotation, idx in annotations:
