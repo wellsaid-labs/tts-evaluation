@@ -78,6 +78,11 @@ class Inputs:
     # torch.BoolTensor [batch_size, num_tokens]
     tokens_mask: torch.Tensor = dataclasses.field(init=False)
 
+    # The size of the annotations added to `token_embeddings`.
+    # NOTE: This is enforced during the construction of `Inputs` in `preprocess`.
+    anno_size: typing.ClassVar[int] = 3
+    num_anno: typing.ClassVar[int] = 2
+
     def __post_init__(self):
         indices = [s.indices(len(t)) for s, t in zip(self.slices, self.tokens)]
         num_tokens = [b - a for a, b, _ in indices]
@@ -466,7 +471,9 @@ def _embed_anno(
         mask[slice_] = mask_val
         mask_val *= -1
     vals = ((vals - val_average) / val_compression) * mask.abs()
-    return torch.stack((vals, mask, mask.abs()), dim=1)
+    ret_ = torch.stack((vals, mask, mask.abs()), dim=1)
+    assert ret_.shape[1] == Inputs.anno_size, "Invariant constraint."
+    return ret_
 
 
 def preprocess(
@@ -539,11 +546,13 @@ def preprocess(
 
         loudness_embed = _embed_anno(len(chars), loudness, device, start_char, **loudness_kwargs)
         tempo_embed = _embed_anno(len(chars), tempo, device, start_char, **tempo_kwargs)
-        # tempo_embed (torch.FloatTensor [num_tokens, 2])
-        # loudness_embed (torch.FloatTensor [num_tokens, 2])
+        anno_embed = torch.cat((tempo_embed, loudness_embed), dim=1)
+        assert anno_embed.shape[1] == Inputs.anno_size * Inputs.num_anno
+
+        # anno_embed (torch.FloatTensor [num_tokens, Inputs.anno_size * Inputs.num_anno])
         # embed (torch.FloatTensor [num_tokens, embedding_size]) →
-        # [num_tokens, embedding_size + 4]
-        embed = torch.cat((embed, tempo_embed, loudness_embed), dim=1)
+        # [num_tokens, embedding_size + Inputs.anno_size * Inputs.num_anno]
+        embed = torch.cat((embed, anno_embed), dim=1)
         typing.cast(list, inputs.token_embeddings).append(embed)
 
     token_embeddings = torch.nn.utils.rnn.pad_sequence(inputs.token_embeddings, batch_first=True)

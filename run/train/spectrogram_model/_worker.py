@@ -242,6 +242,7 @@ def _get_data_generator(
     dev_dataset: Dataset,
     train_get_weight: SpanGeneratorGetWeight,
     dev_get_weight: SpanGeneratorGetWeight,
+    **kwargs,
 ):
     """Initialize training and development data generators."""
     train = cf.partial(SpanGenerator)(train_dataset, get_weight=train_get_weight)
@@ -249,12 +250,24 @@ def _get_data_generator(
     return train, dev
 
 
+def _get_data_processors(
+    train_gen: SpanGenerator,
+    dev_gen: SpanGenerator,
+    step: int,
+    train_batch_size: int,
+    dev_batch_size: int,
+    **kwargs,
+):
+    """Initialize training and development data processors."""
+    train = DataProcessor(train_gen, train_batch_size, step)
+    dev = DataProcessor(dev_gen, dev_batch_size, step)
+    return train, dev
+
+
 def _get_data_loaders(
     state: _State,
     train_dataset: Dataset,
     dev_dataset: Dataset,
-    train_batch_size: int,
-    dev_batch_size: int,
     train_steps_per_epoch: int,
     dev_steps_per_epoch: int,
     num_workers: int,
@@ -264,8 +277,7 @@ def _get_data_loaders(
     """Initialize training and development data loaders."""
     step = int(state.step.item())
     train_gen, dev_gen = cf.call(_get_data_generator, train_dataset, dev_dataset, **kwargs)
-    train = DataProcessor(train_gen, train_batch_size, step)
-    dev = DataProcessor(dev_gen, dev_batch_size, step)
+    train, dev = cf.call(_get_data_processors, train_gen, dev_gen, step, **kwargs)
     kw: typing.Dict[str, typing.Any] = dict(
         num_workers=num_workers,
         device=state.device,
