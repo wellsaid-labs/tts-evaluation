@@ -329,7 +329,7 @@ def test__preprocess():
     stack = (
         torch.cat(word_embeddings),
         torch.cat(contextual_embeddings),
-        torch.zeros(len(script), 6),
+        torch.zeros(len(script), 4),
     )
     token_embeddings = torch.cat(stack, dim=1)
     assert len(processed.token_embeddings) == 1
