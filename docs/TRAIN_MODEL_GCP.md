@@ -256,7 +256,7 @@ Setup your local development environment by following [these instructions](LOCAL
 1. Delete your instance...
 
    ```zsh
-   python -m run.utils.gcp $TYPE delete-instance --name=$VM_NAME --zone=$VM_ZONE
+   python -m run.utils.gcp $TYPE delete-instance --name=$NAME --zone=$VM_ZONE
    ```
 
    You may need to run the above a couple of times.
