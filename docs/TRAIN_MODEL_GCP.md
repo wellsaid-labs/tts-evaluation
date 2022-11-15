@@ -27,13 +27,16 @@ Setup your local development environment by following [these instructions](LOCAL
    ```
 
    💡 TIP: Find zones with that support T4 GPUs here:
-   https://cloud.google.com/compute/docs/gpus/gpu-regions-zones
+   <https://cloud.google.com/compute/docs/gpus/gpu-regions-zones>
 
    💡 TIP: Don't place all your preemptible instances in the same zone, just in case one zone
    runs out of capacity.
 
    💡 TIP: For persistent instances, the `ZONE` parameter is optional. If it's not provided, then
     this will try all the zones until one is found.
+
+   💡 TIP: The `GCP_USER` is used in the startup script, if it's incorrect, then training will
+   not resume.
 
    If starting from scratch, use a standard ubuntu image:
 
@@ -208,7 +211,7 @@ Setup your local development environment by following [these instructions](LOCAL
    ```
 
    ❓ LEARN MORE: PyTorch leaves zombie processes that must be killed, check out:
-   https://leimao.github.io/blog/Kill-PyTorch-Distributed-Training-Processes/
+   <https://leimao.github.io/blog/Kill-PyTorch-Distributed-Training-Processes/>
 
 1. Detach from your screen session by typing `Ctrl-A` then `D`.
 
@@ -235,9 +238,26 @@ Setup your local development environment by following [these instructions](LOCAL
 
    ```zsh
    NAME=$USER"-your-instance-name" # EXAMPLE: michaelp-baseline
+   TYPE='preemptible' # Either 'preemptible' or 'persistent'
    VM_NAME=$(python -m run.utils.gcp $TYPE most-recent --name $NAME)
    echo "VM_NAME=$VM_NAME"
    VM_ZONE=$(python -m run.utils.gcp zone --name $VM_NAME)
+   ```
+
+1. (Optional) Find the latest checkpoint...
+
+   ```bash
+   DIR_NAME='spectrogram_model' # EXAMPLE: spectrogram_model
+   CHECKPOINT=$( \
+    gcloud compute ssh --zone=$VM_ZONE $VM_NAME \
+        --command='cd /opt/wellsaid-labs/Text-to-Speech/disk/experiments/$DIR_NAME/; find . \
+            -name "*.pt" -mindepth 1 -printf "%T+ %P\n" | \
+            sort -n -r | \
+            head -1 | \
+            cut -f2- -d" " | \
+            cut -sd / -f 2-'
+   )
+   echo "CHECKPOINT=$CHECKPOINT"
    ```
 
 1. (Optional) Download checkpoints to your local drive...
