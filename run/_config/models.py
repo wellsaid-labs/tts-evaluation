@@ -56,6 +56,8 @@ def configure(overwrite: bool = False):
             # direction) to generate the encoded features.
             lstm_layers=2,
             out_size=encoder_out_size,
+            # NOTE: This is a standardish number of layers for embedding.
+            num_anno_embed_layers=2,
         ),
         run._models.spectrogram_model.attention.Attention: cf.Args(
             # SOURCE (Tacotron 2):
@@ -100,7 +102,7 @@ def configure(overwrite: bool = False):
             max_styles=max_styles,
             max_languages=max_languages,
             num_frame_channels=NUM_FRAME_CHANNELS,
-            max_token_embed_size=396 + 4,
+            max_token_embed_size=396 + 7,
             # SOURCE (Transfer Learning from Speaker Verification to Multispeaker Text-To-Speech
             #         Synthesis):
             # The paper mentions their proposed model uses a 256 dimension embedding.

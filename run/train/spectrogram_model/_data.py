@@ -339,9 +339,10 @@ class Batch(_utils.Batch):
 
     def apply(self, call: typing.Callable[[torch.Tensor], torch.Tensor]) -> "Batch":
         batch: Batch = super().apply(call)
-        assert isinstance(batch.processed.token_embeddings, torch.Tensor)
         object.__setattr__(
-            batch.processed, "token_embeddings", call(batch.processed.token_embeddings)
+            batch.processed,
+            "token_embeddings_padded",
+            call(batch.processed.token_embeddings_padded),
         )
         object.__setattr__(batch.processed, "num_tokens", call(batch.processed.num_tokens))
         object.__setattr__(batch.processed, "tokens_mask", call(batch.processed.tokens_mask))

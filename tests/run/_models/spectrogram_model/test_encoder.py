@@ -172,6 +172,33 @@ def test__right_masked_bi_rnn__multilayer_mask():
     assert result[:-padding_len].sum().item() != 0
 
 
+def test__grouped_embedder():
+    """Test `spectrogram_model.encoder._GroupedEmbedder` in a basic test."""
+    tokens = torch.randn(1, 6, 3)
+    mask = torch.ones(1, 6, 1, dtype=torch.float32)
+    embed = spectrogram_model.encoder._GroupedEmbedder(3, 5, 1, 2)
+    out = embed(tokens, mask)
+    assert out.shape == (1, 6, 5)
+
+
+def test__grouped_embedder__layers():
+    """Test `spectrogram_model.encoder._GroupedEmbedder._layers` processes in groups."""
+    tokens = torch.tensor([[1, 2, 3] for _ in range(6)], dtype=torch.float32).unsqueeze(0)
+    mask = [[1, 1, 1, 1, 1, 1], [1, 0, 1, 0, 1, 0], [0, 0, 0, 1, 1, 1]]
+    mask = torch.tensor(mask, dtype=torch.float32)
+    mask = mask.transpose(0, 1).unsqueeze(0)
+    embed = spectrogram_model.encoder._GroupedEmbedder(1, 1, 3, 2)
+    for module in embed.modules():
+        if isinstance(module, (torch.nn.Conv1d, torch.nn.Linear)):
+            torch.nn.init.ones_(module.weight)
+            if module.bias is not None:
+                torch.nn.init.zeros_(module.bias)
+    out = embed._layers(tokens, mask)
+    expected = [[1, 1, 1, 1, 1, 1], [2, 0, 2, 0, 2, 0], [0, 0, 0, 3, 3, 3]]
+    expected = torch.tensor(expected, dtype=torch.float32).transpose(0, 1).unsqueeze(0)
+    assert torch.equal(out, expected)
+
+
 def _make_encoder(
     max_tokens=10,
     max_seq_meta_values=(11, 12),
@@ -180,6 +207,8 @@ def _make_encoder(
     seq_meta_embed_size=6,
     token_meta_embed_size=12,
     seq_meta_embed_dropout=0.1,
+    anno_mask_indices=(0,),
+    num_anno_embed_layers=2,
     out_size=8,
     hidden_size=8,
     num_conv_layers=2,
@@ -200,6 +229,8 @@ def _make_encoder(
         seq_meta_embed_size=seq_meta_embed_size,
         token_meta_embed_size=token_meta_embed_size,
         seq_meta_embed_dropout=seq_meta_embed_dropout,
+        num_anno=len(anno_mask_indices),
+        num_anno_embed_layers=num_anno_embed_layers,
         out_size=out_size,
         hidden_size=hidden_size,
         num_conv_layers=num_conv_layers,
@@ -216,13 +247,16 @@ def _make_encoder(
     sessions = torch.randint(1, max_seq_meta_values[1], (batch_size,))
     tokens = torch.randint(1, max_tokens, (batch_size, num_tokens_pad))
     token_meta = torch.randint(1, max_tokens, (num_token_metadata, batch_size, num_tokens_pad))
-    token_embeddings = list(torch.randn(batch_size, num_tokens_pad, max_token_embed_size).unbind())
+    token_embeddings = torch.randn(batch_size, num_tokens_pad, max_token_embed_size)
+    for idx in anno_mask_indices:
+        token_embeddings[:, :, idx].fill_(1)
     inputs = Inputs(
         tokens=tokens.tolist(),
         seq_metadata=[speakers.tolist(), sessions.tolist()],
         token_metadata=token_meta.tolist(),
-        token_embeddings=token_embeddings,
+        token_embeddings=list(token_embeddings.unbind()),
         slices=[slice(context, -context) for _ in range(batch_size)],
+        anno_mask_indices=anno_mask_indices,
     )
     return encoder, inputs, (num_tokens, batch_size, out_size)
 
