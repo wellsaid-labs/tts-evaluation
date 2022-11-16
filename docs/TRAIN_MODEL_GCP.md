@@ -22,7 +22,6 @@ Setup your local development environment by following [these instructions](LOCAL
    ```zsh
    TRAIN_SCRIPT_PATH='path/to/train' # EXAMPLE: run/train/spectrogram_model
    NAME=$USER"-your-instance-name" # EXAMPLE: michaelp-baseline
-   GCP_USER='your-gcp-user-name' # Example: michaelp
    TYPE='preemptible' # Either 'preemptible' or 'persistent'
    ```
 
@@ -34,9 +33,6 @@ Setup your local development environment by following [these instructions](LOCAL
 
    💡 TIP: For persistent instances, the `ZONE` parameter is optional. If it's not provided, then
     this will try all the zones until one is found.
-
-   💡 TIP: The `GCP_USER` is used in the startup script, if it's incorrect, then training will
-   not resume.
 
    If starting from scratch, use a standard ubuntu image:
 
@@ -64,10 +60,13 @@ Setup your local development environment by following [these instructions](LOCAL
       --disk-type='pd-balanced' \
       --image-project=$IMAGE_PROJECT \
       --image-family=$IMAGE_FAMILY \
-      --metadata="startup-script-user=$GCP_USER" \
+      --metadata="startup-script-user=$USER" \
       --metadata="train-script-path=$TRAIN_SCRIPT_PATH" \
       --metadata-from-file="startup-script=run/utils/gcp/resume_training_on_start_up.sh"
    ```
+
+   📙 NOTE: This will use the environment variable `$USER` as the username whilst the browser
+   console will use your email address username.
 
    ❓ LEARN MORE: See our machine type benchmarks [here](./TRAIN_MODEL_GCP_BENCHMARKS.md).
 
@@ -85,6 +84,13 @@ Setup your local development environment by following [these instructions](LOCAL
    ```
 
    Continue to run this command until it succeeds.
+
+   💡 TIP: Keep in mind, if this continues to time out (e.g. "port 22: Operation timed out"), your
+   router may be blocking SSH connections
+   <https://serverfault.com/questions/25545/why-block-port-22-outbound>.
+
+   💡 TIP: This command may create a user and transfer SSH keys. You may delete those, here:
+   <https://console.cloud.google.com/compute/metadata?tab=sshkeys&project=voice-research-255602&orgonly=true&supportedpurview=organizationId>
 
 ### On the instance
 
