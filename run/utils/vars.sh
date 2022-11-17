@@ -45,10 +45,14 @@ function vars() {
 
       make)
         ENV_PATH="$__WSL_ENVS_PATH/$2"
-        if [ -f "$ENV_PATH" ]; then
-            echo "Environment '$2' already exists."
+        if [ -n "$2" ]; then
+            if [ -f "$ENV_PATH" ]; then
+                echo "Environment '$2' already exists."
+            else
+                :>> "$__WSL_ENVS_PATH/$2"
+            fi
         else
-            :>> "$__WSL_ENVS_PATH/$2"
+            echo "Please pass in a ENVIRONMENT name."
         fi
         ;;
 
@@ -88,10 +92,14 @@ function vars() {
 
       delete)
         ENV_PATH="$__WSL_ENVS_PATH/$2"
-        if [ -f "$ENV_PATH" ]; then
-            rm $ENV_PATH
+        if [ -n "$2" ]; then
+            if [ -f "$ENV_PATH" ]; then
+                rm $ENV_PATH
+            else
+                echo "Environment $2 does not exist."
+            fi
         else
-            echo "Environment $2 does not exist."
+            echo "Please pass in a ENVIRONMENT name."
         fi
         ;;
 
