@@ -16,7 +16,10 @@ Afterwards, please install other system dependencies, like so:
 ```zsh
 brew install git
 brew install python@3.8
-setopt interactivecomments
+echo "" >> ~/.zshrc
+echo "# WellSaid Labs Terminal Settings" >> ~/.zshrc
+echo "setopt interactivecomments" >> ~/.zshrc
+. ~/.zshrc
 brew install sox # Audio processing
 brew install ffmpeg # Audio processing
 brew install espeak # Speech synthesizer

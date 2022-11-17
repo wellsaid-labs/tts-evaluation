@@ -12,17 +12,23 @@ We use a couple of different methods for identifying pauses or breaks:
   increase data quality.
 - We start looking 50 or more milliseconds after a speech segment. This accounts for unvoiced
   speech sounds at the end of a word, like "s".
-- We look for audio segments that are untranscribable.
+- We look for audio segments that are not in between the syllables of a word.
 
 With regards to recording datasets, we ask voice-actors that their silences are quieter than -60 db.
 Ideally, they are more like -70 db or lower.
 
 ## Segmentation
 
-We segment audio based on speech segments. A speech segment starts and ends with a pause. Also,
-a speech segment starts and ends on a word delimiter. Keep in mind, that a speaker may sometimes
-blend words together, so we avoid segmenting at a word-level. The smallest segment we consider is
-0.1 to 0.2 seconds. The smallest segment Google STT considers is 0.1 seconds.
+In normal speech, one typically finds many consecutive words being said with no pauses between them,
+and often the final sounds of one word blend smoothly or fuse with the initial sounds of the next
+word. For this reason, we segment speech on pauses as defined above.
+
+The smallest segment that we allow is 0.1 to 0.2 seconds, depending on the application. Google
+STT also has a similar constraint at 0.1 seconds.
+
+Keep in mind, most conventional TTS datasets segment speech based on word boundaries. Due to the
+intractability of that task as many as 1 out of 10 clips will end preemptively in these datasets.
+We have often referred to an audio clip ending early as "audio cutoff" or "word cutoff".
 
 ## Stops
 
@@ -42,7 +48,7 @@ increase consistency, we limit sessions to 15-minutes in length and give the mod
 
 A voice-actor, even during a session, may not be consistent. We also have some datasets with much
 longer sessions. We have some work to-do to resolve this inconsistency. We've found, sometimes,
-that longer sessions indicates that the voice-actor stitched together multiple files from seperate
+that longer sessions indicates that the voice-actor stitched together multiple files from separate
 recording sessions.
 
 ## Yes / No Questions

@@ -141,8 +141,11 @@ def get_non_speech_segments_and_cache(
     name = get_non_speech_segments_and_cache.__name__
     cache_path = cf.partial(_cache_path)(audio_file.path, name, ".npy", **kwargs_, **kwargs)
     if cache_path.exists():
-        loaded = np.load(cache_path, allow_pickle=False)
-        return Timeline(list(typing.cast(FloatFloat, tuple(t)) for t in loaded))
+        try:
+            loaded = np.load(cache_path, allow_pickle=False)
+            return Timeline(list(typing.cast(FloatFloat, tuple(t)) for t in loaded))
+        except ValueError:
+            cache_path.unlink()
 
     audio = read_audio(audio_file, memmap=True)
     vad: typing.List[FloatFloat] = lib.audio.get_non_speech_segments(audio, audio_file, **kwargs_)

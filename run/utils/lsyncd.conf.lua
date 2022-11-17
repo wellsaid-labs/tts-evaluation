@@ -8,14 +8,14 @@ sync {
                     -- https://github.com/axkibe/lsyncd/blob/master/default-rsyncssh.lua
   -- Learn more about this path, as related to Mac OS:
   -- https://github.com/axkibe/lsyncd/issues/587
-  source="/System/Volumes/Data/{source}", -- Your source directory to watch
+  source="{source}", -- Your source directory to watch
   host="{user}@{public_dns}", -- The remote host (use hostname or IP)
   targetdir="{destination}", -- The target dir on remote host, keep in mind this is absolute path
   delay = .2,
   delete = true,
   rsync = {
-      binary = "/usr/local/bin/rsync", -- OSX does not have updated version of rsync,
-                                       -- install via: `brew install rsync`
+      binary = "/opt/homebrew/bin/rsync", -- OSX does not have updated version of rsync,
+                                          -- install via: `brew install rsync`
       -- NOTE: We disable SSH host key checking because GCP frequently changes it's remote
       -- host identification.
       rsh = "ssh -i {identity_file} -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no",

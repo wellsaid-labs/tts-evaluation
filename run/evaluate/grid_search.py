@@ -9,20 +9,6 @@ TODO:
 
 Usage:
     $ PYTHONPATH=. streamlit run run/evaluate/grid_search.py --runner.magicEnabled=false
-
-Use gcloud port-forwarding to interact via your local browser:
-```
-VM_NAME="name-of-remote-machine"
-VM_ZONE="zone-of-remote-machine"
-PROJECT_ID=voice-research-255602
-LOCAL_PORT=2222
-REMOTE_PORT=8501
-
-gcloud compute ssh $VM_NAME \
-    --project $PROJECT_ID \
-    --zone $VM_ZONE \
-    -- -NL $LOCAL_PORT":localhost:"$REMOTE_PORT
-```
 """
 import functools
 import itertools
