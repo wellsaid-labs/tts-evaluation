@@ -24,6 +24,8 @@ function vars() {
     case $1 in
 
       help)
+        echo "`vars` sync variables accross multiple consoles via a virtual environment."
+        echo ""
         echo "Usage: vars COMMAND [ARGS]..."
         echo ""
         echo "Commands:"
