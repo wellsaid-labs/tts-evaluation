@@ -15,14 +15,16 @@ Setup your local development environment by following [these instructions](LOCAL
 
 ### From your local repository
 
-1. Setup your environment variables...
-
-   Also set these environment variables...
+1. Setup your variable environment...
 
    ```zsh
-   TRAIN_SCRIPT_PATH='path/to/train' # EXAMPLE: run/train/spectrogram_model
    NAME=$USER"-your-instance-name" # EXAMPLE: michaelp-baseline
-   TYPE='preemptible' # Either 'preemptible' or 'persistent'
+   . run/utils/vars.sh
+   vars make $NAME
+   vars activate $NAME
+   export NAME=$NAME
+   export TRAIN_SCRIPT_PATH='run/train/spectrogram_model' # EXAMPLE: run/train/spectrogram_model
+   export TYPE='preemptible' # Either 'preemptible' or 'persistent'
    ```
 
    💡 TIP: Find zones with that support T4 GPUs here:
@@ -77,9 +79,10 @@ Setup your local development environment by following [these instructions](LOCAL
 1. SSH into the instance...
 
    ```zsh
-   VM_NAME=$(python -m run.utils.gcp $TYPE most-recent --name $NAME)
+   export VM_NAME=$(python -m run.utils.gcp $TYPE most-recent --name $NAME)
    echo "VM_NAME=$VM_NAME"
-   VM_ZONE=$(python -m run.utils.gcp zone --name $VM_NAME)
+   export VM_ZONE=$(python -m run.utils.gcp zone --name $VM_NAME)
+   export VM_IP=$(python -m run.utils.gcp ip --name $VM_NAME --zone=$VM_ZONE)
    gcloud compute ssh --zone=$VM_ZONE $VM_NAME
    ```
 
@@ -103,23 +106,20 @@ Setup your local development environment by following [these instructions](LOCAL
 
 ### From your local repository
 
+1. (Optional) You may need to open a console, connected to your environment...
+
+   ```bash
+   NAME=$USER"-your-instance-name" # EXAMPLE: michaelp-baseline
+   . run/utils/vars.sh
+   vars activate $NAME
+   ```
+
 1. Use `run.utils.lsyncd` to live sync your repository to your VM instance...
-
-   ```bash
-   VM_NAME=$(python -m run.utils.gcp $TYPE most-recent --name $NAME)
-   echo "VM_NAME=$VM_NAME"
-   ```
-
-   ```bash
-   VM_ZONE=$(python -m run.utils.gcp zone --name $VM_NAME)
-   VM_IP=$(python -m run.utils.gcp ip --name $VM_NAME --zone=$VM_ZONE)
-   VM_USER=$(python -m run.utils.gcp user --name $VM_NAME --zone=$VM_ZONE)
-   ```
 
    ```bash
    sudo python3 -m run.utils.lsyncd $(pwd) /opt/wellsaid-labs/Text-to-Speech \
                                     --public-dns $VM_IP \
-                                    --user $VM_USER \
+                                    --user $USER \
                                     --identity-file ~/.ssh/google_compute_engine
    ```
 
@@ -240,14 +240,12 @@ Setup your local development environment by following [these instructions](LOCAL
 
 ### From your local repository
 
-1. Setup your environment variables again...
+1. (Optional) You may need to open a console, connected to your environment...
 
-   ```zsh
+   ```bash
    NAME=$USER"-your-instance-name" # EXAMPLE: michaelp-baseline
-   TYPE='preemptible' # Either 'preemptible' or 'persistent'
-   VM_NAME=$(python -m run.utils.gcp $TYPE most-recent --name $NAME)
-   echo "VM_NAME=$VM_NAME"
-   VM_ZONE=$(python -m run.utils.gcp zone --name $VM_NAME)
+   . run/utils/vars.sh
+   vars activate $NAME
    ```
 
 1. (Optional) Find the latest checkpoint...
