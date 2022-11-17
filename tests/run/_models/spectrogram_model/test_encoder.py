@@ -174,11 +174,16 @@ def test__right_masked_bi_rnn__multilayer_mask():
 
 def test__grouped_embedder():
     """Test `spectrogram_model.encoder._GroupedEmbedder` in a basic test."""
-    tokens = torch.randn(1, 6, 3)
-    mask = torch.ones(1, 6, 1, dtype=torch.float32)
-    embed = spectrogram_model.encoder._GroupedEmbedder(3, 5, 1, 2)
+    num_groups = 9
+    input_size = 3
+    out_size = 5
+    num_tokens = 6
+    batch_size = 2
+    tokens = torch.randn(batch_size, num_tokens, input_size)
+    mask = torch.ones(batch_size, num_tokens, num_groups, dtype=torch.float32)
+    embed = spectrogram_model.encoder._GroupedEmbedder(input_size, 7, out_size, num_groups, 2)
     out = embed(tokens, mask)
-    assert out.shape == (1, 6, 5)
+    assert out.shape == (batch_size, num_tokens, out_size)
 
 
 def test__grouped_embedder__layers():
@@ -187,7 +192,7 @@ def test__grouped_embedder__layers():
     mask = [[1, 1, 1, 1, 1, 1], [1, 0, 1, 0, 1, 0], [0, 0, 0, 1, 1, 1]]
     mask = torch.tensor(mask, dtype=torch.float32)
     mask = mask.transpose(0, 1).unsqueeze(0)
-    embed = spectrogram_model.encoder._GroupedEmbedder(1, 1, 3, 2)
+    embed = spectrogram_model.encoder._GroupedEmbedder(1, 1, 1, 3, 2)
     for module in embed.modules():
         if isinstance(module, (torch.nn.Conv1d, torch.nn.Linear)):
             torch.nn.init.ones_(module.weight)

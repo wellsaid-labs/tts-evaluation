@@ -174,27 +174,37 @@ class _GroupedEmbedder(torch.nn.Module):
 
     Args:
         input_size: The input size of the sequence.
+        hidden_size: The size of the processing layers per annotation.
         out_size: The output size of the sequence.
         num_groups: The number of times to process the sequence.
         num_layers: The number of layers to process the sequence.
     """
 
-    def __init__(self, input_size: int, out_size: int, num_groups: int, num_layers: int):
+    def __init__(
+        self,
+        input_size: int,
+        hidden_size: int,
+        out_size: int,
+        num_groups: int,
+        num_layers: int,
+    ):
         super().__init__()
-        hidden_size = out_size * num_groups
+
+        self.hidden_size = hidden_size
+        self.total_size = hidden_size * num_groups
         self.out_size = out_size
         self.num_groups = num_groups
         self.in_ = torch.nn.Sequential(
-            torch.nn.Linear(input_size, hidden_size),
+            torch.nn.Linear(input_size, self.total_size),
             torch.nn.ReLU(),
         )
         self.layers = [
-            torch.nn.Conv1d(hidden_size, hidden_size, 1, groups=num_groups)
+            torch.nn.Conv1d(self.total_size, self.total_size, 1, groups=num_groups)
             for _ in range(num_layers)
         ]
         self.layers = ModuleList(self.layers)
         self.out = torch.nn.Sequential(
-            torch.nn.Linear(out_size, out_size),
+            torch.nn.Linear(hidden_size, out_size),
             torch.nn.ReLU(),
             cf.partial(torch.nn.LayerNorm)(out_size),
         )
@@ -208,14 +218,14 @@ class _GroupedEmbedder(torch.nn.Module):
         Returns:
             torch.FloatTensor [batch_size, num_tokens, hidden_size]
         """
-        # [batch_size, num_tokens, hidden_size] →
-        # [batch_size, hidden_size, num_tokens]
+        # [batch_size, num_tokens, total_size] →
+        # [batch_size, total_size, num_tokens]
         tokens, mask = tokens.transpose(1, 2), mask.transpose(1, 2)
         mask = ~mask.bool()
         for layer in self.layers:
             tokens = torch.masked_fill(torch.relu(layer(tokens)), mask, 0)
-        # [batch_size, hidden_size, num_tokens] →
-        # [batch_size, num_tokens, hidden_size]
+        # [batch_size, total_size, num_tokens] →
+        # [batch_size, num_tokens, total_size]
         tokens = tokens.transpose(1, 2)
         return tokens
 
@@ -232,20 +242,22 @@ class _GroupedEmbedder(torch.nn.Module):
             torch.FloatTensor [batch_size, num_tokens, out_size]
         """
         # [batch_size, num_tokens, input_size] →
-        # [batch_size, num_tokens, hidden_size]
+        # [batch_size, num_tokens, total_size]
         tokens = self.in_(tokens)
         # [batch_size, num_tokens, num_groups] →
-        # [batch_size, num_tokens, hidden_size]
-        mask = mask.repeat(1, 1, self.out_size)
-        # [batch_size, num_tokens, hidden_size] →
-        # [batch_size, num_tokens, hidden_size]
+        # [batch_size, num_tokens, total_size]
+        mask = mask.repeat(1, 1, self.hidden_size)
+        # [batch_size, num_tokens, total_size] →
+        # [batch_size, num_tokens, total_size]
         tokens = self._layers(tokens, mask)
-        # [batch_size, num_tokens, hidden_size] →
-        # [batch_size, num_tokens, num_groups, out_size]
+        # [batch_size, num_tokens, total_size] →
+        # [batch_size, num_tokens, num_groups, hidden_size]
         folded = torch.stack(torch.chunk(tokens, self.num_groups, dim=2), dim=2)
-        # [batch_size, num_tokens, num_groups, out_size] →
-        # [batch_size, num_tokens, out_size] →
+        # [batch_size, num_tokens, num_groups, hidden_size] →
+        # [batch_size, num_tokens, hidden_size]
         combined = folded.sum(dim=2) / self.num_groups
+        # [batch_size, num_tokens, hidden_size] →
+        # [batch_size, num_tokens, out_size]
         return self.out(combined)
 
 
@@ -305,6 +317,7 @@ class Encoder(torch.nn.Module):
         self.embed_token = NumeralizePadEmbed(max_tokens, hidden_size)
         self.embed = _GroupedEmbedder(
             hidden_size + seq_meta_embed_size + max_token_embed_size + token_meta_embed_size,
+            hidden_size // num_anno,
             hidden_size,
             num_anno,
             num_anno_embed_layers,

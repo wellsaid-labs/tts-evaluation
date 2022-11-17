@@ -105,7 +105,8 @@ class Inputs:
         mask = empty
         if len(self.anno_mask_indices) != 0:
             assert self.token_embeddings_padded.shape[2] > max(self.anno_mask_indices)
-            mask = torch.index_select(stacked, 2, torch.tensor(self.anno_mask_indices))
+            indices = torch.tensor(self.anno_mask_indices, device=self.device)
+            mask = torch.index_select(stacked, 2, indices)
         object.__setattr__(self, "anno_mask", mask)
 
         self.check_invariants()
@@ -547,7 +548,8 @@ def preprocess(
     iter_ = typing.cast(typing.Iterator[Item], iter_)
     for sesh, span, context, loudness, tempo, respell_map in iter_:
         seq_metadata = [sesh[0].label, sesh, sesh[0].dialect, sesh[0].style, sesh[0].language]
-        inputs.seq_metadata.extend([[] for _ in seq_metadata])
+        if len(inputs.seq_metadata) == 0:
+            inputs.seq_metadata.extend([[] for _ in seq_metadata])
         [inputs.seq_metadata[i].append(data) for i, data in enumerate(seq_metadata)]
 
         tokens: typing.List[str] = []
