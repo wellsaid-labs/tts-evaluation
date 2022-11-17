@@ -56,10 +56,13 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
 
    ```zsh
    VM_NAME=$USER"-dataset-processing" # EXAMPLE: michaelp-dataset-processing
+   vars make $VM_NAME
+   vars activate $VM_NAME
+   export VM_NAME=$VM_NAME
    # NOTE: Pick a zone that's closest to the GCS bucket `wellsaid_labs_datasets`.
-   VM_ZONE=us-central1-a # EXAMPLE: us-central1-a
-   PROJECT=voice-research-255602
-   VM_MACHINE_TYPE=n1-standard-2
+   export VM_ZONE=us-central1-a # EXAMPLE: us-central1-a
+   export PROJECT=voice-research-255602
+   export VM_MACHINE_TYPE=n1-standard-2
    # NOTE: If you have changed projects since your original setup, make sure you are using the
    # right project.
    gcloud config set project $PROJECT
@@ -86,6 +89,7 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
    ```zsh
    gcloud compute ssh --zone=$VM_ZONE $VM_NAME --command="sudo chmod -R a+rwx /opt"
    gcloud compute ssh --zone=$VM_ZONE $VM_NAME --command="mkdir /opt/wellsaid-labs"
+   export VM_IP=$(python -m run.utils.gcp ip --name $VM_NAME --zone=$VM_ZONE)
    gcloud compute ssh --zone=$VM_ZONE $VM_NAME
    ```
 
@@ -95,15 +99,10 @@ In order to process the scripts and recordings, you'll need to make a virtual ma
 
    ```zsh
    VM_NAME=$USER"-dataset-processing" # EXAMPLE: michaelp-dataset-processing
-   VM_ZONE=$(python -m run.utils.gcp zone --name $VM_NAME)
-   VM_IP=$(python -m run.utils.gcp ip --name $VM_NAME --zone=$VM_ZONE)
-   VM_USER=$(python -m run.utils.gcp user --name $VM_NAME --zone=$VM_ZONE)
-   ```
-
-   ```zsh
+   vars activate $VM_NAME
    sudo python3 -m run.utils.lsyncd $(pwd) /opt/wellsaid-labs/Text-to-Speech \
                                     --public-dns $VM_IP \
-                                    --user $VM_USER \
+                                    --user $USER \
                                     --identity-file ~/.ssh/google_compute_engine
    ```
 

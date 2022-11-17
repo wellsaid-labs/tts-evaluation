@@ -19,7 +19,6 @@ Setup your local development environment by following [these instructions](LOCAL
 
    ```zsh
    NAME=$USER"-your-instance-name" # EXAMPLE: michaelp-baseline
-   . run/utils/vars.sh
    vars make $NAME
    vars activate $NAME
    export NAME=$NAME
@@ -110,7 +109,6 @@ Setup your local development environment by following [these instructions](LOCAL
 
    ```bash
    NAME=$USER"-your-instance-name" # EXAMPLE: michaelp-baseline
-   . run/utils/vars.sh
    vars activate $NAME
    ```
 
@@ -247,7 +245,6 @@ Setup your local development environment by following [these instructions](LOCAL
 
    ```zsh
    NAME=$USER"-your-instance-name" # EXAMPLE: michaelp-baseline
-   . run/utils/vars.sh
    vars activate $NAME
    ```
 
