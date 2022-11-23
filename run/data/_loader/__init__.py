@@ -9,6 +9,7 @@ from run.data._loader.structures import (
     Speaker,
     alignment_dtype,
     has_a_mistranscription,
+    make_passages,
     voiced_nonalignment_spans,
 )
 from run.data._loader.utils import (
@@ -66,6 +67,7 @@ __all__ = [
     "Speaker",
     "alignment_dtype",
     "has_a_mistranscription",
+    "make_passages",
     "voiced_nonalignment_spans",
     "DataLoader",
     "DataLoaders",

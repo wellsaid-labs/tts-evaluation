@@ -243,31 +243,38 @@ class Speaker:
 Session = typing.NewType("Session", typing.Tuple[Speaker, str])
 
 
+class IsLinked(typing.NamedTuple):
+    script: bool = False
+    transcript: bool = False
+    audio: bool = False
+
+
 @dataclasses.dataclass(frozen=True)
 class UnprocessedPassage:
     """Raw data for a voiced passage.
 
     Args:
         audio_path: Audio file corresponding to a voice-over of the `script`.
-        speaker: An identifier of the voice.
+        session: An identifier of the recording session.
         script: The `script` the `speaker` was reading from.
         transcript: The `transcript` of the `audio`.
         alignments: Alignments (sorted) that align the `script`, `transcript` and `audio`.
         other_metadata: Additional metadata associated with this passage.
+        is_linked: A flag indicating if this `Passage` is a continuation of the previous and
+            next passage.
     """
 
     audio_path: Path
-    speaker: Speaker
+    session: Session
     script: str
     transcript: str
     alignments: typing.Optional[typing.Tuple[Alignment, ...]] = None
     other_metadata: typing.Dict = field(default_factory=dict)
+    is_linked: IsLinked = field(default_factory=IsLinked)
 
-
-class IsLinked(typing.NamedTuple):
-    script: bool = False
-    transcript: bool = False
-    audio: bool = False
+    @property
+    def speaker(self):
+        return self.session[0]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -982,7 +989,8 @@ def _check_alignments(label: str, passage: UnprocessedPassage):
         logger.warning(f"{prefix} Found {num_pairs} tokens that don't sound-a-like, like: {pairs}")
 
 
-UnprocessedDataset = typing.List[typing.List[UnprocessedPassage]]
+UnprocessedDocument = typing.List[UnprocessedPassage]
+UnprocessedDataset = typing.List[UnprocessedDocument]
 
 
 def _filter_existing_paths(audio_paths: typing.Set[Path]) -> typing.Set[Path]:
@@ -1110,18 +1118,9 @@ def _make_speech_segments(passage: Passage) -> typing.List[Span]:
     return [passage.span(*s) for s in speech_segments]
 
 
-def _default_session(passage: UnprocessedPassage) -> Session:
-    """By default, this assumes that each audio file was recorded, individually."""
-    return Session((passage.speaker, passage.audio_path.stem))
-
-
 @lib.utils.log_runtime
 def make_passages(
-    label: str,
-    dataset: UnprocessedDataset,
-    add_tqdm: bool = False,
-    get_session: typing.Callable[[UnprocessedPassage], Session] = _default_session,
-    **kwargs,
+    label: str, dataset: UnprocessedDataset, add_tqdm: bool = False, **kwargs
 ) -> typing.List[Passage]:
     """Process `UnprocessedPassage` and return a list of `Passage`s.
 
@@ -1154,8 +1153,8 @@ def make_passages(
         if item.audio_path not in normalized_audio_files:
             logger.warning(f"[{label}] Skipping, audio path ({item.audio_path.name}) isn't a file.")
             continue
-        kwargs = {**kwargs, "transcript": item.transcript, "other_metadata": item.other_metadata}
-        kwargs = {**kwargs, "session": get_session(item), "script": item.script}
+        attrs = ("session", "script", "transcript", "other_metadata", "is_linked")
+        kwargs = {**kwargs, **{a: getattr(item, a) for a in attrs}}
         audio_file = normalized_audio_files[item.audio_path]
         alignments = _normalize_alignments(item, audio_file)
         documents[i].append(Passage(audio_file=audio_file, alignments=alignments, **kwargs))

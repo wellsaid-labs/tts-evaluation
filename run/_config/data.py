@@ -306,11 +306,7 @@ def configure(overwrite: bool = False):
     # between different speakers.
     groups += [{s} for s in _loader.DATASETS.keys() if s not in groups[0]]
     config = {
-        run._utils.get_dataset: cf.Args(
-            datasets=DATASETS,
-            include_psge=_include_passage,
-            handle_psge=lib.utils.identity,
-        ),
+        run._utils.get_dataset: cf.Args(datasets=DATASETS, include_passage=_include_passage),
         run._utils.split_dataset: cf.Args(
             groups=groups, dev_speakers=DEV_SPEAKERS, approx_dev_len=30 * 60, min_sim=0.9
         ),

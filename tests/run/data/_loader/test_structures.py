@@ -31,20 +31,20 @@ from run.data._loader.structures import (
 )
 from run.data._loader.utils import get_non_speech_segments_and_cache
 from tests._utils import TEST_DATA_PATH
-from tests.run._utils import make_passage, make_speaker, script_to_alignments
+from tests.run._utils import make_passage, make_session, script_to_alignments
 
 TEST_DATA_LJ = TEST_DATA_PATH / "audio" / "bit(rate(lj_speech,24000),32).wav"
 
 
 def make_unprocessed_passage(
-    audio_path=pathlib.Path("."),
-    speaker=make_speaker(""),
+    audio_path: pathlib.Path = pathlib.Path("."),
+    session: Session = make_session(),
     script: str = "",
     transcript: str = "",
     alignments: typing.Optional[typing.Tuple[Alignment, ...]] = None,
 ) -> UnprocessedPassage:
     """Make a `UnprocessedPassage` for testing."""
-    return UnprocessedPassage(audio_path, speaker, script, transcript, alignments)
+    return UnprocessedPassage(audio_path, session, script, transcript, alignments)
 
 
 def test__maybe_normalize_vo_script():
@@ -324,7 +324,7 @@ def _make_unprocessed_passage_helper(
     found = [(find_script(script, t), find_transcript(transcript, t)) for t in tokens]
     return UnprocessedPassage(
         audio_path=TEST_DATA_LJ,
-        speaker=make_speaker(""),
+        session=make_session(),
         script=script,
         transcript=transcript,
         alignments=tuple(Alignment(s, (0.0, 0.0), t) for s, t in found),
