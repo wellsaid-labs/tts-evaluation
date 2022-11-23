@@ -87,6 +87,9 @@ Setup your local development environment by following [these instructions](LOCAL
 
    Continue to run this command until it succeeds.
 
+   💡 TIP: Preemptible machines will be periodically recreated, so you will need fetch a new
+   `VM_NAME` and `VM_IP`, every so often.
+
    💡 TIP: Keep in mind, if this continues to time out (e.g. "port 22: Operation timed out"), your
    router may be blocking SSH connections
    <https://serverfault.com/questions/25545/why-block-port-22-outbound>.

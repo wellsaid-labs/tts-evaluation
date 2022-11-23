@@ -53,11 +53,17 @@ the instructions [here](https://unix.stackexchange.com/a/40243).
 ## Port Forwarding
 
 You may find it useful to run an application, like `streamlit` remotely while accessing it locally.
-Here is how you would go about doing that:
+
+1. Activate the virtual environment you created alongside your instance...
 
 ```zsh
-VM_NAME="name-of-remote-machine"
-VM_ZONE="zone-of-remote-machine"
+NAME=$USER"-your-instance-name" # EXAMPLE: michaelp-baseline
+vars activate $NAME
+```
+
+1. Forward those ports!
+
+```zsh
 PROJECT_ID=voice-research-255602
 LOCAL_PORT=2222
 REMOTE_PORT=8501
