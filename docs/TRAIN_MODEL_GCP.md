@@ -15,19 +15,19 @@ Setup your local development environment by following [these instructions](LOCAL
 
 ### From your local repository
 
-1. Setup your environment variables...
-
-   Also set these environment variables...
+1. Setup your variable environment...
 
    ```zsh
-   TRAIN_SCRIPT_PATH='path/to/train' # EXAMPLE: run/train/spectrogram_model
    NAME=$USER"-your-instance-name" # EXAMPLE: michaelp-baseline
-   GCP_USER='your-gcp-user-name' # Example: michaelp
-   TYPE='preemptible' # Either 'preemptible' or 'persistent'
+   vars make $NAME
+   vars activate $NAME
+   export NAME=$NAME
+   export TRAIN_SCRIPT_PATH='path/to/train' # EXAMPLE: run/train/spectrogram_model
+   export TYPE='preemptible' # Either 'preemptible' or 'persistent'
    ```
 
    💡 TIP: Find zones with that support T4 GPUs here:
-   https://cloud.google.com/compute/docs/gpus/gpu-regions-zones
+   <https://cloud.google.com/compute/docs/gpus/gpu-regions-zones>
 
    💡 TIP: Don't place all your preemptible instances in the same zone, just in case one zone
    runs out of capacity.
@@ -61,10 +61,13 @@ Setup your local development environment by following [these instructions](LOCAL
       --disk-type='pd-balanced' \
       --image-project=$IMAGE_PROJECT \
       --image-family=$IMAGE_FAMILY \
-      --metadata="startup-script-user=$GCP_USER" \
+      --metadata="startup-script-user=$USER" \
       --metadata="train-script-path=$TRAIN_SCRIPT_PATH" \
       --metadata-from-file="startup-script=run/utils/gcp/resume_training_on_start_up.sh"
    ```
+
+   📙 NOTE: This will use the environment variable `$USER` as the username whilst the browser
+   console will use your email address username.
 
    ❓ LEARN MORE: See our machine type benchmarks [here](./TRAIN_MODEL_GCP_BENCHMARKS.md).
 
@@ -75,13 +78,24 @@ Setup your local development environment by following [these instructions](LOCAL
 1. SSH into the instance...
 
    ```zsh
-   VM_NAME=$(python -m run.utils.gcp $TYPE most-recent --name $NAME)
+   export VM_NAME=$(python -m run.utils.gcp $TYPE most-recent --name $NAME)
    echo "VM_NAME=$VM_NAME"
-   VM_ZONE=$(python -m run.utils.gcp zone --name $VM_NAME)
+   export VM_ZONE=$(python -m run.utils.gcp zone --name $VM_NAME)
+   export VM_IP=$(python -m run.utils.gcp ip --name $VM_NAME --zone=$VM_ZONE)
    gcloud compute ssh --zone=$VM_ZONE $VM_NAME
    ```
 
    Continue to run this command until it succeeds.
+
+   💡 TIP: Preemptible machines will be periodically recreated, so you will need fetch a new
+   `VM_NAME` and `VM_IP`, every so often.
+
+   💡 TIP: Keep in mind, if this continues to time out (e.g. "port 22: Operation timed out"), your
+   router may be blocking SSH connections
+   <https://serverfault.com/questions/25545/why-block-port-22-outbound>.
+
+   💡 TIP: This command may create a user and transfer SSH keys. You may delete those, here:
+   <https://console.cloud.google.com/compute/metadata?tab=sshkeys&project=voice-research-255602&orgonly=true&supportedpurview=organizationId>
 
 ### On the instance
 
@@ -94,23 +108,19 @@ Setup your local development environment by following [these instructions](LOCAL
 
 ### From your local repository
 
-1. Use `run.utils.lsyncd` to live sync your repository to your VM instance...
+1. (Optional) You may need to open a console, connected to your environment...
 
    ```bash
-   VM_NAME=$(python -m run.utils.gcp $TYPE most-recent --name $NAME)
-   echo "VM_NAME=$VM_NAME"
+   NAME=$USER"-your-instance-name" # EXAMPLE: michaelp-baseline
+   vars activate $NAME
    ```
 
-   ```bash
-   VM_ZONE=$(python -m run.utils.gcp zone --name $VM_NAME)
-   VM_IP=$(python -m run.utils.gcp ip --name $VM_NAME --zone=$VM_ZONE)
-   VM_USER=$(python -m run.utils.gcp user --name $VM_NAME --zone=$VM_ZONE)
-   ```
+1. Live sync your repository to your VM instance...
 
    ```bash
    sudo python3 -m run.utils.lsyncd $(pwd) /opt/wellsaid-labs/Text-to-Speech \
                                     --public-dns $VM_IP \
-                                    --user $VM_USER \
+                                    --user $USER \
                                     --identity-file ~/.ssh/google_compute_engine
    ```
 
@@ -188,10 +198,13 @@ Setup your local development environment by following [these instructions](LOCAL
 
    ---
    Or select a `SPECTROGRAM_CHECKPOINT`...
+
    ```
    find /opt/wellsaid-labs/Text-to-Speech/disk/experiments/spectrogram_model/ -name <step_######.pt>
    ```
+
    And store it...
+
    ```
    SPECTROGRAM_CHECKPOINT="<paste>"
    ```
@@ -208,7 +221,7 @@ Setup your local development environment by following [these instructions](LOCAL
    ```
 
    ❓ LEARN MORE: PyTorch leaves zombie processes that must be killed, check out:
-   https://leimao.github.io/blog/Kill-PyTorch-Distributed-Training-Processes/
+   <https://leimao.github.io/blog/Kill-PyTorch-Distributed-Training-Processes/>
 
 1. Detach from your screen session by typing `Ctrl-A` then `D`.
 
@@ -231,13 +244,27 @@ Setup your local development environment by following [these instructions](LOCAL
 
 ### From your local repository
 
-1. Setup your environment variables again...
+1. (Optional) You may need to open a console, connected to your environment...
 
    ```zsh
    NAME=$USER"-your-instance-name" # EXAMPLE: michaelp-baseline
-   VM_NAME=$(python -m run.utils.gcp $TYPE most-recent --name $NAME)
-   echo "VM_NAME=$VM_NAME"
-   VM_ZONE=$(python -m run.utils.gcp zone --name $VM_NAME)
+   vars activate $NAME
+   ```
+
+1. (Optional) Find the latest checkpoint...
+
+   ```zsh
+   DIR_NAME='spectrogram_model' # EXAMPLE: spectrogram_model
+   CHECKPOINT=$( \
+    gcloud compute ssh --zone=$VM_ZONE $VM_NAME \
+        --command='cd /opt/wellsaid-labs/Text-to-Speech/disk/experiments/$DIR_NAME/; find . \
+            -name "*.pt" -mindepth 1 -printf "%T+ %P\n" | \
+            sort -n -r | \
+            head -1 | \
+            cut -f2- -d" " | \
+            cut -sd / -f 2-'
+   )
+   echo "CHECKPOINT=$CHECKPOINT"
    ```
 
 1. (Optional) Download checkpoints to your local drive...
@@ -256,7 +283,7 @@ Setup your local development environment by following [these instructions](LOCAL
 1. Delete your instance...
 
    ```zsh
-   python -m run.utils.gcp $TYPE delete-instance --name=$VM_NAME --zone=$VM_ZONE
+   python -m run.utils.gcp $TYPE delete-instance --name=$NAME --zone=$VM_ZONE
    ```
 
    You may need to run the above a couple of times.

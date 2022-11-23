@@ -58,12 +58,12 @@ def _metadata_path_to_book(metadata_path: Path, root: Path, dialect: struc.Diale
     return Book(getattr(struc.Dialect, root.name.upper()), speaker, book_title)
 
 
-def _get_session(passage: struc.UnprocessedPassage) -> struc.Session:
+def _get_session(speaker: struc.Speaker, audio_path: Path) -> struc.Session:
     """For the M-AILABS speech dataset, we define each chapter as an individual recording
     session."""
-    chapter = passage.audio_path.stem.rsplit("_", 1)[0]
-    label = f"{passage.audio_path.parent.parent.name}/{passage.audio_path.parent.name}/{chapter}"
-    return struc.Session((passage.speaker, label))
+    chapter = audio_path.stem.rsplit("_", 1)[0]
+    label = f"{audio_path.parent.parent.name}/{audio_path.parent.name}/{chapter}"
+    return struc.Session((speaker, label))
 
 
 def m_ailabs_speech_dataset(
@@ -75,9 +75,8 @@ def m_ailabs_speech_dataset(
     check_files: typing.List[str],
     root_directory_name: str = "M-AILABS",
     metadata_pattern: str = "**/metadata.csv",
-    add_tqdm: bool = False,
-    get_session: typing.Callable[[struc.UnprocessedPassage], struc.Session] = _get_session,
-) -> typing.List[struc.Passage]:
+    get_session: typing.Callable[[struc.Speaker, Path], struc.Session] = _get_session,
+) -> struc.UnprocessedDataset:
     """Download, extract, and process a M-AILABS dataset.
 
     NOTE: The original URL is `https://data.solak.de/2019/01/the-m-ailabs-speech-dataset/`. Use
@@ -94,7 +93,6 @@ def m_ailabs_speech_dataset(
         metadata_pattern: Pattern for all `metadata.csv` files containing (filename, text)
             information.
         get_session
-        add_tqdm
     """
     name = f"{root_directory_name} {extracted_name}"
     logger.info(f"Loading {name} speech dataset...")
@@ -112,7 +110,10 @@ def m_ailabs_speech_dataset(
     for book in books:
         metadata_path = _book_to_metadata_path(book, directory)
         loaded = conventional_dataset_loader(
-            metadata_path.parent, book.speaker, additional_metadata={"book": book}
+            metadata_path.parent,
+            book.speaker,
+            additional_metadata={"book": book},
+            get_session=get_session,
         )
         passages.append(loaded)
-    return list(struc.make_passages(name, passages, add_tqdm, get_session))
+    return passages

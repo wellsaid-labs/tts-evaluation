@@ -26,10 +26,9 @@ def dictionary_dataset(
     file_name: str = "gcp_pronunciation_dictionary.tar.gz",
     session: struc.Session = SESSION,
     metadata_text_column: typing.Union[str, int] = 1,
-    add_tqdm: bool = False,
     strict: bool = False,
     **kwargs,
-) -> typing.List[struc.Passage]:
+) -> struc.UnprocessedDataset:
     """Load the a pronunciation dictionary dataset.
 
     Args:
@@ -54,6 +53,6 @@ def dictionary_dataset(
         session[0],
         **kwargs,
         metadata_text_column=metadata_text_column,
+        get_session=lambda *_, **__: session,
     )
-    get_session = lambda *_, **__: session
-    return list(struc.make_passages(root_directory_name, [passages], add_tqdm, get_session))
+    return [passages]

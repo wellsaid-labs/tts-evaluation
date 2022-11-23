@@ -73,7 +73,7 @@ def voiced_nonalignment_spans(
 
 
 def _is_alignment_voiced(passage: Passage, alignment: Alignment) -> bool:
-    """Return `True` if a `passage` voiced at `alignment`."""
+    """Return `True` if a `passage` is voiced at `alignment`."""
     for attr in ("script", "transcript"):
         interval = getattr(alignment, attr)
         if interval[0] < interval[-1] and run._config.is_voiced(
@@ -125,8 +125,8 @@ class Alignment(typing.NamedTuple):
 
     Args:
         script: The start and end of a script slice in characters.
-        audio: The start and end of a audio recording slice in seconds.
-        transcript: The start and end of a trasnscript slice in characters.
+        audio: The start and end of an audio recording slice in seconds.
+        transcript: The start and end of a transcript slice in characters.
     """
 
     script: IntInt
@@ -243,31 +243,38 @@ class Speaker:
 Session = typing.NewType("Session", typing.Tuple[Speaker, str])
 
 
+class IsLinked(typing.NamedTuple):
+    script: bool = False
+    transcript: bool = False
+    audio: bool = False
+
+
 @dataclasses.dataclass(frozen=True)
 class UnprocessedPassage:
     """Raw data for a voiced passage.
 
     Args:
         audio_path: Audio file corresponding to a voice-over of the `script`.
-        speaker: An identifier of the voice.
+        session: An identifier of the recording session.
         script: The `script` the `speaker` was reading from.
         transcript: The `transcript` of the `audio`.
         alignments: Alignments (sorted) that align the `script`, `transcript` and `audio`.
         other_metadata: Additional metadata associated with this passage.
+        is_linked: A flag indicating if this `Passage` is a continuation of the previous and
+            next passage.
     """
 
     audio_path: Path
-    speaker: Speaker
+    session: Session
     script: str
     transcript: str
     alignments: typing.Optional[typing.Tuple[Alignment, ...]] = None
     other_metadata: typing.Dict = field(default_factory=dict)
+    is_linked: IsLinked = field(default_factory=IsLinked)
 
-
-class IsLinked(typing.NamedTuple):
-    script: bool = False
-    transcript: bool = False
-    audio: bool = False
+    @property
+    def speaker(self):
+        return self.session[0]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -559,7 +566,7 @@ class Span:
     """A span of the voiced passage.
 
     NOTE: The first and last `Alignment`s are cached for performance. The goal is to avoid
-    accessing `self.passage_alignments` due to it's mediocre performance.
+    accessing `self.passage_alignments` due to its mediocre performance.
     TODO: Instead of storing `passage_alignments` and `slice`, consolidate into a `ListView` class,
     similar to: https://stackoverflow.com/questions/3485475/can-i-create-a-view-on-a-python-list
 
@@ -918,7 +925,7 @@ def _is_casing_ambiguous(
 
     TODO:
     - There still may be some ambiguity with acronyms that are not initialisms like, NASDAQ. The
-    `script` and `transcript` may agree on them, so the model, needs to learn their pronunciation on
+    `script` and `transcript` may agree on them, so the model needs to learn their pronunciation on
     a case by case basis.
     """
     assert passage.alignments is not None
@@ -931,7 +938,7 @@ def _is_casing_ambiguous(
     new_transcript_token = run._config.replace_punc(transcript_token, " ", passage.speaker.language)
     new_script_token, new_transcript_token = new_script_token.strip(), new_transcript_token.strip()
     if len(new_script_token) == 1 and len(new_transcript_token) == 1:
-        # NOTE: The transcript is guessing at the sentence structure, so, it may mess up on many
+        # NOTE: The transcript is guessing at the sentence structure, so it may mess up on many
         # single word tokens; therefore, we exclude those from this analysis.
         return False, None, None
 
@@ -982,7 +989,8 @@ def _check_alignments(label: str, passage: UnprocessedPassage):
         logger.warning(f"{prefix} Found {num_pairs} tokens that don't sound-a-like, like: {pairs}")
 
 
-UnprocessedDataset = typing.List[typing.List[UnprocessedPassage]]
+UnprocessedDocument = typing.List[UnprocessedPassage]
+UnprocessedDataset = typing.List[UnprocessedDocument]
 
 
 def _filter_existing_paths(audio_paths: typing.Set[Path]) -> typing.Set[Path]:
@@ -1110,24 +1118,15 @@ def _make_speech_segments(passage: Passage) -> typing.List[Span]:
     return [passage.span(*s) for s in speech_segments]
 
 
-def _default_session(passage: UnprocessedPassage) -> Session:
-    """By default, this assumes that each audio file was recorded, individually."""
-    return Session((passage.speaker, passage.audio_path.stem))
-
-
 @lib.utils.log_runtime
 def make_passages(
-    label: str,
-    dataset: UnprocessedDataset,
-    add_tqdm: bool = False,
-    get_session: typing.Callable[[UnprocessedPassage], Session] = _default_session,
-    **kwargs,
+    label: str, dataset: UnprocessedDataset, add_tqdm: bool = False, **kwargs
 ) -> typing.List[Passage]:
     """Process `UnprocessedPassage` and return a list of `Passage`s.
 
-    NOTE: This function processes passages in a batch; therefore, it'd be ideal to pass as many
+    NOTE: This function processes passages in a batch; therefore, it is ideal to pass as many
     items at once as possible.
-    TODO: Add `check_invariants` to `UnprocessedPassage`, so that, we can enforce invariants
+    TODO: Add `check_invariants` to `UnprocessedPassage`, so that we can enforce invariants
     that this code relies on.
     TODO: Load the correct spaCy model based on language.
 
@@ -1154,8 +1153,8 @@ def make_passages(
         if item.audio_path not in normalized_audio_files:
             logger.warning(f"[{label}] Skipping, audio path ({item.audio_path.name}) isn't a file.")
             continue
-        kwargs = {**kwargs, "transcript": item.transcript, "other_metadata": item.other_metadata}
-        kwargs = {**kwargs, "session": get_session(item), "script": item.script}
+        attrs = ("session", "script", "transcript", "other_metadata", "is_linked")
+        kwargs = {**kwargs, **{a: getattr(item, a) for a in attrs}}
         audio_file = normalized_audio_files[item.audio_path]
         alignments = _normalize_alignments(item, audio_file)
         documents[i].append(Passage(audio_file=audio_file, alignments=alignments, **kwargs))
