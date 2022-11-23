@@ -27,7 +27,7 @@ torchaudio==0.11.0
 matplotlib
 comet-ml[cpu_logging]==3.28.2
 tabulate
-streamlit
+streamlit==1.10.0
 altair
 git+https://github.com/wellsaid-labs/streamlit-mui-datatable
 
