@@ -26,6 +26,8 @@ function vars() {
       help)
         echo "`vars` sync variables accross multiple consoles via a virtual environment."
         echo ""
+        echo "NOTE: `vars` uses files for syncing, find them here: `disk/envs`."
+        echo ""
         echo "Usage: vars COMMAND [ARGS]..."
         echo ""
         echo "Commands:"
@@ -52,7 +54,7 @@ function vars() {
                 :>> "$__WSL_ENVS_PATH/$2"
             fi
         else
-            echo "Please pass in a ENVIRONMENT name."
+            echo "Please pass in an ENVIRONMENT name."
         fi
         ;;
 
@@ -62,7 +64,7 @@ function vars() {
             __WSL_OLD_ENV=$(export -p)
             __WSL_PREV_ENV=$(export -p)
             __WSL_VENV=$ENV_PATH
-            # Set bash terminal to indicate the virtual environment.2
+            # Set bash terminal to indicate the virtual environment.
             export PS1="($2) ${PS1:-}"
             _wsl_precmd
             _wsl_preexec
@@ -99,7 +101,7 @@ function vars() {
                 echo "Environment $2 does not exist."
             fi
         else
-            echo "Please pass in a ENVIRONMENT name."
+            echo "Please pass in an ENVIRONMENT name."
         fi
         ;;
 
