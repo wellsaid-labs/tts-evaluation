@@ -5,7 +5,6 @@ import tempfile
 from unittest import mock
 
 import run.data._loader
-from run.data._loader import Alignment
 from run.data._loader.english.lj_speech import LINDA_JOHNSON, lj_speech_dataset
 from tests import _utils
 
@@ -50,10 +49,11 @@ def test_lj_speech_dataset(mock_urlretrieve):
         directory = pathlib.Path(path)
         shutil.copy(archive, directory / archive.name)
         data = lj_speech_dataset(directory=directory)
-        assert len(data) == 12850
-        assert sum(sum(len(p.script) for p in d) for d in data) == 1283806
-        assert data[0] == run.data._loader.Passage(
-            audio_file=_utils.make_metadata(directory / "LJSpeech-1.1/wavs/LJ001-0001.wav"),
+        passages = [p for d in data for p in d]
+        assert len(passages) == 13100
+        assert sum(len(p.script) for p in passages) == 1310332
+        assert passages[0] == run.data._loader.structures.UnprocessedPassage(
+            audio_path=directory / "LJSpeech-1.1/wavs/LJ001-0001.wav",
             session=run.data._loader.Session((LINDA_JOHNSON, "LJ001")),
             script=(
                 "Printing, in the only sense with which we are at present concerned, differs "
@@ -63,7 +63,7 @@ def test_lj_speech_dataset(mock_urlretrieve):
                 "Printing, in the only sense with which we are at present concerned, differs "
                 "from most if not from all the arts and crafts represented in the Exhibition"
             ),
-            alignments=Alignment.stow([Alignment((0, 151), (0.0, 0.0), (0, 151))]),
+            alignments=None,
             other_metadata={
                 2: (  # type: ignore
                     "Printing, in the only sense with which we are at present concerned, differs "
@@ -75,11 +75,10 @@ def test_lj_speech_dataset(mock_urlretrieve):
         # NOTE: Test verbilization via `verbalize_test_cases`.
         _re_filename = re.compile("LJ[0-9]{3}-[0-9]{4}")
         seen = 0
-        for document in data:
-            for passage in document:
-                basename = passage.audio_path.name[:10]
-                assert _re_filename.match(basename)
-                if basename in verbalize_test_cases:
-                    seen += 1
-                    assert verbalize_test_cases[basename] in passage.script
+        for passage in passages:
+            basename = passage.audio_path.name[:10]
+            assert _re_filename.match(basename)
+            if basename in verbalize_test_cases:
+                seen += 1
+                assert verbalize_test_cases[basename] in passage.script
         assert seen == len(verbalize_test_cases)

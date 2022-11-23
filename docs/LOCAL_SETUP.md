@@ -11,15 +11,20 @@ Please install the below requirements:
 - [Visual Studio Code](https://code.visualstudio.com/docs/setup/mac). In addition to the
   initial steps, please run through the section called "Launching from the command line".
 
+Setup your terminal settings from the TTS directory...
+
+```zsh
+echo "" >> ~/.zshrc
+echo "# WellSaid Labs Terminal Settings" >> ~/.zshrc
+echo "setopt interactivecomments" >> ~/.zshrc
+. ~/.zshrc
+```
+
 Afterwards, please install other system dependencies, like so:
 
 ```zsh
 brew install git
 brew install python@3.8
-echo "" >> ~/.zshrc
-echo "# WellSaid Labs Terminal Settings" >> ~/.zshrc
-echo "setopt interactivecomments" >> ~/.zshrc
-. ~/.zshrc
 brew install sox # Audio processing
 brew install ffmpeg # Audio processing
 brew install espeak # Speech synthesizer
@@ -39,13 +44,27 @@ The reason for using `--depth=10 --no-single-branch` is to reduce the size of th
 On May 20th, these flags would reduce the repository size by 80%
 (i.e. 58 megabytes to 12 megabytes).
 
-## 3. Install Python Dependencies
+```zsh
+cd Text-to-Speech/
+```
+
+## 3. Install Terminal Commands
+
+Install Terminal commands, like so:
+
+```zsh
+echo "" >> ~/.zshrc
+echo "# WellSaid Labs Terminal Programs" >> ~/.zshrc
+echo ". $(pwd)/run/utils/vars.sh" >> ~/.zshrc
+. ~/.zshrc
+# TODO: Create a `wsl` tool chain that consolidates the commands we run.
+```
+
+## 4. Install Python Dependencies
 
 Install Python dependencies, like so:
 
 ```zsh
-cd Text-to-Speech/
-
 # Start a virtual environment, learn more:
 # https://realpython.com/python-virtual-environments-a-primer/
 python3 -m venv venv
@@ -56,7 +75,7 @@ python -m pip install pip --upgrade
 python -m pip install -r requirements.txt --upgrade
 ```
 
-## 4. Comet
+## 5. Comet
 
 This repository requires [Comet](https://www.comet.ml) for visualization, and you'll need to ask
 a team member to create you an account.
@@ -77,7 +96,7 @@ optimizer_url=http://www.comet-ml.com/optimizer/
 Learn more about where to find the `api_key` and `rest_api_key` configurations on
 [this web page](https://www.comet.ml/docs/python-sdk/advanced/#python-configuration).
 
-## 5. Google Cloud
+## 6. Google Cloud
 
 This repository relies on GCP, and you'll need to ask team member to get access to our GCP projects,
 "Voice Research" and "Voice Service 2".

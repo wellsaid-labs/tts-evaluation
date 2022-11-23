@@ -34,7 +34,7 @@ def configure(overwrite: bool = False):
         directory.mkdir(exist_ok=True)
 
     config = {
-        run._utils.get_dataset: cf.Args(path=DATA_PATH),
+        run._utils.get_unprocessed_dataset: cf.Args(path=DATA_PATH),
         run.data._loader.utils._cache_path: cf.Args(cache_dir=TTS_DISK_CACHE_NAME),
     }
     cf.add(config, overwrite=overwrite)

@@ -20,18 +20,18 @@ def test_m_ailabs_speech_dataset(mock_urlretrieve):
         (directory / archive.parent.name).mkdir()
         shutil.copy(archive, directory / archive.parent.name / archive.name)
         data = m_ailabs_en_us_speech_dataset(directory=directory)
-        assert len(data) == 2027
-        assert sum(sum(len(p.script) for p in r) for r in data) == 224599
+        passages = [p for d in data for p in d]
+        assert len(passages) == 2046
+        assert sum(len(p.script) for p in passages) == 226649
         path = directory / archive.parent.name / "en_US/by_book/female/judy_bieber"
-        path = path / "dorothy_and_wizard_oz/wavs/dorothy_and_wizard_oz_01_f000001.wav"
-        assert data[0] == run.data._loader.Passage(
-            audio_file=_utils.make_metadata(path),
+        assert passages[0] == run.data._loader.structures.UnprocessedPassage(
+            audio_path=path / "dorothy_and_wizard_oz/wavs/dorothy_and_wizard_oz_01_f000001.wav",
             session=run.data._loader.Session(
                 (JUDY_BIEBER, "dorothy_and_wizard_oz/wavs/dorothy_and_wizard_oz_01")
             ),
             script="To My Readers.",
             transcript="To My Readers.",
-            alignments=struc.Alignment.stow([struc.Alignment((0, 14), (0.0, 0.0), (0, 14))]),
+            alignments=None,
             other_metadata={
                 1: "To My Readers.",
                 "book": Book(struc.Dialect.EN_US, JUDY_BIEBER, "dorothy_and_wizard_oz"),

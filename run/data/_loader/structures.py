@@ -73,7 +73,7 @@ def voiced_nonalignment_spans(
 
 
 def _is_alignment_voiced(passage: Passage, alignment: Alignment) -> bool:
-    """Return `True` if a `passage` voiced at `alignment`."""
+    """Return `True` if a `passage` is voiced at `alignment`."""
     for attr in ("script", "transcript"):
         interval = getattr(alignment, attr)
         if interval[0] < interval[-1] and run._config.is_voiced(
@@ -125,8 +125,8 @@ class Alignment(typing.NamedTuple):
 
     Args:
         script: The start and end of a script slice in characters.
-        audio: The start and end of a audio recording slice in seconds.
-        transcript: The start and end of a trasnscript slice in characters.
+        audio: The start and end of an audio recording slice in seconds.
+        transcript: The start and end of a transcript slice in characters.
     """
 
     script: IntInt
@@ -566,7 +566,7 @@ class Span:
     """A span of the voiced passage.
 
     NOTE: The first and last `Alignment`s are cached for performance. The goal is to avoid
-    accessing `self.passage_alignments` due to it's mediocre performance.
+    accessing `self.passage_alignments` due to its mediocre performance.
     TODO: Instead of storing `passage_alignments` and `slice`, consolidate into a `ListView` class,
     similar to: https://stackoverflow.com/questions/3485475/can-i-create-a-view-on-a-python-list
 
@@ -925,7 +925,7 @@ def _is_casing_ambiguous(
 
     TODO:
     - There still may be some ambiguity with acronyms that are not initialisms like, NASDAQ. The
-    `script` and `transcript` may agree on them, so the model, needs to learn their pronunciation on
+    `script` and `transcript` may agree on them, so the model needs to learn their pronunciation on
     a case by case basis.
     """
     assert passage.alignments is not None
@@ -938,7 +938,7 @@ def _is_casing_ambiguous(
     new_transcript_token = run._config.replace_punc(transcript_token, " ", passage.speaker.language)
     new_script_token, new_transcript_token = new_script_token.strip(), new_transcript_token.strip()
     if len(new_script_token) == 1 and len(new_transcript_token) == 1:
-        # NOTE: The transcript is guessing at the sentence structure, so, it may mess up on many
+        # NOTE: The transcript is guessing at the sentence structure, so it may mess up on many
         # single word tokens; therefore, we exclude those from this analysis.
         return False, None, None
 
@@ -1124,9 +1124,9 @@ def make_passages(
 ) -> typing.List[Passage]:
     """Process `UnprocessedPassage` and return a list of `Passage`s.
 
-    NOTE: This function processes passages in a batch; therefore, it'd be ideal to pass as many
+    NOTE: This function processes passages in a batch; therefore, it is ideal to pass as many
     items at once as possible.
-    TODO: Add `check_invariants` to `UnprocessedPassage`, so that, we can enforce invariants
+    TODO: Add `check_invariants` to `UnprocessedPassage`, so that we can enforce invariants
     that this code relies on.
     TODO: Load the correct spaCy model based on language.
 

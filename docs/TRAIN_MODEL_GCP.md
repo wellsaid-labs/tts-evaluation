@@ -19,11 +19,10 @@ Setup your local development environment by following [these instructions](LOCAL
 
    ```zsh
    NAME=$USER"-your-instance-name" # EXAMPLE: michaelp-baseline
-   . run/utils/vars.sh
    vars make $NAME
    vars activate $NAME
    export NAME=$NAME
-   export TRAIN_SCRIPT_PATH='run/train/spectrogram_model' # EXAMPLE: run/train/spectrogram_model
+   export TRAIN_SCRIPT_PATH='path/to/train' # EXAMPLE: run/train/spectrogram_model
    export TYPE='preemptible' # Either 'preemptible' or 'persistent'
    ```
 
@@ -113,11 +112,10 @@ Setup your local development environment by following [these instructions](LOCAL
 
    ```bash
    NAME=$USER"-your-instance-name" # EXAMPLE: michaelp-baseline
-   . run/utils/vars.sh
    vars activate $NAME
    ```
 
-1. Use `run.utils.lsyncd` to live sync your repository to your VM instance...
+1. Live sync your repository to your VM instance...
 
    ```bash
    sudo python3 -m run.utils.lsyncd $(pwd) /opt/wellsaid-labs/Text-to-Speech \
@@ -200,10 +198,13 @@ Setup your local development environment by following [these instructions](LOCAL
 
    ---
    Or select a `SPECTROGRAM_CHECKPOINT`...
+
    ```
    find /opt/wellsaid-labs/Text-to-Speech/disk/experiments/spectrogram_model/ -name <step_######.pt>
    ```
+
    And store it...
+
    ```
    SPECTROGRAM_CHECKPOINT="<paste>"
    ```
@@ -247,13 +248,12 @@ Setup your local development environment by following [these instructions](LOCAL
 
    ```bash
    NAME=$USER"-your-instance-name" # EXAMPLE: michaelp-baseline
-   . run/utils/vars.sh
    vars activate $NAME
    ```
 
 1. (Optional) Find the latest checkpoint...
 
-   ```bash
+   ```zsh
    DIR_NAME='spectrogram_model' # EXAMPLE: spectrogram_model
    CHECKPOINT=$( \
     gcloud compute ssh --zone=$VM_ZONE $VM_NAME \

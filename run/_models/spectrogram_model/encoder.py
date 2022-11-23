@@ -390,7 +390,8 @@ class Encoder(torch.nn.Module):
 
         token_embed = inputs.token_embeddings_padded
         if token_embed.shape[2] != self.max_token_embed_size:
-            message = "The `token_embed` size must be smaller than the `max_token_embed_size`."
+            message = f"The `token_embed` ({token_embed.shape[2]}) size must be smaller than the "
+            message += f"`max_token_embed_size` ({self.max_token_embed_size})."
             assert token_embed.shape[2] <= self.max_token_embed_size, message
             token_embed_ = torch.zeros(*tokens.shape[:2], self.max_token_embed_size, device=device)
             token_embed_[:, :, 0 : token_embed.shape[2]] = token_embed
