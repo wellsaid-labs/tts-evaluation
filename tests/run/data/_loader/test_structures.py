@@ -31,20 +31,21 @@ from run.data._loader.structures import (
 )
 from run.data._loader.utils import get_non_speech_segments_and_cache
 from tests._utils import TEST_DATA_PATH
-from tests.run._utils import make_passage, make_speaker, script_to_alignments
+from tests.run._utils import make_passage, make_session, script_to_alignments
 
 TEST_DATA_LJ = TEST_DATA_PATH / "audio" / "bit(rate(lj_speech,24000),32).wav"
 
 
 def make_unprocessed_passage(
-    audio_path=pathlib.Path("."),
-    speaker=make_speaker(""),
+    audio_path: pathlib.Path = pathlib.Path("."),
+    session: Session = make_session(),
     script: str = "",
     transcript: str = "",
     alignments: typing.Optional[typing.Tuple[Alignment, ...]] = None,
+    **kwargs,
 ) -> UnprocessedPassage:
     """Make a `UnprocessedPassage` for testing."""
-    return UnprocessedPassage(audio_path, speaker, script, transcript, alignments)
+    return UnprocessedPassage(audio_path, session, script, transcript, alignments, **kwargs)
 
 
 def test__maybe_normalize_vo_script():
@@ -313,21 +314,23 @@ def test_passage_span__identity():
 _find = lambda a, b: (a.index(b), a.index(b) + 1)
 
 
-def _make_unprocessed_passage_helper(
+def _make_unprocessed_passage(
     script: str,
     tokens: typing.List[str],
     transcript: str,
     find_transcript: typing.Callable[[str, str], typing.Tuple[int, int]] = _find,
     find_script: typing.Callable[[str, str], typing.Tuple[int, int]] = _find,
+    **kwargs,
 ):
     """Helper function for `test_passage_span__unaligned*`."""
     found = [(find_script(script, t), find_transcript(transcript, t)) for t in tokens]
     return UnprocessedPassage(
         audio_path=TEST_DATA_LJ,
-        speaker=make_speaker(""),
+        session=make_session(),
         script=script,
         transcript=transcript,
         alignments=tuple(Alignment(s, (0.0, 0.0), t) for s, t in found),
+        **kwargs,
     )
 
 
@@ -345,7 +348,9 @@ def test_passage_span__nonalignment_spans():
     circumstances.
     """
     script = "abcdefghijklmnopqrstuvwxyz"
-    make = functools.partial(_make_unprocessed_passage_helper, transcript=script)
+
+    is_linked = IsLinked(transcript=True, audio=True)
+    make = functools.partial(_make_unprocessed_passage, transcript=script, is_linked=is_linked)
     unprocessed_passages = []
 
     # TEST: Largely no issues, except one in the middle.
@@ -368,8 +373,7 @@ def test_passage_span__nonalignment_spans():
     split, script = script[:3], script[3:]
     unprocessed_passages.append(make(split, ["q"]))  # NOTE: split='pqr'
 
-    is_linked = IsLinked(transcript=True, audio=True)
-    passages = list(make_passages("", [unprocessed_passages], is_linked=is_linked))
+    passages = list(make_passages("", [unprocessed_passages]))
 
     a = (0.0, 0.0)
     empty = ("", "", a)
@@ -394,7 +398,8 @@ def test_passage_span__nonalignment_spans__zero_alignments():
     """Test `Passage` and `Span` get the correct nonalignments if one of the
     passages has zero alignments."""
     script = "abcdef"
-    make = functools.partial(_make_unprocessed_passage_helper, transcript=script)
+    is_linked = IsLinked(transcript=True, audio=True)
+    make = functools.partial(_make_unprocessed_passage, transcript=script, is_linked=is_linked)
     unprocessed_passages = []
 
     split, script = script[:3], script[3:]
@@ -403,8 +408,7 @@ def test_passage_span__nonalignment_spans__zero_alignments():
     split, script = script[:3], script[3:]
     unprocessed_passages.append(make(split, ["e"]))  # NOTE: split='def'
 
-    is_linked = IsLinked(transcript=True, audio=True)
-    passages = list(make_passages("", [unprocessed_passages], is_linked=is_linked))
+    passages = list(make_passages("", [unprocessed_passages]))
 
     a = (0.0, 0.0)
     assert _get_nonaligned(passages[0]) == [("a", "a", a), ("c", "cd", a)]
@@ -420,11 +424,11 @@ def test_passage_linking():
             script=s,
             transcript="abc",
             alignments=(Alignment((0, 1), a, a),),
+            is_linked=IsLinked(transcript=True, audio=True),
         )
         for s, a in (("a", (0, 1)), ("b", (1, 2)), ("c", (2, 3)))
     ]
-    is_linked = IsLinked(transcript=True, audio=True)
-    passages = make_passages("", [unprocessed_passages], is_linked=is_linked)
+    passages = make_passages("", [unprocessed_passages])
     assert len(passages[0].passages) == 3
     assert passages[0].prev is None
     assert passages[0].next == passages[1]
@@ -476,10 +480,11 @@ def _has_a_mistranscription_helper(
             script=s,
             transcript=t,
             alignments=tuple([Alignment(a, (0.0, 0.0), b) for a, b in a]),
+            **kwargs,
         )
         for s, t, a in args
     ]
-    return make_passages("", [unprocessed_passages], **kwargs)
+    return make_passages("", [unprocessed_passages])
 
 
 def _has_a_mistranscription(*args, **kwargs) -> typing.List[bool]:

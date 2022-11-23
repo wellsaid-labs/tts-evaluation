@@ -2,8 +2,6 @@ import collections
 import functools
 import logging
 import math
-import multiprocessing
-import multiprocessing.pool
 import pathlib
 import random
 import typing
@@ -35,19 +33,33 @@ else:
 
 logger = logging.getLogger(__name__)
 
+UnprocessedDataset = typing.Dict[_loader.Speaker, _loader.UnprocessedDataset]
 Dataset = typing.Dict[_loader.Speaker, typing.List[_loader.Passage]]
+
+
+def get_unprocess_data(
+    datasets: typing.Dict[_loader.Speaker, _loader.DataLoader],
+    path: pathlib.Path,
+    language: typing.Optional[_loader.Language] = None,
+) -> UnprocessedDataset:
+    """Get a raw unprocessed TTS dataset.
+
+    Args:
+        datasets: Dictionary of datasets to load.
+        path: Directory to cache the dataset.
+        ...
+    """
+    return {s: d(path) for s, d in datasets.items() if language is None or s.language == language}
 
 
 @lib.utils.log_runtime
 def get_dataset(
     datasets: typing.Dict[_loader.Speaker, _loader.DataLoader],
     path: pathlib.Path,
-    include_psge: typing.Callable[[_loader.Passage], bool],
-    handle_psge: typing.Callable[[_loader.Passage], _loader.Passage],
-    max_workers: int = 0,
+    include_passage: typing.Callable[[_loader.Passage], bool],
     language: typing.Optional[_loader.Language] = None,
 ) -> Dataset:
-    """Define a TTS dataset.
+    """Get a TTS dataset.
 
     TODO: `apply_audio_filters` could be used replicate datasets with different audio processing.
 
@@ -57,16 +69,12 @@ def get_dataset(
         ...
     """
     logger.info("Loading dataset...")
-    prepared = {s: f for s, f in datasets.items() if language is None or s.language == language}
 
-    load = lambda s, d, **k: (s, [handle_psge(p) for p in d(path, **k) if include_psge(p)])
-    if max_workers > 0:
-        with multiprocessing.pool.ThreadPool(processes=min(max_workers, len(prepared))) as pool:
-            items = list(pool.starmap(load, prepared.items()))
-    else:
-        items = [load(s, d, add_tqdm=True) for s, d in prepared.items()]
+    loaders = {s: f for s, f in datasets.items() if language is None or s.language == language}
+    processed = [_loader.make_passages(s.label, l(path), add_tqdm=True) for s, l in loaders.items()]
+    processed = [[p for p in d if include_passage(p)] for d in processed]
+    prepared = {k: v for k, v in zip(loaders.keys(), processed) if len(v) > 0}
 
-    prepared = {k: v for k, v in items if len(v) > 0}
     kept = prepared.keys()
     omitted = datasets.keys() - kept
     logger.info(f"Kept {len(kept)} Speakers: {kept}")
