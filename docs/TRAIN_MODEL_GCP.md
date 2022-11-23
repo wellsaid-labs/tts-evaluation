@@ -246,7 +246,7 @@ Setup your local development environment by following [these instructions](LOCAL
 
 1. (Optional) You may need to open a console, connected to your environment...
 
-   ```bash
+   ```zsh
    NAME=$USER"-your-instance-name" # EXAMPLE: michaelp-baseline
    vars activate $NAME
    ```
