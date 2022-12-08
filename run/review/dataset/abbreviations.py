@@ -59,21 +59,23 @@ def _is_casing_ambiguous(script: str, transcript: str):
     return _is_stand_casing(script) != _is_stand_casing(transcript)
 
 
-ABBREVIATION = re.compile(
+# NOTE: There are some abbreviations we consider non-standard like "t-shirt", "PhD", or "Big C".
+# This makes no attempt at detecting these.
+STANDARD_ABBRE = re.compile(
     r"("
+    # GROUP 2: Abbr seperated with dots like "a.m.".
     r"(?:\b)"  # NON-GROUP: Abbreviation starting
-    r"([A-Za-z]\.){2,}"  # GROUP 2: Abbr seperated with dots
+    r"([A-Za-z]\.){2,}"
     r"(?:\B)"  # NON-GROUP: Abbreviation ending
     r"|"
+    # GROUP 3: Upper-case abbr maybe seperated other punctuation that starts on a word break
+    # like "PCI-DSS", "U. S." or "W-USA".
     r"(?:\b)"
-    r"((?:[A-Z]\s?[&\-\.\s*]\s?)+[A-Z\-]+)"  # GROUP 3: Upper-case abbr seperated other punctuation
+    r"((?:[A-Z]\s?[&\-\.\s*]?\s?)+(?:[A-Z]-?)*[A-Z])"
     r"(?=\b|[0-9])"
     r"|"
-    r"(?:\b)"
-    r"((?:[A-Z]\s?){2,})"  # GROUP 4: Upper-case abbr seperated with spaces
-    r"(?=\b|[0-9])"
-    r"|"
-    r"([A-Z]{2,})"  # GROUP 5: Upper-case abbr
+    # GROUP 4: Upper-case abbr like "MiniUSA.com", "fMRI" or "DirecTV".
+    r"([A-Z0-9]{2,})"
     r"(?=\b|[a-z0-9])"
     r")"
 )
@@ -81,12 +83,15 @@ ABBREVIATION = re.compile(
 
 def _get_abbr_letters(text: str):
     """Get all letters for the abbreviations in `text`."""
-    return tuple(c.lower() for m in ABBREVIATION.findall(text) for c in m[0] if c.isalpha())
+    return tuple(c.lower() for m in STANDARD_ABBRE.findall(text) for c in m[0] if c.isalpha())
 
 
 def _is_abbrs_valid(script: str, transcript: str):
     """Check that the abbreviations in the script are in fact abbreviations in the transcript, also.
 
+    NOTE: This ensures that if there is a standard abbreviation, both the script and transcript
+          agree that it is. It is possible for non-standard abbreviations to make it through if
+          both the script and transcript agree, for example "PhD" or "t-shirt".
     TODO: We want to ensure all upper-case sequences are initialisms. To do so, we'd need to have
           a list of acronyms to filter out.
     """
@@ -133,6 +138,11 @@ assert _is_abbrs_valid("apiece,", "A piece")
 assert _is_abbrs_valid("well.I'll,", "well. I'll")
 assert _is_abbrs_valid("Rain-x-car", "Rain-X car")
 assert _is_abbrs_valid("L.L.Bean", "LL Bean")
+assert _is_abbrs_valid("WBGP -", "W BG P.")
+assert _is_abbrs_valid("KRCK", "K RC K")
+assert _is_abbrs_valid("DVD-L10", "DVD L10")
+assert _is_abbrs_valid("DVD-L10", "DVD, L10")
+assert _is_abbrs_valid("t-shirt", "T-shirt")
 
 
 @st.experimental_singleton()
@@ -190,20 +200,17 @@ def _gather(
     """Gather data on `alignment`."""
     script = passage.script[alignment.script[0] : alignment.script[1]]
     transcript = passage.transcript[alignment.transcript[0] : alignment.transcript[1]]
-    num_upper = sum(c.isupper() for c in script + transcript)
-    num_punc = sum(not c.isalnum() for c in script + transcript)
-    num_numeric = sum(c.isnumeric() for c in script + transcript)
-    num_words = len(script.split()) + len(transcript.split())
     return {
         "script": script,
         "transcript": transcript,
         "clip": audio_to_url(clip, sample_rate=meta.sample_rate),
-        "num_upper": num_upper,
-        "num_punc": num_punc,
-        "num_numeric": num_numeric,
-        "num_words": num_words,
         "casing_ambiguous": _is_casing_ambiguous(script, transcript),
         "abbrs_valid": _is_abbrs_valid(script, transcript),
+        "num_upper": sum(c.isupper() for c in script + transcript),
+        "per_upper_transcript": sum(c.isupper() for c in transcript) / len(transcript),
+        "num_punc": sum(not c.isalnum() for c in script + transcript),
+        "num_numeric": sum(c.isnumeric() for c in script + transcript),
+        "num_words": len(script.split()) + len(transcript.split()),
     }
 
 

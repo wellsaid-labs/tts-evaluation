@@ -337,7 +337,7 @@ def st_ag_grid(
     """Display a table to preview `data`."""
     options = GridOptionsBuilder.from_dataframe(df)
     options.configure_pagination(paginationAutoPageSize=False, paginationPageSize=page_size)
-    options.configure_default_column(wrapText=True, min_column_width=1)
+    options.configure_default_column(wrapText=True, autoHeight=True, min_column_width=1)
     if audio_column_name:
         options.configure_column(audio_column_name, cellRenderer=renderer)
     return AgGrid(

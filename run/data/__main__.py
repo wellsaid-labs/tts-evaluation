@@ -29,7 +29,7 @@ from third_party import LazyLoader
 import lib
 import run
 from run._config import load_spacy_nlp
-from run._utils import gcs_uri_to_blob
+from run._utils import gcs_uri_to_blob, get_unprocessed_dataset
 from run.data import _loader
 
 if typing.TYPE_CHECKING:  # pragma: no cover
@@ -81,6 +81,12 @@ def download(
     is_include = functools.partial(_is_include, include=include, exclude=exclude)
     datasets = {k: v for k, v in run.data._loader.DATASETS.items() if is_include(k.label)}
     [loader(run._config.DATA_PATH) for loader in datasets.values()]
+
+
+@app.command()
+def download_configured():
+    """Download all dataset(s) in configuration."""
+    cf.partial(get_unprocessed_dataset)()
 
 
 def _file_numberings(directory: pathlib.Path) -> typing.List[str]:
