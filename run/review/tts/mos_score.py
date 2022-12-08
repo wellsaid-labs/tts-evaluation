@@ -13,7 +13,7 @@ import altair as alt
 import numpy as np
 import pandas as pd
 import streamlit as st
-from streamlit.uploaded_file_manager import UploadedFile
+from streamlit.runtime.uploaded_file_manager import UploadedFile
 from streamlit_datatable import st_datatable
 
 from run._streamlit import path_to_web_path, web_path_to_url
@@ -30,7 +30,7 @@ def st_merge(dfs: typing.List[pd.DataFrame]) -> pd.DataFrame:
     """Streamlit interface for merging `DataFrame`s."""
     df = dfs[0]
 
-    merge_options = []
+    merge_options: typing.List[typing.Tuple[str]] = []
     for cols in itertools.product(*tuple(list(d.columns) for d in dfs)):
         sets = [set(d[col]) for d, col in zip(dfs, cols)]
         biggest = max(sets, key=lambda s: len(s))
@@ -39,7 +39,8 @@ def st_merge(dfs: typing.List[pd.DataFrame]) -> pd.DataFrame:
     st.info(f"Found only {len(merge_options)} groups of columns which can be merged.")
 
     format_func = lambda a: ", ".join(a)
-    merge_columns = st.selectbox("Merge On", merge_options, format_func=format_func)  # type: ignore
+    merge_columns = st.selectbox("Merge On", merge_options, format_func=format_func)
+    merge_columns = typing.cast(typing.Tuple[str], merge_columns)
     for i, other_df in enumerate(dfs[1:]):
         df = df.merge(other_df, left_on=merge_columns[i], right_on=merge_columns[i + 1])
 
@@ -118,9 +119,10 @@ def main():
     dfs = [typing.cast(pd.DataFrame, pd.read_csv(io.BytesIO(f.read()))) for f in files]
     df = dfs[0] if len(dfs) == 1 else st_merge(dfs)
 
+    audio_name_column = str(st.selectbox("Audio Name Column", list(df.columns)))
     partial_ = partial(
         audio_to_html,
-        audio_name_column=st.selectbox("Audio Name Column", list(df.columns)),
+        audio_name_column=audio_name_column,
         audio_directory=st.text_input("Audio Directory"),
     )
     df["Audio"] = df.apply(partial_, axis=1)
@@ -131,7 +133,7 @@ def main():
     numeric_columns = [
         c for c in df.columns if np.issubdtype(df[c].dtype, np.number)  # type: ignore
     ]
-    metric_column = st.selectbox("Metric Column", numeric_columns)
+    metric_column = str(st.selectbox("Metric Column", numeric_columns))
     min_val, max_val = min(df[metric_column]), max(df[metric_column])
     min_val, max_val = st.slider("Chart range", min_val, max_val, (min_val, max_val), step=0.25)
     if len(segment_columns) > 2 or len(segment_columns) == 0:
@@ -143,7 +145,7 @@ def main():
 
     selected = df[[metric_column] + list(segment_columns)]
     grouped = selected.groupby(segment_columns).agg(["mean", "std"]).reset_index()  # type: ignore
-    grouped.columns = [" | ".join(r for r in c if r) for c in grouped.columns]
+    grouped.columns = [" | ".join(r for r in c if r) for c in grouped.columns]  # type: ignore
     st_datatable(grouped)
     st_bar_chart(selected, segment_columns, metric_column, min_val, max_val)
 
