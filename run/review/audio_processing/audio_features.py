@@ -81,15 +81,15 @@ def main():
     meter = lib.audio.get_pyloudnorm_meter(**cf.get())
     specs = signal_to_spectrogram(torch.tensor(audio), intermediate=True, aligned=True)
     rms_level = round_(lib.audio.signal_to_rms(audio).item())
-    rms_db_level = round_(amp_to_db(rms_level))
+    rms_db_level = round_(amp_to_db(rms_level))  # type: ignore
     peek_level = round_(torch.tensor(audio).abs().max().item())
-    peek_db_level = round_(amp_to_db(peek_level))
+    peek_db_level = round_(amp_to_db(peek_level))  # type: ignore
     power_spec = lib.audio.db_to_power(specs.db_mel)
     framed_rms_level = lib.audio.power_spectrogram_to_framed_rms(power_spec, **cf.get())
     frame_hop = signal_to_spectrogram.frame_hop
     signal_length = signal_to_spectrogram.frame_hop * power_spec.shape[-2]
     spec_rms_level = round_(framed_rms_to_rms(framed_rms_level, frame_hop, signal_length).item())
-    spec_rms_db_level = round_(amp_to_db(spec_rms_level))
+    spec_rms_db_level = round_(amp_to_db(spec_rms_level))  # type: ignore
     lufs = round_(meter.integrated_loudness(audio))
     weighting = signal_to_spectrogram.get_weighting.__name__
 
