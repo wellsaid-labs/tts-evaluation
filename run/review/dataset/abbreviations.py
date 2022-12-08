@@ -156,6 +156,8 @@ def _get_alignments(
         num_alignments: The number of alignments to sample.
         picker: The callable used to filter alignments.
         negate: Iff then the picker results are negated.
+
+    Returns: A list of alignments and related objects.
     """
     alignments: typing.List[typing.Tuple[UnprocessedPassage, Alignment]] = []
     for _, documents in _dataset.items():
@@ -217,8 +219,8 @@ def _gather(
 def main():
     run._config.configure(overwrite=True)
 
-    st.title("Casing Consistency")
-    st.write("The workbook reviews the casing consistency between the script and transcript.")
+    st.title("Script & Transcript Abbreviations")
+    st.write("The workbook reviews the abbreviations in the script and transcript.")
 
     form: DeltaGenerator = st.form("settings")
     question = "How many alignments do you want to analyze?"
