@@ -49,3 +49,26 @@ du --human-readable  | sort --human-numeric-sort
 
 It's useful to be able to scroll through your logs in a screen session, you can do so by following
 the instructions [here](https://unix.stackexchange.com/a/40243).
+
+## Port Forwarding
+
+You may find it useful to run an application, like `streamlit` remotely while accessing it locally.
+
+1. Activate the virtual environment you created alongside your instance...
+
+```zsh
+NAME=$USER"-your-instance-name" # EXAMPLE: michaelp-baseline
+vars activate $NAME
+```
+
+1. Forward those ports!
+
+```zsh
+PROJECT_ID=voice-research-255602
+LOCAL_PORT=2222
+REMOTE_PORT=8501
+gcloud compute ssh $VM_NAME \
+    --project $PROJECT_ID \
+    --zone $VM_ZONE \
+    -- -NL $LOCAL_PORT":localhost:"$REMOTE_PORT
+```
