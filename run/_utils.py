@@ -2,6 +2,7 @@ import collections
 import functools
 import logging
 import math
+import multiprocessing.pool
 import pathlib
 import random
 import typing
@@ -18,7 +19,7 @@ import lib
 from lib.utils import disk_cache, split
 from run import _config
 from run.data import _loader
-from run.data._loader import DataLoaders, Language, Passage, Speaker
+from run.data._loader import DataLoader, DataLoaders, Language, Passage, Speaker
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import librosa
@@ -38,8 +39,15 @@ UnprocessedDataset = typing.Dict[Speaker, _loader.UnprocessedDataset]
 Dataset = typing.Dict[Speaker, typing.List[Passage]]
 
 
+def _load(loader: DataLoader, path: pathlib.Path):
+    return loader(path)
+
+
 def get_unprocessed_dataset(
-    datasets: DataLoaders, path: pathlib.Path, language: typing.Optional[Language] = None
+    datasets: DataLoaders,
+    path: pathlib.Path,
+    language: typing.Optional[Language] = None,
+    max_workers: int = 6,
 ) -> UnprocessedDataset:
     """Get a raw unprocessed TTS dataset.
 
@@ -48,7 +56,17 @@ def get_unprocessed_dataset(
         path: Directory to cache the dataset.
         ...
     """
-    return {s: d(path) for s, d in datasets.items() if language is None or s.language == language}
+    filtered = {s: d for s, d in datasets.items() if language is None or s.language == language}
+    loaded: typing.List[_loader.UnprocessedDataset]
+    if max_workers > 0:
+        num_workers = min(max_workers, len(filtered))
+        logger.info(f"Making `Pool` with {num_workers} workers to load {len(filtered)} datasets.")
+        with multiprocessing.pool.Pool(processes=num_workers) as pool:
+            args = [(l, path) for l in filtered.values()]
+            loaded = list(pool.starmap(_load, args))
+    else:
+        loaded = [d(path) for d in filtered.values()]
+    return {s: d for s, d in zip(filtered.keys(), loaded)}
 
 
 @lib.utils.log_runtime
