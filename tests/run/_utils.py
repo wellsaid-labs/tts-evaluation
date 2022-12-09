@@ -139,10 +139,11 @@ def make_small_dataset() -> run._utils.Dataset:
     temp_directory = pathlib.Path(tempfile.TemporaryDirectory().name)
     shutil.copytree(directory, temp_directory)
     books = [run.data._loader.english.m_ailabs.DOROTHY_AND_WIZARD_OZ]
-    return {
+    unprocessed = {
         m_ailabs.JUDY_BIEBER: M_AILABS_DATASETS[m_ailabs.JUDY_BIEBER](temp_directory, books=books),
         lj_speech.LINDA_JOHNSON: lj_speech.lj_speech_dataset(temp_directory),
     }
+    return {s: struc.make_passages(s.label, d) for s, d in unprocessed.items()}
 
 
 def make_spec_worker_state(

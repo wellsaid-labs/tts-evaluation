@@ -184,6 +184,6 @@ def configure(overwrite: bool = False):
     )
     config = {
         run._utils._get_debug_datasets: cf.Args(speakers=debug_speakers),
-        run._utils.get_dataset: cf.Args(language=LANGUAGE),
+        run._utils.get_unprocessed_dataset: cf.Args(language=LANGUAGE),
     }
     cf.add(config, overwrite)

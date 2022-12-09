@@ -114,7 +114,7 @@ def main():
 
     cols = st.columns([1, 1])
     label = "Query Limit"
-    query_limit = cols[0].number_input(label, value=st.session_state.get("query_limit", 100))
+    query_limit = int(cols[0].number_input(label, value=st.session_state.get("query_limit", 100)))
     st.session_state["query_limit"] = query_limit
     label = "Random Sample"
     fraction = st.session_state.get("fraction", 1.0)
@@ -125,6 +125,7 @@ def main():
     regex = cols[0].text_input("Text Payload Regex", value=st.session_state.get("regex", ""))
     st.session_state["regex"] = regex
     group = cols[1].number_input("Regex Group", min_value=0, value=st.session_state.get("group", 0))
+    group = int(group)
     st.session_state["group"] = group
 
     if not st.button("Run Query"):

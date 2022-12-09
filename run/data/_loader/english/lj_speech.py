@@ -21,9 +21,9 @@ logger = logging.getLogger(__name__)
 LINDA_JOHNSON = struc.Speaker("linda_johnson", struc.Style.LIBRI, struc.Dialect.EN_US)
 
 
-def _get_session(passage: struc.UnprocessedPassage) -> struc.Session:
+def _get_session(speaker: struc.Speaker, audio_path: pathlib.Path) -> struc.Session:
     """For the LJ speech dataset, we define each chapter as an individual recording session."""
-    return struc.Session((passage.speaker, str(passage.audio_path.stem.rsplit("-", 1)[0])))
+    return struc.Session((speaker, str(audio_path.stem.rsplit("-", 1)[0])))
 
 
 def lj_speech_dataset(
@@ -34,10 +34,9 @@ def lj_speech_dataset(
     speaker: struc.Speaker = LINDA_JOHNSON,
     verbalize: bool = True,
     metadata_text_column: typing.Union[str, int] = 1,
-    add_tqdm: bool = False,
-    get_session: typing.Callable[[struc.UnprocessedPassage], struc.Session] = _get_session,
+    get_session: typing.Callable[[struc.Speaker, pathlib.Path], struc.Session] = _get_session,
     **kwargs,
-) -> typing.List[struc.Passage]:
+) -> struc.UnprocessedDataset:
     """Load the Linda Johnson (LJ) Speech dataset.
 
     This is a public domain speech dataset consisting of 13,100 short audio clips of a single
@@ -83,9 +82,9 @@ def lj_speech_dataset(
         speaker,
         **kwargs,
         metadata_text_column=metadata_text_column,
+        get_session=get_session,
     )
-    passages = [_process_text(p, verbalize) for p in passages]
-    return list(struc.make_passages(root_directory_name, [passages], add_tqdm, get_session))
+    return [[_process_text(p, verbalize) for p in passages]]
 
 
 """

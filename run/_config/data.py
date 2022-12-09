@@ -285,11 +285,8 @@ def configure(overwrite: bool = False):
     # between different speakers.
     groups += [{s} for s in _loader.DATASETS.keys() if s not in groups[0]]
     config = {
-        run._utils.get_dataset: cf.Args(
-            datasets=DATASETS,
-            include_psge=_include_passage,
-            handle_psge=lib.utils.identity,
-        ),
+        run._utils.get_unprocessed_dataset: cf.Args(datasets=DATASETS),
+        run._utils.get_dataset: cf.Args(include_passage=_include_passage),
         # NOTE: Set `approx_dev_len` to 30 minutes for a consistent amount of dev data per speaker,
         # guesstimated to be a sufficient quantity to capture enough variety in each voice.
         # NOTE: Set `min_split_passages` to 3 passages, guesstimated to provide enough passage

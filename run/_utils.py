@@ -2,8 +2,6 @@ import collections
 import functools
 import logging
 import math
-import multiprocessing
-import multiprocessing.pool
 import pathlib
 import random
 import typing
@@ -20,6 +18,7 @@ import lib
 from lib.utils import disk_cache, split
 from run import _config
 from run.data import _loader
+from run.data._loader import DataLoaders, Language, Passage, Speaker
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import librosa
@@ -35,21 +34,31 @@ else:
 
 logger = logging.getLogger(__name__)
 
-Dataset = typing.Dict[_loader.Speaker, typing.List[_loader.Passage]]
+UnprocessedDataset = typing.Dict[Speaker, _loader.UnprocessedDataset]
+Dataset = typing.Dict[Speaker, typing.List[Passage]]
+
+
+def get_unprocessed_dataset(
+    datasets: DataLoaders, path: pathlib.Path, language: typing.Optional[Language] = None
+) -> UnprocessedDataset:
+    """Get a raw unprocessed TTS dataset.
+
+    Args:
+        datasets: Dictionary of datasets to load.
+        path: Directory to cache the dataset.
+        ...
+    """
+    return {s: d(path) for s, d in datasets.items() if language is None or s.language == language}
 
 
 @lib.utils.log_runtime
 def get_dataset(
-    datasets: typing.Dict[_loader.Speaker, _loader.DataLoader],
-    path: pathlib.Path,
-    include_psge: typing.Callable[[_loader.Passage], bool],
-    handle_psge: typing.Callable[[_loader.Passage], _loader.Passage],
-    max_workers: int = 0,
-    language: typing.Optional[_loader.Language] = None,
+    datasets: DataLoaders, include_passage: typing.Callable[[Passage], bool], **kwargs
 ) -> Dataset:
-    """Define a TTS dataset.
+    """Get a TTS dataset.
 
     TODO: `apply_audio_filters` could be used replicate datasets with different audio processing.
+    TODO: Implement a version of `make_passages` that can process multiple speakers together.
 
     Args:
         datasets: Dictionary of datasets to load.
@@ -57,16 +66,12 @@ def get_dataset(
         ...
     """
     logger.info("Loading dataset...")
-    prepared = {s: f for s, f in datasets.items() if language is None or s.language == language}
 
-    load = lambda s, d, **k: (s, [handle_psge(p) for p in d(path, **k) if include_psge(p)])
-    if max_workers > 0:
-        with multiprocessing.pool.ThreadPool(processes=min(max_workers, len(prepared))) as pool:
-            items = list(pool.starmap(load, prepared.items()))
-    else:
-        items = [load(s, d, add_tqdm=True) for s, d in prepared.items()]
+    dataset = cf.partial(get_unprocessed_dataset)(datasets, **kwargs)
+    processed = [_loader.make_passages(s.label, d, add_tqdm=True) for s, d in dataset.items()]
+    processed = [[p for p in d if include_passage(p)] for d in processed]
+    prepared = {k: v for k, v in zip(dataset.keys(), processed) if len(v) > 0}
 
-    prepared = {k: v for k, v in items if len(v) > 0}
     kept = prepared.keys()
     omitted = datasets.keys() - kept
     logger.info(f"Kept {len(kept)} Speakers: {kept}")
@@ -88,9 +93,9 @@ def _is_duplicate(a: str, b: str, min_sim: float) -> bool:
 
 def _find_duplicate_passages(
     dev_scripts: typing.Union[typing.Set[str], typing.Tuple[str]],
-    passages: typing.List[_loader.Passage],
+    passages: typing.List[Passage],
     min_sim: float,
-) -> typing.Tuple[typing.List[_loader.Passage], typing.List[_loader.Passage]]:
+) -> typing.Tuple[typing.List[Passage], typing.List[Passage]]:
     """Find passages in `passages` that are a duplicate of a passage in `dev_scripts`.
 
     Args:
@@ -120,13 +125,13 @@ def _find_duplicate_passages(
     return duplicates, rest
 
 
-def _passages_len(passages: typing.List[_loader.Passage]) -> float:
+def _passages_len(passages: typing.List[Passage]) -> float:
     """Get the cumulative length of all `passages`."""
     return sum(p.segmented_audio_length() for p in passages)
 
 
 def _len_of_dups(
-    item: typing.Tuple[int, _loader.Passage], passages: typing.List[_loader.Passage], min_sim: float
+    item: typing.Tuple[int, Passage], passages: typing.List[Passage], min_sim: float
 ) -> float:
     """Get the cumulative length of all passages which are duplicates of `item`, including the
     `item` itself.
@@ -239,10 +244,10 @@ def _split_dataset(dataset: Dataset, approx_dev_len: int, min_sim: float) -> Tra
 @lib.utils.log_runtime
 def split_dataset(
     dataset: Dataset,
-    dev_speakers: typing.Set[_loader.Speaker],
+    dev_speakers: typing.Set[Speaker],
     approx_dev_len: int,
     min_sim: float,
-    groups: typing.List[typing.Set[_loader.Speaker]],
+    groups: typing.List[typing.Set[Speaker]],
     min_split_passages: int,
     seed: int = 123,
 ) -> TrainDev:
@@ -351,7 +356,7 @@ def _get_datasets():
     return cf.partial(split_dataset)(dataset)
 
 
-def _get_debug_datasets(speakers: typing.Set[_loader.Speaker]):
+def _get_debug_datasets(speakers: typing.Set[Speaker]):
     """Get small `train` and `dev` datasets for debugging."""
     speaker = next(iter(speakers), None)
     assert speaker is not None
@@ -367,7 +372,7 @@ def get_datasets(debug: bool):
     return _get_datasets()
 
 
-SpanGeneratorGetWeight = typing.Callable[[_loader.Speaker, float], float]
+SpanGeneratorGetWeight = typing.Callable[[Speaker, float], float]
 
 
 class SpanGenerator(typing.Iterator[_loader.Span]):
@@ -403,7 +408,7 @@ class SpanGenerator(typing.Iterator[_loader.Span]):
     ):
         self.max_seconds = max_seconds
         self.dataset = dataset
-        self.generators: typing.Dict[_loader.Speaker, _loader.SpanGenerator] = {}
+        self.generators: typing.Dict[Speaker, _loader.SpanGenerator] = {}
         for speaker, passages in dataset.items():
             is_singles = all([len(p.alignments) == 1 for p in passages])
             max_seconds_ = math.inf if is_singles else max_seconds

@@ -14,12 +14,7 @@ from run.data import _loader
 from run.data._loader.english.wsl import ALANA_B
 from run.data._loader.structures import Alignment
 from run.data._loader.utils import SpanGenerator, get_non_speech_segments_and_cache
-from tests._utils import (
-    TEST_DATA_PATH,
-    assert_uniform_distribution,
-    get_audio_metadata_side_effect,
-    subprocess_run_side_effect,
-)
+from tests._utils import TEST_DATA_PATH, assert_uniform_distribution, subprocess_run_side_effect
 from tests.run._utils import make_alignments_1d, make_passage
 
 TEST_DATA_LJ = TEST_DATA_PATH / "audio" / "bit(rate(lj_speech,24000),32).wav"
@@ -277,11 +272,9 @@ def test_span_generator__unequal_alignment_sizes__boundary_bias():
         assert_uniform_distribution(counter, abs=0.015)
 
 
-@mock.patch("lib.audio.get_audio_metadata")
 @mock.patch("run.data._loader.utils.subprocess.run", return_value=None)
-def test_dataset_loader(mock_run, mock_get_audio_metadata):
+def test_dataset_loader(mock_run):
     """Test `_loader.dataset_loader` loads a dataset."""
-    mock_get_audio_metadata.side_effect = get_audio_metadata_side_effect
     mock_run.side_effect = functools.partial(subprocess_run_side_effect, _command="gsutil")
     passages = _loader.dataset_loader(TEST_DATA_PATH / "datasets", "hilary_noriega", "", ALANA_B)
     alignments = [
@@ -297,35 +290,18 @@ def test_dataset_loader(mock_run, mock_get_audio_metadata):
             ((43, 47), (2.6, 3.3), (41, 45)),
         ]
     ]
-    nonalignments = [
-        Alignment(a[0], a[1], a[2])
-        for a in [
-            ((0, 0), (0.0, 0.0), (0, 0)),
-            ((6, 7), (0.6, 0.6), (6, 7)),
-            ((9, 10), (0.8, 0.8), (9, 10)),
-            ((13, 14), (0.8, 0.8), (13, 14)),
-            ((20, 21), (1.4, 1.4), (20, 21)),
-            ((27, 28), (1.8, 1.8), (26, 27)),
-            ((34, 35), (2.5, 2.5), (33, 34)),
-            ((42, 43), (2.6, 2.6), (40, 41)),
-            ((47, 47), (3.3, 4.3), (45, 46)),
-        ]
-    ]
 
     path = TEST_DATA_PATH / "datasets/hilary_noriega/recordings/Script 1.wav"
-    assert passages[0].audio_file.sample_rate == 24000
-    assert passages[0].audio_file.encoding == lib.audio.AudioEncoding.PCM_FLOAT_32_BIT
-    assert path.stem in passages[0].audio_file.path.stem
-    assert passages[0].speaker == ALANA_B
-    assert passages[0].script == "Author of the danger trail, Philip Steels, etc."
-    assert passages[0].transcript == (
+    assert path.stem in passages[0][0].audio_path.stem
+    assert passages[0][0].speaker == ALANA_B
+    assert passages[0][0].script == "Author of the danger trail, Philip Steels, etc."
+    assert passages[0][0].transcript == (
         "author of the danger Trail Philip Steels Etc. Not at this particular case Tom "
         "apologized Whitmore for the 20th time that evening the two men shook hands"
     )
-    assert passages[0].alignments == Alignment.stow(alignments)
-    assert passages[0].nonalignments == Alignment.stow(nonalignments)
-    assert passages[0].other_metadata == {"Index": 0, "Source": "CMU", "Title": "CMU"}
-    assert passages[1].script == "Not at this particular case, Tom, apologized Whittemore."
+    assert passages[0][0].alignments == tuple(alignments)
+    assert passages[0][0].other_metadata == {"Index": 0, "Source": "CMU", "Title": "CMU"}
+    assert passages[0][1].script == "Not at this particular case, Tom, apologized Whittemore."
 
 
 def test__overlap():
