@@ -986,6 +986,9 @@ def _check_alignments(label: str, passage: UnprocessedPassage):
         logger.warning(f"{prefix} Found {num_pairs} tokens that don't sound-a-like, like: {pairs}")
 
 
+# NOTE: A `Dataset` has a list of `Document`s which has a list of `Passage`s. A `Document` is
+# list of `Passage`s that are all in sequence. They could additionally have shared attributes
+# like a script, transcript, or audio file.
 UnprocessedDocument = typing.List[UnprocessedPassage]
 UnprocessedDataset = typing.List[UnprocessedDocument]
 
