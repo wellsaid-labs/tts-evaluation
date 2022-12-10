@@ -58,15 +58,6 @@ WebPath = typing.NewType("WebPath", pathlib.Path)
 RelativeUrl = typing.NewType("RelativeUrl", str)
 
 
-def rmtree_streamlit_static_temp_dir():
-    """Destroy Streamlit temporary directory."""
-    assert pathlib.Path(st.__file__).parent in STREAMLIT_STATIC_TEMP_PATH.parents
-    if STREAMLIT_STATIC_TEMP_PATH.exists():
-        path = STREAMLIT_STATIC_TEMP_PATH.relative_to(lib.environment.ROOT_PATH)
-        logger.info(f"Clearing temporary files at {path}...")
-        shutil.rmtree(STREAMLIT_STATIC_TEMP_PATH)
-
-
 @st.experimental_singleton()
 def make_temp_root_dir():
     """Make a temporary directory accessible via HTTP in the streamlit app.
@@ -75,8 +66,8 @@ def make_temp_root_dir():
     """
     assert pathlib.Path(st.__file__).parent in STREAMLIT_STATIC_TEMP_PATH.parents
     if STREAMLIT_STATIC_TEMP_PATH.exists():
-        message = "Clearing temporary files at %s..."
-        logger.info(message, STREAMLIT_STATIC_TEMP_PATH.relative_to(lib.environment.ROOT_PATH))
+        path = STREAMLIT_STATIC_TEMP_PATH.relative_to(lib.environment.ROOT_PATH)
+        logger.info(f"Clearing temporary files at {path}...")
         shutil.rmtree(STREAMLIT_STATIC_TEMP_PATH)
     STREAMLIT_STATIC_TEMP_PATH.mkdir(exist_ok=True, parents=True)
 
