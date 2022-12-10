@@ -565,7 +565,7 @@ def normalize_vo_script(text: str, non_ascii: frozenset, strip: bool = True) -> 
     TODO: Clarify that some characters like `«` will be normalized regardless of being in the
           `non_ascii` set.
     NOTE: `non_ascii` needs to be explicitly set so that text isn't processed incorrecly accidently.
-    TODO: Double check datasets for ambigiously verbalized characters like "<" which can be
+    TODO: Double check datasets for ambiguously verbalized characters like "<" which can be
           "greater than" or "silent".
     TODO: This removes characters like ℃.
     TODO: Research the impact of normalizing backticks to single quotes.
