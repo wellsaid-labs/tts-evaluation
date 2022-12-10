@@ -387,7 +387,7 @@ def dataset_loader(
         strict: Use `gsutil` to validate the source files.
         add_tqdm
     """
-    logger.info("Loading `%s` speech dataset", root_directory_name)
+    logger.info(f"Loading `{root_directory_name}` speech dataset")
 
     root = (Path(directory) / root_directory_name).absolute()
     root.mkdir(exist_ok=True)
@@ -430,7 +430,7 @@ def dataset_loader(
             document.append(passage)
         dataset.append(document)
 
-    logger.info("Loaded `%s` speech dataset", root_directory_name)
+    logger.info(f"Loaded `{root_directory_name}` speech dataset")
 
     return dataset
 

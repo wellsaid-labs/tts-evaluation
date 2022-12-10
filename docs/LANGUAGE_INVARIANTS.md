@@ -20,7 +20,8 @@ transcript with the voice-over script. Also, we consider acronyms to be non-stan
 verbalized into standard words (i.e. "NCAA" to "NC double A"). We have also created datasets that
 have only initialisms and no acronyms to help enforce this invariant.
 
-Keep in mind, it is a work-in-progress to remove acronyms, from our datasets.
+Keep in mind, until we assemble a comprehensive list of acronyms in our dataset, our dataset
+will have some acronyms. There is no other method for filtering them out.
 
 ## Alphabet :a:
 

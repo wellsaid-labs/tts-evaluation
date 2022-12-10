@@ -900,16 +900,17 @@ def _check_updated_script(
 
 # NOTE: There are some abbreviations we consider non-standard like "t-shirt", "PhD", or "Big C".
 # This makes no attempt at detecting these.
+# TODO: Add support for non-English and for accented characters.
 STANDARD_ABBREV = re.compile(
     r"("
-    # GROUP 2: Abbr seperated with dots like "a.m.".
-    r"(?:\b)"  # NON-GROUP: Abbreviation starting
+    # GROUP 2: Abbr separated with dots like "a.m.".
+    r"\b"
     r"([A-Za-z]\.){2,}"
-    r"(?:\B)"  # NON-GROUP: Abbreviation ending
+    r"\B"
     r"|"
-    # GROUP 3: Upper-case abbr maybe seperated other punctuation that starts on a word break
-    # like "PCI-DSS", "U. S." or "W-USA".
-    r"(?:\b)"
+    # GROUP 3: Upper-case abbr maybe separated other punctuation that starts on a word break
+    #          like "PCI-DSS", "U. S." or "W-USA".
+    r"\b"
     r"((?:[A-Z]\s?[&\-\.\s*]?\s?)+(?:[A-Z]-?)*[A-Z])"
     r"(?=\b|[0-9])"
     r"|"
@@ -928,7 +929,7 @@ def _get_abbrev_letters(text: str):
 def _is_stand_abbrev_consistent(script: str, transcript: str):
     """Check that the abbreviations in the script are in fact abbreviations in the transcript, also.
 
-    This can help filter out capitalized words or ambigious abbreviations that will not have the
+    This can help filter out capitalized words or ambiguous abbreviations that will not have the
     same casing in `script` and `transcript`.
 
     NOTE: It is possible for non-standard abbreviations to pass this test if both the script and
@@ -948,13 +949,13 @@ def _remove_abbrev_helper(passage: UnprocessedPassage, i: int) -> typing.Tuple[b
 
 
 def _remove_ambiguous_abbrev(label: str, passage: UnprocessedPassage):
-    """Remove any alignments where the script has a capitalized word or a ambigious abbreviation.
+    """Remove any alignments where the script has a capitalized word or an ambiguous abbreviation.
 
     TODO: Add this to `sync_script_with_audio.py`.
     TODO: We'd still need to add an additional filter to remove acronyms like NASDAQ or NASA, in
           order to stay consistent with our language invariants.
     """
-    if passage.alignments is None:
+    if passage.alignments is None or passage.speaker.language is not Language.ENGLISH:
         return passage
 
     ambiguous = [_remove_abbrev_helper(passage, i) for i in range(len(passage.alignments))]
@@ -964,7 +965,7 @@ def _remove_ambiguous_abbrev(label: str, passage: UnprocessedPassage):
         num_removed = len(passage.alignments) - len(alignments)
         logger.warning(
             f"[{label}][{passage.audio_path.name}] Removed {num_removed}/{len(passage.alignments)}"
-            f" alignments due to ambiguous casing: {tokens}"
+            f" alignments due to ambiguous abbreviation: {tokens}"
         )
 
     return dataclasses.replace(passage, alignments=tuple(alignments))
@@ -1082,9 +1083,10 @@ def _normalize_scripts(
         if (
             passage.alignments is None
             and passage.speaker.style is not Style.DICT
+            and passage.speaker.language is Language.ENGLISH
             and not _is_stand_abbrev_consistent(passage.script, passage.transcript)
         ):
-            logger.warn(f"[{label}] Skipping, passage ({name}) it has ambigious casing.")
+            logger.warn(f"[{label}] Skipping, passage ({name}) it has ambiguous casing.")
             continue
 
         script = new_scripts[(passage.script, passage.speaker.language)]
