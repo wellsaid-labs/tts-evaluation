@@ -277,7 +277,6 @@ def _distributions(
             bargap=0.2,
         )
         col = cols[i % len(cols)]
-        col.subheader(feat)
         col.plotly_chart(fig, use_container_width=True)
 
 
@@ -291,12 +290,12 @@ def _speaker_distribution(data: typing.List[typing.Dict]):
     st.plotly_chart(fig, use_container_width=True)
 
 
-def _find_max_audio_len_weight_and_bias(data: typing.List[typing.Dict]):
+def _find_max_audio_len_weight_and_bias(data: typing.List[typing.Dict], slowest_pace: float):
     """Plot the distribution of possible biases and weights to predict maximum audio length."""
-    st.header("Max Audio Length Bias & Weight")
+    st.header("Slowest Pace Of Speech")
     expected = f"{FEATS_PREFIX}_expected_audio_len"
     speakers = set(r["speaker"] for r in data)
-    weights = []
+    pacing = []
     for speaker in speakers:
         selection = [r for r in data if r["speaker"] == speaker]
         total_expected = sum(r[expected] for r in selection)
@@ -306,26 +305,28 @@ def _find_max_audio_len_weight_and_bias(data: typing.List[typing.Dict]):
             "audio_len": total,
             "expected_audio_len": total_expected,
             "num_examples": len(selection),
-            "weight": total / total_expected,
+            "pace": total / total_expected,
         }
-        weights.append(row)
-    df = pandas.DataFrame(weights).sort_values(by=["weight"], ascending=False)
+        pacing.append(row)
+    df = pandas.DataFrame(pacing).sort_values(by=["pace"], ascending=False)
+    st.markdown("This chart determines the slowest speakers compared to the expected audio length.")
     st.dataframe(df, use_container_width=True)
-    weight = sorted(weights, key=lambda r: r["weight"], reverse=True)[0]["weight"]
-    data = sorted(data, key=lambda r: r["audio_len"] - r[expected] * weight, reverse=True)
+    data = sorted(data, key=lambda r: r["audio_len"] - r[expected] * slowest_pace, reverse=True)
     rows = [
         {
             "speaker": r["speaker"],
             "script": r["script"],
-            "bias": r["audio_len"] - (r[expected] * weight),
+            "clip": r["clip"],
+            "offset": r["audio_len"] - (r[expected] * slowest_pace),
         }
-        for r in data[:250]
+        for r in data[:50]
     ]
-    df = pandas.DataFrame(rows).sort_values(by=["bias"], ascending=False)
-    st.dataframe(df, use_container_width=True)
-    bias = data[0]["audio_len"] - (data[0][expected] * weight)
+    df = pandas.DataFrame(rows).sort_values(by=["offset"], ascending=False)
+    st.markdown(f"This chart determines the maximum offset from a pace of {slowest_pace}.")
+    st_ag_grid(df, audio_column_name="clip")
+    offset = data[0]["audio_len"] - (data[0][expected] * slowest_pace)
     st.markdown(
-        f"The maximum audio length is `average_audio_len * {weight} + {bias}`.\n"
+        f"The maximum audio length is `average_audio_len * {slowest_pace} + {offset}`.\n"
         "*Keep in mind, this formula is based on outliers. It might be helpful to dig in "
         "and see if the outlier are valid.*"
     )
@@ -367,10 +368,9 @@ def _correlations(
     meta = meta.sort_values(by=["rSquared"], ascending=False)
     st.dataframe(meta, use_container_width=True)
     cols = st.columns(num_cols)
-    for i, (feat, fig) in enumerate(zip(feats, figs)):
+    for i, (_, fig) in enumerate(zip(feats, figs)):
         col = cols[i % num_cols]
-        col.subheader(feat)
-        col.plotly_chart(fig)
+        col.plotly_chart(fig, use_container_width=True)
 
 
 def _multivariate_regression(
@@ -432,7 +432,7 @@ def _multivariate_regressions(
         col.subheader(name)
         col.dataframe(coefs.transpose(), use_container_width=True)
         col.info(f"The intercept is **{intercept}**, and R-Squared is **{rsquared}**.")
-        col.plotly_chart(fig)
+        col.plotly_chart(fig, use_container_width=True)
 
 
 def main():
@@ -460,12 +460,14 @@ def main():
     form: DeltaGenerator = st.form("settings")
     question = "How many span(s) do you want to generate?"
     # NOTE: Too many spans could cause the `streamlit` to refresh and start over.
-    num_spans: int = int(form.number_input(question, 0, 50000, 1500))
+    num_spans: int = int(form.number_input(question, 0, 50000, 500))
     format_func = lambda s: "None" if s is None else _speaker(s)
     speakers = [None] + list(train_dataset.keys())
     speaker: typing.Optional[Speaker] = form.selectbox("Speaker", speakers, format_func=format_func)
     question = "How often do characters need to show up, in percent, for them to be analyzed?"
-    char_threshold: float = int(form.number_input(question, 0, 100, 1, 1)) / 100
+    char_threshold: float = int(form.number_input(question, 0, 100, 2, 1)) / 100
+    question = "What is the slowest authentic pace of speech? (See charts to determine this value)"
+    slowest_pace = float(form.number_input(question, 0.0, None, 1.4))
     analyze_alignments: bool = form.checkbox("Analyze Individual Alignments")
     # NOTE: Generally, we have found that phonemes and syllables are not helpful. They are also
     # restrictive because we cannot always find pronunciation data, so this is turned off by
@@ -506,7 +508,7 @@ def main():
     _summarize(spans, df)
     st.header("Data")
     st_ag_grid(df, audio_column_name="clip")
-    _find_max_audio_len_weight_and_bias(data)
+    _find_max_audio_len_weight_and_bias(data, slowest_pace=slowest_pace)
     _speaker_distribution(data)
     _distributions(data, ["audio_len"] + features, [0.1] + [1.0] * len(features))
     _correlations(data, "audio_len", features)

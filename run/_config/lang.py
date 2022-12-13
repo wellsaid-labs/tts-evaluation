@@ -227,21 +227,20 @@ def predict_audio_length(text: str) -> float:
         len(text) - num_upper - num_lower - num_counted_punc - num_initial_dots
     )
     seconds = (
-        (0.2160, "num_initials"),
-        (0.1412, "-"),
-        (0.1091, "!"),
-        (0.0920, ","),
-        (0.0820, "num_upper"),
-        (0.0736, "num_other_punc"),
-        (0.0617, ":"),
-        (0.0560, "num_lower"),
-        (0.0520, "."),
-        (0.0418, '"'),
-        (0.0365, " "),
+        (0.2228, "num_initials"),
+        (0.1288, "-"),
+        (0.1112, "!"),
+        (0.0952, ","),
+        (0.0943, "num_upper"),
+        (0.0815, "num_other_punc"),
+        (0.0575, "num_lower"),
+        (0.0487, "."),
+        (0.0372, '"'),
+        (0.0289, " "),
         (0.0000, "'"),
         (0.0000, "?"),
     )
-    return sum(counts[feat] * val for val, feat in seconds) + 0.1531
+    return sum(counts[feat] * val for val, feat in seconds) + 0.1561
 
 
 def predict_max_audio_length(text: str) -> float:
