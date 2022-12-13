@@ -247,7 +247,10 @@ def predict_max_audio_length(text: str) -> float:
 
     NOTE: Using speech segments in our data, this ensures that 99.97% of the time, the audio length
           is smaller than this maximum audio length, after analyzing 30k segments. The cases
-          in which it's longer have very long unnecessary pauses and breaths.
+          are buggy because extenuated pauses should not have been included in speech segments.
+    TODO: Measure how well this aligns with spans, not just speech segments, which may include
+          longer pauses. It should scale well because spans are longer, so, it'll tend toward
+          the average much more.
     """
     return predict_audio_length(text) * 1.4 + 0.6
 
