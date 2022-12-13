@@ -180,7 +180,7 @@ def load_spacy_nlp(language: Language) -> spacy.language.Language:
 # an impact on audio length. We do not match single letter initials like in "Big C", "c-suite",
 # "u-boat", "t-shirt" and "rain-x" because they largely do not affect the audio length. We DO
 # match acronyms like "U. S.", even so.
-ABBREV = re.compile(
+_LONG_ABBREV = re.compile(
     r"("
     # GROUP 2: Abbr separated with dots like "a.m.".
     r"\b([A-Za-z]\.){2,}\B"
@@ -193,9 +193,9 @@ ABBREV = re.compile(
 )
 
 
-def _get_long_abbrevs(text: str):
+def _get_long_abbrevs(text: str) -> typing.Tuple[str]:
     """Get a list of abbreviations that take a long time to speak in `text`."""
-    return tuple(m[0] for m in ABBREV.findall(text))
+    return tuple(m[0] for m in _LONG_ABBREV.findall(text))
 
 
 def predict_audio_length(text: str) -> float:
@@ -203,12 +203,10 @@ def predict_audio_length(text: str) -> float:
 
     NOTE: This approach counts the individual characters and assigns them with a seconds value. It
           was developed using this workbook
-          `run/review/dataset_processing/text_audio_length_correlation.py`. It has a ~95%
+          `run/review/dataset_processing/text_audio_length_correlation.py`. It has a r=0.946
           correlation with audio length.
-    TODO: Double check the intercept... That'll impact out maximum calculation.
-    TODO: This should be moved to configuration.
     """
-    counts = {p: text.count(p) for p in ["-", "!", ",", ":", ".", '"', " ", "'", "?"]}
+    counts = {p: text.count(p) for p in ["-", "!", ",", ".", '"', " ", "'", "?"]}
     num_counted_punc = sum(counts.values())
     num_upper = sum(c.isupper() for c in text)
     num_lower = sum(c.islower() for c in text)
@@ -240,14 +238,16 @@ def predict_audio_length(text: str) -> float:
         (0.0000, "'"),
         (0.0000, "?"),
     )
+    assert len(seconds) == len(counts)
     return sum(counts[feat] * val for val, feat in seconds) + 0.1561
 
 
 def predict_max_audio_length(text: str) -> float:
     """Predict the maximum audio length given `text`.
 
-    NOTE: Using speech segments in our data, this ensures that ~99% of the time, the audio length
-          is smaller than this maximum audio length.
+    NOTE: Using speech segments in our data, this ensures that 99.97% of the time, the audio length
+          is smaller than this maximum audio length, after analyzing 30k segments. The cases
+          in which it's longer have very long unnecessary pauses and breaths.
     """
     return predict_audio_length(text) * 1.4 + 0.6
 
