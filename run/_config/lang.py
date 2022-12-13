@@ -176,6 +176,83 @@ def load_spacy_nlp(language: Language) -> spacy.language.Language:
     return lib.text.load_spacy_nlp(_LANGUAGE_TO_SPACY[language], disable=disable)
 
 
+# NOTE: This regex gets abbreviations that are multiple characters long that particularly have
+# an impact on audio length. We do not match single letter initials like in "Big C", "c-suite",
+# "u-boat", "t-shirt" and "rain-x" because they largely do not affect the audio length. We DO
+# match acronyms like "U. S.", even so.
+ABBREV = re.compile(
+    r"("
+    # GROUP 2: Abbr separated with dots like "a.m.".
+    r"\b([A-Za-z]\.){2,}\B"
+    r"|"
+    # GROUP 3: Upper-case abbr like "MiniUSA.com", "fMRI", "DirecTV", "PCI-DSS", "U. S.", "W-USA",
+    #          "JCPenney", "PhD", "U. S.", etc.
+    r"([A-Z0-9](?:[a-z]?[&\-\.\s*]*[A-Z0-9])+)"
+    r"(?=\b|s|[A-Z][a-z])"
+    r")"
+)
+
+
+def _get_long_abbrevs(text: str):
+    """Get a list of abbreviations that take a long time to speak in `text`."""
+    return tuple(m[0] for m in ABBREV.findall(text))
+
+
+def predict_audio_length(text: str) -> float:
+    """Predict the audio length given the text.
+
+    NOTE: This approach counts the individual characters and assigns them with a seconds value. It
+          was developed using this workbook
+          `run/review/dataset_processing/text_audio_length_correlation.py`. It has a ~95%
+          correlation with audio length.
+    TODO: Double check the intercept... That'll impact out maximum calculation.
+    TODO: This should be moved to configuration.
+    """
+    counts = {p: text.count(p) for p in ["-", "!", ",", ":", ".", '"', " ", "'", "?"]}
+    num_counted_punc = sum(counts.values())
+    num_upper = sum(c.isupper() for c in text)
+    num_lower = sum(c.islower() for c in text)
+    abbreviations = "".join(_get_long_abbrevs(text))
+    num_upper_initials = sum(c.isupper() for c in abbreviations)
+    num_lower_initials = sum(c.islower() for c in abbreviations)
+    num_initial_dots = sum(c == "." for c in abbreviations)
+    counts = {
+        "num_upper": num_upper - num_upper_initials,
+        "num_lower": num_lower - num_lower_initials,
+        "num_initials": num_upper_initials + num_lower_initials,
+        **counts,
+    }
+    counts["."] = counts["."] - num_initial_dots
+    counts["num_other_punc"] = (
+        len(text) - num_upper - num_lower - num_counted_punc - num_initial_dots
+    )
+    seconds = (
+        (0.2160, "num_initials"),
+        (0.1412, "-"),
+        (0.1091, "!"),
+        (0.0920, ","),
+        (0.0820, "num_upper"),
+        (0.0736, "num_other_punc"),
+        (0.0617, ":"),
+        (0.0560, "num_lower"),
+        (0.0520, "."),
+        (0.0418, '"'),
+        (0.0365, " "),
+        (0.0000, "'"),
+        (0.0000, "?"),
+    )
+    return sum(counts[feat] * val for val, feat in seconds) + 0.1531
+
+
+def predict_max_audio_length(text: str) -> float:
+    """Predict the maximum audio length given `text`.
+
+    NOTE: Using speech segments in our data, this ensures that ~99% of the time, the audio length
+          is smaller than this maximum audio length.
+    """
+    return predict_audio_length(text) * 1.4 + 0.6
+
+
 def configure(overwrite: bool = False):
     """Configure modules involved in processing text."""
     # NOTE: These are speakers reliable datasets, in the right language.
