@@ -146,6 +146,9 @@ def is_sound_alike(a: str, b: str, language: Language) -> bool:
     """Return `True` if `str` `a` and `str` `b` sound a-like.
 
     NOTE: If two words have same sounds are spoken in the same order, then they sound-a-like.
+    TODO: This does not support accents well, for example: `décor` and `decor` are not matching up.
+          We should consider adding a check to just ensure the letters are the same, if so, that's
+          enough.
 
     Example:
         >>> is_sound_alike("Hello-you've", "Hello. You've", Language.ENGLISH)

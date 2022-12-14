@@ -459,7 +459,6 @@ def main():
 
     form: DeltaGenerator = st.form("settings")
     question = "How many span(s) do you want to generate?"
-    # NOTE: Too many spans could cause the `streamlit` to refresh and start over.
     num_spans: int = int(form.number_input(question, 0, 50000, 500))
     format_func = lambda s: "None" if s is None else _speaker(s)
     speakers = [None] + list(train_dataset.keys())
