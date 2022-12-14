@@ -2,7 +2,7 @@
 
 Example:
 
-    $ python -m run.evaluate.grapheme_to_phoneme 'Add your text here.'
+    $ python -m run.review.text_processing.grapheme_to_phoneme 'Add your text here.'
     ˈ|æ|d| |j|ʊɹ| |t|ˈ|ɛ|k|s|t| |h|ˈ|ɪɹ|.
 """
 import sys

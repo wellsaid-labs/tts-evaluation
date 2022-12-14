@@ -23,7 +23,8 @@ TODO:
     We could calculate pauses with `non_speech_segments` or `alignments`?
 
 Usage:
-    $ PYTHONPATH=. streamlit run run/data/dataset_dashboard/__main__.py --runner.magicEnabled=false
+    $ PYTHONPATH=. streamlit run run/review/dataset/dashboard/__main__.py \
+          --runner.magicEnabled=false
 """
 
 import collections
@@ -36,26 +37,19 @@ import warnings
 import altair as alt
 import config as cf
 import pandas as pd
-from spacy.language import Language
 import streamlit as st
 import tqdm
+from spacy.language import Language
 from torchnlp.random import fork_rng
 
 import lib
 import run
 from lib.utils import flatten_2d, mazel_tov, round_, seconds_to_str
 from run._config import configure, is_voiced
-from run._streamlit import (
-    audio_to_html,
-    clear_session_cache,
-    get_dataset,
-    load_en_core_web_md,
-    map_,
-    st_data_frame,
-)
-from run._utils import Dataset, split_dataset, _passages_len
+from run._streamlit import audio_to_html, get_dataset, load_en_core_web_md, map_, st_data_frame
+from run._utils import Dataset, _passages_len, split_dataset
 from run.data._loader import DATASETS, Passage, Span, has_a_mistranscription
-from run.data.dataset_dashboard import _utils as utils
+from run.review.dataset.dashboard import _utils as utils
 
 lib.environment.set_basic_logging_config(reset=True)
 alt.data_transformers.disable_max_rows()
@@ -193,14 +187,15 @@ def _grouped_bar_chart(
         x_label: The x-axis label.
         y_label: The y-axis label.
     """
+    header = alt.Header(labelAngle=-25, labelPadding=-50)  # type: ignore
     grouped_bar_chart = (
-        alt.Chart(df)
+        alt.Chart(df)  # type: ignore
         .mark_bar()
         .encode(
-            x=alt.X(x_feature, title=x_label),
-            y=alt.Y(y_feature, title=y_label),
+            x=alt.X(x_feature, title=x_label),  # type: ignore
+            y=alt.Y(y_feature, title=y_label),  # type: ignore
             color=color_feature,
-            column=alt.Column(column_feature, header=alt.Header(labelAngle=-25, labelPadding=-50)),
+            column=alt.Column(column_feature, header=header),  # type: ignore
         )
     )
     st.altair_chart(grouped_bar_chart, use_container_width=False)
@@ -668,9 +663,6 @@ def main():
 
     st.title("Dataset Dashboard")
     st.write("The dataset dashboard is an effort to understand our dataset and dataset processing.")
-
-    if st.sidebar.button("Clear Session Cache"):
-        clear_session_cache()
 
     sidebar = st.sidebar
 

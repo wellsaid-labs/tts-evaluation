@@ -1,7 +1,7 @@
 """ A workbook to generate audio for quick evaluations.
 
 Usage:
-    $ PYTHONPATH=. streamlit run run/evaluate/simple_audio_generator.py --runner.magicEnabled=false
+    $ PYTHONPATH=. streamlit run run/review/tts/basic.py --runner.magicEnabled=false
 """
 import typing
 

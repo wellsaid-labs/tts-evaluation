@@ -21,7 +21,7 @@ TODO: In addition to measuring the current metrics, add support for running spee
       gibbirsh by comparing the speech-to-text output with the original output.
 
 Usage:
-    $ PYTHONPATH=. streamlit run run/evaluate/batch_generate.py --runner.magicEnabled=false
+    $ PYTHONPATH=. streamlit run run/review/tts/dataset_examples.py --runner.magicEnabled=false
 """
 import pathlib
 import random
@@ -108,7 +108,7 @@ def main():
 
         for span, (_, pred, audio) in tqdm(zip(spans, in_outs), total=len(spans)):
             image_web_path = make_temp_web_dir() / "alignments.png"
-            lib.visualize.plot_alignments(pred.alignments[:, 0]).savefig(image_web_path)
+            lib.visualize.plot_alignments(pred.alignments[:, 0]).savefig(str(image_web_path))
             num_frames = pred.frames.shape[0]
             num_pause_frames = cf.partial(get_num_pause_frames)(pred.frames, None)
             max_pause_frames = cf.partial(get_max_pause)(pred.frames, None)

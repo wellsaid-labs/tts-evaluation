@@ -1,5 +1,5 @@
 import lib
-from run.data.dataset_dashboard._utils import _ngrams, _signal_to_db_rms_level
+from run.review.dataset.dashboard._utils import _ngrams, _signal_to_db_rms_level
 
 
 def test__ngrams():

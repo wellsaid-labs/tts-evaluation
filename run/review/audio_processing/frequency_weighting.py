@@ -10,7 +10,7 @@ Learn more about weighting here:
 
 Example:
 
-    $ python -m run.evaluate.frequency_weighting
+    $ python -m run.review.audio_processing.frequency_weighting
 """
 import numpy as np
 from matplotlib import pyplot

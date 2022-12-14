@@ -8,11 +8,10 @@ TODO:
   would help ensure that the evaluation is consistent.
 
 Usage:
-    $ PYTHONPATH=. streamlit run run/evaluate/grid_search.py --runner.magicEnabled=false
+    $ PYTHONPATH=. streamlit run run/review/tts/grid_search.py --runner.magicEnabled=false
 """
 import functools
 import itertools
-import pathlib
 import typing
 from typing import cast
 
@@ -22,39 +21,25 @@ from streamlit_datatable import st_datatable
 
 import lib
 import run
-from lib.environment import PT_EXTENSION, ROOT_PATH, load
-from lib.text import natural_keys
+from lib.environment import PT_EXTENSION, load
 from run import train
 from run._config import (
     DEFAULT_SCRIPT,
     SIGNAL_MODEL_EXPERIMENTS_PATH,
     SPECTROGRAM_MODEL_EXPERIMENTS_PATH,
 )
-from run._streamlit import audio_to_web_path, paths_to_html_download_link, st_html, web_path_to_url
+from run._streamlit import (
+    audio_to_web_path,
+    path_label,
+    paths_to_html_download_link,
+    st_html,
+    st_select_paths,
+    web_path_to_url,
+)
 from run._tts import TTSPackage, get_session_vocab, text_to_speech
 from run.data._loader import Session, Speaker
 
 st.set_page_config(layout="wide")
-
-
-def path_label(path: pathlib.Path) -> str:
-    """Get a short label for `path`."""
-    return str(path.relative_to(ROOT_PATH)) + "/" if path.is_dir() else str(path.name)
-
-
-def st_select_paths(label: str, dir: pathlib.Path, suffix: str) -> typing.List[pathlib.Path]:
-    """Display a path selector for the directory `dir`."""
-    options = sorted(
-        [p for p in dir.glob("**/*") if p.suffix == suffix or p.is_dir()] + [dir],
-        key=lambda x: natural_keys(str(x)),
-        reverse=True,
-    )
-    paths = st.multiselect(label, options=options, format_func=path_label)  # type: ignore
-    paths = cast(typing.List[pathlib.Path], paths)
-    paths = [f for p in paths for f in ([p] if p.is_file() else list(p.glob(f"**/*{suffix}")))]
-    if len(paths) > 0:
-        st.info(f"Selected {label}:\n" + "".join(["\n - " + path_label(p) for p in paths]))
-    return paths
 
 
 def get_sample_sessions(

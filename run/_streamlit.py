@@ -1,10 +1,8 @@
-import functools
 import logging
 import multiprocessing
 import multiprocessing.pool
 import os
 import pathlib
-import pickle
 import shutil
 import tempfile
 import typing
@@ -13,11 +11,12 @@ import zipfile
 import config as cf
 import numpy as np
 import tqdm
-from streamlit.server.server import Server
 from third_party import LazyLoader
 
 import lib
 import run
+from lib.environment import ROOT_PATH
+from lib.text import natural_keys
 from run._tts import CHECKPOINTS_LOADERS, Checkpoints, package_tts
 from run._utils import Dataset
 from run.data._loader import Passage
@@ -49,120 +48,9 @@ STREAMLIT_STATIC_TEMP_PATH = STREAMLIT_STATIC_PRIVATE_PATH / "temp"
 STREAMLIT_STATIC_SYMLINK_PATH = STREAMLIT_STATIC_PRIVATE_PATH / "symlink"
 
 
-def is_streamlit_running() -> bool:
-    """Check if `streamlit` server has been initialized."""
-    try:
-        Server.get_current()
-        return True
-    except RuntimeError:
-        return False
-
-
-_WrappedFunction = typing.TypeVar("_WrappedFunction", bound=typing.Callable[..., typing.Any])
-
-
-def pickle_cache(func: _WrappedFunction = None, **kwargs) -> _WrappedFunction:
-    """Cache the inputs and outputs of `func` in a `pickle` format.
-
-    NOTE: Due this the below bug, it's better to cache using `pickle`, so that old objects
-    don't stick around. Learn more:
-    https://github.com/streamlit/streamlit/issues/2379
-    """
-    if not func:
-        return functools.partial(pickle_cache, **kwargs)  # type: ignore
-
-    cache = {}
-
-    @functools.wraps(func)
-    def decorator(*args, **kwargs):
-        logger.info(f"Pickling `{func.__qualname__}` arguments...")
-        key = (pickle.dumps(args), pickle.dumps(kwargs))
-        if key in cache:
-            logger.info(f"Loading `{func.__qualname__}` cache...")
-            loaded = pickle.loads(cache[key])
-            logger.info(f"Loaded `{func.__qualname__}` cache!")
-            return loaded
-        result = func(*args, **kwargs)
-        logger.info(f"Saving `{func.__qualname__}` cache...")
-        cache[key] = pickle.dumps(result)
-        logger.info(f"Saved `{func.__qualname__}` cache!")
-        return result
-
-    def cache_clear():
-        cache.clear()
-
-    decorator.cache_clear = cache_clear
-
-    return typing.cast(_WrappedFunction, decorator)
-
-
-_SessionCacheVar = typing.TypeVar("_SessionCacheVar", bound=typing.Callable[..., typing.Any])
-
-
-class SessionCache(typing.Protocol):
-    def __call__(self, func: _SessionCacheVar, **kwargs) -> _SessionCacheVar:
-        ...
-
-
-@typing.overload
-def session_cache(func: _SessionCacheVar, **kwargs) -> _SessionCacheVar:
-    ...
-
-
-@typing.overload
-def session_cache(func: None = None, **kwargs) -> SessionCache:
-    ...
-
-
-def session_cache(func: typing.Optional[typing.Callable] = None, **kwargs):
-    """`lru_cache` wrapper for `streamlit` that caches accross reruns.
-
-    NOTE: `session_cache` will trigger an import of `streamlit`.
-
-    Learn more: https://github.com/streamlit/streamlit/issues/2382
-    """
-    if not func:
-        return functools.partial(session_cache, **kwargs)
-
-    if not is_streamlit_running():
-        return func
-
-    if "cache" not in st.session_state:
-        st.session_state["cache"] = {}
-
-    if func.__qualname__ not in st.session_state["cache"]:
-        logger.info("Creating `%s` cache.", func.__qualname__)
-        st.session_state["cache"][func.__qualname__] = pickle_cache(**kwargs)(func)
-
-    return st.session_state["cache"][func.__qualname__]
-
-
-def clear_session_cache():
-    """Clear the cache for `session_cache`."""
-    logger.info("Clearing cache...")
-    [v.cache_clear() for v in st.session_state["cache"].values()]
-
-
-@session_cache(maxsize=None)
+@st.experimental_singleton()
 def load_tts(checkpoints_key: str):
     return package_tts(*CHECKPOINTS_LOADERS[Checkpoints[checkpoints_key]]())
-
-
-@session_cache(maxsize=None)
-def rmtree_streamlit_static_temp_dir():
-    """Destroy the our Streamlit temporary directory.
-
-    NOTE: With `session_cache`, this function runs once per session.
-    """
-    if is_streamlit_running():
-        assert pathlib.Path(st.__file__).parent in STREAMLIT_STATIC_TEMP_PATH.parents
-        if STREAMLIT_STATIC_TEMP_PATH.exists():
-            message = "Clearing temporary files at %s..."
-            logger.info(message, STREAMLIT_STATIC_TEMP_PATH.relative_to(lib.environment.ROOT_PATH))
-            shutil.rmtree(STREAMLIT_STATIC_TEMP_PATH)
-
-
-rmtree_streamlit_static_temp_dir()
 
 
 # A `Path` to a file or directory accessible via HTTP in the streamlit app.
@@ -170,9 +58,23 @@ WebPath = typing.NewType("WebPath", pathlib.Path)
 RelativeUrl = typing.NewType("RelativeUrl", str)
 
 
+@st.experimental_singleton()
+def make_temp_root_dir():
+    """Make a temporary directory accessible via HTTP in the streamlit app.
+
+    NOTE: With `experimental_singleton`, this function runs once per session.
+    """
+    assert pathlib.Path(st.__file__).parent in STREAMLIT_STATIC_TEMP_PATH.parents
+    if STREAMLIT_STATIC_TEMP_PATH.exists():
+        path = STREAMLIT_STATIC_TEMP_PATH.relative_to(lib.environment.ROOT_PATH)
+        logger.info(f"Clearing temporary files at {path}...")
+        shutil.rmtree(STREAMLIT_STATIC_TEMP_PATH)
+    STREAMLIT_STATIC_TEMP_PATH.mkdir(exist_ok=True, parents=True)
+
+
 def make_temp_web_dir() -> WebPath:
     """Make a temporary directory accessible via HTTP in the streamlit app."""
-    STREAMLIT_STATIC_TEMP_PATH.mkdir(exist_ok=True, parents=True)
+    make_temp_root_dir()
     return WebPath(pathlib.Path(tempfile.mkdtemp(dir=STREAMLIT_STATIC_TEMP_PATH)))
 
 
@@ -197,12 +99,16 @@ def audio_to_web_path(audio: np.ndarray, name: str = "audio.wav", **kwargs) -> W
     return web_path
 
 
+def audio_to_url(audio: np.ndarray, name: str = "audio.wav", **kwargs):
+    """Create a URL that can be loaded from `streamlit`."""
+    return web_path_to_url(audio_to_web_path(audio, name, **kwargs))
+
+
 def audio_to_html(
     audio: np.ndarray, name: str = "audio.wav", attrs: str = "controls", **kwargs
 ) -> str:
     """Create an audio HTML element from a numpy array."""
-    web_path = audio_to_web_path(audio, name, **kwargs)
-    return f'<audio {attrs} src="{web_path_to_url(web_path)}"></audio>'
+    return f'<audio {attrs} src="{audio_to_url(audio, name, **kwargs)}"></audio>'
 
 
 def paths_to_html_download_link(
@@ -241,7 +147,7 @@ def map_(
         return list(iterator)
 
 
-@session_cache(maxsize=None)
+@st.experimental_singleton()
 def read_wave_audio(*args, **kwargs) -> np.ndarray:
     """Read audio slice, and cache."""
     return lib.audio.read_wave_audio(*args, **kwargs)
@@ -258,7 +164,7 @@ def passage_audio(passage: run.data._loader.Passage) -> np.ndarray:
     return read_wave_audio(passage.audio_file, passage.audio_start, length)
 
 
-@session_cache(maxsize=None)
+@st.experimental_singleton()
 def get_dataset(speaker_labels: typing.FrozenSet[str]) -> Dataset:
     """Load dataset subset, and cache."""
     logger.info("Loading dataset...")
@@ -269,7 +175,7 @@ def get_dataset(speaker_labels: typing.FrozenSet[str]) -> Dataset:
     return dataset
 
 
-@session_cache(maxsize=None)
+@st.experimental_singleton()
 def get_dev_dataset() -> Dataset:
     """Load dev dataset, and cache."""
     with st.spinner("Loading dataset..."):
@@ -277,7 +183,7 @@ def get_dev_dataset() -> Dataset:
     return dev_dataset
 
 
-@session_cache(maxsize=None)
+@st.experimental_singleton()
 def fast_grapheme_to_phoneme(text: str):
     """Fast grapheme to phoneme, cached."""
     return lib.text.grapheme_to_phoneme([text], separator="|")[0]
@@ -342,7 +248,7 @@ def dataset_passages(dataset: Dataset) -> typing.Iterator[Passage]:
         yield from passages
 
 
-@session_cache(maxsize=None)
+@st.experimental_singleton()
 def load_en_core_web_md(*args, **kwargs):
     return lib.text.load_spacy_nlp("en_core_web_md", *args, **kwargs)
 
@@ -359,3 +265,27 @@ def st_data_frame(df: pd.DataFrame):
 def st_html(html: str):
     """Write HTML to streamlit app."""
     return st.markdown(html, unsafe_allow_html=True)
+
+
+def path_label(path: pathlib.Path) -> str:
+    """Get a short label for `path`."""
+    return str(path.relative_to(ROOT_PATH)) + "/" if path.is_dir() else str(path.name)
+
+
+def st_select_path(label: str, dir: pathlib.Path, suffix: str) -> pathlib.Path:
+    """Display a path selector for the directory `dir`."""
+    options = [p for p in dir.glob("**/*") if p.suffix == suffix]
+    options = sorted(options, key=lambda x: natural_keys(str(x)), reverse=True)
+    return typing.cast(pathlib.Path, st.selectbox(label, options=options, format_func=path_label))
+
+
+def st_select_paths(label: str, dir: pathlib.Path, suffix: str) -> typing.List[pathlib.Path]:
+    """Display a file and directory selector for the directory `dir`."""
+    options = [p for p in dir.glob("**/*") if p.suffix == suffix or p.is_dir()] + [dir]
+    options = sorted(options, key=lambda x: natural_keys(str(x)), reverse=True)
+    paths = [st.selectbox(label, options=options, format_func=path_label)]
+    paths = typing.cast(typing.List[pathlib.Path], paths)
+    paths = [f for p in paths for f in ([p] if p.is_file() else list(p.glob(f"**/*{suffix}")))]
+    if len(paths) > 0:
+        st.info(f"Selected {label}:\n" + "".join(["\n - " + path_label(p) for p in paths]))
+    return paths
