@@ -31,6 +31,8 @@ streamlit
 altair
 git+https://github.com/wellsaid-labs/streamlit-mui-datatable
 streamlit-aggrid
+plotly
+statsmodels
 
 # Testing
 pytest

@@ -304,7 +304,7 @@ def get_pronunciations(word: str, dictionary: CMUDictSyl) -> typing.List[Pronunc
 
 
 def get_pronunciation(word: str, dictionary: CMUDictSyl) -> typing.Optional[Pronunciation]:
-    """Get the syllabified CMU pronunciation for `word`, unless it's ambigious or not available.
+    """Get the syllabified CMU pronunciation for `word`, unless it's ambiguous or not available.
 
     Args:
         word: English word spelled with only English letter(s) or apostrophe(s).
@@ -575,7 +575,7 @@ def normalize_vo_script(text: str, non_ascii: frozenset, strip: bool = True) -> 
     TODO: Clarify that some characters like `«` will be normalized regardless of being in the
           `non_ascii` set.
     NOTE: `non_ascii` needs to be explicitly set so that text isn't processed incorrecly accidently.
-    TODO: Double check datasets for ambigiously verbalized characters like "<" which can be
+    TODO: Double check datasets for ambiguously verbalized characters like "<" which can be
           "greater than" or "silent".
     TODO: This removes characters like ℃.
     TODO: Research the impact of normalizing backticks to single quotes.

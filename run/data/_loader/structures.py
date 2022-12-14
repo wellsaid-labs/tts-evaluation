@@ -22,7 +22,6 @@ from third_party import LazyLoader
 import lib
 import run
 from lib.audio import AudioMetadata, get_audio_metadata
-from lib.text import has_digit
 from lib.utils import Timeline, Tuple, flatten_2d, tqdm_
 from run import _config
 from run.data import _loader
@@ -902,67 +901,75 @@ def _check_updated_script(
             lib.utils.call_once(_check_updated_script_helper, label, attr, original, updated)
 
 
-TWO_UPPER_CHAR = re.compile(r"[A-Z]{2}")
+# NOTE: There are some abbreviations we consider non-standard like "t-shirt", "PhD", or "Big C".
+# This makes no attempt at detecting these.
+# TODO: Add support for non-English and for accented characters, using
+# https://pypi.org/project/regex/
+STANDARD_ABBREV = re.compile(
+    r"("
+    # GROUP 2: Abbr separated with dots like "a.m.".
+    r"\b"
+    r"([A-Za-z]\.){2,}"
+    r"\B"
+    r"|"
+    # GROUP 3: Upper-case abbr maybe separated other punctuation that starts on a word break
+    #          like "PCI-DSS", "U. S." or "W-USA".
+    r"\b"
+    r"((?:[A-Z0-9]\s?[&\-\.\s*]?\s?)+(?:[A-Z0-9]-?)*[A-Z0-9])"
+    r"(?=\b|[0-9])"
+    r"|"
+    # GROUP 4: Upper-case abbr like "MiniUSA.com", "fMRI" or "DirecTV".
+    r"([A-Z0-9]{2,})"
+    r"(?=\b|[a-z0-9])"
+    r")"
+)
 
 
-def _is_stand_casing(phrase: str):
-    """Check if `phrase` casing is standard.
+def _get_abbrev_letters(text: str):
+    """Get all letters for the abbreviations in `text`."""
+    return tuple(c.lower() for m in STANDARD_ABBREV.findall(text) for c in m[0] if c.isalpha())
 
-    The casing is standard if...
-    - There are no consecutive uppercase letters.
-    - It's not an initialism or acronym with periods or spaces between letters.
+
+def _is_stand_abbrev_consistent(script: str, transcript: str):
+    """Check that the abbreviations in the script are in fact abbreviations in the transcript, also.
+
+    This can help filter out capitalized words or ambiguous abbreviations that will not have the
+    same casing in `script` and `transcript`.
+
+    NOTE: It is possible for non-standard abbreviations to pass this test if both the script and
+          transcript agree, for example "PhD" or "t-shirt".
     """
-    split = phrase.split()
-    if len(split) > 1 and all(len(w) == 1 for w in split):
-        return False
-    return all(TWO_UPPER_CHAR.search(w) is None for w in split)
+    return _get_abbrev_letters(script) == _get_abbrev_letters(transcript)
 
 
-def _is_casing_ambiguous(
-    passage: UnprocessedPassage, i: int
-) -> typing.Tuple[bool, typing.Optional[str], typing.Optional[str]]:
-    """Ensure the script and transcript have "non standard casing", at the same time.
-
-    TODO:
-    - There still may be some ambiguity with acronyms that are not initialisms like, NASDAQ. The
-    `script` and `transcript` may agree on them, so the model needs to learn their pronunciation on
-    a case by case basis.
-    """
+def _remove_abbrev_helper(passage: UnprocessedPassage, i: int) -> typing.Tuple[bool, str, str]:
     assert passage.alignments is not None
     script_token = passage.script[slice(*passage.alignments[i].script)]
     transcript_token = passage.transcript[slice(*passage.alignments[i].transcript)]
-    if script_token == transcript_token or has_digit(script_token) or has_digit(transcript_token):
-        return False, None, None
-
-    new_script_token = run._config.replace_punc(script_token, " ", passage.speaker.language)
-    new_transcript_token = run._config.replace_punc(transcript_token, " ", passage.speaker.language)
-    new_script_token, new_transcript_token = new_script_token.strip(), new_transcript_token.strip()
-    if len(new_script_token) == 1 and len(new_transcript_token) == 1:
-        # NOTE: The transcript is guessing at the sentence structure, so it may mess up on many
-        # single word tokens; therefore, we exclude those from this analysis.
-        return False, None, None
-
-    is_ambiguous = _is_stand_casing(new_script_token) != _is_stand_casing(new_transcript_token)
-    return is_ambiguous, script_token, transcript_token
+    tokens = (script_token, transcript_token)
+    if script_token == transcript_token:
+        return False, *tokens
+    return not _is_stand_abbrev_consistent(*tokens), *tokens
 
 
-def _remove_ambiguous_casing(label: str, passage: UnprocessedPassage):
-    """Remove any alignments where the script or transcript has upper casing or mixed casing when
-    the other one does not.
+def _remove_ambiguous_abbrev(label: str, passage: UnprocessedPassage):
+    """Remove any alignments where the script has a capitalized word or an ambiguous abbreviation.
 
     TODO: Add this to `sync_script_with_audio.py`.
+    TODO: We'd still need to add an additional filter to remove acronyms like NASDAQ or NASA, in
+          order to stay consistent with our language invariants.
     """
-    if passage.alignments is None:
+    if passage.alignments is None or passage.speaker.language is not Language.ENGLISH:
         return passage
 
-    ambiguous = [_is_casing_ambiguous(passage, i) for i in range(len(passage.alignments))]
+    ambiguous = [_remove_abbrev_helper(passage, i) for i in range(len(passage.alignments))]
     alignments = [a for a, (i, _, _) in zip(passage.alignments, ambiguous) if not i]
     if len(alignments) != len(passage.alignments):
         tokens = ", ".join(str((s, t)) for (i, s, t) in ambiguous if i)
         num_removed = len(passage.alignments) - len(alignments)
         logger.warning(
             f"[{label}][{passage.audio_path.name}] Removed {num_removed}/{len(passage.alignments)}"
-            f" alignments due to ambiguous casing: {tokens}"
+            f" alignments due to ambiguous abbreviation: {tokens}"
         )
 
     return dataclasses.replace(passage, alignments=tuple(alignments))
@@ -989,6 +996,9 @@ def _check_alignments(label: str, passage: UnprocessedPassage):
         logger.warning(f"{prefix} Found {num_pairs} tokens that don't sound-a-like, like: {pairs}")
 
 
+# NOTE: A `Dataset` has a list of `Document`s which has a list of `Passage`s. A `Document` is
+# list of `Passage`s that are all in sequence. They could additionally have shared attributes
+# like a script, transcript, or audio file.
 UnprocessedDocument = typing.List[UnprocessedPassage]
 UnprocessedDataset = typing.List[UnprocessedDocument]
 
@@ -1077,16 +1087,23 @@ def _normalize_scripts(
         if (
             passage.alignments is None
             and passage.speaker.style is not Style.DICT
-            and TWO_UPPER_CHAR.search(passage.script)
+            and passage.speaker.language is Language.ENGLISH
+            and len(_get_abbrev_letters(passage.script)) > 0
         ):
-            logger.warn(f"[{label}] Skipping, passage ({name}) it may have ambigious casing.")
+            # NOTE: Datasets like M-AILABS has hundreds of passages like this...
+            # "WHY do you think a mermaid is like an automobile?"
+            # "CHAPTER ten THE UNDISCOVERED ISLAND."
+            # "L. FRANK BAUM."
+            # The transcript and script are both the same, so we would be unable to filter them out.
+            message = f"[{label}] Skipping, passage ({name}) it may have ambiguous abbreviations."
+            logger.warn(message)
             continue
 
         script = new_scripts[(passage.script, passage.speaker.language)]
         transcript = new_scripts[(passage.transcript, passage.speaker.language)]
         _check_updated_script(label, passage, script, transcript)
         new_passage = dataclasses.replace(passage, script=script, transcript=transcript)
-        new_passage = _remove_ambiguous_casing(label, new_passage)
+        new_passage = _remove_ambiguous_abbrev(label, new_passage)
         _check_alignments(label, new_passage)
         new_document.append(new_passage)
     return new_dataset

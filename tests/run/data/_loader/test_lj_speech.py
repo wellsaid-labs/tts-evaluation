@@ -9,7 +9,7 @@ from run.data._loader.english.lj_speech import LINDA_JOHNSON, lj_speech_dataset
 from tests import _utils
 
 verbalize_test_cases = {
-    # NOTE: This example has ambigious casing, and it is now removed from the dataset.
+    # NOTE: This example has ambiguous casing, and it is now removed from the dataset.
     # "LJ044-0055": "five four four Camp Street New",  # Test special case
     "LJ032-0036": "Number two two zero two one three zero four six two",  # Test special case
     # Test time

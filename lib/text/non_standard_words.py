@@ -495,7 +495,7 @@ ORGANIZATIONS: typing.Final[typing.Dict[str, str]] = {
     "MADD": "Mad",
     "NCAA": "N C double A",
     "NAACP": "N double A C P",
-    "NASA": "Nasa",
+    "NASA": "Nassa",
     "NATO": "Nato",
     "NAFTA": "Nafta",
     "NERF": "Nerf",
