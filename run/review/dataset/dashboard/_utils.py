@@ -135,7 +135,7 @@ def dataset_total_audio(dataset: Dataset) -> float:
 
 
 def passage_alignment_speech_segments(passage: Passage) -> typing.List[Span]:
-    """Get `passage` speech segments seperated by alignment pauses."""
+    """Get `passage` speech segments separated by alignment pauses."""
     start = 0
     segments: typing.List[Span] = []
     spans, spans_is_voiced = voiced_nonalignment_spans(passage)
@@ -150,7 +150,7 @@ def passage_alignment_speech_segments(passage: Passage) -> typing.List[Span]:
     message = "Every alignment must be included."
     assert [i for s in segments for i in range(s.slice.start, s.slice.stop)] == expected, message
     if len(segments) > 0:
-        message = "Every speech segment needs to be seperated by a non speech segment."
+        message = "Every speech segment needs to be separated by a non speech segment."
         pairs = zip(segments, segments[1:])
         assert all(b.audio_start - a.audio_stop > 0 for a, b in pairs), message
 

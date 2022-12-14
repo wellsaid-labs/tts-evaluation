@@ -109,7 +109,7 @@ def _include_span(span: struc.Span):
     TODO: How can we filter out all non-standard words that haven't been normalized, yet? We could
     normalize the script before hand, removing all non-standard words. Afterwards, we can verify
     with Google STT that it matches the voice over.
-    TODO: The character "." is ambigious. It is sometimes prounced "dot" and sometimes it's silent.
+    TODO: The character "." is ambiguous. It is sometimes prounced "dot" and sometimes it's silent.
     There may be some inconsistency between eSpeak and the voice over with regards to ".".
     """
     script = str(span.spacy_context(**cf.get()))
@@ -123,13 +123,13 @@ def _include_span(span: struc.Span):
     if "?" in script and span.speaker.style is struc.Style.OG_NARR:
         return False
 
-    # NOTE: Filter out any passage(s) with a slash because it's ambigious. It's not obvious if
+    # NOTE: Filter out any passage(s) with a slash because it's ambiguous. It's not obvious if
     # it should be silent or verbalized.
     if "/" in script or "\\" in script:
         return False
 
     # NOTE: Filter out any passage(s) with digits because the pronunciation is fundamentally
-    # ambigious, and it's much easier to handle this case with text normalization.
+    # ambiguous, and it's much easier to handle this case with text normalization.
     # NOTE: See performance statistics here: https://stackoverflow.com/a/31861306/4804936
     if lib.text.has_digit(script):
         return False
@@ -307,7 +307,7 @@ def configure(overwrite: bool = False):
     groups += [{s} for s in _loader.DATASETS.keys() if s not in groups[0]]
     config = {
         run._utils.get_unprocessed_dataset: cf.Args(datasets=DATASETS),
-        run._utils.get_dataset: cf.Args(include_passage=_include_passage),
+        run._utils.get_dataset: cf.Args(datasets=DATASETS, include_passage=_include_passage),
         # NOTE: Set `approx_dev_len` to 30 minutes for a consistent amount of dev data per speaker,
         # guesstimated to be a sufficient quantity to capture enough variety in each voice.
         # NOTE: Set `min_split_passages` to 3 passages, guesstimated to provide enough passage

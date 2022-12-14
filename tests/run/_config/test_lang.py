@@ -6,6 +6,7 @@ from run._config import (
     normalize_and_verbalize_text,
     normalize_vo_script,
 )
+from run._config.lang import _get_long_abbrevs
 from run.data._loader import Language
 
 
@@ -90,3 +91,66 @@ def text_normalize_and_verbalize_text():
     )
 
     assert text_out == normalize_and_verbalize_text(text_in, Language.ENGLISH)
+
+
+def test__get_long_abbrevs():
+    """Test that `_get_long_abbrevs` is able to get abbreviations that take a long time to speak."""
+    tests = (
+        ("ABC", ["ABC"]),
+        ("NDAs", ["NDA"]),
+        ("HAND-CUT", ["HAND-CUT"]),
+        ("NOVA/national", ["NOVA"]),
+        ("I V As?", ["I V A"]),
+        ("I.V.A.", ["I.V.A."]),
+        ("information...ELEVEN", ["ELEVEN"]),
+        ("(JNA)", ["JNA"]),
+        ("JN a", ["JN"]),
+        ("PwC", ["PwC"]),
+        ("JC PENNEY", ["JC PENNEY"]),
+        ("JCPenney", ["JC"]),
+        ("DirecTV", ["TV"]),
+        ("M*A*C", ["M*A*C"]),
+        ("fMRI", ["MRI"]),
+        ("RuBP.", ["RuBP"]),
+        ("MiniUSA.com,", ["USA"]),
+        ("7-Up", []),
+        ("7UP", ["7UP"]),
+        ("NDT", ["NDT"]),
+        ("ND T", ["ND T"]),
+        ("L.V.N,", ["L.V.N"]),
+        ("I", []),
+        ("p.m.", ["p.m."]),
+        ("place...where", []),
+        ("Smucker's.", []),
+        ("DVD-Players", ["DVD"]),
+        ("PCI-DSS,", ["PCI-DSS"]),
+        ("UFO's,", ["UFO"]),
+        ("most[JT5]", ["JT5"]),
+        ("NJ--at", ["NJ"]),
+        ("U. S.", ["U. S"]),
+        ("ADHD.Some", ["ADHD"]),
+        ("W-USA", ["W-USA"]),
+        ("P-S-E-C-U", ["P-S-E-C-U"]),
+        ("J. V.", ["J. V"]),
+        ("P.m.", ["P.m."]),
+        ("Big-C", []),
+        ("Big C.", []),
+        ("U-Boats", []),
+        ("well.I'll,", []),
+        ("well. I'll", []),
+        ("Rain-x-car", []),
+        ("Rain-X car", []),
+        ("L.L.Bean", ["L.L"]),
+        ("WBGP -", ["WBGP"]),
+        ("W BG P.", ["W BG P"]),
+        ("K RC K", ["K RC K"]),
+        ("DVD-L10", ["DVD-L10"]),
+        ("DVD L10", ["DVD L10"]),
+        ("DVD-L10", ["DVD-L10"]),
+        ("DVD, L10", ["DVD", "L10"]),
+        ("t-shirt", []),
+        ("T-shirt", []),
+    )
+
+    for in_, out in tests:
+        assert list(_get_long_abbrevs(in_)) == out

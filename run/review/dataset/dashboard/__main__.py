@@ -187,14 +187,15 @@ def _grouped_bar_chart(
         x_label: The x-axis label.
         y_label: The y-axis label.
     """
+    header = alt.Header(labelAngle=-25, labelPadding=-50)  # type: ignore
     grouped_bar_chart = (
-        alt.Chart(df)
+        alt.Chart(df)  # type: ignore
         .mark_bar()
         .encode(
-            x=alt.X(x_feature, title=x_label),
-            y=alt.Y(y_feature, title=y_label),
+            x=alt.X(x_feature, title=x_label),  # type: ignore
+            y=alt.Y(y_feature, title=y_label),  # type: ignore
             color=color_feature,
-            column=alt.Column(column_feature, header=alt.Header(labelAngle=-25, labelPadding=-50)),
+            column=alt.Column(column_feature, header=header),  # type: ignore
         )
     )
     st.altair_chart(grouped_bar_chart, use_container_width=False)

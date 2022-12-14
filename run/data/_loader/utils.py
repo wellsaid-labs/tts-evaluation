@@ -387,7 +387,7 @@ def dataset_loader(
         strict: Use `gsutil` to validate the source files.
         add_tqdm
     """
-    logger.info("Loading `%s` speech dataset", root_directory_name)
+    logger.info(f"Loading `{root_directory_name}` speech dataset")
 
     root = (Path(directory) / root_directory_name).absolute()
     root.mkdir(exist_ok=True)
@@ -402,7 +402,8 @@ def dataset_loader(
             command = f"gsutil cp -n {gcs_path}/{directory.name}/*{suffix} {directory}/"
             subprocess.run(command.split(), check=True)
         files_ = [p for p in directory.iterdir() if p.suffix == suffix]
-        message = "Expecting an equal number of recording, alignment, and script files."
+        message = "Expecting an equal number of recording, alignment, and script"
+        message += f" files for `{root_directory_name}`."
         assert len(files) == 0 or len(files_) == len(files[-1]), message
         files.append(sorted(files_, key=lambda p: lib.text.numbers_then_natural_keys(p.name)))
 
@@ -428,6 +429,9 @@ def dataset_loader(
             )
             document.append(passage)
         dataset.append(document)
+
+    logger.info(f"Loaded `{root_directory_name}` speech dataset")
+
     return dataset
 
 

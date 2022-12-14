@@ -2,6 +2,7 @@ import collections
 import functools
 import logging
 import math
+import multiprocessing.pool
 import pathlib
 import random
 import typing
@@ -18,7 +19,7 @@ import lib
 from lib.utils import disk_cache, split
 from run import _config
 from run.data import _loader
-from run.data._loader import DataLoaders, Language, Passage, Speaker
+from run.data._loader import DataLoader, DataLoaders, Language, Passage, Speaker
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import librosa
@@ -38,8 +39,15 @@ UnprocessedDataset = typing.Dict[Speaker, _loader.UnprocessedDataset]
 Dataset = typing.Dict[Speaker, typing.List[Passage]]
 
 
+def _load(loader: DataLoader, path: pathlib.Path):
+    return loader(path)
+
+
 def get_unprocessed_dataset(
-    datasets: DataLoaders, path: pathlib.Path, language: typing.Optional[Language] = None
+    datasets: DataLoaders,
+    path: pathlib.Path,
+    language: typing.Optional[Language] = None,
+    max_workers: int = 6,
 ) -> UnprocessedDataset:
     """Get a raw unprocessed TTS dataset.
 
@@ -48,7 +56,17 @@ def get_unprocessed_dataset(
         path: Directory to cache the dataset.
         ...
     """
-    return {s: d(path) for s, d in datasets.items() if language is None or s.language == language}
+    filtered = {s: d for s, d in datasets.items() if language is None or s.language == language}
+    loaded: typing.List[_loader.UnprocessedDataset]
+    if max_workers > 0:
+        num_workers = min(max_workers, len(filtered))
+        logger.info(f"Making `Pool` with {num_workers} workers to load {len(filtered)} datasets.")
+        with multiprocessing.pool.Pool(processes=num_workers) as pool:
+            args = [(l, path) for l in filtered.values()]
+            loaded = list(pool.starmap(_load, args))
+    else:
+        loaded = [d(path) for d in filtered.values()]
+    return {s: d for s, d in zip(filtered.keys(), loaded)}
 
 
 @lib.utils.log_runtime
@@ -67,7 +85,7 @@ def get_dataset(
     """
     logger.info("Loading dataset...")
 
-    dataset = cf.partial(get_unprocessed_dataset)(datasets, **kwargs)
+    dataset = cf.call(get_unprocessed_dataset, datasets=datasets, **kwargs)
     processed = [_loader.make_passages(s.label, d, add_tqdm=True) for s, d in dataset.items()]
     processed = [[p for p in d if include_passage(p)] for d in processed]
     prepared = {k: v for k, v in zip(dataset.keys(), processed) if len(v) > 0}
@@ -177,7 +195,7 @@ def _split_dataset(dataset: Dataset, approx_dev_len: int, min_sim: float) -> Tra
     # NOTE: Given a dataset of 1 speaker, assume no duplicates and split naively.
     if len(dataset) == 1:
         ((speaker, passages),) = tuple(dataset.items())
-        logger.info(f"Splitting single speaker '{speaker.label}' without deduplication.")
+        logger.info(f"Splitting single speaker `{speaker.label}` without deduplication.")
         random.shuffle(passages)
         d, t = list(split(passages, [approx_dev_len, math.inf], lambda p: _passages_len([p])))
         logger.info(f"Split into {len(t)} train, {len(d)} dev passage(s).")
@@ -191,12 +209,12 @@ def _split_dataset(dataset: Dataset, approx_dev_len: int, min_sim: float) -> Tra
     random.shuffle(items)
     for spkr, passages in tqdm(items):
         num_p = len(passages)
-        logger.info(f"\n\nProcessing speaker {spkr.label} ({spkr.name}) with {num_p} passages.")
+        logger.info(f"Processing speaker `{spkr.label}` ({spkr.name}) with {num_p} passages.")
         duplicates, rest = _find_duplicate_passages(dev_scripts, passages, min_sim)
         num_dup = len(duplicates)
         num_rest = len(rest)
         logger.debug(
-            f"Speaker {spkr.label} ({spkr.name}): found {num_dup} duplicate passages, "
+            f"Speaker `{spkr.label}` ({spkr.name}): found {num_dup} duplicate passages, "
             f"{num_rest} remaining passages in the rest of their dataset."
         )
         random.shuffle(rest)
@@ -209,13 +227,13 @@ def _split_dataset(dataset: Dataset, approx_dev_len: int, min_sim: float) -> Tra
         split_lens = [max(approx_dev_len - _passages_len(duplicates), 0), math.inf]
         d, t = [[p for _, p in s] for s in split(list(enumerate(rest)), split_lens, val)]
 
-        logger.debug(f"Extending {spkr.label} dev set with {len(duplicates)} duplicates.")
+        logger.debug(f"Extending `{spkr.label}` dev set with {len(duplicates)} duplicates.")
         dev[spkr].extend(duplicates + d)
         train[spkr].extend(t)
         dev_scripts.update(d.script for d in dev[spkr])
         num_t = len(train[spkr])
         num_d = len(dev[spkr])
-        logger.info(f"Split {num_p} passages for {spkr.label} into {num_t} train, {num_d} dev.")
+        logger.info(f"Split {num_p} passages for `{spkr.label}` into {num_t} train, {num_d} dev.")
     logger.debug("Finished initial split.\n")
 
     # NOTE: Continue deduping for each speaker until all duplicates are filtered between train/dev.
@@ -225,14 +243,15 @@ def _split_dataset(dataset: Dataset, approx_dev_len: int, min_sim: float) -> Tra
     while not finished_splitting:
         num_dev_scripts = len(dev_scripts)
         for speaker, _ in tqdm(items):
-            logger.debug(f"\n\nFiltering out leftover duplicates for {speaker.label}.")
+            logger.debug(f"\n\nFiltering out leftover duplicates for `{speaker.label}`.")
             duplicates, rest = _find_duplicate_passages(dev_scripts, train[speaker], min_sim)
             num_dup = len(duplicates)
             num_rest = len(rest)
             logger.debug(
-                f"Speaker {speaker.label} ({speaker.name}): {num_dup} duplicates, {num_rest} rest."
+                f"Speaker `{speaker.label}` ({speaker.name}): "
+                f"{num_dup} duplicates, {num_rest} rest."
             )
-            logger.debug(f"Extending {speaker.label} dev set with {len(duplicates)} duplicates.")
+            logger.debug(f"Extending `{speaker.label}` dev set with {len(duplicates)} duplicates.")
             dev[speaker].extend(duplicates)
             train[speaker] = rest
             dev_scripts.update(d.script for d in duplicates)
@@ -283,14 +302,15 @@ def split_dataset(
         ...
     """
     # NOTE: Raise an error for datasets from `dev_speakers` which are shorter than `approx_dev_len`.
-    for spkr in dev_speakers:
-        len_spkr_p = _passages_len(dataset[spkr])
-        if len_spkr_p < approx_dev_len:
-            raise ValueError(
-                f"Speaker {spkr.label} has a total dataset length of {round(len_spkr_p, 1)}s, "
-                f"shorter than `approx_dev_len` of {approx_dev_len}s. Recommended to delete speaker"
-                f" from `dev_speakers`."
-            )
+    for spkr, data in dataset.items():
+        if spkr in dev_speakers:
+            len_spkr_p = _passages_len(data)
+            if len_spkr_p < approx_dev_len:
+                raise ValueError(
+                    f"Speaker `{spkr.label}` has a total dataset length of "
+                    f"{round(len_spkr_p, 1)}s, shorter than `approx_dev_len` of "
+                    f"{approx_dev_len}s. Recommended to delete speaker from `dev_speakers`."
+                )
 
     # NOTE: Ensure that each speaker is in exactly one group.
     logger.info("Splitting dataset...")
@@ -318,7 +338,7 @@ def split_dataset(
         dev_scripts = {p.script for s, d in dev.items() for p in d if s in group}
         items = ((s, p) for s, p in dataset.items() if s in group and s not in dev_speakers)
         for spkr, passages in items:
-            logger.debug(f"Processing non-dev speaker {spkr.label}, {len(passages)} passages.")
+            logger.debug(f"Processing non-dev speaker `{spkr.label}`, {len(passages)} passages.")
             duplicates, rest = _find_duplicate_passages(dev_scripts, passages, min_sim)
             if len(duplicates) > 0:
                 logger.debug(f"Discarded {len(duplicates)} `{spkr.label}` duplicates.")
@@ -335,15 +355,16 @@ def split_dataset(
         num_dev = len(dev.get(spkr, []))
         assert train_len > 0, f"{spkr} `train` dataset has no data."
         if spkr in dev_speakers:
-            msg = f"For {spkr.label}, `dev` is longer than `train` ({dev_len}s > {train_len})s."
+            msg = f"For `{spkr.label}`, `dev` is longer than `train` ({dev_len}s > {train_len})s."
             assert train_len >= dev_len, msg
             assert dev_len > 0, f"{spkr} `dev` dataset has no data."
+            if num_dev < min_split_passages:
+                logger.warning(
+                    f"For `{spkr.label}`, dev set has only {num_dev} passage(s), fewer than "
+                    f"{min_split_passages}."
+                )
+
         logger.info(f"Split {spkr} into {num_train} train, {num_dev} dev passages.")
-        if num_dev < min_split_passages:
-            logger.warning(
-                f"For {spkr.label}, dev set has only {num_dev} passage(s), fewer than "
-                f"{min_split_passages}."
-            )
 
     _is_duplicate.cache_clear()
     return train, dev
