@@ -208,6 +208,11 @@ def predict_audio_length(text: str) -> float:
           was developed using this workbook
           `run/review/dataset_processing/text_audio_length_correlation.py`. It has a r=0.946
           correlation with audio length.
+    TODO: This could be slightly improved by using phonetics; however, there are some challenges
+          to that approach. The issues are tokenization and out-of-vocabulary words.
+    TODO: We could use a deep learning approach for this. We could create a task on in our
+          main model to predict this. We could have a small LSTM. These would be a bit less
+          interpretable; however, they might be far more accurate.
     """
     counts = {p: text.count(p) for p in ["-", "!", ",", ".", '"', " ", "'", "?"]}
     num_counted_punc = sum(counts.values())
