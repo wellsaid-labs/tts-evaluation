@@ -1084,9 +1084,15 @@ def _normalize_scripts(
             passage.alignments is None
             and passage.speaker.style is not Style.DICT
             and passage.speaker.language is Language.ENGLISH
-            and not _is_stand_abbrev_consistent(passage.script, passage.transcript)
+            and len(_get_abbrev_letters(passage.script)) > 0
         ):
-            logger.warn(f"[{label}] Skipping, passage ({name}) it has ambiguous casing.")
+            # NOTE: Datasets like M-AILABS has hundreds of passages like this...
+            # "WHY do you think a mermaid is like an automobile?"
+            # "CHAPTER ten THE UNDISCOVERED ISLAND."
+            # "L. FRANK BAUM."
+            # The transcript and script are both the same, so we would be unable to filter them out.
+            message = f"[{label}] Skipping, passage ({name}) it may have ambiguous abbreviations."
+            logger.warn(message)
             continue
 
         script = new_scripts[(passage.script, passage.speaker.language)]
