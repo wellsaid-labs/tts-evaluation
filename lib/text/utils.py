@@ -281,8 +281,8 @@ def load_cmudict_syl(
     return dictionary
 
 
-def get_pronunciation(word: str, dictionary: CMUDictSyl) -> typing.Optional[Pronunciation]:
-    """Get the syllabified CMU pronunciation for `word`, unless it's ambigious or not available.
+def get_pronunciations(word: str, dictionary: CMUDictSyl) -> typing.List[Pronunciation]:
+    """Get the syllabified CMU pronunciations for `word`.
 
     Args:
         word: English word spelled with only English letter(s) or apostrophe(s).
@@ -291,16 +291,26 @@ def get_pronunciation(word: str, dictionary: CMUDictSyl) -> typing.Optional[Pron
     word = word.strip()
 
     if len(word) > 1 and word.isupper():  # NOTE: Acronyms are not supported.
-        return None
+        return []
 
     if not _is_valid_cmudict_syl_word(word):
-        return None
+        return []
 
     # NOTE: We do not include apostrophe's at the end of a word because they do not change the
     # pronunciation of the word. Learn more here:
     # https://github.com/rhdunn/amepd/commit/5fcd23a4424807e8b1c3f8736f19b38cd7e5abaf
     word = word[:-1] if word[-1] == "'" else word
-    pronunciations = dictionary[word.upper()]
+    return dictionary[word.upper()]
+
+
+def get_pronunciation(word: str, dictionary: CMUDictSyl) -> typing.Optional[Pronunciation]:
+    """Get the syllabified CMU pronunciation for `word`, unless it's ambiguous or not available.
+
+    Args:
+        word: English word spelled with only English letter(s) or apostrophe(s).
+        ...
+    """
+    pronunciations = get_pronunciations(word, dictionary)
     return pronunciations[0] if len(pronunciations) == 1 else None
 
 
@@ -565,7 +575,7 @@ def normalize_vo_script(text: str, non_ascii: frozenset, strip: bool = True) -> 
     TODO: Clarify that some characters like `«` will be normalized regardless of being in the
           `non_ascii` set.
     NOTE: `non_ascii` needs to be explicitly set so that text isn't processed incorrecly accidently.
-    TODO: Double check datasets for ambigiously verbalized characters like "<" which can be
+    TODO: Double check datasets for ambiguously verbalized characters like "<" which can be
           "greater than" or "silent".
     TODO: This removes characters like ℃.
     TODO: Research the impact of normalizing backticks to single quotes.

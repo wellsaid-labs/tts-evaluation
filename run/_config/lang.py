@@ -149,6 +149,9 @@ def is_sound_alike(a: str, b: str, language: Language) -> bool:
     """Return `True` if `str` `a` and `str` `b` sound a-like.
 
     NOTE: If two words have same sounds are spoken in the same order, then they sound-a-like.
+    TODO: This does not support accents well, for example: `décor` and `decor` are not matching up.
+          We should consider adding a check to just ensure the letters are the same, if so, that's
+          enough.
 
     Example:
         >>> is_sound_alike("Hello-you've", "Hello. You've", Language.ENGLISH)
@@ -179,6 +182,90 @@ def load_spacy_nlp(language: Language) -> spacy.language.Language:
     return lib.text.load_spacy_nlp(_LANGUAGE_TO_SPACY[language], disable=disable)
 
 
+# NOTE: This regex gets abbreviations that are multiple characters long that particularly have
+# an impact on audio length. We do not match single letter initials like in "Big C", "c-suite",
+# "u-boat", "t-shirt" and "rain-x" because they largely do not affect the audio length. We DO
+# match acronyms like "U. S.", even so.
+_LONG_ABBREV = re.compile(
+    r"("
+    # GROUP 2: Abbr separated with dots like "a.m.".
+    r"\b([A-Za-z]\.){2,}\B"
+    r"|"
+    # GROUP 3: Upper-case abbr like "MiniUSA.com", "fMRI", "DirecTV", "PCI-DSS", "U. S.", "W-USA",
+    #          "JCPenney", "PhD", "U. S.", etc.
+    r"([A-Z0-9](?:[a-z]?[&\-\.\s*]*[A-Z0-9])+)"
+    r"(?=\b|s|[A-Z][a-z])"
+    r")"
+)
+
+
+def _get_long_abbrevs(text: str) -> typing.Tuple[str]:
+    """Get a list of abbreviations that take a long time to speak in `text`."""
+    return tuple(m[0] for m in _LONG_ABBREV.findall(text))
+
+
+def predict_audio_length(text: str) -> float:
+    """Predict the audio length given the text.
+
+    NOTE: This approach counts the individual characters and assigns them with a seconds value. It
+          was developed using this workbook
+          `run/review/dataset_processing/text_audio_length_correlation.py`. It has a r=0.946
+          correlation with audio length.
+    TODO: This could be slightly improved by using phonetics; however, there are some challenges
+          to that approach. The issues are tokenization and out-of-vocabulary words.
+    TODO: We could use a deep learning approach for this. We could create a task on in our
+          main model to predict this. We could have a small LSTM. These would be a bit less
+          interpretable; however, they might be far more accurate.
+    """
+    counts = {p: text.count(p) for p in ["-", "!", ",", ".", '"', " ", "'", "?"]}
+    num_counted_punc = sum(counts.values())
+    num_upper = sum(c.isupper() for c in text)
+    num_lower = sum(c.islower() for c in text)
+    abbreviations = "".join(_get_long_abbrevs(text))
+    num_upper_initials = sum(c.isupper() for c in abbreviations)
+    num_lower_initials = sum(c.islower() for c in abbreviations)
+    num_initial_dots = sum(c == "." for c in abbreviations)
+    counts = {
+        "num_upper": num_upper - num_upper_initials,
+        "num_lower": num_lower - num_lower_initials,
+        "num_initials": num_upper_initials + num_lower_initials,
+        **counts,
+    }
+    counts["."] = counts["."] - num_initial_dots
+    counts["num_other_punc"] = (
+        len(text) - num_upper - num_lower - num_counted_punc - num_initial_dots
+    )
+    seconds = (
+        (0.2228, "num_initials"),
+        (0.1288, "-"),
+        (0.1112, "!"),
+        (0.0952, ","),
+        (0.0943, "num_upper"),
+        (0.0815, "num_other_punc"),
+        (0.0575, "num_lower"),
+        (0.0487, "."),
+        (0.0372, '"'),
+        (0.0289, " "),
+        (0.0000, "'"),
+        (0.0000, "?"),
+    )
+    assert len(seconds) == len(counts)
+    return sum(counts[feat] * val for val, feat in seconds) + 0.1561
+
+
+def predict_max_audio_length(text: str) -> float:
+    """Predict the maximum audio length given `text`.
+
+    NOTE: Using speech segments in our data, this ensures that 99.97% of the time, the audio length
+          is smaller than this maximum audio length, after analyzing 30k segments. The cases
+          are buggy because extenuated pauses should not have been included in speech segments.
+    TODO: Measure how well this aligns with spans, not just speech segments, which may include
+          longer pauses. It should scale well because spans are longer, so, it'll tend toward
+          the average much more.
+    """
+    return predict_audio_length(text) * 1.4 + 0.6
+
+
 def configure(overwrite: bool = False):
     """Configure modules involved in processing text."""
     # NOTE: These are speakers reliable datasets, in the right language.
@@ -187,7 +274,7 @@ def configure(overwrite: bool = False):
     )
     config = {
         run._utils._get_debug_datasets: cf.Args(speakers=debug_speakers),
-        run._utils.get_dataset: cf.Args(language=LANGUAGE),
+        run._utils.get_unprocessed_dataset: cf.Args(language=LANGUAGE),
         # TODO: In the future, we may add respelling support based on language, for now,
         # we only support `ascii_lowercase` characters.
         run._models.spectrogram_model.inputs.InputsWrapper.check_invariants: cf.Args(

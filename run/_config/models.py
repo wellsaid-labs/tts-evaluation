@@ -6,8 +6,7 @@ import torch.nn
 
 import lib
 import run
-from run._config.audio import FRAME_SIZE, NUM_FRAME_CHANNELS
-from run._config.data import DATASETS
+from run import _config
 
 logger = logging.getLogger(__name__)
 
@@ -27,10 +26,10 @@ def configure(overwrite: bool = False):
     # NOTE: These values can be increased as needed, they preemtively allocate model
     # parameters.
     max_tokens = 1000
-    max_speakers = len(set(s.label for s in DATASETS.keys()))
-    max_dialects = len(set(s.dialect for s in DATASETS.keys()))
-    max_styles = len(set(s.style for s in DATASETS.keys()))
-    max_languages = len(set(s.language for s in DATASETS.keys()))
+    max_speakers = len(set(s.label for s in _config.data.DATASETS.keys()))
+    max_dialects = len(set(s.dialect for s in _config.data.DATASETS.keys()))
+    max_styles = len(set(s.style for s in _config.data.DATASETS.keys()))
+    max_languages = len(set(s.language for s in _config.data.DATASETS.keys()))
 
     # NOTE: Configure the model sizes.
     config = {
@@ -74,7 +73,7 @@ def configure(overwrite: bool = False):
             window_length=9,
             # NOTE: This value was computed with a reference frame size of 4096, and it scales
             # linearly with frame size.
-            avg_frames_per_token=1.45 * (4096 / FRAME_SIZE),
+            avg_frames_per_token=1.45 * (4096 / _config.audio.FRAME_SIZE),
         ),
         run._models.spectrogram_model.decoder.Decoder: cf.Args(
             encoder_out_size=encoder_out_size,
@@ -99,7 +98,7 @@ def configure(overwrite: bool = False):
             max_dialects=max_dialects,
             max_styles=max_styles,
             max_languages=max_languages,
-            num_frame_channels=NUM_FRAME_CHANNELS,
+            num_frame_channels=_config.audio.NUM_FRAME_CHANNELS,
             max_token_embed_size=396 + 4,
             # SOURCE (Transfer Learning from Speaker Verification to Multispeaker Text-To-Speech
             #         Synthesis):
@@ -112,7 +111,7 @@ def configure(overwrite: bool = False):
         run._models.signal_model.wrapper.SignalModelWrapper: cf.Args(
             max_speakers=max_speakers,
             seq_meta_embed_size=128,
-            frame_size=NUM_FRAME_CHANNELS,
+            frame_size=_config.audio.NUM_FRAME_CHANNELS,
             hidden_size=32,
             max_channel_size=512,
         ),

@@ -261,7 +261,7 @@ def test_get_pronunciation__apostrophes():
 
 
 def test_get_pronunciation__variations():
-    """Test `lib.text.utils.get_pronunciation` doesn't return if the pronunciation is ambigious."""
+    """Test `lib.text.utils.get_pronunciation` doesn't return if the pronunciation is ambiguous."""
     # NOTE: Base case with no variations to choose from.
     _check_pronunciation("fly", expected="F L AY1")
 

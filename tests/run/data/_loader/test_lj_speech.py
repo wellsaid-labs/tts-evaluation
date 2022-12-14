@@ -4,17 +4,12 @@ import shutil
 import tempfile
 from unittest import mock
 
-import lib
 import run.data._loader
-from run.data._loader import Alignment
 from run.data._loader.english.lj_speech import LINDA_JOHNSON, lj_speech_dataset
 from tests import _utils
-from tests.run.data._loader._utils import (  # type: ignore
-    maybe_normalize_audio_and_cache_side_effect,
-)
 
 verbalize_test_cases = {
-    # NOTE: This example has ambigious casing, and it is now removed from the dataset.
+    # NOTE: This example has ambiguous casing, and it is now removed from the dataset.
     # "LJ044-0055": "five four four Camp Street New",  # Test special case
     "LJ032-0036": "Number two two zero two one three zero four six two",  # Test special case
     # Test time
@@ -44,37 +39,21 @@ verbalize_test_cases = {
 }
 
 
-@mock.patch("run.data._loader.structures._filter_existing_paths")
-@mock.patch("run.data._loader.structures.get_audio_metadata")
-@mock.patch("run.data._loader.structures._loader.utils.maybe_normalize_audio_and_cache")
-@mock.patch("run.data._loader.structures._loader.utils.get_non_speech_segments_and_cache")
-@mock.patch("run.data._loader.structures.cf.partial")
 @mock.patch("urllib.request.urlretrieve")
-def test_lj_speech_dataset(
-    mock_urlretrieve,
-    mock_config_partial,
-    mock_get_non_speech_segments_and_cache,
-    mock_normalize_and_cache,
-    mock_get_audio_metadata,
-    mock_filter_existing_paths,
-):
+def test_lj_speech_dataset(mock_urlretrieve):
     """Test `run.data._loader.lj_speech_dataset` loads and verbalizes the data."""
-    mock_filter_existing_paths.side_effect = lambda x: x
     mock_urlretrieve.side_effect = _utils.first_parameter_url_side_effect
-    mock_get_audio_metadata.side_effect = _utils.get_audio_metadata_side_effect
-    mock_normalize_and_cache.side_effect = maybe_normalize_audio_and_cache_side_effect
-    mock_config_partial.side_effect = _utils.config_partial_side_effect
-    mock_get_non_speech_segments_and_cache.side_effect = lambda *a, **k: lib.utils.Timeline([])
     archive = _utils.TEST_DATA_PATH / "datasets" / "LJSpeech-1.1.tar.bz2"
 
     with tempfile.TemporaryDirectory() as path:
         directory = pathlib.Path(path)
         shutil.copy(archive, directory / archive.name)
         data = lj_speech_dataset(directory=directory)
-        assert len(data) == 12850
-        assert sum([len(r.script) for r in data]) == 1283806
-        assert data[0] == run.data._loader.Passage(
-            audio_file=_utils.make_metadata(directory / "LJSpeech-1.1/wavs/LJ001-0001.wav"),
+        passages = [p for d in data for p in d]
+        assert len(passages) == 13100
+        assert sum(len(p.script) for p in passages) == 1310332
+        assert passages[0] == run.data._loader.structures.UnprocessedPassage(
+            audio_path=directory / "LJSpeech-1.1/wavs/LJ001-0001.wav",
             session=run.data._loader.Session((LINDA_JOHNSON, "LJ001")),
             script=(
                 "Printing, in the only sense with which we are at present concerned, differs "
@@ -84,7 +63,7 @@ def test_lj_speech_dataset(
                 "Printing, in the only sense with which we are at present concerned, differs "
                 "from most if not from all the arts and crafts represented in the Exhibition"
             ),
-            alignments=Alignment.stow([Alignment((0, 151), (0.0, 0.0), (0, 151))]),
+            alignments=None,
             other_metadata={
                 2: (  # type: ignore
                     "Printing, in the only sense with which we are at present concerned, differs "
@@ -96,10 +75,10 @@ def test_lj_speech_dataset(
         # NOTE: Test verbilization via `verbalize_test_cases`.
         _re_filename = re.compile("LJ[0-9]{3}-[0-9]{4}")
         seen = 0
-        for row in data:
-            basename = row.audio_file.path.name[:10]
+        for passage in passages:
+            basename = passage.audio_path.name[:10]
             assert _re_filename.match(basename)
             if basename in verbalize_test_cases:
                 seen += 1
-                assert verbalize_test_cases[basename] in row.script
+                assert verbalize_test_cases[basename] in passage.script
         assert seen == len(verbalize_test_cases)

@@ -141,8 +141,11 @@ def get_non_speech_segments_and_cache(
     name = get_non_speech_segments_and_cache.__name__
     cache_path = cf.partial(_cache_path)(audio_file.path, name, ".npy", **kwargs_, **kwargs)
     if cache_path.exists():
-        loaded = np.load(cache_path, allow_pickle=False)
-        return Timeline(list(typing.cast(FloatFloat, tuple(t)) for t in loaded))
+        try:
+            loaded = np.load(cache_path, allow_pickle=False)
+            return Timeline(list(typing.cast(FloatFloat, tuple(t)) for t in loaded))
+        except ValueError:
+            cache_path.unlink()
 
     audio = read_audio(audio_file, memmap=True)
     vad: typing.List[FloatFloat] = lib.audio.get_non_speech_segments(audio, audio_file, **kwargs_)
@@ -227,6 +230,8 @@ class SpanGenerator(typing.Iterator[struc.Span]):
 
         # NOTE: The `weight` is based on `start` (i.e. the number of spans)
         # NOTE: For some reason, `torch.multinomial(replacement=True)` is faster by a lot.
+        # NOTE: Since we are getting chunks of data of `length` from each `Passage`, we need to
+        # oversample longer passages, so that each audio sample is sampled equally.
         index = int(torch.multinomial(self._weights + length, 1, replacement=True).item())
         assert self._timelines is not None
         passage, timeline = self.passages[index], self._timelines[index]
@@ -318,8 +323,13 @@ def _temporary_fix_for_transcript_offset(
     return tuple(return_)
 
 
-DataLoader = typing.Callable[[Path], typing.List[struc.Passage]]
+DataLoader = typing.Callable[[Path], struc.UnprocessedDataset]
 DataLoaders = typing.Dict[struc.Speaker, DataLoader]
+
+
+def _default_session(speaker: struc.Speaker, audio_path: Path) -> struc.Session:
+    """By default, this assumes that each audio file was recorded, individually."""
+    return struc.Session((speaker, audio_path.stem))
 
 
 def dataset_loader(
@@ -335,8 +345,8 @@ def dataset_loader(
     scripts_suffix: str = ".csv",
     text_column: str = "Content",
     strict: bool = False,
-    add_tqdm: bool = False,
-) -> typing.List[struc.Passage]:
+    get_session: typing.Callable[[struc.Speaker, Path], struc.Session] = _default_session,
+) -> struc.UnprocessedDataset:
     """Load an alignment text-to-speech (TTS) dataset from GCS.
 
     TODO: Add `-m` when this issue is resolved:
@@ -377,7 +387,7 @@ def dataset_loader(
         strict: Use `gsutil` to validate the source files.
         add_tqdm
     """
-    logger.info("Loading `%s` speech dataset", root_directory_name)
+    logger.info(f"Loading `{root_directory_name}` speech dataset")
 
     root = (Path(directory) / root_directory_name).absolute()
     root.mkdir(exist_ok=True)
@@ -392,7 +402,8 @@ def dataset_loader(
             command = f"gsutil cp -n {gcs_path}/{directory.name}/*{suffix} {directory}/"
             subprocess.run(command.split(), check=True)
         files_ = [p for p in directory.iterdir() if p.suffix == suffix]
-        message = "Expecting an equal number of recording, alignment, and script files."
+        message = "Expecting an equal number of recording, alignment, and script"
+        message += f" files for `{root_directory_name}`."
         assert len(files) == 0 or len(files_) == len(files[-1]), message
         files.append(sorted(files_, key=lambda p: lib.text.numbers_then_natural_keys(p.name)))
 
@@ -409,16 +420,19 @@ def dataset_loader(
             alignments_ = _temporary_fix_for_transcript_offset(json_["transcript"], alignments_)
             passage = struc.UnprocessedPassage(
                 audio_path=recording_path,
-                speaker=speaker,
+                session=get_session(speaker, recording_path),
                 script=typing.cast(str, script[text_column]),
                 transcript=json_["transcript"],
                 alignments=alignments_,
                 other_metadata={k: v for k, v in script.items() if k not in (text_column,)},
+                is_linked=struc.IsLinked(transcript=True, audio=True),
             )
             document.append(passage)
         dataset.append(document)
-    is_linked = struc.IsLinked(transcript=True, audio=True)
-    return struc.make_passages(root_directory_name, dataset, is_linked=is_linked, add_tqdm=add_tqdm)
+
+    logger.info(f"Loaded `{root_directory_name}` speech dataset")
+
+    return dataset
 
 
 def conventional_dataset_loader(
@@ -430,7 +444,8 @@ def conventional_dataset_loader(
     metadata_kwargs={"quoting": csv.QUOTE_NONE, "header": None, "delimiter": "|"},
     audio_path_template: str = "{directory}/wavs/{file_name}.wav",
     additional_metadata: typing.Dict = {},
-) -> typing.List[struc.UnprocessedPassage]:
+    get_session: typing.Callable[[struc.Speaker, Path], struc.Session] = _default_session,
+) -> struc.UnprocessedDocument:
     """Load a conventional speech dataset.
 
     A conventional speech dataset has these invariants:
@@ -467,7 +482,7 @@ def conventional_dataset_loader(
     return [
         struc.UnprocessedPassage(
             audio_path=get_audio_path(row[metadata_audio_column]),
-            speaker=speaker,
+            session=get_session(speaker, get_audio_path(row[metadata_audio_column])),
             script=typing.cast(str, row[metadata_text_column]).strip(),
             transcript=typing.cast(str, row[metadata_text_column]).strip(),
             alignments=None,
@@ -486,7 +501,7 @@ def wsl_gcs_dataset_loader(
     recordings_directory_name: str = "recordings",
     data_directory: str = "processed",
     **kwargs,
-) -> typing.List[struc.Passage]:
+) -> struc.UnprocessedDataset:
     """
     Load WellSaid Labs dataset from Google Cloud Storage (GCS).
 

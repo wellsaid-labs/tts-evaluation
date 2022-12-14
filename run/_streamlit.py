@@ -11,15 +11,17 @@ import zipfile
 import config as cf
 import numpy as np
 import tqdm
+from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, JsCode
 from third_party import LazyLoader
 
 import lib
 import run
+from lib.audio import AudioMetadata, sec_to_sample
 from lib.environment import ROOT_PATH
 from lib.text import natural_keys
 from run._tts import CHECKPOINTS_LOADERS, Checkpoints, package_tts
 from run._utils import Dataset
-from run.data._loader import Alignment, Passage
+from run.data._loader import Alignment, Passage, Span
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import altair as alt
@@ -58,25 +60,16 @@ WebPath = typing.NewType("WebPath", pathlib.Path)
 RelativeUrl = typing.NewType("RelativeUrl", str)
 
 
-def rmtree_streamlit_static_temp_dir():
-    """Destroy the our Streamlit temporary directory."""
-    assert pathlib.Path(st.__file__).parent in STREAMLIT_STATIC_TEMP_PATH.parents
-    if STREAMLIT_STATIC_TEMP_PATH.exists():
-        message = "Clearing temporary files at %s..."
-        logger.info(message, STREAMLIT_STATIC_TEMP_PATH.relative_to(lib.environment.ROOT_PATH))
-        shutil.rmtree(STREAMLIT_STATIC_TEMP_PATH)
-
-
 @st.experimental_singleton()
 def make_temp_root_dir():
     """Make a temporary directory accessible via HTTP in the streamlit app.
 
-    NOTE: With `session_cache`, this function runs once per session.
+    NOTE: With `experimental_singleton`, this function runs once per session.
     """
     assert pathlib.Path(st.__file__).parent in STREAMLIT_STATIC_TEMP_PATH.parents
     if STREAMLIT_STATIC_TEMP_PATH.exists():
-        message = "Clearing temporary files at %s..."
-        logger.info(message, STREAMLIT_STATIC_TEMP_PATH.relative_to(lib.environment.ROOT_PATH))
+        path = STREAMLIT_STATIC_TEMP_PATH.relative_to(lib.environment.ROOT_PATH)
+        logger.info(f"Clearing temporary files at {path}...")
         shutil.rmtree(STREAMLIT_STATIC_TEMP_PATH)
     STREAMLIT_STATIC_TEMP_PATH.mkdir(exist_ok=True, parents=True)
 
@@ -182,6 +175,19 @@ def alignment_audio(
         span.audio_start + alignment.audio[0],
         span.audio_start + alignment.audio[1],
     )
+
+
+def metadata_alignment_audio(metadata: AudioMetadata, alignment: Alignment) -> np.ndarray:
+    """Get `alignment` audio using cached `read_wave_audio`."""
+    return read_wave_audio(metadata, alignment.audio[0], alignment.audio[1] - alignment.audio[0])
+
+
+def clip_audio(audio: np.ndarray, span: Span, alignment: Alignment):
+    """Get a clip of `audio` at `alignment`."""
+    sample_rate = span.audio_file.sample_rate
+    start_ = sec_to_sample(max(alignment.audio[0], 0), sample_rate)
+    stop_ = sec_to_sample(min(alignment.audio[1], span.audio_length), sample_rate)
+    return audio[start_:stop_]
 
 
 @st.experimental_singleton()
@@ -309,3 +315,45 @@ def st_select_paths(label: str, dir: pathlib.Path, suffix: str) -> typing.List[p
     if len(paths) > 0:
         st.info(f"Selected {label}:\n" + "".join(["\n - " + path_label(p) for p in paths]))
     return paths
+
+
+_StTqdmVar = typing.TypeVar("_StTqdmVar")
+
+
+def st_tqdm(
+    iterable: typing.Iterable[_StTqdmVar], length: typing.Optional[int] = None
+) -> typing.Generator[_StTqdmVar, None, None]:
+    """Display a progress bar while iterating through `iterable`."""
+    bar = st.progress(0)
+    for i, item in enumerate(iterable):
+        yield item
+        bar.progress(i / (len(iterable) if length is None else length))  # type: ignore
+    bar.empty()
+
+
+# NOTE: This follows the examples highlighted here:
+# https://github.com/PablocFonseca/streamlit-aggrid-examples/blob/main/cell_renderer_class_example.py
+# https://github.com/PablocFonseca/streamlit-aggrid/issues/119
+renderer = 'function(params) {return `<audio controls preload="none" src="${params.value}" />`}'
+renderer = JsCode(renderer)
+
+
+def st_ag_grid(
+    df: pd.DataFrame,
+    audio_column_name: typing.Optional[str] = None,
+    height: int = 850,
+    page_size: int = 10,
+):
+    """Display a table to preview `data`."""
+    options = GridOptionsBuilder.from_dataframe(df)
+    options.configure_pagination(paginationAutoPageSize=False, paginationPageSize=page_size)
+    options.configure_default_column(wrapText=True, autoHeight=True, min_column_width=1)
+    if audio_column_name:
+        options.configure_column(audio_column_name, cellRenderer=renderer)
+    return AgGrid(
+        data=df,
+        gridOptions=options.build(),
+        update_mode=GridUpdateMode.NO_UPDATE,
+        allow_unsafe_jscode=True,
+        height=height,
+    )

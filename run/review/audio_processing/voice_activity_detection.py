@@ -209,7 +209,7 @@ def _baseline_vad(passage: Passage, audio: np.ndarray):
     st.write("Use an RMS threshold with a bandpass filter to detect voice activity.")
 
     sample_rate = passage.audio_file.sample_rate
-    col = st.beta_columns([1, 1])
+    col = st.columns([1, 1])
     label = "What is the frame size in milliseconds?"
     milli_frame_size: int = col[0].slider(label, min_value=0, max_value=250, value=50, step=1)
 

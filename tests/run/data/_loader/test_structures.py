@@ -23,28 +23,30 @@ from run.data._loader.structures import (
     UnprocessedPassage,
     _check_updated_script,
     _filter_non_speech_segments,
+    _is_stand_abbrev_consistent,
     _make_speech_segments_helper,
     _maybe_normalize_vo_script,
-    _remove_ambiguous_casing,
+    _remove_ambiguous_abbrev,
     has_a_mistranscription,
     make_passages,
 )
 from run.data._loader.utils import get_non_speech_segments_and_cache
 from tests._utils import TEST_DATA_PATH
-from tests.run._utils import make_passage, make_speaker, script_to_alignments
+from tests.run._utils import make_passage, make_session, script_to_alignments
 
 TEST_DATA_LJ = TEST_DATA_PATH / "audio" / "bit(rate(lj_speech,24000),32).wav"
 
 
 def make_unprocessed_passage(
-    audio_path=pathlib.Path("."),
-    speaker=make_speaker(""),
+    audio_path: pathlib.Path = pathlib.Path("."),
+    session: Session = make_session(),
     script: str = "",
     transcript: str = "",
     alignments: typing.Optional[typing.Tuple[Alignment, ...]] = None,
+    **kwargs,
 ) -> UnprocessedPassage:
     """Make a `UnprocessedPassage` for testing."""
-    return UnprocessedPassage(audio_path, speaker, script, transcript, alignments)
+    return UnprocessedPassage(audio_path, session, script, transcript, alignments, **kwargs)
 
 
 def test__maybe_normalize_vo_script():
@@ -313,21 +315,23 @@ def test_passage_span__identity():
 _find = lambda a, b: (a.index(b), a.index(b) + 1)
 
 
-def _make_unprocessed_passage_helper(
+def _make_unprocessed_passage(
     script: str,
     tokens: typing.List[str],
     transcript: str,
     find_transcript: typing.Callable[[str, str], typing.Tuple[int, int]] = _find,
     find_script: typing.Callable[[str, str], typing.Tuple[int, int]] = _find,
+    **kwargs,
 ):
     """Helper function for `test_passage_span__unaligned*`."""
     found = [(find_script(script, t), find_transcript(transcript, t)) for t in tokens]
     return UnprocessedPassage(
         audio_path=TEST_DATA_LJ,
-        speaker=make_speaker(""),
+        session=make_session(),
         script=script,
         transcript=transcript,
         alignments=tuple(Alignment(s, (0.0, 0.0), t) for s, t in found),
+        **kwargs,
     )
 
 
@@ -345,7 +349,9 @@ def test_passage_span__nonalignment_spans():
     circumstances.
     """
     script = "abcdefghijklmnopqrstuvwxyz"
-    make = functools.partial(_make_unprocessed_passage_helper, transcript=script)
+
+    is_linked = IsLinked(transcript=True, audio=True)
+    make = functools.partial(_make_unprocessed_passage, transcript=script, is_linked=is_linked)
     unprocessed_passages = []
 
     # TEST: Largely no issues, except one in the middle.
@@ -368,8 +374,7 @@ def test_passage_span__nonalignment_spans():
     split, script = script[:3], script[3:]
     unprocessed_passages.append(make(split, ["q"]))  # NOTE: split='pqr'
 
-    is_linked = IsLinked(transcript=True, audio=True)
-    passages = list(make_passages("", [unprocessed_passages], is_linked=is_linked))
+    passages = list(make_passages("", [unprocessed_passages]))
 
     a = (0.0, 0.0)
     empty = ("", "", a)
@@ -394,7 +399,8 @@ def test_passage_span__nonalignment_spans__zero_alignments():
     """Test `Passage` and `Span` get the correct nonalignments if one of the
     passages has zero alignments."""
     script = "abcdef"
-    make = functools.partial(_make_unprocessed_passage_helper, transcript=script)
+    is_linked = IsLinked(transcript=True, audio=True)
+    make = functools.partial(_make_unprocessed_passage, transcript=script, is_linked=is_linked)
     unprocessed_passages = []
 
     split, script = script[:3], script[3:]
@@ -403,8 +409,7 @@ def test_passage_span__nonalignment_spans__zero_alignments():
     split, script = script[:3], script[3:]
     unprocessed_passages.append(make(split, ["e"]))  # NOTE: split='def'
 
-    is_linked = IsLinked(transcript=True, audio=True)
-    passages = list(make_passages("", [unprocessed_passages], is_linked=is_linked))
+    passages = list(make_passages("", [unprocessed_passages]))
 
     a = (0.0, 0.0)
     assert _get_nonaligned(passages[0]) == [("a", "a", a), ("c", "cd", a)]
@@ -420,11 +425,11 @@ def test_passage_linking():
             script=s,
             transcript="abc",
             alignments=(Alignment((0, 1), a, a),),
+            is_linked=IsLinked(transcript=True, audio=True),
         )
         for s, a in (("a", (0, 1)), ("b", (1, 2)), ("c", (2, 3)))
     ]
-    is_linked = IsLinked(transcript=True, audio=True)
-    passages = make_passages("", [unprocessed_passages], is_linked=is_linked)
+    passages = make_passages("", [unprocessed_passages])
     assert len(passages[0].passages) == 3
     assert passages[0].prev is None
     assert passages[0].next == passages[1]
@@ -476,10 +481,11 @@ def _has_a_mistranscription_helper(
             script=s,
             transcript=t,
             alignments=tuple([Alignment(a, (0.0, 0.0), b) for a, b in a]),
+            **kwargs,
         )
         for s, t, a in args
     ]
-    return make_passages("", [unprocessed_passages], **kwargs)
+    return make_passages("", [unprocessed_passages])
 
 
 def _has_a_mistranscription(*args, **kwargs) -> typing.List[bool]:
@@ -556,8 +562,60 @@ def test_spacy_context():
     assert str(passage[2:4].spacy) == "back! He"
 
 
+def test__is_stand_abbrev_consistent():
+    """Test that `_is_stand_abbrev_consistent` can verify that an abbreviation is consistent
+    between a script and transcript."""
+    assert not _is_stand_abbrev_consistent("ABC", "abc")
+    assert not _is_stand_abbrev_consistent("NDAs", "nda's")
+    assert not _is_stand_abbrev_consistent("HAND-CUT", "hand cut")
+    assert not _is_stand_abbrev_consistent("NOVA/national", "Nova National")
+    assert not _is_stand_abbrev_consistent("I V As?", "ivas")
+    assert not _is_stand_abbrev_consistent("I.V.A.", "iva")
+    assert not _is_stand_abbrev_consistent("information...ELEVEN", "information 11")
+    assert not _is_stand_abbrev_consistent("(JNA)", "JN a")
+    assert not _is_stand_abbrev_consistent("PwC", "PWC")
+    assert not _is_stand_abbrev_consistent("JC PENNEY", "JCPenney")
+    assert not _is_stand_abbrev_consistent("DIRECTV", "DirecTV")
+    assert not _is_stand_abbrev_consistent("M*A*C", "Mac")
+    assert not _is_stand_abbrev_consistent("fMRI", "fmri")
+    assert not _is_stand_abbrev_consistent("RuBP.", "rubp")
+    assert not _is_stand_abbrev_consistent("MiniUSA.com,", "mini usa.com.")
+    assert not _is_stand_abbrev_consistent("7UP", "7-Up")
+    assert _is_stand_abbrev_consistent("NDT", "ND T")
+    assert _is_stand_abbrev_consistent("L.V.N,", "LVN")
+    assert _is_stand_abbrev_consistent("I", "i")
+    assert _is_stand_abbrev_consistent("PM", "p.m.")
+    assert _is_stand_abbrev_consistent("place...where", "place where")
+    assert _is_stand_abbrev_consistent("Smucker's.", "Smuckers")
+    assert _is_stand_abbrev_consistent("DVD-Players", "DVD players")
+    assert _is_stand_abbrev_consistent("PCI-DSS,", "PCI DSS.")
+    assert _is_stand_abbrev_consistent("UFOs", "UFO's,")
+    assert _is_stand_abbrev_consistent("most[JT5]", "most JT 5")
+    assert _is_stand_abbrev_consistent("NJ--at", "NJ. At")
+    assert _is_stand_abbrev_consistent("U. S.", "u.s.")
+    assert _is_stand_abbrev_consistent("ADHD.Some", "ADHD some")
+    assert _is_stand_abbrev_consistent("W-USA", "WUSA.")
+    assert _is_stand_abbrev_consistent("P-S-E-C-U", "PSECU")
+    assert _is_stand_abbrev_consistent("J. V.", "JV")
+    assert _is_stand_abbrev_consistent("PM", "P.m.")
+    assert _is_stand_abbrev_consistent("Big-C", "Big C.")
+    assert _is_stand_abbrev_consistent("U-Boats", "U-boats")
+    assert _is_stand_abbrev_consistent("Me...obsessive?...I", "me obsessive. I")
+    assert _is_stand_abbrev_consistent("apiece,", "A piece")
+    assert _is_stand_abbrev_consistent("well.I'll,", "well. I'll")
+    assert _is_stand_abbrev_consistent("Rain-x-car", "Rain-X car")
+    assert _is_stand_abbrev_consistent("L.L.Bean", "LL Bean")
+    assert _is_stand_abbrev_consistent("WBGP -", "W BG P.")
+    assert _is_stand_abbrev_consistent("KRCK", "K RC K")
+    assert _is_stand_abbrev_consistent("DVD-L10", "DVD L10")
+    assert _is_stand_abbrev_consistent("DVD-L10", "DVD, L10")
+    assert _is_stand_abbrev_consistent("t-shirt", "T-shirt")
+    assert _is_stand_abbrev_consistent("3-D", "3D")
+
+
 def test__remove_ambiguous_casing():
-    """Test that `_remove_ambiguous_casing` removes any ambiguously cased tokens."""
+    """Test that `_remove_ambiguous_abbrev` removes any capitalized words or
+    ambiguous abbreviations."""
     script, transcript, normalized = (
         "THIS is A test. This. TEST. urls. URLs. 111. Dash-dash. si punc. Dash-Dash. U.S. P-C-I.",
         "This is a TEST. This. TEST. URLs. urls. one. dash-dash. y p. dash-dash. u.s. PCI.",
@@ -566,6 +624,6 @@ def test__remove_ambiguous_casing():
     iter_ = zip(script_to_alignments(script), script_to_alignments(transcript))
     alignments = tuple([Alignment(s, s, t) for s, t in iter_])
     passage = make_unprocessed_passage(script=script, transcript=transcript, alignments=alignments)
-    passage = _remove_ambiguous_casing("", passage)
+    passage = _remove_ambiguous_abbrev("", passage)
     assert passage.alignments is not None
     assert [a.script for a in passage.alignments] == list(script_to_alignments(normalized))
