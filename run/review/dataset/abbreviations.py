@@ -5,6 +5,7 @@ Usage:
         --runner.magicEnabled=false
 """
 import logging
+import pathlib
 import random
 import typing
 
@@ -25,7 +26,9 @@ from run.data._loader.structures import (
     Alignment,
     Language,
     UnprocessedPassage,
+    _get_abbrev_letters,
     _is_stand_abbrev_consistent,
+    _normalize_audio_files,
 )
 
 lib.environment.set_basic_logging_config(reset=True)
@@ -35,7 +38,10 @@ logger = logging.getLogger(__name__)
 
 @st.experimental_singleton()
 def _get_unprocessed_dataset():
-    return cf.partial(get_unprocessed_dataset)()
+    dataset = cf.partial(get_unprocessed_dataset)()
+    documents = [p for d in dataset.values() for p in d]
+    metadatas = _normalize_audio_files(documents, False)
+    return dataset, metadatas
 
 
 def _no_filter(*_):
@@ -53,6 +59,11 @@ def _is_different(script: str, transcript: str, punc: str = ".?,:!-\"'"):
 
 
 TWO_UPPER_CHAR = re.compile(r"[A-Z]{2}")
+
+
+def _has_two_upper_case(script: str, transcript: str):
+    """Check iff the script and transcript has two upper case characters."""
+    return TWO_UPPER_CHAR.search(script) or TWO_UPPER_CHAR.search(transcript)
 
 
 def _is_stand_casing(phrase: str):
@@ -82,8 +93,12 @@ def _is_casing_ambiguous(script: str, transcript: str):
 
 @st.experimental_singleton()
 def _get_alignments(
-    _dataset: UnprocessedDataset, num_alignments: int, picker: str, negate: bool
-) -> typing.List[typing.Tuple[UnprocessedPassage, Alignment, numpy.ndarray, AudioMetadata]]:
+    _dataset: UnprocessedDataset,
+    _metadatas: typing.Dict[pathlib.Path, AudioMetadata],
+    num_alignments: int,
+    picker: str,
+    negate: bool,
+) -> typing.List[typing.Tuple[UnprocessedPassage, Alignment, numpy.ndarray]]:
     """Get all alignments in dataset.
 
     Args:
@@ -98,15 +113,24 @@ def _get_alignments(
     for _, documents in _dataset.items():
         for document in documents:
             for passage in document:
-                if passage.alignments is None:
+                if passage.audio_path not in _metadatas:
+                    print(f"Skipping, audio path ({passage.audio_path}) isn't a file.")
                     continue
 
-                for alignment in passage.alignments:
-                    script = passage.script[alignment.script[0] : alignment.script[1]]
-                    transcript = passage.transcript[
-                        alignment.transcript[0] : alignment.transcript[1]
-                    ]
-                    if globals()[picker](script, transcript) is not negate:
+                passage_alignments = passage.alignments
+                if passage_alignments is None:
+                    audio_length = _metadatas[passage.audio_path].length
+                    alignment = Alignment(
+                        (0, len(passage.script)),
+                        (0.0, audio_length),
+                        (0, len(passage.transcript)),
+                    )
+                    passage_alignments = (alignment,)
+
+                for alignment in passage_alignments:
+                    script = passage.script[slice(*alignment.script)]
+                    transcript = passage.transcript[slice(*alignment.transcript)]
+                    if bool(globals()[picker](script, transcript)) is not negate:
                         alignments.append((passage, alignment))
 
     with fork_rng():
@@ -119,30 +143,24 @@ def _get_alignments(
     )
     alignments = sorted(alignments, key=key)
 
-    with st.spinner("Reading audio metadata..."):
-        audio_paths = list(set(passage.audio_path for passage, _ in alignments))
-        metadatas = {a: m for a, m in zip(audio_paths, lib.audio.get_audio_metadata(audio_paths))}
-
     with st.spinner("Reading audio..."):
         iter_ = st_tqdm(alignments)
-        return [
-            (p, a, metadata_alignment_audio(metadatas[p.audio_path], a), metadatas[p.audio_path])
-            for p, a in iter_
-        ]
+        return [(p, a, metadata_alignment_audio(_metadatas[p.audio_path], a)) for p, a in iter_]
 
 
-def _gather(
-    passage: UnprocessedPassage, alignment: Alignment, clip: numpy.ndarray, meta: AudioMetadata
-):
+def _gather(passage: UnprocessedPassage, alignment: Alignment, clip: numpy.ndarray):
     """Gather data on `alignment`."""
     script = passage.script[alignment.script[0] : alignment.script[1]]
     transcript = passage.transcript[alignment.transcript[0] : alignment.transcript[1]]
     return {
         "script": script,
         "transcript": transcript,
-        "clip": audio_to_url(clip, sample_rate=meta.sample_rate),
+        "clip": audio_to_url(clip),
+        "speaker": repr(passage.speaker),
         "is_casing_ambiguous": _is_casing_ambiguous(script, transcript),
         "is_stand_abbrev_consistent": _is_stand_abbrev_consistent(script, transcript),
+        "has_alignments": passage.alignments is not None,
+        "num_abbrev": len(_get_abbrev_letters(script + transcript)),
         "num_upper": sum(c.isupper() for c in script + transcript),
         "per_upper_transcript": sum(c.isupper() for c in transcript) / len(transcript),
         "num_punc": sum(not c.isalnum() for c in script + transcript),
@@ -161,15 +179,21 @@ def main():
     question = "How many alignments do you want to analyze?"
     # NOTE: Too many alignments could cause the `streamlit` to refresh and start over.
     num_alignments = int(form.number_input(question, 0, 10000, 3000))
-    pickers_ = [_no_filter, _is_different, _is_casing_ambiguous, _is_stand_abbrev_consistent]
+    pickers_ = [
+        _no_filter,
+        _is_different,
+        _is_casing_ambiguous,
+        _has_two_upper_case,
+        _is_stand_abbrev_consistent,
+    ]
     pickers: typing.List[str] = [p.__name__ for p in pickers_]
     picker = typing.cast(str, form.selectbox("Picker", pickers))
     negate = form.checkbox("Negate Picker")
     if not form.form_submit_button("Submit"):
         return
 
-    dataset = _get_unprocessed_dataset()
-    alignments = _get_alignments(dataset, num_alignments, picker, negate)
+    dataset, metadatas = _get_unprocessed_dataset()
+    alignments = _get_alignments(dataset, metadatas, num_alignments, picker, negate)
     rows = [_gather(*a) for a in alignments]
     st_ag_grid(pandas.DataFrame(rows), audio_column_name="clip")
 
