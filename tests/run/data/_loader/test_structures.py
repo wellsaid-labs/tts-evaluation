@@ -23,9 +23,10 @@ from run.data._loader.structures import (
     UnprocessedPassage,
     _check_updated_script,
     _filter_non_speech_segments,
+    _is_stand_abbrev_consistent,
     _make_speech_segments_helper,
     _maybe_normalize_vo_script,
-    _remove_ambiguous_casing,
+    _remove_ambiguous_abbrev,
     has_a_mistranscription,
     make_passages,
 )
@@ -561,8 +562,59 @@ def test_spacy_context():
     assert str(passage[2:4].spacy) == "back! He"
 
 
+def test__is_stand_abbrev_consistent():
+    """Test that `_is_stand_abbrev_consistent` can verify that an abbreviation is consistent
+    between a script and transcript."""
+    assert not _is_stand_abbrev_consistent("ABC", "abc")
+    assert not _is_stand_abbrev_consistent("NDAs", "nda's")
+    assert not _is_stand_abbrev_consistent("HAND-CUT", "hand cut")
+    assert not _is_stand_abbrev_consistent("NOVA/national", "Nova National")
+    assert not _is_stand_abbrev_consistent("I V As?", "ivas")
+    assert not _is_stand_abbrev_consistent("I.V.A.", "iva")
+    assert not _is_stand_abbrev_consistent("information...ELEVEN", "information 11")
+    assert not _is_stand_abbrev_consistent("(JNA)", "JN a")
+    assert not _is_stand_abbrev_consistent("PwC", "PWC")
+    assert not _is_stand_abbrev_consistent("JC PENNEY", "JCPenney")
+    assert not _is_stand_abbrev_consistent("DIRECTV", "DirecTV")
+    assert not _is_stand_abbrev_consistent("M*A*C", "Mac")
+    assert not _is_stand_abbrev_consistent("fMRI", "fmri")
+    assert not _is_stand_abbrev_consistent("RuBP.", "rubp")
+    assert not _is_stand_abbrev_consistent("MiniUSA.com,", "mini usa.com.")
+    assert not _is_stand_abbrev_consistent("7UP", "7-Up")
+    assert _is_stand_abbrev_consistent("NDT", "ND T")
+    assert _is_stand_abbrev_consistent("L.V.N,", "LVN")
+    assert _is_stand_abbrev_consistent("I", "i")
+    assert _is_stand_abbrev_consistent("PM", "p.m.")
+    assert _is_stand_abbrev_consistent("place...where", "place where")
+    assert _is_stand_abbrev_consistent("Smucker's.", "Smuckers")
+    assert _is_stand_abbrev_consistent("DVD-Players", "DVD players")
+    assert _is_stand_abbrev_consistent("PCI-DSS,", "PCI DSS.")
+    assert _is_stand_abbrev_consistent("UFOs", "UFO's,")
+    assert _is_stand_abbrev_consistent("most[JT5]", "most JT 5")
+    assert _is_stand_abbrev_consistent("NJ--at", "NJ. At")
+    assert _is_stand_abbrev_consistent("U. S.", "u.s.")
+    assert _is_stand_abbrev_consistent("ADHD.Some", "ADHD some")
+    assert _is_stand_abbrev_consistent("W-USA", "WUSA.")
+    assert _is_stand_abbrev_consistent("P-S-E-C-U", "PSECU")
+    assert _is_stand_abbrev_consistent("J. V.", "JV")
+    assert _is_stand_abbrev_consistent("PM", "P.m.")
+    assert _is_stand_abbrev_consistent("Big-C", "Big C.")
+    assert _is_stand_abbrev_consistent("U-Boats", "U-boats")
+    assert _is_stand_abbrev_consistent("Me...obsessive?...I", "me obsessive. I")
+    assert _is_stand_abbrev_consistent("apiece,", "A piece")
+    assert _is_stand_abbrev_consistent("well.I'll,", "well. I'll")
+    assert _is_stand_abbrev_consistent("Rain-x-car", "Rain-X car")
+    assert _is_stand_abbrev_consistent("L.L.Bean", "LL Bean")
+    assert _is_stand_abbrev_consistent("WBGP -", "W BG P.")
+    assert _is_stand_abbrev_consistent("KRCK", "K RC K")
+    assert _is_stand_abbrev_consistent("DVD-L10", "DVD L10")
+    assert _is_stand_abbrev_consistent("DVD-L10", "DVD, L10")
+    assert _is_stand_abbrev_consistent("t-shirt", "T-shirt")
+
+
 def test__remove_ambiguous_casing():
-    """Test that `_remove_ambiguous_casing` removes any ambiguously cased tokens."""
+    """Test that `_remove_ambiguous_abbrev` removes any capitalized words or
+    ambiguous abbreviations."""
     script, transcript, normalized = (
         "THIS is A test. This. TEST. urls. URLs. 111. Dash-dash. si punc. Dash-Dash. U.S. P-C-I.",
         "This is a TEST. This. TEST. URLs. urls. one. dash-dash. y p. dash-dash. u.s. PCI.",
@@ -571,6 +623,6 @@ def test__remove_ambiguous_casing():
     iter_ = zip(script_to_alignments(script), script_to_alignments(transcript))
     alignments = tuple([Alignment(s, s, t) for s, t in iter_])
     passage = make_unprocessed_passage(script=script, transcript=transcript, alignments=alignments)
-    passage = _remove_ambiguous_casing("", passage)
+    passage = _remove_ambiguous_abbrev("", passage)
     assert passage.alignments is not None
     assert [a.script for a in passage.alignments] == list(script_to_alignments(normalized))

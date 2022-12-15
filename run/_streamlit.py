@@ -11,15 +11,17 @@ import zipfile
 import config as cf
 import numpy as np
 import tqdm
+from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, JsCode
 from third_party import LazyLoader
 
 import lib
 import run
+from lib.audio import AudioMetadata
 from lib.environment import ROOT_PATH
 from lib.text import natural_keys
 from run._tts import CHECKPOINTS_LOADERS, Checkpoints, package_tts
 from run._utils import Dataset
-from run.data._loader import Passage
+from run.data._loader import Alignment, Passage
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import altair as alt
@@ -164,6 +166,11 @@ def passage_audio(passage: run.data._loader.Passage) -> np.ndarray:
     return read_wave_audio(passage.audio_file, passage.audio_start, length)
 
 
+def metadata_alignment_audio(metadata: AudioMetadata, alignment: Alignment) -> np.ndarray:
+    """Get `alignment` audio using cached `read_wave_audio`."""
+    return read_wave_audio(metadata, alignment.audio[0], alignment.audio[1] - alignment.audio[0])
+
+
 @st.experimental_singleton()
 def get_dataset(speaker_labels: typing.FrozenSet[str]) -> Dataset:
     """Load dataset subset, and cache."""
@@ -289,3 +296,45 @@ def st_select_paths(label: str, dir: pathlib.Path, suffix: str) -> typing.List[p
     if len(paths) > 0:
         st.info(f"Selected {label}:\n" + "".join(["\n - " + path_label(p) for p in paths]))
     return paths
+
+
+_StTqdmVar = typing.TypeVar("_StTqdmVar")
+
+
+def st_tqdm(
+    iterable: typing.Iterable[_StTqdmVar], length: typing.Optional[int] = None
+) -> typing.Generator[_StTqdmVar, None, None]:
+    """Display a progress bar while iterating through `iterable`."""
+    bar = st.progress(0)
+    for i, item in enumerate(iterable):
+        yield item
+        bar.progress(i / (len(iterable) if length is None else length))  # type: ignore
+    bar.empty()
+
+
+# NOTE: This follows the examples highlighted here:
+# https://github.com/PablocFonseca/streamlit-aggrid-examples/blob/main/cell_renderer_class_example.py
+# https://github.com/PablocFonseca/streamlit-aggrid/issues/119
+renderer = 'function(params) {return `<audio controls preload="none" src="${params.value}" />`}'
+renderer = JsCode(renderer)
+
+
+def st_ag_grid(
+    df: pd.DataFrame,
+    audio_column_name: typing.Optional[str] = None,
+    height: int = 750,
+    page_size: int = 10,
+):
+    """Display a table to preview `data`."""
+    options = GridOptionsBuilder.from_dataframe(df)
+    options.configure_pagination(paginationAutoPageSize=False, paginationPageSize=page_size)
+    options.configure_default_column(wrapText=True, autoHeight=True, min_column_width=1)
+    if audio_column_name:
+        options.configure_column(audio_column_name, cellRenderer=renderer)
+    return AgGrid(
+        data=df,
+        gridOptions=options.build(),
+        update_mode=GridUpdateMode.NO_UPDATE,
+        allow_unsafe_jscode=True,
+        height=height,
+    )
