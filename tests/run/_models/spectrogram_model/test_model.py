@@ -38,6 +38,8 @@ class Params(typing.NamedTuple):
     max_frames: int = 5
     max_num_tokens: int = 6
     max_tokens_index: int = 0
+    max_token_embed_size: int = 20
+    anno_mask_indices: typing.Tuple[int, ...] = (0,)
 
     @property
     def max_frames_per_token(self) -> float:
@@ -85,9 +87,10 @@ def _make_spectrogram_model(
         max_tokens=params.max_tokens,
         max_seq_meta_values=params.max_seq_meta_values,
         max_token_meta_values=tuple(),
-        max_token_embed_size=0,
+        max_token_embed_size=params.max_token_embed_size,
         token_meta_embed_size=0,
         seq_meta_embed_size=seq_meta_embed_size,
+        num_anno=len(params.anno_mask_indices),
         num_frame_channels=params.num_frame_channels,
         max_frames_per_token=params.max_frames_per_token,
         output_scalar=output_scalar,
@@ -121,12 +124,18 @@ def _make_inputs(
     for i in range(params.batch_size):
         tokens[i] = tokens[i][: num_tokens[i]]
 
+    token_embeddings_size = (params.batch_size, params.max_num_tokens, params.max_token_embed_size)
+    token_embeddings = torch.randn(*token_embeddings_size)
+    for idx in params.anno_mask_indices:
+        token_embeddings[:, :, idx].fill_(1)
+
     inputs = Inputs(
         tokens=tokens,
         seq_metadata=[speakers, sessions],
-        token_metadata=[[[] for _ in tokens]],
-        token_embeddings=[torch.empty(int(n), 0) for n in num_tokens],
+        token_metadata=[[[] for _ in range(params.batch_size)]],
+        token_embeddings=[e[: len(t)] for t, e in zip(tokens, token_embeddings.unbind())],
         slices=[slice(0, int(n)) for n in num_tokens],
+        anno_mask_indices=params.anno_mask_indices,
     )
 
     target_frames = torch.randn(params.max_frames, params.batch_size, params.num_frame_channels)
@@ -435,8 +444,8 @@ def test_spectrogram_model__infer_batch_padding_invariance():
                 inputs,
                 tokens=[t[:num_tokens_] for t in inputs.tokens][i : i + 1],
                 seq_metadata=[m[i : i + 1] for m in inputs.seq_metadata],
-                token_metadata=[m[i : i + 1] for m in inputs.seq_metadata],
-                token_embeddings=inputs.token_embeddings[i : i + 1],
+                token_metadata=[m[i : i + 1] for m in inputs.token_metadata],
+                token_embeddings=[t[:num_tokens_] for t in inputs.token_embeddings][i : i + 1],
                 slices=inputs.slices[i : i + 1],
             )
             preds = model(inputs_, mode=Mode.INFER)
@@ -461,8 +470,9 @@ def test_spectrogram_model__train_batch_padding_invariance():
     padding = 3
     num_tokens = params.max_num_tokens - padding
     batch_inputs.tokens[i] = batch_inputs.tokens[i][:num_tokens]
-    batch_inputs.token_metadata[i] = batch_inputs.token_metadata[i][:num_tokens]
     batch_inputs.token_embeddings[i] = batch_inputs.token_embeddings[i][:num_tokens]
+    for metadata in batch_inputs.token_metadata:
+        metadata[i] = metadata[i][:num_tokens]
     slice_ = batch_inputs.slices[i]
     batch_inputs.slices[i] = slice(slice_.start, min(num_tokens, slice_.stop))
     batch_inputs = dataclasses.replace(batch_inputs)
@@ -483,7 +493,7 @@ def test_spectrogram_model__train_batch_padding_invariance():
         token_metadata=[
             [s[:num_tokens] for s in m[i : i + 1]] for m in batch_inputs.token_metadata
         ],
-        token_embeddings=[t[:num_tokens] for t in batch_inputs.token_embeddings[i : i + 1]],
+        token_embeddings=[t[:num_tokens] for t in batch_inputs.token_embeddings][i : i + 1],
         slices=[slice(s.start, min(s.stop, num_tokens)) for s in batch_inputs.slices[i : i + 1]],
     )
 

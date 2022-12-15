@@ -339,12 +339,11 @@ class Batch(_utils.Batch):
 
     def apply(self, call: typing.Callable[[torch.Tensor], torch.Tensor]) -> "Batch":
         batch: Batch = super().apply(call)
-        assert isinstance(batch.processed.token_embeddings, torch.Tensor)
-        object.__setattr__(
-            batch.processed, "token_embeddings", call(batch.processed.token_embeddings)
-        )
+        token_embed = batch.processed.token_embeddings_padded
+        object.__setattr__(batch.processed, "token_embeddings_padded", call(token_embed))
         object.__setattr__(batch.processed, "num_tokens", call(batch.processed.num_tokens))
         object.__setattr__(batch.processed, "tokens_mask", call(batch.processed.tokens_mask))
+        object.__setattr__(batch.processed, "anno_mask", call(batch.processed.anno_mask))
         return batch
 
     def __len__(self):
@@ -390,6 +389,9 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
     # NOTE: `inputs` has a spaCy `Span` which is difficult to `pickle`, so instead, we seralize
     # `inputs` into XML.
     xmls = [inputs.to_xml(i, include_context=True) for i in range(len(inputs))]
+    processed = cf.partial(preprocess)(inputs)
+    # NOTE: These tensors are not needed, and are taking up memory.
+    object.__setattr__(processed, "token_embeddings", None)
 
     return Batch(
         # NOTE: Prune unused attributes from `Passage` by creating a new `Passage`, in order to
@@ -400,7 +402,7 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
         spectrogram_mask=spectrogram_mask,
         stop_token=cf.partial(_make_stop_token)(spectrogram),
         xmls=xmls,
-        processed=cf.partial(preprocess)(inputs),
+        processed=processed,
     )
 
 
