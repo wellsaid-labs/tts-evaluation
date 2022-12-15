@@ -80,7 +80,7 @@ class Inputs:
 
     # The size of the annotations added to `token_embeddings`.
     # NOTE: This is enforced during the construction of `Inputs` in `preprocess`.
-    anno_size: typing.ClassVar[int] = 3
+    anno_size: typing.ClassVar[int] = 2
     num_anno: typing.ClassVar[int] = 2
 
     def __post_init__(self):
@@ -301,6 +301,8 @@ class InputsWrapper:
         idx_ = self._idx
         annotations += [(open_(_Schema.RESPELL, a), idx_(span, t)) for t, a in respellings]
         annotations += [(close(_Schema.RESPELL), idx_(span, t) + len(t)) for t, _ in respellings]
+        # TODO: Create a workbook that allows us to dig into `Batch` data specifically and
+        # see what is in the preprocessed and XML data, and make sure it's correct.
         annotations = sorted(annotations, key=lambda k: k[1], reverse=True)
         text = span.text
         for annotation, idx in annotations:
@@ -432,6 +434,7 @@ def _embed_anno(
     idx_offset: int = 0,
     val_average: float = 0,
     val_compression: float = 1,
+    avg_anno_length: int = 1,
 ) -> torch.Tensor:
     """Given annotations for a sequence of `length`, this returns an embedding.
 
@@ -441,14 +444,10 @@ def _embed_anno(
     NOTE: We set the average to zero for consistency, so, if there is no annotation, it's as if
           it was annotated with the average.
 
-    TODO: How should we think about the length of the annotation? The longer the annotation, I'd
-          imagine, the more it can deviate from the annotationed value? So, in effect, it's similar
-          to a standard deviation? I am curious about adding some sort of annotation so that the
-          model has a good idea of the range of the annotation.
-
     Args:
         length: The length of the annotated sequence.
         anno: A list of annotations.
+        avg_anno_length
         idx_offset: Offset the annotation indicies.
         val_average: Offset the annotation values so that the average falls on zero.
         val_compression: Compress the annotation values so that they are easier to model.
@@ -457,21 +456,20 @@ def _embed_anno(
         torch.FloatTensor [length, 3]
             vals: The annotated values (with offset and compression applied). A zero represents
                   no annotation.
-            mask: The mask uses 1, -1, and 0. The non-zero values represent an annotation. We cycle
-                  between 1 and -1 to indicate that the annotation has changed.
-            mask.abs: The absolute version of the mask where 1 indicates an annotation and 0
-                  indicates no annotation.
+            len_: This is the inverse of the length of the annotation. This helps the model
+                  understand how "strict" the annotation is. As this goes to infinity, this goes
+                  to zero, which aligns nicely with `val_average`.
     """
     vals = torch.zeros(length, device=device)
     mask = torch.zeros(length, device=device)
-    mask_val = 1.0
+    len_ = torch.zeros(length, device=device)
     for slice_, val in anno:
         slice_ = slice(slice_.start + idx_offset, slice_.stop + idx_offset, slice_.step)
         vals[slice_] = val
-        mask[slice_] = mask_val
-        mask_val *= -1
-    vals = ((vals - val_average) / val_compression) * mask.abs()
-    ret_ = torch.stack((vals, mask, mask.abs()), dim=1)
+        mask[slice_] = 1
+        len_[slice_] = avg_anno_length / (slice_.stop - slice_.start)
+    vals = ((vals - val_average) / val_compression) * mask
+    ret_ = torch.stack((vals, len_), dim=1)
     assert ret_.shape[1] == Inputs.anno_size, "Invariant constraint."
     return ret_
 

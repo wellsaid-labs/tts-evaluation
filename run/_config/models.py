@@ -99,7 +99,7 @@ def configure(overwrite: bool = False):
             max_styles=max_styles,
             max_languages=max_languages,
             num_frame_channels=_config.audio.NUM_FRAME_CHANNELS,
-            max_token_embed_size=402,
+            max_token_embed_size=396 + 4,
             # SOURCE (Transfer Learning from Speaker Verification to Multispeaker Text-To-Speech
             #         Synthesis):
             # The paper mentions their proposed model uses a 256 dimension embedding.

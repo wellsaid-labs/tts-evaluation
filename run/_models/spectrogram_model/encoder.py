@@ -354,7 +354,6 @@ class Encoder(torch.nn.Module):
         # [num_tokens, batch_size, out_dim] → [batch_size, num_tokens, out_dim]
         tokens = tokens.transpose(0, 1)
 
-        tokens = [tokens[i][s] for i, s in enumerate(inputs.slices)]
-        tokens = torch.nn.utils.rnn.pad_sequence(tokens)
+        tokens = pad_sequence([tokens[i][s] for i, s in enumerate(inputs.slices)])
 
         return Encoded(tokens, inputs.tokens_mask, inputs.num_tokens, seq_metadata)

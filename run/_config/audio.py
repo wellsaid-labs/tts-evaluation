@@ -224,10 +224,11 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
             # workbook.
             # NOTE: The LUFS range is approximately from 0 to -80 db so a offset and compression of
             # 50 will bring that range from roughly 1 to -1.
-            loudness_kwargs=dict(val_average=-21, val_compression=50),
+            # TODO: Let's find out the real `avg_anno_length=20`.
+            loudness_kwargs=dict(val_average=-21, val_compression=50, avg_anno_length=20),
             # NOTE: The tempo range is approximately from 0.04 to 0.2 sec per char so a offset and
             # compression of 0.1 will bring that range from roughly 1 to -1.
-            tempo_kwargs=dict(val_average=0.07, val_compression=0.1),
+            tempo_kwargs=dict(val_average=0.07, val_compression=0.1, avg_anno_length=20),
         ),
         run._models.spectrogram_model.inputs.InputsWrapper.check_invariants: Args(
             # TODO: Consider adding filtering for outlier annotations and reducing the allowable
