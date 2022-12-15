@@ -56,6 +56,7 @@ class SpectrogramModel(torch.nn.Module):
         max_seq_meta_values: The maximum number of metadata values the model will be trained on.
         max_token_embed_size: The maximum size of `inputs.token_embeddings`.
         seq_meta_embed_size: The size of the sequence metadata embedding.
+        num_anno: The number of annotations.
         num_frame_channels: Number of channels in each frame (sometimes refered to as
             "Mel-frequency bins" or "FFT bins" or "FFT bands").
         max_frames_per_token: The maximum sequential predictions to make before stopping.
@@ -73,6 +74,7 @@ class SpectrogramModel(torch.nn.Module):
         max_token_embed_size: int,
         token_meta_embed_size: int,
         seq_meta_embed_size: int,
+        num_anno: int,
         num_frame_channels: int,
         max_frames_per_token: float,
         output_scalar: float,
@@ -91,6 +93,7 @@ class SpectrogramModel(torch.nn.Module):
             max_seq_meta_values=max_seq_meta_values,
             token_meta_embed_size=token_meta_embed_size,
             seq_meta_embed_size=seq_meta_embed_size,
+            num_anno=num_anno,
             **cf.get(),
         )
         self.decoder = decoder.Decoder(

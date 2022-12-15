@@ -10,6 +10,7 @@ import spacy
 import spacy.tokens
 import torch
 from lxml import etree
+from torch.nn.utils.rnn import pad_sequence
 
 from lib.text import XMLType
 from lib.utils import lengths_to_mask
@@ -62,13 +63,20 @@ class Inputs:
     token_metadata: typing.List[typing.List[typing.List[typing.Hashable]]]
 
     # Embeddings associated with each token in each sequence
-    # torch.FloatTensor [batch_size, num_tokens, *]
-    token_embeddings: typing.Union[torch.Tensor, typing.List[torch.Tensor]]
+    # torch.FloatTensor [num_tokens, *]
+    token_embeddings: typing.List[torch.Tensor]
 
     # Slice of tokens in each sequence to be voiced
     slices: typing.List[slice]
 
+    # The size of the annotations added to `token_embeddings`.
+    anno_mask_indices: typing.Tuple[int, ...]
+
     device: torch.device = torch.device("cpu")
+
+    # Embeddings associated with each token in each sequence
+    # torch.FloatTensor [batch_size, num_tokens, *]
+    token_embeddings_padded: torch.Tensor = dataclasses.field(init=False)
 
     # Number of tokens after `slices` is applied
     # torch.LongTensor [batch_size]
@@ -78,10 +86,9 @@ class Inputs:
     # torch.BoolTensor [batch_size, num_tokens]
     tokens_mask: torch.Tensor = dataclasses.field(init=False)
 
-    # The size of the annotations added to `token_embeddings`.
-    # NOTE: This is enforced during the construction of `Inputs` in `preprocess`.
-    anno_size: typing.ClassVar[int] = 2
-    num_anno: typing.ClassVar[int] = 2
+    # A mask for each annotation
+    # torch.BoolTensor [batch_size, num_tokens, len(self.anno_mask_indices)]
+    anno_mask: torch.Tensor = dataclasses.field(init=False)
 
     def __post_init__(self):
         indices = [s.indices(len(t)) for s, t in zip(self.slices, self.tokens)]
@@ -89,6 +96,38 @@ class Inputs:
         num_tokens_ = torch.tensor(num_tokens, dtype=torch.long, device=self.device)
         object.__setattr__(self, "num_tokens", num_tokens_)
         object.__setattr__(self, "tokens_mask", lengths_to_mask(num_tokens, device=self.device))
+
+        embeds = self.token_embeddings
+        empty = torch.empty(0, 0, 0, device=self.device)
+        stacked = empty if len(embeds) == 0 else pad_sequence(embeds, batch_first=True)
+        object.__setattr__(self, "token_embeddings_padded", stacked)
+
+        mask = empty
+        if len(self.anno_mask_indices) != 0:
+            assert self.token_embeddings_padded.shape[2] > max(self.anno_mask_indices)
+            indices = torch.tensor(self.anno_mask_indices, device=self.device)
+            mask = torch.index_select(stacked, 2, indices)
+        object.__setattr__(self, "anno_mask", mask)
+
+        self.check_invariants()
+
+    def check_invariants(self):
+        # NOTE: Double-check sizing.
+        batch_size = len(self.tokens)
+        assert all(len(metadata) == batch_size for metadata in self.seq_metadata)
+        assert all(len(metadata) == batch_size for metadata in self.token_metadata)
+        assert len(self.token_embeddings) == batch_size
+        assert len(self.slices) == batch_size
+        for metadata in self.token_metadata:
+            assert all(len(t) == len(m) or len(m) == 0 for t, m in zip(self.tokens, metadata))
+        if isinstance(self.token_embeddings, list):
+            assert all(len(e) == len(t) for e, t in zip(self.token_embeddings, self.tokens))
+        else:
+            assert self.token_embeddings.shape[1] == max(len(seq) for seq in self.tokens)
+
+        # NOTE: Double-check that `anno_mask` is actually a mask.
+        unique = torch.unique(self.anno_mask, sorted=True).tolist()
+        assert unique == [0, 1] or unique == [0] or unique == [1] or unique == []
 
 
 SpanDoc = typing.Union[spacy.tokens.span.Span, spacy.tokens.doc.Doc]
@@ -427,6 +466,9 @@ class InputsWrapper:
         return cls(**all_)
 
 
+ANNO_MASK_INDICES = (2, 5, 6)
+
+
 def _embed_anno(
     length: int,
     anno: typing.List[typing.Tuple[slice, typing.Union[int, float]]],
@@ -443,6 +485,9 @@ def _embed_anno(
           range as needed.
     NOTE: We set the average to zero for consistency, so, if there is no annotation, it's as if
           it was annotated with the average.
+    NOTE: A mask is required until enough a consistent enough interface is created. This could
+          be an interface where everything is annotated, just some things are more annotated. So,
+          there is never a unmasked portion.
 
     Args:
         length: The length of the annotated sequence.
@@ -459,6 +504,7 @@ def _embed_anno(
             len_: This is the inverse of the length of the annotation. This helps the model
                   understand how "strict" the annotation is. As this goes to infinity, this goes
                   to zero, which aligns nicely with `val_average`.
+            mask: This is 1 when there is an annotation and 0 when there is not.
     """
     vals = torch.zeros(length, device=device)
     mask = torch.zeros(length, device=device)
@@ -469,8 +515,7 @@ def _embed_anno(
         mask[slice_] = 1
         len_[slice_] = avg_anno_length / (slice_.stop - slice_.start)
     vals = ((vals - val_average) / val_compression) * mask
-    ret_ = torch.stack((vals, len_), dim=1)
-    assert ret_.shape[1] == Inputs.anno_size, "Invariant constraint."
+    ret_ = torch.stack((vals, len_, mask), dim=1)
     return ret_
 
 
@@ -495,7 +540,7 @@ def preprocess(
         batch: A row of data in the batch consists of a Session, the script with context, the
             script without context, and any related annotations expressed as a Tensor.
     """
-    inputs = Inputs([], [], [[], []], [], [], device)
+    inputs = Inputs([], [], [[], []], [], [], (), device)
     iter_ = zip(wrap.session, wrap.span, wrap.context, wrap.loudness, wrap.tempo, wrap.respellings)
     Item = typing.Tuple[
         struc.Session, SpanDoc, SpanDoc, SpanAnnotations, SpanAnnotations, TokenAnnotations
@@ -503,7 +548,8 @@ def preprocess(
     iter_ = typing.cast(typing.Iterator[Item], iter_)
     for sesh, span, context, loudness, tempo, respell_map in iter_:
         seq_metadata = [sesh[0].label, sesh, sesh[0].dialect, sesh[0].style, sesh[0].language]
-        inputs.seq_metadata.extend([[] for _ in seq_metadata])
+        if len(inputs.seq_metadata) == 0:
+            inputs.seq_metadata.extend([[] for _ in seq_metadata])
         [inputs.seq_metadata[i].append(data) for i, data in enumerate(seq_metadata)]
 
         tokens: typing.List[str] = []
@@ -537,21 +583,21 @@ def preprocess(
         embed = []
         for token in context:
             assert token.tensor is not None
-            embed.append(np.concatenate((token.vector, token.tensor)))  # type: ignore
+            embed.append(np.concatenate((token.tensor, token.vector)))  # type: ignore
             embed.append(np.zeros(token.vector.shape[0] + token.tensor.shape[0]))
         embed = [torch.tensor(t, device=device, dtype=torch.float32) for t in embed]
         embed = torch.cat([e.unsqueeze(0).repeat(len(t), 1) for e, t in zip(embed, tokens)])
+        vector_embed_mask = torch.ones(embed.shape[0], 1, device=device)
 
         loudness_embed = _embed_anno(len(chars), loudness, device, start_char, **loudness_kwargs)
         tempo_embed = _embed_anno(len(chars), tempo, device, start_char, **tempo_kwargs)
-        anno_embed = torch.cat((tempo_embed, loudness_embed), dim=1)
-        assert anno_embed.shape[1] == Inputs.anno_size * Inputs.num_anno
 
-        # anno_embed (torch.FloatTensor [num_tokens, Inputs.anno_size * Inputs.num_anno])
-        # embed (torch.FloatTensor [num_tokens, embedding_size]) →
-        # [num_tokens, embedding_size + Inputs.anno_size * Inputs.num_anno]
-        embed = torch.cat((embed, anno_embed), dim=1)
+        # loudness_embed    (torch.FloatTensor [num_tokens, 3]) (cat)
+        # tempo_embed       (torch.FloatTensor [num_tokens, 3]) (cat)
+        # vector_embed_mask (torch.FloatTensor [num_tokens, 1]) (cat)
+        # embed             (torch.FloatTensor [num_tokens, embedding_size]) →
+        # [num_tokens, embedding_size + 7]
+        embed = torch.cat((loudness_embed, tempo_embed, vector_embed_mask, embed), dim=1)
         typing.cast(list, inputs.token_embeddings).append(embed)
 
-    token_embeddings = torch.nn.utils.rnn.pad_sequence(inputs.token_embeddings, batch_first=True)
-    return dataclasses.replace(inputs, token_embeddings=token_embeddings)
+    return dataclasses.replace(inputs, anno_mask_indices=ANNO_MASK_INDICES)

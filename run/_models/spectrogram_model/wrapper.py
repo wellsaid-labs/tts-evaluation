@@ -7,6 +7,7 @@ import torch
 from lib.distributed import NumeralizePadEmbed
 from run._models.spectrogram_model.containers import Preds
 from run._models.spectrogram_model.inputs import (
+    ANNO_MASK_INDICES,
     Casing,
     Context,
     Inputs,
@@ -47,6 +48,7 @@ class SpectrogramModelWrapper(SpectrogramModel):
             ),
             max_token_meta_values=(len(Casing) * len(Pronun), len(Context)),
             max_token_embed_size=max_token_embed_size,
+            num_anno=len(ANNO_MASK_INDICES),
             **kwargs,
         )
 

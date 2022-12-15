@@ -327,9 +327,10 @@ def test__preprocess():
         torch.from_numpy(doc[4].tensor).unsqueeze(0).repeat(4, 1),
     ]
     stack = (
-        torch.cat(word_embeddings),
+        torch.zeros(len(script), 6),
+        torch.ones(len(script), 1),
         torch.cat(contextual_embeddings),
-        torch.zeros(len(script), 4),
+        torch.cat(word_embeddings),
     )
     token_embeddings = torch.cat(stack, dim=1)
     assert len(processed.token_embeddings) == 1
@@ -353,6 +354,7 @@ def test__embed_anno():
     expected = [
         [20, 20, 0, -10, 0, 0, 0.99, 0.99, 0],
         [0.5, 0.5, 0, 1, 0, 0, 0.5, 0.5, 0],
+        [1, 1, 0, 1, 0, 0, 1, 1, 0],
     ]
     assert_almost_equal(embedding, torch.tensor(expected).transpose(0, 1))
 
@@ -360,6 +362,7 @@ def test__embed_anno():
     expected = [
         [0, 2.1, 2.1, 0, -0.9, 0, 0, 0.199, 0.199],
         [0, 0.5, 0.5, 0, 1, 0, 0, 0.5, 0.5],
+        [0, 1, 1, 0, 1, 0, 0, 1, 1],
     ]
     assert_almost_equal(embedding, torch.tensor(expected).transpose(0, 1))
 
@@ -464,7 +467,7 @@ def test__preprocess_respelling():
     assert processed.token_metadata[1] == [context]
     expected = torch.from_numpy(nlp.vocab["flu"].vector)  # FLOO
     for idx in range(-5, -1):
-        assert_almost_equal(processed.token_embeddings[0][idx][: expected.shape[0]], expected)
+        assert_almost_equal(processed.token_embeddings[0][idx][-expected.shape[0] :], expected)
     expected = torch.from_numpy(nlp.vocab["n't"].vector)
     for idx in range(2, 4):
-        assert_almost_equal(processed.token_embeddings[0][idx][: expected.shape[0]], expected)
+        assert_almost_equal(processed.token_embeddings[0][idx][-expected.shape[0] :], expected)
