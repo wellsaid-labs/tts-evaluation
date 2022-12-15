@@ -1,4 +1,5 @@
 import logging
+import typing
 from functools import partial
 
 import config as cf
@@ -30,7 +31,10 @@ def _get_num_sessions(train_dataset: Dataset) -> int:
 
 
 def make_spectrogram_model_train_config(
-    train_dataset: Dataset, dev_dataset: Dataset, debug: bool
+    train_dataset: Dataset,
+    dev_dataset: Dataset,
+    debug: bool,
+    device_count: typing.Optional[int] = None,
 ) -> cf.Config:
     """Make additional configuration for spectrogram model training."""
     ratio = _get_ratio(train_dataset, dev_dataset)
@@ -42,8 +46,9 @@ def make_spectrogram_model_train_config(
     oversample = 3
     train_steps_per_epoch = int(round(dev_steps_per_epoch * batch_size_ratio * ratio * oversample))
     train_steps_per_epoch = 1 if debug else train_steps_per_epoch
-    assert train_batch_size % lib.distributed.get_device_count() == 0
-    assert dev_batch_size % lib.distributed.get_device_count() == 0
+    device_count = lib.distributed.get_device_count() if device_count is None else device_count
+    assert train_batch_size % device_count == 0
+    assert dev_batch_size % device_count == 0
 
     spectrogram_model = run.train.spectrogram_model
 

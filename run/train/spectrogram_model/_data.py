@@ -25,7 +25,7 @@ from lib.audio import sec_to_sample
 from lib.distributed import get_rank, get_world_size, is_initialized
 from lib.samplers import BucketBatchSampler
 from lib.text import XMLType, load_cmudict_syl, respell
-from lib.utils import Tuple, flatten_2d, lengths_to_mask, random_nonoverlapping_intervals
+from lib.utils import flatten_2d, lengths_to_mask, random_nonoverlapping_intervals
 from run._models.spectrogram_model import (
     Inputs,
     PreprocessedInputs,
@@ -48,18 +48,15 @@ logger = logging.getLogger(__name__)
 
 
 def _random_nonoverlapping_alignments(
-    alignments: Tuple[Alignment],
+    alignments: typing.Iterable[Alignment],
     avg_alignments: int,
     min_no_intervals_prob: float,
-    min_avg_interval_length: int = 1,
     include_annotation: typing.Callable[[Alignment], bool] = lambda a: True,
 ) -> typing.Tuple[Alignment, ...]:
     """Generate a random set of non-overlapping alignments.
 
-    NOTE: This will undershoot `avg_alignments` for several reasons:
-    - The alignments might overlap and be filtered out.
-    - There might not be enough alignments to satisfy both `min_avg_interval_length` and
-      `avg_alignments`.
+    NOTE: This will undershoot `avg_alignments` for several reasons because the alignments might
+          overlap and be filtered out.
 
     Args:
         alignments
@@ -67,9 +64,6 @@ def _random_nonoverlapping_alignments(
         min_no_intervals_prob: The minimum probability for sampling no intervals. In practice,
             no intervals will be sampled at a slightly higher rate due to the implementation
             quirks.
-        min_avg_interval_length: This parameter ensures that the minimum average length of the
-            intervals returned is `min_avg_interval_length`. This helps ensure that for the most
-            part we don't only return short alignments.
 
     Returns: A tuple of non-overlapping alignments that start and end on a boundary. This may
         return no intervals in some cases.
@@ -83,7 +77,7 @@ def _random_nonoverlapping_alignments(
     # cutting.
     bounds = flatten_2d([[get_(a, 0), get_(a, -1)] for a in alignments])
     # NOTE: Depending on the parameters, this has some probability of generating no intervals.
-    indicies = random_nonoverlapping_intervals(len(bounds), avg_alignments, min_avg_interval_length)
+    indicies = random_nonoverlapping_intervals(len(bounds), avg_alignments)
     intervals = [(bounds[a], bounds[b]) for (a, b) in indicies]
     # NOTE: Alignments may have overlapping audio segments, we remove those. In practice, this
     # doesn't happen that often in our data, as reviewed in:
@@ -134,7 +128,7 @@ def _get_loudness_annotation(
 def _random_loudness_annotations(span: Span, signal: numpy.ndarray, **kwargs) -> SpanAnnotations:
     """Create random annotations that represent the loudness in `span.script`."""
     annotations: SpanAnnotations = []
-    alignments = cf.partial(_random_nonoverlapping_alignments)(span.alignments)
+    alignments = cf.partial(_random_nonoverlapping_alignments)(span.speech_segments)
     for alignment in alignments:
         slice_ = slice(alignment.script[0], alignment.script[1])
         sample_rate = span.audio_file.sample_rate
@@ -144,31 +138,25 @@ def _random_loudness_annotations(span: Span, signal: numpy.ndarray, **kwargs) ->
     return annotations
 
 
-def _get_tempo_annotation(alignment: Alignment, precision: int) -> float:
-    """Get a tempo annotation in seconds per character."""
-    slice_ = slice(alignment.script[0], alignment.script[1])
-    second_per_char = (alignment.audio[1] - alignment.audio[0]) / (slice_.stop - slice_.start)
-    return round(second_per_char, precision)
-
-
-def _random_tempo_annotations(span: Span, **kwargs) -> SpanAnnotations:
+def _random_tempo_annotations(
+    span: Span, get_tempo_annotation: typing.Callable[[Span, Alignment], float], **kwargs
+) -> SpanAnnotations:
     """Create random annotations that represent the speaking tempo in `span.script`.
 
     TODO: We should investigate a more accurate speech tempo, there are a couple options here:
     https://en.wikipedia.org/wiki/Speech_tempo
-
     TODO: We should investiage the correlation of speech tempo to audio length depending on the
     audio length. Are there thresholds for which it is more likely to be incorrect?
 
     Args:
         span
-        precision: The number of decimal places to round phonemes per second.
     """
     annotations: SpanAnnotations = []
-    alignments = cf.partial(_random_nonoverlapping_alignments)(span.alignments)
+    alignments = cf.partial(_random_nonoverlapping_alignments)(span.speech_segments)
     for alignment in alignments:
         slice_ = slice(alignment.script[0], alignment.script[1])
-        annotations.append((slice_, cf.call(_get_tempo_annotation, alignment, **kwargs)))
+        annotation = get_tempo_annotation(span, alignment, **kwargs)
+        annotations.append((slice_, annotation))
     return annotations
 
 
@@ -383,7 +371,7 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
         span=[s.spacy for s in spans],
         context=[cf.partial(s.spacy_context)() for s in spans],
         loudness=[_random_loudness_annotations(s, a) for s, a in zip(spans, signals_)],
-        tempo=[_random_tempo_annotations(s) for s in spans],
+        tempo=[cf.partial(_random_tempo_annotations)(s) for s in spans],
         respellings=[cf.partial(_random_respelling_annotations)(s) for s in spans],
     )
     # NOTE: `inputs` has a spaCy `Span` which is difficult to `pickle`, so instead, we seralize
