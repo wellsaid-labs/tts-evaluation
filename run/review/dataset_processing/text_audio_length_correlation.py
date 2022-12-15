@@ -30,7 +30,7 @@ import run
 from lib.text.utils import Pronunciation, get_pronunciation, get_pronunciations, load_cmudict_syl
 from run._config.data import _include_span
 from run._config.labels import _speaker
-from run._config.lang import _get_long_abbrevs, predict_audio_length, predict_max_audio_length
+from run._config.lang import _get_long_abbrevs, get_avg_audio_length, get_max_audio_length
 from run._streamlit import audio_to_url, clip_audio, st_ag_grid, st_tqdm
 from run._utils import Dataset, get_datasets
 from run.data._loader import Span, Speaker
@@ -138,8 +138,8 @@ def _assemble(
         pronun_str = " ".join("-".join("|".join(p) for p in s) for s in pronuns)
         result = {"pronun": pronun_str, "phone_per_char": phone_per_char}
 
-    expected_audio_len = predict_audio_length(span.script)
-    max_audio_len = predict_max_audio_length(span.script)
+    expected_audio_len = get_avg_audio_length(span.script)
+    max_audio_len = get_max_audio_length(span.script)
     pronun_str = " ".join("-".join("|".join(p) for p in s) for s in pronuns) if pronuns else None
     result = {
         "script": span.script,
@@ -235,8 +235,11 @@ def _gather_alignment_data(
         pronun = None if pronun is None else [pronun]
         feats = {**_get_pronun_feats(pronun), **feats}
 
-    # TODO: This should we factored out in a function similar to `_include_span`
+    # TODO: This should be factored out in a function similar to `_include_span`
     # (i.e. `include_alignment`).
+    # NOTE: This approach to filtering our bad alignment data is taken from `_include_span` in
+    # our configuration in Dec 2022. The idea is that audio clips that are too short or too fast
+    # tend to be error prone.
     sec_per_char = span.audio_length / len(span.script)
     if span.audio_length < 0.2 or sec_per_char < 0.04:
         return None
@@ -328,7 +331,7 @@ def _find_max_audio_len_weight_and_bias(data: typing.List[typing.Dict], slowest_
     st.markdown(
         f"The maximum audio length is `average_audio_len * {slowest_pace} + {offset}`.\n"
         "*Keep in mind, this formula is based on outliers. It might be helpful to dig in "
-        "and see if the outlier are valid.*"
+        "and see if the outliers are valid.*"
     )
 
 
@@ -452,7 +455,8 @@ def main():
             "- This doesn't analyze pronunciation; however, you can analyze it. Keep in "
             "  mind that we don't have the pronunciation for every word, so we will need to "
             "  filter out some data. Also, there are some words with multiple pronunciations, so "
-            "  we need to pick a strategy for resolving that ambiguity."
+            "  we need to pick a strategy for resolving that ambiguity. By default, this picks "
+            "  the first word in CMUDict, if there are multiple."
         )
 
     train_dataset, _ = _get_datasets()
@@ -473,6 +477,7 @@ def main():
     # default.
     analyze_pronun: bool = form.checkbox("Analyze Pronunciation", False)
     # TODO: Warn the user if pronunciations have different counts.
+    # TODO: Add additional strategies for picking pronunciations like by part of speech.
     pick_first: bool = form.checkbox("Pick First Pronunciation (if there are multiple)", True)
     if not form.form_submit_button("Submit"):
         return

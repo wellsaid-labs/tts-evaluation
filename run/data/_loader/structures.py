@@ -121,6 +121,7 @@ class Alignment(typing.NamedTuple):
 
     NOTE: Consecutive alignments may overlap since there is no distinct boundaries between words,
     the script and transcript may not overlap between two consecutive alignments.
+    TODO: Add a check invariants to ensure Alignment slices are always positive.
 
     Args:
         script: The start and end of a script slice in characters.

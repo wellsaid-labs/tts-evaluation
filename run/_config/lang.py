@@ -204,13 +204,9 @@ def _get_long_abbrevs(text: str) -> typing.Tuple[str]:
     return tuple(m[0] for m in _LONG_ABBREV.findall(text))
 
 
-def predict_audio_length(text: str) -> float:
+def get_avg_audio_length(text: str) -> float:
     """Predict the audio length given the text.
 
-    NOTE: This approach counts the individual characters and assigns them with a seconds value. It
-          was developed using this workbook
-          `run/review/dataset_processing/text_audio_length_correlation.py`. It has a r=0.946
-          correlation with audio length.
     TODO: This could be slightly improved by using phonetics; however, there are some challenges
           to that approach. The issues are tokenization and out-of-vocabulary words.
     TODO: We could use a deep learning approach for this. We could create a task on in our
@@ -232,9 +228,12 @@ def predict_audio_length(text: str) -> float:
         **counts,
     }
     counts["."] = counts["."] - num_initial_dots
-    counts["num_other_punc"] = (
-        len(text) - num_upper - num_lower - num_counted_punc - num_initial_dots
-    )
+    num_other_punc = len(text) - num_upper - num_lower - num_counted_punc - num_initial_dots
+    counts["num_other_punc"] = num_other_punc
+    # NOTE: This approach counts the individual characters or buckets of characters and assigns
+    # them with a seconds value. It was developed using this workbook
+    # `run/review/dataset_processing/text_audio_length_correlation.py`. It has a r=0.946
+    # correlation with audio length.
     seconds = (
         (0.2228, "num_initials"),
         (0.1288, "-"),
@@ -250,12 +249,21 @@ def predict_audio_length(text: str) -> float:
         (0.0000, "?"),
     )
     assert len(seconds) == len(counts)
+    # NOTE: Our linear correlation found an intercept of 0.1561 seconds. This likely means that
+    # on average our clips have 70 milliseconds of silent padding on either side. This is about
+    # in-line with our processing which adds 50 milliseconds of padding. See the configuration for
+    # `_make_speech_segments_helper.pad`.
     return sum(counts[feat] * val for val, feat in seconds) + 0.1561
 
 
-def predict_max_audio_length(text: str) -> float:
+def get_max_audio_length(text: str) -> float:
     """Predict the maximum audio length given `text`.
 
+    NOTE: This approach models max audio length based on the slowest speaker and the biggest offset.
+          In this case, the slowest speakers spoke on average 32% slower than the average when
+          analyzing speech segments. They were at most 600 milliseconds off of that pace, at
+          anytime. It was developed using this workbook
+          `run/review/dataset_processing/text_audio_length_correlation.py`.
     NOTE: Using speech segments in our data, this ensures that 99.97% of the time, the audio length
           is smaller than this maximum audio length, after analyzing 30k segments. The cases
           are buggy because extenuated pauses should not have been included in speech segments.
@@ -263,7 +271,9 @@ def predict_max_audio_length(text: str) -> float:
           longer pauses. It should scale well because spans are longer, so, it'll tend toward
           the average much more.
     """
-    return predict_audio_length(text) * 1.4 + 0.6
+    slowest_pace = 1.4
+    max_offset_from_slowest_pace = 0.6
+    return get_avg_audio_length(text) * slowest_pace + max_offset_from_slowest_pace
 
 
 def configure(overwrite: bool = False):
