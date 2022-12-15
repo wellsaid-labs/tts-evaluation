@@ -119,6 +119,8 @@ alignment_dtype = np.dtype(_alignment_dtype)
 class Alignment(typing.NamedTuple):
     """An aligned `script`, `audio` and `transcript` slice.
 
+    TODO: Add a check invariants to ensure Alignment slices are always positive.
+
     Args:
         script: The start and end of a script slice in characters.
         audio: The start and end of an audio recording slice in seconds.
