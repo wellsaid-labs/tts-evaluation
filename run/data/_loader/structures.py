@@ -133,6 +133,18 @@ class Alignment(typing.NamedTuple):
     audio: FloatFloat
     transcript: IntInt
 
+    @property
+    def script_slice(self):
+        return slice(*self.script)
+
+    @property
+    def audio_slice(self):
+        return slice(*self.audio)
+
+    @property
+    def transcript_slice(self):
+        return slice(*self.transcript)
+
     def to_json(self):
         return [list(self.script), list(self.audio), list(self.transcript)]
 
@@ -536,6 +548,7 @@ class Passage:
         # NOTE: `self.speech_segments` must be sorted.
         pairs = zip(self.speech_segments, self.speech_segments[1:])
         assert all(a.slice.start <= b.slice.start for a, b in pairs)
+        assert all(a.script_slice.stop <= b.script_slice.start for a, b in pairs)
 
         for alignments in (self.nonalignments, self.alignments):
             # NOTE: `self.alignments`, and `self.nonalignments` must be sorted.
@@ -632,6 +645,32 @@ class Span:
             audio=(self.audio_start, self.audio_stop),
             transcript=(self._first.transcript[0], self._last.transcript[-1]),
         )
+
+    @property
+    def speech_segments(self) -> typing.List[Alignment]:
+        """Get speech segments inside this `self.script` represented by alignments."""
+        return [
+            self._offset(s.alignment)
+            for s in self.passage.speech_segments
+            if s.script_slice.start >= self.script_slice.start
+            and s.script_slice.stop <= self.script_slice.stop
+        ]
+
+    @property
+    def non_speech_segments(self) -> typing.List[slice]:
+        """Get non speech segments that overlap with `self.audio_slice`.
+
+        TODO: This is somewhat redundant with `_make_speech_segments_helper`, consider refactoring
+              and creating a generic `get_non_speech_segments` function.
+        """
+        passage = self.passage
+        nss = [slice(s[0], s[1]) for s in passage.non_speech_segments[self.audio_slice]]
+        alignments = [a.audio for a in passage.alignments]
+        prev, next_ = passage._prev_alignment(), passage._next_alignment()
+        alignments = [prev.audio] + alignments + [next_.audio]
+        alignments_timeline = Timeline(alignments)
+        nss = list(_filter_non_speech_segments(alignments, alignments_timeline, nss))
+        return [slice(s.start - self.audio_start, s.stop - self.audio_start) for s in nss]
 
     @property
     def other_metadata(self):
@@ -820,7 +859,7 @@ def _make_speech_segments_helper(
     """Make a list of `Span`s that start and end with silence.
 
     NOTE: Long alignments (more than 1s) can include a pause. Due to this, there may be a pause
-    inside a speech segment.
+          inside a speech segment.
 
     Args:
         ...
