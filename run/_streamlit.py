@@ -16,12 +16,12 @@ from third_party import LazyLoader
 
 import lib
 import run
-from lib.audio import AudioMetadata
+from lib.audio import AudioMetadata, sec_to_sample
 from lib.environment import ROOT_PATH
 from lib.text import natural_keys
 from run._tts import CHECKPOINTS_LOADERS, Checkpoints, package_tts
 from run._utils import Dataset
-from run.data._loader import Alignment, Passage
+from run.data._loader import Alignment, Passage, Span
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import altair as alt
@@ -169,6 +169,14 @@ def passage_audio(passage: run.data._loader.Passage) -> np.ndarray:
 def metadata_alignment_audio(metadata: AudioMetadata, alignment: Alignment) -> np.ndarray:
     """Get `alignment` audio using cached `read_wave_audio`."""
     return read_wave_audio(metadata, alignment.audio[0], alignment.audio[1] - alignment.audio[0])
+
+
+def clip_audio(audio: np.ndarray, span: Span, alignment: Alignment):
+    """Get a clip of `audio` at `alignment`."""
+    sample_rate = span.audio_file.sample_rate
+    start_ = sec_to_sample(max(alignment.audio[0], 0), sample_rate)
+    stop_ = sec_to_sample(min(alignment.audio[1], span.audio_length), sample_rate)
+    return audio[start_:stop_]
 
 
 @st.experimental_singleton()
@@ -322,7 +330,7 @@ renderer = JsCode(renderer)
 def st_ag_grid(
     df: pd.DataFrame,
     audio_column_name: typing.Optional[str] = None,
-    height: int = 750,
+    height: int = 850,
     page_size: int = 10,
 ):
     """Display a table to preview `data`."""

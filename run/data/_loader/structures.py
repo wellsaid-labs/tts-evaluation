@@ -119,6 +119,8 @@ alignment_dtype = np.dtype(_alignment_dtype)
 class Alignment(typing.NamedTuple):
     """An aligned `script`, `audio` and `transcript` slice.
 
+    TODO: Add a check invariants to ensure Alignment slices are always positive.
+
     Args:
         script: The start and end of a script slice in characters.
         audio: The start and end of an audio recording slice in seconds.
@@ -900,7 +902,8 @@ def _check_updated_script(
 
 # NOTE: There are some abbreviations we consider non-standard like "t-shirt", "PhD", or "Big C".
 # This makes no attempt at detecting these.
-# TODO: Add support for non-English and for accented characters.
+# TODO: Add support for non-English and for accented characters, using
+# https://pypi.org/project/regex/
 STANDARD_ABBREV = re.compile(
     r"("
     # GROUP 2: Abbr separated with dots like "a.m.".
@@ -911,7 +914,7 @@ STANDARD_ABBREV = re.compile(
     # GROUP 3: Upper-case abbr maybe separated other punctuation that starts on a word break
     #          like "PCI-DSS", "U. S." or "W-USA".
     r"\b"
-    r"((?:[A-Z]\s?[&\-\.\s*]?\s?)+(?:[A-Z]-?)*[A-Z])"
+    r"((?:[A-Z0-9]\s?[&\-\.\s*]?\s?)+(?:[A-Z0-9]-?)*[A-Z0-9])"
     r"(?=\b|[0-9])"
     r"|"
     # GROUP 4: Upper-case abbr like "MiniUSA.com", "fMRI" or "DirecTV".

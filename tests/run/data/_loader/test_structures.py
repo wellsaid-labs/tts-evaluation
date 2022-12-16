@@ -610,6 +610,7 @@ def test__is_stand_abbrev_consistent():
     assert _is_stand_abbrev_consistent("DVD-L10", "DVD L10")
     assert _is_stand_abbrev_consistent("DVD-L10", "DVD, L10")
     assert _is_stand_abbrev_consistent("t-shirt", "T-shirt")
+    assert _is_stand_abbrev_consistent("3-D", "3D")
 
 
 def test__remove_ambiguous_casing():
