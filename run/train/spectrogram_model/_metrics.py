@@ -93,28 +93,6 @@ def get_num_small_max(preds: Preds, threshold: float) -> torch.Tensor:
     return values.sum(dim=0)
 
 
-def get_num_repeated(preds: Preds, threshold: float) -> torch.Tensor:
-    """Given `alignments` from frames to tokens, this gets the number of tokens that get more
-    focus than `threshold`.
-
-    Args:
-        preds
-        threshold: The percentage focus a token gets.
-
-    Returns:
-        torch.FloatTensor [batch_size]
-    """
-    if preds.alignments.numel() == 0:
-        return torch.zeros(preds.alignments.shape[1], device=preds.alignments.device)
-
-    alignments = preds.alignments.masked_fill(~preds.tokens_mask.unsqueeze(0), 0)
-    alignments = alignments.masked_fill(~preds.frames_mask.transpose(0, 1).unsqueeze(2), 0)
-    # [num_frames, batch_size, num_tokens] → [batch_size, num_tokens]
-    values = alignments.sum(dim=0)
-    values = (values > threshold).float()
-    return values.sum(dim=1)
-
-
 """
 TODO: In order to support `get_rms_level`, the signal used to compute the spectrogram should
 be padded appropriately. At the moment, the spectrogram is padded such that it's length
@@ -310,7 +288,6 @@ class Metrics(_utils.Metrics[MetricsKey]):
         ALIGNMENT_NORM: The p-norm of an alignment. The more focused an alignment is the higher this
             metric. The metric is bounded at [0, 1].
         ALIGNMENT_SMALL_MAX: The percentage of frames which have a small maximum alignment.
-        ALIGNMENT_REPEATED: The percentage of tokens which have had a lot of focus.
         ALIGNMENT_SKIPS: This metric assumes that each alignment focuses on one token. This measures
             the percentage of tokens skipped by the alignments.
         ALIGNMENT_JUMPS: This metric assumes that each alignment focuses on one token. This measures
@@ -333,7 +310,6 @@ class Metrics(_utils.Metrics[MetricsKey]):
     (
         ALIGNMENT_NORM_SUM,
         ALIGNMENT_NUM_SMALL_MAX,
-        ALIGNMENT_NUM_REPEATED,
         ALIGNMENT_NUM_SKIPS,
         ALIGNMENT_NUM_JUMPS,
         ALIGNMENT_STD_SUM,
@@ -371,7 +347,6 @@ class Metrics(_utils.Metrics[MetricsKey]):
 
     ALIGNMENT_NORM = partial(get_model_label, "alignment_norm")
     ALIGNMENT_SMALL_MAX = partial(get_model_label, "alignment_num_small_max")
-    ALIGNMENT_REPEATED = partial(get_model_label, "alignment_repeated")
     ALIGNMENT_SKIPS = partial(get_model_label, "alignment_skips")
     ALIGNMENT_JUMPS = partial(get_model_label, "alignment_jumps_v2")
     ALIGNMENT_STD = partial(get_model_label, "alignment_std")
@@ -446,14 +421,13 @@ class Metrics(_utils.Metrics[MetricsKey]):
     ) -> MetricsValues:
         values, _reduce = self._make_values()
 
-        for span, skipped, jumps, std, norm, small_max, repeated, length, has_reached_max in zip(
+        for span, skipped, jumps, std, norm, small_max, length, has_reached_max in zip(
             batch.spans,
             self._to_list(get_num_skipped(preds)),
             self._to_list(get_num_jumps(preds)),
             self._to_list(get_alignment_std(preds)),
             self._to_list(get_alignment_norm(preds)),
             self._to_list(get_num_small_max(preds, **cf.get())),
-            self._to_list(get_num_repeated(preds, **cf.get())),
             self._to_list(preds.num_frames),
             self._to_list(preds.reached_max),
         ):
@@ -465,7 +439,6 @@ class Metrics(_utils.Metrics[MetricsKey]):
                 for speaker in [None, span.speaker]:
                     _reduce(self.ALIGNMENT_NORM_SUM, speaker, v=norm)
                     _reduce(self.ALIGNMENT_NUM_SMALL_MAX, speaker, v=small_max)
-                    _reduce(self.ALIGNMENT_NUM_REPEATED, speaker, v=repeated)
                     _reduce(self.ALIGNMENT_NUM_SKIPS, speaker, v=skipped)
                     _reduce(self.ALIGNMENT_NUM_JUMPS, speaker, v=jumps)
                     _reduce(self.ALIGNMENT_STD_SUM, speaker, v=std)
@@ -532,7 +505,6 @@ class Metrics(_utils.Metrics[MetricsKey]):
                 self.ALIGNMENT_SMALL_MAX: div(
                     self.ALIGNMENT_NUM_SMALL_MAX, self.NUM_FRAMES_PREDICTED
                 ),
-                self.ALIGNMENT_REPEATED: div(self.ALIGNMENT_NUM_REPEATED, self.NUM_TOKENS),
                 self.ALIGNMENT_STD: div(self.ALIGNMENT_STD_SUM, self.NUM_FRAMES_PREDICTED),
                 self.ALIGNMENT_SKIPS: div(self.ALIGNMENT_NUM_SKIPS, self.NUM_TOKENS),
                 self.ALIGNMENT_JUMPS: div(self.ALIGNMENT_NUM_JUMPS, self.NUM_FRAMES_PREDICTED),

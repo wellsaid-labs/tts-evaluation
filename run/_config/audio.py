@@ -1,6 +1,7 @@
 import logging
 import math
 import typing
+from functools import partial
 
 import config as cf
 from config import Args
@@ -45,6 +46,10 @@ assert FRAME_SIZE % 4 == 0
 FRAME_HOP = FRAME_SIZE // 4
 
 
+def _get_max_audio_length(text: str, frames_per_second: float) -> int:
+    return math.ceil(run._config.lang.get_max_audio_length(text) * frames_per_second)
+
+
 def configure(sample_rate: int = 24000, overwrite: bool = False):
     """Configure modules that process audio.
 
@@ -63,8 +68,7 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
         precision="25-bit",
     )
     non_speech_segment_frame_length = 100
-    # TODO: Consider increasing this to 0.45 to handle standalone initialisms?
-    max_frames_per_token = 0.2 / (FRAME_HOP / format_.sample_rate)
+    frames_per_second = format_.sample_rate / FRAME_HOP
     # NOTE: Today pauses longer than one second are not used for emphasis or meaning; however,
     # Otis does tend to use long pauses for emphasis; however, he rarely pauses for longer than
     # one second.
@@ -164,15 +168,6 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
             **hertz_bounds,
         ),
         lib.audio.get_pyloudnorm_meter: Args(filter_class=filter_class),
-        run._models.spectrogram_model.wrapper.SpectrogramModelWrapper: Args(
-            # NOTE: This is based on one of the slowest legitimate alignments in
-            # `dataset_dashboard`. With a sample size of 8192, we found that 0.18 seconds per token
-            # included everything but 3 alignments. The last three alignments were 0.19 "or",
-            # 0.21 "or", and 0.24 "EEOC". The slowest alignment was the acronym "EEOC" with the
-            # last letter taking 0.5 seconds.
-            max_frames_per_token=max_frames_per_token,
-        ),
-        run.train.spectrogram_model._metrics.get_num_repeated: Args(threshold=max_frames_per_token),
         run.train.spectrogram_model._metrics.get_num_pause_frames: Args(
             frame_hop=FRAME_HOP,
             min_length=too_long_pause_length,
@@ -224,11 +219,16 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
             # workbook.
             # NOTE: The LUFS range is approximately from 0 to -80 db so a offset and compression of
             # 50 will bring that range from roughly 1 to -1.
-            # TODO: Let's find out the real `avg_anno_length=20`.
-            loudness_kwargs=dict(val_average=-21, val_compression=50, avg_anno_length=20),
+            # NOTE: The `avg_anno_length` was set with the
+            # `run/review/dataset_processing/annotations.py` workbook which provides basic
+            # statistics on annotation length.
+            loudness_kwargs=dict(val_average=-21, val_compression=50, avg_anno_length=40.5),
             # NOTE: The tempo range is approximately from 0.04 to 0.2 sec per char so a offset and
             # compression of 0.1 will bring that range from roughly 1 to -1.
-            tempo_kwargs=dict(val_average=0.07, val_compression=0.1, avg_anno_length=20),
+            tempo_kwargs=dict(val_average=1.0, val_compression=1, avg_anno_length=40.5),
+            get_max_audio_length=partial(
+                _get_max_audio_length, frames_per_second=frames_per_second
+            ),
         ),
         run._models.spectrogram_model.inputs.InputsWrapper.check_invariants: Args(
             # TODO: Consider adding filtering for outlier annotations and reducing the allowable
@@ -238,11 +238,11 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
             # NOTE: LUFS by definition cannot be less than -70 db.
             min_loudness=-70,
             max_loudness=-5,
-            # NOTE: The tempo range is approximately from 0.04 to 0.2 sec per char, this gives a bit
-            # more wiggle room. In order to accomodate pausing, we need at least 1 second per
-            # character.
-            min_tempo=0.04,
-            max_tempo=2,
+            # NOTE: The tempo range is approximately from 10% to 1000% slower than faster than
+            # average.
+            # TODO: We should refine this a bit more, and find stricter bounds.
+            min_tempo=0.1,
+            max_tempo=10,
         ),
         run.train.spectrogram_model._data._make_stop_token: Args(
             # NOTE: The stop token uncertainty was approximated by a fully trained model that

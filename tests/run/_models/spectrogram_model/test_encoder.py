@@ -224,6 +224,7 @@ def _make_encoder(
     num_tokens=5,
     context=3,
     num_token_metadata=1,
+    max_frames_per_token=4.6875,
 ):
     """Make `encoder.Encoder` and it's inputs for testing."""
     encoder = cf.partial(spectrogram_model.encoder.Encoder)(
@@ -262,6 +263,7 @@ def _make_encoder(
         token_embeddings=list(token_embeddings.unbind()),
         slices=[slice(context, -context) for _ in range(batch_size)],
         anno_mask_indices=anno_mask_indices,
+        max_audio_len=[int(max_frames_per_token * num_tokens) for _ in range(batch_size)],
     )
     return encoder, inputs, (num_tokens, batch_size, out_size)
 

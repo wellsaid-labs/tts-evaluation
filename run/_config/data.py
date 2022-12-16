@@ -105,12 +105,14 @@ def _include_span(span: struc.Span):
     """Return `True` iff `span` should be included in the dataset.
 
     TODO: The dataset metrics show that 2% of Heather's dataset still has pauses longer than 1s.
-    Can we filter them out in accordance to `too_long_pause_length`?
+          Can we filter them out in accordance to `too_long_pause_length`?
     TODO: How can we filter out all non-standard words that haven't been normalized, yet? We could
-    normalize the script before hand, removing all non-standard words. Afterwards, we can verify
-    with Google STT that it matches the voice over.
+          normalize the script before hand, removing all non-standard words. Afterwards, we can
+          verify with Google STT that it matches the voice over.
     TODO: The character "." is ambiguous. It is sometimes prounced "dot" and sometimes it's silent.
-    There may be some inconsistency between eSpeak and the voice over with regards to ".".
+          There may be some inconsistency between eSpeak and the voice over with regards to ".".
+    TODO: Add a filter using `get_max_audio_length`, it'll help filter out clips with excessive
+          silence. It'll also make sure that clips actually subscribe to this limit.
     """
     script = str(span.spacy_context(**cf.get()))
 

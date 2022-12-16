@@ -242,6 +242,7 @@ def _get_data_generator(
     dev_dataset: Dataset,
     train_get_weight: SpanGeneratorGetWeight,
     dev_get_weight: SpanGeneratorGetWeight,
+    **_,
 ):
     """Initialize training and development data generators."""
     train = cf.partial(SpanGenerator)(train_dataset, get_weight=train_get_weight)
@@ -255,6 +256,7 @@ def _get_data_processors(
     step: int,
     train_batch_size: int,
     dev_batch_size: int,
+    **_,
 ):
     """Initialize training and development data processors."""
     train = DataProcessor(train_gen, train_batch_size, step)

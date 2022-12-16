@@ -328,10 +328,12 @@ class Batch(_utils.Batch):
     def apply(self, call: typing.Callable[[torch.Tensor], torch.Tensor]) -> "Batch":
         batch: Batch = super().apply(call)
         token_embed = batch.processed.token_embeddings_padded
-        object.__setattr__(batch.processed, "token_embeddings_padded", call(token_embed))
-        object.__setattr__(batch.processed, "num_tokens", call(batch.processed.num_tokens))
-        object.__setattr__(batch.processed, "tokens_mask", call(batch.processed.tokens_mask))
-        object.__setattr__(batch.processed, "anno_mask", call(batch.processed.anno_mask))
+        set_ = object.__setattr__
+        set_(batch.processed, "token_embeddings_padded", call(token_embed))
+        set_(batch.processed, "num_tokens", call(batch.processed.num_tokens))
+        set_(batch.processed, "tokens_mask", call(batch.processed.tokens_mask))
+        set_(batch.processed, "anno_mask", call(batch.processed.anno_mask))
+        set_(batch.processed, "max_audio_len_tensor", call(batch.processed.max_audio_len_tensor))
         return batch
 
     def __len__(self):

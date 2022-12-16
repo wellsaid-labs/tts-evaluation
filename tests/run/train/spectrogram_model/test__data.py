@@ -148,7 +148,13 @@ def test__random_loudness_annotations():
         signal = lib.audio.full_scale_sine_wave(span.audio_file.sample_rate, 20, length)
         out = _data._random_loudness_annotations(span, signal, precision=0)
         # NOTE: These loudness values are irregular because the sample rate is so small.
-        expected: SpanAnnotations = [(slice(0, 4, None), -70), (slice(4, 15, None), -70)]
+        expected: SpanAnnotations = [
+            (slice(0, 4), -70),
+            (slice(4, 5), -70),
+            (slice(5, 7), -70),
+            (slice(8, 9), -70),
+            (slice(9, 10), -70),
+        ]
         assert expected == out
 
 
@@ -156,8 +162,15 @@ def test__random_tempo_annotations():
     """Test `_data._random_tempo_annotations` on a basic case."""
     with torchnlp.random.fork_rng(123456):
         span = make_passage(script="This is a test.")[:]
-        out = _data._random_tempo_annotations(span, precision=1)
-        expected: SpanAnnotations = [(slice(0, 4, None), 1.0), (slice(4, 15, None), 1.0)]
+        get_tempo_anno = lambda _, a: a.script[1] - a.script[0]
+        out = _data._random_tempo_annotations(span, get_tempo_anno)
+        expected: SpanAnnotations = [
+            (slice(0, 4), 4),
+            (slice(4, 5), 1),
+            (slice(5, 7), 2),
+            (slice(8, 9), 1),
+            (slice(9, 10), 1),
+        ]
         assert expected == out
 
 

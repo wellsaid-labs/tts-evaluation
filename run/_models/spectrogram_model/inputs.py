@@ -69,6 +69,10 @@ class Inputs:
     # Slice of tokens in each sequence to be voiced
     slices: typing.List[slice]
 
+    # The maximum audio length to generate for this text in number of frames.
+    # NOTE: This must be a positive value greater or equal to one.
+    max_audio_len: typing.List[int]
+
     # The size of the annotations added to `token_embeddings`.
     anno_mask_indices: typing.Tuple[int, ...]
 
@@ -90,6 +94,10 @@ class Inputs:
     # torch.BoolTensor [batch_size, num_tokens, len(self.anno_mask_indices)]
     anno_mask: torch.Tensor = dataclasses.field(init=False)
 
+    # The maximum audio length for each sequence.
+    # torch.LongTensor [batch_size]
+    max_audio_len_tensor: torch.Tensor = dataclasses.field(init=False)
+
     def __post_init__(self):
         indices = [s.indices(len(t)) for s, t in zip(self.slices, self.tokens)]
         num_tokens = [b - a for a, b, _ in indices]
@@ -109,15 +117,27 @@ class Inputs:
             mask = torch.index_select(stacked, 2, indices)
         object.__setattr__(self, "anno_mask", mask)
 
+        object.__setattr__(self, "max_audio_len", [max(n, 1) for n in self.max_audio_len])
+        max_audio_len = torch.tensor(self.max_audio_len, device=self.device, dtype=torch.long)
+        object.__setattr__(self, "max_audio_len_tensor", max_audio_len)
+
         self.check_invariants()
 
     def check_invariants(self):
         # NOTE: Double-check sizing.
         batch_size = len(self.tokens)
+        max_num_tokens = max(len(t) for t in self.tokens) if len(self.tokens) > 0 else 0
+        max_num_voiced_tokens = int(self.num_tokens.max()) if len(self.tokens) > 0 else 0
         assert all(len(metadata) == batch_size for metadata in self.seq_metadata)
         assert all(len(metadata) == batch_size for metadata in self.token_metadata)
         assert len(self.token_embeddings) == batch_size
         assert len(self.slices) == batch_size
+        assert len(self.max_audio_len) == batch_size
+        assert self.max_audio_len_tensor.shape == (batch_size,)
+        assert self.token_embeddings_padded.shape[:2] == (batch_size, max_num_tokens)
+        assert self.num_tokens.shape == (batch_size,)
+        assert self.tokens_mask.shape == (batch_size, max_num_voiced_tokens)
+        assert self.anno_mask.shape == (batch_size, max_num_tokens, len(self.anno_mask_indices))
         for metadata in self.token_metadata:
             assert all(len(t) == len(m) or len(m) == 0 for t, m in zip(self.tokens, metadata))
         if isinstance(self.token_embeddings, list):
@@ -523,6 +543,7 @@ def preprocess(
     wrap: InputsWrapper,
     loudness_kwargs: typing.Dict,
     tempo_kwargs: typing.Dict,
+    get_max_audio_length: typing.Callable[[str], int],
     device: torch.device = torch.device("cpu"),
 ) -> Inputs:
     """Preprocess `batch` into model `Inputs`.
@@ -537,10 +558,14 @@ def preprocess(
     TODO: Instead of using `zero` embeddings, what if we tried training a vector, instead?
 
     Args:
-        batch: A row of data in the batch consists of a Session, the script with context, the
-            script without context, and any related annotations expressed as a Tensor.
+        wrap: A raw batch of data that needs to be preprocessed.
+        loudness_kwargs: Key-word arguments for preprocessing loudness annotations.
+        tempo_kwargs: Key-word arguments for preprocessing tempo annotations.
+        get_max_audio_length: A callable for determining the maximum audio length in frames for
+            a given piece of text.
+        ...
     """
-    inputs = Inputs([], [], [[], []], [], [], (), device)
+    inputs = Inputs([], [], [[], []], [], [], [], (), device)
     iter_ = zip(wrap.session, wrap.span, wrap.context, wrap.loudness, wrap.tempo, wrap.respellings)
     Item = typing.Tuple[
         struc.Session, SpanDoc, SpanDoc, SpanAnnotations, SpanAnnotations, TokenAnnotations
@@ -571,6 +596,7 @@ def preprocess(
         end_char = start_char + cntxt.count(Context.SCRIPT)
 
         inputs.slices.append(slice(start_char, end_char))
+        inputs.max_audio_len.append(get_max_audio_length("".join(chars[inputs.slices[-1]])))
         inputs.tokens.append([c.lower() for c in chars])
         # NOTE: We merge `pronun` and `casing` into one category for performance reasons. It's
         # faster to have less unique categories. Furthermore, since casing and pronunication are

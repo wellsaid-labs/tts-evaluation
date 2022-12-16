@@ -247,7 +247,8 @@ def test__preprocess():
     script, sesh = "In 1968 the U.S. Army", make_session()
     doc = nlp(script)
     input_ = InputsWrapper.from_xml(XMLType(doc[:-1].text), doc[:-1], sesh, doc)
-    processed = preprocess(input_, {}, {})
+    processed = preprocess(input_, {}, {}, lambda t: len(t))
+    assert processed.max_audio_len == [len(doc[:-1].text)]
     assert processed.tokens == [list(script.lower())]
     assert processed.seq_metadata[0] == [sesh[0].label]
     assert processed.seq_metadata[1] == [sesh]
@@ -377,7 +378,7 @@ def test__preprocess_respelling():
     sesh = make_session()
     doc = nlp(script)
     input_ = InputsWrapper.from_xml(xml, doc[1:-1], sesh, doc)
-    processed = preprocess(input_, {}, {})
+    processed = preprocess(input_, {}, {}, lambda t: len(t))
     casing = [
         (Pronun.NORMAL, Casing.UPPER),  # D
         (Pronun.NORMAL, Casing.LOWER),  # o

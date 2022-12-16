@@ -30,7 +30,7 @@ def _make_args():
     # NOTE: The script needs to be long enough to pass the below tests.
     script = " ".join([script] * 3)
     inputs = Inputs.from_xml(XMLType(script), nlp(script), session)
-    preprocessed = preprocess(inputs, {}, {})
+    preprocessed = preprocess(inputs, {}, {}, lambda t: int(len(t) * 4.6875))
     package.spec_model.allow_unk_on_eval(True)
     package.signal_model.allow_unk_on_eval(True)
     return package, inputs, preprocessed

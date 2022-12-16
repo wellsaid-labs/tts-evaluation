@@ -59,7 +59,6 @@ class SpectrogramModel(torch.nn.Module):
         num_anno: The number of annotations.
         num_frame_channels: Number of channels in each frame (sometimes refered to as
             "Mel-frequency bins" or "FFT bins" or "FFT bands").
-        max_frames_per_token: The maximum sequential predictions to make before stopping.
         output_scalar: The output of this model is scaled up by this value.
         stop_threshold: If the stop probability exceeds this value, this model stops generating
             frames.
@@ -76,13 +75,11 @@ class SpectrogramModel(torch.nn.Module):
         seq_meta_embed_size: int,
         num_anno: int,
         num_frame_channels: int,
-        max_frames_per_token: float,
         output_scalar: float,
         stop_threshold: float,
         stop_token_eps: float = 1e-10,
     ):
         super().__init__()
-        self.max_frames_per_token = max_frames_per_token
         self.num_frame_channels = num_frame_channels
         self.stop_threshold = stop_threshold
         self.max_tokens = max_tokens
@@ -154,20 +151,8 @@ class SpectrogramModel(torch.nn.Module):
         is_stop = (torch.sigmoid(stop_token) >= self.stop_threshold) | reached_max
         return is_stop, stop_token
 
-    def _get_max_frames(self, num_tokens: torch.Tensor) -> torch.Tensor:
-        """Get the maximum frames allowed for each token sequence.
-
-        Args:
-            num_tokens (torch.LongTensor [batch_size])
-
-        Returns:
-            torch.LongTensor [batch_size]
-        """
-        max_lengths = (num_tokens.float() * self.max_frames_per_token).long()
-        return torch.clamp(max_lengths, min=1)
-
     def _infer_generator(
-        self, encoded: Encoded, split_size: float, use_tqdm: bool, **kwargs
+        self, inputs: Inputs, encoded: Encoded, split_size: float, use_tqdm: bool, **kwargs
     ) -> Generator:
         """Generate frames from the decoder until a stop is predicted or `max_lengths` is reached.
 
@@ -191,11 +176,11 @@ class SpectrogramModel(torch.nn.Module):
         frames, stop_tokens, alignments = [], [], []
         lengths = torch.zeros(batch_size, dtype=torch.long, device=device)
         stopped = torch.zeros(batch_size, dtype=torch.bool, device=device)
-        max_lengths = self._get_max_frames(num_tokens)
         max_tokens = num_tokens.max().cpu().item() if use_tqdm else None
         progress_bar = tqdm(leave=True, unit="char(s)", total=max_tokens) if use_tqdm else None
         keep_going = lambda: (
-            stopped.sum() < batch_size and lengths[~stopped].max() < max_lengths[~stopped].max()
+            stopped.sum() < batch_size
+            and lengths[~stopped].max() < inputs.max_audio_len_tensor[~stopped].max()
         )
         while keep_going():
             if self.grad_enabled is not None:
@@ -207,7 +192,7 @@ class SpectrogramModel(torch.nn.Module):
             lengths[~stopped] += 1
             frame = frame.masked_fill(stopped.view(1, -1, 1), 0)
             hidden_state = hidden_state._replace(last_frame=frame)  # type: ignore
-            reached_max = lengths == max_lengths
+            reached_max = lengths == inputs.max_audio_len_tensor
             window_start = hidden_state.attention_hidden_state.window_start
             is_stop, stop_token = self._is_stop(stop_token, num_tokens, window_start, reached_max)
             stopped[is_stop] = True
@@ -271,7 +256,7 @@ class SpectrogramModel(torch.nn.Module):
             frames_mask=target_mask.transpose(0, 1),
             num_tokens=encoded.num_tokens,
             tokens_mask=encoded.tokens_mask,
-            reached_max=num_frames >= self._get_max_frames(encoded.num_tokens),
+            reached_max=num_frames >= inputs.max_audio_len_tensor,
         )
 
     def _generate(
@@ -293,6 +278,7 @@ class SpectrogramModel(torch.nn.Module):
         with self._set_grad_enabled():
             encoded = self.encoder(inputs)
             yield from self._infer_generator(
+                inputs=inputs,
                 encoded=encoded,
                 split_size=split_size,
                 use_tqdm=use_tqdm,
