@@ -5,6 +5,7 @@ from functools import lru_cache, partial
 
 import config as cf
 import spacy.language
+import unidecode
 from third_party import LazyLoader
 
 import lib
@@ -130,13 +131,24 @@ def _remove_letter_casing(a: str) -> str:
     return a.lower()
 
 
+def _get_norm_spoken_chars(text: str, language: Language):
+    """Get the spoken characters in `text` with character normalization."""
+    if language is Language.ENGLISH:
+        return unidecode.unidecode(get_spoken_chars(text, language))
+    return get_spoken_chars(text, language)
+
+
 @lru_cache(maxsize=2**20)
 def _is_sound_alike(a: str, b: str, language: Language) -> bool:
     a = normalize_vo_script(a, language)
     b = normalize_vo_script(b, language)
-    spoken_chars = partial(get_spoken_chars, language=language)
-    sound_out = _SOUND_OUT[language] if language in _SOUND_OUT else identity
-    return any(func(a) == func(b) for func in (_remove_letter_casing, spoken_chars, sound_out))
+    normalizers = (
+        _remove_letter_casing,
+        partial(get_spoken_chars, language=language),
+        partial(_get_norm_spoken_chars, language=language),
+        _SOUND_OUT[language] if language in _SOUND_OUT else identity,
+    )
+    return any(norm(a) == norm(b) for norm in normalizers)
 
 
 def is_sound_alike(a: str, b: str, language: Language) -> bool:
