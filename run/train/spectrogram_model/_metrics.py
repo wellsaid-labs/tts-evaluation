@@ -473,8 +473,9 @@ class Metrics(_utils.Metrics[MetricsKey]):
     def get_stop_token_values(
         self, batch: Batch, model: SpectrogramModel, preds: Preds
     ) -> MetricsValues:
-        bool_ = lambda t: (t > model.stop_threshold).masked_select(batch.spectrogram_mask.tensor)
-        is_correct = bool_(batch.stop_token.tensor) == bool_(torch.sigmoid(preds.stop_tokens))
+        th = model.stop_threshold
+        is_correct = (batch.stop_token.tensor > th) == (torch.sigmoid(preds.stop_tokens) > th)
+        is_correct = is_correct.masked_select(batch.spectrogram_mask.tensor)
         return {MetricsKey(self.NUM_CORRECT_STOP_TOKEN): float(is_correct.sum().item())}
 
     def _iter_permutations(self, select: _utils.MetricsSelect, is_verbose: bool = True):
