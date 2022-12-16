@@ -187,6 +187,22 @@ def test__make_speech_segments_helper__overlap():
     )
 
 
+def test__make_speech_segments_helper__overlap__regression():
+    """Test `_make_speech_segments_helper` where `non_speech_segment` is on the border of an
+    `alignment`.
+    """
+    pad = 25 / 1000
+    speech_segments = _make_speech_segments_helper(
+        alignments=[(17.4, 17.8), (20.7, 20.9), (24.0, 24.1)],
+        prev_alignment=(0, 0),
+        next_alignment=(26, 26),
+        max_length=26,
+        nss_timeline=Timeline([(16.77, 17.5), (20.7, 20.81), (24.0, 25.275)]),
+        pad=pad,
+    )
+    assert speech_segments == ((slice(1, 3, None), slice(20.785, 24.025, None)),)
+
+
 def test__make_speech_segments_helper__prev_alignment():
     """Test `_make_speech_segments_helper` where `alignments` and `prev_alignment` overlap."""
     speech_segments = _make_speech_segments_helper(

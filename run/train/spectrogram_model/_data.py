@@ -84,6 +84,8 @@ def _random_nonoverlapping_alignments(
     # `run/review/dataset_processing/span_annotation_generation.py`
     ret_ = [Alignment((a[0], b[0]), (a[1], b[1]), (a[2], b[2])) for a, b in intervals]
     ret_ = [a for a in ret_ if a.audio[0] < a.audio[1] and include_annotation(a)]
+    # NOTE: Intervals should not overlap with respect to the script.
+    assert all(a.script_slice.stop <= b.script_slice.start for a, b in zip(ret_, ret_[1:]))
     return tuple(ret_)
 
 

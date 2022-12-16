@@ -547,8 +547,7 @@ class Passage:
 
         # NOTE: `self.speech_segments` must be sorted.
         pairs = zip(self.speech_segments, self.speech_segments[1:])
-        assert all(a.slice.start <= b.slice.start for a, b in pairs)
-        assert all(a.script_slice.stop <= b.script_slice.start for a, b in pairs)
+        assert all(a.slice.stop <= b.slice.start for a, b in pairs)
 
         for alignments in (self.nonalignments, self.alignments):
             # NOTE: `self.alignments`, and `self.nonalignments` must be sorted.
@@ -655,22 +654,6 @@ class Span:
             if s.script_slice.start >= self.script_slice.start
             and s.script_slice.stop <= self.script_slice.stop
         ]
-
-    @property
-    def non_speech_segments(self) -> typing.List[slice]:
-        """Get non speech segments that overlap with `self.audio_slice`.
-
-        TODO: This is somewhat redundant with `_make_speech_segments_helper`, consider refactoring
-              and creating a generic `get_non_speech_segments` function.
-        """
-        passage = self.passage
-        nss = [slice(s[0], s[1]) for s in passage.non_speech_segments[self.audio_slice]]
-        alignments = [a.audio for a in passage.alignments]
-        prev, next_ = passage._prev_alignment(), passage._next_alignment()
-        alignments = [prev.audio] + alignments + [next_.audio]
-        alignments_timeline = Timeline(alignments)
-        nss = list(_filter_non_speech_segments(alignments, alignments_timeline, nss))
-        return [slice(s.start - self.audio_start, s.stop - self.audio_start) for s in nss]
 
     @property
     def other_metadata(self):
@@ -879,14 +862,14 @@ def _make_speech_segments_helper(
     if len(nss) == 0:
         return tuple()
 
-    speech_segments: typing.List[typing.Tuple[slice, ...]] = []
+    speech_segments: typing.List[typing.Tuple[slice, slice]] = []
     pairs = [i for i in zip(nss, nss[1:]) if i[0].stop <= i[1].start]  # NOTE: Pauses may overlap.
     for a, b in pairs:
         idx = list(alignments_timeline.indicies(slice(a.stop, b.start)))
         if (
             len(idx) != 0
             # NOTE: The pauses must contain all the alignments fully, not just partially.
-            and (a.start <= alignments_[idx[0]][0] or b.stop >= alignments_[idx[-1]][1])
+            and (a.start <= alignments_[idx[0]][0] and alignments_[idx[-1]][1] <= b.stop)
             # NOTE: The speech segment must only contain `alignments`.
             and (0 not in idx and len(alignments_) - 1 not in idx)
         ):
