@@ -557,7 +557,7 @@ class Passage:
 
         # NOTE: `self.speech_segments` must be sorted.
         pairs = zip(self.speech_segments, self.speech_segments[1:])
-        assert all(a.slice.start <= b.slice.start for a, b in pairs)
+        assert all(a.slice.stop <= b.slice.start for a, b in pairs)
 
         for alignments in (self.nonalignments, self.alignments):
             # NOTE: `self.alignments`, and `self.nonalignments` must be sorted.
@@ -862,14 +862,14 @@ def _make_speech_segments_helper(
     if len(nss) == 0:
         return tuple()
 
-    speech_segments: typing.List[typing.Tuple[slice, ...]] = []
+    speech_segments: typing.List[typing.Tuple[slice, slice]] = []
     pairs = [i for i in zip(nss, nss[1:]) if i[0].stop <= i[1].start]  # NOTE: Pauses may overlap.
     for a, b in pairs:
         idx = list(alignments_timeline.indicies(slice(a.stop, b.start)))
         if (
             len(idx) != 0
             # NOTE: The pauses must contain all the alignments fully, not just partially.
-            and (a.start <= alignments_[idx[0]][0] or b.stop >= alignments_[idx[-1]][1])
+            and (a.start <= alignments_[idx[0]][0] and alignments_[idx[-1]][1] <= b.stop)
             # NOTE: The speech segment must only contain `alignments`.
             and (0 not in idx and len(alignments_) - 1 not in idx)
         ):
