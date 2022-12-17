@@ -112,10 +112,7 @@ except ImportError:
 
 @lru_cache(maxsize=2**20)
 def _grapheme_to_phoneme(grapheme: str) -> str:
-    """Fast grapheme to phoneme implementation where punctuation is ignored.
-
-    NOTE: Use private `_line_grapheme_to_phoneme` for performance...
-    """
+    """Fast grapheme to phoneme implementation where punctuation is ignored."""
     return grapheme_to_phoneme([grapheme], separator="|")[0]
 
 

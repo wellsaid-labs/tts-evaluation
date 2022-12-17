@@ -21,7 +21,7 @@ from run._config import GetLabel, get_dataset_label, get_model_label
 from run._models.spectrogram_model import Preds, SpectrogramModel
 from run.data._loader import Speaker
 from run.train import _utils
-from run.train._utils import Timer
+from run.train._utils import Context, Timer
 from run.train.spectrogram_model._data import Batch
 
 
@@ -378,9 +378,7 @@ class Metrics(_utils.Metrics[MetricsKey]):
 
         return values, _reduce
 
-    def get_dataset_values(
-        self, batch: Batch, model: SpectrogramModel, preds: Preds
-    ) -> MetricsValues:
+    def get_dataset_values(self, batch: Batch, preds: Preds) -> MetricsValues:
         """
         TODO: Get dataset metrics on OOV words (spaCy and pronunciation dictionary) in our dataset.
         TODO: Create a `streamlit` for measuring coverage in our dataset, and other datasets.
@@ -402,7 +400,7 @@ class Metrics(_utils.Metrics[MetricsKey]):
             _reduce(self.NUM_SPANS, span.speaker, v=float(not has_reached_max))
 
             # NOTE: Remove predictions that diverged (reached max) as to not skew other metrics.
-            if model.training or not has_reached_max:
+            if self.comet.context != str(Context.EVALUATE_INFERENCE.value) or not has_reached_max:
                 index = int(len(span.script) // self.TEXT_LENGTH_BUCKET_SIZE)
                 _reduce(self.NUM_SPANS_PER_TEXT_LENGTH, text_length_bucket=index, v=1)
                 _reduce(self.NUM_FRAMES_MAX, v=num_frames, op=max)
@@ -416,9 +414,7 @@ class Metrics(_utils.Metrics[MetricsKey]):
 
         return dict(values)
 
-    def get_alignment_values(
-        self, batch: Batch, model: SpectrogramModel, preds: Preds
-    ) -> MetricsValues:
+    def get_alignment_values(self, batch: Batch, preds: Preds) -> MetricsValues:
         values, _reduce = self._make_values()
 
         for span, skipped, jumps, std, norm, small_max, length, has_reached_max in zip(
@@ -434,7 +430,7 @@ class Metrics(_utils.Metrics[MetricsKey]):
             _reduce(self.NUM_REACHED_MAX, v=has_reached_max)
             _reduce(self.NUM_REACHED_MAX, span.speaker, v=has_reached_max)
 
-            if model.training or not has_reached_max:
+            if self.comet.context != str(Context.EVALUATE_INFERENCE.value) or not has_reached_max:
                 speaker: typing.Optional[Speaker]
                 for speaker in [None, span.speaker]:
                     _reduce(self.ALIGNMENT_NORM_SUM, speaker, v=norm)
@@ -446,9 +442,7 @@ class Metrics(_utils.Metrics[MetricsKey]):
 
         return dict(values)
 
-    def get_loudness_values(
-        self, batch: Batch, model: SpectrogramModel, preds: Preds
-    ) -> MetricsValues:
+    def get_loudness_values(self, batch: Batch, preds: Preds) -> MetricsValues:
         values, _reduce = self._make_values()
 
         spectrogram_mask = batch.spectrogram_mask.tensor.transpose(0, 1)
@@ -461,7 +455,7 @@ class Metrics(_utils.Metrics[MetricsKey]):
             get_num_pause_frames(preds.frames, preds.frames_mask, **cf.get()),
             self._to_list(preds.reached_max),
         ):
-            if model.training or not has_reached_max:
+            if self.comet.context != str(Context.EVALUATE_INFERENCE.value) or not has_reached_max:
                 for speaker in [None, span.speaker]:
                     _reduce(self.RMS_SUM_PREDICTED, speaker, v=pred_loudness)
                     _reduce(self.RMS_SUM, speaker, v=loudness)
@@ -515,6 +509,7 @@ class Metrics(_utils.Metrics[MetricsKey]):
                 self.REACHED_MAX_FRAMES: reduce(self.NUM_REACHED_MAX) / total_spans,
                 self.SPECTROGRAM_LOSS: spectrogram_loss,
             }
+            assert update[self.STOP_TOKEN_ACCURACY] <= 1.0
             metrics.update({partial(k, speaker=speaker): v for k, v in update.items()})
         return metrics
 

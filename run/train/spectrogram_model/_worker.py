@@ -436,9 +436,9 @@ def _run_step(
     args.timer.record_event(args.timer.MEASURE_METRICS)
     model = typing.cast(SpectrogramModel, args.state.model.module)
     values: MetricsValues = {
-        **args.metrics.get_dataset_values(args.batch, model, preds),
-        **args.metrics.get_alignment_values(args.batch, model, preds),
-        **args.metrics.get_loudness_values(args.batch, model, preds),
+        **args.metrics.get_dataset_values(args.batch, preds),
+        **args.metrics.get_alignment_values(args.batch, preds),
+        **args.metrics.get_loudness_values(args.batch, preds),
         **args.metrics.get_data_loader_values(args.data_loader),
         **args.metrics.get_stop_token_values(args.batch, model, preds),
         MetricsKey(args.metrics.SPECTROGRAM_LOSS_SUM): float(spectrogram_loss.sum().item()),
@@ -542,9 +542,9 @@ def _run_inference(args: _HandleBatchArgs):
 
     args.timer.record_event(args.timer.MEASURE_METRICS)
     values: MetricsValues = {
-        **args.metrics.get_dataset_values(args.batch, model, preds),
-        **args.metrics.get_alignment_values(args.batch, model, preds),
-        **args.metrics.get_loudness_values(args.batch, model, preds),
+        **args.metrics.get_dataset_values(args.batch, preds),
+        **args.metrics.get_alignment_values(args.batch, preds),
+        **args.metrics.get_loudness_values(args.batch, preds),
         **args.metrics.get_data_loader_values(args.data_loader),
     }
     args.timer.record_event(args.timer.GATHER_METRICS)
