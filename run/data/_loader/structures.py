@@ -560,6 +560,9 @@ class Passage:
         assert all(a.slice.stop <= b.slice.start for a, b in pairs)
 
         for alignments in (self.nonalignments, self.alignments):
+            # NOTE: Consecutive `Alignment`s may overlap since there is no distinct boundaries
+            # between words, the script and transcript may not overlap between two consecutive
+            # `Alignment`s.
             # NOTE: `self.alignments`, and `self.nonalignments` must be sorted.
             pairs = zip(alignments, alignments[1:])
             assert all(a.script[1] <= b.script[0] for a, b in pairs)
@@ -842,7 +845,7 @@ def _make_speech_segments_helper(
     """Make a list of `Span`s that start and end with silence.
 
     NOTE: Long alignments (more than 1s) can include a pause. Due to this, there may be a pause
-    inside a speech segment.
+          inside a speech segment.
 
     Args:
         ...
