@@ -179,7 +179,7 @@ def alignment_audio(
 
 def metadata_alignment_audio(metadata: AudioMetadata, alignment: Alignment) -> np.ndarray:
     """Get `alignment` audio using cached `read_wave_audio`."""
-    return read_wave_audio(metadata, alignment.audio[0], alignment.audio[1] - alignment.audio[0])
+    return read_wave_audio(metadata, alignment.audio[0], alignment.audio_len)
 
 
 def clip_audio(audio: np.ndarray, span: Span, alignment: Alignment):

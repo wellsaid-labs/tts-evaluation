@@ -55,8 +55,6 @@ def configure(overwrite: bool = False):
             # direction) to generate the encoded features.
             lstm_layers=2,
             out_size=encoder_out_size,
-            # NOTE: This is a standardish number of layers for embedding.
-            num_anno_embed_layers=2,
         ),
         run._models.spectrogram_model.attention.Attention: cf.Args(
             # SOURCE (Tacotron 2):

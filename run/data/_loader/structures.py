@@ -119,8 +119,6 @@ alignment_dtype = np.dtype(_alignment_dtype)
 class Alignment(typing.NamedTuple):
     """An aligned `script`, `audio` and `transcript` slice.
 
-    NOTE: Consecutive alignments may overlap since there is no distinct boundaries between words,
-    the script and transcript may not overlap between two consecutive alignments.
     TODO: Add a check invariants to ensure Alignment slices are always positive.
 
     Args:
@@ -552,9 +550,9 @@ class Passage:
         assert all(a.transcript[0] <= a.transcript[1] for a in self.alignments)
 
         # NOTE: `self.alignments` must not have extra whitespaces on it's edges.
-        slices = (self.script[a.script[0] : a.script[1]] for a in self.alignments)
+        slices = (self.script[a.script_slice] for a in self.alignments)
         assert all(self._no_white_space(s) for s in slices)
-        slices = (self.transcript[a.transcript[0] : a.transcript[1]] for a in self.alignments)
+        slices = (self.transcript[a.transcript_slice] for a in self.alignments)
         assert all(self._no_white_space(s) for s in slices)
 
         # NOTE: `self.speech_segments` must be sorted.
@@ -562,6 +560,9 @@ class Passage:
         assert all(a.slice.stop <= b.slice.start for a, b in pairs)
 
         for alignments in (self.nonalignments, self.alignments):
+            # NOTE: Consecutive `Alignment`s may overlap since there is no distinct boundaries
+            # between words, the script and transcript may not overlap between two consecutive
+            # `Alignment`s.
             # NOTE: `self.alignments`, and `self.nonalignments` must be sorted.
             pairs = zip(alignments, alignments[1:])
             assert all(a.script[1] <= b.script[0] for a, b in pairs)

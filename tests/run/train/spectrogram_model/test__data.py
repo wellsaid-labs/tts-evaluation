@@ -10,6 +10,7 @@ from torchnlp.encoders.text import SequenceBatch
 
 import lib
 import run
+from run._config.data import _get_loudness_annotation
 from run._models.spectrogram_model import SpanAnnotations, TokenAnnotations
 from run.data._loader import Alignment
 from run.train.spectrogram_model import _data
@@ -77,6 +78,7 @@ def test__get_loudness():
             precision=precision,
             sample_rate=sample_rate,
             filter_class=implementation,
+            get_anno=_get_loudness_annotation,
         )
         assert loundess is not None
         assert math.isfinite(loundess)
@@ -98,6 +100,7 @@ def test__get_loudness__short_audio():
             precision=5,
             sample_rate=sample_rate,
             filter_class="DeMan",
+            get_anno=_get_loudness_annotation,
         )
         assert loundess is None
 
@@ -115,6 +118,7 @@ def test__get_loudness__quiet_audio():
         precision=5,
         sample_rate=sample_rate,
         filter_class="DeMan",
+        get_anno=_get_loudness_annotation,
     )
     assert loundess == -70
 
@@ -136,6 +140,7 @@ def test__get_loudness__quieter_audio():
         precision=5,
         sample_rate=sample_rate,
         filter_class="DeMan",
+        get_anno=_get_loudness_annotation,
     )
     assert loundess is None
 
@@ -162,8 +167,8 @@ def test__random_tempo_annotations():
     """Test `_data._random_tempo_annotations` on a basic case."""
     with torchnlp.random.fork_rng(123456):
         span = make_passage(script="This is a test.")[:]
-        get_tempo_anno = lambda _, a: a.script[1] - a.script[0]
-        out = _data._random_tempo_annotations(span, get_tempo_anno)
+        get_tempo_anno = lambda t, *_, **__: len(t)
+        out = _data._random_tempo_annotations(span, get_anno=get_tempo_anno)
         expected: SpanAnnotations = [
             (slice(0, 4), 4),
             (slice(4, 5), 1),

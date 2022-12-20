@@ -94,10 +94,11 @@ def _get_loudness_annotation(
     sample_rate: int,
     alignment: Alignment,
     get_anno: typing.Callable[..., typing.Optional[float]],
+    **kwargs,
 ) -> typing.Optional[float]:
     sec_to_sample_ = functools.partial(sec_to_sample, sample_rate=sample_rate)
     slice_ = audio[sec_to_sample_(alignment.audio[0]) : sec_to_sample_(alignment.audio[1])]
-    return get_anno(slice_, sample_rate)
+    return get_anno(slice_, sample_rate=sample_rate, **kwargs)
 
 
 def _random_loudness_annotations(span: Span, signal: numpy.ndarray, **kwargs) -> SpanAnnotations:
@@ -105,18 +106,17 @@ def _random_loudness_annotations(span: Span, signal: numpy.ndarray, **kwargs) ->
     annotations: SpanAnnotations = []
     alignments = cf.partial(_random_nonoverlapping_alignments)(span.speech_segments)
     for alignment in alignments:
-        slice_ = slice(alignment.script[0], alignment.script[1])
         sample_rate = span.audio_file.sample_rate
         loudness_ = cf.call(_get_loudness_annotation, signal, sample_rate, alignment, **kwargs)
         if loudness_ is not None:
-            annotations.append((slice_, loudness_))
+            annotations.append((alignment.script_slice, loudness_))
     return annotations
 
 
 def _get_tempo_annotation(
-    span: Span, alignment: Alignment, get_anno: typing.Callable[..., float]
+    span: Span, alignment: Alignment, get_anno: typing.Callable[..., float], **kwargs
 ) -> float:
-    return get_anno(span.script[alignment.script_slice], alignment.audio_len)
+    return get_anno(span.script[alignment.script_slice], alignment.audio_len, **kwargs)
 
 
 def _random_tempo_annotations(span: Span, **kwargs) -> SpanAnnotations:
@@ -133,9 +133,8 @@ def _random_tempo_annotations(span: Span, **kwargs) -> SpanAnnotations:
     annotations: SpanAnnotations = []
     alignments = cf.partial(_random_nonoverlapping_alignments)(span.speech_segments)
     for alignment in alignments:
-        slice_ = slice(alignment.script[0], alignment.script[1])
         annotation = _get_tempo_annotation(span, alignment, **kwargs)
-        annotations.append((slice_, annotation))
+        annotations.append((alignment.script_slice, annotation))
     return annotations
 
 
@@ -352,7 +351,7 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
         span=[s.spacy for s in spans],
         context=[cf.partial(s.spacy_context)() for s in spans],
         loudness=[_random_loudness_annotations(s, a) for s, a in zip(spans, signals_)],
-        tempo=[cf.partial(_random_tempo_annotations)(s) for s in spans],
+        tempo=[_random_tempo_annotations(s) for s in spans],
         respellings=[cf.partial(_random_respelling_annotations)(s) for s in spans],
     )
     # NOTE: `inputs` has a spaCy `Span` which is difficult to `pickle`, so instead, we seralize
