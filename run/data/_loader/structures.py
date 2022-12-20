@@ -131,6 +131,30 @@ class Alignment(typing.NamedTuple):
     audio: FloatFloat
     transcript: IntInt
 
+    @property
+    def script_slice(self):
+        return slice(*self.script)
+
+    @property
+    def audio_slice(self):
+        return slice(*self.audio)
+
+    @property
+    def transcript_slice(self):
+        return slice(*self.transcript)
+
+    @property
+    def script_len(self):
+        return self.script[1] - self.script[0]
+
+    @property
+    def audio_len(self):
+        return self.audio[1] - self.audio[0]
+
+    @property
+    def transcript_len(self):
+        return self.transcript[1] - self.transcript[0]
+
     def to_json(self):
         return [list(self.script), list(self.audio), list(self.transcript)]
 
@@ -526,9 +550,9 @@ class Passage:
         assert all(a.transcript[0] <= a.transcript[1] for a in self.alignments)
 
         # NOTE: `self.alignments` must not have extra whitespaces on it's edges.
-        slices = (self.script[a.script[0] : a.script[1]] for a in self.alignments)
+        slices = (self.script[a.script_slice] for a in self.alignments)
         assert all(self._no_white_space(s) for s in slices)
-        slices = (self.transcript[a.transcript[0] : a.transcript[1]] for a in self.alignments)
+        slices = (self.transcript[a.transcript_slice] for a in self.alignments)
         assert all(self._no_white_space(s) for s in slices)
 
         # NOTE: `self.speech_segments` must be sorted.

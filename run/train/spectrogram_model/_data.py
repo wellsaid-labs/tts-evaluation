@@ -116,11 +116,10 @@ def _random_loudness_annotations(
     loudness = torch.zeros(len(span.script))
     loudness_mask = torch.zeros(len(span.script), dtype=torch.bool)
     for alignment in _random_nonoverlapping_alignments(span.alignments, max_annotations):
-        slice_ = slice(alignment.script[0], alignment.script[1])
         loudness_ = _get_loudness(signal, span.audio_file.sample_rate, alignment, **cf.get())
         if loudness_ is not None:
-            loudness[slice_] = loudness_
-            loudness_mask[slice_] = True
+            loudness[alignment.script_slice] = loudness_
+            loudness_mask[alignment.script_slice] = True
     return loudness, loudness_mask
 
 
@@ -136,14 +135,13 @@ def _random_speed_annotations(
     speed = torch.zeros(len(span.script))
     speed_mask = torch.zeros(len(span.script), dtype=torch.bool)
     for alignment in _random_nonoverlapping_alignments(span.alignments, max_annotations):
-        slice_ = slice(alignment.script[0], alignment.script[1])
         # TODO: Instead of using characters per second, we could estimate the number of phonemes
         # with `grapheme_to_phoneme`. This might be slow, so we'd need to do so in a batch.
         # `grapheme_to_phoneme` can only estimate the number of phonemes because we can't
         # incorporate sufficient context to get the actual phonemes pronounced by the speaker.
-        second_per_char = (alignment.audio[1] - alignment.audio[0]) / (slice_.stop - slice_.start)
-        speed[slice_] = round(second_per_char, precision)
-        speed_mask[slice_] = True
+        second_per_char = alignment.audio_len / alignment.script_len
+        speed[alignment.script_slice] = round(second_per_char, precision)
+        speed_mask[alignment.script_slice] = True
     return speed, speed_mask
 
 

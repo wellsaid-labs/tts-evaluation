@@ -168,7 +168,7 @@ def passage_audio(passage: run.data._loader.Passage) -> np.ndarray:
 
 def metadata_alignment_audio(metadata: AudioMetadata, alignment: Alignment) -> np.ndarray:
     """Get `alignment` audio using cached `read_wave_audio`."""
-    return read_wave_audio(metadata, alignment.audio[0], alignment.audio[1] - alignment.audio[0])
+    return read_wave_audio(metadata, alignment.audio[0], alignment.audio_len)
 
 
 def clip_audio(audio: np.ndarray, span: Span, alignment: Alignment):
@@ -284,7 +284,11 @@ def st_html(html: str):
 
 def path_label(path: pathlib.Path) -> str:
     """Get a short label for `path`."""
-    return str(path.relative_to(ROOT_PATH)) + "/" if path.is_dir() else str(path.name)
+    return (
+        str(path.relative_to(ROOT_PATH)) + "/"
+        if path.is_dir()
+        else f"{path.parent.name}/{path.name}"
+    )
 
 
 def st_select_path(label: str, dir: pathlib.Path, suffix: str) -> pathlib.Path:

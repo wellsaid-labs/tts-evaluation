@@ -313,12 +313,11 @@ def _temporary_fix_for_transcript_offset(
     """
     return_: typing.List[struc.Alignment] = []
     for alignment in alignments:
-        word = transcript[alignment.transcript[0] : alignment.transcript[1]]
+        word = transcript[alignment.transcript_slice]
         if word.strip() != word:
             update = (alignment.transcript[0] - 1, alignment.transcript[1] - 1)
             alignment = alignment._replace(transcript=update)
-            corrected = transcript[alignment.transcript[0] : alignment.transcript[1]]
-            logger.warning("Corrected '%s' to '%s'.", word, corrected)
+            logger.warning("Corrected '%s' to '%s'.", word, transcript[alignment.transcript_slice])
         return_.append(alignment)
     return tuple(return_)
 
