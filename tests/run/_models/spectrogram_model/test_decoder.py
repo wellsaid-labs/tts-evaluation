@@ -21,6 +21,7 @@ def _make_decoder(
     lstm_hidden_size=4,
     encoder_out_size=5,
     stop_net_dropout=0.5,
+    stop_net_hidden_size=3,
 ) -> Decoder:
     """Make `decoder.Decoder` for testing."""
     _config = {
@@ -37,6 +38,7 @@ def _make_decoder(
             lstm_hidden_size=lstm_hidden_size,
             encoder_out_size=encoder_out_size,
             stop_net_dropout=stop_net_dropout,
+            stop_net_hidden_size=stop_net_hidden_size,
         ),
     }
     cf.add(_config, overwrite=True)

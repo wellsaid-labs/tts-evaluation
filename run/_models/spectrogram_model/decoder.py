@@ -30,6 +30,7 @@ class Decoder(torch.nn.Module):
         pre_net_size: The size of the pre-net hidden representation and output.
         lstm_hidden_size: The hidden size of the LSTM layers.
         encoder_out_size: The size of the attention context derived from the encoded sequence.
+        stop_net_hidden_size
         stop_net_dropout: The dropout probability of the stop net.
     """
 
@@ -40,6 +41,7 @@ class Decoder(torch.nn.Module):
         pre_net_size: int,
         lstm_hidden_size: int,
         encoder_out_size: int,
+        stop_net_hidden_size: int,
         stop_net_dropout: float,
     ):
         super().__init__()
@@ -68,7 +70,11 @@ class Decoder(torch.nn.Module):
         self.linear_out = torch.nn.Linear(lstm_hidden_size + input_size, num_frame_channels)
         self.linear_stop_token = torch.nn.Sequential(
             torch.nn.Dropout(stop_net_dropout),
-            torch.nn.Linear(lstm_hidden_size + encoder_out_size + seq_meta_embed_size, 1),
+            torch.nn.Linear(
+                lstm_hidden_size + encoder_out_size + seq_meta_embed_size, stop_net_hidden_size
+            ),
+            torch.nn.ReLU(),
+            torch.nn.Linear(stop_net_hidden_size, 1),
         )
 
     def _pad_encoded(

@@ -131,7 +131,9 @@ def configure(overwrite: bool = False):
         # applied only to layers in the pre-net of the autoregressive decoder.
         run._models.spectrogram_model.pre_net.PreNet: cf.Args(dropout=0.5),
         run._models.spectrogram_model.attention.Attention: cf.Args(dropout=0.1),
-        run._models.spectrogram_model.decoder.Decoder: cf.Args(stop_net_dropout=0.5),
+        run._models.spectrogram_model.decoder.Decoder: cf.Args(
+            stop_net_dropout=0.5, stop_net_hidden_size=512
+        ),
         # NOTE: This dropout approach proved effective in Comet in March 2020.
         run._models.spectrogram_model.encoder.Encoder: cf.Args(
             dropout=0.1, seq_meta_embed_dropout=0.1

@@ -71,6 +71,7 @@ def _make_spectrogram_model(
             lstm_hidden_size=16,
             encoder_out_size=16,
             stop_net_dropout=dropout,
+            stop_net_hidden_size=16,
         ),
         run._models.spectrogram_model.pre_net.PreNet: cf.Args(num_layers=1, dropout=dropout),
         run._models.spectrogram_model.attention.Attention: cf.Args(
