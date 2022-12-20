@@ -171,6 +171,7 @@ class _GroupedEmbedder(torch.nn.Module):
     a different mask. Lastly, the multiple versions are recombined.
 
     TODO: Let's consider adding more normalization and shortcuts to improve performance.
+    TODO: Clarify that this expects one mask to encompass the entire sequence.
 
     Args:
         input_size: The input size of the sequence.
@@ -256,9 +257,12 @@ class _GroupedEmbedder(torch.nn.Module):
         # [batch_size, num_tokens, total_size] →
         # [batch_size, num_tokens, total_size]
         tokens, mask = self._seperate(tokens, mask)
+        # NOTE: Handle padding where each of the masks is zero by masking it to zero.
         # [batch_size, num_tokens, num_groups, hidden_size] →
         # [batch_size, num_tokens, hidden_size]
-        combined = tokens.sum(dim=2) / mask.sum(dim=2)
+        mask_sum = mask.sum(dim=2)
+        combined = tokens.sum(dim=2) / mask_sum.clamp(min=1)
+        combined = torch.masked_fill(combined, mask_sum == 0, 0)
         # [batch_size, num_tokens, hidden_size] →
         # [batch_size, num_tokens, out_size]
         return self.out(combined)
