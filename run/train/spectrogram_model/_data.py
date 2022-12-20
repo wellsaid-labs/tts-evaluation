@@ -94,10 +94,11 @@ def _get_loudness_annotation(
     sample_rate: int,
     alignment: Alignment,
     get_anno: typing.Callable[..., typing.Optional[float]],
+    **kwargs,
 ) -> typing.Optional[float]:
     sec_to_sample_ = functools.partial(sec_to_sample, sample_rate=sample_rate)
     slice_ = audio[sec_to_sample_(alignment.audio[0]) : sec_to_sample_(alignment.audio[1])]
-    return get_anno(slice_, sample_rate)
+    return get_anno(slice_, sample_rate=sample_rate, **kwargs)
 
 
 def _random_loudness_annotations(span: Span, signal: numpy.ndarray, **kwargs) -> SpanAnnotations:
@@ -114,9 +115,9 @@ def _random_loudness_annotations(span: Span, signal: numpy.ndarray, **kwargs) ->
 
 
 def _get_tempo_annotation(
-    span: Span, alignment: Alignment, get_anno: typing.Callable[..., float]
+    span: Span, alignment: Alignment, get_anno: typing.Callable[..., float], **kwargs
 ) -> float:
-    return get_anno(span.script[alignment.script_slice], alignment.audio_len)
+    return get_anno(span.script[alignment.script_slice], alignment.audio_len, **kwargs)
 
 
 def _random_tempo_annotations(span: Span, **kwargs) -> SpanAnnotations:
