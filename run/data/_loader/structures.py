@@ -119,8 +119,6 @@ alignment_dtype = np.dtype(_alignment_dtype)
 class Alignment(typing.NamedTuple):
     """An aligned `script`, `audio` and `transcript` slice.
 
-    NOTE: Consecutive alignments may overlap since there is no distinct boundaries between words,
-    the script and transcript may not overlap between two consecutive alignments.
     TODO: Add a check invariants to ensure Alignment slices are always positive.
 
     Args:
