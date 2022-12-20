@@ -46,7 +46,7 @@ isort
 
 # Utils
 tqdm # Progress bar
-python-Levenshtein # Sequence alignment
+python-Levenshtein==0.12.2 # Sequence alignment
 pythonic-config # Organize hyperparameters
 pandas
 retry
