@@ -186,22 +186,46 @@ def test__grouped_embedder():
     assert out.shape == (batch_size, num_tokens, out_size)
 
 
-def test__grouped_embedder__layers():
-    """Test `spectrogram_model.encoder._GroupedEmbedder._layers` processes in groups."""
-    tokens = torch.tensor([[1, 2, 3] for _ in range(6)], dtype=torch.float32).unsqueeze(0)
-    mask = [[1, 1, 1, 1, 1, 1], [1, 0, 1, 0, 1, 0], [0, 0, 0, 1, 1, 1]]
-    mask = torch.tensor(mask, dtype=torch.float32)
-    mask = mask.transpose(0, 1).unsqueeze(0)
-    embed = spectrogram_model.encoder._GroupedEmbedder(1, 1, 1, 3, 2)
-    for module in embed.modules():
-        if isinstance(module, (torch.nn.Conv1d, torch.nn.Linear)):
-            torch.nn.init.ones_(module.weight)
-            if module.bias is not None:
-                torch.nn.init.zeros_(module.bias)
-    out = embed._layers(tokens, mask)
-    expected = [[1, 1, 1, 1, 1, 1], [2, 0, 2, 0, 2, 0], [0, 0, 0, 3, 3, 3]]
-    expected = torch.tensor(expected, dtype=torch.float32).transpose(0, 1).unsqueeze(0)
-    assert torch.equal(out, expected)
+def test__grouped_embedder__seperate():
+    """Test `spectrogram_model.encoder._GroupedEmbedder._layers` processes in groups.
+
+    This is tested by modifying one of the groups so that more information goes through. The
+    module should let that information pass through without affecting the end result of the
+    other groups.
+    """
+    num_tokens = 5
+    with fork_rng(123):
+        tokens = torch.randn(1, num_tokens, 6)
+        embed = spectrogram_model.encoder._GroupedEmbedder(1, 2, 1, 3, 2)
+    mask = [[1, 1, 1, 1, 1], [1, 0, 1, 0, 1], [0, 0, 0, 1, 1]]
+    mask = torch.tensor(mask, dtype=torch.float32).transpose(0, 1).unsqueeze(0)
+    assert mask.shape[1] == num_tokens
+    out, out_mask = embed._seperate(tokens, mask)
+    mask[:, :, 2].fill_(0)
+    other_out, other_out_mask = embed._seperate(tokens, mask)
+    assert torch.equal(out[:, :, :2], other_out[:, :, :2])
+    assert torch.equal(out[:, 0:3, 2], other_out[:, 0:3, 2])
+    assert not torch.equal(out[:, 3:, 2], other_out[:, 3:, 2])
+    expected_out_mask = [
+        [[1.0, 1.0], [1.0, 1.0], [0.0, 0.0]],
+        [[1.0, 1.0], [0.0, 0.0], [0.0, 0.0]],
+        [[1.0, 1.0], [1.0, 1.0], [0.0, 0.0]],
+        [[1.0, 1.0], [0.0, 0.0], [1.0, 1.0]],
+        [[1.0, 1.0], [1.0, 1.0], [1.0, 1.0]],
+    ]
+    assert torch.equal(out_mask[0], torch.tensor(expected_out_mask))
+    expected_other_out_mask = [
+        [[1.0, 1.0], [1.0, 1.0], [0.0, 0.0]],
+        [[1.0, 1.0], [0.0, 0.0], [0.0, 0.0]],
+        [[1.0, 1.0], [1.0, 1.0], [0.0, 0.0]],
+        [[1.0, 1.0], [0.0, 0.0], [0.0, 0.0]],
+        [[1.0, 1.0], [1.0, 1.0], [0.0, 0.0]],
+    ]
+    assert torch.equal(other_out_mask[0], torch.tensor(expected_other_out_mask))
+    assert torch.masked_select(out, ~(out_mask.bool())).sum() == 0
+    assert torch.masked_select(other_out, ~(other_out_mask.bool())).sum() == 0
+    assert torch.masked_select(out, out_mask.bool()).sum() != 0
+    assert torch.masked_select(other_out, other_out_mask.bool()).sum() != 0
 
 
 def _make_encoder(

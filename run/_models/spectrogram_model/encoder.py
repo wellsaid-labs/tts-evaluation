@@ -209,25 +209,34 @@ class _GroupedEmbedder(torch.nn.Module):
             cf.partial(torch.nn.LayerNorm)(out_size),
         )
 
-    def _layers(self, tokens: torch.Tensor, mask: torch.Tensor):
-        """
+    def _seperate(self, tokens: torch.Tensor, mask: torch.Tensor):
+        """Processes `tokens` in seperable groups with seperable masks.
+
         Args:
-            tokens (torch.FloatTensor [batch_size, num_tokens, hidden_size])
-            mask (torch.FloatTensor [batch_size, num_tokens, hidden_size])
+            tokens (torch.FloatTensor [batch_size, num_tokens, hidden_size * num_groups])
+            mask (torch.FloatTensor [batch_size, num_tokens, num_groups])
 
         Returns:
-            torch.FloatTensor [batch_size, num_tokens, hidden_size]
+            torch.FloatTensor [batch_size, num_tokens, num_groups, hidden_size]
+            torch.LongTensor [batch_size, num_tokens, num_groups, hidden_size]
         """
+        # [batch_size, num_tokens, num_groups] →
+        # [batch_size, num_tokens, total_size]
+        mask = mask.repeat_interleave(self.hidden_size, 2)
         # [batch_size, num_tokens, total_size] →
         # [batch_size, total_size, num_tokens]
         tokens, mask = tokens.transpose(1, 2), mask.transpose(1, 2)
-        mask = ~mask.bool()
+        mask_bool = ~mask.bool()
         for layer in self.layers:
-            tokens = torch.masked_fill(torch.relu(layer(tokens)), mask, 0)
+            tokens = torch.masked_fill(torch.relu(layer(tokens)), mask_bool, 0)
         # [batch_size, total_size, num_tokens] →
         # [batch_size, num_tokens, total_size]
-        tokens = tokens.transpose(1, 2)
-        return tokens
+        tokens, mask = tokens.transpose(1, 2), mask.transpose(1, 2)
+        # [batch_size, num_tokens, total_size] →
+        # [batch_size, num_tokens, num_groups, hidden_size]
+        tokens = torch.stack(tokens.tensor_split(self.num_groups, dim=2), dim=2)
+        mask = torch.stack(mask.tensor_split(self.num_groups, dim=2), dim=2)
+        return tokens, mask
 
     def __call__(self, tokens: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
         return super().__call__(tokens, mask)
@@ -244,18 +253,12 @@ class _GroupedEmbedder(torch.nn.Module):
         # [batch_size, num_tokens, input_size] →
         # [batch_size, num_tokens, total_size]
         tokens = self.in_(tokens)
-        # [batch_size, num_tokens, num_groups] →
-        # [batch_size, num_tokens, total_size]
-        mask = mask.repeat(1, 1, self.hidden_size)
         # [batch_size, num_tokens, total_size] →
         # [batch_size, num_tokens, total_size]
-        tokens = self._layers(tokens, mask)
-        # [batch_size, num_tokens, total_size] →
-        # [batch_size, num_tokens, num_groups, hidden_size]
-        folded = torch.stack(torch.chunk(tokens, self.num_groups, dim=2), dim=2)
+        tokens, mask = self._seperate(tokens, mask)
         # [batch_size, num_tokens, num_groups, hidden_size] →
         # [batch_size, num_tokens, hidden_size]
-        combined = folded.sum(dim=2) / self.num_groups
+        combined = tokens.sum(dim=2) / mask.sum(dim=2)
         # [batch_size, num_tokens, hidden_size] →
         # [batch_size, num_tokens, out_size]
         return self.out(combined)
