@@ -133,7 +133,7 @@ def _random_tempo_annotations(span: Span, **kwargs) -> SpanAnnotations:
     annotations: SpanAnnotations = []
     alignments = cf.partial(_random_nonoverlapping_alignments)(span.speech_segments)
     for alignment in alignments:
-        annotation = _get_tempo_annotation(span, alignment, **kwargs)
+        annotation = cf.partial(_get_tempo_annotation)(span, alignment, **kwargs)
         annotations.append((alignment.script_slice, annotation))
     return annotations
 
