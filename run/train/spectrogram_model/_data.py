@@ -93,38 +93,11 @@ def _get_loudness_annotation(
     audio: numpy.ndarray,
     sample_rate: int,
     alignment: Alignment,
-    block_size: float,
-    precision: int,
-    **kwargs,
+    get_anno: typing.Callable[..., typing.Optional[float]],
 ) -> typing.Optional[float]:
-    """Get the loudness in LUFS for an `alignment` in `audio`.
-
-    NOTE: `integrated_loudness` filters our quiet sections from the loudness computations.
-    NOTE: The minimum audio length for calculating loudness is the `block_size` which is typically
-    around 400ms.
-
-    Args:
-        ...
-        precision: The number of decimal places to round LUFS.
-
-    Returns: The loundess in LUFS with a range of 0 to -70 LUFS in alignment with ITU-R BS.1770-4.
-        This returns `None` if the loundess cannot be computed.
-    """
-    meter = lib.audio.get_pyloudnorm_meter(sample_rate, block_size=block_size, **kwargs)
     sec_to_sample_ = functools.partial(sec_to_sample, sample_rate=sample_rate)
     slice_ = audio[sec_to_sample_(alignment.audio[0]) : sec_to_sample_(alignment.audio[1])]
-    if slice_.shape[0] >= sec_to_sample_(block_size):
-        loudness = round(meter.integrated_loudness(slice_), precision)
-        # NOTE: This algorithm returns negative infinity if the loudness is less than -70 LUFS. We
-        # return -70 LUFS instead to keep the output finite.
-        # NOTE: This number is not parameterized because this specific number is specified in
-        # the LUFS algorithm specification, ITU-R BS.1770-4.
-        # NOTE: The loudness algorithm can sometimes overflow and return stange values that are
-        # significantly outside of the range like in:
-        # https://github.com/csteinmetz1/pyloudnorm/issues/42
-        loudness = -70 if numpy.isinf(loudness) and loudness < 0 else loudness
-        return None if loudness > 0 or loudness < -70 else loudness
-    return None
+    return get_anno(slice_, sample_rate)
 
 
 def _random_loudness_annotations(span: Span, signal: numpy.ndarray, **kwargs) -> SpanAnnotations:
@@ -140,9 +113,13 @@ def _random_loudness_annotations(span: Span, signal: numpy.ndarray, **kwargs) ->
     return annotations
 
 
-def _random_tempo_annotations(
-    span: Span, get_tempo_annotation: typing.Callable[[Span, Alignment], float], **kwargs
-) -> SpanAnnotations:
+def _get_tempo_annotation(
+    span: Span, alignment: Alignment, get_anno: typing.Callable[..., float]
+) -> float:
+    return get_anno(span.script[alignment.script_slice], alignment.audio_len)
+
+
+def _random_tempo_annotations(span: Span, **kwargs) -> SpanAnnotations:
     """Create random annotations that represent the speaking tempo in `span.script`.
 
     TODO: We should investigate a more accurate speech tempo, there are a couple options here:
@@ -157,7 +134,7 @@ def _random_tempo_annotations(
     alignments = cf.partial(_random_nonoverlapping_alignments)(span.speech_segments)
     for alignment in alignments:
         slice_ = slice(alignment.script[0], alignment.script[1])
-        annotation = get_tempo_annotation(span, alignment, **kwargs)
+        annotation = _get_tempo_annotation(span, alignment, **kwargs)
         annotations.append((slice_, annotation))
     return annotations
 

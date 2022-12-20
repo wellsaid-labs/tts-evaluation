@@ -145,6 +145,18 @@ class Alignment(typing.NamedTuple):
     def transcript_slice(self):
         return slice(*self.transcript)
 
+    @property
+    def script_len(self):
+        return self.script[1] - self.script[0]
+
+    @property
+    def audio_len(self):
+        return self.audio[1] - self.audio[0]
+
+    @property
+    def transcript_len(self):
+        return self.transcript[1] - self.transcript[0]
+
     def to_json(self):
         return [list(self.script), list(self.audio), list(self.transcript)]
 

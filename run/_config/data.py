@@ -1,8 +1,11 @@
 import copy
+import functools
 import itertools
 import logging
+import typing
 
 import config as cf
+import numpy as np
 
 import lib
 import run
@@ -160,13 +163,42 @@ def _include_annotation(annotation: struc.Alignment):
     return True
 
 
-def _get_tempo_annotation(
-    span: _loader.Span, alignment: _loader.Alignment, bucket_size: float = 0.05
-) -> float:
+def _get_tempo_annotation(text: str, audio_len: float, bucket_size: float):
     """Get a tempo annotation in actual length vs expected length."""
-    avg = run._config.lang.get_avg_audio_length(span.script[slice(*alignment.script)])
-    second_per_char = (alignment.audio[1] - alignment.audio[0]) / avg
-    return lib.utils.round_(second_per_char, bucket_size)
+    avg = run._config.lang.get_avg_audio_length(text)
+    return lib.utils.round_(audio_len / avg, bucket_size)
+
+
+def _get_loudness_annotation(
+    audio: np.ndarray, sample_rate: int, block_size: float, precision: int, **kwargs
+) -> typing.Optional[float]:
+    """Get the loudness in LUFS for `audio`.
+
+    NOTE: `integrated_loudness` filters our quiet sections from the loudness computations.
+    NOTE: The minimum audio length for calculating loudness is the `block_size` which is typically
+    around 400ms.
+
+    Args:
+        ...
+        precision: The number of decimal places to round LUFS.
+
+    Returns: The loundess in LUFS with a range of 0 to -70 LUFS in alignment with ITU-R BS.1770-4.
+        This returns `None` if the loundess cannot be computed.
+    """
+    meter = lib.audio.get_pyloudnorm_meter(sample_rate, block_size=block_size, **kwargs)
+    sec_to_sample_ = functools.partial(lib.audio.sec_to_sample, sample_rate=sample_rate)
+    if audio.shape[0] >= sec_to_sample_(block_size):
+        loudness = round(meter.integrated_loudness(audio), precision)
+        # NOTE: This algorithm returns negative infinity if the loudness is less than -70 LUFS. We
+        # return -70 LUFS instead to keep the output finite.
+        # NOTE: This number is not parameterized because this specific number is specified in
+        # the LUFS algorithm specification, ITU-R BS.1770-4.
+        # NOTE: The loudness algorithm can sometimes overflow and return stange values that are
+        # significantly outside of the range like in:
+        # https://github.com/csteinmetz1/pyloudnorm/issues/42
+        loudness = -70 if np.isinf(loudness) and loudness < 0 else loudness
+        return None if loudness > 0 or loudness < -70 else loudness
+    return None
 
 
 ENGLISH_TEST_CASES = [
@@ -310,6 +342,8 @@ TEST_CASES = [(struc.Language.ENGLISH, t) for t in ENGLISH_TEST_CASES]
 
 def configure(overwrite: bool = False):
     """Configure modules that process data, other than audio."""
+    cf.add({_get_tempo_annotation: cf.Args(bucket_size=0.05)}, overwrite)
+
     # TODO: Remove `BETH_CAMERON__CUSTOM` from the `WSL_DATASETS` groups because it has it's own
     # custom script.
     groups = [set(itertools.chain(_loader.WSL_DATASETS.keys(), _loader.RND_DATASETS.keys()))]
@@ -345,8 +379,11 @@ def configure(overwrite: bool = False):
             avg_alignments=3,
             include_annotation=_include_annotation,
         ),
-        run.train.spectrogram_model._data._random_tempo_annotations: cf.Args(
-            get_tempo_annotation=_get_tempo_annotation
+        run.train.spectrogram_model._data._get_tempo_annotation: cf.Args(
+            get_anno=cf.partial(_get_tempo_annotation)
+        ),
+        run.train.spectrogram_model._data._get_loudness_annotation: cf.Args(
+            get_anno=cf.partial(_get_loudness_annotation)
         ),
         # NOTE: We expect users to respell approx 5 - 10% of words.
         run.train.spectrogram_model._data._random_respelling_annotations: cf.Args(prob=0.1),

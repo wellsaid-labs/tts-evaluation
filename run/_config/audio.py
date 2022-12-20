@@ -116,6 +116,11 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
         run.data._loader.utils.normalize_audio: args,
         run._tts.text_to_speech_ffmpeg_generator: args,
         lib.audio.get_pyloudnorm_meter: args,
+        lib.audio.milli_to_sample: args,
+        lib.audio.sample_to_milli: args,
+        lib.audio.sample_to_sec: args,
+        lib.audio.sec_to_sample: args,
+        run._config.data._get_loudness_annotation: args,
     }
     cf.add(config, overwrite)
 
@@ -211,7 +216,7 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
         # intensity for the human ear is about 1 decibel. For more intense sounds, this can be
         # as low as 1/2 or 1/3.
         # http://physics.gmu.edu/~dmaria/phys260summer03/sound/DB.HTML#c4
-        run.train.spectrogram_model._data._get_loudness_annotation: Args(
+        run._config.data._get_loudness_annotation: Args(
             block_size=0.400, precision=0, filter_class=filter_class
         ),
         run._models.spectrogram_model.inputs.preprocess: Args(

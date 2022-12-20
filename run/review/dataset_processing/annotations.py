@@ -17,13 +17,13 @@ from torchnlp.random import fork_rng
 
 import lib
 import run
-from run._config.data import _get_tempo_annotation
 from run._config.labels import _speaker
 from run._streamlit import audio_to_url, clip_audio, st_ag_grid, st_tqdm
 from run._utils import Dataset, get_datasets
 from run.data._loader import Alignment, Span, Speaker
 from run.train.spectrogram_model._data import (
     _get_loudness_annotation,
+    _get_tempo_annotation,
     _random_nonoverlapping_alignments,
 )
 from run.train.spectrogram_model._worker import _get_data_generator
@@ -96,7 +96,7 @@ def _gather_data(span_idx: int, span: Span, anno: Alignment, clip: numpy.ndarray
         "index": span_idx,
         "anno_script": repr(_annotate(span.script, anno)),
         "loudness": cf.partial(_get_loudness_annotation)(clip, span.audio_file.sample_rate, anno),
-        "tempo": _get_tempo_annotation(span, anno),
+        "tempo": cf.partial(_get_tempo_annotation)(span, anno),
         "clip": audio_to_url(clip_audio(clip, span, anno)),
         "speaker": repr(span.session[0]),
         "session": span.session[1],
