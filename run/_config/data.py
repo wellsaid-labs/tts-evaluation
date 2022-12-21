@@ -201,6 +201,8 @@ def _get_loudness_annotation(
     return None
 
 
+# TODO: Let's group these test cases together so that we can compare too each other. We can pick
+# a group of test cases every time.
 ENGLISH_TEST_CASES = [
     # NOTE: These statements have a mix of heteronyms, initialisms, hard words (locations,
     # medical terms, technical terms), etc for testing pronunciation.
