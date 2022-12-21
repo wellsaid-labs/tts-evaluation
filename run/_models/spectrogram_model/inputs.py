@@ -399,6 +399,9 @@ class InputsWrapper:
             span: The spaCy document built on text from that XML.
             session_vocab: A vocabulary mapping avatar IDs in XML to sessions.
         """
+        # TODO: Make sure that annotations within annotations are not accepted. The model isn't
+        # trained with that in mind. We don't allow overlapping annotations, either. It'd be
+        # another extreneous level of complexity to explain to customers.
         xml_schema = get_xml_schema()
         root = etree.fromstring(xml, None)
         try:

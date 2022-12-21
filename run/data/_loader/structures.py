@@ -1158,6 +1158,9 @@ def _normalize_alignments(
 def _make_speech_segments(passage: Passage) -> typing.List[Span]:
     """Make `speech_segments` for `passage`."""
     length = passage.audio_file.length
+    # TODO: Speech segments are intended to be speech segments and some of the conventional
+    # datasets are not trimmed, they have unessecary pausing at the beginning and end. We need to
+    # either remove them or trim them to continue using them, at least.
     if len(passage.alignments) == 1 and passage.alignments[0].audio == (0, length):
         return [passage[:]]
     speech_segments = _make_speech_segments_helper(
