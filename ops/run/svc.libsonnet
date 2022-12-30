@@ -165,7 +165,7 @@
     // be idempotent (meaning there's no side-effect of creating it per endpoint)
     local kongIngressClass = {
       apiVersion: 'networking.k8s.io/v1',
-      kind: 'Ingress',
+      kind: 'IngressClass',
       metadata: {
         name: 'kong',
       },
