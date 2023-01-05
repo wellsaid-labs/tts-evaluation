@@ -22,7 +22,7 @@ CHECKPOINTS="" # Example: "v9" (see list of Checkpoints in [run/_tts.py](/run/_t
 TTS_PACKAGE_PATH=$(python -m run.deploy.package_tts $CHECKPOINTS)
 IMAGE_TAG="" # Example: v9.00
 
-docker build -f run/deploy/Dockerfile \
+docker build --platform linux/amd64 -f run/deploy/Dockerfile \
     --build-arg TTS_PACKAGE_PATH=${TTS_PACKAGE_PATH} \
     -t gcr.io/${PROJECT_ID}/speech-api-worker:${IMAGE_TAG} .
 ```
@@ -45,7 +45,9 @@ docker run --rm -p 8000:8000 \
   gcr.io/${PROJECT_ID}/speech-api-worker:${IMAGE_TAG}
 ```
 
-In a new terminal window, generate an audio sample like so:
+In a new terminal window, generate an audio sample using the curl command below. Note that if you
+have an M1 Mac, you may not be able to run this local test, since the image is built for the amd64
+platform, and M1 uses arm64.
 
 ```bash
 curl http://localhost:8000/api/text_to_speech/stream \
@@ -54,10 +56,10 @@ curl http://localhost:8000/api/text_to_speech/stream \
   -o sample.mp3
 ```
 
-If this fails and you need to rebuild your Docker image, first remove the tag:
+If this fails and you need to rebuild your Docker image, first remove the tag and delete the image:
 
 ```bash
-docker images untag gcr.io/${PROJECT_ID}/speech-api-worker:${IMAGE_TAG}
+docker rmi gcr.io/${PROJECT_ID}/speech-api-worker:${IMAGE_TAG}
 ```
 
 Then fix, and rebuild from the top ^^

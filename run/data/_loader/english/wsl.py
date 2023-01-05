@@ -160,9 +160,9 @@ UNEEQ__ASB_CUSTOM_VOICE_COMBINED = custom(
     "UneeQ - ASB (Custom Voice V3)",
     dia=Dia.EN_NZ,
 )
-ENERGY_INDUSTRY_ACADEMY__CUSTOM_VOICE = custom(
-    "energy_industry_academy__custom_voice",
-    "Energy Industry Academy (Custom Voice)",
+ENERGY_INDUSTRY_ACADEMY__CUSTOM_VOICE__V10 = custom(
+    "energy_industry_academy__v10",
+    "Energy Industry Academy (Custom Voice V10)",
 )
 THE_EXPLANATION_COMPANY__CUSTOM_VOICE = custom(
     "the_explanation_company__custom_voice",
