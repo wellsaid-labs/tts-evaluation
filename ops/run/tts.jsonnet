@@ -35,8 +35,8 @@
  * in the image.
  *
  * The version parameter is a unique identifier for for the revision that's
- * being released. It must a valid domain, meaning it should be only lowercase
- * alphanumeric characters and dashes. So things like "v3" or "001" are
+ * being released. It m beust a valid sub-domain character, meaning it should be
+ * only lowercase alphanumeric characters and dashes. So things like "v3" or "001" are
  * acceptable.
  *
  * The image parameter is the docker image to run.

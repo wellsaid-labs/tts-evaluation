@@ -315,7 +315,7 @@ parameters, you would run this command with `version=2`.
      --ext-code-file "config=./ops/run/deployments/$ENV/$MODEL.config.json" \
      | kubectl apply --dry-run=server -f -
    # deploy
-   ./deploy deployments/$ENV/$MODEL.config.json
+   ./deploy.sh deployments/$ENV/$MODEL.config.json
    ```
 
 ### Deleting a release

@@ -2,13 +2,15 @@
 #
 # Deployment script for our tts cloud run services.
 #
-#   Usage: ./deploy <path_to_deployment_config>
+#   Usage: ./deploy.sh <path_to_deployment_config>
 #
 # This script generates the kubernetes manifest files (via jsonnet), applies
 # those resources (via kubectl), and then patches the underlying services
 # with kong-related annotations. This is currently necessary due to the
 # fact that we cannot annotate the underlying knative services, see:
 # https://github.com/knative/serving/issues/5549
+
+set -euo pipefail
 
 # Assert `kubectl` command exists
 if ! command -v kubectl &> /dev/null
