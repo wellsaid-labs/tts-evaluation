@@ -164,7 +164,7 @@ func runTests(dir, host string) error {
 	for i := 0; i < len(endpoints); i++ {
 		r := <-results
 		if r.err != nil {
-			fmt.Printf("%s %s %s\n", r.endpoint.model, r.endpoint.url, r.err)
+			fmt.Printf("%s %s %s\n", r.err, r.endpoint.model, r.endpoint.url)
 			failures = append(failures, r)
 			continue
 		}
@@ -177,12 +177,11 @@ func runTests(dir, host string) error {
 
 	fmt.Println()
 
-	fmt.Printf("DONE: %d succeeded, %d failed", len(ok), len(failures))
-	fmt.Println("Failures:")
+	fmt.Printf("DONE: %d succeeded, %d failed:\n", len(ok), len(failures))
 
 	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', 0)
 	for _, f := range failures {
-		fmt.Fprintf(tw, "%s\t%s\t%s\n", f.endpoint.model, f.endpoint.url, f.err)
+		fmt.Fprintf(tw, "%s\t%s\t%s\n", f.err, f.endpoint.model, f.endpoint.url)
 	}
 	tw.Flush()
 
