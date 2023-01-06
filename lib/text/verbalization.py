@@ -628,6 +628,9 @@ def ensure_period(sent: str, span_text: str) -> str:
 
 def _verbalize_text(text: str):
     """Helper function for `verbalize_text`."""
+    # NOTE: The order of events is important. Normalizing generic digits before normalizing money
+    # cases specifically, for example, will yield incomplete and inaccurate results.
+    # NOTE: The order is based on specificity, the verbalizers start nuanced and generalize.
     sent = text
     sent = _apply(sent, RegExPatterns.MONEY, _verbalize_money)
     sent = _apply(sent, RegExPatterns.MONEY_REVERSED, _verbalize_money__reversed)
@@ -666,16 +669,16 @@ def _is_tag(text: str):
     return text.startswith("<") and text.endswith(">")
 
 
-def verbalize_text(text: XMLType) -> XMLType:
-    """Takes in a text string and, in an intentional and controlled manner, verbalizes numerals and
-    non-standard-words in plain English. The order of events is important. Normalizing generic
-    digits before normalizing money cases specifically, for example, will yield incomplete and
-    inaccurate results.
+def verbalize_text(xml: XMLType) -> XMLType:
+    """Verbalize numerals and non-standard-words into plain English.
+
+    NOTE: This splits up the text on HTML tags, so unfortunately no context is passed on.
     """
     nlp = load_en_english()
     nlp.add_pipe("sentencizer")
     sents = []
-    splits = XML_PATTERN.split(text)
+    splits = XML_PATTERN.split(xml)
+    # TODO: Let's consider processing the entire string together, without tags, to preserve context.
     docs = list(nlp.pipe(html.unescape(s) for s in splits if not _is_tag(s)))
     for split in splits:
         if _is_tag(split):

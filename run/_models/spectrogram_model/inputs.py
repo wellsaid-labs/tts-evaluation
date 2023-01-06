@@ -256,7 +256,7 @@ class InputsWrapper:
             assert sum(token in span for token in context) == len(span)
             # NOTE: It's possible that a `Doc` object does not pass this check, since some
             # characters are not considered spaCy tokens, like white spaces. This selects all the
-            # spaCy tokens and checks if their text aligns with the overall text.
+            # spaCy tokens and checks if they represent the entire `Doc`.
             assert context.text == context[:].text
             assert span.text == span[:].text
 
