@@ -188,7 +188,7 @@ _SPEAKER_ID_TO_SESSION: typing.Dict[int, typing.Tuple[Speaker, str]] = {
         english.wsl.THE_EXPLANATION_COMPANY__CUSTOM_VOICE,
         "is_it_possible_to_become_invisible",
     ),
-    61137774: (english.wsl.ENERGY_INDUSTRY_ACADEMY__CUSTOM_VOICE__V10, "sample_script_1"),
+    61137774: (english.wsl.ENERGY_INDUSTRY_ACADEMY__CUSTOM_VOICE, "sample_script_1"),
     30610881: (english.wsl.VIACOM__CUSTOM_VOICE, "kelsey_speech_synthesis_section1"),
     50481197: (english.wsl.HOUR_ONE_NBC__BB_CUSTOM_VOICE, "hour_one_nbc_dataset_5"),
     77552139: (english.wsl.STUDY_SYNC__CUSTOM_VOICE, "fernandes_audio_5"),
