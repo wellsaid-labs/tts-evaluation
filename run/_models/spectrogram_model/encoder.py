@@ -315,10 +315,6 @@ class Encoder(torch.nn.Module):
             token_embed_[:, :, -token_embed.shape[2] :] = token_embed
             token_embed = token_embed_
 
-        # TODO: Remove this, it's for backwards compatibility.
-        if not hasattr(self, "max_anno_features"):
-            self.max_anno_features = inputs.num_anno
-
         # [batch_size, num_tokens, max_token_embed_size] →
         # [batch_size, num_tokens, num_anno]
         needed_rows = self.max_anno_features - inputs.num_anno
