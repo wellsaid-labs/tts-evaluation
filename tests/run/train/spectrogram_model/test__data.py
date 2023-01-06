@@ -11,7 +11,7 @@ from torchnlp.encoders.text import SequenceBatch
 import lib
 import run
 from run._config.data import _get_loudness_annotation
-from run._models.spectrogram_model import SpanAnnotations, TokenAnnotations
+from run._models.spectrogram_model import SliceAnnos, TokenAnnos
 from run.data._loader import Alignment
 from run.train.spectrogram_model import _data
 from tests._utils import assert_almost_equal
@@ -153,7 +153,7 @@ def test__random_loudness_annotations():
         signal = lib.audio.full_scale_sine_wave(span.audio_file.sample_rate, 20, length)
         out = _data._random_loudness_annotations(span, signal, precision=0)
         # NOTE: These loudness values are irregular because the sample rate is so small.
-        expected: SpanAnnotations = [
+        expected: SliceAnnos = [
             (slice(0, 4), -70),
             (slice(4, 5), -70),
             (slice(5, 7), -70),
@@ -169,7 +169,7 @@ def test__random_tempo_annotations():
         span = make_passage(script="This is a test.")[:]
         get_tempo_anno = lambda t, *_, **__: len(t)
         out = _data._random_tempo_annotations(span, get_anno=get_tempo_anno)
-        expected: SpanAnnotations = [
+        expected: SliceAnnos = [
             (slice(0, 4), 4),
             (slice(4, 5), 1),
             (slice(5, 7), 2),
@@ -184,7 +184,7 @@ def test__random_respelling_annotations():
     with torchnlp.random.fork_rng(123456):
         span = make_passage(script="Don't People from EDGE catch-the-flu?")[:]
         annotations = _data._random_respelling_annotations(span, prob=1.0, delim="-")
-        expected: TokenAnnotations = {
+        expected: TokenAnnos = {
             span.spacy[2]: "PEE-puhl",
             span.spacy[5]: "KACH",
             span.spacy[9]: "FLOO",

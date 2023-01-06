@@ -180,7 +180,7 @@ def _make_encoder(
     seq_meta_embed_size=6,
     token_meta_embed_size=12,
     seq_meta_embed_dropout=0.1,
-    anno_mask_indices=(0,),
+    max_anno_features=1,
     out_size=8,
     hidden_size=8,
     num_conv_layers=2,
@@ -202,7 +202,7 @@ def _make_encoder(
         seq_meta_embed_size=seq_meta_embed_size,
         token_meta_embed_size=token_meta_embed_size,
         seq_meta_embed_dropout=seq_meta_embed_dropout,
-        num_anno=len(anno_mask_indices),
+        max_anno_features=max_anno_features,
         out_size=out_size,
         hidden_size=hidden_size,
         num_conv_layers=num_conv_layers,
@@ -220,15 +220,13 @@ def _make_encoder(
     tokens = torch.randint(1, max_tokens, (batch_size, num_tokens_pad))
     token_meta = torch.randint(1, max_tokens, (num_token_metadata, batch_size, num_tokens_pad))
     token_embeddings = torch.randn(batch_size, num_tokens_pad, max_token_embed_size)
-    for idx in anno_mask_indices:
-        token_embeddings[:, :, idx].fill_(1)
     inputs = Inputs(
         tokens=tokens.tolist(),
         seq_metadata=[speakers.tolist(), sessions.tolist()],
         token_metadata=token_meta.tolist(),
         token_embeddings=list(token_embeddings.unbind()),
         slices=[slice(context, -context) for _ in range(batch_size)],
-        anno_mask_indices=anno_mask_indices,
+        num_anno=max_anno_features,
         max_audio_len=[int(max_frames_per_token * num_tokens) for _ in range(batch_size)],
     )
     return encoder, inputs, (num_tokens, batch_size, out_size)

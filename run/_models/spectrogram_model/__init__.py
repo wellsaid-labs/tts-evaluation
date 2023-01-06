@@ -12,9 +12,9 @@ from run._models.spectrogram_model.inputs import Inputs as PreprocessedInputs
 from run._models.spectrogram_model.inputs import InputsWrapper as Inputs
 from run._models.spectrogram_model.inputs import (
     PublicValueError,
-    SpanAnnotation,
-    SpanAnnotations,
-    TokenAnnotations,
+    SliceAnno,
+    SliceAnnos,
+    TokenAnnos,
     preprocess,
 )
 from run._models.spectrogram_model.model import Generator, Mode
@@ -35,8 +35,8 @@ __all__ = [
     "Inputs",
     "SpectrogramModel",
     "PublicValueError",
-    "SpanAnnotation",
-    "SpanAnnotations",
-    "TokenAnnotations",
+    "SliceAnno",
+    "SliceAnnos",
+    "TokenAnnos",
     "preprocess",
 ]

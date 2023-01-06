@@ -71,9 +71,9 @@ class SpectrogramModel(torch.nn.Module):
         max_seq_meta_values: typing.Tuple[int, ...],
         max_token_meta_values: typing.Tuple[int, ...],
         max_token_embed_size: int,
+        max_anno_features: int,
         token_meta_embed_size: int,
         seq_meta_embed_size: int,
-        num_anno: int,
         num_frame_channels: int,
         output_scalar: float,
         stop_threshold: float,
@@ -87,10 +87,10 @@ class SpectrogramModel(torch.nn.Module):
             max_tokens=max_tokens,
             max_token_meta_values=max_token_meta_values,
             max_token_embed_size=max_token_embed_size,
+            max_anno_features=max_anno_features,
             max_seq_meta_values=max_seq_meta_values,
             token_meta_embed_size=token_meta_embed_size,
             seq_meta_embed_size=seq_meta_embed_size,
-            num_anno=num_anno,
             **cf.get(),
         )
         self.decoder = decoder.Decoder(

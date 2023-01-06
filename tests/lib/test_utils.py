@@ -12,7 +12,7 @@ import torch.nn
 from torchnlp.random import fork_rng
 
 import lib
-from lib.utils import Timeline, TimelineMap, lengths_to_mask, pad_tensor
+from lib.utils import Timeline, TimelineMap, lengths_to_mask, offset_slices, pad_tensor
 from tests._utils import assert_almost_equal
 
 
@@ -675,3 +675,21 @@ def test_lengths_to_mask():
     assert torch.equal(lengths_to_mask([]), torch.empty(0, 0, dtype=torch.bool))
     assert torch.equal(lengths_to_mask(torch.tensor([])), torch.empty(0, 0, dtype=torch.bool))
     assert torch.equal(lengths_to_mask(torch.tensor([[]])), torch.empty(0, 0, dtype=torch.bool))
+
+
+def test_offset_slices():
+    """Test `offset_slices` updates `slices` based on a list of updates."""
+    assert offset_slices([slice(1, 3)], []) == [slice(1, 3)]
+    assert offset_slices([slice(1, 3)], [(slice(0, 1), 0)]) == [slice(0, 2)]
+    assert offset_slices([slice(1, 3)], [(slice(1, 2), 0)]) == [slice(1, 2)]
+    assert offset_slices([slice(1, 3)], [(slice(1, 3), 0)]) == [slice(1, 1)]
+    assert offset_slices([slice(1, 3)], [(slice(1, 3), 5)]) == [slice(1, 6)]
+    assert offset_slices([slice(1, 3)], [(slice(2, 3), 0)]) == [slice(1, 2)]
+    assert offset_slices([slice(1, 3)], [(slice(3, 4), 0)]) == [slice(1, 3)]
+
+    expected = [slice(0, 1), slice(1, 2), slice(3, 4)]
+    assert offset_slices([slice(0, 1), slice(1, 3), slice(4, 5)], [(slice(1, 2), 0)]) == expected
+    updates = [(slice(0, 1), 0), (slice(1, 2), 0)]
+    assert offset_slices([slice(0, 1), slice(1, 2)], updates) == [slice(0, 0), slice(0, 0)]
+    updates = [(slice(0, 1), 2), (slice(1, 2), 2)]
+    assert offset_slices([slice(0, 1), slice(1, 2)], updates) == [slice(0, 2), slice(2, 4)]

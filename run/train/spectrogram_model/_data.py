@@ -29,8 +29,8 @@ from lib.utils import flatten_2d, lengths_to_mask, random_nonoverlapping_interva
 from run._models.spectrogram_model import (
     Inputs,
     PreprocessedInputs,
-    SpanAnnotations,
-    TokenAnnotations,
+    SliceAnnos,
+    TokenAnnos,
     preprocess,
 )
 from run.data._loader.structures import Alignment, Span, Speaker
@@ -101,9 +101,9 @@ def _get_loudness_annotation(
     return get_anno(slice_, sample_rate=sample_rate, **kwargs)
 
 
-def _random_loudness_annotations(span: Span, signal: numpy.ndarray, **kwargs) -> SpanAnnotations:
+def _random_loudness_annotations(span: Span, signal: numpy.ndarray, **kwargs) -> SliceAnnos:
     """Create random annotations that represent the loudness in `span.script`."""
-    annotations: SpanAnnotations = []
+    annotations: SliceAnnos = []
     alignments = cf.partial(_random_nonoverlapping_alignments)(span.speech_segments)
     for alignment in alignments:
         sample_rate = span.audio_file.sample_rate
@@ -119,7 +119,7 @@ def _get_tempo_annotation(
     return get_anno(span.script[alignment.script_slice], alignment.audio_len, **kwargs)
 
 
-def _random_tempo_annotations(span: Span, **kwargs) -> SpanAnnotations:
+def _random_tempo_annotations(span: Span, **kwargs) -> SliceAnnos:
     """Create random annotations that represent the speaking tempo in `span.script`.
 
     TODO: We should investigate a more accurate speech tempo, there are a couple options here:
@@ -130,7 +130,7 @@ def _random_tempo_annotations(span: Span, **kwargs) -> SpanAnnotations:
     Args:
         span
     """
-    annotations: SpanAnnotations = []
+    annotations: SliceAnnos = []
     alignments = cf.partial(_random_nonoverlapping_alignments)(span.speech_segments)
     for alignment in alignments:
         annotation = cf.partial(_get_tempo_annotation)(span, alignment, **kwargs)
@@ -138,14 +138,14 @@ def _random_tempo_annotations(span: Span, **kwargs) -> SpanAnnotations:
     return annotations
 
 
-def _random_respelling_annotations(span: Span, prob: float, delim: str) -> TokenAnnotations:
+def _random_respelling_annotations(span: Span, prob: float, delim: str) -> TokenAnnos:
     """Create random annotations for different respellings in `span.script`.
 
     NOTE: We annotate only basic scenarios. A more complex scenario, for example,
           is apostrophes. spaCy, by default, splits some (not all) words on apostrophes while our
           pronunciation dictionary does not; therefore, those words will not be found in it.
     """
-    annotations: TokenAnnotations = {}
+    annotations: TokenAnnos = {}
     tokens = list(span.spacy)
     for prev, token, next_ in zip([None] + tokens[:-1], tokens, tokens[1:] + [None]):
         if random.random() > prob:
@@ -310,7 +310,6 @@ class Batch(_utils.Batch):
         set_(batch.processed, "token_embeddings_padded", call(token_embed))
         set_(batch.processed, "num_tokens", call(batch.processed.num_tokens))
         set_(batch.processed, "tokens_mask", call(batch.processed.tokens_mask))
-        set_(batch.processed, "anno_mask", call(batch.processed.anno_mask))
         set_(batch.processed, "max_audio_len_tensor", call(batch.processed.max_audio_len_tensor))
         return batch
 

@@ -21,7 +21,7 @@ from flask.wrappers import Response
 import lib
 import run
 from lib.audio import get_audio_metadata
-from lib.text import natural_keys
+from lib.text import XMLType, natural_keys
 from run._config import DEFAULT_SCRIPT
 from run._streamlit import (
     WebPath,
@@ -159,7 +159,7 @@ def main():
     sessions = sorted((s for s in sessions if s[0] == speaker), key=lambda s: natural_keys(s[1]))
     session = st.selectbox("Session", options=sessions, format_func=format_session)  # type: ignore
     session = typing.cast(Session, session)
-    script = st.text_area("Script", value=DEFAULT_SCRIPT, height=300)
+    script = XMLType(st.text_area("Script", value=DEFAULT_SCRIPT, height=300))
     use_process = st.checkbox("Multiprocessing")
     st.info(f"The script has {len(script):,} character(s).")
 
@@ -172,7 +172,7 @@ def main():
         nlp = load_en_core_web_md(disable=("parser", "ner"))
 
     with st.spinner("Processing inputs..."):
-        inputs = process_tts_inputs(nlp, tts, script, session)
+        inputs = process_tts_inputs(tts, nlp, script, session)
         st.info(f"{len(inputs[1].tokens[0]):,} token(s) were inputted.")
 
     if "service" in st.session_state and st.session_state["service"].is_alive():

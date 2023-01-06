@@ -550,6 +550,7 @@ def _visualize_inferred(
         audio={"gold_audio": target.numpy(), "predicted_audio": predicted.cpu().numpy()},
         context=state.comet.context,
         text=batch.batch.spans[item].script,
+        xml=batch.batch.xmls[item],
         session=batch.batch.spans[item].session,
     )
     get_label = partial(get_dataset_label, cadence=Cadence.STEP, type_=dataset_type)
@@ -584,7 +585,7 @@ def _visualize_select_cases(
     waves = list(generate_waveform(model, splits, inputs.session))
     waves = typing.cast(torch.Tensor, torch.cat(waves, dim=-1))
 
-    for item in range(len(inputs.doc)):
+    for item in range(len(inputs)):
         label = partial(get_model_label, cadence=cadence)
         num_tokens = preds.num_tokens[item]
         num_frames = preds.num_frames[item]
@@ -604,7 +605,7 @@ def _visualize_select_cases(
             randomly_sampled_case=item,
             audio=audio,
             context=state.comet.context,
-            text=str(inputs.doc[item]),
+            xml=str(inputs.to_xml(item, include_context=True)),
             session=inputs.session[item],
             dataset_type=dataset_type,
         )
