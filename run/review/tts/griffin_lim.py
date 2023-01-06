@@ -11,7 +11,7 @@ import streamlit as st
 import lib
 import run
 from lib.environment import PT_EXTENSION, load
-from lib.text import XMLType, natural_keys
+from lib.text import XML_PATTERN, XMLType, natural_keys
 from run._config import DEFAULT_SCRIPT, SPECTROGRAM_MODEL_EXPERIMENTS_PATH
 from run._config.data import _get_loudness_annotation, _get_tempo_annotation
 from run._streamlit import audio_to_web_path, st_html, st_select_path, web_path_to_url
@@ -55,7 +55,8 @@ def main():
     # the entire passage.
     # TODO: Add a loundess computed via spectrogram.
     audio_len = cf.partial(lib.audio.sample_to_sec)(wave.shape[0])
-    st.info(f"Generated Tempo: {cf.partial(_get_tempo_annotation)(script, audio_len)}")
+    no_tags_script = XML_PATTERN.sub("", script)
+    st.info(f"Generated Tempo: {cf.partial(_get_tempo_annotation)(no_tags_script, audio_len)}")
     st.info(f"Generated Griffin-Lim Loudness: {cf.partial(_get_loudness_annotation)(wave)}")
 
     st.success(f"Finished! {lib.utils.mazel_tov()}")

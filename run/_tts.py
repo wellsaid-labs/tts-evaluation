@@ -100,50 +100,21 @@ class Checkpoints(enum.Enum):
 
     You can upload a new checkpoint, for example, like so:
 
-        $ gsutil -m cp -r disk/checkpoints/v10_2022_06_15_staging \
-                        gs://wellsaid_labs_checkpoints/v10_2022_06_15_staging
+        $ gsutil -m cp -r disk/checkpoints/v11_2023_01_05_staging \
+                        gs://wellsaid_labs_checkpoints/v11_2023_01_05_staging
     """
 
     """
-    These checkpoints were deployed into staging as version "10.beta.1".
+    These checkpoints were deployed into staging as version "11.beta.1".
 
-    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/409
-    Spectrogram Model Experiment (Step: 527,553):
-    https://www.comet.ml/wellsaid-labs/michael-spectrogram-model-03-2022/669e69f9a8db4dd3aa20386a4b195150
-    Signal Model Experiment (Step: 827,151):
-    https://www.comet.ml/wellsaid-labs/michael-signal-model-2022-04/a2d2e4b313e7490098ca2f3b4935f6d6
+    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/468
+    Spectrogram Model Experiment (Step: 208,347):
+    https://www.comet.com/wellsaid-labs/v11-research-spectrogram/8fd4e8c2ed0946f78b0e82ef7e748c86
+    Signal Model Experiment (Step: 546,207):
+    https://www.comet.com/wellsaid-labs/v11-research-signal/c212a0b20d124578b3ac77846c3eb934
     """
 
-    V10_2022_05_03_STAGING: typing.Final = "v10_2022_05_03_staging"
-
-    """
-    These checkpoints were deployed into staging as version "10.beta.2".
-
-    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/389
-    Spectrogram Model Experiment (Step: 885,735):
-    https://www.comet.ml/wellsaid-labs/michael-spectrogram-model-03-2022/f43e617f5ab74eddb2eb8239b5fc10f0
-    Signal Model Experiment (Step: 1,331,883):
-    https://www.comet.ml/wellsaid-labs/michael-signal-model-2022-04/db35cf6b0e07463692af2a90c80724bb
-    """
-
-    V10_2022_06_08_STAGING: typing.Final = "v10_2022_06_08_staging"
-
-    """
-    These checkpoints were deployed into staging as version "10.beta.3".
-
-    NOTE: This is the model that also went into production. We discovered late into the testing
-    process that `v10_2022_06_08_staging` had consistently faint mic pops at the end of clips. We
-    decided to pick a different model, that was somewhat worse on other metrics, but it had less
-    mic pops.
-
-    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/389
-    Spectrogram Model Experiment (Step: 1,843,641):
-    https://www.comet.ml/wellsaid-labs/michael-spectrogram-model-03-2022/bc51533a6c874938ae0043b6b0e56d59
-    Signal Model Experiment (Step: 1,331,883):
-    https://www.comet.ml/wellsaid-labs/michael-signal-model-2022-04/db35cf6b0e07463692af2a90c80724bb
-    """
-
-    V10_2022_06_15_STAGING: typing.Final = "v10_2022_06_15_staging"
+    V11_2023_01_05_STAGING: typing.Final = "v11_2023_01_05_staging"
 
 
 _GCS_PATH = "gs://wellsaid_labs_checkpoints/"
@@ -207,14 +178,26 @@ class PublicSpeakerValueError(ValueError):
 
 
 def process_tts_inputs(
+    package: TTSPackage,
+    nlp: spacy.language.Language,
+    script: XMLType,
+    session: Session,
+) -> typing.Tuple[Inputs, PreprocessedInputs]:
+    """Process TTS `script` and `session` for use with the model(s) in `package`."""
+    token_vocab = set(package.spec_model.token_embed.vocab.keys())
+    session_vocab = package.session_vocab()
+    return _process_tts_inputs(nlp, session_vocab, token_vocab, script, session)
+
+
+def _process_tts_inputs(
     nlp: spacy.language.Language,
     session_vocab: typing.Set[Session],
     token_vocab: typing.Set[str],
-    xml: XMLType,
+    script: XMLType,
     session: Session,
 ) -> typing.Tuple[Inputs, PreprocessedInputs]:
-    """Process TTS `script`, `speaker` and `session` for use with the model(s)."""
-    normalized = normalize_and_verbalize_text(xml, session[0].language)
+    """Process TTS `script` and `session` for use with the model(s)."""
+    normalized = normalize_and_verbalize_text(script, session[0].language)
     if len(normalized) == 0:
         raise PublicTextValueError("Text cannot be empty.")
 
@@ -242,7 +225,7 @@ def griffin_lim_text_to_speech(
     nlp = load_spacy_nlp(session[0].language)
     session_vocab = set(spec_model.session_embed.vocab.keys())
     token_vocab = set(spec_model.token_embed.vocab.keys())
-    _, preprocessed = process_tts_inputs(nlp, session_vocab, token_vocab, script, session)
+    _, preprocessed = _process_tts_inputs(nlp, session_vocab, token_vocab, script, session)
     preds = spec_model(inputs=preprocessed, mode=Mode.INFER)
     return cf.partial(griffin_lim)(preds.frames.squeeze(1).detach().numpy())
 
@@ -255,9 +238,7 @@ def text_to_speech(
 ) -> numpy.ndarray:
     """Run TTS end-to-end with friendly errors."""
     nlp = load_spacy_nlp(session[0].language)
-    token_vocab = set(package.spec_model.token_embed.vocab.keys())
-    session_vocab = package.session_vocab()
-    inputs, preprocessed = process_tts_inputs(nlp, session_vocab, token_vocab, script, session)
+    inputs, preprocessed = process_tts_inputs(package, nlp, script, session)
     preds = package.spec_model(inputs=preprocessed, mode=Mode.INFER)
     splits = preds.frames.transpose(0, 1).split(split_size)
     generator = generate_waveform(package.signal_model, splits, inputs.session)

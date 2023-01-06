@@ -94,8 +94,7 @@ def test_validate_and_unpack():
         validate_({**args, "text": "wherever"})  # type: ignore
 
     # `text` gets normalized and `speaker` is dereferenced
-    request_args = {**args, "text": "exposé😁 ::a-B::"}
+    request_args = {**args, "text": "exposé😁"}
     encoded = validate_(request_args)  # type: ignore
     # NOTE: The emoji is removed because there is no unicode equivilent.
-    # TODO: Should this special notation be configured?
-    assert str(encoded[0].doc[0]) == "exposé |\\a\\B\\|"
+    assert str(encoded[0].to_xml(0)) == "<speak value='-1'>exposé</speak>"

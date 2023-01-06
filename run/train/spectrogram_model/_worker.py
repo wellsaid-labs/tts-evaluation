@@ -3,7 +3,6 @@ import collections
 import contextlib
 import copy
 import dataclasses
-import html
 import logging
 import math
 import pathlib
@@ -514,7 +513,7 @@ def _visualize_inferred(args: _HandleBatchArgs, preds: Preds, pick: _Pick = _ran
         audio=audio,
         context=args.state.comet.context,
         text=args.batch.spans[item].script,
-        xml=html.escape(args.batch.xmls[item]),
+        xml=args.batch.xmls[item],
         session=args.batch.spans[item].session,
         predicted_loudness=get_average_db_rms_level(predicted_spectrogram.unsqueeze(1)).item(),
         gold_loudness=get_average_db_rms_level(gold_spectrogram.unsqueeze(1)).item(),
@@ -584,7 +583,7 @@ def _visualize_select_cases(state: _State, dataset_type: DatasetType, cadence: C
             randomly_sampled_case=item,
             audio={"predicted_griffin_lim_audio": audio},
             context=state.comet.context,
-            xml=html.escape(str(inputs.to_xml(item, include_context=True))),
+            xml=str(inputs.to_xml(item, include_context=True)),
             session=inputs.session[item],
             predicted_loudness=get_average_db_rms_level(predicted_spectrogram.unsqueeze(1)).item(),
             dataset_type=dataset_type,

@@ -26,6 +26,7 @@ def configure(overwrite: bool = False):
     # NOTE: These values can be increased as needed, they preemtively allocate model
     # parameters.
     max_tokens = 1000
+    max_anno_features = 10
     max_speakers = len(set(s.label for s in _config.data.DATASETS.keys()))
     max_dialects = len(set(s.dialect for s in _config.data.DATASETS.keys()))
     max_styles = len(set(s.style for s in _config.data.DATASETS.keys()))
@@ -55,8 +56,6 @@ def configure(overwrite: bool = False):
             # direction) to generate the encoded features.
             lstm_layers=2,
             out_size=encoder_out_size,
-            # NOTE: This is a standardish number of layers for embedding.
-            num_anno_embed_layers=2,
         ),
         run._models.spectrogram_model.attention.Attention: cf.Args(
             # SOURCE (Tacotron 2):
@@ -101,7 +100,8 @@ def configure(overwrite: bool = False):
             max_styles=max_styles,
             max_languages=max_languages,
             num_frame_channels=_config.audio.NUM_FRAME_CHANNELS,
-            max_token_embed_size=396 + 7,
+            max_token_embed_size=396 + max_anno_features,
+            max_anno_features=max_anno_features,
             # SOURCE (Transfer Learning from Speaker Verification to Multispeaker Text-To-Speech
             #         Synthesis):
             # The paper mentions their proposed model uses a 256 dimension embedding.

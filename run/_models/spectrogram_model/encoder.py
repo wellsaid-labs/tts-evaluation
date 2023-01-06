@@ -165,109 +165,6 @@ class _Conv1dLockedDropout(LockedDropout):
         return super().forward(tensor.permute(2, 0, 1)).permute(1, 2, 0)
 
 
-class _GroupedEmbedder(torch.nn.Module):
-    """
-    This embeds a sequence by processing it multiple times, each time with different weights and
-    a different mask. Lastly, the multiple versions are recombined.
-
-    TODO: Let's consider adding more normalization and shortcuts to improve performance.
-    TODO: Clarify that this expects one mask to encompass the entire sequence.
-
-    Args:
-        input_size: The input size of the sequence.
-        hidden_size: The size of the processing layers per annotation.
-        out_size: The output size of the sequence.
-        num_groups: The number of times to process the sequence.
-        num_layers: The number of layers to process the sequence.
-    """
-
-    def __init__(
-        self,
-        input_size: int,
-        hidden_size: int,
-        out_size: int,
-        num_groups: int,
-        num_layers: int,
-    ):
-        super().__init__()
-
-        self.hidden_size = hidden_size
-        self.total_size = hidden_size * num_groups
-        self.out_size = out_size
-        self.num_groups = num_groups
-        self.in_ = torch.nn.Sequential(
-            torch.nn.Linear(input_size, self.total_size),
-            torch.nn.ReLU(),
-        )
-        self.layers = [
-            torch.nn.Conv1d(self.total_size, self.total_size, 1, groups=num_groups)
-            for _ in range(num_layers)
-        ]
-        self.layers = ModuleList(self.layers)
-        self.out = torch.nn.Sequential(
-            torch.nn.Linear(hidden_size, out_size),
-            torch.nn.ReLU(),
-            cf.partial(torch.nn.LayerNorm)(out_size),
-        )
-
-    def _seperate(self, tokens: torch.Tensor, mask: torch.Tensor):
-        """Processes `tokens` in seperable groups with seperable masks.
-
-        Args:
-            tokens (torch.FloatTensor [batch_size, num_tokens, hidden_size * num_groups])
-            mask (torch.FloatTensor [batch_size, num_tokens, num_groups])
-
-        Returns:
-            torch.FloatTensor [batch_size, num_tokens, num_groups, hidden_size]
-            torch.LongTensor [batch_size, num_tokens, num_groups, hidden_size]
-        """
-        # [batch_size, num_tokens, num_groups] →
-        # [batch_size, num_tokens, total_size]
-        mask = mask.repeat_interleave(self.hidden_size, 2)
-        # [batch_size, num_tokens, total_size] →
-        # [batch_size, total_size, num_tokens]
-        tokens, mask = tokens.transpose(1, 2), mask.transpose(1, 2)
-        mask_bool = ~mask.bool()
-        for layer in self.layers:
-            tokens = torch.masked_fill(torch.relu(layer(tokens)), mask_bool, 0)
-        # [batch_size, total_size, num_tokens] →
-        # [batch_size, num_tokens, total_size]
-        tokens, mask = tokens.transpose(1, 2), mask.transpose(1, 2)
-        # [batch_size, num_tokens, total_size] →
-        # [batch_size, num_tokens, num_groups, hidden_size]
-        tokens = torch.stack(tokens.tensor_split(self.num_groups, dim=2), dim=2)
-        mask = torch.stack(mask.tensor_split(self.num_groups, dim=2), dim=2)
-        return tokens, mask
-
-    def __call__(self, tokens: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-        return super().__call__(tokens, mask)
-
-    def forward(self, tokens: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            tokens (torch.FloatTensor [batch_size, num_tokens, input_size])
-            mask (torch.FloatTensor [batch_size, num_tokens, num_groups])
-
-        Returns:
-            torch.FloatTensor [batch_size, num_tokens, out_size]
-        """
-        # [batch_size, num_tokens, input_size] →
-        # [batch_size, num_tokens, total_size]
-        tokens = self.in_(tokens)
-        # [batch_size, num_tokens, total_size] →
-        # [batch_size, num_tokens, total_size]
-        tokens, mask = self._seperate(tokens, mask)
-        # NOTE: Handle padding where each of the masks is zero by masking it to zero.
-        # [batch_size, num_tokens, num_groups, hidden_size] →
-        # [batch_size, num_tokens, hidden_size]
-        mask_sum = mask.sum(dim=2)
-        combined = tokens.sum(dim=2) / mask_sum.clamp(min=1)
-        combined = torch.masked_fill(combined, mask_sum == 0, 0)
-        # [batch_size, num_tokens, hidden_size] →
-        # [batch_size, num_tokens, out_size]
-        return self.out(combined)
-
-
 class Encoder(torch.nn.Module):
     """Encode a discrete sequence as a sequence of differentiable vector(s).
 
@@ -276,11 +173,10 @@ class Encoder(torch.nn.Module):
         max_seq_meta_values: The maximum number of sequence metadata values.
         max_token_meta_values: The maximum number of token metadata values.
         max_token_embed_size: The maximum size of the inputted token embedding.
+        max_anno_features: The maximum number of annotation features.
         seq_meta_embed_size: The size of the sequence metadata embedding.
         token_meta_embed_size: The size of the token metadata embedding.
         seq_meta_embed_dropout: The sequence metadata embedding dropout probability.
-        num_anno: The number of annotations.
-        num_anno_embed_layers: The number of layers to process annotation embeddings.
         out_size: The size of the encoder output.
         hidden_size: The size of the encoders hidden representation. This value must be even.
         num_conv_layers: Number of convolution layers.
@@ -295,11 +191,10 @@ class Encoder(torch.nn.Module):
         max_seq_meta_values: typing.Tuple[int, ...],
         max_token_meta_values: typing.Tuple[int, ...],
         max_token_embed_size: int,
+        max_anno_features: int,
         seq_meta_embed_size: int,
         token_meta_embed_size: int,
         seq_meta_embed_dropout: float,
-        num_anno: int,
-        num_anno_embed_layers: int,
         out_size: int,
         hidden_size: int,
         num_conv_layers: int,
@@ -313,21 +208,36 @@ class Encoder(torch.nn.Module):
         # https://datascience.stackexchange.com/questions/23183/why-convolutions-always-use-odd-numbers-as-filter-size
         assert conv_filter_size % 2 == 1, "`conv_filter_size` must be odd"
         assert hidden_size % 2 == 0, "`hidden_size` must be even"
+        assert max_token_embed_size > max_anno_features, "Need enough space for annotations."
 
         layer_norm = cf.partial(torch.nn.LayerNorm)
 
+        self.max_anno_features = max_anno_features
         self.max_token_embed_size = max_token_embed_size
         self.embed_seq_metadata = self._make_embeds(seq_meta_embed_size, max_seq_meta_values)
         self.seq_meta_embed_dropout = torch.nn.Dropout(seq_meta_embed_dropout)
         self.embed_token_metadata = self._make_embeds(token_meta_embed_size, max_token_meta_values)
         self.embed_token: NumeralizePadEmbed[typing.Hashable]
         self.embed_token = NumeralizePadEmbed(max_tokens, hidden_size)
-        self.embed = _GroupedEmbedder(
-            hidden_size + seq_meta_embed_size + max_token_embed_size + token_meta_embed_size,
-            hidden_size // num_anno,
-            hidden_size,
-            num_anno,
-            num_anno_embed_layers,
+        self.embed_anno = torch.nn.Sequential(
+            torch.nn.Linear(self.max_anno_features, hidden_size),
+            torch.nn.ReLU(),
+            torch.nn.Linear(hidden_size, hidden_size),
+            torch.nn.ReLU(),
+            layer_norm(hidden_size),
+        )
+        self.embed = torch.nn.Sequential(
+            torch.nn.Linear(
+                hidden_size * 2
+                + seq_meta_embed_size
+                + (max_token_embed_size - self.max_anno_features)
+                + token_meta_embed_size,
+                hidden_size,
+            ),
+            torch.nn.ReLU(),
+            torch.nn.Linear(hidden_size, hidden_size),
+            torch.nn.ReLU(),
+            layer_norm(hidden_size),
         )
         self.conv_layers = ModuleList(
             torch.nn.Sequential(
@@ -347,7 +257,7 @@ class Encoder(torch.nn.Module):
 
         self.lstm = _RightMaskedBiRNN(
             rnn_class=LSTM,
-            input_size=hidden_size * 2,
+            input_size=hidden_size * 3,
             hidden_size=hidden_size // 2,
             num_layers=lstm_layers,
         )
@@ -356,7 +266,7 @@ class Encoder(torch.nn.Module):
 
         self.project_out = torch.nn.Sequential(
             LockedDropout(dropout),
-            torch.nn.Linear(hidden_size * 2, out_size),
+            torch.nn.Linear(hidden_size * 3, out_size),
             layer_norm(out_size),
         )
 
@@ -396,38 +306,67 @@ class Encoder(torch.nn.Module):
         token_metadata = tuple([embed(meta, batch_first=True)[0] for embed, meta in iter_])
 
         token_embed = inputs.token_embeddings_padded
+        extra_rows = self.max_token_embed_size - token_embed.shape[2]
         if token_embed.shape[2] != self.max_token_embed_size:
             message = f"The `token_embed` ({token_embed.shape[2]}) size must be smaller than the "
             message += f"`max_token_embed_size` ({self.max_token_embed_size})."
             assert token_embed.shape[2] <= self.max_token_embed_size, message
             token_embed_ = torch.zeros(*tokens.shape[:2], self.max_token_embed_size, device=device)
-            token_embed_[:, :, 0 : token_embed.shape[2]] = token_embed
+            token_embed_[:, :, -token_embed.shape[2] :] = token_embed
             token_embed = token_embed_
+
+        # TODO: Remove this, it's for backwards compatibility.
+        if not hasattr(self, "max_anno_features"):
+            self.max_anno_features = inputs.num_anno
+
+        # [batch_size, num_tokens, max_token_embed_size] →
+        # [batch_size, num_tokens, num_anno]
+        needed_rows = self.max_anno_features - inputs.num_anno
+        assert extra_rows - needed_rows >= 0, "Need enough space for annotations."
+        annotations = token_embed[:, :, extra_rows - needed_rows : extra_rows + inputs.num_anno]
+
+        token_embed = (
+            token_embed[:, :, : extra_rows - needed_rows],
+            token_embed[:, :, extra_rows + inputs.num_anno :],
+        )
+        token_embed = torch.cat(token_embed, dim=2)
+
+        # [batch_size, num_tokens, num_anno] →
+        # [batch_size, num_tokens, hidden_size]
+        anno_embed = self.embed_anno(annotations)
+        # NOTE: This is equivilant to an `or` operation.
+        # NOTE: This is assuming that all annotations are zero.
+        anno_mask = (annotations != 0).sum(dim=2, keepdim=True)
+        anno_embed = torch.masked_fill(anno_embed, anno_mask == 0, 0)
 
         # [batch_size, num_tokens, hidden_size] (cat)
         # [batch_size, num_tokens, token_meta_embed_size] (cat)
         # [batch_size, num_tokens, seq_meta_embed_size] (cat)
-        # [batch_size, num_tokens, max_token_embed_size] →
+        # [batch_size, num_tokens, max_token_embed_size - max_anno_features]
+        # [batch_size, num_tokens, hidden_size] →
         # [batch_size, num_tokens,
         #  hidden_size + seq_meta_embed_size + max_token_embed_size]
-        tokens = torch.cat([tokens, seq_metadata_expanded, *token_metadata, token_embed], dim=2)
+        feats = [tokens, seq_metadata_expanded, *token_metadata, token_embed, anno_embed]
+        tokens = torch.cat(feats, dim=2)
 
         # [batch_size, num_tokens,
         #  hidden_size + seq_meta_embed_size + token_meta_embed_size + max_token_embed_size] →
         # [batch_size, num_tokens, hidden_size]
-        tokens = self.embed(tokens, inputs.anno_mask)
+        tokens = self.embed(tokens)
 
         # Our input is expected to have shape `[batch_size, num_tokens, hidden_size]`.  The
         # convolution layers expect input of shape
         # `[batch_size, in_channels (hidden_size), sequence_length (num_tokens)]`. We thus
         # need to transpose the tensor first.
         tokens = tokens.transpose(1, 2)
+        anno_embed = anno_embed.transpose(1, 2)
 
         # [batch_size, num_tokens] → [batch_size, 1, num_tokens]
         tokens_mask = tokens_mask.unsqueeze(1)
 
         tokens = tokens.masked_fill(~tokens_mask, 0)
         conditional = tokens.clone()
+        conditional = torch.cat((conditional, anno_embed), dim=1)
 
         for conv, norm in zip(self.conv_layers, self.norm_layers):
             tokens = tokens.masked_fill(~tokens_mask, 0)
@@ -443,10 +382,10 @@ class Encoder(torch.nn.Module):
         lstm_input = self.lstm_dropout(torch.cat((tokens, conditional), dim=2))
         tokens = self.lstm_norm(tokens + self.lstm(lstm_input, tokens_mask, num_tokens))
 
-        # [num_tokens, batch_size, hidden_size] (cat) [num_tokens, batch_size, hidden_size] →
-        # [num_tokens, batch_size, hidden_size * 2]
+        # [num_tokens, batch_size, hidden_size] (cat) [num_tokens, batch_size, hidden_size * 2] →
+        # [num_tokens, batch_size, hidden_size * 3]
         tokens = torch.cat((tokens, conditional), dim=2)
-        # [num_tokens, batch_size, hidden_size * 2] →
+        # [num_tokens, batch_size, hidden_size * 3] →
         # [num_tokens, batch_size, out_dim]
         tokens = self.project_out(tokens).masked_fill(~tokens_mask, 0)
 

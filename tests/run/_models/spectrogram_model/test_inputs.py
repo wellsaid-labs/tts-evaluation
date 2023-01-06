@@ -7,7 +7,7 @@ import torch
 from thinc.types import FloatsXd
 
 import run
-from lib.text import load_en_english, xml_to_text
+from lib.text import load_en_english, text_to_xml, xml_to_text
 from run._config import load_spacy_nlp
 from run._models.spectrogram_model.inputs import (
     Casing,
@@ -32,7 +32,7 @@ def run_around_tests():
     run._config.configure()
     config = {
         run._models.spectrogram_model.inputs.InputsWrapper.check_invariants: cf.Args(
-            min_loudness=-100, max_loudness=0, min_tempo=0.025, max_tempo=1
+            min_loudness=-100, max_loudness=0, min_tempo=0, max_tempo=10
         ),
     }
     cf.add(config, overwrite=True)
@@ -75,6 +75,43 @@ def test_inputs_wrapper__from_xml():
     assert result == expected
 
 
+def test_inputs_wrapper__from_xml__whitespace():
+    """Test `InputsWrapper.from_xml` with a whitespace at the end, which spaCy does not
+    consider a token."""
+    nlp = load_en_english()
+    script = "this is a test "
+    with pytest.raises(AssertionError):
+        InputsWrapper.from_xml(XMLType(script), nlp(script), make_session())
+
+
+def test_inputs_wrapper__from_xml__newline():
+    """Test `InputsWrapper.from_xml` with a newline at the end, which spaCy considers a token."""
+    nlp = load_en_english()
+    script = "this is a test\n"
+    InputsWrapper.from_xml(XMLType(script), nlp(script), make_session())
+
+
+def test_inputs_wrapper__from_xml__nested_tags():
+    """Test `InputsWrapper.from_xml` with nested tags."""
+    nlp = load_en_english()
+    start = f"<{_Schema.LOUDNESS} {_Schema._VALUE}='-20'>"
+    end = f"</{_Schema.LOUDNESS}>"
+    xml = XMLType(f"{start}this {start}is{end} a test{end}")
+    script = xml_to_text(xml)
+    with pytest.raises(PublicValueError, match=r".*loudness annotations cannot not be nested*"):
+        InputsWrapper.from_xml(XMLType(xml), nlp(script), make_session())
+
+
+def test_inputs_wrapper__from_xml__respell_nested_tags():
+    """Test `InputsWrapper.from_xml` with nested respell tags."""
+    nlp = load_en_english()
+    xml = f"<{_Schema.RESPELL} {_Schema._VALUE}='wuuds'>woods</{_Schema.RESPELL}>"
+    xml = XMLType(f"<{_Schema.RESPELL} {_Schema._VALUE}='wuuds'>{xml}</{_Schema.RESPELL}>")
+    script = xml_to_text(xml)
+    with pytest.raises(PublicValueError, match=r".*XML is invalid.*"):
+        InputsWrapper.from_xml(XMLType(xml), nlp(script), make_session())
+
+
 def test_inputs_wrapper__from_xml_batch():
     """Test `InputsWrapper.from_xml_batch` processes a batch correctly."""
     nlp = load_en_english()
@@ -98,7 +135,6 @@ def test_inputs_wrapper__from_xml_batch():
 def test_inputs_wrapper__from_xml__annotated():
     """Test `InputsWrapper.from_xml` and `InputsWrapper.to_xml` with annotations."""
     nlp = load_en_english()
-    script = "this is a test"
     xml = f"<{_Schema.LOUDNESS} {_Schema._VALUE}='-20'>Over the river and "
     xml += f"<{_Schema.TEMPO} {_Schema._VALUE}='0.04'>through the "
     xml += f"<{_Schema.RESPELL} {_Schema._VALUE}='wuuds'>woods</{_Schema.RESPELL}>"
@@ -115,6 +151,28 @@ def test_inputs_wrapper__from_xml__annotated():
         loudness=[[(slice(0, len("Over the river and through the woods.")), -20)]],
         tempo=[[(tempo, 0.04)]],
         respellings=[{doc[-2]: "wuuds"}],
+    )
+    assert result == expected
+    assert expected.to_xml(0) == f"<{_Schema.SPEAK} {_Schema._VALUE}='-1'>{xml}</{_Schema.SPEAK}>"
+
+
+def test_inputs_wrapper__from_xml__escaped_chars():
+    """Test `InputsWrapper.from_xml` and `InputsWrapper.to_xml` escaped html characters."""
+    nlp = load_en_english()
+    script = "Over the <<river>> and through the woods."
+    xml = text_to_xml(script)
+    xml = f"<{_Schema.LOUDNESS} {_Schema._VALUE}='-20'>{xml}</{_Schema.LOUDNESS}>"
+    xml = XMLType(xml)
+    assert script == xml_to_text(xml)
+    doc = nlp(script)
+    result = InputsWrapper.from_xml(xml, doc, make_session())
+    expected = InputsWrapper(
+        session=[make_session()],
+        span=[doc],
+        context=[doc],
+        loudness=[[(slice(0, len("Over the <<river>> and through the woods.")), -20)]],
+        tempo=[[]],
+        respellings=[{}],
     )
     assert result == expected
     assert expected.to_xml(0) == f"<{_Schema.SPEAK} {_Schema._VALUE}='-1'>{xml}</{_Schema.SPEAK}>"
@@ -205,7 +263,7 @@ def test__inputs_wrapper__from_xml__span_annotations():
         check_annotation(_Schema.LOUDNESS, "scientific pro", "-20", suffix="cess")  # Suffix
 
     with pytest.raises(PublicValueError):
-        check_annotation(_Schema.TEMPO, "scientific process", "0")  # Too small
+        check_annotation(_Schema.TEMPO, "scientific process", "-1000")  # Too small
 
     with pytest.raises(PublicValueError):
         check_annotation(_Schema.TEMPO, "scientific process", "1000")  # Too big
@@ -242,10 +300,10 @@ def test_inputs_wrapper__to_xml__context():
 
 
 def test__preprocess():
-    """Test that `_preprocess` handles a basic input."""
+    """Test that `_preprocess` handles a basic input similar to training."""
     nlp = load_spacy_nlp(Language.ENGLISH)
     script, sesh = "In 1968 the U.S. Army", make_session()
-    doc = nlp(script)
+    doc = nlp(script + " Phone")[:-1]
     input_ = InputsWrapper.from_xml(XMLType(doc[:-1].text), doc[:-1], sesh, doc)
     processed = preprocess(input_, {}, {}, lambda t: len(t))
     assert processed.max_audio_len == [len(doc[:-1].text)]
@@ -329,7 +387,6 @@ def test__preprocess():
     ]
     stack = (
         torch.zeros(len(script), 6),
-        torch.ones(len(script), 1),
         torch.cat(contextual_embeddings),
         torch.cat(word_embeddings),
     )
@@ -354,7 +411,7 @@ def test__embed_anno():
     embedding = _embed_anno(9, annotations, torch.device("cpu"))
     expected = [
         [20, 20, 0, -10, 0, 0, 0.99, 0.99, 0],
-        [0.5, 0.5, 0, 1, 0, 0, 0.5, 0.5, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0],
         [1, 1, 0, 1, 0, 0, 1, 1, 0],
     ]
     assert_almost_equal(embedding, torch.tensor(expected).transpose(0, 1))
@@ -362,13 +419,13 @@ def test__embed_anno():
     embedding = _embed_anno(9, annotations, torch.device("cpu"), 1, -1, 10)
     expected = [
         [0, 2.1, 2.1, 0, -0.9, 0, 0, 0.199, 0.199],
-        [0, 0.5, 0.5, 0, 1, 0, 0, 0.5, 0.5],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0],
         [0, 1, 1, 0, 1, 0, 0, 1, 1],
     ]
     assert_almost_equal(embedding, torch.tensor(expected).transpose(0, 1))
 
 
-def test__preprocess_respelling():
+def test__preprocess__respelling():
     """Test that `_preprocess` handles apostrophes, dashes, initialisms and existing respellings."""
     nlp = load_spacy_nlp(Language.ENGLISH)
     xml = "n't <respell value='PEE-puhl'>people</respell> from EDGE "
@@ -472,3 +529,48 @@ def test__preprocess_respelling():
     expected = torch.from_numpy(nlp.vocab["n't"].vector)
     for idx in range(2, 4):
         assert_almost_equal(processed.token_embeddings[0][idx][-expected.shape[0] :], expected)
+
+
+def test__preprocess__slice_anno():
+    """Test that `_preprocess` handles annotations along with context."""
+    nlp = load_spacy_nlp(Language.ENGLISH)
+    xml = "<loudness value='-21.0'>not <respell value='uh-BOWT'>about</respell> what"
+    xml += "<tempo value='5.0'> </tempo>I gain</loudness>"
+    xml = XMLType(xml)
+    sesh = make_session()
+    script = "analysis, not about what I gain and"
+    doc = nlp(script)
+    input_ = InputsWrapper.from_xml(xml, doc[2:-1], sesh, doc)
+    processed = preprocess(input_, {}, {}, lambda t: len(t))
+    l_vals = [[0] * len("analysis, ") + [-21] * len("not uh-BOWT what I gain") + [0] * len(" and")]
+    l_len = [[0] * len("analysis, not uh-BOWT what I gain and")]
+    l_mask = [[0] * len("analysis, ") + [1] * len("not uh-BOWT what I gain") + [0] * len(" and")]
+    t_vals = [[0] * len("analysis, not uh-BOWT what") + [5] * len(" ") + [0] * len("I gain and")]
+    t_len = [[0] * len("analysis, not uh-BOWT what I gain and")]
+    t_mask = [[0] * len("analysis, not uh-BOWT what") + [1] * len(" ") + [0] * len("I gain and")]
+    result = l_vals + l_len + l_mask + t_vals + t_len + t_mask
+    assert len(result[0]) == processed.token_embeddings[0].shape[0]
+    assert processed.token_embeddings[0][:, : processed.num_anno].T.long().tolist() == result
+
+
+def test__preprocess__duplicate_respelling():
+    """Test that `_preprocess` handles respelling the same word two different ways."""
+    nlp = load_spacy_nlp(Language.ENGLISH)
+    xml = "<loudness value='-21.0'>not <respell value='uh-BOWT'>about</respell> "
+    xml += "<respell value='WHAT'>about</respell>"
+    xml += "<tempo value='5.0'> </tempo>I gain</loudness>"
+    xml = XMLType(xml)
+    sesh = make_session()
+    script = "analysis, not about about I gain and"
+    doc = nlp(script)
+    input_ = InputsWrapper.from_xml(xml, doc[2:-1], sesh, doc)
+    processed = preprocess(input_, {}, {}, lambda t: len(t))
+    l_vals = [[0] * len("analysis, ") + [-21] * len("not uh-BOWT WHAT I gain") + [0] * len(" and")]
+    l_len = [[0] * len("analysis, not uh-BOWT WHAT I gain and")]
+    l_mask = [[0] * len("analysis, ") + [1] * len("not uh-BOWT WHAT I gain") + [0] * len(" and")]
+    t_vals = [[0] * len("analysis, not uh-BOWT WHAT") + [5] * len(" ") + [0] * len("I gain and")]
+    t_len = [[0] * len("analysis, not uh-BOWT WHAT I gain and")]
+    t_mask = [[0] * len("analysis, not uh-BOWT WHAT") + [1] * len(" ") + [0] * len("I gain and")]
+    result = l_vals + l_len + l_mask + t_vals + t_len + t_mask
+    assert len(result[0]) == processed.token_embeddings[0].shape[0]
+    assert processed.token_embeddings[0][:, : processed.num_anno].T.long().tolist() == result

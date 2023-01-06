@@ -1,6 +1,7 @@
 import dataclasses
 import enum
 import functools
+import html
 import pathlib
 import typing
 
@@ -12,8 +13,8 @@ import torch
 from lxml import etree
 from torch.nn.utils.rnn import pad_sequence
 
-from lib.text import XMLType
-from lib.utils import lengths_to_mask
+from lib.text import XMLType, text_to_xml
+from lib.utils import lengths_to_mask, offset_slices
 from run._config.lang import is_voiced
 from run.data._loader import structures as struc
 
@@ -73,8 +74,8 @@ class Inputs:
     # NOTE: This must be a positive value greater or equal to one.
     max_audio_len: typing.List[int]
 
-    # The size of the annotations added to `token_embeddings`.
-    anno_mask_indices: typing.Tuple[int, ...]
+    # The number of annotations present
+    num_anno: int
 
     device: torch.device = torch.device("cpu")
 
@@ -89,10 +90,6 @@ class Inputs:
     # Tokens mask after `slices` is applied
     # torch.BoolTensor [batch_size, num_tokens]
     tokens_mask: torch.Tensor = dataclasses.field(init=False)
-
-    # A mask for each annotation
-    # torch.BoolTensor [batch_size, num_tokens, len(self.anno_mask_indices)]
-    anno_mask: torch.Tensor = dataclasses.field(init=False)
 
     # The maximum audio length for each sequence.
     # torch.LongTensor [batch_size]
@@ -109,13 +106,6 @@ class Inputs:
         empty = torch.empty(0, 0, 0, device=self.device)
         stacked = empty if len(embeds) == 0 else pad_sequence(embeds, batch_first=True)
         object.__setattr__(self, "token_embeddings_padded", stacked)
-
-        mask = empty
-        if len(self.anno_mask_indices) != 0:
-            assert self.token_embeddings_padded.shape[2] > max(self.anno_mask_indices)
-            indices = torch.tensor(self.anno_mask_indices, device=self.device)
-            mask = torch.index_select(stacked, 2, indices)
-        object.__setattr__(self, "anno_mask", mask)
 
         object.__setattr__(self, "max_audio_len", [max(n, 1) for n in self.max_audio_len])
         max_audio_len = torch.tensor(self.max_audio_len, device=self.device, dtype=torch.long)
@@ -137,7 +127,6 @@ class Inputs:
         assert self.token_embeddings_padded.shape[:2] == (batch_size, max_num_tokens)
         assert self.num_tokens.shape == (batch_size,)
         assert self.tokens_mask.shape == (batch_size, max_num_voiced_tokens)
-        assert self.anno_mask.shape == (batch_size, max_num_tokens, len(self.anno_mask_indices))
         for metadata in self.token_metadata:
             assert all(len(t) == len(m) or len(m) == 0 for t, m in zip(self.tokens, metadata))
         if isinstance(self.token_embeddings, list):
@@ -145,18 +134,21 @@ class Inputs:
         else:
             assert self.token_embeddings.shape[1] == max(len(seq) for seq in self.tokens)
 
-        # NOTE: Double-check that `anno_mask` is actually a mask.
-        unique = torch.unique(self.anno_mask, sorted=True).tolist()
-        assert unique == [0, 1] or unique == [0] or unique == [1] or unique == []
+    @property
+    def anno_embeddings(self):
+        # NOTE: This is determined by `preprocess` which instantiates this object.
+        # TODO: Adjust the datastructure so it's easy to verify that the `token_embeddings` were
+        # instantiated correctly.
+        return self.token_embeddings_padded[: self.num_anno]
 
 
 SpanDoc = typing.Union[spacy.tokens.span.Span, spacy.tokens.doc.Doc]
 
 
 InputsWrapperTypeVar = typing.TypeVar("InputsWrapperTypeVar")
-SpanAnnotation = typing.Tuple[slice, float]
-SpanAnnotations = typing.List[SpanAnnotation]
-TokenAnnotations = typing.Dict[spacy.tokens.token.Token, str]
+SliceAnno = typing.Tuple[slice, float]
+SliceAnnos = typing.List[SliceAnno]
+TokenAnnos = typing.Dict[spacy.tokens.token.Token, str]
 
 
 class PublicValueError(ValueError):
@@ -183,6 +175,12 @@ class _Schema(enum.Enum):
         return str(self.value)
 
 
+def _idx(span: SpanDoc, token: spacy.tokens.token.Token) -> int:
+    """Get the character offset for `token` relative to `span`."""
+    start_char = span.start_char if isinstance(span, spacy.tokens.span.Span) else 0
+    return token.idx - start_char
+
+
 @dataclasses.dataclass(frozen=True)
 class InputsWrapper:
     """The model inputs before processing.
@@ -199,6 +197,10 @@ class InputsWrapper:
           directly mimic training. This discrepency could explain why the model struggles more
           with phrases than it does full-sentences (i.e. it may not train on many examples of
           phrases without context).
+    TODO: Do we need context? spaCy is already factoring in context that would allow the model
+          to predict the POS and other linguistic features. What's the purpose of further having
+          context? This also creates a discrepency between training and inference that we need
+          to navigate.
     """
 
     # Batch of recording sessions
@@ -210,11 +212,11 @@ class InputsWrapper:
     context: typing.List[SpanDoc]
 
     # Batch of annotations per sequence
-    loudness: typing.List[SpanAnnotations]
+    loudness: typing.List[SliceAnnos]
 
-    tempo: typing.List[SpanAnnotations]
+    tempo: typing.List[SliceAnnos]
 
-    respellings: typing.List[TokenAnnotations]
+    respellings: typing.List[TokenAnnos]
 
     def __post_init__(self):
         cf.partial(self.check_invariants)()
@@ -252,6 +254,11 @@ class InputsWrapper:
             assert has_context or no_context
             assert all(token in context for token in span)
             assert sum(token in span for token in context) == len(span)
+            # NOTE: It's possible that a `Doc` object does not pass this check, since some
+            # characters are not considered spaCy tokens, like white spaces. This selects all the
+            # spaCy tokens and checks if their text aligns with the overall text.
+            assert context.text == context[:].text
+            assert span.text == span[:].text
 
         # NOTE: Check that annotations are sorted and wrap full words.
         for batch_span_annotations in (self.loudness, self.tempo):
@@ -276,15 +283,15 @@ class InputsWrapper:
                         assert prev[0].stop <= annotation[0].start, f"{prev}, {annotation}"
 
         # NOTE: Check that the annotation values are in the right range.
-        for name, unit, annotation_batch, min_, max_ in (
-            ("Loudness", "db", self.loudness, min_loudness, max_loudness),
-            ("Tempo", "seconds per character", self.tempo, min_tempo, max_tempo),
+        for name, annotation_batch, min_, max_ in (
+            ("Loudness", self.loudness, min_loudness, max_loudness),
+            ("Tempo", self.tempo, min_tempo, max_tempo),
         ):
             for annotations in annotation_batch:
                 if len(annotations) > 0:
                     min_seen = min(a[1] for a in annotations)
                     max_seen = max(a[1] for a in annotations)
-                    message = f"{name} must be between {min_} and {max_} {unit}, got: "
+                    message = f"{name} must be between {min_} and {max_}, got: "
                     if min_seen < min_:
                         raise PublicValueError(message + str(min_seen))
                     if max_seen > max_:
@@ -317,12 +324,6 @@ class InputsWrapper:
     def __len__(self):
         return len(self.session)
 
-    def _idx(self, span: SpanDoc, token: spacy.tokens.token.Token) -> int:
-        """Get the character offset for `token` relative to `span`."""
-        if isinstance(span, spacy.tokens.span.Span):
-            return token.idx - span.start_char
-        return token.idx
-
     def to_xml(
         self,
         i: int,
@@ -352,25 +353,25 @@ class InputsWrapper:
         context = self.context[i]
         open_ = lambda tag, value: f"<{tag} {_Schema._VALUE}='{value}'>"
         close = lambda tag: f"</{tag}>"
-        annotations = [(open_(_Schema.LOUDNESS, a), s.start) for s, a in self.loudness[i]]
+        respellings = self.respellings[i].items()
+        annotations = [(open_(_Schema.RESPELL, a), _idx(span, t)) for t, a in respellings]
+        annotations += [(close(_Schema.RESPELL), _idx(span, t) + len(t)) for t, _ in respellings]
+        annotations += [(open_(_Schema.LOUDNESS, a), s.start) for s, a in self.loudness[i]]
         annotations += [(close(_Schema.LOUDNESS), s.stop) for s, _ in self.loudness[i]]
         annotations += [(open_(_Schema.TEMPO, a), s.start) for s, a in self.tempo[i]]
         annotations += [(close(_Schema.TEMPO), s.stop) for s, _ in self.tempo[i]]
-        respellings = self.respellings[i].items()
-        idx_ = self._idx
-        annotations += [(open_(_Schema.RESPELL, a), idx_(span, t)) for t, a in respellings]
-        annotations += [(close(_Schema.RESPELL), idx_(span, t) + len(t)) for t, _ in respellings]
-        # TODO: Create a workbook that allows us to dig into `Batch` data specifically and
-        # see what is in the preprocessed and XML data, and make sure it's correct.
-        annotations = sorted(annotations, key=lambda k: k[1], reverse=True)
-        text = span.text
-        for annotation, idx in annotations:
-            text = text[:idx] + annotation + text[idx:]
-        root = open_(_Schema.SPEAK, session_vocab[self.session[i]] if session_vocab else -1)
-        text = f"{root}{text}{close(_Schema.SPEAK)}"
+        annotations = sorted(annotations, key=lambda k: k[1])
+        indices = [0] + [i for _, i in annotations] + [len(span.text)]
+        parts = [span.text[i:j] for i, j in zip(indices, indices[1:] + [None])]
+        start = open_(_Schema.SPEAK, session_vocab[self.session[i]] if session_vocab else -1)
+        stop = close(_Schema.SPEAK)
+        annotations = [start] + [a for (a, _) in annotations] + [stop]
+        text = "".join("".join((a, text_to_xml(p))) for p, a in zip(parts, annotations))
         if include_context and isinstance(span, spacy.tokens.span.Span):
-            start_char = next((idx_(context, t) for t in context if t in span), 0)
-            text = f"{context.text[:start_char]}{text}{context.text[start_char + len(span.text):]}"
+            start_char = next((_idx(context, t) for t in context if t in span), 0)
+            prefix = text_to_xml(context.text[:start_char])
+            suffix = text_to_xml(context.text[start_char + len(span.text) :])
+            text = f"{prefix}{text}{suffix}"
         return XMLType(text)
 
     def get(self, i: int):
@@ -399,6 +400,8 @@ class InputsWrapper:
             span: The spaCy document built on text from that XML.
             session_vocab: A vocabulary mapping avatar IDs in XML to sessions.
         """
+        assert span.text == span[:].text, "The text must be stripped."
+
         # TODO: Make sure that annotations within annotations are not accepted. The model isn't
         # trained with that in mind. We don't allow overlapping annotations, either. It'd be
         # another extreneous level of complexity to explain to customers.
@@ -415,7 +418,6 @@ class InputsWrapper:
         annotations = {_Schema.LOUDNESS: [], _Schema.RESPELL: [], _Schema.TEMPO: []}
         session: typing.Optional[struc.Session] = None
         text: str = ""
-
         for event, elem in parser.read_events():
             if event == "start":
                 if elem.tag == str(_Schema.SPEAK):
@@ -424,15 +426,15 @@ class InputsWrapper:
                     annotation = ([len(text)], elem.get(str(_Schema._VALUE)))
                     annotations[_Schema[elem.tag.upper()]].append(annotation)
                 if elem.text and len(text) == 0:
-                    text += typing.cast(str, elem.text).lstrip()
+                    text += html.unescape(typing.cast(str, elem.text).lstrip())
                 elif elem.text:
-                    text += elem.text
+                    text += html.unescape(elem.text)
             elif event == "end":
                 if elem.tag is not None and elem.tag != str(_Schema.SPEAK):
                     annotations[_Schema[elem.tag.upper()]][-1][0].append(len(text))
                 if elem.tail:
-                    text += elem.tail
-        text = text.strip()
+                    text += html.unescape(elem.tail)
+
         assert text == span.text, "The `Span` must have the same text as the XML."
         assert session is not None
 
@@ -443,18 +445,22 @@ class InputsWrapper:
                 raise PublicValueError("Respelling must wrap a single word.")
             respellings[token[0]] = value
 
-        try:
-            loudness = [(s, float(v)) for s, v in annotations[_Schema.LOUDNESS]]
-            tempo = [(s, float(v)) for s, v in annotations[_Schema.TEMPO]]
-        except ValueError:
-            raise PublicValueError("The loudness and tempo annotations must be numerical.")
+        slice_annos: typing.Dict[_Schema, SliceAnnos] = {}
+        for tag in [_Schema.LOUDNESS, _Schema.TEMPO]:
+            if not all(len(s) == 2 for s, _ in annotations[tag]):
+                raise PublicValueError(f"The {tag.value} annotations cannot not be nested.")
+            try:
+                annos = [(s, float(v)) for s, v in annotations[tag]]
+            except ValueError:
+                raise PublicValueError(f"The {tag.value} annotations must be numerical.")
+            slice_annos[tag] = [(slice(*tuple(s)), v) for s, v in annos]
 
         return cls(
             session=[session],
             span=[span],
             context=[span if context is None else context],
-            loudness=[[(slice(*tuple(s)), v) for s, v in loudness]],
-            tempo=[[(slice(*tuple(s)), v) for s, v in tempo]],
+            loudness=[slice_annos[_Schema.LOUDNESS]],
+            tempo=[slice_annos[_Schema.TEMPO]],
             respellings=[respellings],
         )
 
@@ -487,9 +493,6 @@ class InputsWrapper:
             for key, val in all_.items():
                 val.extend(getattr(input_, key))
         return cls(**all_)
-
-
-ANNO_MASK_INDICES = (2, 5, 6)
 
 
 def _embed_anno(
@@ -536,10 +539,20 @@ def _embed_anno(
         slice_ = slice(slice_.start + idx_offset, slice_.stop + idx_offset, slice_.step)
         vals[slice_] = val
         mask[slice_] = 1
-        len_[slice_] = avg_anno_length / (slice_.stop - slice_.start)
+        len_[slice_] = 0  # TODO: Figure out how we might handle annos of different lengths.
     vals = ((vals - val_average) / val_compression) * mask
     ret_ = torch.stack((vals, len_, mask), dim=1)
     return ret_
+
+
+def _offset(annos: SliceAnnos, updates: typing.List[typing.Tuple[slice, int]]) -> SliceAnnos:
+    """Adjust `annos` based on `updates` such as respellings additions."""
+    slices = [s for s, _ in annos]
+    return [(o, v) for o, (_, v) in zip(offset_slices(slices, updates), annos)]
+
+
+def _tok_to_char_slice(span: SpanDoc, token: spacy.tokens.token.Token) -> slice:
+    return slice(_idx(span, token), _idx(span, token) + len(token.text))
 
 
 def preprocess(
@@ -568,13 +581,12 @@ def preprocess(
             a given piece of text.
         ...
     """
-    inputs = Inputs([], [], [[], []], [], [], [], (), device)
+    num_anno = 6
+    inputs = Inputs([], [], [[], []], [], [], [], num_anno, device)
     iter_ = zip(wrap.session, wrap.span, wrap.context, wrap.loudness, wrap.tempo, wrap.respellings)
-    Item = typing.Tuple[
-        struc.Session, SpanDoc, SpanDoc, SpanAnnotations, SpanAnnotations, TokenAnnotations
-    ]
+    Item = typing.Tuple[struc.Session, SpanDoc, SpanDoc, SliceAnnos, SliceAnnos, TokenAnnos]
     iter_ = typing.cast(typing.Iterator[Item], iter_)
-    for sesh, span, context, loudness, tempo, respell_map in iter_:
+    for sesh, span, context, loudness, tempo, respells in iter_:
         seq_metadata = [sesh[0].label, sesh, sesh[0].dialect, sesh[0].style, sesh[0].language]
         if len(inputs.seq_metadata) == 0:
             inputs.seq_metadata.extend([[] for _ in seq_metadata])
@@ -583,13 +595,19 @@ def preprocess(
         tokens: typing.List[str] = []
         pronun: typing.List[Pronun] = []
         cntxt: typing.List[Context] = []
+        org_tokens: typing.List[str] = []
         for tk in context:
-            pronun.append(Pronun.RESPELLING if tk in respell_map else Pronun.NORMAL)
-            tokens.append(respell_map[tk] if tk in respell_map else tk.text)
+            tokens.extend((respells[tk] if tk in respells else tk.text, tk.whitespace_))
+            org_tokens.extend((tk.text, tk.whitespace_))
+            pronun.extend((Pronun.RESPELLING if tk in respells else Pronun.NORMAL, Pronun.NORMAL))
             cntxt.append(Context.SCRIPT if tk in span else Context.CONTEXT)
-            pronun.append(Pronun.NORMAL)
-            tokens.append(tk.whitespace_)
             cntxt.append(Context.SCRIPT if tk in span and tk != span[-1] else Context.CONTEXT)
+
+        # NOTE: Discard the trailing whitespace
+        pronun, tokens, org_tokens, cntxt = pronun[:-1], tokens[:-1], org_tokens[:-1], cntxt[:-1]
+
+        assert "".join(org_tokens) == context.text
+        assert "".join(t for c, t in zip(cntxt, org_tokens) if c is Context.SCRIPT) == span.text
 
         chars = [c for t in tokens for c in t]
         casing = [_get_case(c) for c in chars]
@@ -599,7 +617,10 @@ def preprocess(
         end_char = start_char + cntxt.count(Context.SCRIPT)
 
         inputs.slices.append(slice(start_char, end_char))
-        inputs.max_audio_len.append(get_max_audio_length("".join(chars[inputs.slices[-1]])))
+        # TODO: This is able to reliably determine the max audio length based on the dataset;
+        # however, during inference, the user may try to push the model to slow down even further
+        # using annotations. Should those be considered?
+        inputs.max_audio_len.append(get_max_audio_length(span.text))
         inputs.tokens.append([c.lower() for c in chars])
         # NOTE: We merge `pronun` and `casing` into one category for performance reasons. It's
         # faster to have less unique categories. Furthermore, since casing and pronunication are
@@ -614,19 +635,27 @@ def preprocess(
             assert token.tensor is not None
             embed.append(np.concatenate((token.tensor, token.vector)))  # type: ignore
             embed.append(np.zeros(token.vector.shape[0] + token.tensor.shape[0]))
+        embed = embed[:-1]  # NOTE: Discard the trailing whitespace
         embed = [torch.tensor(t, device=device, dtype=torch.float32) for t in embed]
         embed = torch.cat([e.unsqueeze(0).repeat(len(t), 1) for e, t in zip(embed, tokens)])
-        vector_embed_mask = torch.ones(embed.shape[0], 1, device=device)
+
+        # NOTE: Offset the loudness and tempo slices based on respellings added to text.
+        respell_updates = [(_tok_to_char_slice(span, t), len(v)) for t, v in respells.items()]
+        loudness = _offset(loudness, respell_updates)
+        tempo = _offset(tempo, respell_updates)
 
         loudness_embed = _embed_anno(len(chars), loudness, device, start_char, **loudness_kwargs)
         tempo_embed = _embed_anno(len(chars), tempo, device, start_char, **tempo_kwargs)
 
         # loudness_embed    (torch.FloatTensor [num_tokens, 3]) (cat)
-        # tempo_embed       (torch.FloatTensor [num_tokens, 3]) (cat)
-        # vector_embed_mask (torch.FloatTensor [num_tokens, 1]) (cat)
-        # embed             (torch.FloatTensor [num_tokens, embedding_size]) →
-        # [num_tokens, embedding_size + 7]
-        embed = torch.cat((loudness_embed, tempo_embed, vector_embed_mask, embed), dim=1)
-        typing.cast(list, inputs.token_embeddings).append(embed)
+        # tempo_embed       (torch.FloatTensor [num_tokens, 3]) →
+        # [num_tokens, num_anno]
+        anno_embed = torch.cat((loudness_embed, tempo_embed), dim=1)
+        assert anno_embed.shape[1] == num_anno
 
-    return dataclasses.replace(inputs, anno_mask_indices=ANNO_MASK_INDICES)
+        # anno_embed    (torch.FloatTensor [num_tokens, num_anno]) (cat)
+        # embed         (torch.FloatTensor [num_tokens, embedding_size]) →
+        # [num_tokens, embedding_size + num_anno]
+        typing.cast(list, inputs.token_embeddings).append(torch.cat((anno_embed, embed), dim=1))
+
+    return dataclasses.replace(inputs)

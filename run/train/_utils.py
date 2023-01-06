@@ -295,7 +295,7 @@ class CometMLExperiment:
         """
         items = [f"<p><b>Step:</b> {self.curr_step}</p>"]
         param_label = lambda s: s.title().replace("_", " ") if " " not in s else s
-        html_repr = lambda v: v if isinstance(v, str) else html.escape(repr(v))
+        html_repr = lambda v: html.escape(v if isinstance(v, str) else repr(v))
         kwargs = dict(session=session, **kwargs)
         items.extend([f"<p><b>{param_label(k)}:</b> {html_repr(v)}</p>" for k, v in kwargs.items()])
         for key, data in audio.items():

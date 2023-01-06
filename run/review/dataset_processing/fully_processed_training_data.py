@@ -47,8 +47,7 @@ def main():
             print(f"Token: '{repr(token)}'")
             print("Token Metadata:", casing, cntxt)
             assert isinstance(processed.token_embeddings, torch.Tensor)
-            anno_size = processed.num_anno * processed.anno_size
-            print("Annotations:", processed.token_embeddings[seq_idx, idx, -anno_size:])
+            print("Annotations:", processed.anno_embeddings)
         print("=" * 10)
 
 

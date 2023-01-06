@@ -9,7 +9,7 @@ import streamlit as st
 
 import lib
 import run
-from lib.text import natural_keys
+from lib.text import XMLType, natural_keys
 from run._config import DEFAULT_SCRIPT
 from run._streamlit import (
     audio_to_web_path,
@@ -34,7 +34,7 @@ def main():
         tts = load_tts(checkpoint)
 
     format_speaker: typing.Callable[[Speaker], str] = lambda s: s.label
-    speakers = sorted(sesh[0] for sesh in tts.session_vocab())
+    speakers = sorted(list(set(sesh[0] for sesh in tts.session_vocab())))
     speaker = st.selectbox("Speaker", options=speakers, format_func=format_speaker)  # type: ignore
     speaker = typing.cast(Speaker, speaker)
     assert speaker.name is not None
@@ -51,7 +51,7 @@ def main():
         return
 
     frm = st.form(key="form")
-    script: str = frm.text_area("Script", value=DEFAULT_SCRIPT, height=150)
+    script: str = XMLType(frm.text_area("Script", value=DEFAULT_SCRIPT, height=150))
 
     label = "Number of Clips Per Session"
     num_clips: int = frm.number_input(label, min_value=1, max_value=None, value=5)
@@ -71,7 +71,7 @@ def main():
                 st.markdown(f"##### Session: **{sesh}**")
             st.markdown(f"###### Clip: **{clip_num}**")
             name = f"spk={speaker_name},sesh={sesh},clp={clip_num}.wav"
-            audio_web_path = audio_to_web_path(generated.sig_model, name)
+            audio_web_path = audio_to_web_path(generated.sig_model[0], name)
             st_html(f'<audio controls src="{web_path_to_url(audio_web_path)}"></audio>')
             paths.append(audio_web_path)
 

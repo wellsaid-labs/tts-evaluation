@@ -84,4 +84,7 @@ gcs_credentials.json
 disk/data/**
 disk/other/**
 disk/samples/**
+disk/envs/**
 disk/temp/**
+disk/experiments/**
+disk/checkpoints/**

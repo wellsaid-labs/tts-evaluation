@@ -41,12 +41,13 @@ RUN apt-get update --fix-missing \
   && venv/bin/pip install --no-cache-dir numpy \
   flask \
   gunicorn \
-  torch==1.11.0+cpu -f https://download.pytorch.org/whl/torch_stable.html \
+  torch==1.11.0+cpu --extra-index-url https://download.pytorch.org/whl/cpu \
   unidecode \
   ftfy \
   tqdm \
-  spacy==3.2.3 \
-  pythonic-config==0.6.14 \
+  lxml \
+  spacy==3.4.4 \
+  pythonic-config \
   num2words \
   git+https://github.com/PetrochukM/PyTorch-NLP.git \
   # TODO: Automatically fetch the languages a model has, and install those.

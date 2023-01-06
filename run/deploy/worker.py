@@ -54,8 +54,9 @@ from flask.wrappers import Response
 from spacy.lang.en import English
 
 from lib.environment import load, set_basic_logging_config
+from lib.text import XMLType
 from run._config import TTS_PACKAGE_PATH, configure, load_spacy_nlp
-from run._models.spectrogram_model import Inputs, PreprocessedInputs, RespellingError
+from run._models.spectrogram_model import Inputs, PreprocessedInputs, PublicValueError
 from run._tts import (
     PublicSpeakerValueError,
     PublicTextValueError,
@@ -263,7 +264,7 @@ def validate_and_unpack(
         raise FlaskException(message, code="MISSING_ARGUMENT")
 
     speaker_id = request_args.get("speaker_id")
-    text = request_args.get("text")
+    xml = XMLType(request_args.get("text"))
 
     if not isinstance(speaker_id, (str, int)):
         message = "Speaker ID must be either an integer or string."
@@ -275,7 +276,7 @@ def validate_and_unpack(
 
     speaker_id = int(speaker_id)
 
-    if not (isinstance(text, str) and len(text) < max_chars and len(text) > 0):
+    if not (isinstance(xml, str) and len(xml) < max_chars and len(xml) > 0):
         message = f"Text must be a string under {max_chars} characters and more than 0 characters."
         raise FlaskException(message, code="INVALID_TEXT_LENGTH_EXCEEDED")
 
@@ -293,20 +294,18 @@ def validate_and_unpack(
     gc.collect()
 
     try:
-        return process_tts_inputs(language_to_spacy[session[0].language], tts, text, session)
+        return process_tts_inputs(tts, language_to_spacy[session[0].language], xml, session)
     except PublicSpeakerValueError as error:
-        app.logger.exception("Invalid speaker: %r", text)
+        app.logger.exception("Invalid speaker: %r", xml)
         raise FlaskException(str(error), code="INVALID_SPEAKER_ID")
     except PublicTextValueError as error:
-        app.logger.exception("Invalid text: %r", text)
+        app.logger.exception("Invalid text: %r", xml)
         raise FlaskException(str(error), code="INVALID_TEXT")
-    except RespellingError:
-        raise FlaskException(
-            "Please format your respelling correctly (help.wellsaidlabs.com/respellings)",
-            code="INVALID_TEXT",
-        )
+    except PublicValueError as error:
+        app.logger.exception("Invalid xml: %r", xml)
+        raise FlaskException(str(error), code="INVALID_XML")
     except BaseException:
-        app.logger.exception("Unknown error text: %r", text)
+        app.logger.exception("Unknown error text: %r", xml)
         raise FlaskException("Unknown error.", code="UNKNOWN_ERROR")
 
 
@@ -340,6 +339,7 @@ def get_stream():
 
     NOTE: Consider the scenario where the requester isn't consuming the stream quickly, the
     worker would need to wait for the requester.
+    TODO: Create an end point that accepts XML rather than JSON.
 
     Usage:
         http://192.168.50.19:8000/api/text_to_speech/stream?speaker_id=46&text="Hello there"

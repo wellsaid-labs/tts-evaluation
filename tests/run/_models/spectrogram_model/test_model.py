@@ -39,7 +39,7 @@ class Params(typing.NamedTuple):
     max_num_tokens: int = 6
     max_tokens_index: int = 0
     max_token_embed_size: int = 20
-    anno_mask_indices: typing.Tuple[int, ...] = (0,)
+    max_anno_features: int = 1
 
     @property
     def max_frames_per_token(self) -> float:
@@ -88,9 +88,9 @@ def _make_spectrogram_model(
         max_seq_meta_values=params.max_seq_meta_values,
         max_token_meta_values=tuple(),
         max_token_embed_size=params.max_token_embed_size,
+        max_anno_features=params.max_anno_features,
         token_meta_embed_size=0,
         seq_meta_embed_size=seq_meta_embed_size,
-        num_anno=len(params.anno_mask_indices),
         num_frame_channels=params.num_frame_channels,
         output_scalar=output_scalar,
         stop_threshold=stop_threshold,
@@ -125,8 +125,6 @@ def _make_inputs(
 
     token_embeddings_size = (params.batch_size, params.max_num_tokens, params.max_token_embed_size)
     token_embeddings = torch.randn(*token_embeddings_size)
-    for idx in params.anno_mask_indices:
-        token_embeddings[:, :, idx].fill_(1)
 
     inputs = Inputs(
         tokens=tokens,
@@ -134,7 +132,7 @@ def _make_inputs(
         token_metadata=[[[] for _ in range(params.batch_size)]],
         token_embeddings=[e[: len(t)] for t, e in zip(tokens, token_embeddings.unbind())],
         slices=[slice(0, int(n)) for n in num_tokens],
-        anno_mask_indices=params.anno_mask_indices,
+        num_anno=params.max_anno_features,
         max_audio_len=[int(n * params.max_frames_per_token) for n in num_tokens],
     )
 

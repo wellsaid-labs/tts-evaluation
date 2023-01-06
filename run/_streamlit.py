@@ -50,7 +50,7 @@ STREAMLIT_STATIC_TEMP_PATH = STREAMLIT_STATIC_PRIVATE_PATH / "temp"
 STREAMLIT_STATIC_SYMLINK_PATH = STREAMLIT_STATIC_PRIVATE_PATH / "symlink"
 
 
-@st.experimental_singleton()
+@st.experimental_memo()
 def load_tts(checkpoints_key: str):
     return package_tts(*CHECKPOINTS_LOADERS[Checkpoints[checkpoints_key]]())
 

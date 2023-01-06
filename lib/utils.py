@@ -771,3 +771,41 @@ def lengths_to_mask(
     for i, length in enumerate(lengths):
         tokens_mask[i, :length] = True
     return tokens_mask
+
+
+def _is_simple_slice(s: slice):
+    """Check if `s` is "simple" as-in it doesn't have negative indicies or a step size."""
+    return s.step is None and s.start <= s.stop and s.start >= 0 and s.stop >= 0
+
+
+def offset_slices(slices: typing.List[slice], updates: typing.List[typing.Tuple[slice, int]]):
+    """Shift `slices` according to a list of `updates` to the underlying index represented by
+    a previous slice and updated length.
+
+    TODO: This algorithm can be re-written in linear time.
+
+    Args:
+        slices: An initial list of sorted slices.
+        updates: A list of updates to a underlying index expressed by a previous and updated length.
+            For example, an update like `(slice(1, 3), 1)` indicates that an index was
+            removed between 1 and 3.
+
+    Returns: Updates slices with start and stop updated.
+    """
+    assert all(_is_simple_slice(s) for s in slices), "`slices` must use simple slices"
+    assert all(_is_simple_slice(s) for s, _ in updates), "`updates` must use simple slices"
+    assert all(a.start <= b.start for a, b in zip(slices, slices[1:])), "`slices` must be sorted."
+    updates = sorted(updates, key=lambda i: i[0].start, reverse=True)
+    for prev, len_ in updates:
+        offset = len_ - (prev.stop - prev.start)
+        for i in reversed(range(len(slices))):
+            if prev.stop <= slices[i].start:
+                slices[i] = slice(slices[i].start + offset, slices[i].stop + offset)
+            elif prev.start >= slices[i].start and prev.stop <= slices[i].stop:
+                slices[i] = slice(slices[i].start, slices[i].stop + offset)
+            elif prev.stop > slices[i].stop:
+                break
+            else:
+                message = f"`updates` slice `{prev}` overlaps with `slices` `{slices[i]}`"
+                raise ValueError(f"{message}, this is not supported.")
+    return slices
