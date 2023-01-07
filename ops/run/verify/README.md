@@ -35,7 +35,7 @@ API_KEY=XXX go run main.go --only v10 --repeat 10 \
   ../deployments/staging staging.tts.wellsaidlabs.com
 ```
 
-See usage info like so:
+Finally, for more information run:
 
 ```
 go run main.go --help
