@@ -150,17 +150,27 @@ func readEndpoints(dir, host string) ([]endpoint, error) {
 	return endpoints, nil
 }
 
-func runTests(dir, host string) error {
+func runTests(dir, host, only string) error {
 	fmt.Println("Reading endpoints...")
-	endpoints, err := readEndpoints(dir, host)
+	allEndpoints, err := readEndpoints(dir, host)
 	if err != nil {
 		return err
+	}
+
+	endpoints := []endpoint{}
+	for _, e := range allEndpoints {
+		if only == "" || e.model == only {
+			endpoints = append(endpoints, e)
+		}
 	}
 
 	fmt.Printf("Found %d endpoints to test\n", len(endpoints))
 	queue := make(chan endpoint, len(endpoints))
 
 	numWorkers := 20
+	if numWorkers > len(endpoints) {
+		numWorkers = len(endpoints)
+	}
 	fmt.Printf("Starting %d workers...\n", numWorkers)
 	results := make(chan status)
 	for i := 0; i < numWorkers; i++ {
@@ -205,14 +215,14 @@ func runTests(dir, host string) error {
 }
 
 func main() {
-	var host string
+	var host, only string
 
 	cmd := cobra.Command{
 		Use:   "verify",
 		Short: "A small program for verifying a TTS cluster",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runTests(args[0], host)
+			return runTests(args[0], host, only)
 		},
 	}
 
@@ -221,6 +231,13 @@ func main() {
 		"host",
 		"staging.tts.wellsaidlabs.com",
 		"The hostname to use when making requests",
+	)
+
+	cmd.Flags().StringVar(
+		&only,
+		"only",
+		"",
+		"If specified, only endpoints belonging to the provided model version will be tested",
 	)
 
 	if err := cmd.Execute(); err != nil {
