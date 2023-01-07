@@ -274,7 +274,16 @@ func runTests(ctx context.Context, dir, host, only string, repeat int) error {
 
 	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', 0)
 	for _, f := range failures {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", f.status, f.endpoint.model, f.endpoint.url, f.err)
+		status := f.status
+		if status == "" {
+			status = "XXX"
+		}
+
+		err := ""
+		if f.err != nil {
+			err = f.err.Error()
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", status, err, f.endpoint.model, f.endpoint.url)
 	}
 	tw.Flush()
 
