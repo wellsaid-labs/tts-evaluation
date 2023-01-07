@@ -25,6 +25,10 @@ type requestPayload struct {
 
 // Send a request to the endpoint. Returns an error on a non-200 response.
 func request(ep endpoint) error {
+	// TODO: Right now if the script is interrupted an outstanding request won't
+	// be canceled. We should probably implement a context at the top level that's
+	// canceled in that event which in turn closes the queue channel and, finally/
+	// causes this HTTP request to be canceled (probably via a nested context per worker).
 	client := http.Client{Timeout: 2 * time.Minute}
 
 	payload := requestPayload{
@@ -200,12 +204,12 @@ func runTests(dir, host string) error {
 	return nil
 }
 
-func newVerifyAllCommand() *cobra.Command {
+func main() {
 	var host string
 
 	cmd := cobra.Command{
-		Use:   "all PATH",
-		Short: "Verifies all endpoints once. PATH should be a directory containing endpoint definitions.",
+		Use:   "verify",
+		Short: "A small program for verifying a TTS cluster",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runTests(args[0], host)
@@ -219,18 +223,7 @@ func newVerifyAllCommand() *cobra.Command {
 		"The hostname to use when making requests",
 	)
 
-	return &cmd
-}
-
-func main() {
-	root := cobra.Command{
-		Use:   "verify",
-		Short: "A small program for verifying a TTS cluster",
-	}
-
-	root.AddCommand(newVerifyAllCommand())
-
-	if err := root.Execute(); err != nil {
+	if err := cmd.Execute(); err != nil {
 		os.Exit(1)
 	}
 }
