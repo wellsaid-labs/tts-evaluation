@@ -1,7 +1,7 @@
 {
   "env": "staging",
   "model": "hour-one-x-nbc",
-  "version": "1",
+  "version": "3",
   "image": "gcr.io/voice-service-2-313121/speech-api-worker@sha256:a73368d0017652bc9c7e4d4e5ec1c5e9c87f91f4e880fb7f1027b7999ecd45b7",
   "imageEntrypoint": "run.deploy.worker:app",
   "provideApiKeyAuthForLegacyContainerSupport": "true",

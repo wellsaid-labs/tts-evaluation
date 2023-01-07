@@ -1,12 +1,12 @@
 {
   "env": "staging",
-  "model": "viacom",
-  "version": "2",
-  "image": "gcr.io/voice-service-2-313121/speech-api-worker@sha256:e112b9ad78aa22cf403b595cff3af202303f97fe2d67c38df13c0911f17e5de4",
+  "model": "v11",
+  "version": "3",
+  "image": "gcr.io/voice-service-2-313121/speech-api-worker@sha256:f8158cc7465c820c9d5723507f6365399cfd45a3e84e289057607ce12770d59f",
   "imageEntrypoint": "run.deploy.worker:app",
   "provideApiKeyAuthForLegacyContainerSupport": "true",
   "stream": {
-    "minScale": 0,
+    "minScale": 1,
     "maxScale": 32,
     "concurrency": 1,
     "paths": [
@@ -14,7 +14,7 @@
     ]
   },
   "validate": {
-    "minScale": 0,
+    "minScale": 1,
     "maxScale": 8,
     "concurrency": 4,
     "paths": [
@@ -23,7 +23,7 @@
   },
   "traffic": [
     {
-      "tag": "1",
+      "tag": "2",
       "percent": 100
     }
   ]
