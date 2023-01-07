@@ -14,10 +14,6 @@ import (
 	"time"
 )
 
-type modelConfig struct {
-	Model string `json:"model"`
-}
-
 type requestPayload struct {
 	SpeakerID      string `json:"speaker_id"`
 	Text           string `json:"text"`
@@ -83,6 +79,16 @@ func worker(endpoints <-chan endpoint, result chan<- status) {
 	}
 }
 
+type endpointSpec struct {
+	Paths []string `json:"paths"`
+}
+
+type modelConfig struct {
+	Model    string       `json:"model"`
+	Stream   endpointSpec `json:"stream"`
+	Validate endpointSpec `json:"validate"`
+}
+
 // Returns a list of endpoints to test, per the provided path and hostname.
 func readEndpoints(dir, host string) ([]endpoint, error) {
 	if dir == "" || host == "" {
@@ -121,15 +127,17 @@ func readEndpoints(dir, host string) ([]endpoint, error) {
 			return nil, err
 		}
 
-		for _, p := range []string{"stream", "input_validated"} {
-			endpoints = append(endpoints, endpoint{
-				url: &url.URL{
-					Scheme: "https",
-					Host:   host,
-					Path:   fmt.Sprintf("/api/text_to_speech/%s", p),
-				},
-				model: conf.Model,
-			})
+		for _, s := range []endpointSpec{conf.Stream, conf.Validate} {
+			for _, p := range s.Paths {
+				endpoints = append(endpoints, endpoint{
+					url: &url.URL{
+						Scheme: "https",
+						Host:   host,
+						Path:   p,
+					},
+					model: conf.Model,
+				})
+			}
 		}
 	}
 
