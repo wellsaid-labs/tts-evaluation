@@ -11,7 +11,8 @@ Run the tests like so:
 API_KEY=XXX go run main.go ../deployments/staging
 ```
 
-Change the host like so. You'll have to do this for production:
+The hostname defaults to `staging.tts.wellsaidlabs.com`. You can change it
+for testing production via the `--host` flag:
 
 ```
 API_KEY=XXX go run main.go ../deployments/prod --host tts.wellsaidlabs.com
