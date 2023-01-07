@@ -58,7 +58,7 @@ if __name__ == "__main__":
             if diff > 1:
                 print(f"WARNING: model {model}'s {next} is more than 1 version beyond k8s version {stream_k8s_version}")
 
-            spec["version"] = next
+            spec["version"] = str(next)
 
             if not args.dry_run:
                 fh.truncate(0)
