@@ -1,7 +1,7 @@
 # TTS Cluster Verification
 
 This directory includes code for a small program that verifies a TTS cluster
-by submitting sample requests to it.
+by submitting real requests.
 
 ## Run
 
