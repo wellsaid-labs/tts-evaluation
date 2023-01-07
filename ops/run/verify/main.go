@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"text/tabwriter"
 	"time"
+
+	"github.com/spf13/cobra"
 )
 
 type requestPayload struct {
@@ -198,17 +200,37 @@ func runTests(dir, host string) error {
 	return nil
 }
 
-func main() {
-	var dir, host string
-	if len(os.Args) == 3 {
-		dir = os.Args[1]
-		host = os.Args[2]
+func newVerifyAllCommand() *cobra.Command {
+	var host string
+
+	cmd := cobra.Command{
+		Use:   "all PATH",
+		Short: "Verifies all endpoints once. PATH should be a directory containing endpoint definitions.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runTests(args[0], host)
+		},
 	}
 
-	if err := runTests(dir, host); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
+	cmd.Flags().StringVar(
+		&host,
+		"host",
+		"staging.tts.wellsaidlabs.com",
+		"The hostname to use when making requests",
+	)
+
+	return &cmd
+}
+
+func main() {
+	root := cobra.Command{
+		Use:   "verify",
+		Short: "A small program for verifying a TTS cluster",
+	}
+
+	root.AddCommand(newVerifyAllCommand())
+
+	if err := root.Execute(); err != nil {
 		os.Exit(1)
 	}
-
-	os.Exit(0)
 }
