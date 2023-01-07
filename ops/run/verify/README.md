@@ -8,11 +8,37 @@ by submitting sample requests to it.
 Run the tests like so:
 
 ```
-API_KEY=XXX go run main.go ../deployments/staging staging.tts.wellsaidlabs.com
+API_KEY=XXX go run main.go ../deployments/staging
+```
+
+Change the host like so. You'll have to do this for production:
+
+```
+API_KEY=XXX go run main.go ../deployments/prod --host tts.wellsaidlabs.com
 ```
 
 The tests make up to 20 requests at once. The actual request rate is probably
 much slower than 20 rps in practice because of API latency.
+
+By default all endpoints are tested. You can test a single endpoint
+with the `--only` flag:
+
+```
+API_KEY=XXX go run main.go --only v10 ../deployments/staging
+```
+
+And you can repeat the tests indefinitely, every 10 seconds, like so:
+
+```
+API_KEY=XXX go run main.go --only v10 --repeat 10 \
+  ../deployments/staging staging.tts.wellsaidlabs.com
+```
+
+See usage info like so:
+
+```
+go run main.go --help
+```
 
 ## Why Go?
 
