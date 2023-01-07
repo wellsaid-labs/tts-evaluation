@@ -39,14 +39,24 @@ function(env, includeTls='true')
     plugin: 'request-termination',
   };
 
+  local kongIngressClass = {
+    apiVersion: 'networking.k8s.io/v1',
+    kind: 'IngressClass',
+    metadata: {
+      name: 'kong',
+    },
+    spec: {
+      controller: 'ingress-controllers.konghq.com/kong',
+    },
+  };
+
   local ingress = {
-    apiVersion: 'extensions/v1beta1',
+    apiVersion: 'networking.k8s.io/v1',
     kind: 'Ingress',
     metadata: {
       name: 'tts-wellsaidlabs-com',
       namespace: 'kong',
       annotations: {
-        'kubernetes.io/ingress.class': 'kong',
         'konghq.com/plugins': plugin.metadata.name,
       } + (if includeTls == 'true' then {
         // Value must match name of ClusterIssuer, see ../../tls/clusterIssuer.yaml
@@ -55,6 +65,7 @@ function(env, includeTls='true')
       } else {}),
     },
     spec: {
+      ingressClassName: 'kong',
       rules: [
         {
           host: hostname,
@@ -64,8 +75,12 @@ function(env, includeTls='true')
                 path: '/',
                 pathType: 'Prefix',
                 backend: {
-                  serviceName: 'gateway-kong-proxy',
-                  servicePort: 80,
+                  service: {
+                    name: 'gateway-kong-proxy',
+                    port: {
+                      number: 80,
+                    },
+                  },
                 },
               },
             ],
@@ -82,4 +97,4 @@ function(env, includeTls='true')
     } else {}),
   };
 
-  [ingress, plugin]
+  [kongIngressClass, ingress, plugin]
