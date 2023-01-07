@@ -326,6 +326,7 @@ class Encoder(torch.nn.Module):
             token_embed[:, :, extra_rows + inputs.num_anno :],
         )
         token_embed = torch.cat(token_embed, dim=2)
+        assert token_embed.shape[2] + inputs.num_anno + extra_rows == self.max_token_embed_size
 
         # [batch_size, num_tokens, num_anno] →
         # [batch_size, num_tokens, hidden_size]
@@ -349,20 +350,21 @@ class Encoder(torch.nn.Module):
         #  hidden_size + seq_meta_embed_size + token_meta_embed_size + max_token_embed_size] →
         # [batch_size, num_tokens, hidden_size]
         tokens = self.embed(tokens)
+        tokens_mask = tokens_mask.unsqueeze(2)
+        tokens = tokens.masked_fill(~tokens_mask, 0)
+
+        # [batch_size, num_tokens, hidden_size] (cat) [batch_size, num_tokens, hidden_size] →
+        # [batch_size, num_tokens, 2 * hidden_size]
+        conditional = tokens.clone()
+        conditional = torch.cat((conditional, anno_embed), dim=2)
 
         # Our input is expected to have shape `[batch_size, num_tokens, hidden_size]`.  The
         # convolution layers expect input of shape
         # `[batch_size, in_channels (hidden_size), sequence_length (num_tokens)]`. We thus
         # need to transpose the tensor first.
         tokens = tokens.transpose(1, 2)
-        anno_embed = anno_embed.transpose(1, 2)
-
-        # [batch_size, num_tokens] → [batch_size, 1, num_tokens]
-        tokens_mask = tokens_mask.unsqueeze(1)
-
-        tokens = tokens.masked_fill(~tokens_mask, 0)
-        conditional = tokens.clone()
-        conditional = torch.cat((conditional, anno_embed), dim=1)
+        tokens_mask = tokens_mask.transpose(1, 2)
+        conditional = conditional.transpose(1, 2)
 
         for conv, norm in zip(self.conv_layers, self.norm_layers):
             tokens = tokens.masked_fill(~tokens_mask, 0)
