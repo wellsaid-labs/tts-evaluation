@@ -23,7 +23,8 @@ fi
 
 MODEL=$1
 FILE=$2
-CLUSTER_NAME=$(gcloud config get container/cluster)
+KUBECTL_CTX=$(kubectl config current-context)
+ENV=$(grep -q "prod" <<< "$KUBECTL_CTX" && echo "prod" || echo "staging")
 
 # Usage: countRevision <model> <service>
 function countRevisions {
@@ -87,7 +88,7 @@ PROVIDE_LEGACY_API_KEY_AUTH=$(grep -q "LEGACY_SPEECH_API_KEY" <<< "$LATEST_STREA
 
 JSON=$(cat << EOF
 {
-  "env": "$CLUSTER_NAME",
+  "env": "$ENV",
   "model": "$MODEL",
   "version": "$VERSION",
   "image": "$LATEST_STREAM_REVISION_IMAGE",
