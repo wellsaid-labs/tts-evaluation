@@ -26,6 +26,11 @@ FILE=$2
 KUBECTL_CTX=$(kubectl config current-context)
 ENV=$(grep -q "prod" <<< "$KUBECTL_CTX" && echo "prod" || echo "staging")
 
+if [[ "$ENV" != "prod" && "$ENV" != "staging" ]]; then
+  echo "Error: Unknown cluster $ENV"
+  exit 1
+fi
+
 # Usage: countRevision <model> <service>
 function countRevisions {
   kubectl get revision.serving.knative.dev -n $MODEL -l 'serving.knative.dev/service'=$SERVICE,'serving.knative.dev/routingState'=active --no-headers 2> /dev/null | wc -l
