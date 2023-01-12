@@ -8,7 +8,7 @@
 #   Usage: ./deployment-to-config $MODEL_NAME
 #   Usage: ./deployment-to-config $MODE_NAME > config.json
 #
-
+set -euo pipefail
 # Assert argument was passed
 if [ -z "$1" ]; then
   echo "Usage: ./helmme <model_name> <service=stream|validate>"
