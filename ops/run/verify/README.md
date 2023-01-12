@@ -1,7 +1,11 @@
 # TTS Cluster Verification
 
 This directory includes code for a small program that verifies a TTS cluster
-by submitting real requests to it.
+by submitting a request to the stream and input validation endpoints for
+every model deployed to it.
+
+The intent is to use the script as a sanity check for validating that a deploy
+or infrastructural adjustment didn't disrupt the functionality of services.
 
 ## Run
 

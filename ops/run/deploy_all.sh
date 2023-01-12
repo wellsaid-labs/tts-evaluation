@@ -3,6 +3,8 @@
 # This script deploys all of the configurations for a particular environment.
 # It should be used carefully because of it's breadth.
 #
+# Deploys are executed sequentially. The script stops if a deploy fails.
+#
 
 set -euo pipefail
 
