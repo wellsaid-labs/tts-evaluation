@@ -2,6 +2,7 @@ import copy
 import functools
 import itertools
 import logging
+import math
 import typing
 
 import config as cf
@@ -164,19 +165,32 @@ def _include_annotation(annotation: struc.Alignment):
 
 
 def _get_tempo_annotation(text: str, audio_len: float, bucket_size: float):
-    """Get a tempo annotation in actual length vs expected length."""
+    """Get a tempo annotation in actual length vs expected length.
+
+    Args:
+        ...
+        audio_len: The audio length in seconds.
+        bucket_size: The bucket size for rounding in seconds.
+    """
     avg = run._config.lang.get_avg_audio_length(text)
     return lib.utils.round_(audio_len / avg, bucket_size)
 
 
 def _get_loudness_annotation(
-    audio: np.ndarray, sample_rate: int, block_size: float, precision: int, **kwargs
+    audio: typing.Union[np.ndarray, typing.List[np.ndarray]],
+    sample_rate: int,
+    block_size: float,
+    precision: int,
+    **kwargs,
 ) -> typing.Optional[float]:
     """Get the loudness in LUFS for `audio`.
 
     NOTE: `integrated_loudness` filters our quiet sections from the loudness computations.
     NOTE: The minimum audio length for calculating loudness is the `block_size` which is typically
-    around 400ms.
+          around 400ms.
+    TODO: Let's investigate how well this matches with folks expectations of loudness, the LUFS
+          algorithm isn't built to match perception accross the entire range. LUFS uses
+          K-weighting which was initially built for music/radio.
 
     Args:
         ...
@@ -185,10 +199,18 @@ def _get_loudness_annotation(
     Returns: The loundess in LUFS with a range of 0 to -70 LUFS in alignment with ITU-R BS.1770-4.
         This returns `None` if the loundess cannot be computed.
     """
-    meter = lib.audio.get_pyloudnorm_meter(sample_rate, block_size=block_size, **kwargs)
     sec_to_sample_ = functools.partial(lib.audio.sec_to_sample, sample_rate=sample_rate)
+
+    if isinstance(audio, list):
+        # TODO: Test if zero padding affects the loudness computation; whilst this would be
+        # disheartening, it shouldn't have a big impact, either way. Hopefully, the algorithm
+        # is invariant to padding.
+        padding = np.zeros((sec_to_sample_(block_size),))
+        audio = np.concatenate([n for a in audio for n in (a, padding)][:-1])
+
+    meter = lib.audio.get_pyloudnorm_meter(sample_rate, block_size=block_size, **kwargs)
     if audio.shape[0] >= sec_to_sample_(block_size):
-        loudness = round(meter.integrated_loudness(audio), precision)
+        loudness = round(float(meter.integrated_loudness(audio)), precision)
         # NOTE: This algorithm returns negative infinity if the loudness is less than -70 LUFS. We
         # return -70 LUFS instead to keep the output finite.
         # NOTE: This number is not parameterized because this specific number is specified in
@@ -196,8 +218,10 @@ def _get_loudness_annotation(
         # NOTE: The loudness algorithm can sometimes overflow and return stange values that are
         # significantly outside of the range like in:
         # https://github.com/csteinmetz1/pyloudnorm/issues/42
-        loudness = -70 if np.isinf(loudness) and loudness < 0 else loudness
-        return None if loudness > 0 or loudness < -70 else loudness
+        loudness = -70.0 if math.isinf(loudness) and loudness < 0 else loudness
+        assert loudness >= -70 and loudness <= 0
+        assert isinstance(loudness, float)
+        return loudness
     return None
 
 
@@ -380,6 +404,10 @@ def configure(overwrite: bool = False):
             min_no_intervals_prob=0.1,
             avg_alignments=3,
             include_annotation=_include_annotation,
+        ),
+        run.data._loader.structures._process_sessions: cf.Args(
+            get_loudness=cf.partial(_get_loudness_annotation),
+            get_tempo=cf.partial(_get_tempo_annotation),
         ),
         run.train.spectrogram_model._data._get_tempo_annotation: cf.Args(
             get_anno=cf.partial(_get_tempo_annotation)

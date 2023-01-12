@@ -29,8 +29,18 @@ def make_speaker(
     return struc.Speaker(label, style, dialect, label, label)
 
 
-def make_session(*args, name: str = "", **kwargs):
-    return struc.Session((make_speaker(*args, **kwargs), name))
+def make_unprocessed_session(speaker: struc.Speaker = make_speaker(), name: str = ""):
+    return struc.UnprocessedSession(speaker, name)
+
+
+def make_session(
+    speaker: struc.Speaker = make_speaker(),
+    name: str = "",
+    loudness: float = -21.0,
+    tempo: float = 1.0,
+    spk_tempo: float = 1.0,
+):
+    return struc.Session(speaker, name, loudness, tempo, spk_tempo)
 
 
 def make_alignment(script=(0, 0), transcript=(0, 0), audio=(0.0, 0.0)):
@@ -101,7 +111,7 @@ def make_passage(
     assert alignments is not None
     passage = struc.Passage(
         audio_file,
-        struc.Session((speaker, str(audio_file))),
+        make_session(speaker, str(audio_file)),
         script,
         script if transcript is None else transcript,
         Alignment.stow(alignments),

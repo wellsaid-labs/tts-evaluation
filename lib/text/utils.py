@@ -983,3 +983,8 @@ def xml_to_text(xml: XMLType) -> str:
 def text_to_xml(text: str) -> XMLType:
     """Escape any special XML characters and return valid XML."""
     return XMLType(html.escape(text))
+
+
+def is_stripped(s: str) -> bool:
+    """Check if text is stripped."""
+    return s.strip() == s

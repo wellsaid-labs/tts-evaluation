@@ -5,6 +5,7 @@ import config as cf
 import pytest
 
 import lib
+import run
 from run.data import _loader
 
 
@@ -22,8 +23,16 @@ def run_around_tests():
         precision="25-bit",
     )
     non_speech_segment_frame_length = 50
+    config = {
+        run._config.data._get_loudness_annotation: cf.Args(
+            block_size=0.400, precision=0, filter_class="DeMan", sample_rate=format_.sample_rate
+        ),
+        run._config.data._get_tempo_annotation: cf.Args(bucket_size=0.05),
+    }
+    cf.add(config)
+
     temp_dir = tempfile.TemporaryDirectory()
-    temp_dir_path = pathlib.Path(temp_dir.name)
+    temp_dir_path = pathlib.Path(temp_dir.name).absolute()
     config = {
         _loader.utils.normalize_audio_suffix: cf.Args(suffix=suffix),
         _loader.utils.normalize_audio: cf.Args(
@@ -45,6 +54,11 @@ def run_around_tests():
         ),
         _loader.utils.maybe_normalize_audio_and_cache: cf.Args(
             suffix=suffix, data_type=data_type, bits=bits, format_=format_
+        ),
+        _loader.structures._process_sessions: cf.Args(
+            get_loudness=cf.partial(run._config.data._get_loudness_annotation),
+            get_tempo=cf.partial(run._config.data._get_tempo_annotation),
+            cache_dir=temp_dir_path,
         ),
     }
     cf.add(config)

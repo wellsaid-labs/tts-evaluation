@@ -113,13 +113,33 @@ def audio_to_html(
     return f'<audio {attrs} src="{audio_to_url(audio, name, **kwargs)}"></audio>'
 
 
+# NOTE: While streamlit does provide `st.download`, it'll force the entire app to reload when it's
+# used. Here is an issue thread: https://github.com/streamlit/streamlit/issues/4382. The below
+# options don't have that backdraw.
+
+
+def bytes_to_html_download_link(name: str, label: str, bytes_: bytes) -> str:
+    """Make a zipfile named `name` that can be downloaded with a button called `label`."""
+    web_path = make_temp_web_dir() / name
+    web_path.write_bytes(bytes_)
+    return f'<a href="{web_path_to_url(web_path)}" download="{name}">{label}</a>'
+
+
+def st_download_bytes(*args, **kwargs):
+    """Download a text file."""
+    return st_html(bytes_to_html_download_link(*args, **kwargs))
+
+
 def paths_to_html_download_link(
     name: str,
     label: str,
     paths: typing.List[pathlib.Path],
     archive_paths: typing.Optional[typing.List[pathlib.Path]] = None,
 ) -> str:
-    """Make a zipfile named `name` that can be downloaded with a button called `label`."""
+    """Make a zipfile named `name` that can be downloaded with a button called `label`.
+
+    TODO: Implement a utility like `st_download_bytes` for `paths_to_html_download_link`.
+    """
     web_path = make_temp_web_dir() / name
     archive_paths_ = [p.name for p in paths] if archive_paths is None else archive_paths
     with zipfile.ZipFile(web_path, "w") as file_:
