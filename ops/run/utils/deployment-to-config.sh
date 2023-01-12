@@ -11,29 +11,29 @@
 set -euo pipefail
 # Assert argument was passed
 if [ -z "$1" ]; then
-  echo "Usage: ./helmme <model_name> <service=stream|validate>"
-  exit 1
-fi
-
-# Assert env argument file exists
-if [[ "$2" && -f $2 ]]; then
-  echo "File already exists: $2"
+  echo "Usage: ./deployment-to-config <model_name>"
   exit 1
 fi
 
 MODEL=$1
-FILE=$2
 KUBECTL_CTX=$(kubectl config current-context)
-ENV=$(grep -q "prod" <<< "$KUBECTL_CTX" && echo "prod" || echo "staging")
-
-if [[ "$ENV" != "prod" && "$ENV" != "staging" ]]; then
-  echo "Error: Unknown cluster $ENV"
+if [[ $KUBECTL_CTX == "gke_voice-service-2-313121_us-central1_prod" ]]; then
+  ENV="prod"
+elif [[ $KUBECTL_CTX = "gke_voice-service-2-313121_us-central1_staging" ]]; then
+  ENV="staging"
+else
+  echo "Error: Unknown cluster $KUBECTL_CTX"
   exit 1
 fi
 
 # Usage: countRevision <model> <service>
 function countRevisions {
-  kubectl get revision.serving.knative.dev -n $MODEL -l 'serving.knative.dev/service'=$SERVICE,'serving.knative.dev/routingState'=active --no-headers 2> /dev/null | wc -l
+  kubectl get revision.serving.knative.dev \
+    -n $MODEL \
+    -l 'serving.knative.dev/service'=$SERVICE,'serving.knative.dev/routingState'=active \
+    --no-headers \
+    2> /dev/null \
+    | wc -l
 }
 
 # Get `stream` service information
