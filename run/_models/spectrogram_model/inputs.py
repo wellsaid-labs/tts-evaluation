@@ -647,6 +647,10 @@ def preprocess(
         loudness_embed = _embed_anno(len(chars), loudness, device, start_char, **loudness_kwargs)
         tempo_embed = _embed_anno(len(chars), tempo, device, start_char, **tempo_kwargs)
 
+        # TODO: Use the average loudness and tempo annotations. We should consider having
+        # them as a seperate annotation, so that, the user can't accidently trick the model
+        # into changing sessions.
+
         # loudness_embed    (torch.FloatTensor [num_tokens, 3]) (cat)
         # tempo_embed       (torch.FloatTensor [num_tokens, 3]) →
         # [num_tokens, num_anno]
