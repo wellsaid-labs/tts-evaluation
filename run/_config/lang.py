@@ -222,7 +222,20 @@ def get_avg_audio_length(text: str) -> float:
           main model to predict this. We could have a small LSTM. These would be a bit less
           interpretable; however, they might be far more accurate.
     """
-    counts = {p: text.count(p) for p in ["-", "!", ",", ".", '"', " ", "'", "?"]}
+    seconds = [
+        (0.3267, "\n"),
+        (0.3190, ":"),
+        (0.2491, "!"),
+        (0.2118, ","),
+        (0.1892, ";"),
+        (0.1556, "?"),
+        (0.1247, "-"),
+        (0.1118, "."),
+        (0.1041, '"'),
+        (0.0151, " "),
+        (0.0000, "'"),
+    ]
+    counts = {p: text.count(p) for _, p in seconds}
     num_counted_punc = sum(counts.values())
     num_upper = sum(c.isupper() for c in text)
     num_lower = sum(c.islower() for c in text)
@@ -243,45 +256,40 @@ def get_avg_audio_length(text: str) -> float:
     # them with a seconds value. It was developed using this workbook
     # `run/review/dataset_processing/text_audio_length_correlation.py`. It has a r=0.946
     # correlation with audio length.
-    seconds = (
-        (0.2228, "num_initials"),
-        (0.1288, "-"),
-        (0.1112, "!"),
-        (0.0952, ","),
-        (0.0943, "num_upper"),
-        (0.0815, "num_other_punc"),
-        (0.0575, "num_lower"),
-        (0.0487, "."),
-        (0.0372, '"'),
-        (0.0289, " "),
-        (0.0000, "'"),
-        (0.0000, "?"),
-    )
+    seconds = seconds + [
+        (0.3055, "num_initials"),
+        (0.0767, "num_other_punc"),
+        (0.0779, "num_upper"),
+        (0.0623, "num_lower"),
+    ]
     assert len(seconds) == len(counts)
-    # NOTE: Our linear correlation found an intercept of 0.1561 seconds. This likely means that
-    # on average our clips have 70 milliseconds of silent padding on either side. This is about
-    # in-line with our processing which adds 50 milliseconds of padding. See the configuration for
-    # `_make_speech_segments_helper.pad`.
-    return sum(counts[feat] * val for val, feat in seconds) + 0.1561
+    # TODO: Our linear correlation found an intercept of 0.2781 seconds. This likely means that
+    # on average our clips have 139 milliseconds of silent padding on either side. This is larger
+    # than our processing which adds 50 milliseconds of padding. See the configuration for
+    # `_make_speech_segments_helper.pad`. Let's investigate better trimming.
+    return sum(counts[feat] * val for val, feat in seconds) + 0.2781
 
 
 def get_max_audio_length(text: str) -> float:
     """Predict the maximum audio length given `text`.
 
     NOTE: This approach models max audio length based on the slowest speaker and the biggest offset.
-          In this case, the slowest speakers spoke on average 32% slower than the average when
-          analyzing speech segments. They were at most 600 milliseconds off of that pace, at
-          anytime. It was developed using this workbook
+          In this case, the slowest speakers spoke on average 20% slower than the average when
+          analyzing training data spans; however, our slowest speaker could deliver content as much
+          as 60% slower. They were at most 500 milliseconds off of that pace, at anytime. It was
+          developed using this workbook
           `run/review/dataset_processing/text_audio_length_correlation.py`.
-    NOTE: Using speech segments in our data, this ensures that 99.97% of the time, the audio length
-          is smaller than this maximum audio length, after analyzing 30k segments. The cases
-          are buggy because extenuated pauses should not have been included in speech segments.
-    TODO: Measure how well this aligns with spans, not just speech segments, which may include
-          longer pauses. It should scale well because spans are longer, so, it'll tend toward
-          the average much more.
+    NOTE: This ensures that 99.976% of the time, in our training data (excluding non-dev speakers),
+          the audio length is smaller than this maximum audio length, after analyzing 50k segments.
+          The cases are buggy because extenuated pauses should not have been included in spans,
+          see `SpanGenerator.max_pause` in `run._config.audio`.
+    NOTE: We do not use the speakers tempo to determine the maximum audio length because anyone
+          could deliver content at any pace. This effort is to determine the slowest realistic
+          maximum audio length for this content, not for this speaker.
+    TODO: Let's consider filtering out the remaining .024% of spans with this rule.
     """
-    slowest_pace = 1.4
-    max_offset_from_slowest_pace = 0.6
+    slowest_pace = 1.6
+    max_offset_from_slowest_pace = 0.5
     return get_avg_audio_length(text) * slowest_pace + max_offset_from_slowest_pace
 
 

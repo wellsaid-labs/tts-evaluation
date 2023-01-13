@@ -35,7 +35,7 @@ from torchnlp.random import fork_rng
 import lib
 import run
 from run._config.labels import _speaker
-from run._streamlit import audio_to_url, clip_audio, st_ag_grid, st_download_bytes, st_tqdm
+from run._streamlit import audio_to_url, clip_audio, get_spans, st_ag_grid, st_download_bytes
 from run._utils import Dataset, get_datasets
 from run.data._loader import Alignment, Session, Span, Speaker
 from run.train.spectrogram_model._data import (
@@ -43,7 +43,6 @@ from run.train.spectrogram_model._data import (
     _get_tempo_annotation,
     _random_nonoverlapping_alignments,
 )
-from run.train.spectrogram_model._worker import _get_data_generator
 
 lib.environment.set_basic_logging_config(reset=True)
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
@@ -53,41 +52,6 @@ logger = logging.getLogger(__name__)
 @st.experimental_singleton()
 def _get_datasets() -> typing.Tuple[Dataset, Dataset]:
     return get_datasets(False)
-
-
-@st.experimental_singleton()
-def _get_spans(
-    _train_dataset: Dataset,
-    _dev_dataset: Dataset,
-    speaker: typing.Optional[Speaker],
-    num_spans: int,
-    device_count: int = 4,
-) -> typing.Tuple[typing.List[Span], typing.List[numpy.ndarray]]:
-    """Get `num_spans` spans from `_train_dataset` for `speaker`. This uses the same code path
-    as a training run so it ensures we are analyzing training data directly.
-
-    Args:
-        ...
-        device_count: The number of devices used during training to set the configuration.
-    """
-    with st.spinner("Configuring..."):
-        datasets = (_train_dataset, _dev_dataset)
-        config_ = run._config.make_spectrogram_model_train_config(*datasets, False, device_count)
-        cf.add(config_, overwrite=True)
-
-    with st.spinner("Making generators..."):
-        if speaker is not None:
-            _train_dataset = {speaker: _train_dataset[speaker]}
-            _dev_dataset = {speaker: _dev_dataset[speaker]}
-        train_gen, _ = cf.partial(_get_data_generator)(_train_dataset, _dev_dataset)
-
-    with st.spinner("Making spans..."):
-        spans = [next(train_gen) for _ in st_tqdm(range(num_spans), num_spans)]
-
-    with st.spinner("Loading audio..."):
-        signals = [s.audio() for s in st_tqdm(spans)]
-
-    return spans, signals
 
 
 def _annotate(text: str, alignment: Alignment, prefix: str = "<<<", suffix: str = ">>>") -> str:
@@ -320,7 +284,7 @@ def main():
     if not form.form_submit_button("Submit"):
         return
 
-    spans, clips = _get_spans(train_dataset, dev_dataset, speaker, num_spans)
+    spans, clips = get_spans(train_dataset, dev_dataset, speaker, num_spans, False)
 
     with st.spinner("Generating Annotations..."):
         with fork_rng(seed=random_seed):

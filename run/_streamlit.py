@@ -3,6 +3,7 @@ import multiprocessing
 import multiprocessing.pool
 import os
 import pathlib
+import random
 import shutil
 import tempfile
 import typing
@@ -19,9 +20,11 @@ import run
 from lib.audio import AudioMetadata, sec_to_sample
 from lib.environment import ROOT_PATH
 from lib.text import natural_keys
+from run._config.data import _include_span
 from run._tts import CHECKPOINTS_LOADERS, Checkpoints, package_tts
 from run._utils import Dataset
-from run.data._loader import Alignment, Passage, Span
+from run.data._loader import Alignment, Passage, Span, Speaker
+from run.train.spectrogram_model._worker import _get_data_generator
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import altair as alt
@@ -227,6 +230,82 @@ def get_dev_dataset() -> Dataset:
     with st.spinner("Loading dataset..."):
         _, dev_dataset = run._utils.get_datasets(False)
     return dev_dataset
+
+
+@st.experimental_singleton()
+def get_spans(
+    _train_dataset: Dataset,
+    _dev_dataset: Dataset,
+    speaker: typing.Optional[Speaker],
+    num_spans: int,
+    is_dev_speakers: bool,
+    device_count: int = 4,
+) -> typing.Tuple[typing.List[Span], typing.List[np.ndarray]]:
+    """Get `num_spans` spans from `_train_dataset` for `speaker`. This uses the same code path
+    as a training run so it ensures we are analyzing training data directly.
+
+    Args:
+        ...
+        device_count: The number of devices used during training to set the configuration.
+    """
+    with st.spinner("Configuring..."):
+        datasets = (_train_dataset, _dev_dataset)
+        config_ = run._config.make_spectrogram_model_train_config(*datasets, False, device_count)
+        cf.add(config_, overwrite=True)
+
+    with st.spinner("Making generators..."):
+        if is_dev_speakers:
+            _train_dataset = {s: _train_dataset[s] for s in _dev_dataset.keys()}
+
+        if speaker is not None:
+            _train_dataset = {speaker: _train_dataset[speaker]}
+            _dev_dataset = {speaker: _dev_dataset[speaker]}
+
+        train_gen, _ = cf.partial(_get_data_generator)(_train_dataset, _dev_dataset)
+
+    with st.spinner("Making spans..."):
+        spans = [next(train_gen) for _ in st_tqdm(range(num_spans), num_spans)]
+
+    with st.spinner("Loading audio..."):
+        signals = [s.audio() for s in st_tqdm(spans)]
+
+    return spans, signals
+
+
+def _random_speech_segments(_train_dataset: Dataset):
+    """Get random speech segments while balancing each of the speakers.
+
+    NOTE: This implementation of sampling speech segments is simpler than others. This is because
+          in other implementations we are trying to sample an interval of data. To ensure we
+          sample proportionally, we need to oversample longer passages. In this case, we are
+          directly sampling from a fixed pool of non-overlapping spans. With that in mind, we
+          can just sample uniformly, and ensure that every alignment has an equal chance of
+          getting sampled.
+    """
+    counter = {s: 0.0 for s in _train_dataset.keys()}
+    data = {k: [s for p in v for s in p.speech_segments] for k, v in _train_dataset.items()}
+    while True:
+        speaker = lib.utils.corrected_random_choice(counter)
+        span = random.choice(data[speaker])
+        if _include_span(span):
+            counter[span.speaker] += span.audio_length
+            yield span
+
+
+@st.experimental_singleton()
+def get_speech_segments(
+    _train_dataset: Dataset, speaker: typing.Optional[Speaker], num_spans: int
+) -> typing.Tuple[typing.List[Span], typing.List[np.ndarray]]:
+    """Get `num_spans` speech segments from `_train_dataset` for `speaker`."""
+    with st.spinner("Making spans..."):
+        _train_dataset = _train_dataset if speaker is None else {speaker: _train_dataset[speaker]}
+        train_gen = _random_speech_segments(_train_dataset)
+        spans = [next(train_gen) for _ in st_tqdm(range(num_spans), num_spans)]
+
+    with st.spinner("Loading audio..."):
+        signals = [s.audio() for s in st_tqdm(spans)]
+
+    return spans, signals
 
 
 @st.experimental_singleton()
