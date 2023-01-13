@@ -1,20 +1,20 @@
 {
   "env": "staging",
-  "model": "synthesia",
+  "model": "v11",
   "version": "7",
-  "image": "gcr.io/voice-service-2-313121/speech-api-worker@sha256:e500e826172dd23c92c9bfd9c70edad13bebfe9c04b45076d60f80bf14dc0e83",
+  "image": "gcr.io/voice-service-2-313121/speech-api-worker@sha256:f8158cc7465c820c9d5723507f6365399cfd45a3e84e289057607ce12770d59f",
   "imageEntrypoint": "run.deploy.worker:app",
   "provideApiKeyAuthForLegacyContainerSupport": "true",
   "stream": {
-    "minScale": 0,
-    "maxScale": 8,
+    "minScale": 1,
+    "maxScale": 32,
     "concurrency": 1,
     "paths": [
       "/api/text_to_speech/stream"
     ]
   },
   "validate": {
-    "minScale": 0,
+    "minScale": 1,
     "maxScale": 8,
     "concurrency": 4,
     "paths": [

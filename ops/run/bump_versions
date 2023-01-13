@@ -60,6 +60,13 @@ if __name__ == "__main__":
 
             spec["version"] = str(next)
 
+            # Next update all traffic to be directed to the new version. If traffic is split, notify and skip.
+            traffic = spec["traffic"]
+            if len(traffic) > 1:
+                print(f"ERROR: {model} as split traffic config, manual update required, skipping...")
+                continue
+            spec["traffic"] = [{ "tag": str(next), "percent": 100 }]
+
             if not args.dry_run:
                 fh.truncate(0)
                 fh.seek(0)

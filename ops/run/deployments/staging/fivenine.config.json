@@ -1,7 +1,7 @@
 {
   "env": "staging",
   "model": "fivenine",
-  "version": "2",
+  "version": "6",
   "image": "gcr.io/voice-service-2-313121/speech-api-worker@sha256:0cef9a4eda14e3cbd72b557d3e54c245d6127b18ceb0d7b83407b73a0533c675",
   "imageEntrypoint": "run.deploy.worker:app",
   "provideApiKeyAuthForLegacyContainerSupport": "true",
@@ -23,7 +23,7 @@
   },
   "traffic": [
     {
-      "tag": "1",
+      "tag": "6",
       "percent": 100
     }
   ]
