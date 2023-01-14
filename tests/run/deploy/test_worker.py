@@ -6,10 +6,10 @@ import pytest
 
 import lib
 from run._config import RESPELLING_DELIM
-from run.data._loader import Language, Session
+from run.data._loader import Language
 from run.data._loader.english.m_ailabs import JUDY_BIEBER
 from run.deploy.worker import FlaskException, validate_and_unpack
-from tests.run._utils import make_mock_tts_package
+from tests.run._utils import make_mock_tts_package, make_session
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ def test_flask_exception():
 
 def test_validate_and_unpack():
     """Test `validate_and_unpack` handles all sorts of arguments."""
-    sesh = Session((JUDY_BIEBER, "sesh"))
+    sesh = make_session(JUDY_BIEBER, "sesh")
     script = "This is a exposé. ABC."
     _, package = make_mock_tts_package()
 

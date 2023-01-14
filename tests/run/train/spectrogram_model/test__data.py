@@ -133,16 +133,16 @@ def test__get_loudness__quieter_audio():
     block_size = 0.4
     audio = lib.audio.full_scale_sine_wave(sample_rate) / 100000
     alignment = Alignment((0, 1), (0, block_size), (0, 1))
-    loundess = _data._get_loudness_annotation(
-        audio=audio,
-        alignment=alignment,
-        block_size=block_size,
-        precision=5,
-        sample_rate=sample_rate,
-        filter_class="DeMan",
-        get_anno=_get_loudness_annotation,
-    )
-    assert loundess is None
+    with pytest.raises(AssertionError):
+        _data._get_loudness_annotation(
+            audio=audio,
+            alignment=alignment,
+            block_size=block_size,
+            precision=5,
+            sample_rate=sample_rate,
+            filter_class="DeMan",
+            get_anno=_get_loudness_annotation,
+        )
 
 
 def test__random_loudness_annotations():

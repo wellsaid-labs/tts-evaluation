@@ -600,8 +600,8 @@ def preprocess(
             a given piece of text.
         ...
     """
-    num_anno = 6
-    inputs = Inputs([], [], [[], []], [], [], [], num_anno, device)
+    num_anno = None
+    inputs = Inputs([], [], [[], []], [], [], [], 0, device)
     iter_ = zip(wrap.session, wrap.span, wrap.context, wrap.loudness, wrap.tempo, wrap.respellings)
     Item = typing.Tuple[struc.Session, SpanDoc, SpanDoc, SliceAnnos, SliceAnnos, TokenAnnos]
     iter_ = typing.cast(typing.Iterator[Item], iter_)
@@ -666,15 +666,21 @@ def preprocess(
         loudness_embed = _embed_anno(len(chars), loudness, device, start_char, **loudness_kwargs)
         tempo_embed = _embed_anno(len(chars), tempo, device, start_char, **tempo_kwargs)
 
+        # TODO: Use the average loudness and tempo annotations. We should consider having
+        # them as a seperate annotation, so that, the user can't accidently trick the model
+        # into changing sessions.
+
         # loudness_embed    (torch.FloatTensor [num_tokens, 3]) (cat)
         # tempo_embed       (torch.FloatTensor [num_tokens, 3]) →
         # [num_tokens, num_anno]
         anno_embed = torch.cat((loudness_embed, tempo_embed), dim=1)
-        assert anno_embed.shape[1] == num_anno
+        assert num_anno is None or anno_embed.shape[1] == num_anno
+        num_anno = anno_embed.shape[1]
 
         # anno_embed    (torch.FloatTensor [num_tokens, num_anno]) (cat)
         # embed         (torch.FloatTensor [num_tokens, embedding_size]) →
         # [num_tokens, embedding_size + num_anno]
         typing.cast(list, inputs.token_embeddings).append(torch.cat((anno_embed, embed), dim=1))
 
-    return dataclasses.replace(inputs)
+    assert num_anno is not None
+    return dataclasses.replace(inputs, num_anno=num_anno)

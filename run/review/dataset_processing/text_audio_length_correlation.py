@@ -14,7 +14,6 @@ Usage:
 """
 import collections
 import logging
-import random
 import typing
 
 import numpy
@@ -28,10 +27,9 @@ from streamlit.delta_generator import DeltaGenerator
 import lib
 import run
 from lib.text.utils import Pronunciation, get_pronunciation, get_pronunciations, load_cmudict_syl
-from run._config.data import _include_span
 from run._config.labels import _speaker
 from run._config.lang import _get_long_abbrevs, get_avg_audio_length, get_max_audio_length
-from run._streamlit import audio_to_url, clip_audio, st_ag_grid, st_tqdm
+from run._streamlit import audio_to_url, clip_audio, get_spans, st_ag_grid
 from run._utils import Dataset, get_datasets
 from run.data._loader import Span, Speaker
 
@@ -43,42 +41,6 @@ logger = logging.getLogger(__name__)
 @st.experimental_singleton()
 def _get_datasets() -> typing.Tuple[Dataset, Dataset]:
     return get_datasets(False)
-
-
-def _random_speech_segments(_train_dataset: Dataset):
-    """Get random speech segments while balancing each of the speakers.
-
-    NOTE: This implementation of sampling speech segments is simpler than others. This is because
-          in other implementations we are trying to sample an interval of data. To ensure we
-          sample proportionally, we need to oversample longer passages. In this case, we are
-          directly sampling from a fixed pool of non-overlapping spans. With that in mind, we
-          can just sample uniformly, and ensure that every alignment has an equal chance of
-          getting sampled.
-    """
-    counter = {s: 0.0 for s in _train_dataset.keys()}
-    data = {k: [s for p in v for s in p.speech_segments] for k, v in _train_dataset.items()}
-    while True:
-        speaker = lib.utils.corrected_random_choice(counter)
-        span = random.choice(data[speaker])
-        if _include_span(span):
-            counter[span.speaker] += span.audio_length
-            yield span
-
-
-@st.experimental_singleton()
-def _get_spans(
-    _train_dataset: Dataset, speaker: typing.Optional[Speaker], num_spans: int
-) -> typing.Tuple[typing.List[Span], typing.List[numpy.ndarray]]:
-    """Get `num_spans` spans from `_train_dataset` for `speaker`."""
-    with st.spinner("Making spans..."):
-        _train_dataset = _train_dataset if speaker is None else {speaker: _train_dataset[speaker]}
-        train_gen = _random_speech_segments(_train_dataset)
-        spans = [next(train_gen) for _ in st_tqdm(range(num_spans), num_spans)]
-
-    with st.spinner("Loading audio..."):
-        signals = [s.audio() for s in st_tqdm(spans)]
-
-    return spans, signals
 
 
 def _get_letter_feats(text: str, common_punct: typing.Set[str]) -> typing.Dict[str, int]:
@@ -449,7 +411,7 @@ def main():
             "\n"
             "- This analyzes the correlation between character counts and audio length. This has "
             "  an option for filtering out uncommon characters.\n"
-            "- This analyzes speech segments; however, if you wanted to analyze "
+            "- This analyzes training data spans; however, if you wanted to analyze "
             "  individual words you can review alignments instead. Unfortunately, these are "
             "  also less accurate because speech doesn't have clear word boundaries.\n"
             "- This doesn't analyze pronunciation; however, you can analyze it. Keep in "
@@ -459,7 +421,7 @@ def main():
             "  the first word in CMUDict, if there are multiple."
         )
 
-    train_dataset, _ = _get_datasets()
+    train_dataset, dev_dataset = _get_datasets()
 
     form: DeltaGenerator = st.form("settings")
     question = "How many span(s) do you want to generate?"
@@ -468,9 +430,9 @@ def main():
     speakers = [None] + list(train_dataset.keys())
     speaker: typing.Optional[Speaker] = form.selectbox("Speaker", speakers, format_func=format_func)
     question = "How often do characters need to show up, in percent, for them to be analyzed?"
-    char_threshold: float = int(form.number_input(question, 0, 100, 2, 1)) / 100
+    char_threshold: float = int(form.number_input(question, 0, 100, 1, 1)) / 100
     question = "What is the slowest authentic pace of speech? (See charts to determine this value)"
-    slowest_pace = float(form.number_input(question, 0.0, None, 1.4))
+    slowest_pace = float(form.number_input(question, 0.0, None, 1.6))
     analyze_alignments: bool = form.checkbox("Analyze Individual Alignments")
     # NOTE: Generally, we have found that phonemes and syllables are not helpful. They are also
     # restrictive because we cannot always find pronunciation data, so this is turned off by
@@ -479,10 +441,11 @@ def main():
     # TODO: Warn the user if pronunciations have different counts.
     # TODO: Add additional strategies for picking pronunciations like by part of speech.
     pick_first: bool = form.checkbox("Pick First Pronunciation (if there are multiple)", True)
+    dev_speakers: bool = form.checkbox("Analyze Only Dev Speakers", True)
     if not form.form_submit_button("Submit"):
         return
 
-    spans, clips = _get_spans(train_dataset, speaker, num_spans)
+    spans, clips = get_spans(train_dataset, dev_dataset, speaker, num_spans, dev_speakers)
 
     with st.spinner("Finding common punctuation marks..."):
         common_punct = collections.Counter()

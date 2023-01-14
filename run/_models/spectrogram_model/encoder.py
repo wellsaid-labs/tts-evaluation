@@ -326,7 +326,6 @@ class Encoder(torch.nn.Module):
             token_embed[:, :, extra_rows + inputs.num_anno :],
         )
         token_embed = torch.cat(token_embed, dim=2)
-        assert token_embed.shape[2] + inputs.num_anno + extra_rows == self.max_token_embed_size
 
         # [batch_size, num_tokens, num_anno] →
         # [batch_size, num_tokens, hidden_size]

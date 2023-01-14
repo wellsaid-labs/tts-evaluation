@@ -200,7 +200,10 @@ _SPEAKER_ID_TO_SESSION: typing.Dict[int, typing.Tuple[Speaker, str]] = {
     45105608: (english.wsl.SELECTQUOTE__CUSTOM_VOICE, "SelectQuote_Script2"),
 }
 SPEAKER_ID_TO_SESSION: typing.Dict[int, Session]
-SPEAKER_ID_TO_SESSION = {k: Session(args) for k, args in _SPEAKER_ID_TO_SESSION.items()}
+# TODO: Add the correct loudness and tempo averages for each speaker, and session.
+SPEAKER_ID_TO_SESSION = {
+    k: Session(*args, -20, 1.0, 1.0) for k, args in _SPEAKER_ID_TO_SESSION.items()
+}
 
 
 class FlaskException(Exception):
@@ -374,7 +377,7 @@ if __name__ == "__main__" or "GUNICORN" in os.environ:
     TTS_PACKAGE = typing.cast(TTSPackage, load(TTS_PACKAGE_PATH, DEVICE))
 
     vocab = set(TTS_PACKAGE.session_vocab())
-    app.logger.info("Loaded speakers: %s", "\n".join(list(set(str(s) for s, _ in vocab))))
+    app.logger.info("Loaded speakers: %s", "\n".join(list(set(str(s.spk) for s in vocab))))
 
     for session in SPEAKER_ID_TO_SESSION.values():
         if session not in vocab:
