@@ -693,3 +693,15 @@ def test_offset_slices():
     assert offset_slices([slice(0, 1), slice(1, 2)], updates) == [slice(0, 0), slice(0, 0)]
     updates = [(slice(0, 1), 2), (slice(1, 2), 2)]
     assert offset_slices([slice(0, 1), slice(1, 2)], updates) == [slice(0, 2), slice(2, 4)]
+
+
+def test_arange():
+    """Test `lib.utils.arange` is similar to `range`."""
+    assert list(range(0, 10, 1)) == list(lib.utils.arange(0, 10, 1))
+    assert list(range(0, -10, -1)) == list(lib.utils.arange(0, -10, -1))
+    assert list(range(0, -10, 1)) == list(lib.utils.arange(0, -10, 1))
+    assert list(range(0, 10, -1)) == list(lib.utils.arange(0, 10, -1))
+    result = [round(i, 1) for i in lib.utils.arange(0, 1, 0.1)]
+    assert result == [round(i / 10, 1) for i in range(0, 10, 1)]
+    result = [round(i, 1) for i in lib.utils.arange(0, -1, -0.1)]
+    assert result == [round(i / 10, 1) for i in range(0, -10, -1)]

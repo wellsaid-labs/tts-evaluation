@@ -11,13 +11,7 @@ import lib
 import run
 from lib.text import XMLType, natural_keys
 from run._config import DEFAULT_SCRIPT
-from run._streamlit import (
-    audio_to_web_path,
-    load_tts,
-    paths_to_html_download_link,
-    st_html,
-    web_path_to_url,
-)
+from run._streamlit import audio_to_web_path, load_tts, st_download_files, st_html, web_path_to_url
 from run._tts import CHECKPOINTS_LOADERS, batch_text_to_speech
 from run.data._loader import Session, Speaker
 
@@ -78,7 +72,7 @@ def main():
     with st.spinner("Making zipfile..."):
         st.text("")
         zip_name = f"{speaker_name}_samples.zip"
-        st_html(paths_to_html_download_link(zip_name, f"📁 Download All {len(paths)} (zip)", paths))
+        st_download_files(zip_name, f"📁 Download All {len(paths)} (zip)", paths)
 
     st.success(f"Finished! {lib.utils.mazel_tov()}")
 

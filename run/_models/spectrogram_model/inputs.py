@@ -77,6 +77,7 @@ class Inputs:
     # The number of annotations present
     num_anno: int
 
+    # NOTE: The `device` to initialize new `Tensor`s with.
     device: torch.device = torch.device("cpu")
 
     # Embeddings associated with each token in each sequence
@@ -133,6 +134,23 @@ class Inputs:
             assert all(len(e) == len(t) for e, t in zip(self.token_embeddings, self.tokens))
         else:
             assert self.token_embeddings.shape[1] == max(len(seq) for seq in self.tokens)
+
+    def get(self, idx: int):
+        return Inputs(
+            tokens=self.tokens[idx : idx + 1],
+            seq_metadata=[m[idx : idx + 1] for m in self.seq_metadata],
+            token_metadata=[m[idx : idx + 1] for m in self.token_metadata],
+            # TODO: `self.token_embeddings` may be purged from this object to save memory once
+            # it has been initialized. In Python 3.10, we can solve this, by making
+            # `self.token_embeddings` `kw_only` so it doesn't hang around after initialization.
+            token_embeddings=[self.token_embeddings_padded[idx, : self.num_tokens[idx]]],
+            slices=self.slices[idx : idx + 1],
+            max_audio_len=self.max_audio_len[idx : idx + 1],
+            num_anno=self.num_anno,
+            # TODO: `device` is only used for initialization, let's also make it `kw_only` once
+            # we upgrade to Python 3.10.
+            device=self.token_embeddings_padded.device,
+        )
 
     @property
     def anno_embeddings(self):

@@ -18,7 +18,6 @@ import os
 import pathlib
 import platform
 import pprint
-import random
 import resource
 import sys
 import time
@@ -44,7 +43,6 @@ import lib
 import run
 from lib.distributed import ListedDict, is_master
 from lib.environment import load, load_most_recent_file
-from lib.text import XMLType, xml_to_text
 from lib.utils import dataclass_as_dict, flatten_2d, seconds_to_str
 from run._config import (
     Cadence,
@@ -54,11 +52,8 @@ from run._config import (
     get_dataset_label,
     get_model_label,
     get_timer_label,
-    load_spacy_nlp,
 )
-from run._models.spectrogram_model import Inputs, Mode, Preds, SpectrogramModel
 from run._utils import Dataset, get_datasets
-from run.data._loader.structures import Language, Session, Speaker
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import comet_ml
@@ -83,6 +78,7 @@ class Context(enum.Enum):
     TRAIN: typing.Final = "train"
     EVALUATE: typing.Final = "evaluate"
     EVALUATE_INFERENCE: typing.Final = "evaluate_inference"
+    EVALUATE_TTS: typing.Final = "evaluate_tts"
 
 
 class CometMLExperiment:
@@ -984,23 +980,3 @@ class Timer:
                 label = get_timer_label(name, device=Device.CUDA, **kwargs)
                 times[label] += prev.cuda.elapsed_time(next.cuda) / 1000
         return dict(times)
-
-
-def process_select_cases(
-    model: SpectrogramModel,
-    avail_sessions: typing.Set[Session],
-    cases: typing.List[typing.Tuple[Language, XMLType]],
-    speakers: typing.Set[Speaker],
-    num_cases: int = 5,
-) -> typing.Tuple[Inputs, Preds]:
-    """Get the spectrogram model prediction for `num_cases` sampled from `cases` limited to
-    `speakers`."""
-    cases = [random.choice(cases) for _ in range(num_cases)]
-    xmls = [x for _, x in cases]
-    docs = [load_spacy_nlp(l)(xml_to_text(t)) for l, t in cases]
-    # NOTE: `seshs` is sorted so `random.choice` produces consistent results.
-    vocab = sorted(avail_sessions)
-    seshs = [[s for s in vocab if s[0].language is l and s[0] in speakers] for l, _ in cases]
-    seshs = [random.choice(choices) for choices in seshs]
-    inputs_ = Inputs.from_xml_batch(xmls, docs, seshs)  # type: ignore
-    return inputs_, model(inputs_, mode=Mode.INFER)

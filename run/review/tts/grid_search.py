@@ -31,8 +31,7 @@ from run._config import (
 from run._streamlit import (
     audio_to_web_path,
     path_label,
-    paths_to_html_download_link,
-    st_html,
+    st_download_files,
     st_select_paths,
     web_path_to_url,
 )
@@ -122,8 +121,7 @@ def main():
 
     with st.spinner("Making Zipfile..."):
         st.text("")
-        label = "📁 Download Audio(s) (zip)"
-        st_html(paths_to_html_download_link(f"{file_name}.zip", label, paths))
+        st_download_files(f"{file_name}.zip", "📁 Download Audio(s) (zip)", paths)
 
 
 if __name__ == "__main__":

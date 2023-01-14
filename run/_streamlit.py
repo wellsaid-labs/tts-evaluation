@@ -12,6 +12,7 @@ import config as cf
 import numpy as np
 import tqdm
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, JsCode
+from streamlit.delta_generator import DeltaGenerator
 from third_party import LazyLoader
 
 import lib
@@ -113,7 +114,7 @@ def audio_to_html(
     return f'<audio {attrs} src="{audio_to_url(audio, name, **kwargs)}"></audio>'
 
 
-def paths_to_html_download_link(
+def _paths_to_html_download_link(
     name: str,
     label: str,
     paths: typing.List[pathlib.Path],
@@ -126,6 +127,11 @@ def paths_to_html_download_link(
         for path, archive_path in zip(paths, archive_paths_):
             file_.write(path, arcname=archive_path)
     return f'<a href="{web_path_to_url(web_path)}" download="{name}">{label}</a>'
+
+
+def st_download_files(*args, **kwargs):
+    """Create a link to download a zip file with `paths`."""
+    st_html(_paths_to_html_download_link(*args, **kwargs))
 
 
 _MapInputVar = typing.TypeVar("_MapInputVar")
@@ -302,7 +308,16 @@ def path_label(path: pathlib.Path) -> str:
     )
 
 
-def st_select_path(label: str, dir: pathlib.Path, suffix: str) -> pathlib.Path:
+# TODO: Offer options to override `st` throughout the utility functions or consider integrating with
+# their `DeltaGenerator`.
+
+
+def st_select_path(
+    label: str,
+    dir: pathlib.Path,
+    suffix: str,
+    st: DeltaGenerator = typing.cast(DeltaGenerator, st),
+) -> pathlib.Path:
     """Display a path selector for the directory `dir`."""
     options = [p for p in dir.glob("**/*") if p.suffix == suffix]
     options = sorted(options, key=lambda x: natural_keys(str(x)), reverse=True)

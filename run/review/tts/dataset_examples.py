@@ -42,8 +42,7 @@ from run._streamlit import (
     get_dev_dataset,
     load_tts,
     make_temp_web_dir,
-    paths_to_html_download_link,
-    st_html,
+    st_download_files,
     web_path_to_url,
 )
 from run._tts import CHECKPOINTS_LOADERS, batch_span_to_speech
@@ -138,8 +137,7 @@ def main():
     with st.spinner("Making Zipfile..."):
         paths = [pathlib.Path(r["Audio Path"]) for r in results]
         archive_paths = [pathlib.Path(str(r["Id"]) + p.suffix) for r, p in zip(results, paths)]
-        label = "Download Audio(s)"
-        st_html(paths_to_html_download_link("audios.zip", label, paths, archive_paths))
+        st_download_files("audios.zip", "Download Audio(s)", paths, archive_paths)
 
 
 if __name__ == "__main__":
