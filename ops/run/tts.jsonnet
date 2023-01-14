@@ -165,8 +165,8 @@ function(
       },
     },
     concurrency: stream.concurrency,
-    timeout: 3600,  // 1hr
-    restartTimeout: 600,  // 10 minutes
+    timeout: 300, // 5 minutes
+    restartTimeout: 300,  // 5 minutes
     legacyContainerApiKey: legacyContainerApiKey,
     traffic: [
       {

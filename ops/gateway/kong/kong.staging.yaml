@@ -30,5 +30,6 @@ resources:
     memory: 1024Mi
 
 autoscaling:
-  minReplicas: 1
+  minReplicas: 2
   maxReplicas: 3
+

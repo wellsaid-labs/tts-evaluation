@@ -350,12 +350,15 @@ livenessProbe:
 lifecycle:
   preStop:
     exec:
-      # Note kong quit has a default timeout of 10 seconds
-      command: ["/bin/sh", "-c", "/bin/sleep 15 && kong quit"]
+      # We give Kong 5 minutes + 90s to gracefully shut down. This is to account for:
+      # - the fact that we give each backend up to 5 seconds to shut down
+      # - the fact that cold start latency is at it's worst 90s or so
+      # This makes it very unlikely that Kong will terminate a request that's in flight.
+      command: ["/bin/sh", "-c", "/bin/sleep 15 && kong quit --timeout 390"]
 
 # Sets the termination grace period for pods spawned by the Kubernetes Deployment.
 # Ref: https://kubernetes.io/docs/concepts/containers/container-lifecycle-hooks/#hook-handler-execution
-terminationGracePeriodSeconds: 30
+terminationGracePeriodSeconds: 3600
 
 # Affinity for pod assignment
 # Ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#affinity-and-anti-affinity
@@ -393,7 +396,7 @@ deploymentAnnotations:
 # "resources" and, if using the controller, "ingressController.resources" in values.yaml
 autoscaling:
   enabled: true
-  minReplicas: 1
+  minReplicas: 3
   maxReplicas: 8
   metrics:
     - type: Resource
