@@ -485,8 +485,8 @@ def _visualize_inferred(args: _HandleBatchArgs, preds: Preds):
         session=args.batch.spans[item].session,
         predicted_loudness=get_average_db_rms_level(predicted_spectrogram.unsqueeze(1)).item(),
         gold_loudness=get_average_db_rms_level(gold_spectrogram.unsqueeze(1)).item(),
-        **{f"{k} Figure": link(v) for k, v in assets.items()},
-        **{k: link(v) for k, v in npy_urls.items()},
+        **{f"_{k} Figure": link(v) for k, v in assets.items()},
+        **{f"_{k}": link(v) for k, v in npy_urls.items()},
     )
 
 
