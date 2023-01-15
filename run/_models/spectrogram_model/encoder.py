@@ -189,11 +189,14 @@ class _GroupedEmbedder(torch.nn.Module):
         self.num_groups = num_groups
         self.input_size = input_size
         self.layers = [
-            torch.nn.Conv1d(
-                in_channels=input_size * num_groups if i == 0 else hidden_size * num_groups,
-                out_channels=hidden_size * num_groups,
-                kernel_size=1,
-                groups=num_groups,
+            torch.nn.Sequential(
+                torch.nn.Conv1d(
+                    in_channels=input_size * num_groups if i == 0 else hidden_size * num_groups,
+                    out_channels=hidden_size * num_groups,
+                    kernel_size=1,
+                    groups=num_groups,
+                ),
+                torch.nn.ReLU(),
             )
             for i in range(num_layers)
         ]
@@ -218,7 +221,7 @@ class _GroupedEmbedder(torch.nn.Module):
         tokens, mask = tokens.transpose(1, 2), mask.transpose(1, 2)
         mask_bool = ~mask.bool()
         for layer in self.layers:
-            tokens = torch.masked_fill(torch.relu(layer(tokens)), mask_bool, 0)
+            tokens = torch.masked_fill(layer(tokens), mask_bool, 0)
         # [batch_size, num_groups * hidden_size, num_tokens] →
         # [batch_size, num_tokens, num_groups * hidden_size]
         tokens, mask = tokens.transpose(1, 2), mask.transpose(1, 2)
