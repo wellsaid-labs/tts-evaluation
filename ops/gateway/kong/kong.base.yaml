@@ -359,7 +359,7 @@ lifecycle:
 # Sets the termination grace period for pods spawned by the Kubernetes Deployment.
 # Ref: https://kubernetes.io/docs/concepts/containers/container-lifecycle-hooks/#hook-handler-execution
 # We set this to 390 (the time we wait for Kong to gracefully quit) + 10, so there's
-# a bit of bugger.
+# a bit of buffer.
 terminationGracePeriodSeconds: 400
 
 # Affinity for pod assignment
