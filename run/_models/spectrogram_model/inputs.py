@@ -138,15 +138,18 @@ class Inputs:
             assert self.token_embeddings.shape[1] == max(len(seq) for seq in self.tokens)
 
     def get(self, idx: int):
+        num_tokens = self.num_tokens[idx]
         return Inputs(
-            tokens=self.tokens[idx : idx + 1],
+            # TODO: Remove this `slice`, it was added to make writing tests easier.
+            tokens=[self.tokens[idx][:num_tokens]],
             seq_metadata=[m[idx : idx + 1] for m in self.seq_metadata],
             token_metadata=[m[idx : idx + 1] for m in self.token_metadata],
             # TODO: `self.token_embeddings` may be purged from this object to save memory once
             # it has been initialized. In Python 3.10, we can solve this, by making
             # `self.token_embeddings` `kw_only` so it doesn't hang around after initialization.
             token_embeddings=[self.token_embeddings_padded[idx, : self.num_tokens[idx]]],
-            slices=self.slices[idx : idx + 1],
+            # TODO: Remove this `min`, it was added to make writing tests easier.
+            slices=[slice(self.slices[idx].start, min(self.slices[idx].stop, num_tokens))],
             max_audio_len=self.max_audio_len[idx : idx + 1],
             token_embed_idx=self.token_embed_idx,
             # TODO: `device` is only used for initialization, let's also make it `kw_only` once

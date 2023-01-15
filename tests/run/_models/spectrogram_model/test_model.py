@@ -452,16 +452,7 @@ def test_spectrogram_model__infer_batch_padding_invariance():
         set_stop_token_rand_offset(i)
         num_tokens_ = typing.cast(int, num_tokens[i].item())
         with fork_rng(seed=123):
-            inputs_ = dataclasses.replace(
-                inputs,
-                tokens=[t[:num_tokens_] for t in inputs.tokens][i : i + 1],
-                seq_metadata=[m[i : i + 1] for m in inputs.seq_metadata],
-                token_metadata=[m[i : i + 1] for m in inputs.token_metadata],
-                token_embeddings=[t[:num_tokens_] for t in inputs.token_embeddings][i : i + 1],
-                slices=inputs.slices[i : i + 1],
-                max_audio_len=inputs.max_audio_len[i : i + 1],
-            )
-            preds = model(inputs_, mode=Mode.INFER)
+            preds = model(inputs.get(i), mode=Mode.INFER)
 
         length = typing.cast(int, batch_preds.num_frames[i].item())
         assert_almost_equal(preds.reached_max, batch_preds.reached_max[i : i + 1])
@@ -499,22 +490,11 @@ def test_spectrogram_model__train_batch_padding_invariance():
         model.zero_grad()
 
     length = typing.cast(int, target_lengths[i].item())
-    inputs = dataclasses.replace(
-        batch_inputs,
-        tokens=[t[:num_tokens] for t in batch_inputs.tokens][i : i + 1],
-        seq_metadata=[m[i : i + 1] for m in batch_inputs.seq_metadata],
-        token_metadata=[
-            [s[:num_tokens] for s in m[i : i + 1]] for m in batch_inputs.token_metadata
-        ],
-        token_embeddings=[t[:num_tokens] for t in batch_inputs.token_embeddings][i : i + 1],
-        slices=[slice(s.start, min(s.stop, num_tokens)) for s in batch_inputs.slices[i : i + 1]],
-        max_audio_len=batch_inputs.max_audio_len[i : i + 1],
-    )
 
     with fork_rng(seed=123):
         target_mask = target_mask[:length, i : i + 1]
         target_frames = target_frames[:length, i : i + 1]
-        preds = model(inputs, target_frames=target_frames, target_mask=target_mask)
+        preds = model(batch_inputs.get(i), target_frames=target_frames, target_mask=target_mask)
         (preds.frames.sum() + preds.stop_tokens.sum()).backward()
         grad = [p.grad for p in model.parameters() if p.grad is not None]
         model.zero_grad()
