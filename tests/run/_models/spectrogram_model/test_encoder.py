@@ -172,11 +172,44 @@ def test__right_masked_bi_rnn__multilayer_mask():
     assert result[:-padding_len].sum().item() != 0
 
 
+def test__grouped_embedder():
+    """Test `spectrogram_model.encoder._GroupedEmbedder` in a basic test."""
+    num_groups = 3
+    input_size = 3
+    num_tokens = 6
+    batch_size = 2
+    hidden_size = 7
+    tokens = [torch.randn(batch_size, num_tokens, input_size) for _ in range(num_groups)]
+    mask = [torch.ones(batch_size, num_tokens, 1, dtype=torch.float32) for _ in range(num_groups)]
+    embed = spectrogram_model.encoder._GroupedEmbedder(input_size, hidden_size, num_groups, 2)
+    out = embed(tokens, mask)
+    assert out.shape == (batch_size, num_tokens, hidden_size)
+
+
+def test__grouped_embedder__group_invariance():
+    """Test `spectrogram_model.encoder._GroupedEmbedder` is invariant to how many groups are
+    processed together."""
+    tokens_a = torch.randn(1, 4, 1)
+    tokens_b = torch.randn(1, 4, 1)
+    mask_a = torch.tensor([[1, 0, 1, 0]])
+    mask_b = torch.tensor([[0, 1, 1, 0]])
+    null_mask = torch.tensor([[0, 0, 0, 0]])
+    embed = spectrogram_model.encoder._GroupedEmbedder(1, 7, 2, 2)
+
+    result_a = embed([tokens_a, tokens_b], [mask_a, null_mask])[0]
+    result_b = embed([tokens_a, tokens_b], [null_mask, mask_b])[0]
+    result_combined = embed([tokens_a, tokens_b], [mask_a, mask_b])[0]
+    assert_almost_equal(result_a[0], result_combined[0])
+    assert_almost_equal(result_b[1], result_combined[1])
+    assert_almost_equal((result_a[2] + result_b[2]) / 2, result_combined[2])
+    assert_almost_equal(result_a[3], result_b[3])
+
+
 def _make_encoder(
     max_tokens=10,
     max_seq_meta_values=(11, 12),
     max_token_meta_values=(13,),
-    max_token_embed_size=8,
+    max_word_embed_size=8,
     seq_meta_embed_size=6,
     token_meta_embed_size=12,
     seq_meta_embed_dropout=0.1,
@@ -194,15 +227,22 @@ def _make_encoder(
     max_frames_per_token=4.6875,
 ):
     """Make `encoder.Encoder` and it's inputs for testing."""
+    annos = ("anno_embed", "anno_mask")
+    token_embed_idx = {
+        annos[0]: slice(0, max_anno_features),
+        annos[1]: slice(max_anno_features, max_anno_features + 1),
+        "word_embed": slice(max_anno_features + 1, max_anno_features + 1 + max_word_embed_size),
+    }
     encoder = cf.partial(spectrogram_model.encoder.Encoder)(
         max_tokens=max_tokens,
         max_seq_meta_values=max_seq_meta_values,
         max_token_meta_values=max_token_meta_values,
-        max_token_embed_size=max_token_embed_size,
+        max_word_embed_size=max_word_embed_size,
         seq_meta_embed_size=seq_meta_embed_size,
         token_meta_embed_size=token_meta_embed_size,
         seq_meta_embed_dropout=seq_meta_embed_dropout,
         max_anno_features=max_anno_features,
+        annos=[annos],
         out_size=out_size,
         hidden_size=hidden_size,
         num_conv_layers=num_conv_layers,
@@ -219,14 +259,17 @@ def _make_encoder(
     sessions = torch.randint(1, max_seq_meta_values[1], (batch_size,))
     tokens = torch.randint(1, max_tokens, (batch_size, num_tokens_pad))
     token_meta = torch.randint(1, max_tokens, (num_token_metadata, batch_size, num_tokens_pad))
-    token_embeddings = torch.randn(batch_size, num_tokens_pad, max_token_embed_size)
+    word_embed = torch.randn(batch_size, num_tokens_pad, max_word_embed_size)
+    anno_embed = torch.randn(batch_size, num_tokens_pad, max_anno_features)
+    anno_mask = torch.ones(batch_size, num_tokens_pad, 1)
+    token_embed = torch.cat((anno_embed, anno_mask, word_embed), dim=2)
     inputs = Inputs(
         tokens=tokens.tolist(),
         seq_metadata=[speakers.tolist(), sessions.tolist()],
         token_metadata=token_meta.tolist(),
-        token_embeddings=list(token_embeddings.unbind()),
+        token_embeddings=list(token_embed.unbind()),
         slices=[slice(context, -context) for _ in range(batch_size)],
-        num_anno=max_anno_features,
+        token_embed_idx=token_embed_idx,
         max_audio_len=[int(max_frames_per_token * num_tokens) for _ in range(batch_size)],
     )
     return encoder, inputs, (num_tokens, batch_size, out_size)

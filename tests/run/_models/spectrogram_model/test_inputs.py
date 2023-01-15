@@ -336,7 +336,7 @@ def test__preprocess():
     ]
     assert processed.token_metadata[0] == [casing]
     context = [
-        Context.SCRIPT,  # I
+        Context.SCRIPT_START,  # I
         Context.SCRIPT,  # n
         Context.SCRIPT,
         Context.SCRIPT,  # 1
@@ -351,7 +351,7 @@ def test__preprocess():
         Context.SCRIPT,  # u
         Context.SCRIPT,  # .
         Context.SCRIPT,  # s
-        Context.SCRIPT,  # .
+        Context.SCRIPT_STOP,  # .
         Context.CONTEXT,
         Context.CONTEXT,  # A
         Context.CONTEXT,  # r
@@ -360,39 +360,44 @@ def test__preprocess():
     ]
     assert processed.token_metadata[1] == [context]
     vocab: spacy.vocab.Vocab = nlp.vocab
-    word_embedding_length = nlp.meta["vectors"]["width"]
+    word_embed_len = nlp.meta["vectors"]["width"]
     # NOTE: The word embeddings are case sensitive.
-    word_embeddings = [
+    word_embeds = [
         torch.from_numpy(vocab["In"].vector).unsqueeze(0).repeat(2, 1),
-        torch.zeros(1, word_embedding_length),
+        torch.zeros(1, word_embed_len),
         torch.from_numpy(vocab["1968"].vector).unsqueeze(0).repeat(4, 1),
-        torch.zeros(1, word_embedding_length),
+        torch.zeros(1, word_embed_len),
         torch.from_numpy(vocab["the"].vector).unsqueeze(0).repeat(3, 1),
-        torch.zeros(1, word_embedding_length),
+        torch.zeros(1, word_embed_len),
         torch.from_numpy(vocab["U.S."].vector).unsqueeze(0).repeat(4, 1),
-        torch.zeros(1, word_embedding_length),
+        torch.zeros(1, word_embed_len),
         torch.from_numpy(vocab["Army"].vector).unsqueeze(0).repeat(4, 1),
     ]
-    contextual_embedding_length = typing.cast(FloatsXd, doc[0].tensor).shape[0]
-    contextual_embeddings = [
+    contextual_embed_len = typing.cast(FloatsXd, doc[0].tensor).shape[0]
+    contextual_embeds = [
         torch.from_numpy(doc[0].tensor).unsqueeze(0).repeat(2, 1),
-        torch.zeros(1, contextual_embedding_length),
+        torch.zeros(1, contextual_embed_len),
         torch.from_numpy(doc[1].tensor).unsqueeze(0).repeat(4, 1),
-        torch.zeros(1, contextual_embedding_length),
+        torch.zeros(1, contextual_embed_len),
         torch.from_numpy(doc[2].tensor).unsqueeze(0).repeat(3, 1),
-        torch.zeros(1, contextual_embedding_length),
+        torch.zeros(1, contextual_embed_len),
         torch.from_numpy(doc[3].tensor).unsqueeze(0).repeat(4, 1),
-        torch.zeros(1, contextual_embedding_length),
+        torch.zeros(1, contextual_embed_len),
         torch.from_numpy(doc[4].tensor).unsqueeze(0).repeat(4, 1),
     ]
-    stack = (
-        torch.zeros(len(script), 6),
-        torch.cat(contextual_embeddings),
-        torch.cat(word_embeddings),
-    )
-    token_embeddings = torch.cat(stack, dim=1)
+    word_embed = torch.cat((torch.cat(contextual_embeds), torch.cat(word_embeds)), dim=1)
     assert len(processed.token_embeddings) == 1
-    assert torch.allclose(processed.token_embeddings[0], token_embeddings)
+    assert processed.token_embed_idx == dict(
+        default_mask=slice(0, 1),
+        loudness_anno_embed=slice(1, 3),
+        loudness_anno_mask=slice(3, 4),
+        sesh_loudness_embed=slice(4, 5),
+        tempo_anno_embed=slice(5, 7),
+        tempo_anno_mask=slice(7, 8),
+        sesh_tempo_embed=slice(8, 9),
+        word_embed=slice(9, 405),
+    )
+    assert torch.allclose(processed.anno_embed("word_embed"), word_embed)
 
 
 def test__get_case():
@@ -406,23 +411,23 @@ def test__get_case():
 
 def test__embed_anno():
     """Test `_embed_anno` on basic cases."""
-    annotations = [(slice(0, 2), 20), (slice(3, 4), -10), (slice(6, 8), 0.99)]
+    annotations = [(slice(0, 2), 2, 20), (slice(3, 4), 1, -10), (slice(6, 8), 1, 0.99)]
 
-    embedding = _embed_anno(9, annotations, torch.device("cpu"))
+    embed, mask = _embed_anno(annotations, 9, torch.device("cpu"), avg_anno_length=10)
     expected = [
         [20, 20, 0, -10, 0, 0, 0.99, 0.99, 0],
-        [0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [1, 1, 0, 1, 0, 0, 1, 1, 0],
+        [-0.8, -0.8, 0, -0.9, 0, 0, -0.9, -0.9, 0],
     ]
-    assert_almost_equal(embedding, torch.tensor(expected).transpose(0, 1))
+    assert_almost_equal(embed, torch.tensor(expected).transpose(0, 1))
+    assert_almost_equal(mask.long(), torch.tensor([1, 1, 0, 1, 0, 0, 1, 1, 0]).unsqueeze(1))
 
-    embedding = _embed_anno(9, annotations, torch.device("cpu"), 1, -1, 10)
+    embed, mask = _embed_anno(annotations, 9, torch.device("cpu"), 1, -1, 10, avg_anno_length=10)
     expected = [
         [0, 2.1, 2.1, 0, -0.9, 0, 0, 0.199, 0.199],
-        [0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 1, 1, 0, 1, 0, 0, 1, 1],
+        [0, -0.8, -0.8, 0, -0.9, 0, 0, -0.9, -0.9],
     ]
-    assert_almost_equal(embedding, torch.tensor(expected).transpose(0, 1))
+    assert_almost_equal(embed, torch.tensor(expected).transpose(0, 1))
+    assert_almost_equal(mask, torch.tensor([0, 1, 1, 0, 1, 0, 0, 1, 1]).unsqueeze(1))
 
 
 def test__preprocess__respelling():
@@ -484,7 +489,7 @@ def test__preprocess__respelling():
     context = [
         Context.CONTEXT,  # D
         Context.CONTEXT,  # o
-        Context.SCRIPT,  # n
+        Context.SCRIPT_START,  # n
         Context.SCRIPT,  # '
         Context.SCRIPT,  # t
         Context.SCRIPT,
@@ -519,7 +524,7 @@ def test__preprocess__respelling():
         Context.SCRIPT,  # F
         Context.SCRIPT,  # L
         Context.SCRIPT,  # O
-        Context.SCRIPT,  # O
+        Context.SCRIPT_STOP,  # O
         Context.CONTEXT,  # ?
     ]
     assert processed.token_metadata[1] == [context]
@@ -532,29 +537,7 @@ def test__preprocess__respelling():
 
 
 def test__preprocess__slice_anno():
-    """Test that `_preprocess` handles annotations along with context."""
-    nlp = load_spacy_nlp(Language.ENGLISH)
-    xml = "<loudness value='-21.0'>not <respell value='uh-BOWT'>about</respell> what"
-    xml += "<tempo value='5.0'> </tempo>I gain</loudness>"
-    xml = XMLType(xml)
-    sesh = make_session()
-    script = "analysis, not about what I gain and"
-    doc = nlp(script)
-    input_ = InputsWrapper.from_xml(xml, doc[2:-1], sesh, doc)
-    processed = preprocess(input_, {}, {}, lambda t: len(t))
-    l_vals = [[0] * len("analysis, ") + [-21] * len("not uh-BOWT what I gain") + [0] * len(" and")]
-    l_len = [[0] * len("analysis, not uh-BOWT what I gain and")]
-    l_mask = [[0] * len("analysis, ") + [1] * len("not uh-BOWT what I gain") + [0] * len(" and")]
-    t_vals = [[0] * len("analysis, not uh-BOWT what") + [5] * len(" ") + [0] * len("I gain and")]
-    t_len = [[0] * len("analysis, not uh-BOWT what I gain and")]
-    t_mask = [[0] * len("analysis, not uh-BOWT what") + [1] * len(" ") + [0] * len("I gain and")]
-    result = l_vals + l_len + l_mask + t_vals + t_len + t_mask
-    assert len(result[0]) == processed.token_embeddings[0].shape[0]
-    assert processed.token_embeddings[0][:, : processed.num_anno].T.long().tolist() == result
-
-
-def test__preprocess__duplicate_respelling():
-    """Test that `_preprocess` handles respelling the same word two different ways."""
+    """Test that `_preprocess` handles annotations along with context and duplicate respellings."""
     nlp = load_spacy_nlp(Language.ENGLISH)
     xml = "<loudness value='-21.0'>not <respell value='uh-BOWT'>about</respell> "
     xml += "<respell value='WHAT'>about</respell>"
@@ -564,13 +547,32 @@ def test__preprocess__duplicate_respelling():
     script = "analysis, not about about I gain and"
     doc = nlp(script)
     input_ = InputsWrapper.from_xml(xml, doc[2:-1], sesh, doc)
-    processed = preprocess(input_, {}, {}, lambda t: len(t))
-    l_vals = [[0] * len("analysis, ") + [-21] * len("not uh-BOWT WHAT I gain") + [0] * len(" and")]
-    l_len = [[0] * len("analysis, not uh-BOWT WHAT I gain and")]
-    l_mask = [[0] * len("analysis, ") + [1] * len("not uh-BOWT WHAT I gain") + [0] * len(" and")]
-    t_vals = [[0] * len("analysis, not uh-BOWT WHAT") + [5] * len(" ") + [0] * len("I gain and")]
-    t_len = [[0] * len("analysis, not uh-BOWT WHAT I gain and")]
-    t_mask = [[0] * len("analysis, not uh-BOWT WHAT") + [1] * len(" ") + [0] * len("I gain and")]
-    result = l_vals + l_len + l_mask + t_vals + t_len + t_mask
-    assert len(result[0]) == processed.token_embeddings[0].shape[0]
-    assert processed.token_embeddings[0][:, : processed.num_anno].T.long().tolist() == result
+    avg_anno_length = 40
+    kwargs = {"avg_anno_length": avg_anno_length}
+    processed = preprocess(input_, kwargs, kwargs, lambda t: len(t))
+
+    # Loudness embedding
+    l_anno_len = len("not uh-BOWT WHAT I gain")
+    l_len_val = len("not about about I gain") / avg_anno_length - 1
+    l_vals = [[0] * len("analysis, ") + [-21] * l_anno_len + [0] * len(" and")]
+    l_len = [[0] * len("analysis, ") + [l_len_val] * l_anno_len + [0] * len(" and")]
+    result = torch.tensor(l_vals + l_len, dtype=torch.float)
+    assert_almost_equal(processed.anno_embed("loudness_anno_embed")[0].T, result)
+
+    l_mask = [[0] * len("analysis, ") + [1] * l_anno_len + [0] * len(" and")]
+    result = torch.tensor(l_mask, dtype=torch.float)
+    assert_almost_equal(processed.anno_embed("loudness_anno_mask")[0].T, result)
+
+    # Tempo embedding
+    t_anno_len = len(" ")
+    t_len_val = t_anno_len / avg_anno_length - 1
+    t_anno_prefix_len = len("analysis, not uh-BOWT WHAT")
+    t_anno_suffix_len = len("I gain and")
+    t_vals = [[0] * t_anno_prefix_len + [5] * t_anno_len + [0] * t_anno_suffix_len]
+    t_len = [[0] * t_anno_prefix_len + [t_len_val] * len(" ") + [0] * t_anno_suffix_len]
+    result = torch.tensor(t_vals + t_len, dtype=torch.float)
+    assert_almost_equal(processed.anno_embed("tempo_anno_embed")[0].T, result)
+
+    t_mask = [[0] * t_anno_prefix_len + [1] * len(" ") + [0] * t_anno_suffix_len]
+    result = torch.tensor(t_mask, dtype=torch.float)
+    assert_almost_equal(processed.anno_embed("tempo_anno_mask")[0].T, result)

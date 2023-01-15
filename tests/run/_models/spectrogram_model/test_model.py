@@ -38,12 +38,22 @@ class Params(typing.NamedTuple):
     max_frames: int = 5
     max_num_tokens: int = 6
     max_tokens_index: int = 0
-    max_token_embed_size: int = 20
+    max_word_embed_size: int = 20
     max_anno_features: int = 1
+    annos: typing.Tuple[str, str] = ("anno_embed", "anno_mask")
 
     @property
     def max_frames_per_token(self) -> float:
         return self.max_frames / self.max_num_tokens
+
+    @property
+    def token_embed_idx(self):
+        idx = self.max_anno_features
+        return {
+            self.annos[0]: slice(0, idx),
+            self.annos[1]: slice(idx, idx + 1),
+            "word_embed": slice(idx + 1, idx + 1 + self.max_word_embed_size),
+        }
 
 
 def _make_spectrogram_model(
@@ -88,8 +98,9 @@ def _make_spectrogram_model(
         max_tokens=params.max_tokens,
         max_seq_meta_values=params.max_seq_meta_values,
         max_token_meta_values=tuple(),
-        max_token_embed_size=params.max_token_embed_size,
+        max_word_embed_size=params.max_word_embed_size,
         max_anno_features=params.max_anno_features,
+        annos=[params.annos],
         token_meta_embed_size=0,
         seq_meta_embed_size=seq_meta_embed_size,
         num_frame_channels=params.num_frame_channels,
@@ -124,16 +135,18 @@ def _make_inputs(
     for i in range(params.batch_size):
         tokens[i] = tokens[i][: num_tokens[i]]
 
-    token_embeddings_size = (params.batch_size, params.max_num_tokens, params.max_token_embed_size)
-    token_embeddings = torch.randn(*token_embeddings_size)
+    word_embed = torch.randn(params.batch_size, params.max_num_tokens, params.max_word_embed_size)
+    anno_embed = torch.randn(params.batch_size, params.max_num_tokens, params.max_anno_features)
+    anno_mask = torch.ones(params.batch_size, params.max_num_tokens, 1)
+    token_embed = torch.cat((anno_embed, anno_mask, word_embed), dim=2)
 
     inputs = Inputs(
         tokens=tokens,
         seq_metadata=[speakers, sessions],
         token_metadata=[[[] for _ in range(params.batch_size)]],
-        token_embeddings=[e[: len(t)] for t, e in zip(tokens, token_embeddings.unbind())],
+        token_embeddings=[e[: len(t)] for t, e in zip(tokens, token_embed.unbind())],
         slices=[slice(0, int(n)) for n in num_tokens],
-        num_anno=params.max_anno_features,
+        token_embed_idx=params.token_embed_idx,
         max_audio_len=[int(n * params.max_frames_per_token) for n in num_tokens],
     )
 

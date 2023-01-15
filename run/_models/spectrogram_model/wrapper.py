@@ -31,8 +31,9 @@ class SpectrogramModelWrapper(SpectrogramModel):
         max_dialects: int,
         max_styles: int,
         max_languages: int,
-        max_token_embed_size: int,
+        max_word_embed_size: int,
         max_anno_features: int,
+        annos: typing.List[typing.Tuple[str, str]],
         *args,
         **kwargs,
     ):
@@ -47,8 +48,9 @@ class SpectrogramModelWrapper(SpectrogramModel):
                 max_languages,
             ),
             max_token_meta_values=(len(Casing) * len(Pronun), len(Context)),
-            max_token_embed_size=max_token_embed_size,
+            max_word_embed_size=max_word_embed_size,
             max_anno_features=max_anno_features,
+            annos=annos,
             **kwargs,
         )
 

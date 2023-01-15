@@ -54,7 +54,9 @@ class SpectrogramModel(torch.nn.Module):
     Args:
         max_tokens: The maximum number of tokens the model will be trained on.
         max_seq_meta_values: The maximum number of metadata values the model will be trained on.
-        max_token_embed_size: The maximum size of `inputs.token_embeddings`.
+        max_word_embed_size: The maximum size of `inputs.anno_embed("token_embed")`.
+        max_anno_features: The maximum number of annotation features.
+        annos: The annotations to use along with their corresponding mask.
         seq_meta_embed_size: The size of the sequence metadata embedding.
         num_anno: The number of annotations.
         num_frame_channels: Number of channels in each frame (sometimes refered to as
@@ -70,8 +72,9 @@ class SpectrogramModel(torch.nn.Module):
         max_tokens: int,
         max_seq_meta_values: typing.Tuple[int, ...],
         max_token_meta_values: typing.Tuple[int, ...],
-        max_token_embed_size: int,
+        max_word_embed_size: int,
         max_anno_features: int,
+        annos: typing.List[typing.Tuple[str, str]],
         token_meta_embed_size: int,
         seq_meta_embed_size: int,
         num_frame_channels: int,
@@ -86,8 +89,9 @@ class SpectrogramModel(torch.nn.Module):
         self.encoder = encoder.Encoder(
             max_tokens=max_tokens,
             max_token_meta_values=max_token_meta_values,
-            max_token_embed_size=max_token_embed_size,
+            max_word_embed_size=max_word_embed_size,
             max_anno_features=max_anno_features,
+            annos=annos,
             max_seq_meta_values=max_seq_meta_values,
             token_meta_embed_size=token_meta_embed_size,
             seq_meta_embed_size=seq_meta_embed_size,

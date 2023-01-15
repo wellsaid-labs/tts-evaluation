@@ -45,6 +45,8 @@ class Context(enum.Enum):
 
     CONTEXT: typing.Final = "context"
     SCRIPT: typing.Final = "script"
+    SCRIPT_START: typing.Final = "script_start"
+    SCRIPT_STOP: typing.Final = "script_stop"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -74,8 +76,8 @@ class Inputs:
     # NOTE: This must be a positive value greater or equal to one.
     max_audio_len: typing.List[int]
 
-    # The number of annotations present
-    num_anno: int
+    # A look up mapping various embeddings slices.
+    token_embed_idx: typing.Dict[str, slice]
 
     # NOTE: The `device` to initialize new `Tensor`s with.
     device: torch.device = torch.device("cpu")
@@ -146,18 +148,31 @@ class Inputs:
             token_embeddings=[self.token_embeddings_padded[idx, : self.num_tokens[idx]]],
             slices=self.slices[idx : idx + 1],
             max_audio_len=self.max_audio_len[idx : idx + 1],
-            num_anno=self.num_anno,
+            token_embed_idx=self.token_embed_idx,
             # TODO: `device` is only used for initialization, let's also make it `kw_only` once
             # we upgrade to Python 3.10.
             device=self.token_embeddings_padded.device,
         )
 
-    @property
-    def anno_embeddings(self):
+    def anno_embed(self, name, size: typing.Optional[int] = None) -> torch.Tensor:
+        """
+        Args:
+            name: The annotation embedding to retrieve.
+            size: The size of the embedding to return.
+
+        Returns:
+            torch.FloatTensor [batch_size, num_tokens, *]
+        """
         # NOTE: This is determined by `preprocess` which instantiates this object.
         # TODO: Adjust the datastructure so it's easy to verify that the `token_embeddings` were
         # instantiated correctly.
-        return self.token_embeddings_padded[: self.num_anno]
+        embed = self.token_embeddings_padded[:, :, self.token_embed_idx[name]]
+        if size is not None and embed.shape[2] != size:
+            message = f"The `{name}` ({embed.shape[2]}) size must be smaller or equal to {size}."
+            assert embed.shape[2] <= size, message
+            embed = torch.zeros(*embed.shape[:2], size, device=embed.device)
+            embed[:, :, : embed.shape[2]] = embed
+        return embed
 
 
 SpanDoc = typing.Union[spacy.tokens.span.Span, spacy.tokens.doc.Doc]
@@ -514,14 +529,14 @@ class InputsWrapper:
 
 
 def _embed_anno(
+    anno: typing.List[typing.Tuple[slice, int, float]],
     length: int,
-    anno: typing.List[typing.Tuple[slice, typing.Union[int, float]]],
     device: torch.device,
     idx_offset: int = 0,
     val_average: float = 0,
     val_compression: float = 1,
     avg_anno_length: int = 1,
-) -> torch.Tensor:
+) -> typing.Tuple[torch.Tensor, torch.Tensor]:
     """Given annotations for a sequence of `length`, this returns an embedding.
 
     NOTE: Usually, for training, it's helpful if the data is within a range of -1 to 1. This
@@ -536,38 +551,93 @@ def _embed_anno(
     Args:
         length: The length of the annotated sequence.
         anno: A list of annotations.
-        avg_anno_length
         idx_offset: Offset the annotation indicies.
         val_average: Offset the annotation values so that the average falls on zero.
         val_compression: Compress the annotation values so that they are easier to model.
+        avg_anno_length: The average length of an annotation for normalization.
 
     Returns:
-        torch.FloatTensor [length, 3]
+        torch.FloatTensor [length, 2]
             vals: The annotated values (with offset and compression applied). A zero represents
                   no annotation.
             len_: This is the inverse of the length of the annotation. This helps the model
-                  understand how "strict" the annotation is. As this goes to infinity, this goes
-                  to zero, which aligns nicely with `val_average`.
+                  understand how "strict" the annotation is. A short annotation does not have
+                  much room to deviate while a long one does.
+        torch.FloatTensor [length, 1]
             mask: This is 1 when there is an annotation and 0 when there is not.
     """
     vals = torch.zeros(length, device=device)
     mask = torch.zeros(length, device=device)
     len_ = torch.zeros(length, device=device)
-    for slice_, val in anno:
+    for slice_, anno_len, val in anno:
         slice_ = slice(slice_.start + idx_offset, slice_.stop + idx_offset, slice_.step)
         vals[slice_] = val
         mask[slice_] = 1
-        # TODO: Let configure this formula.
-        len_[slice_] = min(slice_.stop - slice_.start, avg_anno_length * 2) / avg_anno_length - 1
+        len_[slice_] = min(anno_len / avg_anno_length - 1, 1.0)
     vals = ((vals - val_average) / val_compression) * mask
-    ret_ = torch.stack((vals, len_, mask), dim=1)
-    return ret_
+    return torch.stack((vals, len_), dim=1), mask.unsqueeze(1)
 
 
-def _offset(annos: SliceAnnos, updates: typing.List[typing.Tuple[slice, int]]) -> SliceAnnos:
+def _offset(
+    annos: SliceAnnos, updates: typing.List[typing.Tuple[slice, int]]
+) -> typing.List[typing.Tuple[slice, int, float]]:
     """Adjust `annos` based on `updates` such as respellings additions."""
     slices = [s for s, _ in annos]
-    return [(o, v) for o, (_, v) in zip(offset_slices(slices, updates), annos)]
+    return [(u, s.stop - s.start, v) for u, (s, v) in zip(offset_slices(slices, updates), annos)]
+
+
+def _embed(
+    sesh: struc.Session,
+    span: SpanDoc,
+    context: SpanDoc,
+    loudness: SliceAnnos,
+    tempo: SliceAnnos,
+    respells: TokenAnnos,
+    start_char: int,
+    tokens: typing.List[str],
+    loudness_kwargs: typing.Dict,
+    tempo_kwargs: typing.Dict,
+    device: torch.device,
+) -> typing.Tuple[typing.Dict[str, slice], torch.Tensor]:
+    """Embed annotations `loudness`, `tempo`, `sesh.loudness`, `sesh.tempo`, etc."""
+    total_chars = sum(len(t) for t in tokens)
+
+    # NOTE: Offset the loudness and tempo slices based on respellings added to text.
+    respell_updates = [(_tok_to_char_slice(span, t), len(v)) for t, v in respells.items()]
+    loudness_ = _offset(loudness, respell_updates)
+    tempo_ = _offset(tempo, respell_updates)
+
+    anno_args = (total_chars, device, start_char)
+    loudness_anno_embed, loudness_anno_mask = _embed_anno(loudness_, *anno_args, **loudness_kwargs)
+    tempo_anno_embed, tempo_anno_mask = _embed_anno(tempo_, *anno_args, **tempo_kwargs)
+    sesh_loudness_embed = torch.full((total_chars, 1), sesh.loudness, device=device)
+    sesh_tempo_embed = torch.full((total_chars, 1), sesh.tempo, device=device)
+    no_mask = torch.ones((total_chars, 1), device=device)
+
+    word_embed = []
+    for token in context:
+        assert token.tensor is not None
+        word_embed.append(np.concatenate((token.tensor, token.vector)))  # type: ignore
+        word_embed.append(np.zeros(token.vector.shape[0] + token.tensor.shape[0]))
+    word_embed = word_embed[:-1]  # NOTE: Discard the trailing whitespace
+    word_embed = [torch.tensor(t, device=device, dtype=torch.float32) for t in word_embed]
+    word_embed = torch.cat([e.unsqueeze(0).repeat(len(t), 1) for e, t in zip(word_embed, tokens)])
+
+    annos = dict(
+        default_mask=no_mask,  # torch.FloatTensor [total_chars, 1]
+        loudness_anno_embed=loudness_anno_embed,  # torch.FloatTensor [total_chars, 2]
+        loudness_anno_mask=loudness_anno_mask,  # torch.FloatTensor [total_chars, 1]
+        sesh_loudness_embed=sesh_loudness_embed,  # torch.FloatTensor [total_chars, 1]
+        tempo_anno_embed=tempo_anno_embed,  # torch.FloatTensor [total_chars, 2]
+        tempo_anno_mask=tempo_anno_mask,  # torch.FloatTensor [total_chars, 1]
+        sesh_tempo_embed=sesh_tempo_embed,  # torch.FloatTensor [total_chars, 1]
+        word_embed=word_embed,  # torch.FloatTensor [total_chars, 396]
+    )
+    indicies, offset = {}, 0
+    for name, tensor in annos.items():
+        indicies[name] = slice(offset, offset + tensor.shape[1])
+        offset += tensor.shape[1]
+    return indicies, torch.cat(list(annos.values()), dim=1)
 
 
 def _tok_to_char_slice(span: SpanDoc, token: spacy.tokens.token.Token) -> slice:
@@ -600,12 +670,13 @@ def preprocess(
             a given piece of text.
         ...
     """
-    num_anno = None
-    inputs = Inputs([], [], [[], []], [], [], [], 0, device)
+    token_embed_idx = None
+    inputs = Inputs([], [], [[], []], [], [], [], {}, device)
     iter_ = zip(wrap.session, wrap.span, wrap.context, wrap.loudness, wrap.tempo, wrap.respellings)
     Item = typing.Tuple[struc.Session, SpanDoc, SpanDoc, SliceAnnos, SliceAnnos, TokenAnnos]
     iter_ = typing.cast(typing.Iterator[Item], iter_)
-    for sesh, span, context, loudness, tempo, respells in iter_:
+    for item in iter_:
+        sesh, span, context, loudness, tempo, respells = item
         seq_metadata = [sesh[0].label, sesh, sesh[0].dialect, sesh[0].style, sesh[0].language]
         if len(inputs.seq_metadata) == 0:
             inputs.seq_metadata.extend([[] for _ in seq_metadata])
@@ -634,6 +705,8 @@ def preprocess(
         cntxt: typing.List[Context] = [c for t, c in zip(tokens, cntxt) for _ in range(len(t))]
         start_char = next(i for i, c in enumerate(cntxt) if c is Context.SCRIPT)
         end_char = start_char + cntxt.count(Context.SCRIPT)
+        cntxt[start_char] = Context.SCRIPT_START
+        cntxt[end_char - 1] = Context.SCRIPT_STOP
 
         inputs.slices.append(slice(start_char, end_char))
         # TODO: This is able to reliably determine the max audio length based on the dataset;
@@ -649,38 +722,10 @@ def preprocess(
         inputs.token_metadata[0].append(list(zip(pronun, casing)))
         inputs.token_metadata[1].append(cntxt)  # type: ignore
 
-        embed = []
-        for token in context:
-            assert token.tensor is not None
-            embed.append(np.concatenate((token.tensor, token.vector)))  # type: ignore
-            embed.append(np.zeros(token.vector.shape[0] + token.tensor.shape[0]))
-        embed = embed[:-1]  # NOTE: Discard the trailing whitespace
-        embed = [torch.tensor(t, device=device, dtype=torch.float32) for t in embed]
-        embed = torch.cat([e.unsqueeze(0).repeat(len(t), 1) for e, t in zip(embed, tokens)])
+        embed_args = (start_char, tokens, loudness_kwargs, tempo_kwargs, device)
+        token_embed_idx, token_embed = _embed(*item, *embed_args)
+        assert token_embed_idx is None or token_embed_idx == token_embed_idx
+        typing.cast(list, inputs.token_embeddings).append(token_embed)
 
-        # NOTE: Offset the loudness and tempo slices based on respellings added to text.
-        respell_updates = [(_tok_to_char_slice(span, t), len(v)) for t, v in respells.items()]
-        loudness = _offset(loudness, respell_updates)
-        tempo = _offset(tempo, respell_updates)
-
-        loudness_embed = _embed_anno(len(chars), loudness, device, start_char, **loudness_kwargs)
-        tempo_embed = _embed_anno(len(chars), tempo, device, start_char, **tempo_kwargs)
-
-        # TODO: Use the average loudness and tempo annotations. We should consider having
-        # them as a seperate annotation, so that, the user can't accidently trick the model
-        # into changing sessions.
-
-        # loudness_embed    (torch.FloatTensor [num_tokens, 3]) (cat)
-        # tempo_embed       (torch.FloatTensor [num_tokens, 3]) →
-        # [num_tokens, num_anno]
-        anno_embed = torch.cat((loudness_embed, tempo_embed), dim=1)
-        assert num_anno is None or anno_embed.shape[1] == num_anno
-        num_anno = anno_embed.shape[1]
-
-        # anno_embed    (torch.FloatTensor [num_tokens, num_anno]) (cat)
-        # embed         (torch.FloatTensor [num_tokens, embedding_size]) →
-        # [num_tokens, embedding_size + num_anno]
-        typing.cast(list, inputs.token_embeddings).append(torch.cat((anno_embed, embed), dim=1))
-
-    assert num_anno is not None
-    return dataclasses.replace(inputs, num_anno=num_anno)
+    assert token_embed_idx is not None
+    return dataclasses.replace(inputs, token_embed_idx=token_embed_idx)
