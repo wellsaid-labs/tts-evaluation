@@ -385,8 +385,6 @@ class Metrics(_utils.Metrics[MetricsKey]):
         """
         TODO: Get dataset metrics on OOV words (spaCy and pronunciation dictionary) in our dataset.
         TODO: Create a `streamlit` for measuring coverage in our dataset, and other datasets.
-        TODO: Measure the difference between punctuation in the phonetic vs grapheme phrases.
-        Apart from unique cases, they should have the same punctuation.
         """
         values, _reduce = self._make_values()
 

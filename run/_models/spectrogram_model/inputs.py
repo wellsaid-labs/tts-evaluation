@@ -655,10 +655,6 @@ def preprocess(
 
     NOTE: This preprocessing layer can be run in a seperate process to prepare data for model
           training.
-    NOTE: Contextual word-vectors would likely be more informative than word-vectors; however,
-          they are likely not as robust in the presence of OOV words due to intentional
-          misspellings. Our users intentionally misspell words to adjust the pronunciation. For that
-          reason, using contextual word-vectors is risky.
 
     TODO: Instead of using `zero` embeddings, what if we tried training a vector, instead?
 
