@@ -210,6 +210,7 @@ def _make_encoder(
     max_seq_meta_values=(11, 12),
     max_token_meta_values=(13,),
     max_word_embed_size=8,
+    max_seq_embed_size=2,
     seq_meta_embed_size=6,
     token_meta_embed_size=12,
     seq_meta_embed_dropout=0.1,
@@ -238,6 +239,7 @@ def _make_encoder(
         max_seq_meta_values=max_seq_meta_values,
         max_token_meta_values=max_token_meta_values,
         max_word_embed_size=max_word_embed_size,
+        max_seq_embed_size=max_seq_embed_size,
         seq_meta_embed_size=seq_meta_embed_size,
         token_meta_embed_size=token_meta_embed_size,
         seq_meta_embed_dropout=seq_meta_embed_dropout,
@@ -263,10 +265,12 @@ def _make_encoder(
     anno_embed = torch.randn(batch_size, num_tokens_pad, max_anno_features)
     anno_mask = torch.ones(batch_size, num_tokens_pad, 1)
     token_embed = torch.cat((anno_embed, anno_mask, word_embed), dim=2)
+    seq_embed = torch.randn(batch_size, max_seq_embed_size)
     inputs = Inputs(
         tokens=tokens.tolist(),
         seq_metadata=[speakers.tolist(), sessions.tolist()],
         token_metadata=token_meta.tolist(),
+        seq_embeddings=list(seq_embed.unbind()),
         token_embeddings=list(token_embed.unbind()),
         slices=[slice(context, -context) for _ in range(batch_size)],
         token_embed_idx=token_embed_idx,

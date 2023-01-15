@@ -65,6 +65,9 @@ class Inputs:
     # Metadata associated with each token in each sequence
     token_metadata: typing.List[typing.List[typing.List[typing.Hashable]]]
 
+    # Embeddings associated with each sequence
+    seq_embeddings: typing.List[torch.Tensor]
+
     # Embeddings associated with each token in each sequence
     # torch.FloatTensor [num_tokens, *]
     token_embeddings: typing.List[torch.Tensor]
@@ -85,6 +88,10 @@ class Inputs:
     # Embeddings associated with each token in each sequence
     # torch.FloatTensor [batch_size, num_tokens, *]
     token_embeddings_padded: torch.Tensor = dataclasses.field(init=False)
+
+    # Embeddings associated with each sequence
+    # torch.FloatTensor [batch_size, *]
+    seq_embeddings_compact: torch.Tensor = dataclasses.field(init=False)
 
     # Number of tokens after `slices` is applied
     # torch.LongTensor [batch_size]
@@ -109,6 +116,10 @@ class Inputs:
         empty = torch.empty(0, 0, 0, device=self.device)
         stacked = empty if len(embeds) == 0 else pad_sequence(embeds, batch_first=True)
         object.__setattr__(self, "token_embeddings_padded", stacked)
+
+        empty = torch.empty(0, 0, device=self.device)
+        stacked = empty if len(embeds) == 0 else torch.stack(self.seq_embeddings)
+        object.__setattr__(self, "seq_embeddings_compact", stacked)
 
         object.__setattr__(self, "max_audio_len", [max(n, 1) for n in self.max_audio_len])
         max_audio_len = torch.tensor(self.max_audio_len, device=self.device, dtype=torch.long)
@@ -144,9 +155,10 @@ class Inputs:
             tokens=[self.tokens[idx][:num_tokens]],
             seq_metadata=[m[idx : idx + 1] for m in self.seq_metadata],
             token_metadata=[m[idx : idx + 1] for m in self.token_metadata],
-            # TODO: `self.token_embeddings` may be purged from this object to save memory once
-            # it has been initialized. In Python 3.10, we can solve this, by making
-            # `self.token_embeddings` `kw_only` so it doesn't hang around after initialization.
+            # TODO: `self.token_embeddings` and `self.seq_embeddings` may be purged from this object
+            # to save memory once  it has been initialized. In Python 3.10, we can solve this, by
+            # making these `kw_only` so they don't hang around after initialization.
+            seq_embeddings=[self.seq_embeddings_compact[idx]],
             token_embeddings=[self.token_embeddings_padded[idx, : self.num_tokens[idx]]],
             # TODO: Remove this `min`, it was added to make writing tests easier.
             slices=[slice(self.slices[idx].start, min(self.slices[idx].stop, num_tokens))],
@@ -628,12 +640,12 @@ def _embed(
 
     annos = dict(
         default_mask=no_mask,  # torch.FloatTensor [total_chars, 1]
-        loudness_anno_embed=loudness_anno_embed,  # torch.FloatTensor [total_chars, 2]
+        # torch.FloatTensor [total_chars, 3]
+        loudness_anno_embed=torch.cat((loudness_anno_embed, sesh_loudness_embed), dim=1),
         loudness_anno_mask=loudness_anno_mask,  # torch.FloatTensor [total_chars, 1]
-        sesh_loudness_embed=sesh_loudness_embed,  # torch.FloatTensor [total_chars, 1]
-        tempo_anno_embed=tempo_anno_embed,  # torch.FloatTensor [total_chars, 2]
+        # torch.FloatTensor [total_chars, 3]
+        tempo_anno_embed=torch.cat((tempo_anno_embed, sesh_tempo_embed), dim=1),
         tempo_anno_mask=tempo_anno_mask,  # torch.FloatTensor [total_chars, 1]
-        sesh_tempo_embed=sesh_tempo_embed,  # torch.FloatTensor [total_chars, 1]
         word_embed=word_embed,  # torch.FloatTensor [total_chars, 396]
     )
     indicies, offset = {}, 0
@@ -670,7 +682,7 @@ def preprocess(
         ...
     """
     token_embed_idx = None
-    inputs = Inputs([], [], [[], []], [], [], [], {}, device)
+    inputs = Inputs([], [], [[], []], [], [], [], [], {}, device)
     iter_ = zip(wrap.session, wrap.span, wrap.context, wrap.loudness, wrap.tempo, wrap.respellings)
     Item = typing.Tuple[struc.Session, SpanDoc, SpanDoc, SliceAnnos, SliceAnnos, TokenAnnos]
     iter_ = typing.cast(typing.Iterator[Item], iter_)
@@ -724,7 +736,10 @@ def preprocess(
         embed_args = (start_char, tokens, loudness_kwargs, tempo_kwargs, device)
         token_embed_idx, token_embed = _embed(*item, *embed_args)
         assert token_embed_idx is None or token_embed_idx == token_embed_idx
-        typing.cast(list, inputs.token_embeddings).append(token_embed)
+        inputs.token_embeddings.append(token_embed)
+
+        seq_embed = torch.tensor([sesh.loudness, sesh.tempo], device=device)
+        inputs.seq_embeddings.append(seq_embed)
 
     assert token_embed_idx is not None
     return dataclasses.replace(inputs, token_embed_idx=token_embed_idx)

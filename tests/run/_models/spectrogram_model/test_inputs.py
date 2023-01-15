@@ -389,12 +389,10 @@ def test__preprocess():
     assert len(processed.token_embeddings) == 1
     assert processed.token_embed_idx == dict(
         default_mask=slice(0, 1),
-        loudness_anno_embed=slice(1, 3),
-        loudness_anno_mask=slice(3, 4),
-        sesh_loudness_embed=slice(4, 5),
-        tempo_anno_embed=slice(5, 7),
-        tempo_anno_mask=slice(7, 8),
-        sesh_tempo_embed=slice(8, 9),
+        loudness_anno_embed=slice(1, 4),
+        loudness_anno_mask=slice(4, 5),
+        tempo_anno_embed=slice(5, 8),
+        tempo_anno_mask=slice(8, 9),
         word_embed=slice(9, 405),
     )
     assert torch.allclose(processed.anno_embed("word_embed"), word_embed)
@@ -557,17 +555,14 @@ def test__preprocess__slice_anno():
 
     # Session embeddings
     sesh_len = len("analysis, not uh-BOWT WHAT I gain and")
-    result = torch.tensor([[sesh.loudness] * sesh_len], dtype=torch.float)
-    assert_almost_equal(processed.anno_embed("sesh_loudness_embed")[0].T, result)
-    result = torch.tensor([[sesh.tempo] * sesh_len], dtype=torch.float)
-    assert_almost_equal(processed.anno_embed("sesh_tempo_embed")[0].T, result)
 
     # Loudness embedding
     l_anno_len = len("not uh-BOWT WHAT I gain")
     l_len_val = len("not about about I gain") / avg_anno_length - 1
     l_vals = [[0] * len("analysis, ") + [-21] * l_anno_len + [0] * len(" and")]
     l_len = [[0] * len("analysis, ") + [l_len_val] * l_anno_len + [0] * len(" and")]
-    result = torch.tensor(l_vals + l_len, dtype=torch.float)
+    l_sesh = [[sesh.loudness] * sesh_len]
+    result = torch.tensor(l_vals + l_len + l_sesh, dtype=torch.float)
     assert_almost_equal(processed.anno_embed("loudness_anno_embed")[0].T, result)
 
     l_mask = [[0] * len("analysis, ") + [1] * l_anno_len + [0] * len(" and")]
@@ -581,7 +576,8 @@ def test__preprocess__slice_anno():
     t_anno_suffix_len = len("I gain and")
     t_vals = [[0] * t_anno_prefix_len + [5] * t_anno_len + [0] * t_anno_suffix_len]
     t_len = [[0] * t_anno_prefix_len + [t_len_val] * len(" ") + [0] * t_anno_suffix_len]
-    result = torch.tensor(t_vals + t_len, dtype=torch.float)
+    t_sesh = [[sesh.tempo] * sesh_len]
+    result = torch.tensor(t_vals + t_len + t_sesh, dtype=torch.float)
     assert_almost_equal(processed.anno_embed("tempo_anno_embed")[0].T, result)
 
     t_mask = [[0] * t_anno_prefix_len + [1] * len(" ") + [0] * t_anno_suffix_len]

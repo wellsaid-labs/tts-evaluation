@@ -276,6 +276,7 @@ class Encoder(torch.nn.Module):
         max_seq_meta_values: The maximum number of sequence metadata values.
         max_token_meta_values: The maximum number of token metadata values.
         max_word_embed_size: The maximum size of `inputs.anno_embed("token_embed")`.
+        max_seq_embed_size: The maximum size of the sequence embedding.
         max_anno_features: The maximum number of annotation features.
         annos: The annotations to process.
         num_anno_layers: The number of layers to process annotations with.
@@ -296,6 +297,7 @@ class Encoder(torch.nn.Module):
         max_seq_meta_values: typing.Tuple[int, ...],
         max_token_meta_values: typing.Tuple[int, ...],
         max_word_embed_size: int,
+        max_seq_embed_size: int,
         max_anno_features: int,
         annos: typing.List[typing.Tuple[str, str]],
         num_anno_layers: int,
@@ -322,7 +324,14 @@ class Encoder(torch.nn.Module):
         self.annos = annos
         self.max_word_embed_size = max_word_embed_size
         self.embed_seq_metadata = self._make_embeds(seq_meta_embed_size, max_seq_meta_values)
-        self.seq_meta_embed_dropout = torch.nn.Dropout(seq_meta_embed_dropout)
+        self.embed_seq = torch.nn.Sequential(
+            torch.nn.Linear(seq_meta_embed_size + max_seq_embed_size, seq_meta_embed_size),
+            torch.nn.ReLU(),
+            torch.nn.Dropout(seq_meta_embed_dropout),
+            torch.nn.Linear(seq_meta_embed_size, seq_meta_embed_size),
+            torch.nn.ReLU(),
+            layer_norm(seq_meta_embed_size),
+        )
         self.embed_token_metadata = self._make_embeds(token_meta_embed_size, max_token_meta_values)
         self.embed_token: NumeralizePadEmbed[typing.Hashable]
         self.embed_token = NumeralizePadEmbed(max_tokens, hidden_size)
@@ -404,7 +413,9 @@ class Encoder(torch.nn.Module):
         # [batch_size] → [batch_size, seq_meta_embed_size]
         iter_ = zip(self.embed_seq_metadata, inputs.seq_metadata)
         seq_metadata = [embed(meta, batch_first=True)[0] for embed, meta in iter_]
-        seq_metadata = self.seq_meta_embed_dropout(torch.cat(seq_metadata, dim=1))
+        seq_metadata = torch.cat(seq_metadata + [inputs.seq_embeddings_compact], dim=1)
+        seq_metadata = self.embed_seq(seq_metadata)
+
         # [batch_size, seq_meta_embed_size] → [batch_size, num_tokens, seq_meta_embed_size]
         seq_metadata_expanded = seq_metadata.unsqueeze(1).expand(-1, tokens.shape[1], -1)
 

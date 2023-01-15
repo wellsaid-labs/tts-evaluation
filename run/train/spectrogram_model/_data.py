@@ -306,8 +306,10 @@ class Batch(_utils.Batch):
     def apply(self, call: typing.Callable[[torch.Tensor], torch.Tensor]) -> "Batch":
         batch: Batch = super().apply(call)
         token_embed = batch.processed.token_embeddings_padded
+        seq_embed = batch.processed.seq_embeddings_compact
         set_ = object.__setattr__
         set_(batch.processed, "token_embeddings_padded", call(token_embed))
+        set_(batch.processed, "seq_embeddings_compact", call(seq_embed))
         set_(batch.processed, "num_tokens", call(batch.processed.num_tokens))
         set_(batch.processed, "tokens_mask", call(batch.processed.tokens_mask))
         set_(batch.processed, "max_audio_len_tensor", call(batch.processed.max_audio_len_tensor))
@@ -359,6 +361,7 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
     processed = cf.partial(preprocess)(inputs)
     # NOTE: These tensors are not needed, and are taking up memory.
     object.__setattr__(processed, "token_embeddings", None)
+    object.__setattr__(processed, "seq_embeddings", None)
 
     return Batch(
         # NOTE: Prune unused attributes from `Passage` by creating a new `Passage`, in order to

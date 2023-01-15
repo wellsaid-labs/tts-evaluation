@@ -39,6 +39,7 @@ class Params(typing.NamedTuple):
     max_num_tokens: int = 6
     max_tokens_index: int = 0
     max_word_embed_size: int = 20
+    max_seq_embed_size: int = 2
     max_anno_features: int = 1
     annos: typing.Tuple[str, str] = ("anno_embed", "anno_mask")
 
@@ -99,6 +100,7 @@ def _make_spectrogram_model(
         max_seq_meta_values=params.max_seq_meta_values,
         max_token_meta_values=tuple(),
         max_word_embed_size=params.max_word_embed_size,
+        max_seq_embed_size=params.max_seq_embed_size,
         max_anno_features=params.max_anno_features,
         annos=[params.annos],
         token_meta_embed_size=0,
@@ -139,12 +141,14 @@ def _make_inputs(
     anno_embed = torch.randn(params.batch_size, params.max_num_tokens, params.max_anno_features)
     anno_mask = torch.ones(params.batch_size, params.max_num_tokens, 1)
     token_embed = torch.cat((anno_embed, anno_mask, word_embed), dim=2)
+    seq_embed = torch.randn(params.batch_size, params.max_seq_embed_size)
 
     inputs = Inputs(
         tokens=tokens,
         seq_metadata=[speakers, sessions],
         token_metadata=[[[] for _ in range(params.batch_size)]],
         token_embeddings=[e[: len(t)] for t, e in zip(tokens, token_embed.unbind())],
+        seq_embeddings=list(seq_embed.unbind()),
         slices=[slice(0, int(n)) for n in num_tokens],
         token_embed_idx=params.token_embed_idx,
         max_audio_len=[int(n * params.max_frames_per_token) for n in num_tokens],
