@@ -185,8 +185,9 @@ class Inputs:
         if size is not None and embed.shape[2] != size:
             message = f"The `{name}` ({embed.shape[2]}) size must be smaller or equal to {size}."
             assert embed.shape[2] <= size, message
-            embed = torch.zeros(*embed.shape[:2], size, device=embed.device)
-            embed[:, :, : embed.shape[2]] = embed
+            embed_ = torch.zeros(*embed.shape[:2], size, device=embed.device)
+            embed_[:, :, : embed.shape[2]] = embed
+            embed = embed_
         return embed
 
 

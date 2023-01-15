@@ -396,6 +396,7 @@ def test__preprocess():
         word_embed=slice(9, 405),
     )
     assert torch.allclose(processed.anno_embed("word_embed"), word_embed)
+    assert torch.allclose(processed.anno_embed("word_embed", size=400)[:, :, :-4], word_embed)
     assert processed.token_embeddings_padded.shape[2] == 405
     is_mask = lambda t: len(set(t.unique().tolist()) - set((0, 1))) == 0
     for mask in ("loudness_anno_mask", "tempo_anno_mask", "default_mask"):
