@@ -398,7 +398,7 @@ deploymentAnnotations:
 # "resources" and, if using the controller, "ingressController.resources" in values.yaml
 autoscaling:
   enabled: true
-  minReplicas: 3
+  minReplicas: 1
   maxReplicas: 8
   metrics:
     - type: Resource
