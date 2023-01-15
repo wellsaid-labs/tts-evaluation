@@ -398,6 +398,10 @@ def test__preprocess():
         word_embed=slice(9, 405),
     )
     assert torch.allclose(processed.anno_embed("word_embed"), word_embed)
+    assert processed.token_embeddings_padded.shape[2] == 405
+    is_mask = lambda t: len(set(t.unique().tolist()) - set((0, 1))) == 0
+    for mask in ("loudness_anno_mask", "tempo_anno_mask", "default_mask"):
+        assert is_mask(processed.anno_embed(mask))
 
 
 def test__get_case():
@@ -550,6 +554,13 @@ def test__preprocess__slice_anno():
     avg_anno_length = 40
     kwargs = {"avg_anno_length": avg_anno_length}
     processed = preprocess(input_, kwargs, kwargs, lambda t: len(t))
+
+    # Session embeddings
+    sesh_len = len("analysis, not uh-BOWT WHAT I gain and")
+    result = torch.tensor([[sesh.loudness] * sesh_len], dtype=torch.float)
+    assert_almost_equal(processed.anno_embed("sesh_loudness_embed")[0].T, result)
+    result = torch.tensor([[sesh.tempo] * sesh_len], dtype=torch.float)
+    assert_almost_equal(processed.anno_embed("sesh_tempo_embed")[0].T, result)
 
     # Loudness embedding
     l_anno_len = len("not uh-BOWT WHAT I gain")
