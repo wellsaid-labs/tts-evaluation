@@ -222,12 +222,12 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
         run._models.spectrogram_model.inputs.preprocess: Args(
             # NOTE: The average values were calculated through the `span_annotation_generation.py`
             # workbook.
-            # NOTE: The LUFS range is approximately from 0 to -80 db so a offset and compression of
-            # 50 will bring that range from roughly 1 to -1.
+            # NOTE: The loudness range is approximately from 35db to -60db, centered on the average
+            # loudness, so a compression of 50 will bring that range from roughly 1 to -1.
             # NOTE: The `avg_anno_length` was set with the
             # `run/review/dataset_processing/annotations.py` workbook which provides basic
             # statistics on annotation length.
-            loudness_kwargs=dict(val_average=-21, val_compression=50, avg_anno_length=40.5),
+            loudness_kwargs=dict(val_average=0, val_compression=50, avg_anno_length=40.5),
             # NOTE: The tempo range is approximately from 0.04 to 0.2 sec per char so a offset and
             # compression of 0.1 will bring that range from roughly 1 to -1.
             tempo_kwargs=dict(val_average=1.0, val_compression=1, avg_anno_length=40.5),
@@ -238,11 +238,13 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
         run._models.spectrogram_model.inputs.InputsWrapper.check_invariants: Args(
             # TODO: Consider adding filtering for outlier annotations and reducing the allowable
             # range.
-            # NOTE: The LUFS range is approximately from -15 to -70 db, this gives a bit more
-            # wiggle room.
-            # NOTE: LUFS by definition cannot be less than -70 db.
-            min_loudness=-70,
-            max_loudness=-5,
+            # NOTE: LUFS by definition cannot be less than -70 db, or more than 0db.
+            # NOTE: The LUFS range is approximately centered on our loudest a recording session
+            # (-10db) and quietest recording session (-40db). With a range of -5db to -70db,
+            # centered on those recording sessions, the quietest recording session could
+            # be 35db louder and the loudest recording session could be -60db quieter.
+            min_loudness=-60,
+            max_loudness=35,
             # NOTE: The tempo range is approximately from 10% to 1000% slower than faster than
             # average.
             # TODO: We should refine this a bit more, and find stricter bounds.

@@ -154,11 +154,11 @@ def test__random_loudness_annotations():
         out = _data._random_loudness_annotations(span, signal, precision=0)
         # NOTE: These loudness values are irregular because the sample rate is so small.
         expected: SliceAnnos = [
-            (slice(0, 4), -70),
-            (slice(4, 5), -70),
-            (slice(5, 7), -70),
-            (slice(8, 9), -70),
-            (slice(9, 10), -70),
+            (slice(0, 4), -49),
+            (slice(4, 5), -49),
+            (slice(5, 7), -49),
+            (slice(8, 9), -49),
+            (slice(9, 10), -49),
         ]
         assert expected == out
 
