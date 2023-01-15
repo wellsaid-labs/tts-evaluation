@@ -109,7 +109,7 @@ def _random_loudness_annotations(span: Span, signal: numpy.ndarray, **kwargs) ->
         sample_rate = span.audio_file.sample_rate
         loudness_ = cf.call(_get_loudness_annotation, signal, sample_rate, alignment, **kwargs)
         if loudness_ is not None:
-            annotations.append((alignment.script_slice, loudness_))
+            annotations.append((alignment.script_slice, loudness_ - span.session.loudness))
     return annotations
 
 
