@@ -133,7 +133,7 @@ helm repo add kong https://charts.konghq.com
 kubectl create namespace kong
 # Install helm chart, referencing our configurations (order of file paths is important!)
 helm install gateway kong/kong \
-  --version 2.1.0 \
+  --version 2.3.0 \
   -f ./ops/gateway/kong/kong.base.yaml \
   -f ./ops/gateway/kong/kong.$ENV.yaml
 ```
