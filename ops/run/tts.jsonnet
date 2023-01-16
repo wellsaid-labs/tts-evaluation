@@ -165,6 +165,9 @@ function(
       },
     },
     concurrency: stream.concurrency,
+    // NOTE: 5 minutes was decided on based on max latency values we are seeing in production as
+    // well as limitations defined by maximum input lengths. Changes to these values will need to
+    // be reflected in our Kong gateway timeouts and termination values.
     timeout: 300, // 5 minutes
     restartTimeout: 300,  // 5 minutes
     legacyContainerApiKey: legacyContainerApiKey,
