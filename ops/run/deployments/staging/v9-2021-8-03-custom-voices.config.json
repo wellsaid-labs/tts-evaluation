@@ -1,7 +1,7 @@
 {
   "env": "staging",
   "model": "v9-2021-8-03-custom-voices",
-  "version": "6",
+  "version": "7",
   "image": "gcr.io/voice-service-2-313121/speech-api-worker@sha256:dffe11d0b24a4d124bc9d76c0f09b5aebff67c2cb9eb7fedfe39df1d290b62ea",
   "imageEntrypoint": "run.deploy.worker:app",
   "provideApiKeyAuthForLegacyContainerSupport": "true",
@@ -23,7 +23,7 @@
   },
   "traffic": [
     {
-      "tag": "6",
+      "tag": "7",
       "percent": 100
     }
   ]

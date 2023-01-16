@@ -1,7 +1,7 @@
 {
   "env": "staging",
   "model": "update-eia-tec",
-  "version": "7",
+  "version": "8",
   "image": "gcr.io/voice-service-2-313121/speech-api-worker@sha256:9c9f5af9a190778e3823ecb446eba98f3ce35f0ef8f3700776f2744b3592af95",
   "imageEntrypoint": "run.deploy.worker:app",
   "provideApiKeyAuthForLegacyContainerSupport": "true",
@@ -23,7 +23,7 @@
   },
   "traffic": [
     {
-      "tag": "7",
+      "tag": "8",
       "percent": 100
     }
   ]

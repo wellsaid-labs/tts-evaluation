@@ -1,7 +1,7 @@
 {
   "env": "staging",
   "model": "v10-2022-q4-marketplace-expansion",
-  "version": "7",
+  "version": "8",
   "image": "gcr.io/voice-service-2-313121/speech-api-worker@sha256:2acb9fae01561794a5bd22d881218614b4c5f5373bcb6914a63854e374f58e2e",
   "imageEntrypoint": "run.deploy.worker:app",
   "provideApiKeyAuthForLegacyContainerSupport": "true",
@@ -23,7 +23,7 @@
   },
   "traffic": [
     {
-      "tag": "7",
+      "tag": "8",
       "percent": 100
     }
   ]
