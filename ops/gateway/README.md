@@ -262,6 +262,30 @@ helm list
 helm rollback gateway <REVISION_NUMBER>
 ```
 
+#### Troubleshooting helm upgrade
+
+If the helm chart deployments are not kept up to date with kubernetes api deprecations you may encounter the following error:
+
+```
+UPGRADE FAILED: unable to build kubernetes objects from current release manifest: resource mapping not found ...
+```
+
+This indicates a mismatch between the helm chart api versions, the previous helm revision configurations (stored in secret/configmap by helm), and available kubernetes apis. The solution is to use the [helm mapkubeapis](https://github.com/helm/helm-mapkubeapis) plugin to remove the references to deprecated apis in the existing stored helm configs.
+
+```sh
+# Install plugin
+helm plugin install https://github.com/helm/helm-mapkubeapis
+# Review list of api mappings in ./misc/mapkubeapis.deprecationmap.yaml
+# Preview changes
+helm mapkubeapis gateway --mapfile ./misc/mapkubeapis.deprecationmap.yaml --dry-run
+# Apply changes
+helm mapkubeapis gateway --mapfile ./misc/mapkubeapis.deprecationmap.yaml
+# Prior to upgrading the deployment, ensure the helm chart being used no longer contains
+# references to the deprecated API's. Compare the output of the following command to the
+# list of removed/deprecated API's.
+helm template kong/kong --version=2.3.0
+```
+
 ### Kong Consumers
 
 Once the `key-auth` plugin is enabled, a `KongConsumer` is required to make
