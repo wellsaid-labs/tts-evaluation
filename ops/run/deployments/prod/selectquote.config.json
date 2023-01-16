@@ -1,7 +1,7 @@
 {
   "env": "prod",
   "model": "selectquote",
-  "version": "2",
+  "version": "3",
   "image": "gcr.io/voice-service-2-313121/speech-api-worker@sha256:80277a18eb3dde24b285312b42a5f98081acbfa1644a67df695e7e76ae6e90cf",
   "imageEntrypoint": "run.deploy.worker:app",
   "provideApiKeyAuthForLegacyContainerSupport": "true",
@@ -23,7 +23,7 @@
   },
   "traffic": [
     {
-      "tag": "2",
+      "tag": "3",
       "percent": 100
     }
   ]

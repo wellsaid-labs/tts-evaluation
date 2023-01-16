@@ -1,7 +1,7 @@
 {
   "env": "prod",
   "model": "uneeq",
-  "version": "3",
+  "version": "4",
   "image": "gcr.io/voice-service-2-313121/speech-api-worker@sha256:4848c7c18c173d27eed11130cb4a6f820878eaf5f73c7e06244b7745353b6105",
   "imageEntrypoint": "run.deploy.worker:app",
   "provideApiKeyAuthForLegacyContainerSupport": "true",
@@ -23,7 +23,7 @@
   },
   "traffic": [
     {
-      "tag": "3",
+      "tag": "4",
       "percent": 100
     }
   ]
