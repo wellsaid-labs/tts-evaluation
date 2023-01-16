@@ -232,8 +232,14 @@ scaling, resource requirements, etc..). Similar to installing kong, we will also
 use `helm` to "upgrade" the release.
 
 ```bash
+# Preview changes prior to deployment (requires installation of helm diff plugin)
+helm diff gateway kong/kong \
+  --version 2.3.0 \
+  -f ./ops/gateway/kong/kong.base.yaml \
+  -f ./ops/gateway/kong/kong.$ENV.yaml
+# Deploy changes
 helm upgrade gateway kong/kong \
-  --version 2.1.0 \
+  --version 2.3.0 \
   -f ./ops/gateway/kong/kong.base.yaml \
   -f ./ops/gateway/kong/kong.$ENV.yaml
 ```

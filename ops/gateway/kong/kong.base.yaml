@@ -4,7 +4,7 @@
 #
 # Default values can be found using the following command:
 #
-#     helm show values kong/kong --version 2.1.0
+#     helm show values kong/kong --version 2.3.0
 #
 # Sections:
 # - Deployment parameters
