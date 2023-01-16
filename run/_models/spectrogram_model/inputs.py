@@ -709,9 +709,9 @@ def preprocess(
         cntxt[end_char - 1] = Context.SCRIPT_STOP
 
         inputs.slices.append(slice(start_char, end_char))
-        # TODO: This is able to reliably determine the max audio length based on the dataset;
-        # however, during inference, the user may try to push the model to slow down even further
-        # using annotations. Should those be considered?
+        # NOTE: This does not consider annotations because `get_max_audio_length` is the maximum
+        # audio length found in the dataset, overall. The model shouldn't be able to work well past
+        # that.
         inputs.max_audio_len.append(get_max_audio_length(span.text))
         inputs.tokens.append([c.lower() for c in chars])
         # NOTE: We merge `pronun` and `casing` into one category for performance reasons. It's
