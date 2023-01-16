@@ -1,7 +1,7 @@
 {
   "env": "prod",
   "model": "mitel-fr-fr",
-  "version": "1",
+  "version": "2",
   "image": "gcr.io/voice-service-2-313121/speech-api-worker@sha256:782c55fa7b115f13667e0b16e2400e57b55350fb89bb90c15bbfa1d0a26c58dc",
   "imageEntrypoint": "run.deploy.worker:app",
   "provideApiKeyAuthForLegacyContainerSupport": "true",
@@ -23,7 +23,7 @@
   },
   "traffic": [
     {
-      "tag": "1",
+      "tag": "2",
       "percent": 100
     }
   ]

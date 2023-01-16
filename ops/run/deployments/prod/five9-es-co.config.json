@@ -1,7 +1,7 @@
 {
   "env": "prod",
   "model": "five9-es-co",
-  "version": "1",
+  "version": "2",
   "image": "gcr.io/voice-service-2-313121/speech-api-worker@sha256:e08453607ac0ddac4c5f93be10ab4f922ced5ff11f4519b1f31c48b22273a0e1",
   "imageEntrypoint": "run.deploy.worker:app",
   "provideApiKeyAuthForLegacyContainerSupport": "true",
@@ -9,17 +9,21 @@
     "minScale": "1",
     "maxScale": "32",
     "concurrency": 1,
-    "paths": ["/api/text_to_speech/stream"]
+    "paths": [
+      "/api/text_to_speech/stream"
+    ]
   },
   "validate": {
     "minScale": "1",
     "maxScale": "8",
     "concurrency": 4,
-    "paths": ["/api/text_to_speech/input_validated"]
+    "paths": [
+      "/api/text_to_speech/input_validated"
+    ]
   },
   "traffic": [
     {
-      "tag": "1",
+      "tag": "2",
       "percent": 100
     }
   ]

@@ -1,7 +1,7 @@
 {
   "env": "prod",
   "model": "v8",
-  "version": "1",
+  "version": "4",
   "image": "gcr.io/voice-service-2-313121/speech-api-worker@sha256:3c02aa6ac2d4290232a1f2c27a6e391b15cf9dc55e490faf7bd4a4c419abecd7",
   "imageEntrypoint": "src.service.worker:app",
   "provideApiKeyAuthForLegacyContainerSupport": "true",
@@ -23,7 +23,7 @@
   },
   "traffic": [
     {
-      "tag": "1",
+      "tag": "4",
       "percent": 100
     }
   ]

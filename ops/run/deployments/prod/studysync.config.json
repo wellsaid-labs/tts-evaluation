@@ -1,7 +1,7 @@
 {
   "env": "prod",
   "model": "studysync",
-  "version": "1",
+  "version": "2",
   "image": "gcr.io/voice-service-2-313121/speech-api-worker@sha256:27e0adf1b0cf304674c9c47f6bdab15e524f29540b591020b45669bd92f642bd",
   "imageEntrypoint": "run.deploy.worker:app",
   "provideApiKeyAuthForLegacyContainerSupport": "true",
@@ -23,7 +23,7 @@
   },
   "traffic": [
     {
-      "tag": "1",
+      "tag": "2",
       "percent": 100
     }
   ]
