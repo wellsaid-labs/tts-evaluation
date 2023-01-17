@@ -391,12 +391,14 @@ class InputsWrapper:
         open_ = lambda tag, value: f"<{tag} {_Schema._VALUE}='{value}'>"
         close = lambda tag: f"</{tag}>"
         respellings = self.respellings[i].items()
-        annotations = [(open_(_Schema.RESPELL, a), _idx(span, t)) for t, a in respellings]
-        annotations += [(close(_Schema.RESPELL), _idx(span, t) + len(t)) for t, _ in respellings]
-        annotations += [(open_(_Schema.LOUDNESS, a), s.start) for s, a in self.loudness[i]]
-        annotations += [(close(_Schema.LOUDNESS), s.stop) for s, _ in self.loudness[i]]
-        annotations += [(open_(_Schema.TEMPO, a), s.start) for s, a in self.tempo[i]]
+        annotations = [(close(_Schema.RESPELL), _idx(span, t) + len(t)) for t, _ in respellings]
         annotations += [(close(_Schema.TEMPO), s.stop) for s, _ in self.tempo[i]]
+        annotations += [(close(_Schema.LOUDNESS), s.stop) for s, _ in self.loudness[i]]
+        annotations += [(open_(_Schema.LOUDNESS, a), s.start) for s, a in self.loudness[i]]
+        annotations += [(open_(_Schema.TEMPO, a), s.start) for s, a in self.tempo[i]]
+        annotations += [(open_(_Schema.RESPELL, a), _idx(span, t)) for t, a in respellings]
+        # TODO: Ensure that this is sorted by specificity, so the most specific tag is opened
+        # and closed, first.
         annotations = sorted(annotations, key=lambda k: k[1])
         indices = [0] + [i for _, i in annotations] + [len(span.text)]
         parts = [span.text[i:j] for i, j in zip(indices, indices[1:] + [None])]
