@@ -403,12 +403,14 @@ class InputsWrapper:
         open_ = lambda tag, value: f"<{tag} {_Schema._VALUE}='{value}'>"
         close = lambda tag: f"</{tag}>"
         respellings = self.respellings[i].items()
-        annotations = [(open_(_Schema.RESPELL, a), _idx(span, t)) for t, a in respellings]
-        annotations += [(close(_Schema.RESPELL), _idx(span, t) + len(t)) for t, _ in respellings]
-        annotations += [(open_(_Schema.LOUDNESS, a), s.start) for s, a in self.loudness[i]]
-        annotations += [(close(_Schema.LOUDNESS), s.stop) for s, _ in self.loudness[i]]
-        annotations += [(open_(_Schema.TEMPO, a), s.start) for s, a in self.tempo[i]]
+        annotations = [(close(_Schema.RESPELL), _idx(span, t) + len(t)) for t, _ in respellings]
         annotations += [(close(_Schema.TEMPO), s.stop) for s, _ in self.tempo[i]]
+        annotations += [(close(_Schema.LOUDNESS), s.stop) for s, _ in self.loudness[i]]
+        annotations += [(open_(_Schema.LOUDNESS, a), s.start) for s, a in self.loudness[i]]
+        annotations += [(open_(_Schema.TEMPO, a), s.start) for s, a in self.tempo[i]]
+        annotations += [(open_(_Schema.RESPELL, a), _idx(span, t)) for t, a in respellings]
+        # TODO: Ensure that this is sorted by specificity, so the most specific tag is opened
+        # and closed, first.
         annotations = sorted(annotations, key=lambda k: k[1])
         indices = [0] + [i for _, i in annotations] + [len(span.text)]
         parts = [span.text[i:j] for i, j in zip(indices, indices[1:] + [None])]
@@ -721,9 +723,9 @@ def preprocess(
         cntxt[end_char - 1] = Context.SCRIPT_STOP
 
         inputs.slices.append(slice(start_char, end_char))
-        # TODO: This is able to reliably determine the max audio length based on the dataset;
-        # however, during inference, the user may try to push the model to slow down even further
-        # using annotations. Should those be considered?
+        # NOTE: This does not consider annotations because `get_max_audio_length` is the maximum
+        # audio length found in the dataset, overall. The model shouldn't be able to work well past
+        # that.
         inputs.max_audio_len.append(get_max_audio_length(span.text))
         inputs.tokens.append([c.lower() for c in chars])
         # NOTE: We merge `pronun` and `casing` into one category for performance reasons. It's
