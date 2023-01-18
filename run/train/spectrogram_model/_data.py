@@ -305,14 +305,10 @@ class Batch(_utils.Batch):
 
     def apply(self, call: typing.Callable[[torch.Tensor], torch.Tensor]) -> "Batch":
         batch: Batch = super().apply(call)
-        token_embed = batch.processed.token_embeddings_padded
-        seq_embed = batch.processed.seq_embeddings_compact
-        set_ = object.__setattr__
-        set_(batch.processed, "token_embeddings_padded", call(token_embed))
-        set_(batch.processed, "seq_embeddings_compact", call(seq_embed))
-        set_(batch.processed, "num_tokens", call(batch.processed.num_tokens))
-        set_(batch.processed, "tokens_mask", call(batch.processed.tokens_mask))
-        set_(batch.processed, "max_audio_len_tensor", call(batch.processed.max_audio_len_tensor))
+        for field in dataclasses.fields(batch.processed):
+            val = getattr(batch.processed, field.name)
+            if isinstance(val, torch.Tensor):
+                object.__setattr__(batch.processed, field.name, call(val))
         return batch
 
     def __len__(self):
@@ -353,15 +349,12 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
         context=[cf.partial(s.spacy_context)() for s in spans],
         loudness=[_random_loudness_annotations(s, a) for s, a in zip(spans, signals_)],
         tempo=[_random_tempo_annotations(s) for s in spans],
-        respellings=[cf.partial(_random_respelling_annotations)(s) for s in spans],
+        respells=[cf.partial(_random_respelling_annotations)(s) for s in spans],
     )
     # NOTE: `inputs` has a spaCy `Span` which is difficult to `pickle`, so instead, we seralize
     # `inputs` into XML.
     xmls = [inputs.to_xml(i, include_context=True) for i in range(len(inputs))]
     processed = cf.partial(preprocess)(inputs)
-    # NOTE: These tensors are not needed, and are taking up memory.
-    object.__setattr__(processed, "token_embeddings", None)
-    object.__setattr__(processed, "seq_embeddings", None)
 
     return Batch(
         # NOTE: Prune unused attributes from `Passage` by creating a new `Passage`, in order to

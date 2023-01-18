@@ -35,13 +35,13 @@ def main():
     speaker_name = speaker.name.split()[0].lower()
 
     seshs = tts.session_vocab()
-    seshs = sorted([s for s in seshs if s.spk == speaker], key=lambda s: natural_keys(s.lbl))
+    seshs = sorted([s for s in seshs if s.spkr == speaker], key=lambda s: natural_keys(s.label))
     all_sesh: bool = st.checkbox("Sample all %d sessions" % len(seshs))
     seshs = st.multiselect(
         "Session(s)",
         options=seshs,
         default=seshs if all_sesh else [],
-        format_func=lambda s: s.lbl,
+        format_func=lambda s: s.label,
     )
 
     if len(seshs) == 0:
@@ -67,7 +67,7 @@ def main():
             if clip_num == 1:
                 st.markdown(f"##### Session: **{sesh}**")
             st.markdown(f"###### Clip: **{clip_num}**")
-            name = f"spk={speaker_name},sesh={sesh},clp={clip_num}.wav"
+            name = f"spkr={speaker_name},sesh={sesh},clp={clip_num}.wav"
             audio_web_path = audio_to_web_path(generated.sig_model[0], name)
             st_html(f'<audio controls src="{web_path_to_url(audio_web_path)}"></audio>')
             paths.append(audio_web_path)

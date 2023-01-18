@@ -1,9 +1,11 @@
+import dataclasses
 import typing
 
 import torch
 
 
-class Preds(typing.NamedTuple):
+@dataclasses.dataclass(frozen=True)
+class Preds:
     """The model predictions and related metadata."""
 
     # Spectrogram frames.
@@ -27,7 +29,7 @@ class Preds(typing.NamedTuple):
     frames_mask: torch.Tensor
 
     # The number of tokens in each sequence.
-    # torch.LongTensor [num_tokens]
+    # torch.LongTensor [batch_size]
     num_tokens: torch.Tensor
 
     # Sequence mask(s) to deliminate token padding with `False`.
@@ -37,6 +39,23 @@ class Preds(typing.NamedTuple):
     # If `True` the sequence has reached `self.max_frames_per_token`.
     # torch.BoolTensor [batch_size]
     reached_max: torch.Tensor
+
+    def __len__(self):
+        return self.num_tokens.shape[0]
+
+    def __getitem__(self, key):
+        num_frames = self.num_frames[key].max()
+        num_tokens = self.num_tokens[key].max()
+        return Preds(
+            frames=self.frames[:, key],
+            stop_tokens=self.stop_tokens[:num_frames, key],
+            alignments=self.alignments[:num_frames, key, :num_tokens],
+            num_frames=self.num_frames[key],
+            frames_mask=self.frames_mask[key, :num_frames],
+            num_tokens=self.num_tokens[key],
+            tokens_mask=self.tokens_mask[key, :num_frames],
+            reached_max=self.reached_max[key],
+        )
 
 
 class Encoded(typing.NamedTuple):
@@ -54,9 +73,9 @@ class Encoded(typing.NamedTuple):
     # torch.LongTensor [batch_size]
     num_tokens: torch.Tensor
 
-    # Sequence metadata encoded
-    # torch.FloatTensor [batch_size, seq_meta_embed_size]
-    seq_metadata: torch.Tensor
+    # Sequence embedding
+    # torch.FloatTensor [batch_size, seq_embed_size]
+    seq_embed: torch.Tensor
 
 
 class AttentionHiddenState(typing.NamedTuple):

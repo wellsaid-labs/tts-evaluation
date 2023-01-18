@@ -14,7 +14,7 @@ from run._models.spectrogram_model.inputs import (
     Pronun,
     preprocess,
 )
-from run._models.spectrogram_model.model import Generator, Mode, SpectrogramModel
+from run._models.spectrogram_model.model import Mode, SpectrogramModel
 from run.data._loader import structures as struc
 
 InputsTyping = typing.Union[InputsWrapper, Inputs]
@@ -31,9 +31,9 @@ class SpectrogramModelWrapper(SpectrogramModel):
         max_dialects: int,
         max_styles: int,
         max_languages: int,
-        max_word_embed_size: int,
-        max_seq_embed_size: int,
-        max_anno_features: int,
+        max_word_vector_size: int,
+        max_seq_vector_size: int,
+        max_anno_vector_size: int,
         annos: typing.List[typing.Tuple[str, str]],
         *args,
         **kwargs,
@@ -41,17 +41,17 @@ class SpectrogramModelWrapper(SpectrogramModel):
         super().__init__(
             *args,
             max_tokens=max_tokens,
-            max_seq_meta_values=(
+            max_seq_meta_vals=(
                 max_speakers,
                 max_sessions,
                 max_dialects,
                 max_styles,
                 max_languages,
             ),
-            max_token_meta_values=(len(Casing) * len(Pronun), len(Context)),
-            max_word_embed_size=max_word_embed_size,
-            max_seq_embed_size=max_seq_embed_size,
-            max_anno_features=max_anno_features,
+            max_token_meta_vals=(len(Casing) * len(Pronun), len(Context)),
+            max_word_vector_size=max_word_vector_size,
+            max_seq_vector_size=max_seq_vector_size,
+            max_anno_vector_size=max_anno_vector_size,
             annos=annos,
             **kwargs,
         )
@@ -64,23 +64,23 @@ class SpectrogramModelWrapper(SpectrogramModel):
 
     @property
     def speaker_embed(self) -> NumeralizePadEmbed[str]:
-        return typing.cast(NumeralizePadEmbed[str], self.encoder.embed_seq_metadata[0])
+        return typing.cast(NumeralizePadEmbed[str], self.encoder.embed_seq_meta[0])
 
     @property
     def session_embed(self) -> NumeralizePadEmbed[struc.Session]:
-        return typing.cast(NumeralizePadEmbed[struc.Session], self.encoder.embed_seq_metadata[1])
+        return typing.cast(NumeralizePadEmbed[struc.Session], self.encoder.embed_seq_meta[1])
 
     @property
     def dialect_embed(self) -> NumeralizePadEmbed[struc.Dialect]:
-        return typing.cast(NumeralizePadEmbed[struc.Dialect], self.encoder.embed_seq_metadata[2])
+        return typing.cast(NumeralizePadEmbed[struc.Dialect], self.encoder.embed_seq_meta[2])
 
     @property
     def style_embed(self) -> NumeralizePadEmbed[struc.Style]:
-        return typing.cast(NumeralizePadEmbed[struc.Style], self.encoder.embed_seq_metadata[3])
+        return typing.cast(NumeralizePadEmbed[struc.Style], self.encoder.embed_seq_meta[3])
 
     @property
     def language_embed(self) -> NumeralizePadEmbed[struc.Language]:
-        return typing.cast(NumeralizePadEmbed[struc.Language], self.encoder.embed_seq_metadata[4])
+        return typing.cast(NumeralizePadEmbed[struc.Language], self.encoder.embed_seq_meta[4])
 
     @typing.overload
     def __call__(
@@ -110,7 +110,7 @@ class SpectrogramModelWrapper(SpectrogramModel):
         use_tqdm: bool = False,
         token_skip_warning: float = math.inf,
         mode: typing.Literal[Mode.GENERATE] = Mode.GENERATE,
-    ) -> Generator:
+    ) -> typing.Generator[Preds, None, None]:
         ...  # pragma: no cover
 
     def __call__(
@@ -119,7 +119,7 @@ class SpectrogramModelWrapper(SpectrogramModel):
         *args,
         mode: typing.Literal[Mode.FORWARD] = Mode.FORWARD,
         **kwargs,
-    ) -> typing.Union[Generator, Preds]:
+    ) -> typing.Union[typing.Generator[Preds, None, None], Preds]:
         if isinstance(inputs, InputsWrapper):
             inputs = cf.partial(preprocess)(inputs, device=self.encoder.embed_token.weight.device)
 

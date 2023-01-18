@@ -24,9 +24,6 @@ class Mode(enum.Enum):
     INFER: typing.Final = enum.auto()
 
 
-Generator = typing.Iterator[Preds]
-
-
 class SpectrogramModel(torch.nn.Module):
     """Sequence to sequence model from tokens to a spectrogram.
 
@@ -52,14 +49,14 @@ class SpectrogramModel(torch.nn.Module):
           https://arxiv.org/pdf/1712.05884.pdf
 
     Args:
-        max_tokens: The maximum number of tokens the model will be trained on.
-        max_seq_meta_values: The maximum number of metadata values the model will be trained on.
-        max_word_embed_size: The maximum size of `inputs.anno_embed("token_embed")`.
-        max_seq_embed_size: The maximum size of the sequence embedding.
-        max_anno_features: The maximum number of annotation features.
+        max_tokens: The maximum number of tokens the modelsee.
+        max_seq_meta_vals: The maximum number of sequence metadata values the model see.
+        max_token_meta_vals: The maximum number of token metadata values the model see.
+        max_word_vector_size: The maximum size of `inputs.anno_embed("token_embed")`.
+        max_seq_vector_size: The maximum size of the sequence embedding.
+        max_anno_vector_size: The maximum number of annotation features.
         annos: The annotations to use along with their corresponding mask.
-        seq_meta_embed_size: The size of the sequence metadata embedding.
-        num_anno: The number of annotations.
+        seq_embed_size: The size of the sequence metadata embedding.
         num_frame_channels: Number of channels in each frame (sometimes refered to as
             "Mel-frequency bins" or "FFT bins" or "FFT bands").
         output_scalar: The output of this model is scaled up by this value.
@@ -71,14 +68,13 @@ class SpectrogramModel(torch.nn.Module):
     def __init__(
         self,
         max_tokens: int,
-        max_seq_meta_values: typing.Tuple[int, ...],
-        max_token_meta_values: typing.Tuple[int, ...],
-        max_word_embed_size: int,
-        max_seq_embed_size: int,
-        max_anno_features: int,
+        max_seq_meta_vals: typing.Tuple[int, ...],
+        max_token_meta_vals: typing.Tuple[int, ...],
+        max_word_vector_size: int,
+        max_seq_vector_size: int,
+        max_anno_vector_size: int,
         annos: typing.List[typing.Tuple[str, str]],
-        token_meta_embed_size: int,
-        seq_meta_embed_size: int,
+        seq_embed_size: int,
         num_frame_channels: int,
         output_scalar: float,
         stop_threshold: float,
@@ -90,19 +86,18 @@ class SpectrogramModel(torch.nn.Module):
         self.max_tokens = max_tokens
         self.encoder = encoder.Encoder(
             max_tokens=max_tokens,
-            max_token_meta_values=max_token_meta_values,
-            max_word_embed_size=max_word_embed_size,
-            max_seq_embed_size=max_seq_embed_size,
-            max_anno_features=max_anno_features,
+            max_token_meta_vals=max_token_meta_vals,
+            max_word_vector_size=max_word_vector_size,
+            max_seq_vector_size=max_seq_vector_size,
+            max_anno_vector_size=max_anno_vector_size,
             annos=annos,
-            max_seq_meta_values=max_seq_meta_values,
-            token_meta_embed_size=token_meta_embed_size,
-            seq_meta_embed_size=seq_meta_embed_size,
+            max_seq_meta_vals=max_seq_meta_vals,
+            seq_embed_size=seq_embed_size,
             **cf.get(),
         )
         self.decoder = decoder.Decoder(
             num_frame_channels=num_frame_channels,
-            seq_meta_embed_size=seq_meta_embed_size,
+            seq_embed_size=seq_embed_size,
             **cf.get(),
         )
         self.output_scalar: torch.Tensor
@@ -160,7 +155,7 @@ class SpectrogramModel(torch.nn.Module):
 
     def _infer_generator(
         self, inputs: Inputs, encoded: Encoded, split_size: float, use_tqdm: bool, **kwargs
-    ) -> Generator:
+    ) -> typing.Generator[Preds, None, None]:
         """Generate frames from the decoder until a stop is predicted or `max_lengths` is reached.
 
         TODO: Should we consider masking `alignments`, `stop_token`, also?
@@ -187,7 +182,7 @@ class SpectrogramModel(torch.nn.Module):
         progress_bar = tqdm(leave=True, unit="char(s)", total=max_tokens) if use_tqdm else None
         keep_going = lambda: (
             stopped.sum() < batch_size
-            and lengths[~stopped].max() < inputs.max_audio_len_tensor[~stopped].max()
+            and lengths[~stopped].max() < inputs.max_audio_len[~stopped].max()
         )
         while keep_going():
             if self.grad_enabled is not None:
@@ -199,7 +194,7 @@ class SpectrogramModel(torch.nn.Module):
             lengths[~stopped] += 1
             frame = frame.masked_fill(stopped.view(1, -1, 1), 0)
             hidden_state = hidden_state._replace(last_frame=frame)  # type: ignore
-            reached_max = lengths == inputs.max_audio_len_tensor
+            reached_max = lengths == inputs.max_audio_len
             window_start = hidden_state.attention_hidden_state.window_start
             is_stop, stop_token = self._is_stop(stop_token, num_tokens, window_start, reached_max)
             stopped[is_stop] = True
@@ -263,7 +258,7 @@ class SpectrogramModel(torch.nn.Module):
             frames_mask=target_mask.transpose(0, 1),
             num_tokens=encoded.num_tokens,
             tokens_mask=encoded.tokens_mask,
-            reached_max=num_frames >= inputs.max_audio_len_tensor,
+            reached_max=num_frames >= inputs.max_audio_len,
         )
 
     def _generate(
@@ -272,7 +267,7 @@ class SpectrogramModel(torch.nn.Module):
         split_size: float = 64,
         use_tqdm: bool = False,
         token_skip_warning: float = math.inf,
-    ) -> Generator:
+    ) -> typing.Generator[Preds, None, None]:
         """Generate frames from the decoder until a stop is predicted or `max_lengths` is reached.
 
         Args:
@@ -339,7 +334,7 @@ class SpectrogramModel(torch.nn.Module):
         use_tqdm: bool = False,
         token_skip_warning: float = math.inf,
         mode: typing.Literal[Mode.GENERATE] = Mode.GENERATE,
-    ) -> Generator:
+    ) -> typing.Generator[Preds, None, None]:
         ...  # pragma: no cover
 
     def __call__(self, *args, mode: Mode = Mode.FORWARD, **kwargs):

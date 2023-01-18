@@ -102,7 +102,7 @@ def main():
         audio = text_to_speech(package, script, session)
         sesh = str(session).replace("/", "__")
         speaker = session[0]
-        name = f"i={i},spec={spec_path.stem},sig={sig_path.stem},spk={speaker.label},"
+        name = f"i={i},spec={spec_path.stem},sig={sig_path.stem},spkr={speaker.label},"
         name += f"sesh={sesh},script={id(script)}.wav"
         audio_web_path = audio_to_web_path(audio, name=name)
         row = {

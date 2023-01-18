@@ -311,26 +311,18 @@ def batch_text_to_speech(
     logger.info(f"Processing {len(inputs)} examples with TTS models...")
     for batch in tqdm_(batches):
         xmls, docs, seshs = zip(*[i[1] for i in batch])
-        batch_input = Inputs.from_xml_batch(xmls, docs, seshs)  # type: ignore
-        preds = package.spec_model(batch_input, mode=Mode.INFER)
-        spectrogram = preds.frames.transpose(0, 1)
-        signals = package.signal_model(spectrogram, batch_input.session, preds.frames_mask)
+        input_batch = Inputs.from_xml_batch(xmls, docs, seshs)  # type: ignore
+        preds = package.spec_model(input_batch, mode=Mode.INFER)
+        spec = preds.frames.transpose(0, 1)
+        signals = package.signal_model(spec, input_batch.session, preds.frames_mask)
         num_samples = preds.num_frames * package.signal_model.upscale_factor
         for i, (j, _) in zip(range(len(batch)), batch):
-            idx = slice(i, i + 1)
-            input_ = batch_input.get(i)
-            preds_ = Preds(
-                frames=preds.frames[: preds.num_frames[i], idx],
-                stop_tokens=preds.stop_tokens[: preds.num_frames[i], idx],
-                alignments=preds.alignments[: preds.num_frames[i], idx, : preds.num_tokens[i]],
-                num_frames=preds.num_frames[idx],
-                frames_mask=preds.frames_mask[idx, : preds.num_frames[i]],
-                num_tokens=preds.num_tokens[idx],
-                tokens_mask=preds.tokens_mask[idx, : preds.num_frames[i]],
-                reached_max=preds.reached_max[idx],
+            key = slice(i, i + 1)
+            results[j] = TTSInputOutput(
+                inputs=input_batch[key],
+                spec_model=preds[key],
+                sig_model=signals[0][key, : num_samples[i]].detach().numpy(),
             )
-            sig = signals[0][idx, : num_samples[i]].detach().numpy()
-            results[j] = TTSInputOutput(inputs=input_, spec_model=preds_, sig_model=sig)
     return [results[i] for i in range(len(inputs))]
 
 

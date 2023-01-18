@@ -577,7 +577,7 @@ def _visualize_tts(
 
     batch = typing.cast(Batch, next(iter(data_loader)))
     item = random.randint(0, len(batch.batch) - 1)
-    inputs = batch.batch.processed.get(item)
+    inputs = batch.batch.processed[item]
     span = batch.batch.spans[item]
     # NOTE: The `spectrogram_model` runs on CPU to conserve GPU memory.
     preds = state.spec_model(inputs=inputs, mode=run._models.spectrogram_model.Mode.INFER)
