@@ -69,7 +69,7 @@ def test_integration():
 
         # fmt: off
         keys = [
-            metrics.ALIGNMENT_NUM_SKIPS, metrics.ALIGNMENT_STD_SUM, metrics.ALIGNMENT_NORM_SUM,
+            metrics.ALIGNMENT_STD_SUM, metrics.ALIGNMENT_NORM_SUM,
             metrics.NUM_REACHED_MAX, metrics.RMS_SUM_PREDICTED, metrics.RMS_SUM
         ]
         # fmt: on
