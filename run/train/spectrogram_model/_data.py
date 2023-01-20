@@ -303,6 +303,8 @@ class Batch(_utils.Batch):
 
     processed: PreprocessedInputs
 
+    inputs: typing.Optional[Inputs]
+
     def apply(self, call: typing.Callable[[torch.Tensor], torch.Tensor]) -> "Batch":
         batch: Batch = super().apply(call)
         for field in dataclasses.fields(batch.processed):
@@ -314,8 +316,23 @@ class Batch(_utils.Batch):
     def __len__(self):
         return len(self.spans)
 
+    def __getitem__(self, key: typing.Union[slice, int]):
+        key = slice(key, key + 1) if isinstance(key, int) else key
+        return Batch(
+            spans=self.spans[key],
+            audio=self.audio[key],
+            spectrogram=SequenceBatch(self.spectrogram[0][:, key], self.spectrogram[1][:, key]),
+            spectrogram_mask=SequenceBatch(
+                self.spectrogram_mask[0][:, key], self.spectrogram_mask[1][:, key]
+            ),
+            stop_token=SequenceBatch(self.stop_token[0][:, key], self.stop_token[1][:, key]),
+            xmls=self.xmls[key],
+            processed=self.processed[key],
+            inputs=None if self.inputs is None else self.inputs[key],
+        )
 
-def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
+
+def make_batch(spans: typing.List[Span], max_workers: int = 6, add_inputs: bool = False) -> Batch:
     """
     NOTE: In Janurary 2020, this function profiled like so:
     - 27% for `_signals_to_spectrograms`
@@ -355,7 +372,6 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
     # `inputs` into XML.
     xmls = [inputs.to_xml(i, include_context=True) for i in range(len(inputs))]
     processed = cf.partial(preprocess)(inputs)
-
     return Batch(
         # NOTE: Prune unused attributes from `Passage` by creating a new `Passage`, in order to
         # reduce batch size, which in turn makes it easier to send to other processes, for example.
@@ -366,6 +382,8 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
         stop_token=cf.partial(_make_stop_token)(spectrogram),
         xmls=xmls,
         processed=processed,
+        # NOTE: `inputs` with spaCy objects can be intensive so pickle, so it's optional.
+        inputs=inputs if add_inputs else None,
     )
 
 

@@ -15,7 +15,7 @@ from lib.text import XML_PATTERN, XMLType, natural_keys
 from run._config import DEFAULT_SCRIPT, SPECTROGRAM_MODEL_EXPERIMENTS_PATH
 from run._config.data import _get_loudness_annotation, _get_tempo_annotation
 from run._streamlit import audio_to_web_path, st_html, st_select_path, web_path_to_url
-from run._tts import griffin_lim_text_to_speech
+from run._tts import griffin_lim_tts
 from run.data._loader import Session, Speaker
 
 
@@ -47,7 +47,7 @@ def main():
         return
 
     with st.spinner("Generating audio..."):
-        wave = griffin_lim_text_to_speech(spec_export, XMLType(script), session)
+        wave = griffin_lim_tts(spec_export, XMLType(script), session)
         audio_web_path = audio_to_web_path(wave)
         st_html(f'<audio controls src="{web_path_to_url(audio_web_path)}"></audio>')
 

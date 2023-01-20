@@ -35,8 +35,15 @@ from torchnlp.random import fork_rng
 import lib
 import run
 from run._config.labels import _speaker
-from run._streamlit import audio_to_url, clip_audio, get_spans, st_ag_grid, st_download_bytes
-from run._utils import Dataset, get_datasets
+from run._streamlit import (
+    audio_to_url,
+    clip_audio,
+    get_datasets,
+    get_spans,
+    st_ag_grid,
+    st_download_bytes,
+    st_tqdm,
+)
 from run.data._loader import Alignment, Session, Span, Speaker
 from run.train.spectrogram_model._data import (
     _get_loudness_annotation,
@@ -47,11 +54,6 @@ from run.train.spectrogram_model._data import (
 lib.environment.set_basic_logging_config(reset=True)
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 logger = logging.getLogger(__name__)
-
-
-@st.experimental_singleton()
-def _get_datasets() -> typing.Tuple[Dataset, Dataset]:
-    return get_datasets(False)
 
 
 def _annotate(text: str, alignment: Alignment, prefix: str = "<<<", suffix: str = ">>>") -> str:
@@ -267,8 +269,8 @@ def main():
     st.write("The workbook reviews the annotations that are being generated for spans.")
 
     if st.sidebar.button("Clear Dataset Cache"):
-        _get_datasets.clear()
-    train_dataset, dev_dataset = _get_datasets()
+        get_datasets.clear()
+    train_dataset, dev_dataset = get_datasets()
 
     form: DeltaGenerator = st.form("settings")
     question = "How many span(s) do you want to generate?"
@@ -284,7 +286,10 @@ def main():
     if not form.form_submit_button("Submit"):
         return
 
-    spans, clips = get_spans(train_dataset, dev_dataset, speaker, num_spans, False)
+    spans = get_spans(train_dataset, dev_dataset, num_spans, speaker, is_dev_speakers=False)
+
+    with st.spinner("Loading audio..."):
+        clips = [s.audio() for s in st_tqdm(spans)]
 
     with st.spinner("Generating Annotations..."):
         with fork_rng(seed=random_seed):
@@ -300,7 +305,7 @@ def main():
 
     if load_individual:
         st.subheader("Individual Annotations")
-        st_ag_grid(df, audio_column_name="clip")
+        st_ag_grid(df, audio_column_names=["clip"])
 
     _speakers_variability(data)
     _stats(spans, data, intervals)

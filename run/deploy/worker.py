@@ -62,7 +62,7 @@ from run._tts import (
     PublicTextValueError,
     TTSPackage,
     process_tts_inputs,
-    text_to_speech_ffmpeg_generator,
+    tts_ffmpeg_generator,
 )
 from run.data._loader import Language, Session, Speaker, english, german, portuguese, spanish
 
@@ -358,7 +358,7 @@ def get_stream():
         "Expires": "0",
     }
     output_flags = ("-f", "mp3", "-b:a", "192k")
-    generator = text_to_speech_ffmpeg_generator(
+    generator = tts_ffmpeg_generator(
         TTS_PACKAGE, *input, **cf.get(), logger=app.logger, output_flags=output_flags
     )
     return Response(generator, headers=headers, mimetype="audio/mpeg")

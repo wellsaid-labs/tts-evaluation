@@ -25,6 +25,7 @@ from run._config.data import _include_span
 from run._tts import CHECKPOINTS_LOADERS, Checkpoints, package_tts
 from run._utils import Dataset
 from run.data._loader import Alignment, Passage, Span, Speaker
+from run.data._loader import structures as struc
 from run.train.spectrogram_model._worker import _get_data_generator
 
 if typing.TYPE_CHECKING:  # pragma: no cover
@@ -55,8 +56,8 @@ STREAMLIT_STATIC_SYMLINK_PATH = STREAMLIT_STATIC_PRIVATE_PATH / "symlink"
 
 
 @st.experimental_memo()
-def load_tts(checkpoints_key: str):
-    return package_tts(*CHECKPOINTS_LOADERS[Checkpoints[checkpoints_key]]())
+def load_tts(checkpoints_key: str, **kwargs):
+    return package_tts(*CHECKPOINTS_LOADERS[Checkpoints[checkpoints_key]](**kwargs))
 
 
 # A `Path` to a file or directory accessible via HTTP in the streamlit app.
@@ -231,27 +232,38 @@ def get_dataset(speaker_labels: typing.FrozenSet[str]) -> Dataset:
 
 
 @st.experimental_singleton()
+def get_datasets() -> typing.Tuple[Dataset, Dataset]:
+    """Load train and dev dataset, and cache."""
+    return run._utils.get_datasets(False)
+
+
 def get_dev_dataset() -> Dataset:
-    """Load dev dataset, and cache."""
-    with st.spinner("Loading dataset..."):
-        _, dev_dataset = run._utils.get_datasets(False)
-    return dev_dataset
+    """Load dev dataset and cache."""
+    return get_datasets()[1]
 
 
 @st.experimental_singleton()
 def get_spans(
     _train_dataset: Dataset,
     _dev_dataset: Dataset,
-    speaker: typing.Optional[Speaker],
     num_spans: int,
-    is_dev_speakers: bool,
+    speaker: typing.Optional[Speaker] = None,
+    is_dev_speakers: bool = True,
+    is_train_spans: bool = True,
+    include_dic: bool = True,
     device_count: int = 4,
-) -> typing.Tuple[typing.List[Span], typing.List[np.ndarray]]:
+) -> typing.List[Span]:
     """Get `num_spans` spans from `_train_dataset` for `speaker`. This uses the same code path
     as a training run so it ensures we are analyzing training data directly.
 
     Args:
         ...
+        speaker: Pick a speaker to generate spans for.
+        num_spans: The number of spans to generate.
+        is_dev_speakers: Get spans only for development speakers.
+        is_train_spans: Get spans from the training dataset.
+        include_dic: Include dictionary datasets that are sometimes used in development; however,
+            may not be as applicable for applied use cases.
         device_count: The number of devices used during training to set the configuration.
     """
     with st.spinner("Configuring..."):
@@ -267,15 +279,14 @@ def get_spans(
             _train_dataset = {speaker: _train_dataset[speaker]}
             _dev_dataset = {speaker: _dev_dataset[speaker]}
 
-        train_gen, _ = cf.partial(_get_data_generator)(_train_dataset, _dev_dataset)
+        train_gen, dev_gen = cf.partial(_get_data_generator)(_train_dataset, _dev_dataset)
+        gen = train_gen if is_train_spans else dev_gen
 
     with st.spinner("Making spans..."):
-        spans = [next(train_gen) for _ in st_tqdm(range(num_spans), num_spans)]
+        gen = (s for s in gen if include_dic or s.speaker.style is not struc.Style.DICT)
+        spans = [next(gen) for _ in st_tqdm(range(num_spans), num_spans)]
 
-    with st.spinner("Loading audio..."):
-        signals = [s.audio() for s in st_tqdm(spans)]
-
-    return spans, signals
+    return spans
 
 
 def _random_speech_segments(_train_dataset: Dataset):
@@ -458,7 +469,7 @@ renderer = JsCode(renderer)
 
 def st_ag_grid(
     df: pd.DataFrame,
-    audio_column_name: typing.Optional[str] = None,
+    audio_column_names: typing.List[str] = [],
     height: int = 850,
     page_size: int = 10,
 ):
@@ -466,8 +477,8 @@ def st_ag_grid(
     options = GridOptionsBuilder.from_dataframe(df)
     options.configure_pagination(paginationAutoPageSize=False, paginationPageSize=page_size)
     options.configure_default_column(wrapText=True, autoHeight=True, min_column_width=1)
-    if audio_column_name:
-        options.configure_column(audio_column_name, cellRenderer=renderer)
+    for name in audio_column_names:
+        options.configure_column(name, cellRenderer=renderer)
     return AgGrid(
         data=df,
         gridOptions=options.build(),

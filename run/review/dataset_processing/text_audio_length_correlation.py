@@ -29,18 +29,12 @@ import run
 from lib.text.utils import Pronunciation, get_pronunciation, get_pronunciations, load_cmudict_syl
 from run._config.labels import _speaker
 from run._config.lang import _get_long_abbrevs, get_avg_audio_length, get_max_audio_length
-from run._streamlit import audio_to_url, clip_audio, get_spans, st_ag_grid
-from run._utils import Dataset, get_datasets
+from run._streamlit import audio_to_url, clip_audio, get_datasets, get_spans, st_ag_grid, st_tqdm
 from run.data._loader import Span, Speaker
 
 lib.environment.set_basic_logging_config(reset=True)
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 logger = logging.getLogger(__name__)
-
-
-@st.experimental_singleton()
-def _get_datasets() -> typing.Tuple[Dataset, Dataset]:
-    return get_datasets(False)
 
 
 def _get_letter_feats(text: str, common_punct: typing.Set[str]) -> typing.Dict[str, int]:
@@ -288,7 +282,7 @@ def _find_max_audio_len_weight_and_bias(data: typing.List[typing.Dict], slowest_
     ]
     df = pandas.DataFrame(rows).sort_values(by=["offset"], ascending=False)
     st.markdown(f"This chart determines the maximum offset from a pace of {slowest_pace}.")
-    st_ag_grid(df, audio_column_name="clip")
+    st_ag_grid(df, audio_column_names=["clip"])
     offset = data[0]["audio_len"] - (data[0][expected] * slowest_pace)
     st.markdown(
         f"The maximum audio length is `average_audio_len * {slowest_pace} + {offset}`.\n"
@@ -421,7 +415,7 @@ def main():
             "  the first word in CMUDict, if there are multiple."
         )
 
-    train_dataset, dev_dataset = _get_datasets()
+    train_dataset, dev_dataset = get_datasets()
 
     form: DeltaGenerator = st.form("settings")
     question = "How many span(s) do you want to generate?"
@@ -445,7 +439,10 @@ def main():
     if not form.form_submit_button("Submit"):
         return
 
-    spans, clips = get_spans(train_dataset, dev_dataset, speaker, num_spans, dev_speakers)
+    spans = get_spans(train_dataset, dev_dataset, num_spans, speaker, dev_speakers)
+
+    with st.spinner("Loading audio..."):
+        clips = [s.audio() for s in st_tqdm(spans)]
 
     with st.spinner("Finding common punctuation marks..."):
         common_punct = collections.Counter()
@@ -474,7 +471,7 @@ def main():
     features = [k for k in data[0].keys() if k.startswith(FEATS_PREFIX)]
     _summarize(spans, df)
     st.header("Data")
-    st_ag_grid(df, audio_column_name="clip")
+    st_ag_grid(df, audio_column_names=["clip"])
     _find_max_audio_len_weight_and_bias(data, slowest_pace=slowest_pace)
     _speaker_distribution(data)
     _distributions(data, ["audio_len"] + features, [0.1] + [1.0] * len(features))
