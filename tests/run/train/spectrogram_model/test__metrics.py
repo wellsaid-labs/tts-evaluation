@@ -37,7 +37,7 @@ def run_around_tests():
         lib.audio.griffin_lim: cf.Args(
             frame_hop=frame_hop, fft_length=fft_length, window=window, sample_rate=sample_rate
         ),
-        _metrics._get_alignment_token_idx: cf.Args(token_idx=1),
+        _metrics._get_token_idx_frames: cf.Args(token_idx=1),
     }
     cf.add(config, overwrite=True)
     yield
@@ -54,15 +54,17 @@ def _make_preds(
         tokens_mask (torch.BoolTensor [batch_size, num_tokens])
         frames_mask (torch.BoolTensor [batch_size, num_frames])
     """
+    num_frames, batch_size, _ = tuple(alignments.shape)
+    num_frame_channels = 1
     return Preds(
-        frames=torch.tensor(0),
-        stop_tokens=torch.tensor(0),
+        frames=torch.zeros(num_frames, batch_size, num_frame_channels),
+        stop_tokens=torch.zeros(num_frames, batch_size),
         alignments=alignments,
         num_frames=frames_mask.sum(dim=1),
         frames_mask=frames_mask,
         num_tokens=tokens_mask.sum(dim=1),
         tokens_mask=tokens_mask,
-        reached_max=torch.tensor(0),
+        reached_max=torch.zeros(batch_size, dtype=torch.bool),
     )
 
 
@@ -106,9 +108,9 @@ def test_get_alignment_hang_time__get_alignment_was_aligned():
 def test_get_alignment_hang_time__zero_elements():
     """Test `_metrics.get_alignment_hang_time` handles zero elements correctly."""
     preds = _make_preds(
-        torch.empty(1024, 0, 1024),
-        torch.empty(0, 1024, dtype=torch.bool),
-        torch.empty(0, 1024, dtype=torch.bool),
+        torch.empty(0, 0, 0),
+        torch.empty(0, 0, dtype=torch.bool),
+        torch.empty(0, 0, dtype=torch.bool),
     )
     assert _metrics.get_alignment_hang_time(preds).shape == (0,)
 
@@ -116,9 +118,9 @@ def test_get_alignment_hang_time__zero_elements():
 def test_get_alignment_was_aligned__zero_elements():
     """Test `_metrics.get_alignment_was_aligned` handles zero elements correctly."""
     preds = _make_preds(
-        torch.empty(1024, 0, 1024),
-        torch.empty(0, 1024, dtype=torch.bool),
-        torch.empty(0, 1024, dtype=torch.bool),
+        torch.empty(0, 0, 0),
+        torch.empty(0, 0, dtype=torch.bool),
+        torch.empty(0, 0, dtype=torch.bool),
     )
     assert _metrics.get_alignment_was_aligned(preds).shape == (0,)
 

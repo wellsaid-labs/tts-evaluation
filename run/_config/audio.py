@@ -205,6 +205,10 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
             **hertz_bounds,
         ),
         lib.audio.get_pyloudnorm_meter: Args(filter_class=filter_class),
+        # TODO: Some speakers, like Heather, speak at around -40 db to -50db,
+        # and pauses are at best -60 db. While speakers like Donnla, may have silences around
+        # -45 db. We should use session avg loudness, to create a threshold that is more general.
+        # There is some preliminary work on that in `batch_griffin_lim.py`
         run.train.spectrogram_model._metrics.get_num_pause_frames: Args(
             frame_hop=FRAME_HOP,
             min_length=too_long_pause_length,

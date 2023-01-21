@@ -29,6 +29,7 @@ import run
 from lib.text.utils import Pronunciation, get_pronunciation, get_pronunciations, load_cmudict_syl
 from run._config.labels import _speaker
 from run._config.lang import _get_long_abbrevs, get_avg_audio_length, get_max_audio_length
+from run._config.train import _config_spec_model_training
 from run._streamlit import audio_to_url, clip_audio, get_datasets, get_spans, st_ag_grid, st_tqdm
 from run.data._loader import Span, Speaker
 
@@ -282,7 +283,7 @@ def _find_max_audio_len_weight_and_bias(data: typing.List[typing.Dict], slowest_
     ]
     df = pandas.DataFrame(rows).sort_values(by=["offset"], ascending=False)
     st.markdown(f"This chart determines the maximum offset from a pace of {slowest_pace}.")
-    st_ag_grid(df, audio_column_names=["clip"])
+    st_ag_grid(df, audio_cols=["clip"])
     offset = data[0]["audio_len"] - (data[0][expected] * slowest_pace)
     st.markdown(
         f"The maximum audio length is `average_audio_len * {slowest_pace} + {offset}`.\n"
@@ -396,6 +397,8 @@ def _multivariate_regressions(
 
 def main():
     run._config.configure(overwrite=True)
+    # NOTE: The various parameters map to configurations that are not relevant for this workbook.
+    _config_spec_model_training(0, 0, 0, 0, 0, False, overwrite=True)
 
     st.title("Text Audio Correlation")
     with st.expander("ℹ️", expanded=True):
@@ -471,7 +474,7 @@ def main():
     features = [k for k in data[0].keys() if k.startswith(FEATS_PREFIX)]
     _summarize(spans, df)
     st.header("Data")
-    st_ag_grid(df, audio_column_names=["clip"])
+    st_ag_grid(df, audio_cols=["clip"])
     _find_max_audio_len_weight_and_bias(data, slowest_pace=slowest_pace)
     _speaker_distribution(data)
     _distributions(data, ["audio_len"] + features, [0.1] + [1.0] * len(features))

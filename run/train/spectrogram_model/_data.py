@@ -305,19 +305,18 @@ class Batch(_utils.Batch):
 
     inputs: typing.Optional[Inputs]
 
-    def apply(self, call: typing.Callable[[torch.Tensor], torch.Tensor]) -> "Batch":
-        batch: Batch = super().apply(call)
-        for field in dataclasses.fields(batch.processed):
-            val = getattr(batch.processed, field.name)
-            if isinstance(val, torch.Tensor):
-                object.__setattr__(batch.processed, field.name, call(val))
-        return batch
-
     def __len__(self):
         return len(self.spans)
 
-    def __getitem__(self, key: typing.Union[slice, int]):
-        key = slice(key, key + 1) if isinstance(key, int) else key
+    def __getitem__(self, key: typing.Any):
+        if not isinstance(key, (slice, int)):
+            raise TypeError
+        # TODO: There are several instances of this pattern in the code. Could we rewrite this
+        # using conventional list objects? And/or create an object is able to represent both
+        # a batch and an individual item?
+        if isinstance(key, int):
+            self.spans[key]  # NOTE: Raise `IndexError` if needed.
+            key = slice(key, key + 1)
         return Batch(
             spans=self.spans[key],
             audio=self.audio[key],
@@ -330,6 +329,14 @@ class Batch(_utils.Batch):
             processed=self.processed[key],
             inputs=None if self.inputs is None else self.inputs[key],
         )
+
+    def apply(self, call: typing.Callable[[torch.Tensor], torch.Tensor]) -> "Batch":
+        batch: Batch = super().apply(call)
+        for field in dataclasses.fields(batch.processed):
+            val = getattr(batch.processed, field.name)
+            if isinstance(val, torch.Tensor):
+                object.__setattr__(batch.processed, field.name, call(val))
+        return batch
 
 
 def make_batch(spans: typing.List[Span], max_workers: int = 6, add_inputs: bool = False) -> Batch:

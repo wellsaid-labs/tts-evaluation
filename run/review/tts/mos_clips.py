@@ -41,9 +41,9 @@ import run
 from lib.text import XMLType
 from run._streamlit import (
     audio_to_web_path,
+    figure_to_url,
     get_dev_dataset,
     load_tts,
-    make_temp_web_dir,
     st_download_files,
     web_path_to_url,
 )
@@ -111,8 +111,7 @@ def main():
             results = batch_tts(package, batches)
 
         for span, (_, pred, audio) in tqdm(zip(spans, results), total=len(spans)):
-            image_web_path = make_temp_web_dir() / "alignments.png"
-            lib.visualize.plot_alignments(pred.alignments[:, 0]).savefig(str(image_web_path))
+            figure_url = figure_to_url(lib.visualize.plot_alignments(pred.alignments[:, 0]))
             num_frames = pred.frames.shape[0]
             num_pause_frames = cf.partial(get_num_pause_frames)(pred.frames, None)
             row = {
@@ -121,7 +120,7 @@ def main():
                 "Num Pause Frames": num_pause_frames[0],
                 "Alignment Norm": (get_alignment_norm(pred)[0] / num_frames).item(),
                 "Alignment STD": (get_alignment_std(pred)[0] / num_frames).item(),
-                "Alignment": f'<img src="{web_path_to_url(image_web_path)}" />',
+                "Alignment": f'<img src="{figure_url}" />',
                 **make_result(span, audio[0]),
             }
             rows.append(row)

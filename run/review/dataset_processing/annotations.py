@@ -35,6 +35,7 @@ from torchnlp.random import fork_rng
 import lib
 import run
 from run._config.labels import _speaker
+from run._config.train import _config_spec_model_training
 from run._streamlit import (
     audio_to_url,
     clip_audio,
@@ -264,12 +265,15 @@ def _speakers_variability(data: typing.List[typing.Dict]):
 
 def main():
     run._config.configure(overwrite=True)
+    # NOTE: The various parameters map to configurations that are not relevant for this workbook.
+    _config_spec_model_training(0, 0, 0, 0, 0, False, overwrite=True)
 
     st.title("Annotations")
     st.write("The workbook reviews the annotations that are being generated for spans.")
 
     if st.sidebar.button("Clear Dataset Cache"):
         get_datasets.clear()
+
     train_dataset, dev_dataset = get_datasets()
 
     form: DeltaGenerator = st.form("settings")
@@ -305,7 +309,7 @@ def main():
 
     if load_individual:
         st.subheader("Individual Annotations")
-        st_ag_grid(df, audio_column_names=["clip"])
+        st_ag_grid(df, audio_cols=["clip"])
 
     _speakers_variability(data)
     _stats(spans, data, intervals)

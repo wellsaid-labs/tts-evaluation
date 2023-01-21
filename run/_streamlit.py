@@ -32,6 +32,7 @@ if typing.TYPE_CHECKING:  # pragma: no cover
     import altair as alt
     import librosa
     import librosa.util
+    import matplotlib.figure
     import pandas as pd
     import streamlit as st
 else:
@@ -39,6 +40,7 @@ else:
     alt = LazyLoader("alt", globals(), "altair")
     pd = LazyLoader("pd", globals(), "pandas")
     st = LazyLoader("st", globals(), "streamlit")
+    matplotlib = LazyLoader("matplotlib", globals(), "matplotlib")
 
 
 logger = logging.getLogger(__name__)
@@ -98,6 +100,13 @@ def path_to_web_path(path: pathlib.Path) -> WebPath:
         web_path.parent.mkdir(exist_ok=True, parents=True)
         web_path.symlink_to(path)
     return WebPath(web_path)
+
+
+def figure_to_url(figure: matplotlib.figure.Figure, name: str = "fig.png", **kwargs):
+    """Create a URL that can be loaded from `streamlit`."""
+    image_web_path = make_temp_web_dir() / name
+    figure.savefig(str(image_web_path), **kwargs)
+    return web_path_to_url(image_web_path)
 
 
 def audio_to_web_path(audio: np.ndarray, name: str = "audio.wav", **kwargs) -> WebPath:
@@ -266,11 +275,6 @@ def get_spans(
             may not be as applicable for applied use cases.
         device_count: The number of devices used during training to set the configuration.
     """
-    with st.spinner("Configuring..."):
-        datasets = (_train_dataset, _dev_dataset)
-        config_ = run._config.make_spectrogram_model_train_config(*datasets, False, device_count)
-        cf.add(config_, overwrite=True)
-
     with st.spinner("Making generators..."):
         if is_dev_speakers:
             _train_dataset = {s: _train_dataset[s] for s in _dev_dataset.keys()}
@@ -450,26 +454,29 @@ _StTqdmVar = typing.TypeVar("_StTqdmVar")
 
 
 def st_tqdm(
-    iterable: typing.Iterable[_StTqdmVar], length: typing.Optional[int] = None
+    iterable: typing.Iterable[_StTqdmVar], total: typing.Optional[int] = None
 ) -> typing.Generator[_StTqdmVar, None, None]:
     """Display a progress bar while iterating through `iterable`."""
     bar = st.progress(0)
     for i, item in enumerate(iterable):
         yield item
-        bar.progress(i / (len(iterable) if length is None else length))  # type: ignore
+        bar.progress(i / (len(iterable) if total is None else total))  # type: ignore
     bar.empty()
 
 
 # NOTE: This follows the examples highlighted here:
 # https://github.com/PablocFonseca/streamlit-aggrid-examples/blob/main/cell_renderer_class_example.py
 # https://github.com/PablocFonseca/streamlit-aggrid/issues/119
-renderer = 'function(params) {return `<audio controls preload="none" src="${params.value}" />`}'
-renderer = JsCode(renderer)
+audio_renderer = 'function(prms) {return `<audio controls preload="none" src="${prms.value}" />`}'
+audio_renderer = JsCode(audio_renderer)
+img_renderer = 'function(prms) {return `<img src="${prms.value}" />`}'
+img_renderer = JsCode(img_renderer)
 
 
 def st_ag_grid(
     df: pd.DataFrame,
-    audio_column_names: typing.List[str] = [],
+    audio_cols: typing.List[str] = [],
+    img_cols: typing.List[str] = [],
     height: int = 850,
     page_size: int = 10,
 ):
@@ -477,8 +484,10 @@ def st_ag_grid(
     options = GridOptionsBuilder.from_dataframe(df)
     options.configure_pagination(paginationAutoPageSize=False, paginationPageSize=page_size)
     options.configure_default_column(wrapText=True, autoHeight=True, min_column_width=1)
-    for name in audio_column_names:
-        options.configure_column(name, cellRenderer=renderer)
+    for name in audio_cols:
+        options.configure_column(name, cellRenderer=audio_renderer)
+    for name in img_cols:
+        options.configure_column(name, cellRenderer=img_renderer)
     return AgGrid(
         data=df,
         gridOptions=options.build(),

@@ -184,8 +184,12 @@ class Inputs:
     def __len__(self):
         return len(self.tokens)
 
-    def __getitem__(self, key: typing.Union[int, slice]):
-        key = slice(key, key + 1) if isinstance(key, int) else key
+    def __getitem__(self, key: typing.Any):
+        if not isinstance(key, (slice, int)):
+            raise TypeError
+        if isinstance(key, int):
+            self.tokens[key]  # NOTE: Raise `IndexError` if needed.
+            key = slice(key, key + 1)
         max_num_tokens = self.num_tokens[key].max()
         return Inputs(
             tokens=self.tokens[key],
@@ -457,8 +461,13 @@ class InputsWrapper:
 
     def __getitem__(self, key: typing.Any):
         """Get the ith item in `self`."""
+        if not isinstance(key, (slice, int)):
+            raise TypeError
+        if isinstance(key, int):
+            self.session[key]  # NOTE: Raise `IndexError` if needed.
+            key = slice(key, key + 1)
         fields = dataclasses.fields(self)
-        return self.__class__(**{f.name: [getattr(self, f.name)[key]] for f in fields})
+        return self.__class__(**{f.name: getattr(self, f.name)[key] for f in fields})
 
     @classmethod
     def from_strict_xml(
