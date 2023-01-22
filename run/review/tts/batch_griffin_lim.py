@@ -18,6 +18,7 @@ from lib.environment import PT_EXTENSION, load
 from run import _streamlit as _st
 from run._config import SPECTROGRAM_MODEL_EXPERIMENTS_PATH
 from run._config.train import _config_spec_model_training
+from run._models.spectrogram_model import Preds
 from run._tts import batch_griffin_lim_tts, make_training_batches
 from run.train.spectrogram_model import _metrics
 from run.train.spectrogram_model._worker import Checkpoint
@@ -74,6 +75,62 @@ def get_num_hanging_silent_frames(
     is_speech = (get_loudness(db_spectrogram, mask) >= min_loudness) * mask
     idx_last_speech_frame = mask.shape[1] - is_speech.flip(dims=[1]).long().argmax(dim=1)
     return mask.sum(dim=1) - idx_last_speech_frame
+
+
+def _get_token_idx_frames(preds: Preds, token_idx: int = 2, threshold: float = 0.2) -> torch.Tensor:
+    """Given `alignments` from frames to tokens, get a bool tensor where it's true if frame was
+    aligned to `preds.num_tokens - token_idx` determined by reaching or exceeding a `threshold`
+    of focus.
+
+    Returns:
+        torch.BoolTensor [batch_size, num_frames]
+    """
+    num_frames = preds.alignments.shape[0]
+    batch_size = preds.alignments.shape[1]
+    if preds.alignments.numel() == 0:
+        return torch.zeros(batch_size, num_frames, device=preds.alignments.device)
+
+    alignments = preds.alignments.masked_fill(~preds.tokens_mask.unsqueeze(0), 0)
+    # [batch_size] → [batch_size, 1]
+    token_idx_ = (preds.num_tokens - token_idx).view(1, -1, 1).expand(num_frames, batch_size, 1)
+    # [num_frames, batch_size, num_tokens] → [num_frames, batch_size]
+    frames = torch.gather(alignments, dim=2, index=token_idx_).squeeze(2) > threshold
+    # [num_frames, batch_size] → [batch_size, num_frames]
+    frames = frames.transpose(0, 1)
+    return frames.masked_fill(~preds.frames_mask, 0)
+
+
+def get_alignment_was_aligned(preds: Preds, **kwargs) -> torch.Tensor:
+    """Given `alignments` from frames to tokens, this gets the number of sequences where a frame
+    was aligned with `preds.num_tokens - token_idx`.
+
+    Returns:
+        torch.FloatTensor [batch_size]
+    """
+    token_idx_frames = _get_token_idx_frames(preds, **kwargs)
+    return token_idx_frames.sum(dim=1) != 0
+
+
+def get_alignment_hang_time(preds: Preds, **kwargs) -> torch.Tensor:
+    """Given `alignments` from frames to tokens, the gets the number of frames after
+    `preds.num_tokens - token_idx` has been reached.
+
+    TODO: This metric could be adjusted to match our stop token metric, which is based off anytime
+    the model is focused on `token_idx` or any token higher than that.
+
+    Returns:
+        torch.FloatTensor [batch_size]
+    """
+    # [batch_size, num_frames]
+    token_idx_frames = _get_token_idx_frames(preds, **kwargs)
+    if token_idx_frames.numel() == 0:
+        return torch.empty(0, device=token_idx_frames.device)
+
+    # NOTE: Get the first frame where frames is focused on `token_idx`.
+    # [batch_size, num_frames] → [batch_size]
+    frame_idx = token_idx_frames.long().argmax(dim=1)
+    aligned = token_idx_frames.sum(dim=1) != 0
+    return (preds.num_frames - frame_idx - 1).float() * aligned
 
 
 def main():
@@ -139,7 +196,7 @@ def main():
             "Num Hanging Silent Frames": num_hanging_silent[0].item(),
             "Stop Token Hang Time": num_frames - first_stop_option,
             "Hang Time Diff": abs(num_hanging_silent[0].item() - (num_frames - first_stop_option)),
-            "Alignment Hang Time": _metrics.get_alignment_hang_time(pred)[0].item(),
+            "Alignment Hang Time": get_alignment_hang_time(pred)[0].item(),
             "Loudness Diff": gold_avg_loudness - avg_loudness,
             "Audio Length Diff": gold_num_frames / num_frames,
             "Audio Length Diff (minus hang time)": gold_num_frames / first_stop_option,
@@ -148,7 +205,7 @@ def main():
             "Gold Average Loudness": gold_avg_loudness,
             "Alignment Norm": (_metrics.get_alignment_norm(pred)[0] / num_frames).item(),
             "Alignment STD": (_metrics.get_alignment_std(pred)[0] / num_frames).item(),
-            "Alignment Reached": _metrics.get_alignment_was_aligned(pred).long()[0].item(),
+            "Alignment Reached": get_alignment_was_aligned(pred).long()[0].item(),
             "Transcript": span.transcript,
             "Script": span.script,
             "Audio File": str(span.audio_file.path.relative_to(lib.environment.ROOT_PATH)),

@@ -110,9 +110,10 @@ def _config_spec_model_training(
         spectrogram_model._metrics.Metrics._get_model_metrics: cf.Args(
             num_frame_channels=NUM_FRAME_CHANNELS
         ),
-        # NOTE: For robustness, we measure if the model reached the second to last token rather
-        # than the last token.
-        spectrogram_model._metrics._get_token_idx_frames: cf.Args(token_idx=2),
+        # NOTE: This parameter was set via the workbook `run/review/tts/batch_griffin_lim.py`. It
+        # is closely aligned to the number of silent frames at the end of each sequence; however,
+        # it's a bit more robust.
+        spectrogram_model._metrics.get_hang_time: cf.Args(threshold=0.03),
         # SOURCE (Tacotron 2):
         # We use the Adam optimizer with β1 = 0.9, β2 = 0.999, eps = 10−6 learning rate of 10−3
         # We also apply L2 regularization with weight 10−6
