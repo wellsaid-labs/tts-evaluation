@@ -423,11 +423,12 @@ def test_spectrogram_model__infer_generate():
         with fork_rng(seed=123):
             generated = list(model(inputs, mode=Mode.GENERATE, split_size=i))
 
+        num_frames = torch.stack([g.num_frames for g in generated]).sum(dim=0)
         assert_almost_equal(preds.frames, torch.cat([g.frames for g in generated]))
         assert_almost_equal(preds.stop_tokens, torch.cat([g.stop_tokens for g in generated]))
         assert_almost_equal(preds.alignments, torch.cat([g.alignments for g in generated]))
-        assert_almost_equal(preds.num_frames, generated[-1].num_frames)
-        assert_almost_equal(preds.frames_mask, generated[-1].frames_mask)
+        assert_almost_equal(preds.num_frames, num_frames)
+        assert_almost_equal(preds.frames_mask, torch.cat([g.frames_mask for g in generated], dim=1))
         assert_almost_equal(preds.num_tokens, generated[-1].num_tokens)
         assert_almost_equal(preds.tokens_mask, generated[-1].tokens_mask)
         assert_almost_equal(preds.reached_max, generated[-1].reached_max)
