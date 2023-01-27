@@ -4,11 +4,9 @@ from unittest import mock
 import config as cf
 import pytest
 
-from run._config import Cadence, DatasetType, make_spectrogram_model_train_config
+from run._config import Cadence, DatasetType, config_spec_model_training_from_datasets
 from run._models.spectrogram_model import SpectrogramModel
-from run.data._loader.english.lj_speech import LINDA_JOHNSON
 from run.data._loader.english.m_ailabs import JUDY_BIEBER
-from run.data._loader.structures import Language
 from run.train._utils import Context, Timer, set_context
 from run.train.spectrogram_model._metrics import Metrics, MetricsKey
 from run.train.spectrogram_model._worker import (
@@ -17,7 +15,6 @@ from run.train.spectrogram_model._worker import (
     _log_vocab,
     _run_inference,
     _run_step,
-    _visualize_select_cases,
 )
 from tests.run._utils import make_spec_worker_state, mock_distributed_data_parallel
 from tests.run.train._utils import setup_experiment
@@ -32,7 +29,7 @@ def run_around_tests():
 
 def test_integration():
     train_dataset, dev_dataset, comet, device = setup_experiment()
-    cf.add(make_spectrogram_model_train_config(train_dataset, dev_dataset, True))
+    config_spec_model_training_from_datasets(train_dataset, dev_dataset, True)
     state = make_spec_worker_state(comet, device)
 
     assert state.model.module == state.model  # Ensure the mock worked
@@ -72,7 +69,7 @@ def test_integration():
 
         # fmt: off
         keys = [
-            metrics.ALIGNMENT_NUM_SKIPS, metrics.ALIGNMENT_STD_SUM, metrics.ALIGNMENT_NORM_SUM,
+            metrics.ALIGNMENT_STD_SUM, metrics.ALIGNMENT_NORM_SUM,
             metrics.NUM_REACHED_MAX, metrics.RMS_SUM_PREDICTED, metrics.RMS_SUM
         ]
         # fmt: on
@@ -121,15 +118,6 @@ def test_integration():
 
         metrics.log(lambda l: l[-1:], type_=DatasetType.TRAIN, cadence=Cadence.STEP)
         metrics.log(is_verbose=True, type_=DatasetType.TRAIN, cadence=Cadence.MULTI_STEP)
-
-        _visualize_select_cases(
-            state,
-            DatasetType.TEST,
-            Cadence.MULTI_STEP,
-            cases=[(Language.ENGLISH, "Hi There")],
-            speakers={JUDY_BIEBER, LINDA_JOHNSON},
-            num_cases=1,
-        )
 
     # Test loading and saving a checkpoint
     with mock.patch("torch.nn.parallel.DistributedDataParallel") as module:

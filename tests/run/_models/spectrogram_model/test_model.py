@@ -32,23 +32,35 @@ assert_almost_equal = lambda *a, **k: _utils.assert_almost_equal(*a, **k, decima
 
 class Params(typing.NamedTuple):
     max_tokens: int = 17
-    max_seq_meta_values: typing.Tuple[int, int] = (3, 5)
+    max_seq_meta_vals: typing.Tuple[int, int] = (3, 5)
     num_frame_channels: int = 6
     batch_size: int = 5
     max_frames: int = 5
     max_num_tokens: int = 6
     max_tokens_index: int = 0
-    max_token_embed_size: int = 20
-    max_anno_features: int = 1
+    max_word_vector_size: int = 20
+    max_seq_vector_size: int = 2
+    max_anno_vector_size: int = 1
+    annos: typing.Tuple[str, str] = ("anno_embed", "anno_mask")
 
     @property
     def max_frames_per_token(self) -> float:
         return self.max_frames / self.max_num_tokens
 
+    @property
+    def token_embed_idx(self):
+        idx = self.max_anno_vector_size
+        return {
+            self.annos[0]: slice(0, idx),
+            self.annos[1]: slice(idx, idx + 1),
+            "word_vector": slice(idx + 1, idx + 1 + self.max_word_vector_size),
+        }
+
 
 def _make_spectrogram_model(
     params: Params,
-    seq_meta_embed_size: int = 8,
+    seq_embed_size: int = 8,
+    anno_embed_size: int = 3,
     output_scalar: float = 1.2,
     stop_threshold: float = 0.5,
     dropout: float = 0.5,
@@ -65,6 +77,8 @@ def _make_spectrogram_model(
             conv_filter_size=3,
             lstm_layers=1,
             dropout=dropout,
+            token_meta_embed_size=0,
+            anno_embed_size=anno_embed_size,
         ),
         run._models.spectrogram_model.decoder.Decoder: cf.Args(
             pre_net_size=16,
@@ -86,12 +100,13 @@ def _make_spectrogram_model(
     cf.add(config, overwrite=True)
     model = SpectrogramModel(
         max_tokens=params.max_tokens,
-        max_seq_meta_values=params.max_seq_meta_values,
-        max_token_meta_values=tuple(),
-        max_token_embed_size=params.max_token_embed_size,
-        max_anno_features=params.max_anno_features,
-        token_meta_embed_size=0,
-        seq_meta_embed_size=seq_meta_embed_size,
+        max_seq_meta_vals=params.max_seq_meta_vals,
+        max_token_meta_vals=tuple(),
+        max_word_vector_size=params.max_word_vector_size,
+        max_seq_vector_size=params.max_seq_vector_size,
+        max_anno_vector_size=params.max_anno_vector_size,
+        annos=[params.annos],
+        seq_embed_size=seq_embed_size,
         num_frame_channels=params.num_frame_channels,
         output_scalar=output_scalar,
         stop_threshold=stop_threshold,
@@ -115,8 +130,8 @@ def _make_inputs(
     # TODO: Remove and update `test_spectrogram_model__version` values.
     tokens_size = (params.max_num_tokens, params.batch_size)
     tokens = torch.randint(1, params.max_tokens, tokens_size).transpose(0, 1).tolist()
-    speakers = torch.randint(0, params.max_seq_meta_values[0], (params.batch_size,)).tolist()
-    sessions = torch.randint(0, params.max_seq_meta_values[1], (params.batch_size,)).tolist()
+    speakers = torch.randint(0, params.max_seq_meta_vals[0], (params.batch_size,)).tolist()
+    sessions = torch.randint(0, params.max_seq_meta_vals[1], (params.batch_size,)).tolist()
 
     num_tokens = torch.randint(1, params.max_num_tokens, (params.batch_size,), dtype=long_)
     # NOTE: Ensure at least one sequence is `max_num_tokens`.
@@ -124,17 +139,22 @@ def _make_inputs(
     for i in range(params.batch_size):
         tokens[i] = tokens[i][: num_tokens[i]]
 
-    token_embeddings_size = (params.batch_size, params.max_num_tokens, params.max_token_embed_size)
-    token_embeddings = torch.randn(*token_embeddings_size)
+    word_vector = torch.randn(params.batch_size, params.max_num_tokens, params.max_word_vector_size)
+    anno_vector = torch.randn(params.batch_size, params.max_num_tokens, params.max_anno_vector_size)
+    anno_mask = torch.ones(params.batch_size, params.max_num_tokens, 1)
+    token_vectors = torch.cat((anno_vector, anno_mask, word_vector), dim=2)
+    seq_vectors = torch.randn(params.batch_size, params.max_seq_vector_size)
+    max_audio_len = (params.max_frames_per_token * num_tokens).ceil()
 
     inputs = Inputs(
         tokens=tokens,
-        seq_metadata=[speakers, sessions],
-        token_metadata=[[[] for _ in range(params.batch_size)]],
-        token_embeddings=[e[: len(t)] for t, e in zip(tokens, token_embeddings.unbind())],
+        seq_meta=list(zip(speakers, sessions)),
+        token_meta=[[] for _ in range(params.batch_size)],
+        seq_vectors=seq_vectors,
+        token_vector_idx=params.token_embed_idx,
+        token_vectors=token_vectors,
         slices=[slice(0, int(n)) for n in num_tokens],
-        num_anno=params.max_anno_features,
-        max_audio_len=[int(n * params.max_frames_per_token) for n in num_tokens],
+        max_audio_len=max_audio_len,
     )
 
     target_frames = torch.randn(params.max_frames, params.batch_size, params.num_frame_channels)
@@ -345,7 +365,7 @@ def test_spectrogram_model__stop():
 
         preds = model(inputs, mode=Mode.INFER)
 
-        max_lengths = (num_tokens.float() * params.max_frames_per_token).long()
+        max_lengths = (num_tokens.float() * params.max_frames_per_token).ceil()
         max_lengths = torch.clamp(max_lengths, min=1)
         threshold = torch.sigmoid(preds.stop_tokens) >= model.stop_threshold
         for i in range(params.batch_size):  # NOTE: Only stop if the window includes the last token.
@@ -383,8 +403,8 @@ def test_spectrogram_model__infer_train():
 def _set_embedding_vocab(model: SpectrogramModel, params: Params):
     """Update `model` vocab so it can be run in inference mode."""
     model.encoder.embed_token.update_tokens(list(range(params.max_tokens)))
-    for i, max_values in enumerate(params.max_seq_meta_values):
-        embedding = typing.cast(NumeralizePadEmbed, model.encoder.embed_seq_metadata[i])
+    for i, max_values in enumerate(params.max_seq_meta_vals):
+        embedding = typing.cast(NumeralizePadEmbed, model.encoder.embed_seq_meta[i])
         embedding.update_tokens(list(range(max_values)))
 
 
@@ -401,17 +421,17 @@ def test_spectrogram_model__infer_generate():
 
     for i in [1, 8, 11]:
         with fork_rng(seed=123):
-            generator = model(inputs, mode=Mode.GENERATE, split_size=i)
-            generated = tuple(zip(*list(generator)))
+            generated = list(model(inputs, mode=Mode.GENERATE, split_size=i))
 
-        assert_almost_equal(preds.frames, torch.cat(generated[0]))
-        assert_almost_equal(preds.stop_tokens, torch.cat(generated[1]))
-        assert_almost_equal(preds.alignments, torch.cat(generated[2]))
-        assert_almost_equal(preds.num_frames, generated[3][-1])
-        assert_almost_equal(preds.frames_mask, generated[4][-1])
-        assert_almost_equal(preds.num_tokens, generated[5][-1])
-        assert_almost_equal(preds.tokens_mask, generated[6][-1])
-        assert_almost_equal(preds.reached_max, generated[7][-1])
+        num_frames = torch.stack([g.num_frames for g in generated]).sum(dim=0)
+        assert_almost_equal(preds.frames, torch.cat([g.frames for g in generated]))
+        assert_almost_equal(preds.stop_tokens, torch.cat([g.stop_tokens for g in generated]))
+        assert_almost_equal(preds.alignments, torch.cat([g.alignments for g in generated]))
+        assert_almost_equal(preds.num_frames, num_frames)
+        assert_almost_equal(preds.frames_mask, torch.cat([g.frames_mask for g in generated], dim=1))
+        assert_almost_equal(preds.num_tokens, generated[-1].num_tokens)
+        assert_almost_equal(preds.tokens_mask, generated[-1].tokens_mask)
+        assert_almost_equal(preds.reached_max, generated[-1].reached_max)
 
 
 # NOTE: The random generator for dropout varies based on the tensor size; therefore, it's
@@ -439,16 +459,7 @@ def test_spectrogram_model__infer_batch_padding_invariance():
         set_stop_token_rand_offset(i)
         num_tokens_ = typing.cast(int, num_tokens[i].item())
         with fork_rng(seed=123):
-            inputs_ = dataclasses.replace(
-                inputs,
-                tokens=[t[:num_tokens_] for t in inputs.tokens][i : i + 1],
-                seq_metadata=[m[i : i + 1] for m in inputs.seq_metadata],
-                token_metadata=[m[i : i + 1] for m in inputs.token_metadata],
-                token_embeddings=[t[:num_tokens_] for t in inputs.token_embeddings][i : i + 1],
-                slices=inputs.slices[i : i + 1],
-                max_audio_len=inputs.max_audio_len[i : i + 1],
-            )
-            preds = model(inputs_, mode=Mode.INFER)
+            preds = model(inputs[i], mode=Mode.INFER)
 
         length = typing.cast(int, batch_preds.num_frames[i].item())
         assert_almost_equal(preds.reached_max, batch_preds.reached_max[i : i + 1])
@@ -470,12 +481,14 @@ def test_spectrogram_model__train_batch_padding_invariance():
     padding = 3
     num_tokens = params.max_num_tokens - padding
     batch_inputs.tokens[i] = batch_inputs.tokens[i][:num_tokens]
-    batch_inputs.token_embeddings[i] = batch_inputs.token_embeddings[i][:num_tokens]
-    for metadata in batch_inputs.token_metadata:
-        metadata[i] = metadata[i][:num_tokens]
+    max_tokens = max(len(seq) for seq in batch_inputs.tokens)
+    for j in range(batch_inputs.num_token_meta):
+        batch_inputs.token_meta[i][j][:num_tokens]
     slice_ = batch_inputs.slices[i]
     batch_inputs.slices[i] = slice(slice_.start, min(num_tokens, slice_.stop))
-    batch_inputs = dataclasses.replace(batch_inputs)
+    batch_inputs = dataclasses.replace(
+        batch_inputs, token_vectors=batch_inputs.token_vectors[:, :max_tokens]
+    )
     target_lengths[i] = params.max_frames - padding
 
     with fork_rng(seed=123):
@@ -486,22 +499,11 @@ def test_spectrogram_model__train_batch_padding_invariance():
         model.zero_grad()
 
     length = typing.cast(int, target_lengths[i].item())
-    inputs = dataclasses.replace(
-        batch_inputs,
-        tokens=[t[:num_tokens] for t in batch_inputs.tokens][i : i + 1],
-        seq_metadata=[m[i : i + 1] for m in batch_inputs.seq_metadata],
-        token_metadata=[
-            [s[:num_tokens] for s in m[i : i + 1]] for m in batch_inputs.token_metadata
-        ],
-        token_embeddings=[t[:num_tokens] for t in batch_inputs.token_embeddings][i : i + 1],
-        slices=[slice(s.start, min(s.stop, num_tokens)) for s in batch_inputs.slices[i : i + 1]],
-        max_audio_len=batch_inputs.max_audio_len[i : i + 1],
-    )
 
     with fork_rng(seed=123):
         target_mask = target_mask[:length, i : i + 1]
         target_frames = target_frames[:length, i : i + 1]
-        preds = model(inputs, target_frames=target_frames, target_mask=target_mask)
+        preds = model(batch_inputs[i], target_frames=target_frames, target_mask=target_mask)
         (preds.frames.sum() + preds.stop_tokens.sum()).backward()
         grad = [p.grad for p in model.parameters() if p.grad is not None]
         model.zero_grad()
@@ -513,8 +515,8 @@ def test_spectrogram_model__train_batch_padding_invariance():
 
 
 _expected_parameters = {
-    "encoder.embed_seq_metadata.0.weight": torch.tensor(-3.281343),
-    "encoder.embed_seq_metadata.1.weight": torch.tensor(0.318184),
+    "encoder.embed_seq_meta.0.weight": torch.tensor(-3.281343),
+    "encoder.embed_seq_meta.1.weight": torch.tensor(0.318184),
     "encoder.embed_token.weight": torch.tensor(-4.785396),
     "encoder.embed.0.weight": torch.tensor(0.664301),
     "encoder.embed.0.bias": torch.tensor(-0.198331),
@@ -578,8 +580,8 @@ _expected_parameters = {
 }
 
 _expected_grads = {
-    "encoder.embed_seq_metadata.0.weight": torch.tensor(-9.266479),
-    "encoder.embed_seq_metadata.1.weight": torch.tensor(6.884593),
+    "encoder.embed_seq_meta.0.weight": torch.tensor(-9.266479),
+    "encoder.embed_seq_meta.1.weight": torch.tensor(6.884593),
     "encoder.embed_token.weight": torch.tensor(6.565002),
     "encoder.embed.0.weight": torch.tensor(-1.680573),
     "encoder.embed.0.bias": torch.tensor(11.139169),
@@ -679,7 +681,7 @@ def _side_effect(params: Params, num_embeddings: int, *args, padding_idx=None, *
 
     TODO: Remove and update `test_spectrogram_model__version` values.
     """
-    assert all(params.max_tokens != n for n in params.max_seq_meta_values)
+    assert all(params.max_tokens != n for n in params.max_seq_meta_vals)
     default_tokens = len(NumeralizePadEmbed._Tokens)
     padding_idx = padding_idx if num_embeddings == (params.max_tokens + default_tokens) else None
     return Embedding(num_embeddings - default_tokens, *args, padding_idx=padding_idx, **kwargs)
@@ -697,7 +699,7 @@ def _make_backward_compatible_model(params: Params, stop_threshold=0.5):
 
     model.encoder.embed_token.vocab.update({i: i for i in range(params.max_tokens)})
     model.encoder.embed_token.num_embeddings = len(model.encoder.embed_token.vocab)
-    for embed, max_values in zip(model.encoder.embed_seq_metadata, params.max_seq_meta_values):
+    for embed, max_values in zip(model.encoder.embed_seq_meta, params.max_seq_meta_vals):
         embed = typing.cast(NumeralizePadEmbed, embed)
         embed.vocab.update({i: i for i in range(max_values)})
         embed.num_embeddings = len(embed.vocab)

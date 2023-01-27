@@ -62,7 +62,7 @@ from run._tts import (
     PublicTextValueError,
     TTSPackage,
     process_tts_inputs,
-    text_to_speech_ffmpeg_generator,
+    tts_ffmpeg_generator,
 )
 from run.data._loader import Language, Session, Speaker, english, german, portuguese, spanish
 
@@ -358,7 +358,7 @@ def get_stream():
         "Expires": "0",
     }
     output_flags = ("-f", "mp3", "-b:a", "192k")
-    generator = text_to_speech_ffmpeg_generator(
+    generator = tts_ffmpeg_generator(
         TTS_PACKAGE, *input, **cf.get(), logger=app.logger, output_flags=output_flags
     )
     return Response(generator, headers=headers, mimetype="audio/mpeg")
@@ -377,7 +377,7 @@ if __name__ == "__main__" or "GUNICORN" in os.environ:
     TTS_PACKAGE = typing.cast(TTSPackage, load(TTS_PACKAGE_PATH, DEVICE))
 
     vocab = set(TTS_PACKAGE.session_vocab())
-    app.logger.info("Loaded speakers: %s", "\n".join(list(set(str(s.spk) for s in vocab))))
+    app.logger.info("Loaded speakers: %s", "\n".join(list(set(str(s.spkr) for s in vocab))))
 
     for session in SPEAKER_ID_TO_SESSION.values():
         if session not in vocab:

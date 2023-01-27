@@ -156,31 +156,64 @@ def test__right_masked_bi_rnn__multilayer_mask():
             num_layers=masked_bi_rnn.num_layers,
             bidirectional=True,
         )
-    padding_len = 2
+    pad_len = 2
     tokens, tokens_mask = _make_rnn_inputs(masked_bi_rnn)
     num_tokens = tokens_mask.sum(dim=0)
-    padded_tokens = torch.cat([tokens, torch.zeros(padding_len, *tokens.shape[1:3])], dim=0)
-    padded_tokens_mask = torch.cat(
-        [tokens_mask, torch.zeros(padding_len, tokens_mask.shape[1], dtype=torch.bool)],
-        dim=0,
-    )
+    padded_tokens = torch.cat([tokens, torch.zeros(pad_len, *tokens.shape[1:3])], dim=0)
+    padded_tokens_mask = [tokens_mask, torch.zeros(pad_len, tokens_mask.shape[1], dtype=torch.bool)]
+    padded_tokens_mask = torch.cat(padded_tokens_mask, dim=0)
 
     expected = lstm(tokens)[0]
     result = masked_bi_rnn(padded_tokens, padded_tokens_mask, num_tokens)
-    assert_almost_equal(expected, result[:-padding_len])
-    assert result[-padding_len:].sum().item() == 0
-    assert result[:-padding_len].sum().item() != 0
+    assert_almost_equal(expected, result[:-pad_len])
+    assert result[-pad_len:].sum().item() == 0
+    assert result[:-pad_len].sum().item() != 0
+
+
+def test__grouped_embedder():
+    """Test `spectrogram_model.encoder._GroupedEmbedder` in a basic test."""
+    num_groups = 3
+    input_size = 3
+    num_tokens = 6
+    batch_size = 2
+    hidden_size = 7
+    tokens = [torch.randn(batch_size, num_tokens, input_size) for _ in range(num_groups)]
+    mask = [torch.ones(batch_size, num_tokens, 1, dtype=torch.float32) for _ in range(num_groups)]
+    embed = spectrogram_model.encoder._GroupedEmbedder(input_size, hidden_size, num_groups, 2)
+    out = embed(tokens, mask)
+    assert out.shape == (batch_size, num_tokens, hidden_size)
+
+
+def test__grouped_embedder__group_invariance():
+    """Test `spectrogram_model.encoder._GroupedEmbedder` is invariant to how many groups are
+    processed together."""
+    tokens_a = torch.randn(1, 4, 1)
+    tokens_b = torch.randn(1, 4, 1)
+    mask_a = torch.tensor([[1, 0, 1, 0]])
+    mask_b = torch.tensor([[0, 1, 1, 0]])
+    null_mask = torch.tensor([[0, 0, 0, 0]])
+    embed = spectrogram_model.encoder._GroupedEmbedder(1, 7, 2, 2)
+
+    result_a = embed([tokens_a, tokens_b], [mask_a, null_mask])[0]
+    result_b = embed([tokens_a, tokens_b], [null_mask, mask_b])[0]
+    result_combined = embed([tokens_a, tokens_b], [mask_a, mask_b])[0]
+    assert_almost_equal(result_a[0], result_combined[0])
+    assert_almost_equal(result_b[1], result_combined[1])
+    assert_almost_equal((result_a[2] + result_b[2]) / 2, result_combined[2])
+    assert_almost_equal(result_a[3], result_b[3])
 
 
 def _make_encoder(
     max_tokens=10,
-    max_seq_meta_values=(11, 12),
-    max_token_meta_values=(13,),
-    max_token_embed_size=8,
-    seq_meta_embed_size=6,
+    max_seq_meta_vals=(11, 12),
+    max_token_meta_vals=(13,),
+    max_word_vector_size=8,
+    max_seq_vector_size=2,
+    seq_embed_size=6,
     token_meta_embed_size=12,
+    anno_embed_size=3,
     seq_meta_embed_dropout=0.1,
-    max_anno_features=1,
+    max_anno_vector_size=1,
     out_size=8,
     hidden_size=8,
     num_conv_layers=2,
@@ -190,19 +223,30 @@ def _make_encoder(
     batch_size=4,
     num_tokens=5,
     context=3,
-    num_token_metadata=1,
-    max_frames_per_token=4.6875,
+    num_token_meta=1,
+    max_frames_per_token=4.5,
 ):
     """Make `encoder.Encoder` and it's inputs for testing."""
+    annos = ("anno_embed", "anno_mask")
+    token_embed_idx = {
+        annos[0]: slice(0, max_anno_vector_size),
+        annos[1]: slice(max_anno_vector_size, max_anno_vector_size + 1),
+        "word_vector": slice(
+            max_anno_vector_size + 1, max_anno_vector_size + 1 + max_word_vector_size
+        ),
+    }
     encoder = cf.partial(spectrogram_model.encoder.Encoder)(
         max_tokens=max_tokens,
-        max_seq_meta_values=max_seq_meta_values,
-        max_token_meta_values=max_token_meta_values,
-        max_token_embed_size=max_token_embed_size,
-        seq_meta_embed_size=seq_meta_embed_size,
+        max_seq_meta_vals=max_seq_meta_vals,
+        max_token_meta_vals=max_token_meta_vals,
+        max_word_vector_size=max_word_vector_size,
+        max_seq_vector_size=max_seq_vector_size,
+        seq_embed_size=seq_embed_size,
         token_meta_embed_size=token_meta_embed_size,
+        anno_embed_size=anno_embed_size,
         seq_meta_embed_dropout=seq_meta_embed_dropout,
-        max_anno_features=max_anno_features,
+        max_anno_vector_size=max_anno_vector_size,
+        annos=[annos],
         out_size=out_size,
         hidden_size=hidden_size,
         num_conv_layers=num_conv_layers,
@@ -215,19 +259,25 @@ def _make_encoder(
     [torch.nn.init.normal_(p) for p in encoder.parameters() if p.std() == 0]
 
     num_tokens_pad = num_tokens + context * 2
-    speakers = torch.randint(1, max_seq_meta_values[0], (batch_size,))
-    sessions = torch.randint(1, max_seq_meta_values[1], (batch_size,))
+    speakers = torch.randint(1, max_seq_meta_vals[0], (batch_size,))
+    sessions = torch.randint(1, max_seq_meta_vals[1], (batch_size,))
     tokens = torch.randint(1, max_tokens, (batch_size, num_tokens_pad))
-    token_meta = torch.randint(1, max_tokens, (num_token_metadata, batch_size, num_tokens_pad))
-    token_embeddings = torch.randn(batch_size, num_tokens_pad, max_token_embed_size)
+    token_meta = torch.randint(1, max_tokens, (batch_size, num_token_meta, num_tokens_pad))
+    word_vector = torch.randn(batch_size, num_tokens_pad, max_word_vector_size)
+    anno_vector = torch.randn(batch_size, num_tokens_pad, max_anno_vector_size)
+    anno_mask = torch.ones(batch_size, num_tokens_pad, 1)
+    token_vectors = torch.cat((anno_vector, anno_mask, word_vector), dim=2)
+    seq_vectors = torch.randn(batch_size, max_seq_vector_size)
+    max_audio_len = torch.full((batch_size,), max_frames_per_token * num_tokens)
     inputs = Inputs(
         tokens=tokens.tolist(),
-        seq_metadata=[speakers.tolist(), sessions.tolist()],
-        token_metadata=token_meta.tolist(),
-        token_embeddings=list(token_embeddings.unbind()),
-        slices=[slice(context, -context) for _ in range(batch_size)],
-        num_anno=max_anno_features,
-        max_audio_len=[int(max_frames_per_token * num_tokens) for _ in range(batch_size)],
+        seq_meta=list(zip(speakers.tolist(), sessions.tolist())),
+        token_meta=token_meta.tolist(),
+        seq_vectors=seq_vectors,
+        token_vector_idx=token_embed_idx,
+        token_vectors=token_vectors,
+        slices=[slice(context, context + num_tokens) for _ in range(batch_size)],
+        max_audio_len=max_audio_len,
     )
     return encoder, inputs, (num_tokens, batch_size, out_size)
 
@@ -257,9 +307,8 @@ def test_encoder():
 def test_encoder__filter_size():
     """Test `encoder.Encoder` handles different filter sizes."""
     for filter_size in [1, 3, 5]:
-        module, arg, (num_tokens, batch_size, out_size) = _make_encoder(
-            conv_filter_size=filter_size
-        )
+        kwargs = dict(conv_filter_size=filter_size)
+        module, arg, (num_tokens, batch_size, out_size) = _make_encoder(**kwargs)
         encoded = module(arg)
         assert encoded.tokens.shape == (num_tokens, batch_size, out_size)
         assert encoded.tokens_mask.shape == (batch_size, num_tokens)
@@ -269,26 +318,24 @@ def test_encoder__filter_size():
 
 def test_encoder__padding_invariance():
     """Test `encoder.Encoder` is consistent regardless of the padding."""
-    module, arg, _ = _make_encoder(dropout=0, seq_meta_embed_dropout=0)
+    module, arg, (_, batch_size, _) = _make_encoder(dropout=0, seq_meta_embed_dropout=0)
     expected = module(arg)
     expected.tokens.sum().backward()
     expected_grad = [p.grad for p in module.parameters() if p.grad is not None]
     module.zero_grad()
-    for padding_len in range(1, 10):
-        pad_token: typing.List[typing.Hashable] = [module.embed_token.pad_token] * padding_len
-        pad_meta: typing.List[typing.Hashable]
-        pad_meta = [module.embed_token_metadata[0].pad_token] * padding_len
-        inputs = dataclasses.replace(
+    for pad_len in range(1, 10):
+        pad_token: typing.List[typing.Hashable] = [module.embed_token.pad_token] * pad_len
+        pad_meta: typing.List[typing.Hashable] = [module.embed_token_meta[0].pad_token] * pad_len
+        pad_zeros = torch.zeros(batch_size, pad_len, arg.token_vectors.shape[2])
+        inp = dataclasses.replace(
             arg,
             tokens=[t + pad_token for t in arg.tokens],
-            token_metadata=[[s + pad_meta for s in m] for m in arg.token_metadata],
-            token_embeddings=[
-                torch.cat([t, torch.zeros(padding_len, t.shape[1])]) for t in arg.token_embeddings
-            ],
+            token_meta=[[s + pad_meta for s in m] for m in arg.token_meta],
+            token_vectors=torch.cat([arg.token_vectors, pad_zeros], dim=1),
         )
-        result = module(inputs)
+        result = module(inp)
         result.tokens.sum().backward()
         result_grad = [p.grad for p in module.parameters() if p.grad is not None]
         module.zero_grad()
-        assert_almost_equal(result.tokens[:-padding_len], expected.tokens, decimal=5)
+        assert_almost_equal(result.tokens, expected.tokens, decimal=5)
         [assert_almost_equal(r, e) for r, e in zip(result_grad, expected_grad)]

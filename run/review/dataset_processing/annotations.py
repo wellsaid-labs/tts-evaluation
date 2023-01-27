@@ -35,8 +35,16 @@ from torchnlp.random import fork_rng
 import lib
 import run
 from run._config.labels import _speaker
-from run._streamlit import audio_to_url, clip_audio, get_spans, st_ag_grid, st_download_bytes
-from run._utils import Dataset, get_datasets
+from run._config.train import _config_spec_model_training
+from run._streamlit import (
+    audio_to_url,
+    clip_audio,
+    get_datasets,
+    get_spans,
+    st_ag_grid,
+    st_download_bytes,
+    st_tqdm,
+)
 from run.data._loader import Alignment, Session, Span, Speaker
 from run.train.spectrogram_model._data import (
     _get_loudness_annotation,
@@ -47,11 +55,6 @@ from run.train.spectrogram_model._data import (
 lib.environment.set_basic_logging_config(reset=True)
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 logger = logging.getLogger(__name__)
-
-
-@st.experimental_singleton()
-def _get_datasets() -> typing.Tuple[Dataset, Dataset]:
-    return get_datasets(False)
 
 
 def _annotate(text: str, alignment: Alignment, prefix: str = "<<<", suffix: str = ">>>") -> str:
@@ -87,10 +90,10 @@ def _gather_data(span_idx: int, span: Span, anno: Alignment, clip: numpy.ndarray
         "diff_loudness": loudness if loudness is None else loudness - span.session.loudness,
         "audio_len": round(anno.audio_len, 2),
         "clip": audio_to_url(clip_audio(clip, span, anno)),
-        "speaker": repr(span.session.spk),
-        "session": span.session.lbl,
+        "speaker": repr(span.session.spkr),
+        "session": span.session.label,
         "loudness": loudness,
-        "diff_tempo": tempo - span.session.spk_tempo,
+        "diff_tempo": tempo - span.session.spkr_tempo,
         "sesh_loudness": span.session.loudness,
         "sesh_tempo": span.session.tempo,
         "num_words": len(text.split()),
@@ -202,19 +205,19 @@ def _speakers_variability(data: typing.List[typing.Dict]):
         ("[1 no filter]", lambda _: True),
         ("[2 short]", lambda r: r["audio_len"] < 1),
     )
-    attrs = (("diff_loudness", "loudness"), ("diff_tempo", "spk_tempo"))
+    attrs = (("diff_loudness", "loudness"), ("diff_tempo", "spkr_tempo"))
 
     stats: typing.Dict[Speaker, typing.Dict[str, typing.Any]] = defaultdict(dict)
     for filter_name, filter_ in filters:
         for diff, avg in attrs:
-            spk_anno: typing.Dict[Speaker, typing.List[float]] = defaultdict(list)
-            spk_dups: typing.Dict[Speaker, typing.Set] = defaultdict(set)
+            spkr_anno: typing.Dict[Speaker, typing.List[float]] = defaultdict(list)
+            spkr_dups: typing.Dict[Speaker, typing.Set] = defaultdict(set)
             for row in data:
                 if row[diff] is not None and filter_(row):
-                    spk_anno[row["_session"].spk].append(row[diff])
-                    spk_dups[row["_session"].spk].add(row["key"])
+                    spkr_anno[row["_session"].spkr].append(row[diff])
+                    spkr_dups[row["_session"].spkr].add(row["key"])
 
-            for spk, vals in spk_anno.items():
+            for spkr, vals in spkr_anno.items():
                 v = sorted(vals)
                 prefix = f"[2] {filter_name}"
                 percent = int(round(0.01 * len(v)))
@@ -225,25 +228,25 @@ def _speakers_variability(data: typing.List[typing.Dict]):
                 }
                 items = min_max.items()
                 plus_minus = {f"{k} ±": v if v is None else (v[1] - v[0]) / 2 for k, v in items}
-                num_unique = spk_dups[spk]
-                stats[spk] = {
+                num_unique = spkr_dups[spkr]
+                stats[spkr] = {
                     f"{prefix} Num `{diff}` Vals": len(v),
                     f"{prefix} Num `{diff}` Dups": len(v) - len(num_unique),
                     f"{prefix} % `{diff}` Dups": (1 - (len(num_unique) / len(v))) * 100,
                     f"{prefix} `{diff}` Stdev": stdev(v) if len(v) > 2 else None,
                     **plus_minus,
                     **min_max,
-                    **stats[spk],
+                    **stats[spkr],
                 }
 
     seshs: typing.Set[Session] = set(r["_session"] for r in data)
     for diff, avg in attrs:
         for sesh in seshs:
-            s = stats[sesh.spk]
+            s = stats[sesh.spkr]
 
             key = "[1] Sesh"
             s[key] = s[key] if key in s else set()
-            s[key].add(sesh.lbl)
+            s[key].add(sesh.label)
 
             key = f"[1] Sesh `{avg}`"
             val = float(getattr(sesh, avg))  # TODO: Remove
@@ -262,13 +265,16 @@ def _speakers_variability(data: typing.List[typing.Dict]):
 
 def main():
     run._config.configure(overwrite=True)
+    # NOTE: The various parameters map to configurations that are not relevant for this workbook.
+    _config_spec_model_training(0, 0, 0, 0, 0, False, overwrite=True)
 
     st.title("Annotations")
     st.write("The workbook reviews the annotations that are being generated for spans.")
 
     if st.sidebar.button("Clear Dataset Cache"):
-        _get_datasets.clear()
-    train_dataset, dev_dataset = _get_datasets()
+        get_datasets.clear()
+
+    train_dataset, dev_dataset = get_datasets()
 
     form: DeltaGenerator = st.form("settings")
     question = "How many span(s) do you want to generate?"
@@ -284,7 +290,10 @@ def main():
     if not form.form_submit_button("Submit"):
         return
 
-    spans, clips = get_spans(train_dataset, dev_dataset, speaker, num_spans, False)
+    spans = get_spans(train_dataset, dev_dataset, num_spans, speaker, is_dev_speakers=False)
+
+    with st.spinner("Loading audio..."):
+        clips = [s.audio() for s in st_tqdm(spans)]
 
     with st.spinner("Generating Annotations..."):
         with fork_rng(seed=random_seed):
@@ -300,7 +309,7 @@ def main():
 
     if load_individual:
         st.subheader("Individual Annotations")
-        st_ag_grid(df, audio_column_name="clip")
+        st_ag_grid(df, audio_cols=["clip"])
 
     _speakers_variability(data)
     _stats(spans, data, intervals)

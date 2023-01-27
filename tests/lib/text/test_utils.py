@@ -15,6 +15,7 @@ from lib.text.utils import (
     grapheme_to_phoneme,
     is_normalized_vo_script,
     normalize_vo_script,
+    text_to_xml,
     xml_to_text,
 )
 
@@ -752,3 +753,9 @@ def test_xml_to_text():
     """Test `lib.text.utils.xml_to_text` removes XML."""
     xml = "<Tomato juicy='True'>\nLet's call <Potato>the whole thing off\n</Potato></Tomato>"
     assert xml_to_text(XMLType(xml)) == "Let's call the whole thing off"
+
+
+def test_text_to_xml():
+    """Test `lib.text.utils.text_to_xml` escape special characters."""
+    text = "Over the <<river>> and through the woods."
+    assert xml_to_text(text_to_xml(text)) == text

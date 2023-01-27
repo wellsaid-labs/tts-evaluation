@@ -18,7 +18,6 @@ import os
 import pathlib
 import platform
 import pprint
-import random
 import resource
 import sys
 import time
@@ -44,7 +43,6 @@ import lib
 import run
 from lib.distributed import ListedDict, is_master
 from lib.environment import load, load_most_recent_file
-from lib.text import XMLType, xml_to_text
 from lib.utils import dataclass_as_dict, flatten_2d, seconds_to_str
 from run._config import (
     Cadence,
@@ -54,11 +52,8 @@ from run._config import (
     get_dataset_label,
     get_model_label,
     get_timer_label,
-    load_spacy_nlp,
 )
-from run._models.spectrogram_model import Inputs, Mode, Preds, SpectrogramModel
 from run._utils import Dataset, get_datasets
-from run.data._loader.structures import Language, Session, Speaker
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import comet_ml
@@ -83,6 +78,7 @@ class Context(enum.Enum):
     TRAIN: typing.Final = "train"
     EVALUATE: typing.Final = "evaluate"
     EVALUATE_INFERENCE: typing.Final = "evaluate_inference"
+    EVALUATE_TTS: typing.Final = "evaluate_tts"
 
 
 class CometMLExperiment:
@@ -281,6 +277,20 @@ class CometMLExperiment:
         asset = self.log_asset(file_, file_name=file_name)
         return asset["web"] if asset is not None else asset
 
+    @staticmethod
+    def _format_key(key: str):
+        """Format argument name for HTML."""
+        if key.startswith("_"):
+            return key[1:]
+        return key.title().replace("_", " ")
+
+    @staticmethod
+    def _format_val(key: str, value: typing.Any):
+        """Format argument value for HTML."""
+        if key.startswith("_"):
+            return value
+        return html.escape(value if isinstance(value, str) else repr(value))
+
     def log_html_audio(
         self,
         session: run.data._loader.Session,
@@ -291,24 +301,24 @@ class CometMLExperiment:
 
         Args:
             audio
-            **kwargs: Additional metadata to include.
+            **kwargs: Additional metadata to include. Arguments with a underscore before their
+                name will be printed as is.
         """
-        items = [f"<p><b>Step:</b> {self.curr_step}</p>"]
-        param_label = lambda s: s.title().replace("_", " ") if " " not in s else s
-        html_repr = lambda v: html.escape(v if isinstance(v, str) else repr(v))
         kwargs = dict(session=session, **kwargs)
-        items.extend([f"<p><b>{param_label(k)}:</b> {html_repr(v)}</p>" for k, v in kwargs.items()])
+        items = [(self._format_key(k), self._format_val(k, v)) for k, v in kwargs.items()]
+        lines = [f"<p><b>Step:</b> {self.curr_step}</p>"]
+        lines.extend([f"<p><b>{k}:</b> {v}</p>" for k, v in items])
         for key, data in audio.items():
-            name = param_label(key)
+            name = self._format_key(key)
             file_name = f"step={self.curr_step},speaker={session[0].label},"
             file_name += f"name={name},experiment={self.get_key()}.wav"
             url = self._upload_audio(file_name, data)
-            items.append(f"<p><b>{name}:</b></p>")
+            lines.append(f"<p><b>{name}:</b></p>")
             if url is None:
-                items.append(f"Failed to upload: {file_name}")
+                lines.append(f"Failed to upload: {file_name}")
             else:
-                items.append(f'<audio controls preload="none" src="{url}"></audio>')
-        self.log_html("<section>{}</section>".format("\n".join(items)))
+                lines.append(f'<audio controls preload="none" src="{url}"></audio>')
+        self.log_html("<section>{}</section>".format("\n".join(lines)))
 
     def _handle_param(self, key: run._config.Label, value: typing.Any, max_len: int = 50) -> str:
         """Format and log complex objects in standard out."""
@@ -984,23 +994,3 @@ class Timer:
                 label = get_timer_label(name, device=Device.CUDA, **kwargs)
                 times[label] += prev.cuda.elapsed_time(next.cuda) / 1000
         return dict(times)
-
-
-def process_select_cases(
-    model: SpectrogramModel,
-    avail_sessions: typing.Set[Session],
-    cases: typing.List[typing.Tuple[Language, XMLType]],
-    speakers: typing.Set[Speaker],
-    num_cases: int = 5,
-) -> typing.Tuple[Inputs, Preds]:
-    """Get the spectrogram model prediction for `num_cases` sampled from `cases` limited to
-    `speakers`."""
-    cases = [random.choice(cases) for _ in range(num_cases)]
-    xmls = [x for _, x in cases]
-    docs = [load_spacy_nlp(l)(xml_to_text(t)) for l, t in cases]
-    # NOTE: `seshs` is sorted so `random.choice` produces consistent results.
-    vocab = sorted(avail_sessions)
-    seshs = [[s for s in vocab if s[0].language is l and s[0] in speakers] for l, _ in cases]
-    seshs = [random.choice(choices) for choices in seshs]
-    inputs_ = Inputs.from_xml_batch(xmls, docs, seshs)  # type: ignore
-    return inputs_, model(inputs_, mode=Mode.INFER)

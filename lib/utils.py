@@ -809,3 +809,13 @@ def offset_slices(slices: typing.List[slice], updates: typing.List[typing.Tuple[
                 message = f"`updates` slice `{prev}` overlaps with `slices` `{slices[i]}`"
                 raise ValueError(f"{message}, this is not supported.")
     return slices
+
+
+def arange(start: float, stop: float, step: float) -> typing.Generator[float, None, None]:
+    """Similar to `range` but with floating values."""
+    val = start
+    # NOTE: This handles rounding errors, so if val is close enough to `stop`, it stops.
+    stop = stop - step / 2
+    while val < stop if step >= 0 else val > stop:
+        yield val
+        val += step

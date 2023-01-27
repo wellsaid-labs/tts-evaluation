@@ -1,0 +1,273 @@
+""" A workbook to generate audio for evaluating various test cases.
+
+TODO: Create a script that downloads multiple checkpoints at various points, generates scripts
+      with them, and produces a zip file. We can use `disk/envs` to get the information I need
+      to generating something like this.
+TODO: Instead of using random speakers and sessions, let's consider using the choosen session
+      and speakers in `deploy.sh`. Those will be deployed, anyways.
+TODO: Implement `griffin_lim_tts` to support batch generation, speeding up this script.
+
+Usage:
+    $ PYTHONPATH=. streamlit run run/review/tts/test_cases.py --runner.magicEnabled=false
+"""
+import functools
+import random
+import typing
+
+import config as cf
+import numpy as np
+import streamlit as st
+from streamlit.delta_generator import DeltaGenerator
+
+import lib
+import run
+from lib.environment import PT_EXTENSION, load
+from lib.text import XMLType
+from run._config import DEFAULT_SCRIPT, SPECTROGRAM_MODEL_EXPERIMENTS_PATH
+from run._config.data import _get_loudness_annotation, _get_tempo_annotation
+from run._models.spectrogram_model import SpectrogramModel
+from run._streamlit import (
+    audio_to_web_path,
+    st_download_files,
+    st_html,
+    st_select_path,
+    web_path_to_url,
+)
+from run._tts import griffin_lim_tts
+from run.data._loader import Speaker
+from run.data._loader.english.wsl import DIARMID_C
+
+V10_REGRESSIONS = [
+    # NOTE: Respellings are formatted like they were inputted in v10
+    # - Difficult acronyms
+    "It took six Ph.Ds to design a VCR a five-year-old could use.",
+    # - "Cape Cod" was repeated
+    "It is ironic that today's least "
+    "<respell value='PAH-pyuh-lay-tuhd'>|\\PAH\\pyuh\\lay\\tuhd\\|</respell> town on Cape Cod",
+    # - Short sentences were cut off
+    "Taking sides early - I feel like... I feel like that's a recipe for disaster. It is.",
+    "manager. Egan",
+    "then walked away without taking any questions. Wow,",
+    "Thanks! For..",
+    "using your ears. Why?",
+    "Yes. Are you ready to play? Yeah.",
+    # - This question generated a long silence, after "morning"
+    "Can you tell me more about what happened that morning?",
+    # - This word was pronounced incorrectly
+    "anemone",
+    # - This word caused the model to overflow
+    "<respell value='po-lahn-co'>|\\po\\lahn\\co|</respell>",
+    "<respell value='fran-SIH-skoh'>|\\fran\\SIH\\skoh|</respell>",
+]
+
+
+VARIOUS_INITIALISMS = [
+    "Each line will have GA Type as Payment, Paid Amount along with PAC, and GA Code.",
+    "Properly use and maintain air-line breathing systems and establish a uniform procedure "
+    "for all employees, for both LACC and LCLA contractors, to follow when working jobs that "
+    "require the use of fresh air.",
+    "QCBS is a method of selecting transaction advisors based on both the quality of their "
+    "technical proposals and the costs shown in their financial proposals.",
+    "HSPs account for fifteen to twenty percent of the population.",
+    "We used to have difficulty with AOA and AMA, but now we are A-okay.",
+    "As far as AIs go, ours is pretty great!",
+]
+
+QUESTIONS_WITH_UPWARD_INFLECTION = [
+    # NOTE: All these questions should have an upward inflection at the end.
+    "Have you ever hidden a snack so that nobody else would find it and eat it first?",
+    "Can fish see air like we see water?",
+    "Are you a messy person?",
+    "Did you have cats growing up?",
+    "Do you consider yourself an adventurous person?",
+    "Do you have any weird food combos?",
+    "Do you respond to texts fast?",
+    "Have you ever been stalked by an animal that later became your pet?",
+    "If you have made it this far, do you relate to any of these signs? Are you a highly "
+    "sensitive person?",
+    "Have you started, but not found success, with a platform requiring monthly payments?",
+    "When deciding between organic and non-organic coffees, is the price premium worth it?",
+    "Can you make yourself disappear?",
+    "Do mice really eat cheese?",
+    "Do you believe in any conspiracy theories?",
+    "Have elves always lived at the North Pole?",
+    "Have you ever been on the radio?",
+    "Have you ever done something embarrassing in front of the office CCTV cameras?",
+    "In your opinion, are giant spiders worse than giant chickens?",
+    "What is the process for making your favorite dish?",
+    "Would you like to be part of the UK Royal Family?",
+    "Did you ever try DIY projects?",
+    "Can people from NASA catch the flu?",
+    "Do you watch ESPN at night?",
+    "Will AI replace humans?",
+    "Can our AI say AI?",
+]
+
+QUESTIONS_WITH_VARIED_INFLECTION = [
+    # NOTE: These questions each have a different expected inflection.
+    "If you can instantly become an expert in something, what would it be?",
+    "What led to the two of you having a disagreement?",
+    "Why do some words sound funny to us?",
+    "What are your plans for dealing with it?",
+    "There may be times where you have to RDP to a node and manually collect logs for some "
+    "reason. So, another question you may have is, exactly where on disk are all these logs?",
+    "How common are HSPs?",
+    "If you could rid the world of one thing, what would it be?",
+    "What childish things do you still do as an adult?",
+    "If you were to perform in the circus, what would you do?",
+]
+
+RESPELLINGS = [
+    "I see in “Happening at <respell value='se-FOHR-u'>Sephora</respell>” I have two new brands"
+    "requesting store-led events for the same day.",
+    "Welcome to the <respell value='su-LAHR-es'>Solares</respell> Injury and Illness Prevention "
+    "Program Training.",
+    "The <respell value='pur-AY-toh'>Pareto</respell> principle was named after Italian economist "
+    "Vilfredo <respell value='pu-RAY-toh'>Pareto</respell>.",
+    "We would like to nominate <respell value='AY-vu'>Avu</respell> for her phenomenal "
+    "recordings.",
+    "To use your self-help AI, please enable the Affirmations feature on the "
+    "<respell value='KAHN-sohl'>console</respell> so that you can "
+    "<respell value='kuhn-SOHL'>console</respell> yourself.",
+    "Too much sand? Tired of cacti? <respell value='dee-ZURT'>desert</respell> the "
+    "<respell value='DEZ-urt'>desert</respell> now, with caravan adventures!",
+    "If you want to get the good food at the <respell value='bu-FAY'>buffet</respell>, you have "
+    "to be willing to "
+    "<respell value='BUF-et'>buffet</respell> and punch your way to the front of the line.",
+    "Does <respell value='BEE-u-loh-ZHEEK'>biologique</respell> "
+    "<respell value='ru-SHURSH'>recherche</respell> really work?",
+]
+
+HARD_SCRIPTS = [
+    # NOTE: These statements have a mix of heteronyms, initialisms, hard words (locations,
+    # medical terms, technical terms), etc for testing pronunciation.
+    "For more updates on covid nineteen, please contact us via the URL at the bottom of the "
+    "screen, or visit our office in Seattle at the address shown here.",
+    "I've listed INTJ on my resume because it's important for me that you understand how I "
+    "conduct myself in stressful situations.",
+    "The website is live and you can access your records via the various APIs slash URLs or use "
+    "the Studio as an alternate avenue.",
+    "The nurses will resume the triage conduct around the oropharyngeal and test for "
+    "tachydysrhythmia to ensure the patient lives another day.",
+    "Access your clusters using the Kubernetes API. You can alternate between the CLI and the "
+    "web interface.",
+    "Live from Seattle, it's AIQTV, with the governor's special address on the coronavirus. Don't "
+    "forget to record this broadcast for viewing later.",
+    "Let's add a row on our assay tracking sheet so we can build out the proper egress "
+    "measurements.",
+    "Hello! Can you put this contractor into a supervisory role?",
+]
+
+HARD_SCRIPTS_2 = [
+    # NOTE: Test cases with a variety of lengths, respellings, and punctuation marks.
+    "WellSaid Labs.",
+    "Livingroom",
+    "Ophthalmologist",
+    "ACLA",
+    "ACLA.",  # NOTE: `ACLA` sometimes gets cut-off, this is a test to see how a period affects it.
+    "NASA",
+    "Why?",
+    'Ready to find out ""more""?',
+    "Thisss isrealy awhsome.",
+    "Topic two:     Is an NRA right for my rate?.",
+    'Internet Assigned Numbers Authority ("""I-eigh n Eigh""")',
+    '"""G-E-ran""" is an abbreviation for GSM EDGE',
+    "epidermolysis bullosa (ep-ih-dur-MOL-uh-sis buhl-LOE-sah) (epi-dermo-lysiss) is a group of",
+    "Harry lay in his dark cupboard much later, wishing he had a watch. He didn't know what time "
+    "it was and he couldn't be sure the Dursleys were asleep yet. Until they were, he couldn't "
+    "risk sneaking to the kitchen for some food. He'd lived with the Dursleys almost ten years, "
+    "ten miserable years, as long as he could remember, ever since he'd been a baby and his "
+    "parents had died in that car crash. He couldn't remember being in the car when his parents "
+    "had died. Sometimes, when he strained his memory during long hours in his cupboard, he came "
+    "up with a strange vision: a blinding flash of green light and a burning pain on his "
+    "forehead. This, he supposed, was the crash, though he couldn't imagine where all the green "
+    "light came from. He couldn't remember his parents at all. His aunt and uncle never spoke "
+    "about them, and of course he was forbidden to ask questions. There were no photographs of "
+    "them in the house. When he had been younger, Harry had dreamed and dreamed of some unknown "
+    "relation coming to take him away, but it had never happened; the Dursleys were his only "
+    "family. Yet sometimes he thought (or maybe hoped) that strangers in the street seemed to "
+    "know him. Very strange strangers they were, too.",
+]
+
+items = locals().items()
+TEST_CASES = {k: v for k, v in items if isinstance(v, list) and all(isinstance(t, str) for t in v)}
+
+
+def generate_test_cases(spec_export: SpectrogramModel, test_cases: typing.List[str]):
+    vocab = list(spec_export.session_embed.get_vocab())
+    for case in test_cases:
+        sesh = random.choice(vocab)
+        st.info(f"Seshion: {sesh}")
+        yield griffin_lim_tts(spec_export, XMLType(case), sesh)
+
+
+Generator = typing.Callable[[SpectrogramModel], typing.Generator[np.ndarray, None, None]]
+OPTIONS: typing.Dict[str, Generator]
+OPTIONS = {k: functools.partial(generate_test_cases, test_cases=v) for k, v in TEST_CASES.items()}
+
+
+def generate_incremental_annotations(
+    spec_export: SpectrogramModel,
+    speakers: typing.Set[Speaker] = {DIARMID_C},
+    annos: typing.Tuple[typing.Tuple[str, typing.Generator[float, None, None]], ...] = (
+        ("loudness", lib.utils.arange(-15, -35, -5)),
+        ("tempo", lib.utils.arange(0.5, 2.1, 0.1)),
+    ),
+):
+    for speaker in speakers:
+        sesh = random.choice([s for s in spec_export.session_embed.get_vocab() if s[0] == speaker])
+        st.info(f"Seshion: {sesh}")
+        for tag, range in annos:
+            for val in range:
+                xml = XMLType(f"<{tag} value='{val}'>{DEFAULT_SCRIPT}</{tag}>")
+                wave = griffin_lim_tts(spec_export, xml, sesh)
+                audio_len = cf.partial(lib.audio.sample_to_sec)(wave.shape[0])
+                tempo = cf.partial(_get_tempo_annotation)(DEFAULT_SCRIPT, audio_len)
+                loudness = cf.partial(_get_loudness_annotation)(wave)
+                st.info(
+                    f"- Tag: {tag}={val}\n"
+                    f"- Tempo: {tempo}\n"
+                    f"- Generated Griffin-Lim Loudness: {loudness}\n"
+                )
+                # TODO: Add a loundess computed via spectrogram.
+                # TODO: Use a some signal model, and then measure the loudness based on that.
+                yield wave
+
+
+OPTIONS = {generate_incremental_annotations.__name__: generate_incremental_annotations, **OPTIONS}
+
+
+def main():
+    st.markdown("# Test Case Audio Generator")
+    st.markdown("Use this workbook to generate batches of audio for evaluating our test cases.")
+    run._config.configure(overwrite=True)
+
+    form: DeltaGenerator = st.form(key="form")
+
+    label = "Spectrogram Checkpoints"
+    spec_path = st_select_path(label, SPECTROGRAM_MODEL_EXPERIMENTS_PATH, PT_EXTENSION, form)
+    items = OPTIONS.items()
+    option = form.selectbox("Test Cases", items, format_func=lambda i: i[0])
+    assert option is not None
+
+    if not form.form_submit_button("Submit"):
+        return
+
+    spec_ckpt = typing.cast(run.train.spectrogram_model._worker.Checkpoint, load(spec_path))
+    spec_export = spec_ckpt.export()
+
+    with st.spinner("Generating audio..."):
+        paths = []
+        for wave in option[1](spec_export):
+            paths.append(audio_to_web_path(wave))
+            st_html(f'<audio controls src="{web_path_to_url(paths[-1])}"></audio>')
+
+    with st.spinner("Making Zipfile..."):
+        st.text("")
+        st_download_files("Audios.zip", "📁 Download Audio(s) (zip)", paths)
+
+    st.success(f"Finished! {lib.utils.mazel_tov()}")
+
+
+if __name__ == "__main__":
+    main()

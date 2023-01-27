@@ -39,7 +39,10 @@ from run._config.lang import (
     normalize_vo_script,
     replace_punc,
 )
-from run._config.train import make_signal_model_train_config, make_spectrogram_model_train_config
+from run._config.train import (
+    config_sig_model_training_from_datasets,
+    config_spec_model_training_from_datasets,
+)
 
 # TODO: Reduce the usage of globals, and use configuration if possible.
 
@@ -86,6 +89,6 @@ __all__ = [
     "replace_punc",
     "normalize_and_verbalize_text",
     "load_spacy_nlp",
-    "make_signal_model_train_config",
-    "make_spectrogram_model_train_config",
+    "config_sig_model_training_from_datasets",
+    "config_spec_model_training_from_datasets",
 ]

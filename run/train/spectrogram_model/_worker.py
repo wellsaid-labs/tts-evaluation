@@ -7,7 +7,6 @@ import logging
 import math
 import pathlib
 import random
-import types
 import typing
 from functools import partial
 
@@ -20,7 +19,6 @@ import torch.utils
 import torch.utils.data
 from third_party import get_parameter_norm
 from torch.nn.functional import binary_cross_entropy_with_logits, mse_loss
-from torchnlp.random import fork_rng
 from torchnlp.utils import get_total_parameters
 
 import lib
@@ -49,7 +47,6 @@ from run.train.spectrogram_model._metrics import (
     Metrics,
     MetricsKey,
     MetricsValues,
-    get_alignment_norm,
     get_average_db_rms_level,
 )
 
@@ -304,11 +301,7 @@ class _HandleBatchArgs(typing.NamedTuple):
 
 
 def _visualize_source_vs_target(args: _HandleBatchArgs, preds: Preds):
-    """Visualize predictions as compared to the original `batch`.
-
-    TODO: Add `pick` so that we can find examples which perform poorly in training, and hence are
-    probably bad examples. Also, this should log the audio, for analysis.
-    """
+    """Visualize predictions as compared to the original `batch`."""
     if not is_master():
         return
 
@@ -447,29 +440,7 @@ def _run_step(
     args.metrics.update(values)
 
 
-def _min_alignment_norm(_: _HandleBatchArgs, preds: Preds) -> int:
-    """Get the index of the prediction that has the smallest alignment norm."""
-    return int(torch.argmin(get_alignment_norm(preds)))
-
-
-def _max_num_frames_diff(args: _HandleBatchArgs, preds: Preds) -> int:
-    """Get the index of the prediction that most deviates from the original spectrogram length."""
-    return int(torch.argmax((args.batch.spectrogram.lengths - preds.num_frames).abs()))
-
-
-def _random_sequence(args: _HandleBatchArgs, preds: Preds) -> int:
-    """Get a random batch index."""
-    return random.randint(0, len(args.batch) - 1)
-
-
-class _Pick(typing.Protocol):
-    """Get a batch index given the arguments and predictions."""
-
-    def __call__(self, args: _HandleBatchArgs, preds: Preds) -> int:
-        ...
-
-
-def _visualize_inferred(args: _HandleBatchArgs, preds: Preds, pick: _Pick = _random_sequence):
+def _visualize_inferred(args: _HandleBatchArgs, preds: Preds):
     """Run in inference mode and visualize results.
 
     TODO: Visualize any related text annotations.
@@ -477,8 +448,7 @@ def _visualize_inferred(args: _HandleBatchArgs, preds: Preds, pick: _Pick = _ran
     if not is_master():
         return
 
-    pick_label = typing.cast(types.MethodType, pick).__name__
-    item = pick(args, preds)
+    item = random.randint(0, len(args.batch) - 1)
     num_frames = int(args.batch.spectrogram.lengths[0, item].item())
     num_frames_predicted = int(preds.num_frames[item].item())
     text_length = int(preds.num_tokens[item].item())
@@ -489,10 +459,8 @@ def _visualize_inferred(args: _HandleBatchArgs, preds: Preds, pick: _Pick = _ran
     predicted_alignments = preds.alignments[:num_frames_predicted, item, :text_length]
     predicted_stop_token = preds.stop_tokens[:num_frames_predicted, item]
 
-    model = lambda n: get_model_label(f"{n}/{pick_label}", cadence=args.cadence)
-    dataset = lambda n: get_dataset_label(
-        f"{n}/{pick_label}", cadence=args.cadence, type_=args.dataset_type
-    )
+    model = lambda n: get_model_label(n, cadence=args.cadence)
+    dataset = lambda n: get_dataset_label(n, cadence=args.cadence, type_=args.dataset_type)
     _plot_mel_spectrogram = cf.partial(plot_mel_spectrogram)
     figures = (
         (dataset("gold_spectrogram"), _plot_mel_spectrogram, gold_spectrogram),
@@ -517,9 +485,8 @@ def _visualize_inferred(args: _HandleBatchArgs, preds: Preds, pick: _Pick = _ran
         session=args.batch.spans[item].session,
         predicted_loudness=get_average_db_rms_level(predicted_spectrogram.unsqueeze(1)).item(),
         gold_loudness=get_average_db_rms_level(gold_spectrogram.unsqueeze(1)).item(),
-        pick_function=pick_label,
-        **{f"{k} Figure": link(v) for k, v in assets.items()},
-        **{k: link(v) for k, v in npy_urls.items()},
+        **{f"_{k} Figure": link(v) for k, v in assets.items()},
+        **{f"_{k}": link(v) for k, v in npy_urls.items()},
     )
 
 
@@ -536,8 +503,7 @@ def _run_inference(args: _HandleBatchArgs):
 
     if args.visualize:
         args.timer.record_event(args.timer.VISUALIZE_PREDICTIONS)
-        for pick in [_random_sequence, _max_num_frames_diff, _min_alignment_norm]:
-            _visualize_inferred(args, preds, pick)
+        _visualize_inferred(args, preds)
 
     args.timer.record_event(args.timer.MEASURE_METRICS)
     values: MetricsValues = {
@@ -548,48 +514,6 @@ def _run_inference(args: _HandleBatchArgs):
     }
     args.timer.record_event(args.timer.GATHER_METRICS)
     args.metrics.update(values)
-
-
-def _visualize_select_cases(state: _State, dataset_type: DatasetType, cadence: Cadence, **kw):
-    """Run spectrogram model in inference mode and visualize a test case."""
-    if not is_master():
-        return
-
-    model = typing.cast(SpectrogramModel, state.model.module)
-    sesh_vocab = model.session_embed.get_vocab()
-    inputs, preds = cf.partial(_utils.process_select_cases)(model, sesh_vocab, **kw)
-
-    for item in range(len(inputs)):
-        text_length = int(preds.num_tokens[item].item())
-        num_frames_predicted = int(preds.num_frames[item].item())
-        # spectrogram [num_frames, frame_channels]
-        predicted_spectrogram = preds.frames[:num_frames_predicted, item]
-        predicted_alignments = preds.alignments[:num_frames_predicted, item, :text_length]
-        predicted_stop_token = preds.stop_tokens[:num_frames_predicted, item]
-
-        model = partial(get_model_label, cadence=cadence)
-        _plot_mel_spectrogram = cf.partial(plot_mel_spectrogram)
-        figures = (
-            (model("predicted_spectrogram"), _plot_mel_spectrogram, predicted_spectrogram),
-            (model("alignment"), plot_alignments, predicted_alignments),
-            (model("stop_token"), plot_logits, predicted_stop_token),
-        )
-        assets = state.comet.log_figures({l: v(n) for l, v, n in figures})
-        audio = cf.partial(griffin_lim)(predicted_spectrogram.cpu().numpy())
-        log_npy = state.comet.log_npy
-        npy_urls = {f"{l} Array": log_npy(l, inputs.session[item][0], a) for l, _, a in figures}
-        link = lambda h: "Failed to upload." if h is None else f'<a href="{h}">{h}</a>'
-        state.comet.log_html_audio(
-            randomly_sampled_case=item,
-            audio={"predicted_griffin_lim_audio": audio},
-            context=state.comet.context,
-            xml=str(inputs.to_xml(item, include_context=True)),
-            session=inputs.session[item],
-            predicted_loudness=get_average_db_rms_level(predicted_spectrogram.unsqueeze(1)).item(),
-            dataset_type=dataset_type,
-            **{f"{k} Figure": link(v) for k, v in assets.items()},
-            **{k: link(v) for k, v in npy_urls.items()},
-        )
 
 
 _HandleBatch = typing.Callable[[_HandleBatchArgs], None]
@@ -716,10 +640,4 @@ def run_worker(
     while True:
         steps_per_epoch = train_loader.num_steps_per_epoch
         [_run_steps(state, *args, steps_per_epoch=steps_per_epoch) for args in contexts]
-
-        with set_context(Context.EVALUATE_INFERENCE, state.comet, state.model, ema=state.ema):
-            assert comet.curr_epoch is not None
-            with fork_rng(comet.curr_epoch):
-                _visualize_select_cases(state, DatasetType.TEST, Cadence.MULTI_STEP)
-
         save_checkpoint(state.to_checkpoint(), checkpoints_directory, f"step_{state.step.item()}")
