@@ -280,6 +280,7 @@ class UnprocessedSession(typing.NamedTuple):
 class Session(typing.NamedTuple):
     spkr: Speaker
     label: str
+    # NOTE: This loudness value is in LUFS.
     loudness: float
     tempo: float
     # TODO: We should consider adding `spkr_tempo` to the `Speaker` object, instead. It makes

@@ -305,6 +305,14 @@ class Batch(_utils.Batch):
 
     inputs: typing.Optional[Inputs]
 
+    @property
+    def spec(self):
+        return self.spectrogram
+
+    @property
+    def spec_mask(self):
+        return self.spectrogram_mask
+
     def __len__(self):
         return len(self.spans)
 
