@@ -25,12 +25,14 @@ from run._config.data import _include_span
 from run._tts import CHECKPOINTS_LOADERS, Checkpoints, package_tts
 from run._utils import Dataset
 from run.data._loader import Alignment, Passage, Span, Speaker
+from run.data._loader import structures as struc
 from run.train.spectrogram_model._worker import _get_data_generator
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import altair as alt
     import librosa
     import librosa.util
+    import matplotlib.figure
     import pandas as pd
     import streamlit as st
 else:
@@ -38,6 +40,7 @@ else:
     alt = LazyLoader("alt", globals(), "altair")
     pd = LazyLoader("pd", globals(), "pandas")
     st = LazyLoader("st", globals(), "streamlit")
+    matplotlib = LazyLoader("matplotlib", globals(), "matplotlib")
 
 
 logger = logging.getLogger(__name__)
@@ -55,8 +58,8 @@ STREAMLIT_STATIC_SYMLINK_PATH = STREAMLIT_STATIC_PRIVATE_PATH / "symlink"
 
 
 @st.experimental_memo()
-def load_tts(checkpoints_key: str):
-    return package_tts(*CHECKPOINTS_LOADERS[Checkpoints[checkpoints_key]]())
+def load_tts(checkpoints_key: str, **kwargs):
+    return package_tts(*CHECKPOINTS_LOADERS[Checkpoints[checkpoints_key]](**kwargs))
 
 
 # A `Path` to a file or directory accessible via HTTP in the streamlit app.
@@ -97,6 +100,13 @@ def path_to_web_path(path: pathlib.Path) -> WebPath:
         web_path.parent.mkdir(exist_ok=True, parents=True)
         web_path.symlink_to(path)
     return WebPath(web_path)
+
+
+def figure_to_url(figure: matplotlib.figure.Figure, name: str = "fig.png", **kwargs):
+    """Create a URL that can be loaded from `streamlit`."""
+    image_web_path = make_temp_web_dir() / name
+    figure.savefig(str(image_web_path), **kwargs)
+    return web_path_to_url(image_web_path)
 
 
 def audio_to_web_path(audio: np.ndarray, name: str = "audio.wav", **kwargs) -> WebPath:
@@ -231,34 +241,40 @@ def get_dataset(speaker_labels: typing.FrozenSet[str]) -> Dataset:
 
 
 @st.experimental_singleton()
+def get_datasets() -> typing.Tuple[Dataset, Dataset]:
+    """Load train and dev dataset, and cache."""
+    return run._utils.get_datasets(False)
+
+
 def get_dev_dataset() -> Dataset:
-    """Load dev dataset, and cache."""
-    with st.spinner("Loading dataset..."):
-        _, dev_dataset = run._utils.get_datasets(False)
-    return dev_dataset
+    """Load dev dataset and cache."""
+    return get_datasets()[1]
 
 
 @st.experimental_singleton()
 def get_spans(
     _train_dataset: Dataset,
     _dev_dataset: Dataset,
-    speaker: typing.Optional[Speaker],
     num_spans: int,
-    is_dev_speakers: bool,
+    speaker: typing.Optional[Speaker] = None,
+    is_dev_speakers: bool = True,
+    is_train_spans: bool = True,
+    include_dic: bool = True,
     device_count: int = 4,
-) -> typing.Tuple[typing.List[Span], typing.List[np.ndarray]]:
+) -> typing.List[Span]:
     """Get `num_spans` spans from `_train_dataset` for `speaker`. This uses the same code path
     as a training run so it ensures we are analyzing training data directly.
 
     Args:
         ...
+        speaker: Pick a speaker to generate spans for.
+        num_spans: The number of spans to generate.
+        is_dev_speakers: Get spans only for development speakers.
+        is_train_spans: Get spans from the training dataset.
+        include_dic: Include dictionary datasets that are sometimes used in development; however,
+            may not be as applicable for applied use cases.
         device_count: The number of devices used during training to set the configuration.
     """
-    with st.spinner("Configuring..."):
-        datasets = (_train_dataset, _dev_dataset)
-        config_ = run._config.make_spectrogram_model_train_config(*datasets, False, device_count)
-        cf.add(config_, overwrite=True)
-
     with st.spinner("Making generators..."):
         if is_dev_speakers:
             _train_dataset = {s: _train_dataset[s] for s in _dev_dataset.keys()}
@@ -267,15 +283,14 @@ def get_spans(
             _train_dataset = {speaker: _train_dataset[speaker]}
             _dev_dataset = {speaker: _dev_dataset[speaker]}
 
-        train_gen, _ = cf.partial(_get_data_generator)(_train_dataset, _dev_dataset)
+        train_gen, dev_gen = cf.partial(_get_data_generator)(_train_dataset, _dev_dataset)
+        gen = train_gen if is_train_spans else dev_gen
 
     with st.spinner("Making spans..."):
-        spans = [next(train_gen) for _ in st_tqdm(range(num_spans), num_spans)]
+        gen = (s for s in gen if include_dic or s.speaker.style is not struc.Style.DICT)
+        spans = [next(gen) for _ in st_tqdm(range(num_spans), num_spans)]
 
-    with st.spinner("Loading audio..."):
-        signals = [s.audio() for s in st_tqdm(spans)]
-
-    return spans, signals
+    return spans
 
 
 def _random_speech_segments(_train_dataset: Dataset):
@@ -439,26 +454,29 @@ _StTqdmVar = typing.TypeVar("_StTqdmVar")
 
 
 def st_tqdm(
-    iterable: typing.Iterable[_StTqdmVar], length: typing.Optional[int] = None
+    iterable: typing.Iterable[_StTqdmVar], total: typing.Optional[int] = None
 ) -> typing.Generator[_StTqdmVar, None, None]:
     """Display a progress bar while iterating through `iterable`."""
     bar = st.progress(0)
     for i, item in enumerate(iterable):
         yield item
-        bar.progress(i / (len(iterable) if length is None else length))  # type: ignore
+        bar.progress(i / (len(iterable) if total is None else total))  # type: ignore
     bar.empty()
 
 
 # NOTE: This follows the examples highlighted here:
 # https://github.com/PablocFonseca/streamlit-aggrid-examples/blob/main/cell_renderer_class_example.py
 # https://github.com/PablocFonseca/streamlit-aggrid/issues/119
-renderer = 'function(params) {return `<audio controls preload="none" src="${params.value}" />`}'
-renderer = JsCode(renderer)
+audio_renderer = 'function(prms) {return `<audio controls preload="none" src="${prms.value}" />`}'
+audio_renderer = JsCode(audio_renderer)
+img_renderer = 'function(prms) {return `<img src="${prms.value}" />`}'
+img_renderer = JsCode(img_renderer)
 
 
 def st_ag_grid(
     df: pd.DataFrame,
-    audio_column_name: typing.Optional[str] = None,
+    audio_cols: typing.List[str] = [],
+    img_cols: typing.List[str] = [],
     height: int = 850,
     page_size: int = 10,
 ):
@@ -466,8 +484,10 @@ def st_ag_grid(
     options = GridOptionsBuilder.from_dataframe(df)
     options.configure_pagination(paginationAutoPageSize=False, paginationPageSize=page_size)
     options.configure_default_column(wrapText=True, autoHeight=True, min_column_width=1)
-    if audio_column_name:
-        options.configure_column(audio_column_name, cellRenderer=renderer)
+    for name in audio_cols:
+        options.configure_column(name, cellRenderer=audio_renderer)
+    for name in img_cols:
+        options.configure_column(name, cellRenderer=img_renderer)
     return AgGrid(
         data=df,
         gridOptions=options.build(),

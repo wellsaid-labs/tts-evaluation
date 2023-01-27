@@ -37,7 +37,7 @@ from run._tts import (
     PreprocessedInputs,
     TTSPackage,
     process_tts_inputs,
-    text_to_speech_ffmpeg_generator,
+    tts_ffmpeg_generator,
 )
 from run.data._loader import Session, Speaker
 
@@ -65,7 +65,7 @@ def _generation_service(
 ):
     """Generate a voice over from `input` using `tts` and store the results in `file_path`."""
     with file_path.open("ab") as file_:
-        for bytes_ in text_to_speech_ffmpeg_generator(tts, input, preprocessed, **cf.get()):
+        for bytes_ in tts_ffmpeg_generator(tts, input, preprocessed, **cf.get()):
             if len(bytes_) > 0:
                 file_.write(bytes_)
     is_streaming.clear()

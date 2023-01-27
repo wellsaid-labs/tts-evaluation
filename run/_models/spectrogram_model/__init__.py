@@ -17,7 +17,7 @@ from run._models.spectrogram_model.inputs import (
     TokenAnnos,
     preprocess,
 )
-from run._models.spectrogram_model.model import Generator, Mode
+from run._models.spectrogram_model.model import Mode
 from run._models.spectrogram_model.wrapper import SpectrogramModelWrapper as SpectrogramModel
 
 __all__ = [
@@ -29,7 +29,6 @@ __all__ = [
     "pre_net",
     "wrapper",
     "Preds",
-    "Generator",
     "Mode",
     "PreprocessedInputs",
     "Inputs",

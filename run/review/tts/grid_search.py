@@ -35,7 +35,7 @@ from run._streamlit import (
     st_select_paths,
     web_path_to_url,
 )
-from run._tts import TTSPackage, get_session_vocab, text_to_speech
+from run._tts import TTSPackage, basic_tts, get_session_vocab
 from run.data._loader import Session, Speaker
 
 st.set_page_config(layout="wide")
@@ -99,10 +99,10 @@ def main():
         script,
     ) in enumerate(iter_):
         package = TTSPackage(spec_model, sig_model)
-        audio = text_to_speech(package, script, session)
+        audio = basic_tts(package, script, session)
         sesh = str(session).replace("/", "__")
         speaker = session[0]
-        name = f"i={i},spec={spec_path.stem},sig={sig_path.stem},spk={speaker.label},"
+        name = f"i={i},spec={spec_path.stem},sig={sig_path.stem},spkr={speaker.label},"
         name += f"sesh={sesh},script={id(script)}.wav"
         audio_web_path = audio_to_web_path(audio, name=name)
         row = {

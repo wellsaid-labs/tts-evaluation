@@ -26,13 +26,8 @@ def configure(overwrite: bool = False):
     # NOTE: These values can be increased as needed, they preemtively allocate model
     # parameters.
     max_tokens = 1000
-    max_anno_features = 2
-    annos = [
-        ("loudness_anno_embed", "loudness_anno_mask"),
-        ("sesh_loudness_embed", "default_mask"),
-        ("tempo_anno_embed", "tempo_anno_mask"),
-        ("sesh_tempo_embed", "default_mask"),
-    ]
+    max_anno_vector_size = 3
+    annos = [("loudness_vector", "loudness_mask"), ("tempo_vector", "tempo_mask")]
     max_speakers = len(set(s.label for s in _config.data.DATASETS.keys()))
     max_dialects = len(set(s.dialect for s in _config.data.DATASETS.keys()))
     max_styles = len(set(s.style for s in _config.data.DATASETS.keys()))
@@ -41,7 +36,10 @@ def configure(overwrite: bool = False):
     # NOTE: Configure the model sizes.
     config = {
         run._models.spectrogram_model.encoder.Encoder: cf.Args(
+            # NOTE: These are standard choices for embedding sizing and processing.
             num_anno_layers=2,
+            token_meta_embed_size=128,
+            anno_embed_size=128,
             # SOURCE (Tacotron 2):
             # Input characters are represented using a learned 512-dimensional character embedding
             # ...
@@ -107,16 +105,16 @@ def configure(overwrite: bool = False):
             max_styles=max_styles,
             max_languages=max_languages,
             num_frame_channels=_config.audio.NUM_FRAME_CHANNELS,
-            max_word_embed_size=396,
-            max_anno_features=max_anno_features,
+            max_word_vector_size=396,
+            max_seq_vector_size=2,
+            max_anno_vector_size=max_anno_vector_size,
             annos=annos,
             # SOURCE (Transfer Learning from Speaker Verification to Multispeaker Text-To-Speech
             #         Synthesis):
             # The paper mentions their proposed model uses a 256 dimension embedding.
             # NOTE: See https://github.com/wellsaid-labs/Text-to-Speech/pull/258 to learn more about
             # this parameter.
-            seq_meta_embed_size=150,
-            token_meta_embed_size=128,
+            seq_embed_size=128,
         ),
         run._models.signal_model.wrapper.SignalModelWrapper: cf.Args(
             max_speakers=max_speakers,

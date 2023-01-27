@@ -272,19 +272,20 @@ class Speaker:
 
 
 class UnprocessedSession(typing.NamedTuple):
-    spk: Speaker
-    lbl: str
+    spkr: Speaker
+    label: str
 
 
 # TODO: Implement `__str__` so that we have a more succinct string representation for logging
 class Session(typing.NamedTuple):
-    spk: Speaker
-    lbl: str
+    spkr: Speaker
+    label: str
+    # NOTE: This loudness value is in LUFS.
     loudness: float
     tempo: float
-    # TODO: We should consider adding `spk_tempo` to the `Speaker` object, instead. It makes
+    # TODO: We should consider adding `spkr_tempo` to the `Speaker` object, instead. It makes
     # more sense there.
-    spk_tempo: float
+    spkr_tempo: float
 
 
 class IsLinked(typing.NamedTuple):
@@ -365,7 +366,7 @@ class UnprocessedPassage:
 
     @property
     def speaker(self):
-        return self.session.spk
+        return self.session.spkr
 
     @property
     def aligned_audio_length(self) -> float:
@@ -1177,16 +1178,16 @@ def _process_sessions(
     assert len(pairs) == len(set(p.audio_path for p in all_psgs)), message
 
     SeshToPsg = typing.Dict[UnprocessedSession, typing.List[UnprocessedPassage]]
-    spk_to_psg: typing.Dict[Speaker, SeshToPsg] = defaultdict(lambda: defaultdict(list))
+    spkr_to_psg: typing.Dict[Speaker, SeshToPsg] = defaultdict(lambda: defaultdict(list))
     for psg in all_psgs:
-        spk_to_psg[psg.session.spk][psg.session].append(psg)
+        spkr_to_psg[psg.session.spkr][psg.session].append(psg)
 
     processed: typing.Dict[UnprocessedSession, Session] = {}
-    for spk, sesh_to_psg in spk_to_psg.items():
-        spk_psgs = [p for psgs in sesh_to_psg.values() for p in psgs]
+    for spkr, sesh_to_psg in spkr_to_psg.items():
+        spkr_psgs = [p for psgs in sesh_to_psg.values() for p in psgs]
 
-        cache_name = f"{_process_sessions.__name__}_{spk.label}.pickle"
-        cache_path = Path(os.path.commonpath(list(set(p.audio_path for p in spk_psgs))))
+        cache_name = f"{_process_sessions.__name__}_{spkr.label}.pickle"
+        cache_path = Path(os.path.commonpath(list(set(p.audio_path for p in spkr_psgs))))
         cache_path = cache_path.parent if cache_path.is_file() else cache_path
         cache_path = cache_path / cache_dir / cache_name
         if cache_path.exists():
@@ -1207,8 +1208,8 @@ def _process_sessions(
             tempo = get_tempo(" ".join(p.script for p in sesh_psgs), audio_len)
             updates[sesh] = Session(*sesh, get_loudness(audios), tempo, 0)
             total_audio_len += audio_len
-        spk_tempo = get_tempo(" ".join(p.script for p in spk_psgs), total_audio_len)
-        updates = {a: b._replace(spk_tempo=spk_tempo) for a, b in updates.items()}
+        spkr_tempo = get_tempo(" ".join(p.script for p in spkr_psgs), total_audio_len)
+        updates = {a: b._replace(spkr_tempo=spkr_tempo) for a, b in updates.items()}
 
         cache_path.parent.mkdir(exist_ok=True)
         cache_path.write_bytes(pickle.dumps(updates))

@@ -303,21 +303,51 @@ class Batch(_utils.Batch):
 
     processed: PreprocessedInputs
 
-    def apply(self, call: typing.Callable[[torch.Tensor], torch.Tensor]) -> "Batch":
-        batch: Batch = super().apply(call)
-        token_embed = batch.processed.token_embeddings_padded
-        set_ = object.__setattr__
-        set_(batch.processed, "token_embeddings_padded", call(token_embed))
-        set_(batch.processed, "num_tokens", call(batch.processed.num_tokens))
-        set_(batch.processed, "tokens_mask", call(batch.processed.tokens_mask))
-        set_(batch.processed, "max_audio_len_tensor", call(batch.processed.max_audio_len_tensor))
-        return batch
+    inputs: typing.Optional[Inputs]
+
+    @property
+    def spec(self):
+        return self.spectrogram
+
+    @property
+    def spec_mask(self):
+        return self.spectrogram_mask
 
     def __len__(self):
         return len(self.spans)
 
+    def __getitem__(self, key: typing.Any):
+        if not isinstance(key, (slice, int)):
+            raise TypeError
+        # TODO: There are several instances of this pattern in the code. Could we rewrite this
+        # using conventional list objects? And/or create an object is able to represent both
+        # a batch and an individual item?
+        if isinstance(key, int):
+            self.spans[key]  # NOTE: Raise `IndexError` if needed.
+            key = slice(key, key + 1)
+        return Batch(
+            spans=self.spans[key],
+            audio=self.audio[key],
+            spectrogram=SequenceBatch(self.spectrogram[0][:, key], self.spectrogram[1][:, key]),
+            spectrogram_mask=SequenceBatch(
+                self.spectrogram_mask[0][:, key], self.spectrogram_mask[1][:, key]
+            ),
+            stop_token=SequenceBatch(self.stop_token[0][:, key], self.stop_token[1][:, key]),
+            xmls=self.xmls[key],
+            processed=self.processed[key],
+            inputs=None if self.inputs is None else self.inputs[key],
+        )
 
-def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
+    def apply(self, call: typing.Callable[[torch.Tensor], torch.Tensor]) -> "Batch":
+        batch: Batch = super().apply(call)
+        for field in dataclasses.fields(batch.processed):
+            val = getattr(batch.processed, field.name)
+            if isinstance(val, torch.Tensor):
+                object.__setattr__(batch.processed, field.name, call(val))
+        return batch
+
+
+def make_batch(spans: typing.List[Span], max_workers: int = 6, add_inputs: bool = False) -> Batch:
     """
     NOTE: In Janurary 2020, this function profiled like so:
     - 27% for `_signals_to_spectrograms`
@@ -351,15 +381,12 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
         context=[cf.partial(s.spacy_context)() for s in spans],
         loudness=[_random_loudness_annotations(s, a) for s, a in zip(spans, signals_)],
         tempo=[_random_tempo_annotations(s) for s in spans],
-        respellings=[cf.partial(_random_respelling_annotations)(s) for s in spans],
+        respells=[cf.partial(_random_respelling_annotations)(s) for s in spans],
     )
     # NOTE: `inputs` has a spaCy `Span` which is difficult to `pickle`, so instead, we seralize
     # `inputs` into XML.
     xmls = [inputs.to_xml(i, include_context=True) for i in range(len(inputs))]
     processed = cf.partial(preprocess)(inputs)
-    # NOTE: These tensors are not needed, and are taking up memory.
-    object.__setattr__(processed, "token_embeddings", None)
-
     return Batch(
         # NOTE: Prune unused attributes from `Passage` by creating a new `Passage`, in order to
         # reduce batch size, which in turn makes it easier to send to other processes, for example.
@@ -370,6 +397,8 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
         stop_token=cf.partial(_make_stop_token)(spectrogram),
         xmls=xmls,
         processed=processed,
+        # NOTE: `inputs` with spaCy objects can be intensive so pickle, so it's optional.
+        inputs=inputs if add_inputs else None,
     )
 
 

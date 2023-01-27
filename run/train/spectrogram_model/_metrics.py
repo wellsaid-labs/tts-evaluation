@@ -25,72 +25,30 @@ from run.train._utils import Context, Timer
 from run.train.spectrogram_model._data import Batch
 
 
-def get_num_skipped(preds: Preds) -> torch.Tensor:
-    """Given `alignments` from frames to tokens, this computes the number of tokens that were
-    skipped.
-
-    NOTE: This function assumes a token is attended to if it has the most focus of all the other
-    tokens for some frame.
-
-    Returns:
-        torch.FloatTensor [batch_size]
-    """
-    if preds.alignments.numel() == 0:
-        return torch.zeros(preds.alignments.shape[1], device=preds.alignments.device)
-
-    indices = preds.alignments.max(dim=2, keepdim=True).indices
-    device = preds.alignments.device
-    one = torch.ones(*preds.alignments.shape, device=device, dtype=torch.long)
-    # [num_frames, batch_size, num_tokens]
-    num_skipped = torch.zeros(*preds.alignments.shape, device=device, dtype=torch.long)
-    num_skipped = num_skipped.scatter(dim=2, index=indices, src=one)
-    # [num_frames, batch_size, num_tokens] → [batch_size, num_tokens]
-    num_skipped = num_skipped.masked_fill(~preds.frames_mask.transpose(0, 1).unsqueeze(-1), 0)
-    num_skipped = num_skipped.sum(dim=0)
-    num_skipped = num_skipped.masked_fill(~preds.tokens_mask, -1)
-    return (num_skipped == 0).float().sum(dim=1)
-
-
-def get_num_jumps(preds: Preds) -> torch.Tensor:
-    """Given `alignments` from frames to tokens, the computes the number of "jumps" between frame
-    to frame, that would skip at least one token.
-
-    Returns:
-        torch.FloatTensor [batch_size]
-    """
-    if preds.alignments.numel() == 0:
-        return torch.zeros(preds.alignments.shape[1], device=preds.alignments.device)
-
-    alignments = preds.alignments.masked_fill(~preds.tokens_mask.unsqueeze(0), 0)
-    # [num_frames, batch_size, num_tokens] → [num_frames, batch_size]
-    indices = alignments.max(dim=2).indices
-    start = torch.cat([torch.zeros(1, alignments.shape[1], device=alignments.device), indices[:-1]])
-    skip_size = indices - start
-    skip_size = skip_size.masked_fill(~preds.frames_mask.transpose(0, 1), 0)
-    num_jumps = (skip_size.abs() > 1).float()
-    return num_jumps.sum(dim=0)
-
-
-def get_num_small_max(preds: Preds, threshold: float) -> torch.Tensor:
-    """Given `alignments` from frames to tokens, this computes the number of alignments where no
-    token gets no more than `threshold` focus.
+def get_hang_time(
+    stop_token: torch.Tensor, mask: torch.Tensor, num_frames: torch.Tensor, threshold: float
+) -> torch.Tensor:
+    """Get the number of frames after stop token reached `threshold`, this is metric is closely
+    aligned to the number of non-speech frames there at the end.
 
     Args:
-        preds
-        threshold: The percentage focus a token gets.
+        stop_token (torch.FloatTensor [num_frames, batch_size])
+        mask (torch.FloatTensor [batch_size, num_frames])
+        num_frames (torch.FloatTensor [batch_size])
 
     Returns:
         torch.FloatTensor [batch_size]
     """
-    if preds.alignments.numel() == 0:
-        return torch.zeros(preds.alignments.shape[1], device=preds.alignments.device)
+    if stop_token.numel() == 0:
+        return torch.empty(0, device=stop_token.device)
 
-    alignments = preds.alignments.masked_fill(~preds.tokens_mask.unsqueeze(0), 0)
-    # [num_frames, batch_size, num_tokens] → [num_frames, batch_size]
-    values = alignments.max(dim=2).values
-    values = (values < threshold).float()
-    values = values.masked_fill(~preds.frames_mask.transpose(0, 1), 0)
-    return values.sum(dim=0)
+    # [num_frames, batch_size]
+    is_potential_stop = torch.sigmoid(stop_token) >= threshold
+    is_potential_stop = is_potential_stop.masked_fill(~mask.transpose(0, 1), 0)
+    # [num_frames, batch_size] → [batch_size]
+    had_potential_stop = is_potential_stop.sum(dim=0) != 0
+    first_potential_stop = is_potential_stop.long().argmax(dim=0)
+    return (num_frames - first_potential_stop - 1) * had_potential_stop
 
 
 """
@@ -194,47 +152,6 @@ def get_num_pause_frames(
     return num_frames
 
 
-def get_max_pause(
-    db_spectrogram: torch.Tensor,
-    mask: typing.Optional[torch.Tensor],
-    max_loudness: float,
-    min_speech_segment: float,
-    frame_hop: int,
-    sample_rate: int,
-    **kwargs,
-) -> typing.List[int]:
-    """Get the maximum pause length.
-
-    TODO: Incorperate this into training.
-    TODO: Test this function.
-
-    Args:
-        db_spectrogram (torch.FloatTensor [num_frames, batch_size, frame_channels])
-        mask (torch.FloatTensor [batch_size, num_frames])
-        max_loudness: The maximum loudness a pause can be.
-        min_speech_segment: The minimum length that a speech segment must be.
-        ...
-    """
-    # [num_frames, batch_size, frame_channels] → [batch_size, num_frames, frame_channels]
-    power_spec = lib.audio.db_to_power(db_spectrogram).transpose(0, 1)
-    # [batch_size, num_frames, frame_channels] → [batch_size, num_frames]
-    framed_rms_level = cf.partial(power_spectrogram_to_framed_rms)(power_spec, **kwargs)
-    is_silent = framed_rms_level < lib.audio.db_to_amp(max_loudness)  # [batch_size, num_frames]
-    is_silent = is_silent if mask is None else is_silent * mask
-    batch_size = is_silent.shape[0]
-    ss_threshold = min_speech_segment * sample_rate / frame_hop
-    max_frames = [0] * batch_size
-    for i in range(batch_size):
-        _is_silent, inverse, count = torch.unique_consecutive(
-            is_silent[i], return_counts=True, return_inverse=True
-        )
-        _is_silent[count < ss_threshold] = True
-        is_silent[i] = torch.gather(_is_silent, 0, inverse)
-        _is_silent, count = torch.unique_consecutive(is_silent[i], return_counts=True)
-        max_frames[i] = int((_is_silent.float() * count).max().item())
-    return max_frames
-
-
 def get_alignment_norm(preds: Preds) -> torch.Tensor:
     """The inf-norm of an alignment. The more focused an alignment is the higher this metric. The
     metric is bounded at [0, 1].
@@ -287,16 +204,17 @@ class Metrics(_utils.Metrics[MetricsKey]):
         FREQUENCY_TEXT_LENGTH: The frequency of each text length bucket.
         ALIGNMENT_NORM: The p-norm of an alignment. The more focused an alignment is the higher this
             metric. The metric is bounded at [0, 1].
-        ALIGNMENT_SMALL_MAX: The percentage of frames which have a small maximum alignment.
-        ALIGNMENT_SKIPS: This metric assumes that each alignment focuses on one token. This measures
-            the percentage of tokens skipped by the alignments.
-        ALIGNMENT_JUMPS: This metric assumes that each alignment focuses on one token. This measures
-            the percentage of token transitions that jump over a token.
         ALIGNMENT_STD: This metric measures the standard deviation of an alignment. As the alignment
             is more focused, this metrics goes to zero.
+        STOP_TOKEN_HANG_TIME_SUM: The metric measures the number of frames after the model started
+            to predict a stop. Essentially, this measures how many silence or breathing frames
+            there are before the model stops generating.
         PREDICTED_PAUSE_FRAMES: The percentage of predicted frames inside of a pause.
         AVERAGE_PREDICTED_RMS_LEVEL: The average loudness per predicted frame.
         AVERAGE_RELATIVE_SPEED: The number of predicted frames divided by the number of frames.
+        AVERAGE_RELATIVE_SPEED_TRIMMED: The number of predicted frames minus any hanging frames
+            divided by the number of frames. This metric will always be slightly under 100% due
+            to the trimming; however, it should be more stable than `AVERAGE_RELATIVE_SPEED`.
         AVERAGE_RMS_LEVEL_DELTA: The delta between `AVERAGE_PREDICTED_RMS_LEVEL` and
             `AVERAGE_RMS_LEVEL`.
         GRADIENT_INFINITY_NORM: The total infinity norm of all parameter gradients.
@@ -309,10 +227,8 @@ class Metrics(_utils.Metrics[MetricsKey]):
 
     (
         ALIGNMENT_NORM_SUM,
-        ALIGNMENT_NUM_SMALL_MAX,
-        ALIGNMENT_NUM_SKIPS,
-        ALIGNMENT_NUM_JUMPS,
         ALIGNMENT_STD_SUM,
+        STOP_TOKEN_HANG_TIME_SUM,
         DATA_QUEUE_SIZE,
         MAX_FRAMES_PER_TOKEN,
         NUM_CORRECT_STOP_TOKEN,
@@ -346,13 +262,12 @@ class Metrics(_utils.Metrics[MetricsKey]):
     FREQUENCY_TEXT_LENGTH = partial(get_dataset_label, "text_length_bucket_{lower}_{upper}")
 
     ALIGNMENT_NORM = partial(get_model_label, "alignment_norm")
-    ALIGNMENT_SMALL_MAX = partial(get_model_label, "alignment_num_small_max")
-    ALIGNMENT_SKIPS = partial(get_model_label, "alignment_skips")
-    ALIGNMENT_JUMPS = partial(get_model_label, "alignment_jumps_v2")
     ALIGNMENT_STD = partial(get_model_label, "alignment_std")
+    STOP_TOKEN_HANG_TIME = partial(get_model_label, "stop_token_hang_time")
     PREDICTED_PAUSE_FRAMES = partial(get_model_label, "predicted_pause_frames")
     AVERAGE_PREDICTED_RMS_LEVEL = partial(get_model_label, "average_predicted_rms_level")
     AVERAGE_RELATIVE_SPEED = partial(get_model_label, "average_relative_speed")
+    AVERAGE_RELATIVE_SPEED_TRIMMED = partial(get_model_label, "average_relative_speed_trimmed")
     AVERAGE_RMS_LEVEL_DELTA = partial(get_model_label, "average_rms_level_delta")
     REACHED_MAX_FRAMES = partial(get_model_label, "reached_max_frames")
     SPECTROGRAM_LOSS = partial(get_model_label, "spectrogram_loss")
@@ -423,13 +338,13 @@ class Metrics(_utils.Metrics[MetricsKey]):
     def get_alignment_values(self, batch: Batch, preds: Preds) -> MetricsValues:
         values, _reduce = self._make_values()
 
-        for span, skipped, jumps, std, norm, small_max, length, has_reached_max in zip(
+        for span, std, norm, hang_time, length, has_reached_max in zip(
             batch.spans,
-            self._to_list(get_num_skipped(preds)),
-            self._to_list(get_num_jumps(preds)),
             self._to_list(get_alignment_std(preds)),
             self._to_list(get_alignment_norm(preds)),
-            self._to_list(cf.partial(get_num_small_max)(preds)),
+            self._to_list(
+                cf.partial(get_hang_time)(preds.stop_tokens, preds.frames_mask, preds.num_frames)
+            ),
             self._to_list(preds.num_frames),
             self._to_list(preds.reached_max),
         ):
@@ -440,10 +355,8 @@ class Metrics(_utils.Metrics[MetricsKey]):
                 speaker: typing.Optional[Speaker]
                 for speaker in [None, span.speaker]:
                     _reduce(self.ALIGNMENT_NORM_SUM, speaker, v=norm)
-                    _reduce(self.ALIGNMENT_NUM_SMALL_MAX, speaker, v=small_max)
-                    _reduce(self.ALIGNMENT_NUM_SKIPS, speaker, v=skipped)
-                    _reduce(self.ALIGNMENT_NUM_JUMPS, speaker, v=jumps)
                     _reduce(self.ALIGNMENT_STD_SUM, speaker, v=std)
+                    _reduce(self.STOP_TOKEN_HANG_TIME_SUM, speaker, v=hang_time)
                     _reduce(self.NUM_FRAMES_PREDICTED, speaker, v=length)
 
         return dict(values)
@@ -501,15 +414,15 @@ class Metrics(_utils.Metrics[MetricsKey]):
         for speaker, reduce, div in self._iter_permutations(select, is_verbose):
             spectrogram_loss = div(self.SPECTROGRAM_LOSS_SUM, self.NUM_FRAMES) / num_frame_channels
             total_spans = reduce(self.NUM_SPANS) + reduce(self.NUM_REACHED_MAX)
+            num_frames_predicted_right_trimmed = reduce(self.NUM_FRAMES_PREDICTED)
+            num_frames_predicted_right_trimmed -= reduce(self.STOP_TOKEN_HANG_TIME_SUM)
+            avg_speed_trimmed = div(num_frames_predicted_right_trimmed, self.NUM_FRAMES)
             update = {
                 self.ALIGNMENT_NORM: div(self.ALIGNMENT_NORM_SUM, self.NUM_FRAMES_PREDICTED),
-                self.ALIGNMENT_SMALL_MAX: div(
-                    self.ALIGNMENT_NUM_SMALL_MAX, self.NUM_FRAMES_PREDICTED
-                ),
                 self.ALIGNMENT_STD: div(self.ALIGNMENT_STD_SUM, self.NUM_FRAMES_PREDICTED),
-                self.ALIGNMENT_SKIPS: div(self.ALIGNMENT_NUM_SKIPS, self.NUM_TOKENS),
-                self.ALIGNMENT_JUMPS: div(self.ALIGNMENT_NUM_JUMPS, self.NUM_FRAMES_PREDICTED),
+                self.STOP_TOKEN_HANG_TIME: div(self.STOP_TOKEN_HANG_TIME_SUM, self.NUM_SPANS),
                 self.AVERAGE_RELATIVE_SPEED: div(self.NUM_FRAMES_PREDICTED, self.NUM_FRAMES),
+                self.AVERAGE_RELATIVE_SPEED_TRIMMED: avg_speed_trimmed,
                 self.STOP_TOKEN_ACCURACY: div(self.NUM_CORRECT_STOP_TOKEN, self.NUM_FRAMES),
                 self.STOP_TOKEN_LOSS: div(self.STOP_TOKEN_LOSS_SUM, self.NUM_FRAMES),
                 self.REACHED_MAX_FRAMES: reduce(self.NUM_REACHED_MAX) / total_spans,
