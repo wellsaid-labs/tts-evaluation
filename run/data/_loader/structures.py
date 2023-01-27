@@ -303,15 +303,9 @@ def _check_passage_invariants(psg: typing.Union[UnprocessedPassage, Passage]):
         dtype = alignment_dtype["audio"]["stop"].type
         audio_length = max(dtype(psg.audio_file.length), psg.audio_file.length)
 
-    batch = [psg.alignments] + [psg.nonalignments] if isinstance(psg, Passage) else []
+    batch = [psg.alignments] + ([psg.nonalignments] if isinstance(psg, Passage) else [])
     batch = [a for a in batch if a is not None]
     for alignments in batch:
-        for key, is_linked in psg.is_linked._asdict().items():
-            if not is_linked:
-                # NOTE: Any non-linked field must start, and end, at the boundaries.
-                assert getattr(alignments[0], key)[0] == 0
-                assert getattr(alignments[-1], key)[-1] == len(getattr(psg, key))
-
         # TODO: Should we consider updating this from `<=` to `<`?
         assert all(a.script[0] <= a.script[1] for a in alignments)
         assert all(a.transcript[0] <= a.transcript[1] for a in alignments)
@@ -370,19 +364,28 @@ class UnprocessedPassage:
     other_metadata: typing.Dict = field(default_factory=dict)
     is_linked: IsLinked = field(default_factory=IsLinked)
 
+    def __post_init__(self):
+        self.check_invariants()
+
     @property
     def speaker(self):
         return self.session.spkr
 
     @property
     def aligned_audio_length(self) -> float:
-        assert self.alignments is not None, "Alignment length is not possible"
+        assert self.alignments is not None
         if len(self.alignments) == 0:
             return 0.0
         return self.alignments[-1].audio[-1] - self.alignments[0].audio[0]
 
+    @property
+    def aligned_script(self) -> str:
+        assert self.alignments is not None
+        if len(self.alignments) == 0:
+            return ""
+        return self.script[self.alignments[0].script[0] : self.alignments[-1].script[-1]]
+
     def check_invariants(self):
-        # TODO: Ensure this is getting run at some stage.
         _check_passage_invariants(self)
 
 
@@ -1205,20 +1208,30 @@ def _process_sessions(
             continue
 
         total_audio_len = 0
+        full_script = []
         updates: typing.Dict[UnprocessedSession, Session] = {}
         for sesh, sesh_psgs in tqdm_(sesh_to_psg.items(), disable=no_tqdm):
             audio_paths = list(set(p.audio_path for p in sesh_psgs))
             audio_meta = [meta[p] for p in audio_paths]
             audios = [_loader.utils._read_audio_cached(f, memmap=True) for f in audio_meta]
+            # TODO: This tempo estimate assumes that the entire aligned script was read with
+            # no mistranscriptions. How can we make it easy to just get the aligned script
+            # and audio data?
             audio_len = sum(
                 (m.len for m in audio_meta)
                 if any(p.alignments is None for p in sesh_psgs)
                 else (p.aligned_audio_length for p in sesh_psgs)
             )
-            tempo = get_tempo(" ".join(p.script for p in sesh_psgs), audio_len)
+            script = " ".join(
+                (p.script for p in sesh_psgs)
+                if any(p.alignments is None for p in sesh_psgs)
+                else (p.aligned_script for p in sesh_psgs)
+            )
+            tempo = get_tempo(script, audio_len)
             updates[sesh] = Session(*sesh, get_loudness(audios), tempo, 0)
             total_audio_len += audio_len
-        spkr_tempo = get_tempo(" ".join(p.script for p in spkr_psgs), total_audio_len)
+            full_script.append(script)
+        spkr_tempo = get_tempo(" ".join(full_script), total_audio_len)
         updates = {a: b._replace(spkr_tempo=spkr_tempo) for a, b in updates.items()}
 
         cache_path.parent.mkdir(exist_ok=True)

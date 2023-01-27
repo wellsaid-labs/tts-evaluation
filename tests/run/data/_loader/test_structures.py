@@ -660,7 +660,7 @@ def test__process_sessions():
         audio_path=TEST_DATA_LJ,
         script="abcd",
         transcript="abcd",
-        alignments=(Alignment((0, 5), (0, 1), (0, 1)),),
+        alignments=(Alignment((0, 3), (0, 1), (0, 1)),),
     )
     other_audio_file = TEST_DATA_PATH / "audio" / "hilary.wav"
     other_meta = lib.audio.get_audio_metadata(other_audio_file)
@@ -681,12 +681,12 @@ def test__process_sessions():
     assert processed[passage.session] == Session(
         *passage.session,
         1.240387064171955e-06,
-        1 / 4,
-        1.0355555555555556,
+        1 / len("abc"),
+        (other_meta.len + 1) / len("abc abcd"),
     )
     assert processed[other_passage.session] == Session(
         *other_passage.session,
         3.3791247915360145e-06,
-        2.08,
-        1.0355555555555556,
+        other_meta.len / len("abcd"),
+        (other_meta.len + 1) / len("abc abcd"),
     )
