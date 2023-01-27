@@ -306,6 +306,12 @@ def _check_passage_invariants(psg: typing.Union[UnprocessedPassage, Passage]):
     batch = [psg.alignments] + [psg.nonalignments] if isinstance(psg, Passage) else []
     batch = [a for a in batch if a is not None]
     for alignments in batch:
+        for key, is_linked in psg.is_linked._asdict().items():
+            if not is_linked:
+                # NOTE: Any non-linked field must start, and end, at the boundaries.
+                assert getattr(alignments[0], key)[0] == 0
+                assert getattr(alignments[-1], key)[-1] == len(getattr(psg, key))
+
         # TODO: Should we consider updating this from `<=` to `<`?
         assert all(a.script[0] <= a.script[1] for a in alignments)
         assert all(a.transcript[0] <= a.transcript[1] for a in alignments)
@@ -397,6 +403,10 @@ class Passage:
     NOTE: This data structure has a number of invariants. Please review `check_invariants` to
     learn more about invariants that are being enforced.
 
+    NOTE: The `script`, `transcript`, and `audio_file` may contain additional data, if there
+    are additional `is_linked` `Passages`. These may be sliced with something like `alignments`
+    in order to get `Passage` specific data.
+
     TODO: The `Passage` object is difficult to test. It takes awhile to initialize. It's not
     consistent (i.e. some fields include data about the entire audio file). There is some data
     processing functions in `_data.py` that might be helpful to include in `Passage`, what data
@@ -411,8 +421,8 @@ class Passage:
         audio_file: An audio-file that includes a voice-over of `script`, and maybe other
             voice-overs.
         session: A label used to group passages recorded together.
-        script: The `script` the `speaker` was reading from for this `Passage`.
-        transcript: The `transcript` of the `audio_file`.
+        script: The `script` the `speaker` was reading from, this may include other voice-overs.
+        transcript: The `transcript` of the `audio_file`, this may include other voice-overs.
         alignments: Alignments (sorted) that align the `script`, `transcript` and `audio`.
         other_metadata: Additional metadata associated with this passage.
         is_linked: A flag indicating if this `Passage` is a continuation of the previous and

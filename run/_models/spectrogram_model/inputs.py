@@ -661,14 +661,14 @@ def _anno_vector(
     """
     # NOTE: The annotation length annotation helps the model understand how "strict" the annotation
     # is. A short annotation does not have much room to deviate while a long one does.
-    loudness_vector = (
+    anno_vector = (
         _slice_seq([(s, value) for s, _, value in anno], **kwargs),
         _slice_seq([(s, avg) for s, _, _ in anno], **kwargs),
         _slice_seq([(s, length) for s, length, _ in anno], **kwargs),
     )
-    loudness_vector = torch.stack(loudness_vector, dim=1)
-    loudness_mask = _slice_seq([(slice_, 1) for slice_, _, _ in anno], **kwargs).unsqueeze(1)
-    return loudness_vector, loudness_mask
+    anno_vector = torch.stack(anno_vector, dim=1)
+    anno_mask = _slice_seq([(slice_, 1) for slice_, _, _ in anno], **kwargs).unsqueeze(1)
+    return anno_vector, anno_mask
 
 
 def _word_vector(span: SpanDoc, tokens: typing.List[str], **kwargs) -> torch.Tensor:
@@ -813,7 +813,8 @@ def preprocess(
         )
         token_vector_idx, token_vector = _token_vector(item, *normalized, spacy_tokens, **kwargs)
         token_vectors.append(token_vector)
-        seq_vectors.append(torch.tensor(normalized[2:], **kwargs))
+        _, _, sesh_loudness, sesh_tempo = normalized
+        seq_vectors.append(torch.tensor([sesh_loudness, sesh_tempo], **kwargs))
 
     return dataclasses.replace(
         result,

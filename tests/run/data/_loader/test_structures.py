@@ -18,6 +18,7 @@ from run.data._loader.structures import (
     IsLinked,
     Language,
     Passage,
+    Session,
     Span,
     UnprocessedPassage,
     UnprocessedSession,
@@ -26,6 +27,7 @@ from run.data._loader.structures import (
     _is_stand_abbrev_consistent,
     _make_speech_segments_helper,
     _maybe_normalize_vo_script,
+    _process_sessions,
     _remove_ambiguous_abbrev,
     has_a_mistranscription,
     make_passages,
@@ -648,3 +650,43 @@ def test__remove_ambiguous_casing():
     passage = _remove_ambiguous_abbrev("", passage)
     assert passage.alignments is not None
     assert [a.script for a in passage.alignments] == list(script_to_alignments(normalized))
+
+
+def test__process_sessions():
+    """Test `_process_sessions` handles a basic case, with multiple passages and
+    optional alignments."""
+    meta = lib.audio.get_audio_metadata(TEST_DATA_LJ)
+    passage = make_unprocessed_passage(
+        audio_path=TEST_DATA_LJ,
+        script="abcd",
+        transcript="abcd",
+        alignments=(Alignment((0, 5), (0, 1), (0, 1)),),
+    )
+    other_audio_file = TEST_DATA_PATH / "audio" / "hilary.wav"
+    other_meta = lib.audio.get_audio_metadata(other_audio_file)
+    other_passage = make_unprocessed_passage(
+        audio_path=other_audio_file,
+        session=make_unprocessed_session(name="no alignments"),
+        script="abcd",
+        transcript="abcd",
+    )
+    kwargs = dict(
+        meta={TEST_DATA_LJ: meta, other_audio_file: other_meta},
+        get_loudness=lambda l: sum([n.mean() for n in l]),
+        get_tempo=lambda s, f: f / len(s),
+        no_tqdm=True,
+    )
+    processed = cf.call(_process_sessions, [[passage], [other_passage]], **kwargs)
+    assert len(processed) == 2
+    assert processed[passage.session] == Session(
+        *passage.session,
+        1.240387064171955e-06,
+        1 / 4,
+        1.0355555555555556,
+    )
+    assert processed[other_passage.session] == Session(
+        *other_passage.session,
+        3.3791247915360145e-06,
+        2.08,
+        1.0355555555555556,
+    )
