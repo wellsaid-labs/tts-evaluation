@@ -363,8 +363,7 @@ def test_spectrogram_model__stop():
 
         preds = model(inputs, mode=Mode.INFER)
 
-        max_lengths = (num_tokens.float() * params.max_frames_per_token).ceil()
-        max_lengths = torch.clamp(max_lengths, min=1)
+        max_lengths = inputs.max_audio_len
         threshold = torch.sigmoid(preds.stop_tokens) >= model.stop_threshold
         for i in range(params.batch_size):  # NOTE: Only stop if the window includes the last token.
             min_index = torch.clamp_min(num_tokens[i] - window_length, 0).item()
