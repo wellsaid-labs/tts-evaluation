@@ -118,14 +118,17 @@ def test_inputs_wrapper__from_xml__nested_token_anno_error():
 
 def test_inputs_wrapper__from_xml_batch():
     """Test `InputsWrapper.from_xml_batch` processes a basic batch."""
-    script = "this is a test"
-    doc = load_en_english()(script)
-    xml = XMLType(script)
-    sesh = make_session()
-    result = InputsWrapper.from_xml_batch([xml, xml], [doc, doc], [sesh, sesh])
-    expected = InputsWrapper([make_session()], [doc], [doc], [[]], [[]], [{}])
-    assert result[0] == expected
-    assert result[1] == expected
+    batch_size = 5
+    docs, xmls, seshs = [], [], []
+    for i in range(batch_size):
+        script = f"[{i}] this is a test"
+        docs.append(load_en_english()(script))
+        xmls.append(XMLType(script))
+        seshs.append(make_session())
+    batch = InputsWrapper.from_xml_batch(xmls, docs, seshs)
+    # NOTE: Please refer to this typing issue: https://github.com/python/mypy/issues/9737
+    for i, result in enumerate(batch):  # type: ignore
+        assert result == InputsWrapper([seshs[i]], [docs[i]], [docs[i]], [[]], [[]], [{}])
 
 
 def test_inputs_wrapper__from_xml__escaped_chars():
