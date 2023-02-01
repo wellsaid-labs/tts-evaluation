@@ -145,6 +145,9 @@ class Inputs:
             assert self.seq_vectors.shape[0] == len(self)
 
         if len(self) > 0:
+            token_vectors, num_tokens = self.token_vectors, self.num_tokens
+            num_sliced_tokens = self.num_sliced_tokens
+
             # NOTE: Double-check sizing.
             assert all(len(seq) != 0 for seq in self.tokens)
             assert all(len(meta) == self.num_seq_meta for meta in self.seq_meta)
@@ -154,20 +157,19 @@ class Inputs:
                 for i, meta in enumerate(self.token_meta)
                 for seq in meta
             )
+            assert all(token_vectors[i, num_tokens[i] :].sum() == 0.0 for i in range(len(self)))
 
             # NOTE: Double check values.
-            assert torch.equal(self.sliced_tokens_mask.sum(dim=1), self.num_sliced_tokens)
-            assert all(len(s) == self.num_tokens[i] for i, s in enumerate(self.tokens))
+            assert torch.equal(self.sliced_tokens_mask.sum(dim=1), num_sliced_tokens)
+            assert all(len(s) == num_tokens[i] for i, s in enumerate(self.tokens))
             assert all(len(t) >= s.stop for t, s in zip(self.tokens, self.slices))
             assert all(s.start < s.stop and s.step is None for s in self.slices)
-            assert all(
-                s.stop - s.start == self.num_sliced_tokens[i] for i, s in enumerate(self.slices)
-            )
+            assert all(s.stop - s.start == num_sliced_tokens[i] for i, s in enumerate(self.slices))
 
             # NOTE: Double check `token_vector_idx` name space.
             slices = sorted(list(self.token_vector_idx.values()), key=lambda s: s.start)
             assert slices[0].start == 0
-            assert slices[-1].stop == self.token_vectors.shape[2]
+            assert slices[-1].stop == token_vectors.shape[2]
             assert all(s.start < s.stop and s.step is None for s in slices)
             assert all(a.stop == b.start for a, b in zip(slices, slices[1:]))
 
