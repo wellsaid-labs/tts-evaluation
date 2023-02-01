@@ -397,6 +397,9 @@ class Metrics(_utils.Metrics[MetricsKey]):
             self._to_list(preds.reached_max),
         ):
             num_tokens = slice.stop - slice.start
+            # NOTE: `has_reached_max` is only applicable during inference; otherwise, the predicted
+            # frames lines up with the real frames, so they shouldn't be filtered out unless the
+            # same standard is applied to the real data, also.
             has_reached_max = self.is_eval_infer() and has_reached_max
 
             # NOTE: Create a key for `self.NUM_SPANS` so a value exists, even if zero.

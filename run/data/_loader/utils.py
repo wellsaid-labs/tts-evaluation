@@ -317,7 +317,7 @@ def _temporary_fix_for_transcript_offset(
         if word.strip() != word:
             update = (alignment.transcript[0] - 1, alignment.transcript[1] - 1)
             alignment = alignment._replace(transcript=update)
-            logger.warning("Corrected '%s' to '%s'.", word, transcript[alignment.transcript_slice])
+            logger.warning(f"Corrected '{word}' to '{transcript[alignment.transcript_slice]}'.")
         return_.append(alignment)
     return tuple(return_)
 
