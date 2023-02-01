@@ -555,7 +555,9 @@ class Passage:
         slices = (self.transcript[a.transcript_slice] for a in self.alignments)
         assert all(self._no_white_space(s) for s in slices)
 
-        # NOTE: `self.speech_segments` must be sorted.
+        # NOTE: `self.speech_segments` must be sorted, and do not overlap. Specifically,
+        # `speech_segments` are defined by `Alignment`s, and two speech segments may not share
+        # an `Alignment`.
         pairs = zip(self.speech_segments, self.speech_segments[1:])
         assert all(a.slice.stop <= b.slice.start for a, b in pairs)
 
