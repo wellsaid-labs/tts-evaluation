@@ -102,7 +102,7 @@ def _assemble(
         "script": span.script,
         "clip": audio_to_url(clip),
         "speaker": repr(span.session[0]),
-        "session": span.session[1],
+        "session": span.session.label,
         "transcript": span.transcript,
         "audio_len": round(span.audio_length, 1),
         f"{FEATS_PREFIX}_expected_audio_len": expected_audio_len,

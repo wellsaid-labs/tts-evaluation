@@ -50,7 +50,7 @@ def dictionary_dataset(
         _maybe_extract(directory / file_name, directory)
     passages = conventional_dataset_loader(
         directory,
-        session[0],
+        session.spkr,
         **kwargs,
         metadata_text_column=metadata_text_column,
         get_session=lambda *_, **__: session,

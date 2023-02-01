@@ -270,7 +270,7 @@ def _check_processed(
 ):
     """Helper function for `test_preprocess`."""
     assert processed.tokens == [list(script.lower())]
-    assert processed.seq_meta[0][:2] == [sesh[0].label, sesh]
+    assert processed.seq_meta[0][:2] == [sesh.spkr.label, sesh]
     casing = [
         (Pronun.NORMAL, Casing.UPPER),  # I
         (Pronun.NORMAL, Casing.LOWER),  # n

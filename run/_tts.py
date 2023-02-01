@@ -198,7 +198,7 @@ def _process_tts_inputs(
     session: Session,
 ) -> typing.Tuple[Inputs, PreprocessedInputs]:
     """Process TTS `script` and `session` for use with the model(s)."""
-    normalized = normalize_and_verbalize_text(script, session[0].language)
+    normalized = normalize_and_verbalize_text(script, session.spkr.language)
     if len(normalized) == 0:
         raise PublicTextValueError("Text cannot be empty.")
 
@@ -238,7 +238,7 @@ def basic_tts(
     split_size: int = 32,
 ) -> numpy.ndarray:
     """Run TTS end-to-end with friendly errors."""
-    nlp = load_spacy_nlp(session[0].language)
+    nlp = load_spacy_nlp(session.spkr.language)
     inputs, preprocessed = process_tts_inputs(package, nlp, script, session)
     preds = package.spec_model(inputs=preprocessed, mode=Mode.INFER)
     splits = preds.frames.transpose(0, 1).split(split_size)
@@ -251,7 +251,7 @@ def griffin_lim_tts(
     spec_model: SpectrogramModel, script: XMLType, session: Session
 ) -> numpy.ndarray:
     """Run TTS with griffin-lim."""
-    nlp = load_spacy_nlp(session[0].language)
+    nlp = load_spacy_nlp(session.spkr.language)
     session_vocab = set(spec_model.session_embed.vocab.keys())
     token_vocab = set(spec_model.token_embed.vocab.keys())
     _, preprocessed = _process_tts_inputs(nlp, session_vocab, token_vocab, script, session)
@@ -281,11 +281,11 @@ def _process_input_batch(
     logger.info(f"Processing {len(inputs)} examples with spaCy...")
     seshs = [s for _, s in inputs]
     xmls = [x for x, _ in inputs]
-    langs = set(s[0].language for s in seshs)
+    langs = set(s.spkr.language for s in seshs)
     result: typing.List[typing.Optional[spacy.tokens.doc.Doc]] = [None] * len(inputs)
     for lang in langs:
         nlp = load_spacy_nlp(lang)
-        scripts = [(i, s) for i, (s, sesh) in enumerate(inputs) if sesh[0].language is lang]
+        scripts = [(i, s) for i, (s, sesh) in enumerate(inputs) if sesh.spkr.language is lang]
         normalized = (xml_to_text(XMLType(normalize_vo_script(s, lang))) for _, s in scripts)
         docs = nlp.pipe(normalized)
         for (i, _), doc in zip(scripts, docs):
@@ -297,9 +297,10 @@ def make_batches(
     inputs: typing.List[typing.Tuple[XMLType, Session]], batch_size: int = 8
 ) -> BatchGen:
     """Generate a sorted batch of inputs for batch TTS generation."""
-    inputs_ = _process_input_batch(inputs)
-    inputs_ = sorted(enumerate(inputs_), key=lambda i: len(str(i[1][0])))
-    batches = list(get_chunks(inputs_, batch_size))
+    processed: typing.List[typing.Tuple[XMLType, spacy.tokens.doc.Doc, Session]]
+    processed = _process_input_batch(inputs)
+    sorted_ = sorted(enumerate(processed), key=lambda i: len(str(i[1][0])))
+    batches = list(get_chunks(sorted_, batch_size))
     for batch in tqdm_(batches):
         xmls, docs = [b[1][0] for b in batch], [b[1][1] for b in batch]
         seshs, indicies = [b[1][2] for b in batch], [i for i, _ in batch]

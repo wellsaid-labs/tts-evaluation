@@ -28,7 +28,7 @@ def main():
         tts = load_tts(checkpoint)
 
     format_speaker: typing.Callable[[Speaker], str] = lambda s: s.label
-    speakers = sorted(list(set(sesh[0] for sesh in tts.session_vocab())))
+    speakers = sorted(list(set(sesh.spkr for sesh in tts.session_vocab())))
     speaker = st.selectbox("Speaker", options=speakers, format_func=format_speaker)  # type: ignore
     speaker = typing.cast(Speaker, speaker)
     assert speaker.name is not None

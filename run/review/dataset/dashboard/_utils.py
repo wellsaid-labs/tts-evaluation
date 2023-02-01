@@ -263,7 +263,7 @@ def span_sec_per_char(span: Span):
 
     TODO: Consider using `non_speech_segments` to remove silences from this calculation.
     """
-    return round(sum(a.audio[-1] - a.audio[0] for a in span.alignments) / len(span.script), 2)
+    return round(sum(a.audio_len for a in span.alignments) / len(span.script), 2)
 
 
 def span_sec_per_phon(span: Span):
@@ -272,4 +272,4 @@ def span_sec_per_phon(span: Span):
         phonemes = fast_grapheme_to_phoneme(span.script)
     except AssertionError:
         return math.nan
-    return sum(a.audio[-1] - a.audio[0] for a in span.alignments) / len(phonemes.split("|"))
+    return sum(a.audio_len for a in span.alignments) / len(phonemes.split("|"))

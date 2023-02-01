@@ -74,7 +74,7 @@ DEV_SPEAKERS.add(_loader.english.dictionary.GCP_SPEAKER)
 
 def _include_passage(passage: struc.Passage) -> bool:
     """Return `True` iff `passage` should be included in the dataset."""
-    repr_ = f"{passage.__class__.__name__}({passage.speaker.label}, {passage.session[1]}, "
+    repr_ = f"{passage.__class__.__name__}({passage.speaker.label}, {passage.session.label}, "
     repr_ += f"{(passage.script[:25] + '...') if len(passage.script) > 25 else passage.script})"
 
     if len(passage.alignments) == 0:
@@ -153,12 +153,10 @@ def _include_span(span: struc.Span):
 
 def _include_annotation(annotation: struc.Alignment):
     """Return `True` iff `annotation` should be included in the dataset."""
-    audio_len = annotation.audio[1] - annotation.audio[0]
-    if audio_len < 0.2:
+    if annotation.audio_len < 0.2:
         return False
 
-    script_len = annotation.script[1] - annotation.script[0]
-    if audio_len / script_len < 0.04:
+    if annotation.audio_len / annotation.script_len < 0.04:
         return False
 
     return True

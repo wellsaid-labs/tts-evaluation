@@ -310,7 +310,7 @@ class CometMLExperiment:
         lines.extend([f"<p><b>{k}:</b> {v}</p>" for k, v in items])
         for key, data in audio.items():
             name = self._format_key(key)
-            file_name = f"step={self.curr_step},speaker={session[0].label},"
+            file_name = f"step={self.curr_step},speaker={session.spkr.label},"
             file_name += f"name={name},experiment={self.get_key()}.wav"
             url = self._upload_audio(file_name, data)
             lines.append(f"<p><b>{name}:</b></p>")
