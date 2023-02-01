@@ -73,7 +73,7 @@ class SpectrogramModel(torch.nn.Module):
         max_word_vector_size: int,
         max_seq_vector_size: int,
         max_anno_vector_size: int,
-        annos: typing.List[typing.Tuple[str, str]],
+        annos: typing.List[typing.Tuple[str, ...]],
         seq_embed_size: int,
         num_frame_channels: int,
         output_scalar: float,
