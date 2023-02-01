@@ -14,7 +14,7 @@ from lxml import etree
 from torch.nn.utils.rnn import pad_sequence
 
 from lib.text import XMLType, text_to_xml
-from lib.utils import lengths_to_mask, offset_slices, zip_strict
+from lib.utils import lengths_to_mask, offset_slices, slice_seq, zip_strict
 from run._config.lang import is_voiced
 from run.data._loader import structures as struc
 
@@ -473,7 +473,7 @@ class InputsWrapper:
     def __getitem__(self, key: typing.Any):
         """Get the ith item in `self`."""
         if not isinstance(key, (slice, int)):
-            raise TypeError
+            raise TypeError()
         if isinstance(key, int):
             self.session[key]  # NOTE: Raise `IndexError` if needed.
             key = slice(key, key + 1)
@@ -647,16 +647,6 @@ def _norm_input(
     )
 
 
-def _slice_seq(
-    slices: typing.List[typing.Tuple[slice, float]], length: int, **kwargs
-) -> torch.Tensor:
-    """Create a 1-d `Tensor` representing `slices`."""
-    sequence = torch.zeros(length, **kwargs)
-    for slice_, val in slices:
-        sequence[slice_] = val
-    return sequence
-
-
 def _anno_vector(
     anno: NormSliceAnno, avg: float, **kwargs
 ) -> typing.Tuple[torch.Tensor, torch.Tensor]:
@@ -674,12 +664,12 @@ def _anno_vector(
     # NOTE: The annotation length annotation helps the model understand how "strict" the annotation
     # is. A short annotation does not have much room to deviate while a long one does.
     anno_vector = (
-        _slice_seq([(s, value) for s, _, value in anno], **kwargs),
-        _slice_seq([(s, avg) for s, _, _ in anno], **kwargs),
-        _slice_seq([(s, length) for s, length, _ in anno], **kwargs),
+        slice_seq([(s, value) for s, _, value in anno], **kwargs),
+        slice_seq([(s, avg) for s, _, _ in anno], **kwargs),
+        slice_seq([(s, length) for s, length, _ in anno], **kwargs),
     )
     anno_vector = torch.stack(anno_vector, dim=1)
-    anno_mask = _slice_seq([(slice_, 1) for slice_, _, _ in anno], **kwargs).unsqueeze(1)
+    anno_mask = slice_seq([(slice_, 1) for slice_, _, _ in anno], **kwargs).unsqueeze(1)
     return anno_vector, anno_mask
 
 
@@ -692,13 +682,12 @@ def _word_vector(span: SpanDoc, tokens: typing.List[str], **kwargs) -> torch.Ten
 
     Returns:
         (torch.FloatTensor [length, num_features])
-        (torch.FloatTensor [length, 1]): This is 1 when there is an annotation and 0 otherwise.
     """
     word_vector = []
     for token in span:
         assert token.tensor is not None
         word_vector.append(np.concatenate((token.tensor, token.vector)))  # type: ignore
-        word_vector.append(np.zeros(token.vector.shape[0] + token.tensor.shape[0]))
+        word_vector.append(np.zeros(token.tensor.shape[0] + token.vector.shape[0]))
     word_vector = word_vector[:-1]  # NOTE: Discard the trailing whitespace
     word_vector = [torch.tensor(t, **kwargs, dtype=torch.float32) for t in word_vector]
     return torch.cat([e.unsqueeze(0).repeat(len(t), 1) for e, t in zip_strict(word_vector, tokens)])
@@ -815,15 +804,15 @@ def preprocess(
         pronun_casing = list(zip_strict(pronun, casing))
         result.token_meta.append([pronun_casing, cntxt])  # type: ignore
 
-        normalized = _norm_input(
-            item,
-            start_char,
-            norm_anno_len,
-            norm_anno_loudness,
-            norm_sesh_loudness,
-            norm_tempo,
+        normalizers = dict(
+            norm_anno_len=norm_anno_len,
+            norm_anno_loudness=norm_anno_loudness,
+            norm_sesh_loudness=norm_sesh_loudness,
+            norm_tempo=norm_tempo,
         )
+        normalized = _norm_input(item, start_char, **normalizers)
         token_vector_idx, token_vector = _token_vector(item, *normalized, spacy_tokens, **kwargs)
+        assert token_vector.shape[0] == len(chars), "Invariant failure"
         token_vectors.append(token_vector)
         _, _, sesh_loudness, sesh_tempo = normalized
         seq_vectors.append(torch.tensor([sesh_loudness, sesh_tempo], **kwargs))

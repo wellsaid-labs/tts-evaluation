@@ -836,3 +836,24 @@ def zip_strict(
     message = f"`zip_strict` requires iterators to be the same size: {len(a)} != {len(b)}"
     assert len(a) == len(b), message
     return zip(a, b)  # type: ignore
+
+
+def slice_seq(
+    slices: typing.List[typing.Tuple[slice, float]], length: int, **kwargs
+) -> torch.Tensor:
+    """Create a 1-d `Tensor` representing `slices`.
+
+    Args:
+        slices: A list of sorted non-overlapping simple slices.
+        length: The length of the returned `Tensor`.
+
+    Returns:
+        (torch.FloatTensor [length])
+    """
+    assert all(a.stop <= b.start for (a, _), (b, _) in zip(slices, slices[1:]))
+    assert all(_is_simple_slice(s) and s.stop <= length and s.start >= 0 for s, _ in slices)
+    assert max(s.stop for s, _ in slices) <= length
+    sequence = torch.zeros(length, **kwargs)
+    for slice_, val in slices:
+        sequence[slice_] = val
+    return sequence
