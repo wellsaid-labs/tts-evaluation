@@ -60,7 +60,7 @@ for more details.
 1. Build and tag the docker image locally
 
    ```bash
-   docker build -t $KONG_IMAGE ./ops/gateway/kong
+   docker build -t $KONG_IMAGE --platform linux/amd64 ./ops/gateway/kong
    ```
 
 1. Push the image to our cloud registry
