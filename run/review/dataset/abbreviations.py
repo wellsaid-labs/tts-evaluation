@@ -150,8 +150,8 @@ def _get_alignments(
 
 def _gather(passage: UnprocessedPassage, alignment: Alignment, clip: numpy.ndarray):
     """Gather data on `alignment`."""
-    script = passage.script[alignment.script[0] : alignment.script[1]]
-    transcript = passage.transcript[alignment.transcript[0] : alignment.transcript[1]]
+    script = passage.script[alignment.script_slice]
+    transcript = passage.transcript[alignment.transcript_slice]
     return {
         "script": script,
         "transcript": transcript,

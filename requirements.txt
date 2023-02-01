@@ -27,7 +27,7 @@ torchaudio==0.11.0
 matplotlib
 comet-ml[cpu_logging]==3.28.2
 tabulate
-streamlit==1.14.0
+streamlit
 altair
 git+https://github.com/wellsaid-labs/streamlit-mui-datatable
 streamlit-aggrid
@@ -46,7 +46,7 @@ isort
 
 # Utils
 tqdm # Progress bar
-python-Levenshtein # Sequence alignment
+python-Levenshtein==0.12.2 # Sequence alignment
 pythonic-config # Organize hyperparameters
 pandas
 retry

@@ -157,7 +157,7 @@ def read_wave_audio(*args, **kwargs) -> np.ndarray:
 
 def span_audio(span: run.data._loader.Span) -> np.ndarray:
     """Get `span` audio using cached `read_wave_audio`."""
-    return read_wave_audio(span.passage.audio_file, span.audio_start, span.audio_length)
+    return read_wave_audio(span.audio_file, span.audio_start, span.audio_length)
 
 
 def passage_audio(passage: run.data._loader.Passage) -> np.ndarray:
@@ -166,9 +166,20 @@ def passage_audio(passage: run.data._loader.Passage) -> np.ndarray:
     return read_wave_audio(passage.audio_file, passage.audio_start, length)
 
 
+def alignment_audio(
+    span: typing.Union[run.data._loader.Span, run.data._loader.Passage], alignment: Alignment
+) -> np.ndarray:
+    """Get `span` or `Passage` audio using cached `read_wave_audio`."""
+    return read_wave_audio(
+        span.audio_file,
+        span.audio_start + alignment.audio[0],
+        span.audio_start + alignment.audio[1],
+    )
+
+
 def metadata_alignment_audio(metadata: AudioMetadata, alignment: Alignment) -> np.ndarray:
     """Get `alignment` audio using cached `read_wave_audio`."""
-    return read_wave_audio(metadata, alignment.audio[0], alignment.audio[1] - alignment.audio[0])
+    return read_wave_audio(metadata, alignment.audio[0], alignment.audio_len)
 
 
 def clip_audio(audio: np.ndarray, span: Span, alignment: Alignment):
@@ -284,7 +295,11 @@ def st_html(html: str):
 
 def path_label(path: pathlib.Path) -> str:
     """Get a short label for `path`."""
-    return str(path.relative_to(ROOT_PATH)) + "/" if path.is_dir() else str(path.name)
+    return (
+        str(path.relative_to(ROOT_PATH)) + "/"
+        if path.is_dir()
+        else f"{path.parent.name}/{path.name}"
+    )
 
 
 def st_select_path(label: str, dir: pathlib.Path, suffix: str) -> pathlib.Path:

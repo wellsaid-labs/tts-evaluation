@@ -21,7 +21,7 @@ from run._config import GetLabel, get_dataset_label, get_model_label
 from run._models.spectrogram_model import Preds, SpectrogramModel
 from run.data._loader import Speaker
 from run.train import _utils
-from run.train._utils import Timer
+from run.train._utils import Context, Timer
 from run.train.spectrogram_model._data import Batch
 
 
@@ -403,9 +403,10 @@ class Metrics(_utils.Metrics[MetricsKey]):
 
         return values, _reduce
 
-    def get_dataset_values(
-        self, batch: Batch, model: SpectrogramModel, preds: Preds
-    ) -> MetricsValues:
+    def is_eval_infer(self):
+        return self.comet.context == str(Context.EVALUATE_INFERENCE.value)
+
+    def get_dataset_values(self, batch: Batch, preds: Preds) -> MetricsValues:
         """
         TODO: Get dataset metrics on OOV words (spaCy and pronunciation dictionary) in our dataset.
         TODO: Create a `streamlit` for measuring coverage in our dataset, and other datasets.
@@ -421,13 +422,21 @@ class Metrics(_utils.Metrics[MetricsKey]):
             self._to_list(preds.reached_max),
         ):
             num_tokens = slice.stop - slice.start
+            # NOTE: `has_reached_max` is only applicable during inference; otherwise, the predicted
+            # frames lines up with the real frames, so they shouldn't be filtered out unless the
+            # same standard is applied to the real data, also.
+            has_reached_max = self.is_eval_infer() and has_reached_max
 
             # NOTE: Create a key for `self.NUM_SPANS` so a value exists, even if zero.
             _reduce(self.NUM_SPANS, v=float(not has_reached_max))
             _reduce(self.NUM_SPANS, span.speaker, v=float(not has_reached_max))
 
             # NOTE: Remove predictions that diverged (reached max) as to not skew other metrics.
-            if model.training or not has_reached_max:
+            # TODO: Should we develop a metric that considers the original num of frames in
+            # a determination of max frames? We could do a data analysis of how many frames
+            # more than the original frames does the model generate before it's too many? That
+            # should in theory be more accurate.
+            if not has_reached_max:
                 index = int(len(span.script) // self.TEXT_LENGTH_BUCKET_SIZE)
                 _reduce(self.NUM_SPANS_PER_TEXT_LENGTH, text_length_bucket=index, v=1)
                 _reduce(self.NUM_FRAMES_MAX, v=num_frames, op=max)
@@ -441,9 +450,7 @@ class Metrics(_utils.Metrics[MetricsKey]):
 
         return dict(values)
 
-    def get_alignment_values(
-        self, batch: Batch, model: SpectrogramModel, preds: Preds
-    ) -> MetricsValues:
+    def get_alignment_values(self, batch: Batch, preds: Preds) -> MetricsValues:
         values, _reduce = self._make_values()
 
         for span, skipped, jumps, std, norm, small_max, repeated, length, has_reached_max in zip(
@@ -452,15 +459,15 @@ class Metrics(_utils.Metrics[MetricsKey]):
             self._to_list(get_num_jumps(preds)),
             self._to_list(get_alignment_std(preds)),
             self._to_list(get_alignment_norm(preds)),
-            self._to_list(get_num_small_max(preds, **cf.get())),
-            self._to_list(get_num_repeated(preds, **cf.get())),
+            self._to_list(cf.partial(get_num_small_max)(preds)),
+            self._to_list(cf.partial(get_num_repeated)(preds)),
             self._to_list(preds.num_frames),
             self._to_list(preds.reached_max),
         ):
             _reduce(self.NUM_REACHED_MAX, v=has_reached_max)
             _reduce(self.NUM_REACHED_MAX, span.speaker, v=has_reached_max)
 
-            if model.training or not has_reached_max:
+            if not (self.is_eval_infer() and has_reached_max):
                 speaker: typing.Optional[Speaker]
                 for speaker in [None, span.speaker]:
                     _reduce(self.ALIGNMENT_NORM_SUM, speaker, v=norm)
@@ -473,9 +480,7 @@ class Metrics(_utils.Metrics[MetricsKey]):
 
         return dict(values)
 
-    def get_loudness_values(
-        self, batch: Batch, model: SpectrogramModel, preds: Preds
-    ) -> MetricsValues:
+    def get_loudness_values(self, batch: Batch, preds: Preds) -> MetricsValues:
         values, _reduce = self._make_values()
 
         spectrogram_mask = batch.spectrogram_mask.tensor.transpose(0, 1)
@@ -484,11 +489,11 @@ class Metrics(_utils.Metrics[MetricsKey]):
             batch.spans,
             self._to_list(loudness),
             self._to_list(get_power_rms_level_sum(preds.frames, preds.frames_mask)),
-            get_num_pause_frames(batch.spectrogram.tensor, spectrogram_mask, **cf.get()),
-            get_num_pause_frames(preds.frames, preds.frames_mask, **cf.get()),
+            cf.partial(get_num_pause_frames)(batch.spectrogram.tensor, spectrogram_mask),
+            cf.partial(get_num_pause_frames)(preds.frames, preds.frames_mask),
             self._to_list(preds.reached_max),
         ):
-            if model.training or not has_reached_max:
+            if not (self.is_eval_infer() and has_reached_max):
                 for speaker in [None, span.speaker]:
                     _reduce(self.RMS_SUM_PREDICTED, speaker, v=pred_loudness)
                     _reduce(self.RMS_SUM, speaker, v=loudness)
@@ -500,8 +505,9 @@ class Metrics(_utils.Metrics[MetricsKey]):
     def get_stop_token_values(
         self, batch: Batch, model: SpectrogramModel, preds: Preds
     ) -> MetricsValues:
-        bool_ = lambda t: (t > model.stop_threshold).masked_select(batch.spectrogram_mask.tensor)
-        is_correct = bool_(batch.stop_token.tensor) == bool_(torch.sigmoid(preds.stop_tokens))
+        th = model.stop_threshold
+        is_correct = (batch.stop_token.tensor > th) == (torch.sigmoid(preds.stop_tokens) > th)
+        is_correct = is_correct.masked_select(batch.spectrogram_mask.tensor)
         return {MetricsKey(self.NUM_CORRECT_STOP_TOKEN): float(is_correct.sum().item())}
 
     def _iter_permutations(self, select: _utils.MetricsSelect, is_verbose: bool = True):
@@ -542,6 +548,9 @@ class Metrics(_utils.Metrics[MetricsKey]):
                 self.REACHED_MAX_FRAMES: reduce(self.NUM_REACHED_MAX) / total_spans,
                 self.SPECTROGRAM_LOSS: spectrogram_loss,
             }
+            # TODO: Flesh out various metric invariants.
+            accuracy = update[self.STOP_TOKEN_ACCURACY]
+            assert math.isnan(accuracy) or accuracy <= 1.0
             metrics.update({partial(k, speaker=speaker): v for k, v in update.items()})
         return metrics
 
@@ -622,7 +631,7 @@ class Metrics(_utils.Metrics[MetricsKey]):
             record_event = lambda e: None if timer is None else timer.record_event(e)
             record_event(Timer.REDUCE_METRICS)
             metrics = {
-                **self._get_model_metrics(select=select, is_verbose=is_verbose, **cf.get()),
+                **cf.partial(self._get_model_metrics)(select=select, is_verbose=is_verbose),
                 **self._get_dataset_metrics(select=select, is_verbose=is_verbose),
                 **self._get_loudness_metrics(select=select, is_verbose=is_verbose),
             }

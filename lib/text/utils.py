@@ -649,6 +649,9 @@ SPACES_REGEX = re.compile(r"\s+")
 def get_spoken_chars(text: str, punc_regex: re.Pattern) -> str:
     """Remove all unspoken characters from string including spaces, marks, casing, etc.
 
+    NOTE: This is not called `get_voiced_chars` because "un-voiced" and "voiced" characters
+          has a specific linguistic meaning tied to the pronunciation of a character.
+
     Example:
         >>> get_spoken_chars('123 abc !.?')
         '123abc'

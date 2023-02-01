@@ -33,16 +33,16 @@ del DATASETS[_loader.portuguese.librivox.RND__LIBRIVOX__FELIPE_PT]
 del DATASETS[_loader.portuguese.librivox.RND__LIBRIVOX__LENI_PT]
 del DATASETS[_loader.portuguese.librivox.RND__LIBRIVOX__MIRAMONTES_PT]
 del DATASETS[_loader.portuguese.librivox.RND__LIBRIVOX__SANDRALUNA_PT]
+# NOTE: The `AVA_M`, `KAI_M`, and `WADE_C` datasets are duplicate datasets.
+# There is an improved version of their datasets already in `DATASETS`.
+del DATASETS[_loader.english.wsl.AVA_M]
+del DATASETS[_loader.english.wsl.KAI_M]
+del DATASETS[_loader.english.wsl.WADE_C]
 
 # TODO: Remove any non-production datasets from `WSL_DATASETS` so we don't evaluate on them.
 DEV_SPEAKERS = _loader.WSL_DATASETS.copy()
 # NOTE: The `MARI_MONGE__PROMO` dataset is too short for evaluation, at 15 minutes long.
 del DEV_SPEAKERS[_loader.english.wsl.MARI_MONGE__PROMO]
-# NOTE: The `AVA_M`, `KAI_M`, and `WADE_C` datasets are duplicate datasets.
-# There is an improved version of their datasets already in `dev_speakers`.
-del DEV_SPEAKERS[_loader.english.wsl.AVA_M]
-del DEV_SPEAKERS[_loader.english.wsl.KAI_M]
-del DEV_SPEAKERS[_loader.english.wsl.WADE_C]
 # NOTE: The `RAMONA_J__CUSTOM` dataset isn't included in the studio.
 del DEV_SPEAKERS[_loader.english.wsl.RAMONA_J__CUSTOM]
 # NOTE: Elizabeth's dataset is low quality & might be fixed or re-recorded. Tobin's did not differ
@@ -115,7 +115,7 @@ def _include_span(span: struc.Span):
     """
     script = str(span.spacy_context(**cf.get()))
 
-    if "<" in script or ">" in script:
+    if "<" in script or ">" in script or "&" in script:
         return False
 
     # NOTE: Questions in `NARR` style voices tend to fall flat, largely due to the content

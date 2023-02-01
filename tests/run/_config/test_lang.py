@@ -22,6 +22,8 @@ def test_is_sound_alike():
     assert _isa("Pre-game", "pregame")
     assert _isa("Dreamfields.", "dream Fields")
     assert _isa(" — ", "")
+    assert _isa("verite", "vérité")
+    assert _isa("fête", "Fete,")
 
     # NOTE: These cases are not supported, yet.
     assert not _isa("fifteen", "15")

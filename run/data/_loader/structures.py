@@ -131,6 +131,30 @@ class Alignment(typing.NamedTuple):
     audio: FloatFloat
     transcript: IntInt
 
+    @property
+    def script_slice(self):
+        return slice(*self.script)
+
+    @property
+    def audio_slice(self):
+        return slice(*self.audio)
+
+    @property
+    def transcript_slice(self):
+        return slice(*self.transcript)
+
+    @property
+    def script_len(self):
+        return self.script[1] - self.script[0]
+
+    @property
+    def audio_len(self):
+        return self.audio[1] - self.audio[0]
+
+    @property
+    def transcript_len(self):
+        return self.transcript[1] - self.transcript[0]
+
     def to_json(self):
         return [list(self.script), list(self.audio), list(self.transcript)]
 
@@ -526,16 +550,21 @@ class Passage:
         assert all(a.transcript[0] <= a.transcript[1] for a in self.alignments)
 
         # NOTE: `self.alignments` must not have extra whitespaces on it's edges.
-        slices = (self.script[a.script[0] : a.script[1]] for a in self.alignments)
+        slices = (self.script[a.script_slice] for a in self.alignments)
         assert all(self._no_white_space(s) for s in slices)
-        slices = (self.transcript[a.transcript[0] : a.transcript[1]] for a in self.alignments)
+        slices = (self.transcript[a.transcript_slice] for a in self.alignments)
         assert all(self._no_white_space(s) for s in slices)
 
-        # NOTE: `self.speech_segments` must be sorted.
+        # NOTE: `self.speech_segments` must be sorted, and do not overlap. Specifically,
+        # `speech_segments` are defined by `Alignment`s, and two speech segments may not share
+        # an `Alignment`.
         pairs = zip(self.speech_segments, self.speech_segments[1:])
-        assert all(a.slice.start <= b.slice.start for a, b in pairs)
+        assert all(a.slice.stop <= b.slice.start for a, b in pairs)
 
         for alignments in (self.nonalignments, self.alignments):
+            # NOTE: Consecutive `Alignment`s may overlap since there is no distinct boundaries
+            # between words, the script and transcript may not overlap between two consecutive
+            # `Alignment`s.
             # NOTE: `self.alignments`, and `self.nonalignments` must be sorted.
             pairs = zip(alignments, alignments[1:])
             assert all(a.script[1] <= b.script[0] for a, b in pairs)
@@ -818,7 +847,7 @@ def _make_speech_segments_helper(
     """Make a list of `Span`s that start and end with silence.
 
     NOTE: Long alignments (more than 1s) can include a pause. Due to this, there may be a pause
-    inside a speech segment.
+          inside a speech segment.
 
     Args:
         ...
@@ -838,14 +867,14 @@ def _make_speech_segments_helper(
     if len(nss) == 0:
         return tuple()
 
-    speech_segments: typing.List[typing.Tuple[slice, ...]] = []
+    speech_segments: typing.List[typing.Tuple[slice, slice]] = []
     pairs = [i for i in zip(nss, nss[1:]) if i[0].stop <= i[1].start]  # NOTE: Pauses may overlap.
     for a, b in pairs:
         idx = list(alignments_timeline.indicies(slice(a.stop, b.start)))
         if (
             len(idx) != 0
             # NOTE: The pauses must contain all the alignments fully, not just partially.
-            and (a.start <= alignments_[idx[0]][0] or b.stop >= alignments_[idx[-1]][1])
+            and (a.start <= alignments_[idx[0]][0] and alignments_[idx[-1]][1] <= b.stop)
             # NOTE: The speech segment must only contain `alignments`.
             and (0 not in idx and len(alignments_) - 1 not in idx)
         ):
