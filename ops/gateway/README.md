@@ -11,13 +11,20 @@ guide for a better understanding of Kong-related concepts.
 
 This document assumes the following dependencies have been installed and
 [cluster setup](../ClusterSetup.md) has been completed. Additionally, you may
-need
-[authorize docker](https://cloud.google.com/container-registry/docs/advanced-authentication)
+need to [authorize docker](https://cloud.google.com/container-registry/docs/advanced-authentication)
 in order to push images to the cloud registry.
 
 - [gcloud](https://cloud.google.com/sdk/docs/quickstart)
 - [kubectl](https://kubernetes.io/docs/tasks/tools/)
 - [helm@v3](https://helm.sh/docs/intro/install/)
+
+Finally, ensure the correct `gcloud` and `kubectl` context is set before proceeding
+
+```bash
+gcloud container clusters get-credentials $CLUSTER_NAME --region=us-central1
+# Very kubectl context
+kubectl config current-context
+```
 
 ## Kong Gateway Configuration
 
@@ -36,10 +43,15 @@ plugins to our [kong configuration](./kong/kong.yaml). See
 [kong plugin distribution](https://docs.konghq.com/gateway-oss/1.0.x/plugin-development/distribution/)
 for more details.
 
-1. Ensure the custom plugins exist locally (via git submodules)
+1. Ensure the custom plugins exist locally (via git submodules). It is important
+   to make sure the submodules are referencing the expected commits before
+   building the docker image.
 
    ```bash
+   # Initial setup
    git submodule update --init --recursive
+   # Update submodules to remote
+   git submodule update --recursive --remote
    ```
 
 1. Setup env variables for image tagging.
@@ -123,7 +135,8 @@ helm list
 ### Deploying the Kong Gateway
 
 The following will deploy the configured Kong gateway along with the Kong
-Ingress Controller.
+Ingress Controller. If updating an existing deployment of Kong, skip to the
+_Updating our Kong Gateway configuration_ section.
 
 ```bash
 # Add repository so we can reference the kong/kong helm chart
@@ -136,6 +149,8 @@ helm install gateway kong/kong \
   --version 2.3.0 \
   -f ./ops/gateway/kong/kong.base.yaml \
   -f ./ops/gateway/kong/kong.$ENV.yaml
+# Monitor status of the deployment
+kubectl rollout status deployment/gateway-kong -n kong
 ```
 
 Let's confirm the proxy is live on our cluster.
@@ -242,6 +257,8 @@ helm upgrade gateway kong/kong \
   --version 2.3.0 \
   -f ./ops/gateway/kong/kong.base.yaml \
   -f ./ops/gateway/kong/kong.$ENV.yaml
+# Monitor status of the deployment
+kubectl rollout status deployment/gateway-kong -n kong
 ```
 
 It may be helpful to see the configured values for a previous release. Omit the
