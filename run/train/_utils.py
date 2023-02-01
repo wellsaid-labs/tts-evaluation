@@ -613,6 +613,7 @@ class Batch:
         """Apply `call` to `SequenceBatch` in `Batch`."""
         # TODO: Given that this has a specific use case with `SequenceBatch` it shouldn't
         # have a generic name like `apply`.
+        # TODO: Use `apply_to_tensors` to apply recursively too all `NameTuple`s or `dataclass`s.
         apply = lambda o: apply_to_tensors(o, call, True) if isinstance(o, SequenceBatch) else o
         dict_ = lib.utils.dataclass_as_dict(self)
         return dataclasses.replace(self, **{k: apply(v) for k, v in dict_.items()})
@@ -743,7 +744,8 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
         NOTE: `torch.utils.data.dataloader.DataLoader` doesn't pin tensors if CUDA isn't
         available.
         """
-        message = "Expecting `tensor` memory to be pinned before moving."
+        message = f"Expecting `tensor` ({tensor.shape}, {tensor.dtype}) memory to be "
+        message += "pinned before moving."
         assert not torch.cuda.is_available() or tensor.is_pinned(), message
         return tensor.to(device=self.device, non_blocking=True)
 

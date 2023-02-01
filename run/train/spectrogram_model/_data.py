@@ -340,10 +340,7 @@ class Batch(_utils.Batch):
 
     def apply(self, call: typing.Callable[[torch.Tensor], torch.Tensor]) -> "Batch":
         batch: Batch = super().apply(call)
-        for field in dataclasses.fields(batch.processed):
-            val = getattr(batch.processed, field.name)
-            if isinstance(val, torch.Tensor):
-                object.__setattr__(batch.processed, field.name, call(val))
+        object.__setattr__(batch, "processed", batch.processed.apply(call))
         return batch
 
 

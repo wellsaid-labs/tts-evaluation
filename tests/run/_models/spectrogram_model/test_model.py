@@ -9,6 +9,7 @@ import config as cf
 import torch
 import torch.nn
 from torch.nn.functional import binary_cross_entropy_with_logits, mse_loss
+from torch.nn.utils.rnn import pad_sequence
 from torchnlp.random import fork_rng
 
 import run
@@ -137,10 +138,10 @@ def _make_inputs(
     for i in range(params.batch_size):
         tokens[i] = tokens[i][: num_tokens[i]]
 
-    word_vector = torch.randn(params.batch_size, params.max_num_tokens, params.max_word_vector_size)
-    anno_vector = torch.randn(params.batch_size, params.max_num_tokens, params.max_anno_vector_size)
-    anno_mask = torch.ones(params.batch_size, params.max_num_tokens, 1)
-    token_vectors = torch.cat((anno_vector, anno_mask, word_vector), dim=2)
+    token_vector_size = params.max_word_vector_size + params.max_anno_vector_size
+    token_vectors = torch.randn(params.batch_size, params.max_num_tokens, token_vector_size)
+    token_vectors = [token_vectors[i, : len(t)] for i, t in enumerate(tokens)]
+    token_vectors = [torch.cat((t, torch.ones(t.shape[0], 1)), dim=1) for t in token_vectors]
     seq_vectors = torch.randn(params.batch_size, params.max_seq_vector_size)
     max_audio_len = (params.max_frames_per_token * num_tokens).ceil()
 
@@ -150,7 +151,7 @@ def _make_inputs(
         token_meta=[[] for _ in range(params.batch_size)],
         seq_vectors=seq_vectors,
         token_vector_idx=params.token_embed_idx,
-        token_vectors=token_vectors,
+        token_vectors=pad_sequence(token_vectors, batch_first=True),
         slices=[slice(0, int(n)) for n in num_tokens],
         max_audio_len=max_audio_len,
     )
@@ -483,9 +484,9 @@ def test_spectrogram_model__train_batch_padding_invariance():
         batch_inputs.token_meta[i][j][:num_tokens]
     slice_ = batch_inputs.slices[i]
     batch_inputs.slices[i] = slice(slice_.start, min(num_tokens, slice_.stop))
-    batch_inputs = dataclasses.replace(
-        batch_inputs, token_vectors=batch_inputs.token_vectors[:, :max_tokens]
-    )
+    token_vectors = batch_inputs.token_vectors[:, :max_tokens]
+    token_vectors[i][num_tokens:].fill_(0)
+    batch_inputs = dataclasses.replace(batch_inputs, token_vectors=token_vectors)
     target_lengths[i] = params.max_frames - padding
 
     with fork_rng(seed=123):

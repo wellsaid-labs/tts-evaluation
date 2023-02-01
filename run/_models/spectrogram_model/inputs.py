@@ -202,6 +202,15 @@ class Inputs:
             max_audio_len=self.max_audio_len[key],
         )
 
+    def apply(self, call: typing.Callable[[torch.Tensor], torch.Tensor]) -> "Inputs":
+        # TODO: Use `apply_to_tensors` instead, which should generically run apply on dataclasses
+        # or namedtuples.
+        for field in dataclasses.fields(self):
+            val = getattr(self, field.name)
+            if isinstance(val, torch.Tensor):
+                object.__setattr__(self, field.name, call(val))
+        return self
+
     def get_token_vec(self, name, size: typing.Optional[int] = None) -> torch.Tensor:
         """Retrieve a slice of `self.token_vectors` by `name` as set in `self.token_vector_idx`.
 
