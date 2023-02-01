@@ -32,3 +32,4 @@ resources:
 autoscaling:
   minReplicas: 3
   maxReplicas: 9
+

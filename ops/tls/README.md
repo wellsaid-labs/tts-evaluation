@@ -37,7 +37,7 @@ guide to obtain a certificate and then configure our routes to use https.
      cert-manager jetstack/cert-manager \
      --namespace cert-manager \
      --create-namespace \
-     --version v1.4.0 \
+     --version v1.6.3 \
      --set installCRDs=true
    ```
 

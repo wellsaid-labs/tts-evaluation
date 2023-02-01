@@ -315,8 +315,30 @@ parameters, you would run this command with `version=2`.
      --ext-code-file "config=./ops/run/deployments/$ENV/$MODEL.config.json" \
      | kubectl apply --dry-run=server -f -
    # deploy
-   ./deploy deployments/$ENV/$MODEL.config.json
+   ./deploy.sh deployments/$ENV/$MODEL.config.json
    ```
+
+### Updating Everything
+
+In rare cases you may want to update all model endpoints. You can do so by
+first bumping all versions:
+
+```bash
+./bump_versions deployments/staging
+```
+
+Then deploying everything:
+
+```bash
+# Sanity check the cluster you're about to mutate
+kubectl config current-context
+
+# If things look good, release. Note, the trailing slash here is required.
+./deploy_all deployments/staging/
+```
+
+But this should be used judiciously, as it could cause mass chaos by potentially
+breaking all endpoints.
 
 ### Deleting a release
 

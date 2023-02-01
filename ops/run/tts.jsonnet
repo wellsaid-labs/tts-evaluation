@@ -35,9 +35,9 @@
  * in the image.
  *
  * The version parameter is a unique identifier for for the revision that's
- * being released. It must a valid domain, meaning it should be only lowercase
- * alphanumeric characters and dashes. So things like "v3" or "001" are
- * acceptable.
+ * being released. It can only contain characters that are appropriate in a
+ * URL subdomain. Which means it's limited to lowercase alphanumeric characters
+ * and dashes. Things like "v3" or "001" are valid examples.
  *
  * The image parameter is the docker image to run.
  *
@@ -165,8 +165,11 @@ function(
       },
     },
     concurrency: stream.concurrency,
-    timeout: 3600,  // 1hr
-    restartTimeout: 600,  // 10 minutes
+    // NOTE: 5 minutes was decided on based on max latency values we are seeing in production as
+    // well as limitations defined by maximum input lengths. Changes to these values will need to
+    // be reflected in our Kong gateway timeouts and termination values.
+    timeout: 300, // 5 minutes
+    restartTimeout: 300,  // 5 minutes
     legacyContainerApiKey: legacyContainerApiKey,
     traffic: [
       {

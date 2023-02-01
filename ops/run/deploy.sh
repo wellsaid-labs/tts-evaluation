@@ -2,13 +2,15 @@
 #
 # Deployment script for our tts cloud run services.
 #
-#   Usage: ./deploy <path_to_deployment_config>
+#   Usage: ./deploy.sh <path_to_deployment_config>
 #
 # This script generates the kubernetes manifest files (via jsonnet), applies
 # those resources (via kubectl), and then patches the underlying services
 # with kong-related annotations. This is currently necessary due to the
 # fact that we cannot annotate the underlying knative services, see:
 # https://github.com/knative/serving/issues/5549
+
+set -eo pipefail
 
 # Assert `kubectl` command exists
 if ! command -v kubectl &> /dev/null
@@ -55,11 +57,13 @@ fi
 # Quick sanity check, avoid deploying cloud run service with same version.
 # The deployment will fail, but we can provide a more straightforward error
 # message here.
-if kubectl get deployment stream-$VERSION-deployment -n $MODEL &> /dev/null; then
-  echo "Deployment version '${VERSION}' already exists for model '${MODEL}'!"
-  echo "This is not an issue if updating traffic configurations for existing revisions."
-  echo "For changes to scaling or image configs, try bumping the version number and running again."
-  read -p "Continue? (Y/N): " confirm && [[ $confirm == [yY] || $confirm == [yY][eE][sS] ]] || exit 1
+if [[ "$SKIP_VERSION_CHECK" != "true" ]]; then
+    if kubectl get deployment stream-$VERSION-deployment -n $MODEL &> /dev/null; then
+      echo "Deployment version '${VERSION}' already exists for model '${MODEL}'!"
+      echo "This is not an issue if updating traffic configurations for existing revisions."
+      echo "For changes to scaling or image configs, try bumping the version number and running again."
+      read -p "Continue? (Y/N): " confirm && [[ $confirm == [yY] || $confirm == [yY][eE][sS] ]] || exit 1
+    fi
 fi
 
 # Generate manifests

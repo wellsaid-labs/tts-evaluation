@@ -133,7 +133,7 @@ helm repo add kong https://charts.konghq.com
 kubectl create namespace kong
 # Install helm chart, referencing our configurations (order of file paths is important!)
 helm install gateway kong/kong \
-  --version 2.1.0 \
+  --version 2.3.0 \
   -f ./ops/gateway/kong/kong.base.yaml \
   -f ./ops/gateway/kong/kong.$ENV.yaml
 ```
@@ -232,8 +232,14 @@ scaling, resource requirements, etc..). Similar to installing kong, we will also
 use `helm` to "upgrade" the release.
 
 ```bash
+# Preview changes prior to deployment (requires installation of helm diff plugin)
+helm diff gateway kong/kong \
+  --version 2.3.0 \
+  -f ./ops/gateway/kong/kong.base.yaml \
+  -f ./ops/gateway/kong/kong.$ENV.yaml
+# Deploy changes
 helm upgrade gateway kong/kong \
-  --version 2.1.0 \
+  --version 2.3.0 \
   -f ./ops/gateway/kong/kong.base.yaml \
   -f ./ops/gateway/kong/kong.$ENV.yaml
 ```
@@ -254,6 +260,30 @@ configuration) we can easily do that via helm.
 helm list
 # Rollback to a previous version
 helm rollback gateway <REVISION_NUMBER>
+```
+
+#### Troubleshooting helm upgrade
+
+If the helm chart deployments are not kept up to date with kubernetes api deprecations you may encounter the following error:
+
+```
+UPGRADE FAILED: unable to build kubernetes objects from current release manifest: resource mapping not found ...
+```
+
+This indicates a mismatch between the helm chart api versions, the previous helm revision configurations (stored in secret/configmap by helm), and available kubernetes apis. The solution is to use the [helm mapkubeapis](https://github.com/helm/helm-mapkubeapis) plugin to remove the references to deprecated apis in the existing stored helm configs.
+
+```sh
+# Install plugin
+helm plugin install https://github.com/helm/helm-mapkubeapis
+# Review list of api mappings in ./misc/mapkubeapis.deprecationmap.yaml
+# Preview changes
+helm mapkubeapis gateway --mapfile ./misc/mapkubeapis.deprecationmap.yaml --dry-run
+# Apply changes
+helm mapkubeapis gateway --mapfile ./misc/mapkubeapis.deprecationmap.yaml
+# Prior to upgrading the deployment, ensure the helm chart being used no longer contains
+# references to the deprecated API's. Compare the output of the following command to the
+# list of removed/deprecated API's.
+helm template kong/kong --version=2.3.0
 ```
 
 ### Kong Consumers
