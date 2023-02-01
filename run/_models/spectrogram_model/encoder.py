@@ -447,7 +447,7 @@ class Encoder(torch.nn.Module):
         anno_masks = [inputs.get_token_vec(m) for _, m in self.annos]
         anno_embed = self.embed_anno(self.embed_anno_separable(anno_embeds, anno_masks))
 
-        # # [batch_size, num_tokens, max_word_vector_size]
+        # [batch_size, num_tokens, max_word_vector_size]
         word_vector = inputs.get_token_vec("word_vector", self.max_word_vector_size)
 
         # [batch_size, num_tokens, hidden_size] (cat)
