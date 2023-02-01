@@ -14,7 +14,7 @@ from lxml import etree
 from torch.nn.utils.rnn import pad_sequence
 
 from lib.text import XMLType, text_to_xml
-from lib.utils import lengths_to_mask, offset_slices
+from lib.utils import lengths_to_mask, offset_slices, zip_strict
 from run._config.lang import is_voiced
 from run.data._loader import structures as struc
 
@@ -100,7 +100,7 @@ class Inputs:
     def __post_init__(self):
         device = self.seq_vectors.device
 
-        indices = [s.indices(len(t)) for s, t in zip(self.slices, self.tokens)]
+        indices = [s.indices(len(t)) for s, t in zip_strict(self.slices, self.tokens)]
         num_tokens = [b - a for a, b, _ in indices]
         num_tokens_ = torch.tensor(num_tokens, dtype=torch.long, device=device)
         object.__setattr__(self, "num_sliced_tokens", num_tokens_)
@@ -162,7 +162,7 @@ class Inputs:
             # NOTE: Double check values.
             assert torch.equal(self.sliced_tokens_mask.sum(dim=1), num_sliced_tokens)
             assert all(len(s) == num_tokens[i] for i, s in enumerate(self.tokens))
-            assert all(len(t) >= s.stop for t, s in zip(self.tokens, self.slices))
+            assert all(len(t) >= s.stop for t, s in zip_strict(self.tokens, self.slices))
             assert all(s.start < s.stop and s.step is None for s in self.slices)
             assert all(s.stop - s.start == num_sliced_tokens[i] for i, s in enumerate(self.slices))
 
@@ -171,7 +171,7 @@ class Inputs:
             assert slices[0].start == 0
             assert slices[-1].stop == token_vectors.shape[2]
             assert all(s.start < s.stop and s.step is None for s in slices)
-            assert all(a.stop == b.start for a, b in zip(slices, slices[1:]))
+            assert all(a.stop == b.start for a, b in zip_strict(slices[:-1], slices[1:]))
 
     @property
     def num_token_meta(self):
@@ -339,7 +339,7 @@ class InputsWrapper:
                 raise PublicValueError("There must be text.")
 
         # NOTE: Check that `context` fully contains `span`...
-        for context, span in zip(self.context, self.span):
+        for context, span in zip_strict(self.context, self.span):
             no_context = isinstance(span, spacy.tokens.doc.Doc)
             has_context = context is not span
             assert has_context or no_context
@@ -392,7 +392,7 @@ class InputsWrapper:
                         raise PublicValueError(message + str(max_seen))
 
         # NOTE: Check that respells are correctly formatted and wrap words entirely.
-        for span_, token_annotations in zip(self.span, self.respells):
+        for span_, token_annotations in zip_strict(self.span, self.respells):
             for token, annotation in token_annotations.items():
                 if token is None:
                     raise PublicValueError("Respelling must wrap a word.")
@@ -458,11 +458,11 @@ class InputsWrapper:
         # and closed, first.
         annotations = sorted(annotations, key=lambda k: k[1])
         indices = [0] + [i for _, i in annotations] + [len(span.text)]
-        parts = [span.text[i:j] for i, j in zip(indices, indices[1:] + [None])]
+        parts = [span.text[i:j] for i, j in zip_strict(indices, indices[1:] + [None])]
         start = open_(_Schema.SPEAK, session_vocab[self.session[i]] if session_vocab else -1)
         stop = close(_Schema.SPEAK)
         annotations = [start] + [a for (a, _) in annotations] + [stop]
-        text = "".join("".join((a, text_to_xml(p))) for p, a in zip(parts, annotations))
+        text = "".join("".join((a, text_to_xml(p))) for p, a in zip_strict(parts, annotations))
         if include_context and isinstance(span, spacy.tokens.span.Span):
             start_char = next((_idx(context, t) for t in context if t in span), 0)
             prefix = text_to_xml(context.text[:start_char])
@@ -612,13 +612,14 @@ def _norm_annos(
         updates: Updates to make to the underlying `annos` index, adjusting the slices.
         char_offset: The number of characters to offset `annos`.
     """
+    updated = offset_slices([s for s, _ in annos], updates)
     return [
         (
             slice(u.start + char_offset, u.stop + char_offset),
             norm_len(s.stop - s.start),
             norm_val(v),
         )
-        for u, (s, v) in zip(offset_slices([s for s, _ in annos], updates), annos)
+        for u, (s, v) in zip_strict(updated, annos)
     ]
 
 
@@ -700,7 +701,7 @@ def _word_vector(span: SpanDoc, tokens: typing.List[str], **kwargs) -> torch.Ten
         word_vector.append(np.zeros(token.vector.shape[0] + token.tensor.shape[0]))
     word_vector = word_vector[:-1]  # NOTE: Discard the trailing whitespace
     word_vector = [torch.tensor(t, **kwargs, dtype=torch.float32) for t in word_vector]
-    return torch.cat([e.unsqueeze(0).repeat(len(t), 1) for e, t in zip(word_vector, tokens)])
+    return torch.cat([e.unsqueeze(0).repeat(len(t), 1) for e, t in zip_strict(word_vector, tokens)])
 
 
 def _token_vector(
@@ -797,8 +798,8 @@ def preprocess(
 
         chars = [c for t in spacy_tokens for c in t]
         casing = [_get_case(c) for c in chars]
-        pronun = [p for t, p in zip(spacy_tokens, pronun) for _ in range(len(t))]
-        cntxt = [c for t, c in zip(spacy_tokens, cntxt) for _ in range(len(t))]
+        pronun = [p for t, p in zip_strict(spacy_tokens, pronun) for _ in range(len(t))]
+        cntxt = [c for t, c in zip_strict(spacy_tokens, cntxt) for _ in range(len(t))]
         start_char = next(i for i, c in enumerate(cntxt) if c is Context.SCRIPT)
         end_char = start_char + cntxt.count(Context.SCRIPT)
         cntxt[start_char] = Context.SCRIPT_START
@@ -811,7 +812,7 @@ def preprocess(
         result.tokens.append([c.lower() for c in chars])
         # NOTE: `Casing` has a different meaning in a `RESPELLING` versus generally, so it's we
         # merge them together.
-        pronun_casing = list(zip(pronun, casing))
+        pronun_casing = list(zip_strict(pronun, casing))
         result.token_meta.append([pronun_casing, cntxt])  # type: ignore
 
         normalized = _norm_input(
