@@ -48,5 +48,4 @@ __all__ = [
     "verbalize_text",
     "text_to_xml",
     "xml_to_text",
-    "is_stripped",
 ]

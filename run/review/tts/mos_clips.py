@@ -58,7 +58,7 @@ from run.train.spectrogram_model._metrics import (
 st.set_page_config(layout="wide")
 
 
-def make_result(span: Span, audio: typing.Optional[np.ndarray] = None) -> typing.Dict[str, str]:
+def make_row(span: Span, audio: typing.Optional[np.ndarray] = None) -> typing.Dict[str, str]:
     audio_web_path = audio_to_web_path(span.audio() if audio is None else audio)
     return {
         "Transcript": span.transcript,
@@ -99,7 +99,7 @@ def main():
         include_dic or s.speaker not in DICTIONARY_DATASETS
     )
     generator = (s for s in generator if include_span(s))
-    rows = [{"Checkpoints": "original", **make_result(next(generator))} for _ in range(num_real)]
+    rows = [{"Checkpoints": "original", **make_row(next(generator))} for _ in range(num_real)]
 
     for package, checkpoints_ in zip(packages, checkpoints_keys):
         spans = [next(generator) for _ in tqdm(range(num_fake), total=num_fake)]
@@ -121,15 +121,15 @@ def main():
                 "Alignment Norm": (get_alignment_norm(pred)[0] / num_frames).item(),
                 "Alignment STD": (get_alignment_std(pred)[0] / num_frames).item(),
                 "Alignment": f'<img src="{figure_url}" />',
-                **make_result(span, audio[0]),
+                **make_row(span, audio[0]),
             }
             rows.append(row)
 
     if shuffle:
         random.shuffle(rows)
 
-    for index, result in enumerate(rows):
-        result["Id"] = str(index)
+    for index, row in enumerate(rows):
+        row["Id"] = str(index)
 
     data_frame = pd.DataFrame(rows)
     with st.spinner("Visualizing data..."):
