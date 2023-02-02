@@ -299,7 +299,7 @@ class CometMLExperiment:
         items.extend([f"<p><b>{param_label(k)}:</b> {html_repr(v)}</p>" for k, v in kwargs.items()])
         for key, data in audio.items():
             name = param_label(key)
-            file_name = f"step={self.curr_step},speaker={session[0].label},"
+            file_name = f"step={self.curr_step},speaker={session.spkr.label},"
             file_name += f"name={name},experiment={self.get_key()}.wav"
             url = self._upload_audio(file_name, data)
             items.append(f"<p><b>{name}:</b></p>")
@@ -999,7 +999,7 @@ def process_select_cases(
     docs = [load_spacy_nlp(l)(t) for (l, t) in cases]
     # NOTE: `seshs` is sorted so `random.choice` produces consistent results.
     vocab = sorted(avail_sessions)
-    seshs = [[s for s in vocab if s[0].language is l and s[0] in speakers] for l, _ in cases]
+    seshs = [[s for s in vocab if s.spkr.language is l and s.spkr in speakers] for l, _ in cases]
     seshs = [random.choice(choices) for choices in seshs]
     inputs_ = Inputs(seshs, docs)
     return inputs_, model(inputs_, mode=Mode.INFER)

@@ -199,7 +199,7 @@ _SPEAKER_ID_TO_SESSION: typing.Dict[int, typing.Tuple[Speaker, str]] = {
     45105608: (english.wsl.SELECTQUOTE__CUSTOM_VOICE, "SelectQuote_Script2"),
 }
 SPEAKER_ID_TO_SESSION: typing.Dict[int, Session]
-SPEAKER_ID_TO_SESSION = {k: Session(args) for k, args in _SPEAKER_ID_TO_SESSION.items()}
+SPEAKER_ID_TO_SESSION = {k: Session(*args) for k, args in _SPEAKER_ID_TO_SESSION.items()}
 
 
 class FlaskException(Exception):
@@ -293,7 +293,7 @@ def validate_and_unpack(
     gc.collect()
 
     try:
-        return process_tts_inputs(language_to_spacy[session[0].language], tts, text, session)
+        return process_tts_inputs(language_to_spacy[session.spkr.language], tts, text, session)
     except PublicSpeakerValueError as error:
         app.logger.exception("Invalid speaker: %r", text)
         raise FlaskException(str(error), code="INVALID_SPEAKER_ID")
@@ -378,15 +378,15 @@ if __name__ == "__main__" or "GUNICORN" in os.environ:
 
     for session in SPEAKER_ID_TO_SESSION.values():
         if session not in vocab:
-            if not any(session[0] is sesh[0] for sesh in vocab):
-                app.logger.warning(f"Speaker not found in model vocab: {session[0]}")
+            if not any(session.spkr is sesh.spkr for sesh in vocab):
+                app.logger.warning(f"Speaker not found in model vocab: {session.spkr}")
             else:
                 app.logger.warning(f"Session not found in model vocab: {session}")
-                avail_sessions = [s[1] for s in vocab if s[0] == session[0]]
+                avail_sessions = [s.label for s in vocab if s.spkr == session.spkr]
                 if len(avail_sessions) > 0:
                     app.logger.warning(f"Sessions available: {avail_sessions}")
 
-    languages = set(s[0].language for s in vocab)
+    languages = set(s.spkr.language for s in vocab)
     LANGUAGE_TO_SPACY = {l: load_spacy_nlp(l) for l in languages}
     app.logger.info("Loaded spaCy.")
 

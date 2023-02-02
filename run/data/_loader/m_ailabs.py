@@ -63,7 +63,7 @@ def _get_session(speaker: struc.Speaker, audio_path: Path) -> struc.Session:
     session."""
     chapter = audio_path.stem.rsplit("_", 1)[0]
     label = f"{audio_path.parent.parent.name}/{audio_path.parent.name}/{chapter}"
-    return struc.Session((speaker, label))
+    return struc.Session(speaker, label)
 
 
 def m_ailabs_speech_dataset(

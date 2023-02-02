@@ -54,7 +54,7 @@ def test_lj_speech_dataset(mock_urlretrieve):
         assert sum(len(p.script) for p in passages) == 1310332
         assert passages[0] == run.data._loader.structures.UnprocessedPassage(
             audio_path=directory / "LJSpeech-1.1/wavs/LJ001-0001.wav",
-            session=run.data._loader.Session((LINDA_JOHNSON, "LJ001")),
+            session=run.data._loader.Session(LINDA_JOHNSON, "LJ001"),
             script=(
                 "Printing, in the only sense with which we are at present concerned, differs "
                 "from most if not from all the arts and crafts represented in the Exhibition"

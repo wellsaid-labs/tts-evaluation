@@ -23,7 +23,7 @@ LINDA_JOHNSON = struc.Speaker("linda_johnson", struc.Style.LIBRI, struc.Dialect.
 
 def _get_session(speaker: struc.Speaker, audio_path: pathlib.Path) -> struc.Session:
     """For the LJ speech dataset, we define each chapter as an individual recording session."""
-    return struc.Session((speaker, str(audio_path.stem.rsplit("-", 1)[0])))
+    return struc.Session(speaker, str(audio_path.stem.rsplit("-", 1)[0]))
 
 
 def lj_speech_dataset(

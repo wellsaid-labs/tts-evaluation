@@ -34,7 +34,7 @@ def main():
         tts = load_tts(checkpoint)
 
     format_speaker: typing.Callable[[Speaker], str] = lambda s: s.label
-    speakers = sorted(sesh[0] for sesh in tts.session_vocab())
+    speakers = sorted(sesh.spkr for sesh in tts.session_vocab())
     speaker = st.selectbox("Speaker", options=speakers, format_func=format_speaker)  # type: ignore
     speaker = typing.cast(Speaker, speaker)
     assert speaker.name is not None
@@ -45,7 +45,7 @@ def main():
 
     all_sessions: bool = st.checkbox("Sample all %d sessions" % len(sessions))
     selected_sessions = sessions if all_sessions else st.multiselect("Session(s)", options=sessions)
-    selected_sessions = [Session((speaker, name)) for name in selected_sessions]
+    selected_sessions = [Session(speaker, name) for name in selected_sessions]
 
     if len(selected_sessions) == 0:
         return

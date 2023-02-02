@@ -292,7 +292,7 @@ def test_passage_span__identity():
     alignment = Alignment((0, len(script)), (0.0, metadata.length), (0, len(script)))
     passage = Passage(
         audio_file=metadata,
-        session=Session((LINDA_JOHNSON, audio_path.name)),
+        session=Session(LINDA_JOHNSON, audio_path.name),
         script=script,
         transcript=script,
         alignments=Alignment.stow([alignment]),

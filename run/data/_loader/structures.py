@@ -262,7 +262,11 @@ class Speaker:
 
 
 # TODO: Implement `__str__` so that we have a more succinct string representation for logging
-Session = typing.NewType("Session", typing.Tuple[Speaker, str])
+
+
+class Session(typing.NamedTuple):
+    spkr: Speaker
+    label: str
 
 
 class IsLinked(typing.NamedTuple):
@@ -296,7 +300,7 @@ class UnprocessedPassage:
 
     @property
     def speaker(self):
-        return self.session[0]
+        return self.session.spkr
 
 
 @dataclasses.dataclass(frozen=True)
@@ -402,7 +406,7 @@ class Passage:
 
     @property
     def speaker(self):
-        return self.session[0]
+        return self.session.spkr
 
     @property
     def doc(self) -> spacy.tokens.doc.Doc:
@@ -641,7 +645,7 @@ class Span:
 
     @property
     def speaker(self) -> Speaker:
-        return self.passage.session[0]
+        return self.passage.session.spkr
 
     @property
     def session(self) -> Session:

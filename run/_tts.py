@@ -208,7 +208,7 @@ def process_tts_inputs(
     nlp: spacy.language.Language, package: TTSPackage, script: str, session: Session
 ) -> typing.Tuple[Inputs, PreprocessedInputs]:
     """Process TTS `script`, `speaker` and `session` for use with the model(s)."""
-    normalized = normalize_and_verbalize_text(script, session[0].language)
+    normalized = normalize_and_verbalize_text(script, session.spkr.language)
     if len(normalized) == 0:
         raise PublicTextValueError("Text cannot be empty.")
 
@@ -236,7 +236,7 @@ def text_to_speech(
     split_size: int = 32,
 ) -> numpy.ndarray:
     """Run TTS end-to-end with friendly errors."""
-    nlp = load_spacy_nlp(session[0].language)
+    nlp = load_spacy_nlp(session.spkr.language)
     inputs, preprocessed_inputs = process_tts_inputs(nlp, package, script, session)
     preds = package.spec_model(inputs=preprocessed_inputs, mode=Mode.INFER)
     splits = preds.frames.transpose(0, 1).split(split_size)
@@ -268,11 +268,11 @@ def _multilingual_spacy_pipe(
 ) -> typing.List[typing.Tuple[spacy.tokens.doc.Doc, Session]]:
     """Efficiently pipe `inputs` through spaCy with batching per language."""
     seshs = [s for _, s in inputs]
-    langs = set(s[0].language for s in seshs)
+    langs = set(s.spkr.language for s in seshs)
     result: typing.List[typing.Optional[spacy.tokens.doc.Doc]] = [None] * len(inputs)
     for lang in langs:
         nlp = load_spacy_nlp(lang)
-        scripts = [(i, s) for i, (s, sesh) in enumerate(inputs) if sesh[0].language is lang]
+        scripts = [(i, s) for i, (s, sesh) in enumerate(inputs) if sesh.spkr.language is lang]
         docs = nlp.pipe(s for _, s in scripts)
         for (i, _), doc in zip(scripts, docs):
             result[i] = doc
@@ -285,7 +285,7 @@ def batch_text_to_speech(
     batch_size: int = 8,
 ) -> typing.List[TTSInputOutput]:
     """Run TTS end-to-end quickly with a verbose output."""
-    inputs = [(normalize_vo_script(script, sesh[0].language), sesh) for script, sesh in inputs]
+    inputs = [(normalize_vo_script(script, sesh.spkr.language), sesh) for script, sesh in inputs]
     logger.info(f"Processing {len(inputs)} examples with spaCy...")
     inputs_ = list(enumerate(_multilingual_spacy_pipe(inputs)))
     inputs_ = sorted(inputs_, key=lambda i: len(str(i[1][0])))

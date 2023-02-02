@@ -328,7 +328,7 @@ DataLoaders = typing.Dict[struc.Speaker, DataLoader]
 
 def _default_session(speaker: struc.Speaker, audio_path: Path) -> struc.Session:
     """By default, this assumes that each audio file was recorded, individually."""
-    return struc.Session((speaker, audio_path.stem))
+    return struc.Session(speaker, audio_path.stem)
 
 
 def dataset_loader(
