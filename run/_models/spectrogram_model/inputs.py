@@ -393,7 +393,7 @@ class InputsWrapper:
                     if max_seen > max_:
                         raise PublicValueError(message + str(max_seen))
 
-        # NOTE: Check that respells are correctly formatted and wrap words entirely.
+        # NOTE: Check that respellings are correctly formatted and wrap words entirely.
         for span_, token_annotations in zip_strict(self.span, self.respells):
             for token, annotation in token_annotations.items():
                 if token is None:
