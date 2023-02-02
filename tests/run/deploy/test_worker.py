@@ -29,7 +29,7 @@ def test_flask_exception():
 
 def test_validate_and_unpack():
     """Test `validate_and_unpack` handles all sorts of arguments."""
-    sesh = Session((JUDY_BIEBER, "sesh"))
+    sesh = Session(JUDY_BIEBER, "sesh")
     script = "This is a exposé. ABC."
     _, package = make_mock_tts_package()
 
@@ -37,12 +37,12 @@ def test_validate_and_unpack():
     # Or the vocabulary is based off a dataset which can be used, also? That handles special
     # characters, also.
     package.spec_model.token_embed.update_tokens(list(script.lower()) + [RESPELLING_DELIM])
-    package.spec_model.speaker_embed.update_tokens([sesh[0].label])
+    package.spec_model.speaker_embed.update_tokens([sesh.spkr.label])
     package.spec_model.session_embed.update_tokens([sesh])
-    package.spec_model.dialect_embed.update_tokens([sesh[0].dialect])
-    package.spec_model.style_embed.update_tokens([sesh[0].style])
-    package.spec_model.language_embed.update_tokens([sesh[0].language])
-    package.signal_model.speaker_embed.update_tokens([sesh[0].label])
+    package.spec_model.dialect_embed.update_tokens([sesh.spkr.dialect])
+    package.spec_model.style_embed.update_tokens([sesh.spkr.style])
+    package.spec_model.language_embed.update_tokens([sesh.spkr.language])
+    package.signal_model.speaker_embed.update_tokens([sesh.spkr.label])
     package.signal_model.session_embed.update_tokens([sesh])
 
     language_to_spacy = {Language.ENGLISH: lib.text.load_en_core_web_sm()}

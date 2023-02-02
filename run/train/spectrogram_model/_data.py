@@ -303,6 +303,14 @@ class Batch(_utils.Batch):
 
     processed: PreprocessedInputs
 
+    @property
+    def spec(self):
+        return self.spectrogram
+
+    @property
+    def spec_mask(self):
+        return self.spectrogram_mask
+
     def apply(self, call: typing.Callable[[torch.Tensor], torch.Tensor]) -> "Batch":
         batch: Batch = super().apply(call)
         token_embed = batch.processed.token_embeddings_padded

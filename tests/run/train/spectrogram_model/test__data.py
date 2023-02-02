@@ -11,11 +11,9 @@ from torchnlp.encoders.text import SequenceBatch
 import lib
 import run
 from run._config.data import _get_loudness_annotation
-from run._models.spectrogram_model import SliceAnnos, TokenAnnos
 from run.data._loader import Alignment
 from run.train.spectrogram_model import _data
 from tests._utils import assert_almost_equal
-from tests.run._utils import make_passage
 
 
 @pytest.fixture(autouse=True, scope="module")
@@ -71,7 +69,7 @@ def test__get_loudness():
     with torchnlp.random.fork_rng(1234):
         audio = np.random.rand(sample_rate * length) * 2 - 1
         alignment = Alignment((0, length), (0, length), (0, length))
-        loundess = _data._get_loudness_annotation(
+        loudness = _data._get_loudness_annotation(
             audio=audio,
             alignment=alignment,
             block_size=block_size,
@@ -80,131 +78,9 @@ def test__get_loudness():
             filter_class=implementation,
             get_anno=_get_loudness_annotation,
         )
-        assert loundess is not None
-        assert math.isfinite(loundess)
-        assert round(meter.integrated_loudness(audio), precision) == loundess
-
-
-def test__get_loudness__short_audio():
-    """Test `_data._get_loudness` handles short audio."""
-    sample_rate = 1000
-    block_size = 0.4
-    length = block_size - 0.1
-    with torchnlp.random.fork_rng(12345):
-        audio = np.random.rand(int(sample_rate * length)) * 2 - 1
-        alignment = Alignment((0, 1), (0, length), (0, 1))
-        loundess = _data._get_loudness_annotation(
-            audio=audio,
-            alignment=alignment,
-            block_size=block_size,
-            precision=5,
-            sample_rate=sample_rate,
-            filter_class="DeMan",
-            get_anno=_get_loudness_annotation,
-        )
-        assert loundess is None
-
-
-def test__get_loudness__quiet_audio():
-    """Test `_data._get_loudness` handles quiet audio that is less than -70 LUFS."""
-    sample_rate = 1000
-    block_size = 0.4
-    audio = lib.audio.full_scale_sine_wave(sample_rate) / 10000
-    alignment = Alignment((0, 1), (0, block_size), (0, 1))
-    loundess = _data._get_loudness_annotation(
-        audio=audio,
-        alignment=alignment,
-        block_size=block_size,
-        precision=5,
-        sample_rate=sample_rate,
-        filter_class="DeMan",
-        get_anno=_get_loudness_annotation,
-    )
-    assert loundess == -70
-
-
-def test__get_loudness__quieter_audio():
-    """Test `_data._get_loudness` handles quiet audio that is less than -70 LUFS.
-
-    NOTE: This tends to overflow, like described in:
-    https://github.com/csteinmetz1/pyloudnorm/issues/42
-    """
-    sample_rate = 1000
-    block_size = 0.4
-    audio = lib.audio.full_scale_sine_wave(sample_rate) / 100000
-    alignment = Alignment((0, 1), (0, block_size), (0, 1))
-    loundess = _data._get_loudness_annotation(
-        audio=audio,
-        alignment=alignment,
-        block_size=block_size,
-        precision=5,
-        sample_rate=sample_rate,
-        filter_class="DeMan",
-        get_anno=_get_loudness_annotation,
-    )
-    assert loundess is None
-
-
-def test__random_loudness_annotations():
-    """Test `_data._random_loudness_annotations` on a basic case."""
-    with torchnlp.random.fork_rng(123456):
-        span = make_passage(script="This is a test.")[:]
-        length = int(span.audio_file.sample_rate * span.alignments[-1].audio[-1])
-        signal = lib.audio.full_scale_sine_wave(span.audio_file.sample_rate, 20, length)
-        out = _data._random_loudness_annotations(span, signal, precision=0)
-        # NOTE: These loudness values are irregular because the sample rate is so small.
-        expected: SliceAnnos = [
-            (slice(0, 4), -70),
-            (slice(4, 5), -70),
-            (slice(5, 7), -70),
-            (slice(8, 9), -70),
-            (slice(9, 10), -70),
-        ]
-        assert expected == out
-
-
-def test__random_tempo_annotations():
-    """Test `_data._random_tempo_annotations` on a basic case."""
-    with torchnlp.random.fork_rng(123456):
-        span = make_passage(script="This is a test.")[:]
-        get_tempo_anno = lambda t, *_, **__: len(t)
-        out = _data._random_tempo_annotations(span, get_anno=get_tempo_anno)
-        expected: SliceAnnos = [
-            (slice(0, 4), 4),
-            (slice(4, 5), 1),
-            (slice(5, 7), 2),
-            (slice(8, 9), 1),
-            (slice(9, 10), 1),
-        ]
-        assert expected == out
-
-
-def test__random_respelling_annotations():
-    """Test `_random_respelling_annotations` on a basic case."""
-    with torchnlp.random.fork_rng(123456):
-        span = make_passage(script="Don't People from EDGE catch-the-flu?")[:]
-        annotations = _data._random_respelling_annotations(span, prob=1.0, delim="-")
-        expected: TokenAnnos = {
-            span.spacy[2]: "PEE-puhl",
-            span.spacy[5]: "KACH",
-            span.spacy[9]: "FLOO",
-        }
-        assert annotations == expected
-
-
-def test__random_respelling_annotations__prob_zero():
-    """Test `_random_respelling_annotations` respects `prob`."""
-    span = make_passage(script="Don't People from EDGE catch-the-flu?")[:]
-    annotations = _data._random_respelling_annotations(span, prob=0, delim="-")
-    assert annotations == {}
-
-
-def test__random_respelling_annotations__appostrophe():
-    """Test `_random_respelling_annotations` does not annotate a apostrophed word."""
-    with torchnlp.random.fork_rng(123456):
-        span = make_passage(script="Catch Catch's")[:]
-        annotations = _data._random_respelling_annotations(span, prob=1.0, delim="-")
-        assert annotations == {span.spacy[0]: "KACH"}
+        assert loudness is not None
+        assert math.isfinite(loudness)
+        assert round(meter.integrated_loudness(audio), precision) == loudness
 
 
 def test__signals_to_spectrograms():

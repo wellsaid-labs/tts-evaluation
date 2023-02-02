@@ -300,7 +300,7 @@ class CometMLExperiment:
         items.extend([f"<p><b>{param_label(k)}:</b> {html_repr(v)}</p>" for k, v in kwargs.items()])
         for key, data in audio.items():
             name = param_label(key)
-            file_name = f"step={self.curr_step},speaker={session[0].label},"
+            file_name = f"step={self.curr_step},speaker={session.spkr.label},"
             file_name += f"name={name},experiment={self.get_key()}.wav"
             url = self._upload_audio(file_name, data)
             items.append(f"<p><b>{name}:</b></p>")
@@ -733,7 +733,8 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
         NOTE: `torch.utils.data.dataloader.DataLoader` doesn't pin tensors if CUDA isn't
         available.
         """
-        message = "Expecting `tensor` memory to be pinned before moving."
+        message = f"Expecting `tensor` ({tensor.shape}, {tensor.dtype}) memory to be "
+        message += "pinned before moving."
         assert not torch.cuda.is_available() or tensor.is_pinned(), message
         return tensor.to(device=self.device, non_blocking=True)
 
@@ -1000,7 +1001,7 @@ def process_select_cases(
     docs = [load_spacy_nlp(l)(xml_to_text(t)) for l, t in cases]
     # NOTE: `seshs` is sorted so `random.choice` produces consistent results.
     vocab = sorted(avail_sessions)
-    seshs = [[s for s in vocab if s[0].language is l and s[0] in speakers] for l, _ in cases]
+    seshs = [[s for s in vocab if s.spkr.language is l and s.spkr in speakers] for l, _ in cases]
     seshs = [random.choice(choices) for choices in seshs]
     inputs_ = Inputs.from_xml_batch(xmls, docs, seshs)  # type: ignore
     return inputs_, model(inputs_, mode=Mode.INFER)

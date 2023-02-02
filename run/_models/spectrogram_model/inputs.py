@@ -36,7 +36,9 @@ def _get_case(c: str) -> Casing:
     assert len(c) == 1
     if c.isupper():
         return Casing.UPPER
-    return Casing.LOWER if c.islower() else Casing.NO_CASING
+    elif c.islower():
+        return Casing.LOWER
+    return Casing.NO_CASING
 
 
 class Context(enum.Enum):
@@ -235,10 +237,10 @@ class InputsWrapper:
         # would be to provide a convient function to resolve this during instantiation, so the
         # client does not need to worry about instantiating `InputsWrapper` in a strictly correct
         # way.
-        # NOTE: That model recieves public data through this interface, so, we need to have
-        # robust verification and clear error messages for API developers.
+        # NOTE: That model recieves public data through this interface, so, we tried to add robust
+        # verification and clear error messages for API developers.
         # NOTE: `assert` is used for non-public errors, related to using this object.
-        # `AnnotationError`s are used for public-facing errors.
+        # `PublicValueError`s are used for public-facing errors.
         for field in dataclasses.fields(self):
             assert len(self.session) == len(getattr(self, field.name))
 
@@ -587,7 +589,8 @@ def preprocess(
     Item = typing.Tuple[struc.Session, SpanDoc, SpanDoc, SliceAnnos, SliceAnnos, TokenAnnos]
     iter_ = typing.cast(typing.Iterator[Item], iter_)
     for sesh, span, context, loudness, tempo, respells in iter_:
-        seq_metadata = [sesh[0].label, sesh, sesh[0].dialect, sesh[0].style, sesh[0].language]
+        spkr = sesh.spkr
+        seq_metadata = [spkr.label, sesh, spkr.dialect, spkr.style, spkr.language]
         if len(inputs.seq_metadata) == 0:
             inputs.seq_metadata.extend([[] for _ in seq_metadata])
         [inputs.seq_metadata[i].append(data) for i, data in enumerate(seq_metadata)]

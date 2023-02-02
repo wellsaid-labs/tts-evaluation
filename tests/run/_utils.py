@@ -5,13 +5,15 @@ import tempfile
 import typing
 from unittest import mock
 
-import config as cf
 import torch
 
 import lib
 import run
 from run import train
-from run._config import make_signal_model_train_config, make_spectrogram_model_train_config
+from run._config import (
+    config_sig_model_training_from_datasets,
+    config_spec_model_training_from_datasets,
+)
 from run._tts import TTSPackage, package_tts
 from run.data._loader import structures as struc
 from run.data._loader.english import M_AILABS_DATASETS, lj_speech, m_ailabs
@@ -30,7 +32,7 @@ def make_speaker(
 
 
 def make_session(*args, name: str = "", **kwargs):
-    return struc.Session((make_speaker(*args, **kwargs), name))
+    return struc.Session(make_speaker(*args, **kwargs), name)
 
 
 def make_alignment(script=(0, 0), transcript=(0, 0), audio=(0.0, 0.0)):
@@ -49,7 +51,7 @@ def make_alignments_1d(
 
 
 def script_to_alignments(script: str) -> typing.Tuple[typing.Tuple[int, int]]:
-    """Get the indicies of each "word" in `script`.
+    """Get the indices of each "word" in `script`.
 
     Example:
         >>> script_to_alignments("This is a test")
@@ -101,7 +103,7 @@ def make_passage(
     assert alignments is not None
     passage = struc.Passage(
         audio_file,
-        struc.Session((speaker, str(audio_file))),
+        struc.Session(speaker, str(audio_file)),
         script,
         script if transcript is None else transcript,
         Alignment.stow(alignments),
@@ -187,7 +189,7 @@ def make_mock_tts_package() -> typing.Tuple[run._utils.Dataset, TTSPackage]:
     comet = train._utils.CometMLExperiment(disabled=True, project_name="project name")
     device = torch.device("cpu")
     dataset = make_small_dataset()
-    cf.add(make_spectrogram_model_train_config(dataset, dataset, False))
-    cf.add(make_signal_model_train_config(dataset, dataset, False))
+    config_spec_model_training_from_datasets(dataset, dataset, False)
+    config_sig_model_training_from_datasets(dataset, dataset, False)
     spec_state, sig_state, _ = make_spec_and_sig_worker_state(comet, device)
     return dataset, package_tts(spec_state.to_checkpoint(), sig_state.to_checkpoint())

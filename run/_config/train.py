@@ -1,5 +1,4 @@
 import logging
-import typing
 from functools import partial
 
 import config as cf
@@ -30,15 +29,10 @@ def _get_num_sessions(train_dataset: Dataset) -> int:
     return len(set(psg.session for data in train_dataset.values() for psg in data))
 
 
-def make_spectrogram_model_train_config(
-    train_dataset: Dataset,
-    dev_dataset: Dataset,
-    debug: bool,
-    device_count: typing.Optional[int] = None,
-) -> cf.Config:
-    """Make additional configuration for spectrogram model training."""
+def _get_spec_model_training_configs(train_dataset: Dataset, dev_dataset: Dataset, debug: bool):
+    """Get configurations for various values like batch size and steps per epoch using the train
+    and dev datasets."""
     ratio = _get_ratio(train_dataset, dev_dataset)
-
     train_batch_size = 28 if debug else 56
     batch_size_ratio = 4
     dev_batch_size = train_batch_size * batch_size_ratio
@@ -46,13 +40,24 @@ def make_spectrogram_model_train_config(
     oversample = 3
     train_steps_per_epoch = int(round(dev_steps_per_epoch * batch_size_ratio * ratio * oversample))
     train_steps_per_epoch = 1 if debug else train_steps_per_epoch
-    device_count = lib.distributed.get_device_count() if device_count is None else device_count
-    assert train_batch_size % device_count == 0
-    assert dev_batch_size % device_count == 0
+    assert train_batch_size % lib.distributed.get_device_count() == 0
+    assert dev_batch_size % lib.distributed.get_device_count() == 0
+    num_sesh = _get_num_sessions(train_dataset)
+    return train_batch_size, dev_batch_size, train_steps_per_epoch, dev_steps_per_epoch, num_sesh
 
+
+def _config_spec_model_training(
+    train_batch_size: int,
+    dev_batch_size: int,
+    train_steps_per_epoch: int,
+    dev_steps_per_epoch: int,
+    num_sesh: int,
+    debug: bool,
+    **kwargs,
+):
+    """Make additional configurations for spectrogram model training."""
     spectrogram_model = run.train.spectrogram_model
-
-    return {
+    config = {
         run.train._utils.set_run_seed: cf.Args(seed=RANDOM_SEED),
         spectrogram_model._worker._State._get_optimizers: cf.Args(
             lr_multiplier_schedule=partial(
@@ -104,9 +109,6 @@ def make_spectrogram_model_train_config(
         spectrogram_model._metrics.Metrics._get_model_metrics: cf.Args(
             num_frame_channels=NUM_FRAME_CHANNELS
         ),
-        # NOTE: Based on the alignment visualizations, if the maximum alignment is less than 30%
-        # then a misalignment has likely occured.
-        spectrogram_model._metrics.get_num_small_max: cf.Args(threshold=0.3),
         # SOURCE (Tacotron 2):
         # We use the Adam optimizer with β1 = 0.9, β2 = 0.999, eps = 10−6 learning rate of 10−3
         # We also apply L2 regularization with weight 10−6
@@ -121,14 +123,22 @@ def make_spectrogram_model_train_config(
             betas=(0.9, 0.999),
         ),
         run._models.spectrogram_model.wrapper.SpectrogramModelWrapper: cf.Args(
-            max_sessions=_get_num_sessions(train_dataset),
+            max_sessions=num_sesh
         ),
     }
+    cf.add(config, **kwargs)
 
 
-def make_signal_model_train_config(
+def config_spec_model_training_from_datasets(
     train_dataset: Dataset, dev_dataset: Dataset, debug: bool
-) -> cf.Config:
+):
+    configs = _get_spec_model_training_configs(train_dataset, dev_dataset, debug)
+    _config_spec_model_training(*configs, debug)
+
+
+def config_sig_model_training_from_datasets(
+    train_dataset: Dataset, dev_dataset: Dataset, debug: bool, **kwargs
+):
     """Make additional configuration for signal model training."""
     ratio = _get_ratio(train_dataset, dev_dataset)
 
@@ -162,7 +172,7 @@ def make_signal_model_train_config(
     signal_model = run.train.signal_model
     _State, _worker = signal_model._worker._State, signal_model._worker
 
-    return {
+    config = {
         run.train._utils.set_run_seed: cf.Args(seed=RANDOM_SEED),
         signal_model._worker._get_data_loaders: cf.Args(
             # SOURCE (Tacotron 2):
@@ -211,3 +221,4 @@ def make_signal_model_train_config(
             max_sessions=_get_num_sessions(train_dataset),
         ),
     }
+    cf.add(config, **kwargs)

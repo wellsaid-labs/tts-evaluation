@@ -18,6 +18,7 @@ from torchnlp.random import fork_rng
 import lib
 import run
 from run._config.labels import _speaker
+from run._config.train import _config_spec_model_training
 from run._streamlit import audio_to_url, clip_audio, st_ag_grid, st_tqdm
 from run._utils import Dataset, get_datasets
 from run.data._loader import Alignment, Span, Speaker
@@ -53,11 +54,6 @@ def _get_spans(
         ...
         device_count: The number of devices used during training to set the configuration.
     """
-    with st.spinner("Configuring..."):
-        datasets = (_train_dataset, _dev_dataset)
-        config_ = run._config.make_spectrogram_model_train_config(*datasets, False, device_count)
-        cf.add(config_, overwrite=True)
-
     with st.spinner("Making generators..."):
         if speaker is not None:
             _train_dataset = {speaker: _train_dataset[speaker]}
@@ -137,10 +133,10 @@ def _stats(
         "Num `Span`s (0 annotations)": sum(1 for i in annotations if len(i) == 0),
         "Percent `Span`s (0 annotations)": sum(1 for i in annotations if len(i) == 0),
         "Average Annotations Per Span": round(len(data) / len(spans), 1),
-        "Num Loundess Annotations": len(loudness_vals),
-        "Max Loundess Annotation": max(loudness_vals),
-        "Min Loundess Annotation": min(loudness_vals),
-        "Average Loundess Annotation Length": total_loudness_script_len / len(data),
+        "Num Loudness Annotations": len(loudness_vals),
+        "Max Loudness Annotation": max(loudness_vals),
+        "Min Loudness Annotation": min(loudness_vals),
+        "Average Loudness Annotation Length": total_loudness_script_len / len(data),
         "Num Tempo Annotations": len(tempo_vals),
         "Max Tempo Annotation": max(tempo_vals),
         "Min Tempo Annotation": min(tempo_vals),
@@ -159,9 +155,10 @@ def _stats(
     label = "Percent `Span`s (0 annotations)"
     stats[label] = stats["Num `Span`s (0 annotations)"] / stats["Num `Span`s"]
 
-    # TODO: Is this really how you average decibels?
+    # TODO: Decibels should not be averaged, like this. A decibel is ratio, rather, we need to
+    # covert power/energy units to get the total energy which we can then average out.
     total_loudness = sum(r["audio_len"] * r["loudness"] for r in data if r["loudness"] is not None)
-    stats["Average Loundess"] = total_loudness / stats["Total Seconds Annotated"]
+    stats["Average Loudness"] = total_loudness / stats["Total Seconds Annotated"]
 
     total_tempo = sum(r["audio_len"] * r["tempo"] for r in data)
     stats["Average Tempo"] = total_tempo / stats["Total Seconds Annotated"]
@@ -198,6 +195,8 @@ def _distributions(data: typing.List[typing.Dict], num_cols: int = 3):
 
 def main():
     run._config.configure(overwrite=True)
+    # NOTE: The various parameters map to configurations that are not relevant for this workbook.
+    _config_spec_model_training(0, 0, 0, 0, 0, False, overwrite=True)
 
     st.title("Annotations")
     st.write("The workbook reviews the annotations that are being generated for spans.")
@@ -233,7 +232,7 @@ def main():
         df = pandas.DataFrame(data)
 
     st.subheader("Data")
-    st_ag_grid(df, audio_column_name="clip")
+    st_ag_grid(df, audio_cols=["clip"])
     _stats(spans, data, intervals)
     _distributions(data)
 
