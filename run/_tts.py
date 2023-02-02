@@ -229,7 +229,7 @@ def process_tts_inputs(
     return inputs, preprocessed
 
 
-def text_to_speech(
+def basic_tts(
     package: TTSPackage,
     script: str,
     session: Session,
@@ -245,7 +245,7 @@ def text_to_speech(
     return wave.squeeze(0).detach().numpy()
 
 
-class TTSInputOutput(typing.NamedTuple):
+class TTSResult(typing.NamedTuple):
     """Text-to-speech input and output."""
 
     inputs: Inputs
@@ -255,12 +255,12 @@ class TTSInputOutput(typing.NamedTuple):
 
 def batch_span_to_speech(
     package: TTSPackage, spans: typing.List[Span], **kwargs
-) -> typing.List[TTSInputOutput]:
+) -> typing.List[TTSResult]:
     """
     NOTE: This method doesn't consider `Span` context for TTS generation.
     """
     inputs = [(s.script, s.session) for s in spans]
-    return batch_text_to_speech(package, inputs, **kwargs)
+    return batch_tts(package, inputs, **kwargs)
 
 
 def _multilingual_spacy_pipe(
@@ -279,17 +279,15 @@ def _multilingual_spacy_pipe(
     return list(zip(typing.cast(typing.List[spacy.tokens.doc.Doc], result), seshs))
 
 
-def batch_text_to_speech(
-    package: TTSPackage,
-    inputs: typing.List[typing.Tuple[str, Session]],
-    batch_size: int = 8,
-) -> typing.List[TTSInputOutput]:
+def batch_tts(
+    package: TTSPackage, inputs: typing.List[typing.Tuple[str, Session]], batch_size: int = 8
+) -> typing.List[TTSResult]:
     """Run TTS end-to-end quickly with a verbose output."""
     inputs = [(normalize_vo_script(script, sesh.spkr.language), sesh) for script, sesh in inputs]
     logger.info(f"Processing {len(inputs)} examples with spaCy...")
     inputs_ = list(enumerate(_multilingual_spacy_pipe(inputs)))
     inputs_ = sorted(inputs_, key=lambda i: len(str(i[1][0])))
-    results: typing.Dict[int, TTSInputOutput] = {}
+    results: typing.Dict[int, TTSResult] = {}
     logger.info(f"Processing {len(inputs)} examples with TTS models...")
     for batch in tqdm_(list(get_chunks(inputs_, batch_size))):
         batch_input = Inputs(doc=[i[1][0] for i in batch], session=[i[1][1] for i in batch])
@@ -298,7 +296,7 @@ def batch_text_to_speech(
         signals = package.signal_model(spectrogram, batch_input.session, preds.frames_mask)
         num_samples = preds.num_frames * package.signal_model.upscale_factor
         more_results = {
-            j: TTSInputOutput(
+            j: TTSResult(
                 inputs=Inputs(doc=[batch_input.doc[i]], session=[batch_input.session[i]]),
                 spec_model=preds[i : i + 1],
                 sig_model=signals[0][i : i + 1, : num_samples[i]].detach().numpy(),
@@ -321,7 +319,7 @@ def _dequeue(queue: SimpleQueue) -> typing.Generator[bytes, None, None]:
         yield queue.get_nowait()
 
 
-def text_to_speech_ffmpeg_generator(
+def tts_ffmpeg_generator(
     package: TTSPackage,
     inputs: Inputs,
     preprocessed_inputs: PreprocessedInputs,

@@ -1,9 +1,11 @@
+import dataclasses
 import typing
 
 import torch
 
 
-class Preds(typing.NamedTuple):
+@dataclasses.dataclass(frozen=True)
+class Preds:
     """The model predictions and related metadata."""
 
     # Spectrogram frames.

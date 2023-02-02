@@ -109,7 +109,7 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
         lib.audio.griffin_lim: args,
         run.train.spectrogram_model._metrics.get_num_pause_frames: args,
         run.data._loader.utils.normalize_audio: args,
-        run._tts.text_to_speech_ffmpeg_generator: args,
+        run._tts.tts_ffmpeg_generator: args,
         lib.audio.get_pyloudnorm_meter: args,
     }
     cf.add(config, overwrite)

@@ -340,7 +340,8 @@ class Passage:
     and audio updates. We could more efficiently create a `ConventionalSpan`.
 
     Args:
-        audio_file: A voice-over of the `script`.
+        audio_file: An audio-file that includes a voice-over of `script`, and maybe other
+            voice-overs.
         session: A label used to group passages recorded together.
         script: The `script` the `speaker` was reading from, this may include other voice-overs.
         transcript: The `transcript` of the `audio_file`, this may include other voice-overs.
