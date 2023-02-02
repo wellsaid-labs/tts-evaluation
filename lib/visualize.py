@@ -73,6 +73,7 @@ def plot_logits(logits: typing.Union[torch.Tensor, np.ndarray]) -> "matplotlib.f
 
 def plot_loudness(loudness: typing.Union[torch.Tensor, np.ndarray]) -> "matplotlib.figure.Figure":
     """Given a time-series of decibel values, plot a line graph.
+
     Args:
         loudness (numpy.array or torch.Tensor [sequence_length])
     """
