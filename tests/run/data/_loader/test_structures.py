@@ -191,14 +191,13 @@ def test__make_speech_segments_helper__overlap__regression():
     """Test `_make_speech_segments_helper` where `non_speech_segment` is on the border of an
     `alignment`.
     """
-    pad = 25 / 1000
     speech_segments = _make_speech_segments_helper(
         alignments=[(17.4, 17.8), (20.7, 20.9), (24.0, 24.1)],
         prev_alignment=(0, 0),
         next_alignment=(26, 26),
         max_length=26,
         nss_timeline=Timeline([(16.77, 17.5), (20.7, 20.81), (24.0, 25.275)]),
-        pad=pad,
+        pad=25 / 1000,
     )
     assert speech_segments == ((slice(1, 3, None), slice(20.785, 24.025, None)),)
 
@@ -293,7 +292,7 @@ def test_passage_span__identity():
     alignment = Alignment((0, len(script)), (0.0, metadata.length), (0, len(script)))
     passage = Passage(
         audio_file=metadata,
-        session=Session((LINDA_JOHNSON, audio_path.name)),
+        session=Session(LINDA_JOHNSON, audio_path.name),
         script=script,
         transcript=script,
         alignments=Alignment.stow([alignment]),

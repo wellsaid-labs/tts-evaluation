@@ -48,7 +48,7 @@ from lib.utils import flatten_2d, mazel_tov, round_, seconds_to_str
 from run._config import configure, is_voiced
 from run._streamlit import audio_to_html, get_dataset, load_en_core_web_md, map_, st_data_frame
 from run._utils import Dataset, _passages_len, split_dataset
-from run.data._loader import DATASETS, Passage, Span, has_a_mistranscription
+from run.data._loader import DATASETS, Alignment, Passage, Span, has_a_mistranscription
 from run.review.dataset.dashboard import _utils as utils
 
 lib.environment.set_basic_logging_config(reset=True)
@@ -243,9 +243,9 @@ def _analyze_alignment_speech_segments(
         sample = segments[:max_rows]
         edges = []
         for segment in sample:
-            start = segment.passage.nonalignments[segment.nonalignments_slice.start].audio
-            end = segment.passage.nonalignments[segment.nonalignments_slice.stop - 1].audio
-            edges.append((start[-1] - start[0], end[-1] - end[0]))
+            start: Alignment = segment.passage.nonalignments[segment.nonalignments_slice.start]
+            end: Alignment = segment.passage.nonalignments[segment.nonalignments_slice.stop - 1]
+            edges.append((start.audio_len, end.audio_len))
         other_columns = {"edges": edges, "transcript": [s.transcript for s in sample]}
         _write_span_table(sample, other_columns=other_columns)
 

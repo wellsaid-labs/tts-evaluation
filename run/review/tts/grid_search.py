@@ -47,7 +47,7 @@ def get_sample_sessions(
     """For each `speaker` randomly sample `max_sessions`."""
     sessions_sample = []
     for speaker in speakers:
-        speaker_sessions = [s for s in sessions if s[0] == speaker]
+        speaker_sessions = [s for s in sessions if s.spkr == speaker]
         sessions_sample.extend(lib.utils.random_sample(speaker_sessions, max_sessions))
     return sessions_sample
 
@@ -101,8 +101,8 @@ def main():
         package = TTSPackage(spec_model, sig_model)
         audio = text_to_speech(package, script, session)
         sesh = str(session).replace("/", "__")
-        speaker = session[0]
-        name = f"i={i},spec={spec_path.stem},sig={sig_path.stem},spk={speaker.label},"
+        speaker = session.spkr
+        name = f"i={i},spec={spec_path.stem},sig={sig_path.stem},spkr={speaker.label},"
         name += f"sesh={sesh},script={id(script)}.wav"
         audio_web_path = audio_to_web_path(audio, name=name)
         row = {
@@ -110,7 +110,7 @@ def main():
             "Spectrogam Model": path_label(spec_path),
             "Signal Model": path_label(sig_path),
             "Speaker": speaker.label,
-            "Session": session[1],
+            "Session": session.label,
             "Script": f"'{script[:25]}...'",
         }
         rows.append(row)

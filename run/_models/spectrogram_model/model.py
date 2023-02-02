@@ -24,9 +24,6 @@ class Mode(enum.Enum):
     INFER: typing.Final = enum.auto()
 
 
-Generator = typing.Iterator[Preds]
-
-
 class SpectrogramModel(torch.nn.Module):
     """Sequence to sequence model from tokens to a spectrogram.
 
@@ -153,7 +150,7 @@ class SpectrogramModel(torch.nn.Module):
 
     def _infer_generator(
         self, inputs: Inputs, encoded: Encoded, split_size: float, use_tqdm: bool, **kwargs
-    ) -> Generator:
+    ) -> typing.Generator[Preds, None, None]:
         """Generate frames from the decoder until a stop is predicted or `max_lengths` is reached.
 
         TODO: Should we consider masking `alignments`, `stop_token`, also?
@@ -176,6 +173,7 @@ class SpectrogramModel(torch.nn.Module):
         frames, stop_tokens, alignments = [], [], []
         lengths = torch.zeros(batch_size, dtype=torch.long, device=device)
         stopped = torch.zeros(batch_size, dtype=torch.bool, device=device)
+        prev_lengths = torch.zeros(batch_size, dtype=torch.long, device=device)
         max_tokens = num_tokens.max().cpu().item() if use_tqdm else None
         progress_bar = tqdm(leave=True, unit="char(s)", total=max_tokens) if use_tqdm else None
         keep_going = lambda: (
@@ -202,17 +200,19 @@ class SpectrogramModel(torch.nn.Module):
             alignments.append(alignment.squeeze(0))
 
             if len(frames) > split_size or not keep_going():
+                num_frames = lengths - prev_lengths
                 yield Preds(
                     frames=torch.stack(frames, dim=0),
                     stop_tokens=torch.stack(stop_tokens, dim=0),
                     alignments=torch.stack(alignments, dim=0),
-                    num_frames=lengths,
-                    frames_mask=lengths_to_mask(lengths),
+                    num_frames=num_frames,
+                    frames_mask=lengths_to_mask(num_frames),
                     num_tokens=encoded.num_tokens,
                     tokens_mask=encoded.tokens_mask,
                     reached_max=reached_max,
                 )
                 frames, stop_tokens, alignments = [], [], []
+                prev_lengths = lengths.clone()
 
             if use_tqdm:
                 assert progress_bar is not None
@@ -265,7 +265,7 @@ class SpectrogramModel(torch.nn.Module):
         split_size: float = 64,
         use_tqdm: bool = False,
         token_skip_warning: float = math.inf,
-    ) -> Generator:
+    ) -> typing.Generator[Preds, None, None]:
         """Generate frames from the decoder until a stop is predicted or `max_lengths` is reached.
 
         Args:
@@ -332,7 +332,7 @@ class SpectrogramModel(torch.nn.Module):
         use_tqdm: bool = False,
         token_skip_warning: float = math.inf,
         mode: typing.Literal[Mode.GENERATE] = Mode.GENERATE,
-    ) -> Generator:
+    ) -> typing.Generator[Preds, None, None]:
         ...  # pragma: no cover
 
     def __call__(self, *args, mode: Mode = Mode.FORWARD, **kwargs):

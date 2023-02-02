@@ -170,6 +170,11 @@ class Alignment(typing.NamedTuple):
     def stow(alignments: typing.Sequence[Alignment]) -> Tuple[Alignment]:
         return lib.utils.stow(alignments, dtype=alignment_dtype)
 
+    @staticmethod
+    def _get(alignments: typing.Sequence[Alignment], field: str) -> typing.List[float]:
+        """Get the values for `field` in `self.alignments`."""
+        return [typing.cast(float, v) for a in alignments for v in getattr(a, field)]
+
 
 class Language(Enum):
     ENGLISH: typing.Final = "English"
@@ -262,7 +267,11 @@ class Speaker:
 
 
 # TODO: Implement `__str__` so that we have a more succinct string representation for logging
-Session = typing.NewType("Session", typing.Tuple[Speaker, str])
+
+
+class Session(typing.NamedTuple):
+    spkr: Speaker
+    label: str
 
 
 class IsLinked(typing.NamedTuple):
@@ -296,7 +305,7 @@ class UnprocessedPassage:
 
     @property
     def speaker(self):
-        return self.session[0]
+        return self.session.spkr
 
 
 @dataclasses.dataclass(frozen=True)
@@ -316,6 +325,10 @@ class Passage:
     NOTE: This data structure has a number of invariants. Please review `check_invariants` to
     learn more about invariants that are being enforced.
 
+    NOTE: The `script`, `transcript`, and `audio_file` may contain additional data, if there
+    are additional `is_linked` `Passages`. These may be sliced with something like `alignments`
+    in order to get `Passage` specific data.
+
     TODO: The `Passage` object is difficult to test. It takes awhile to initialize. It's not
     consistent (i.e. some fields include data about the entire audio file). There is some data
     processing functions in `_data.py` that might be helpful to include in `Passage`, what data
@@ -329,8 +342,8 @@ class Passage:
     Args:
         audio_file: A voice-over of the `script`.
         session: A label used to group passages recorded together.
-        script: The `script` the `speaker` was reading from.
-        transcript: The `transcript` of the `audio_file`.
+        script: The `script` the `speaker` was reading from, this may include other voice-overs.
+        transcript: The `transcript` of the `audio_file`, this may include other voice-overs.
         alignments: Alignments (sorted) that align the `script`, `transcript` and `audio`.
         other_metadata: Additional metadata associated with this passage.
         is_linked: A flag indicating if this `Passage` is a continuation of the previous and
@@ -402,7 +415,7 @@ class Passage:
 
     @property
     def speaker(self):
-        return self.session[0]
+        return self.session.spkr
 
     @property
     def doc(self) -> spacy.tokens.doc.Doc:
@@ -513,15 +526,6 @@ class Passage:
         else:
             raise TypeError("Invalid argument type: {}".format(type(key)))
 
-    @staticmethod
-    def _get(alignments: Tuple[Alignment], field: str) -> typing.List[float]:
-        """Get the values for `field` in `self.alignments`."""
-        return [typing.cast(float, v) for a in alignments for v in getattr(a, field)]
-
-    @staticmethod
-    def _no_white_space(s: str) -> bool:
-        return s.strip() == s
-
     def check_invariants(self):
         """Check datastructure invariants."""
         assert hasattr(self, "nonalignments")
@@ -551,11 +555,13 @@ class Passage:
 
         # NOTE: `self.alignments` must not have extra whitespaces on it's edges.
         slices = (self.script[a.script_slice] for a in self.alignments)
-        assert all(self._no_white_space(s) for s in slices)
+        assert all(lib.text.is_stripped(s) for s in slices)
         slices = (self.transcript[a.transcript_slice] for a in self.alignments)
-        assert all(self._no_white_space(s) for s in slices)
+        assert all(lib.text.is_stripped(s) for s in slices)
 
-        # NOTE: `self.speech_segments` must be sorted.
+        # NOTE: `self.speech_segments` must be sorted, and do not overlap. Specifically,
+        # `speech_segments` are defined by `Alignment`s, and two speech segments may not share
+        # an `Alignment`.
         pairs = zip(self.speech_segments, self.speech_segments[1:])
         assert all(a.slice.stop <= b.slice.start for a, b in pairs)
 
@@ -573,12 +579,12 @@ class Passage:
             if len(alignments) != 0:
                 dtype = alignment_dtype["audio"]["stop"].type
                 max_length = max(dtype(self.audio_file.length), self.audio_file.length)
-                assert max(self._get(alignments, "audio")) <= max_length
-                assert max(self._get(alignments, "script")) <= len(self.script)
-                assert max(self._get(alignments, "transcript")) <= len(self.transcript)
-                assert min(self._get(alignments, "audio")) >= 0
-                assert min(self._get(alignments, "script")) >= 0
-                assert min(self._get(alignments, "transcript")) >= 0
+                assert max(Alignment._get(alignments, "audio")) <= max_length
+                assert max(Alignment._get(alignments, "script")) <= len(self.script)
+                assert max(Alignment._get(alignments, "transcript")) <= len(self.transcript)
+                assert min(Alignment._get(alignments, "audio")) >= 0
+                assert min(Alignment._get(alignments, "script")) >= 0
+                assert min(Alignment._get(alignments, "transcript")) >= 0
 
         return self
 
@@ -594,6 +600,7 @@ class Span:
     accessing `self.passage_alignments` due to its mediocre performance.
     TODO: Instead of storing `passage_alignments` and `slice`, consolidate into a `ListView` class,
     similar to: https://stackoverflow.com/questions/3485475/can-i-create-a-view-on-a-python-list
+    TODO: Add a key to `Span` for hashing, equality, etc.
 
     Args:
         passage: The original passage, for context.
@@ -639,7 +646,7 @@ class Span:
 
     @property
     def speaker(self) -> Speaker:
-        return self.passage.session[0]
+        return self.passage.session.spkr
 
     @property
     def session(self) -> Session:
@@ -820,13 +827,13 @@ def _filter_non_speech_segments(
     NOTE: To better understand the various cases, take a look at the unit tests for this function.
     """
     for slice_ in non_speech_segments:
-        indicies = list(alignments_timeline.indicies(slice_))
+        indices = list(alignments_timeline.indices(slice_))
 
-        if len(indicies) >= 3:
+        if len(indices) >= 3:
             continue
 
         # NOTE: Check if any interval is inside any other interval.
-        intervals = [alignments[i] for i in indicies]
+        intervals = [alignments[i] for i in indices]
         permutations = itertools.permutations(intervals + [(slice_.start, slice_.stop)], 2)
         if any(
             (a[0] < b[0] and b[1] < a[1]) or (a[0] == b[0] and b[1] == a[1])
@@ -839,7 +846,7 @@ def _filter_non_speech_segments(
             continue
 
         message = "Alignments should be back-to-back."
-        assert len(indicies) != 2 or abs(indicies[0] - indicies[1]) == 1, message
+        assert len(indices) != 2 or abs(indices[0] - indices[1]) == 1, message
 
         yield slice_
 
@@ -878,7 +885,7 @@ def _make_speech_segments_helper(
     speech_segments: typing.List[typing.Tuple[slice, slice]] = []
     pairs = [i for i in zip(nss, nss[1:]) if i[0].stop <= i[1].start]  # NOTE: Pauses may overlap.
     for a, b in pairs:
-        idx = list(alignments_timeline.indicies(slice(a.stop, b.start)))
+        idx = list(alignments_timeline.indices(slice(a.stop, b.start)))
         if (
             len(idx) != 0
             # NOTE: The pauses must contain all the alignments fully, not just partially.

@@ -12,6 +12,7 @@ import torch
 
 import lib
 import run
+from run import _config
 from run._utils import get_datasets
 from run.train.spectrogram_model._worker import _get_data_generator, _get_data_processors
 
@@ -22,7 +23,7 @@ logger = logging.getLogger(__name__)
 def main():
     run._config.configure(overwrite=True)
     train_dataset, dev_dataset = get_datasets(False)
-    cf.add(run._config.make_spectrogram_model_train_config(train_dataset, dev_dataset, False))
+    _config.config_spec_model_training_from_datasets(train_dataset, dev_dataset, False)
     train_gen, dev_gen = cf.partial(_get_data_generator)(train_dataset, dev_dataset)
     train_process, _ = cf.partial(_get_data_processors)(train_gen, dev_gen, 0)
     batch_idx = 0

@@ -16,7 +16,7 @@ GCP_SPEAKER = struc.Speaker(
     "Google Cloud Speaker",
     "gcp_speaker",
 )
-SESSION = struc.Session((GCP_SPEAKER, ""))
+SESSION = struc.Session(GCP_SPEAKER, "")
 
 
 def dictionary_dataset(
@@ -50,7 +50,7 @@ def dictionary_dataset(
         _maybe_extract(directory / file_name, directory)
     passages = conventional_dataset_loader(
         directory,
-        session[0],
+        session.spkr,
         **kwargs,
         metadata_text_column=metadata_text_column,
         get_session=lambda *_, **__: session,

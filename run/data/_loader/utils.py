@@ -242,11 +242,11 @@ class SpanGenerator(typing.Iterator[struc.Span]):
         start = max(start, passage.audio_start)
 
         # NOTE: Based on the overlap, decide which alignments to include in the span.
-        indicies = list(timeline.indicies(slice(start, stop)))
+        indices = list(timeline.indices(slice(start, stop)))
         self._is_include.cache_clear()
         _filter = lambda i: self._is_include(timeline.start(i), timeline.stop(i), start, stop)
-        begin = next((i for i in iter(indicies) if _filter(i)), None)
-        end = next((i for i in reversed(indicies) if _filter(i)), None)
+        begin = next((i for i in iter(indices) if _filter(i)), None)
+        end = next((i for i in reversed(indices) if _filter(i)), None)
         if begin is None or end is None:
             return
 
@@ -317,18 +317,19 @@ def _temporary_fix_for_transcript_offset(
         if word.strip() != word:
             update = (alignment.transcript[0] - 1, alignment.transcript[1] - 1)
             alignment = alignment._replace(transcript=update)
-            logger.warning("Corrected '%s' to '%s'.", word, transcript[alignment.transcript_slice])
+            logger.warning(f"Corrected '{word}' to '{transcript[alignment.transcript_slice]}'.")
         return_.append(alignment)
     return tuple(return_)
 
 
 DataLoader = typing.Callable[[Path], struc.UnprocessedDataset]
 DataLoaders = typing.Dict[struc.Speaker, DataLoader]
+GetSession = typing.Callable[[struc.Speaker, Path], struc.Session]
 
 
 def _default_session(speaker: struc.Speaker, audio_path: Path) -> struc.Session:
     """By default, this assumes that each audio file was recorded, individually."""
-    return struc.Session((speaker, audio_path.stem))
+    return struc.Session(speaker, audio_path.stem)
 
 
 def dataset_loader(
@@ -344,7 +345,7 @@ def dataset_loader(
     scripts_suffix: str = ".csv",
     text_column: str = "Content",
     strict: bool = False,
-    get_session: typing.Callable[[struc.Speaker, Path], struc.Session] = _default_session,
+    get_session: GetSession = _default_session,
 ) -> struc.UnprocessedDataset:
     """Load an alignment text-to-speech (TTS) dataset from GCS.
 
@@ -443,7 +444,7 @@ def conventional_dataset_loader(
     metadata_kwargs={"quoting": csv.QUOTE_NONE, "header": None, "delimiter": "|"},
     audio_path_template: str = "{directory}/wavs/{file_name}.wav",
     additional_metadata: typing.Dict = {},
-    get_session: typing.Callable[[struc.Speaker, Path], struc.Session] = _default_session,
+    get_session: GetSession = _default_session,
 ) -> struc.UnprocessedDocument:
     """Load a conventional speech dataset.
 

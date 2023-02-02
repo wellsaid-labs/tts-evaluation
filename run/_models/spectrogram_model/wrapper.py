@@ -14,7 +14,7 @@ from run._models.spectrogram_model.inputs import (
     Pronun,
     preprocess,
 )
-from run._models.spectrogram_model.model import Generator, Mode, SpectrogramModel
+from run._models.spectrogram_model.model import Mode, SpectrogramModel
 from run.data._loader import structures as struc
 
 InputsTyping = typing.Union[InputsWrapper, Inputs]
@@ -106,7 +106,7 @@ class SpectrogramModelWrapper(SpectrogramModel):
         use_tqdm: bool = False,
         token_skip_warning: float = math.inf,
         mode: typing.Literal[Mode.GENERATE] = Mode.GENERATE,
-    ) -> Generator:
+    ) -> typing.Generator[Preds, None, None]:
         ...  # pragma: no cover
 
     def __call__(
@@ -115,7 +115,7 @@ class SpectrogramModelWrapper(SpectrogramModel):
         *args,
         mode: typing.Literal[Mode.FORWARD] = Mode.FORWARD,
         **kwargs,
-    ) -> typing.Union[Generator, Preds]:
+    ) -> typing.Union[typing.Generator[Preds, None, None], Preds]:
         if isinstance(inputs, InputsWrapper):
             inputs = cf.partial(preprocess)(inputs, device=self.encoder.embed_token.weight.device)
 

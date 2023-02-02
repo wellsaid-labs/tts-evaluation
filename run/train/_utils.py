@@ -310,7 +310,7 @@ class CometMLExperiment:
         lines.extend([f"<p><b>{k}:</b> {v}</p>" for k, v in items])
         for key, data in audio.items():
             name = self._format_key(key)
-            file_name = f"step={self.curr_step},speaker={session[0].label},"
+            file_name = f"step={self.curr_step},speaker={session.spkr.label},"
             file_name += f"name={name},experiment={self.get_key()}.wav"
             url = self._upload_audio(file_name, data)
             lines.append(f"<p><b>{name}:</b></p>")
@@ -743,7 +743,8 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
         NOTE: `torch.utils.data.dataloader.DataLoader` doesn't pin tensors if CUDA isn't
         available.
         """
-        message = "Expecting `tensor` memory to be pinned before moving."
+        message = f"Expecting `tensor` ({tensor.shape}, {tensor.dtype}) memory to be "
+        message += "pinned before moving."
         assert not torch.cuda.is_available() or tensor.is_pinned(), message
         return tensor.to(device=self.device, non_blocking=True)
 

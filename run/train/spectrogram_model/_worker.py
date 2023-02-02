@@ -544,7 +544,7 @@ def _log_vocab(state: _State, dataset_type: DatasetType):
 
     sessions: typing.Dict[Speaker, typing.List[str]] = collections.defaultdict(list)
     for session in session_vocab:
-        sessions[session[0]].append(session[1])
+        sessions[session.spkr].append(session.label)
 
     for speaker, session_label in sessions.items():
         parameters = {

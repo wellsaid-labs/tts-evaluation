@@ -25,7 +25,7 @@ def checkout(context: typer.Context, experiment: str, overwrite: bool = False):
     typer.secho(f"Checking out experiment {experiment_.get_name()}...", fg=typer.colors.MAGENTA)
     subprocess.run(f"git checkout {git['branch']}", shell=True, check=True)
     subprocess.run(f"git checkout {git['parent']}", shell=True, check=True)
-    patch.__wrapped__(context, experiment, overwrite=overwrite)  # type: ignore
+    patch(context, experiment, overwrite=overwrite)  # type: ignore
 
 
 @app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})

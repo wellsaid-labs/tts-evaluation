@@ -610,7 +610,7 @@ def test_timeline():
     assert timeline._intervals[0].data.contiguous and timeline._intervals[0].dtype == numpy.float64
     assert timeline._intervals[1].data.contiguous and timeline._intervals[1].dtype == numpy.float64
     assert timeline[0.5].tolist() == [[0, 1], [0.5, 1]]
-    assert [intervals[i] for i in timeline.indicies(0.5)] == [(0, 1), (0.5, 1)]
+    assert [intervals[i] for i in timeline.indices(0.5)] == [(0, 1), (0.5, 1)]
     assert timeline.intervals(0.5) == [(0, 1), (0.5, 1)]
     assert timeline[0.5:1.5].tolist() == [[0, 1], [0.5, 1], [1, 2]]
     assert timeline[6:10].tolist() == []
@@ -625,7 +625,7 @@ def test_timeline__zero():
         timeline.start(0)
         timeline.stop(0)
     assert timeline[0.5].tolist() == []
-    assert list(timeline.indicies(0.5)) == []
+    assert list(timeline.indices(0.5)) == []
     assert timeline.intervals(0.5) == []
     assert timeline[0.5:1.5].tolist() == []
     assert timeline.num_intervals() == 0
@@ -705,3 +705,12 @@ def test_arange():
     assert result == [round(i / 10, 1) for i in range(0, 10, 1)]
     result = [round(i, 1) for i in lib.utils.arange(0, -1, -0.1)]
     assert result == [round(i / 10, 1) for i in range(0, -10, -1)]
+
+
+def test_zip_strict():
+    """Test `lib.utils.zip_strict` is similar to `zip`."""
+    assert list(lib.utils.zip_strict((1, 2, 3), (1, 2, 3))) == [(1, 1), (2, 2), (3, 3)]
+    with pytest.raises(AssertionError):
+        assert list(lib.utils.zip_strict((1, 2, 3), (1, 2))) == [(1, 1), (2, 2), (3, 3)]
+    with pytest.raises(AssertionError):
+        assert list(lib.utils.zip_strict((1, 2), (1, 2, 3))) == [(1, 1), (2, 2), (3, 3)]

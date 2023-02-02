@@ -4,7 +4,7 @@ from unittest import mock
 import config as cf
 import pytest
 
-from run._config import Cadence, DatasetType, make_spectrogram_model_train_config
+from run._config import Cadence, DatasetType, config_spec_model_training_from_datasets
 from run._models.spectrogram_model import SpectrogramModel
 from run.data._loader.english.m_ailabs import JUDY_BIEBER
 from run.train._utils import Context, Timer, set_context
@@ -29,7 +29,7 @@ def run_around_tests():
 
 def test_integration():
     train_dataset, dev_dataset, comet, device = setup_experiment()
-    cf.add(make_spectrogram_model_train_config(train_dataset, dev_dataset, True))
+    config_spec_model_training_from_datasets(train_dataset, dev_dataset, True)
     state = make_spec_worker_state(comet, device)
 
     assert state.model.module == state.model  # Ensure the mock worked
@@ -69,7 +69,7 @@ def test_integration():
 
         # fmt: off
         keys = [
-            metrics.ALIGNMENT_NUM_SKIPS, metrics.ALIGNMENT_STD_SUM, metrics.ALIGNMENT_NORM_SUM,
+            metrics.ALIGNMENT_STD_SUM, metrics.ALIGNMENT_NORM_SUM,
             metrics.NUM_REACHED_MAX, metrics.RMS_SUM_PREDICTED, metrics.RMS_SUM
         ]
         # fmt: on

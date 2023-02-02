@@ -1,4 +1,4 @@
-""" A workbook to generate a batch of predictions.
+""" A workbook to generate a batch of predictions for MOS scoring.
 
 TODO: In addition to measuring the current metrics, add support for running speech-to-text on the
       generated audio. This should help uncover egregious errors like gibbirsh, word skipping, etc.
@@ -21,7 +21,7 @@ TODO: In addition to measuring the current metrics, add support for running spee
       gibbirsh by comparing the speech-to-text output with the original output.
 
 Usage:
-    $ PYTHONPATH=. streamlit run run/review/tts/dataset_examples.py --runner.magicEnabled=false
+    $ PYTHONPATH=. streamlit run run/review/tts/mos_clips.py --runner.magicEnabled=false
 """
 import pathlib
 import random
@@ -39,9 +39,9 @@ import lib
 import run
 from run._streamlit import (
     audio_to_web_path,
+    figure_to_url,
     get_dev_dataset,
     load_tts,
-    make_temp_web_dir,
     st_download_files,
     web_path_to_url,
 )
@@ -50,9 +50,7 @@ from run.data._loader import DICTIONARY_DATASETS, Span
 from run.train.spectrogram_model._metrics import (
     get_alignment_norm,
     get_alignment_std,
-    get_max_pause,
     get_num_pause_frames,
-    get_num_skipped,
 )
 
 st.set_page_config(layout="wide")
@@ -74,7 +72,7 @@ def make_result(span: Span, audio: typing.Optional[np.ndarray] = None) -> typing
 
 def main():
     st.markdown("# Batch Generation ")
-    st.markdown("Use this workbook to generate a batch of clips and export them.")
+    st.markdown("Use this workbook to generate a batch of clips and export them for MOS.")
     run._config.configure(overwrite=True)
 
     form: DeltaGenerator = st.form("form")
@@ -106,20 +104,16 @@ def main():
             in_outs = batch_span_to_speech(package, spans)
 
         for span, (_, pred, audio) in tqdm(zip(spans, in_outs), total=len(spans)):
-            image_web_path = make_temp_web_dir() / "alignments.png"
-            lib.visualize.plot_alignments(pred.alignments[:, 0]).savefig(str(image_web_path))
+            figure_url = figure_to_url(lib.visualize.plot_alignments(pred.alignments[:, 0]))
             num_frames = pred.frames.shape[0]
             num_pause_frames = cf.partial(get_num_pause_frames)(pred.frames, None)
-            max_pause_frames = cf.partial(get_max_pause)(pred.frames, None)
             result = {
                 "Checkpoints": checkpoints_,
                 "Frames Per Token": num_frames / pred.num_tokens[0].item(),
                 "Num Pause Frames": num_pause_frames[0],
-                "Max Pause Frames": max_pause_frames[0],
                 "Alignment Norm": (get_alignment_norm(pred)[0] / num_frames).item(),
                 "Alignment STD": (get_alignment_std(pred)[0] / num_frames).item(),
-                "Alignment Skips": get_num_skipped(pred)[0].item(),
-                "Alignment": f'<img src="{web_path_to_url(image_web_path)}" />',
+                "Alignment": f'<img src="{figure_url}" />',
                 **make_result(span, audio[0]),
             }
             results.append(result)

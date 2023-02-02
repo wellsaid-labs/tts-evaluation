@@ -100,6 +100,7 @@ def configure(overwrite: bool = False):
             max_styles=max_styles,
             max_languages=max_languages,
             num_frame_channels=_config.audio.NUM_FRAME_CHANNELS,
+            # NOTE: 396 is the size of the spaCy embeddings that are added to the model.
             max_token_embed_size=396 + max_anno_features,
             max_anno_features=max_anno_features,
             # SOURCE (Transfer Learning from Speaker Verification to Multispeaker Text-To-Speech

@@ -144,8 +144,8 @@ def _assemble(
     result = {
         "script": span.script,
         "clip": audio_to_url(clip),
-        "speaker": repr(span.session[0]),
-        "session": span.session[1],
+        "speaker": repr(span.session.spkr),
+        "session": span.session.label,
         "transcript": span.transcript,
         "audio_len": round(span.audio_length, 1),
         f"{FEATS_PREFIX}_expected_audio_len": expected_audio_len,
@@ -326,7 +326,7 @@ def _find_max_audio_len_weight_and_bias(data: typing.List[typing.Dict], slowest_
     ]
     df = pandas.DataFrame(rows).sort_values(by=["offset"], ascending=False)
     st.markdown(f"This chart determines the maximum offset from a pace of {slowest_pace}.")
-    st_ag_grid(df, audio_column_name="clip")
+    st_ag_grid(df, audio_cols=["clip"])
     offset = data[0]["audio_len"] - (data[0][expected] * slowest_pace)
     st.markdown(
         f"The maximum audio length is `average_audio_len * {slowest_pace} + {offset}`.\n"
@@ -511,7 +511,7 @@ def main():
     features = [k for k in data[0].keys() if k.startswith(FEATS_PREFIX)]
     _summarize(spans, df)
     st.header("Data")
-    st_ag_grid(df, audio_column_name="clip")
+    st_ag_grid(df, audio_cols=["clip"])
     _find_max_audio_len_weight_and_bias(data, slowest_pace=slowest_pace)
     _speaker_distribution(data)
     _distributions(data, ["audio_len"] + features, [0.1] + [1.0] * len(features))
