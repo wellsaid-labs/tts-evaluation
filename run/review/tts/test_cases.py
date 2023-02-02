@@ -5,7 +5,7 @@ TODO: Create a script that downloads multiple checkpoints at various points, gen
       to generating something like this.
 TODO: Instead of using random speakers and sessions, let's consider using the choosen session
       and speakers in `deploy.sh`. Those will be deployed, anyways.
-TODO: Implement `griffin_lim_text_to_speech` to support batch generation, speeding up this script.
+TODO: Implement `batch_griffin_lim_tts` to support batch generation, speeding up this script.
 
 Usage:
     $ PYTHONPATH=. streamlit run run/review/tts/test_cases.py --runner.magicEnabled=false
@@ -33,7 +33,7 @@ from run._streamlit import (
     st_select_path,
     web_path_to_url,
 )
-from run._tts import griffin_lim_text_to_speech
+from run._tts import griffin_lim_tts
 from run.data._loader import Speaker
 from run.data._loader.english.wsl import DIARMID_C
 
@@ -198,7 +198,7 @@ def generate_test_cases(spec_export: SpectrogramModel, test_cases: typing.List[s
     for case in test_cases:
         sesh = random.choice(vocab)
         st.info(f"Seshion: {sesh}")
-        yield griffin_lim_text_to_speech(spec_export, XMLType(case), sesh)
+        yield griffin_lim_tts(spec_export, XMLType(case), sesh)
 
 
 Generator = typing.Callable[[SpectrogramModel], typing.Generator[np.ndarray, None, None]]
@@ -215,12 +215,13 @@ def generate_incremental_annotations(
     ),
 ):
     for speaker in speakers:
-        sesh = random.choice([s for s in spec_export.session_embed.get_vocab() if s[0] == speaker])
+        sesh_vocab = spec_export.session_embed.get_vocab()
+        sesh = random.choice([s for s in sesh_vocab if s.spkr == speaker])
         st.info(f"Seshion: {sesh}")
         for tag, range in annos:
             for val in range:
                 xml = XMLType(f"<{tag} value='{val}'>{DEFAULT_SCRIPT}</{tag}>")
-                wave = griffin_lim_text_to_speech(spec_export, xml, sesh)
+                wave = griffin_lim_tts(spec_export, xml, sesh)
                 audio_len = cf.partial(lib.audio.sample_to_sec)(wave.shape[0])
                 tempo = cf.partial(_get_tempo_annotation)(DEFAULT_SCRIPT, audio_len)
                 loudness = cf.partial(_get_loudness_annotation)(wave)
