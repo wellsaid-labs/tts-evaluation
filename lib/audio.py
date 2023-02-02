@@ -124,6 +124,11 @@ class AudioMetadata(AudioFormat):
         return sample_to_sec(self.num_samples, self.sample_rate)
 
     @property
+    def len(self):
+        # TODO: Deprecate `length` eventually, it's too verbose and not pythonic.
+        return self.length
+
+    @property
     def format(self):
         return AudioFormat(
             sample_rate=self.sample_rate,

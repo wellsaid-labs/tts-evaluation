@@ -966,3 +966,8 @@ def align_tokens(
         typing.cast(int, row_one[-1]),
         row_one_paths[-1][0],
     )
+
+
+def is_stripped(s: str) -> bool:
+    """Check if text is stripped."""
+    return s.strip() == s

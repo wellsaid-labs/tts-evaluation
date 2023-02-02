@@ -744,3 +744,9 @@ def test_align_tokens__word_deletion():
         "Hey   There",
         "Hey , There",
     )
+
+
+def test_is_stripped():
+    """Test `lib.text.utils.is_stripped` on basic case."""
+    assert not lib.text.is_stripped("  hi ")
+    assert lib.text.is_stripped("hi")
