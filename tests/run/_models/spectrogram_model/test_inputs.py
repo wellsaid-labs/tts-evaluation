@@ -51,7 +51,7 @@ def test_inputs_wrapper():
         context=[span],
         loudness=[[]],
         tempo=[[]],
-        respellings=[{}],
+        respells=[{}],
     )
     assert len(input_) == 1
     assert input_.get(0) == input_
@@ -70,7 +70,7 @@ def test_inputs_wrapper__from_xml():
         context=[span],
         loudness=[[]],
         tempo=[[]],
-        respellings=[{}],
+        respells=[{}],
     )
     assert result == expected
 
@@ -126,7 +126,7 @@ def test_inputs_wrapper__from_xml_batch():
         context=[doc],
         loudness=[[]],
         tempo=[[]],
-        respellings=[{}],
+        respells=[{}],
     )
     assert result.get(0) == expected
     assert result.get(1) == expected
@@ -150,7 +150,7 @@ def test_inputs_wrapper__from_xml__annotated():
         context=[doc],
         loudness=[[(slice(0, len("Over the river and through the woods.")), -20)]],
         tempo=[[(tempo, 0.04)]],
-        respellings=[{doc[-2]: "wuuds"}],
+        respells=[{doc[-2]: "wuuds"}],
     )
     assert result == expected
     assert expected.to_xml(0) == f"<{_Schema.SPEAK} {_Schema._VALUE}='-1'>{xml}</{_Schema.SPEAK}>"
@@ -172,7 +172,7 @@ def test_inputs_wrapper__from_xml__escaped_chars():
         context=[doc],
         loudness=[[(slice(0, len("Over the <<river>> and through the woods.")), -20)]],
         tempo=[[]],
-        respellings=[{}],
+        respells=[{}],
     )
     assert result == expected
     assert expected.to_xml(0) == f"<{_Schema.SPEAK} {_Schema._VALUE}='-1'>{xml}</{_Schema.SPEAK}>"
@@ -293,7 +293,7 @@ def test_inputs_wrapper__to_xml__context():
         context=[doc],
         loudness=[[(slice(0, len(xml)), -20)]],
         tempo=[[]],
-        respellings=[{}],
+        respells=[{}],
     )
     expected = f"this <{_Schema.SPEAK} {_Schema._VALUE}='-1'>{xml}</{_Schema.SPEAK}> test"
     assert input_.to_xml(0, include_context=True) == expected

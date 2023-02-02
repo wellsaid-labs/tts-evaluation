@@ -51,7 +51,7 @@ class Context(enum.Enum):
 
 @dataclasses.dataclass(frozen=True)
 class Inputs:
-    """The model inputs.
+    """Preprocessed inputs for the model.
 
     TODO: Use `tuple`s so these values cannot be reassigned.
     """
@@ -218,7 +218,7 @@ class InputsWrapper:
 
     tempo: typing.List[SliceAnnos]
 
-    respellings: typing.List[TokenAnnos]
+    respells: typing.List[TokenAnnos]
 
     def __post_init__(self):
         cf.partial(self.check_invariants)()
@@ -280,7 +280,7 @@ class InputsWrapper:
                     char_span = doc.char_span(indices[0], indices[1], alignment_mode="expand")
                     is_valid_span = char_span is not None and len(char_span.text) <= annotation_len
                     if not is_valid_span and not is_pause:
-                        raise PublicValueError("The annotations must wrap words fully")
+                        raise PublicValueError("The annotations must wrap words fully.")
                     if prev is not None:
                         assert prev[0].stop <= annotation[0].start, f"{prev}, {annotation}"
 
@@ -300,7 +300,7 @@ class InputsWrapper:
                         raise PublicValueError(message + str(max_seen))
 
         # NOTE: Check that respellings are correctly formatted and wrap words entirely.
-        for span_, token_annotations in zip(self.span, self.respellings):
+        for span_, token_annotations in zip(self.span, self.respells):
             for token, annotation in token_annotations.items():
                 if token is None:
                     raise PublicValueError("Respelling must wrap a word.")
@@ -355,9 +355,9 @@ class InputsWrapper:
         context = self.context[i]
         open_ = lambda tag, value: f"<{tag} {_Schema._VALUE}='{value}'>"
         close = lambda tag: f"</{tag}>"
-        respellings = self.respellings[i].items()
-        annotations = [(open_(_Schema.RESPELL, a), _idx(span, t)) for t, a in respellings]
-        annotations += [(close(_Schema.RESPELL), _idx(span, t) + len(t)) for t, _ in respellings]
+        respells = self.respells[i].items()
+        annotations = [(open_(_Schema.RESPELL, a), _idx(span, t)) for t, a in respells]
+        annotations += [(close(_Schema.RESPELL), _idx(span, t) + len(t)) for t, _ in respells]
         annotations += [(open_(_Schema.LOUDNESS, a), s.start) for s, a in self.loudness[i]]
         annotations += [(close(_Schema.LOUDNESS), s.stop) for s, _ in self.loudness[i]]
         annotations += [(open_(_Schema.TEMPO, a), s.start) for s, a in self.tempo[i]]
@@ -440,12 +440,12 @@ class InputsWrapper:
         assert text == span.text, "The `Span` must have the same text as the XML."
         assert session is not None
 
-        respellings = {}
+        respells = {}
         for slice_, value in annotations[_Schema.RESPELL]:
             token = span.char_span(*tuple(slice_))
             if token is None or len(token) != 1:
                 raise PublicValueError("Respelling must wrap a single word.")
-            respellings[token[0]] = value
+            respells[token[0]] = value
 
         slice_annos: typing.Dict[_Schema, SliceAnnos] = {}
         for tag in [_Schema.LOUDNESS, _Schema.TEMPO]:
@@ -463,7 +463,7 @@ class InputsWrapper:
             context=[span if context is None else context],
             loudness=[slice_annos[_Schema.LOUDNESS]],
             tempo=[slice_annos[_Schema.TEMPO]],
-            respellings=[respellings],
+            respells=[respells],
         )
 
     @classmethod
@@ -586,7 +586,7 @@ def preprocess(
     """
     num_anno = 6
     inputs = Inputs([], [], [[], []], [], [], [], num_anno, device)
-    iter_ = zip(wrap.session, wrap.span, wrap.context, wrap.loudness, wrap.tempo, wrap.respellings)
+    iter_ = zip(wrap.session, wrap.span, wrap.context, wrap.loudness, wrap.tempo, wrap.respells)
     Item = typing.Tuple[struc.Session, SpanDoc, SpanDoc, SliceAnnos, SliceAnnos, TokenAnnos]
     iter_ = typing.cast(typing.Iterator[Item], iter_)
     for sesh, span, context, loudness, tempo, respells in iter_:
