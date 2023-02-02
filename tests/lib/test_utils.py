@@ -567,6 +567,18 @@ def test_lengths_to_mask():
     assert torch.equal(lengths_to_mask(torch.tensor([[]])), torch.empty(0, 0, dtype=torch.bool))
 
 
+def test_arange():
+    """Test `lib.utils.arange` is similar to `range`."""
+    assert list(range(0, 10, 1)) == list(lib.utils.arange(0, 10, 1))
+    assert list(range(0, -10, -1)) == list(lib.utils.arange(0, -10, -1))
+    assert list(range(0, -10, 1)) == list(lib.utils.arange(0, -10, 1))
+    assert list(range(0, 10, -1)) == list(lib.utils.arange(0, 10, -1))
+    result = [round(i, 1) for i in lib.utils.arange(0, 1, 0.1)]
+    assert result == [round(i / 10, 1) for i in range(0, 10, 1)]
+    result = [round(i, 1) for i in lib.utils.arange(0, -1, -0.1)]
+    assert result == [round(i / 10, 1) for i in range(0, -10, -1)]
+
+
 def test_zip_strict():
     """Test `lib.utils.zip_strict` is similar to `zip`."""
     assert list(lib.utils.zip_strict((1, 2, 3), (1, 2, 3))) == [(1, 1), (2, 2), (3, 3)]
