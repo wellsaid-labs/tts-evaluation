@@ -24,9 +24,6 @@ class Mode(enum.Enum):
     INFER: typing.Final = enum.auto()
 
 
-Generator = typing.Iterator[Preds]
-
-
 class SpectrogramModel(torch.nn.Module):
     """Sequence to sequence model from tokens to a spectrogram.
 
@@ -165,7 +162,7 @@ class SpectrogramModel(torch.nn.Module):
 
     def _infer_generator(
         self, encoded: Encoded, split_size: float, use_tqdm: bool, **kwargs
-    ) -> Generator:
+    ) -> typing.Generator[Preds, None, None]:
         """Generate frames from the decoder until a stop is predicted or `max_lengths` is reached.
 
         TODO: Should we consider masking `alignments`, `stop_token`, also?
@@ -280,7 +277,7 @@ class SpectrogramModel(torch.nn.Module):
         split_size: float = 64,
         use_tqdm: bool = False,
         token_skip_warning: float = math.inf,
-    ) -> Generator:
+    ) -> typing.Generator[Preds, None, None]:
         """Generate frames from the decoder until a stop is predicted or `max_lengths` is reached.
 
         Args:
@@ -346,7 +343,7 @@ class SpectrogramModel(torch.nn.Module):
         use_tqdm: bool = False,
         token_skip_warning: float = math.inf,
         mode: typing.Literal[Mode.GENERATE] = Mode.GENERATE,
-    ) -> Generator:
+    ) -> typing.Generator[Preds, None, None]:
         ...  # pragma: no cover
 
     def __call__(self, *args, mode: Mode = Mode.FORWARD, **kwargs):
