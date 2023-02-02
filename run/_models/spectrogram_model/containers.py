@@ -27,7 +27,7 @@ class Preds(typing.NamedTuple):
     frames_mask: torch.Tensor
 
     # The number of tokens in each sequence.
-    # torch.LongTensor [num_tokens]
+    # torch.LongTensor [batch_size]
     num_tokens: torch.Tensor
 
     # Sequence mask(s) to deliminate token padding with `False`.
