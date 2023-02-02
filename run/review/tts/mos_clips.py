@@ -51,9 +51,7 @@ from run.data._loader import DICTIONARY_DATASETS, Span
 from run.train.spectrogram_model._metrics import (
     get_alignment_norm,
     get_alignment_std,
-    get_max_pause,
     get_num_pause_frames,
-    get_num_skipped,
 )
 
 st.set_page_config(layout="wide")
@@ -110,15 +108,12 @@ def main():
             figure_url = figure_to_url(lib.visualize.plot_alignments(pred.alignments[:, 0]))
             num_frames = pred.frames.shape[0]
             num_pause_frames = cf.partial(get_num_pause_frames)(pred.frames, None)
-            max_pause_frames = cf.partial(get_max_pause)(pred.frames, None)
             result = {
                 "Checkpoints": checkpoints_,
                 "Frames Per Token": num_frames / pred.num_tokens[0].item(),
                 "Num Pause Frames": num_pause_frames[0],
-                "Max Pause Frames": max_pause_frames[0],
                 "Alignment Norm": (get_alignment_norm(pred)[0] / num_frames).item(),
                 "Alignment STD": (get_alignment_std(pred)[0] / num_frames).item(),
-                "Alignment Skips": get_num_skipped(pred)[0].item(),
                 "Alignment": f'<img src="{figure_url}" />',
                 **make_result(span, audio[0]),
             }

@@ -107,9 +107,6 @@ def _config_spec_model_training(
         spectrogram_model._metrics.Metrics._get_model_metrics: cf.Args(
             num_frame_channels=NUM_FRAME_CHANNELS
         ),
-        # NOTE: Based on the alignment visualizations, if the maximum alignment is less than 30%
-        # then a misalignment has likely occured.
-        spectrogram_model._metrics.get_num_small_max: cf.Args(threshold=0.3),
         # SOURCE (Tacotron 2):
         # We use the Adam optimizer with β1 = 0.9, β2 = 0.999, eps = 10−6 learning rate of 10−3
         # We also apply L2 regularization with weight 10−6
