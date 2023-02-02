@@ -53,15 +53,17 @@ def _make_preds(
         tokens_mask (torch.BoolTensor [batch_size, num_tokens])
         frames_mask (torch.BoolTensor [batch_size, num_frames])
     """
+    num_frames, batch_size, _ = tuple(alignments.shape)
+    num_frame_channels = 1
     return Preds(
-        frames=torch.tensor(0),
-        stop_tokens=torch.tensor(0),
+        frames=torch.zeros(num_frames, batch_size, num_frame_channels),
+        stop_tokens=torch.zeros(num_frames, batch_size),
         alignments=alignments,
         num_frames=frames_mask.sum(dim=1),
         frames_mask=frames_mask,
         num_tokens=tokens_mask.sum(dim=1),
         tokens_mask=tokens_mask,
-        reached_max=torch.tensor(0),
+        reached_max=torch.zeros(batch_size, dtype=torch.bool),
     )
 
 
@@ -95,9 +97,9 @@ def test_get_num_skipped():
 def test_get_num_skipped__zero_elements():
     """Test `_metrics.get_num_skipped` handles zero elements correctly."""
     preds = _make_preds(
-        torch.empty(1024, 0, 1024),
-        torch.empty(0, 1024, dtype=torch.bool),
-        torch.empty(0, 1024, dtype=torch.bool),
+        torch.empty(0, 0, 0),
+        torch.empty(0, 0, dtype=torch.bool),
+        torch.empty(0, 0, dtype=torch.bool),
     )
     assert _metrics.get_num_skipped(preds).shape == (0,)
 
@@ -135,9 +137,9 @@ def test_get_num_jumps():
 def test_get_num_jumps__zero_elements():
     """Test `_metrics.get_num_jumps` handles zero elements correctly."""
     preds = _make_preds(
-        torch.empty(1024, 0, 1024),
-        torch.empty(0, 1024, dtype=torch.bool),
-        torch.empty(0, 1024, dtype=torch.bool),
+        torch.empty(0, 0, 0),
+        torch.empty(0, 0, dtype=torch.bool),
+        torch.empty(0, 0, dtype=torch.bool),
     )
     assert _metrics.get_num_jumps(preds).shape == (0,)
 
