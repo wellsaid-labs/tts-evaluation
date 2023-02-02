@@ -12,7 +12,7 @@ import run
 from lib.text import XMLType, natural_keys
 from run._config import DEFAULT_SCRIPT
 from run._streamlit import audio_to_web_path, load_tts, st_download_files, st_html, web_path_to_url
-from run._tts import CHECKPOINTS_LOADERS, batch_text_to_speech
+from run._tts import CHECKPOINTS_LOADERS, batch_tts
 from run.data._loader import Session, Speaker
 
 
@@ -57,7 +57,7 @@ def main():
     with st.spinner("Generating audio..."):
         inputs = [(script, s) for s in selected_sessions]
         inputs = [i for i in inputs for _ in range(num_clips)]
-        for i, generated in enumerate(batch_text_to_speech(tts, inputs)):
+        for i, generated in enumerate(batch_tts(tts, inputs)):
             clip_num = i % num_clips + 1
             sesh = inputs[i][-1][1]
             sesh = sesh[:-4] if (sesh.endswith(".wav") or sesh.endswith(".mp3")) else sesh
