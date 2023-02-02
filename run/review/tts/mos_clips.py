@@ -1,4 +1,4 @@
-""" A workbook to generate a batch of predictions.
+""" A workbook to generate a batch of predictions for MOS scoring.
 
 TODO: In addition to measuring the current metrics, add support for running speech-to-text on the
       generated audio. This should help uncover egregious errors like gibbirsh, word skipping, etc.
@@ -21,7 +21,7 @@ TODO: In addition to measuring the current metrics, add support for running spee
       gibbirsh by comparing the speech-to-text output with the original output.
 
 Usage:
-    $ PYTHONPATH=. streamlit run run/review/tts/dataset_examples.py --runner.magicEnabled=false
+    $ PYTHONPATH=. streamlit run run/review/tts/mos_clips.py --runner.magicEnabled=false
 """
 import pathlib
 import random
@@ -75,7 +75,7 @@ def make_result(span: Span, audio: typing.Optional[np.ndarray] = None) -> typing
 
 def main():
     st.markdown("# Batch Generation ")
-    st.markdown("Use this workbook to generate a batch of clips and export them.")
+    st.markdown("Use this workbook to generate a batch of clips and export them for MOS.")
     run._config.configure(overwrite=True)
 
     form: DeltaGenerator = st.form("form")
