@@ -189,18 +189,6 @@ class PublicSpeakerValueError(ValueError):
     pass
 
 
-def process_tts_inputs(
-    package: TTSPackage,
-    nlp: spacy.language.Language,
-    script: XMLType,
-    session: Session,
-) -> typing.Tuple[Inputs, PreprocessedInputs]:
-    """Process TTS `script` and `session` for use with the model(s) in `package`."""
-    token_vocab = set(package.spec_model.token_embed.vocab.keys())
-    session_vocab = package.session_vocab()
-    return _process_tts_inputs(nlp, session_vocab, token_vocab, script, session)
-
-
 def _process_tts_inputs(
     nlp: spacy.language.Language,
     session_vocab: typing.Set[Session],
@@ -228,6 +216,18 @@ def _process_tts_inputs(
         raise PublicSpeakerValueError("Speaker is not available.")
 
     return inputs, preprocessed
+
+
+def process_tts_inputs(
+    package: TTSPackage,
+    nlp: spacy.language.Language,
+    script: XMLType,
+    session: Session,
+) -> typing.Tuple[Inputs, PreprocessedInputs]:
+    """Process TTS `script` and `session` for use with the model(s) in `package`."""
+    token_vocab = set(package.spec_model.token_embed.vocab.keys())
+    session_vocab = package.session_vocab()
+    return _process_tts_inputs(nlp, session_vocab, token_vocab, script, session)
 
 
 def griffin_lim_tts(

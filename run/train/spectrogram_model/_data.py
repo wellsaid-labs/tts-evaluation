@@ -359,7 +359,7 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
         context=[cf.partial(s.spacy_context)() for s in spans],
         loudness=[_random_loudness_annotations(s, a) for s, a in zip(spans, signals_)],
         tempo=[_random_tempo_annotations(s) for s in spans],
-        respellings=[cf.partial(_random_respelling_annotations)(s) for s in spans],
+        respells=[cf.partial(_random_respelling_annotations)(s) for s in spans],
     )
     # NOTE: `inputs` has a spaCy `Span` which is difficult to `pickle`, so instead, we seralize
     # `inputs` into XML.

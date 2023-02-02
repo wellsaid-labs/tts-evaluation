@@ -154,19 +154,23 @@ def _include_annotation(annotation: struc.Alignment):
     """Return `True` iff `annotation` should be included in the dataset."""
     # TODO: This criteria matches the the above `Span` criteria, and could be fleshed out more.
     # Generally, we've found that `Alignment`s which are too fast or too short, are error prone.
-    audio_len = annotation.audio[1] - annotation.audio[0]
-    if audio_len < 0.2:
+    if annotation.audio_len < 0.2:
         return False
 
-    script_len = annotation.script[1] - annotation.script[0]
-    if audio_len / script_len < 0.04:
+    if annotation.audio_len / annotation.script_len < 0.04:
         return False
 
     return True
 
 
 def _get_tempo_annotation(text: str, audio_len: float, bucket_size: float):
-    """Get a tempo annotation in actual length vs expected length."""
+    """Get a tempo annotation in actual length vs expected length.
+
+    Args:
+        ...
+        audio_len: The audio length in seconds.
+        bucket_size: The bucket size for rounding in seconds.
+    """
     avg = run._config.lang.get_avg_audio_length(text)
     return lib.utils.round_(audio_len / avg, bucket_size)
 
@@ -178,7 +182,10 @@ def _get_loudness_annotation(
 
     NOTE: `integrated_loudness` filters out quiet sections from the loudness computations.
     NOTE: The minimum audio length for calculating loudness is the `block_size` which is typically
-    around 400ms.
+          around 400ms.
+    TODO: Let's investigate how well this matches with folks expectations of loudness, the LUFS
+          algorithm isn't built to match perception accross the entire range. LUFS uses
+          K-weighting which was initially built for music/radio.
 
     Args:
         ...
