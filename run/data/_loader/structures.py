@@ -170,6 +170,11 @@ class Alignment(typing.NamedTuple):
     def stow(alignments: typing.Sequence[Alignment]) -> Tuple[Alignment]:
         return lib.utils.stow(alignments, dtype=alignment_dtype)
 
+    @staticmethod
+    def _get(alignments: typing.Sequence[Alignment], field: str) -> typing.List[float]:
+        """Get the values for `field` in `self.alignments`."""
+        return [typing.cast(float, v) for a in alignments for v in getattr(a, field)]
+
 
 class Language(Enum):
     ENGLISH: typing.Final = "English"
@@ -521,15 +526,6 @@ class Passage:
         else:
             raise TypeError("Invalid argument type: {}".format(type(key)))
 
-    @staticmethod
-    def _get(alignments: Tuple[Alignment], field: str) -> typing.List[float]:
-        """Get the values for `field` in `self.alignments`."""
-        return [typing.cast(float, v) for a in alignments for v in getattr(a, field)]
-
-    @staticmethod
-    def _no_white_space(s: str) -> bool:
-        return s.strip() == s
-
     def check_invariants(self):
         """Check datastructure invariants."""
         assert hasattr(self, "nonalignments")
@@ -559,9 +555,9 @@ class Passage:
 
         # NOTE: `self.alignments` must not have extra whitespaces on it's edges.
         slices = (self.script[a.script_slice] for a in self.alignments)
-        assert all(self._no_white_space(s) for s in slices)
+        assert all(lib.text.is_stripped(s) for s in slices)
         slices = (self.transcript[a.transcript_slice] for a in self.alignments)
-        assert all(self._no_white_space(s) for s in slices)
+        assert all(lib.text.is_stripped(s) for s in slices)
 
         # NOTE: `self.speech_segments` must be sorted, and do not overlap. Specifically,
         # `speech_segments` are defined by `Alignment`s, and two speech segments may not share
@@ -583,12 +579,12 @@ class Passage:
             if len(alignments) != 0:
                 dtype = alignment_dtype["audio"]["stop"].type
                 max_length = max(dtype(self.audio_file.length), self.audio_file.length)
-                assert max(self._get(alignments, "audio")) <= max_length
-                assert max(self._get(alignments, "script")) <= len(self.script)
-                assert max(self._get(alignments, "transcript")) <= len(self.transcript)
-                assert min(self._get(alignments, "audio")) >= 0
-                assert min(self._get(alignments, "script")) >= 0
-                assert min(self._get(alignments, "transcript")) >= 0
+                assert max(Alignment._get(alignments, "audio")) <= max_length
+                assert max(Alignment._get(alignments, "script")) <= len(self.script)
+                assert max(Alignment._get(alignments, "transcript")) <= len(self.transcript)
+                assert min(Alignment._get(alignments, "audio")) >= 0
+                assert min(Alignment._get(alignments, "script")) >= 0
+                assert min(Alignment._get(alignments, "transcript")) >= 0
 
         return self
 
@@ -604,6 +600,7 @@ class Span:
     accessing `self.passage_alignments` due to its mediocre performance.
     TODO: Instead of storing `passage_alignments` and `slice`, consolidate into a `ListView` class,
     similar to: https://stackoverflow.com/questions/3485475/can-i-create-a-view-on-a-python-list
+    TODO: Add a key to `Span` for hashing, equality, etc.
 
     Args:
         passage: The original passage, for context.
