@@ -541,7 +541,8 @@ def _embed_anno(
         slice_ = slice(slice_.start + idx_offset, slice_.stop + idx_offset, slice_.step)
         vals[slice_] = val
         mask[slice_] = 1
-        len_[slice_] = 0  # TODO: Figure out how we might handle annos of different lengths.
+        # TODO: Let configure this formula.
+        len_[slice_] = min(slice_.stop - slice_.start, avg_anno_length * 2) / avg_anno_length - 1
     vals = ((vals - val_average) / val_compression) * mask
     ret_ = torch.stack((vals, len_, mask), dim=1)
     return ret_
