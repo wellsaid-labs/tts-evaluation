@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
 
-<!-- TODO: The respellings alphabet should we configured based on language. -->
+<!-- TODO: The respellings alphabet should be configured based on language. -->
 
 <xs:complexType name="respell">
   <xs:simpleContent>

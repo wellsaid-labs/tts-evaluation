@@ -152,6 +152,8 @@ def _include_span(span: struc.Span):
 
 def _include_annotation(annotation: struc.Alignment):
     """Return `True` iff `annotation` should be included in the dataset."""
+    # TODO: This criteria matches the the above `Span` criteria, and could be fleshed out more.
+    # Generally, we've found that `Alignment`s which are too fast or too short, are error prone.
     audio_len = annotation.audio[1] - annotation.audio[0]
     if audio_len < 0.2:
         return False
@@ -174,7 +176,7 @@ def _get_loudness_annotation(
 ) -> typing.Optional[float]:
     """Get the loudness in LUFS for `audio`.
 
-    NOTE: `integrated_loudness` filters our quiet sections from the loudness computations.
+    NOTE: `integrated_loudness` filters out quiet sections from the loudness computations.
     NOTE: The minimum audio length for calculating loudness is the `block_size` which is typically
     around 400ms.
 
@@ -182,8 +184,8 @@ def _get_loudness_annotation(
         ...
         precision: The number of decimal places to round LUFS.
 
-    Returns: The loundess in LUFS with a range of 0 to -70 LUFS in alignment with ITU-R BS.1770-4.
-        This returns `None` if the loundess cannot be computed.
+    Returns: The loudness in LUFS with a range of 0 to -70 LUFS in alignment with ITU-R BS.1770-4.
+        This returns `None` if the loudness cannot be computed.
     """
     meter = lib.audio.get_pyloudnorm_meter(sample_rate, block_size=block_size, **kwargs)
     sec_to_sample_ = functools.partial(lib.audio.sec_to_sample, sample_rate=sample_rate)
@@ -193,7 +195,7 @@ def _get_loudness_annotation(
         # return -70 LUFS instead to keep the output finite.
         # NOTE: This number is not parameterized because this specific number is specified in
         # the LUFS algorithm specification, ITU-R BS.1770-4.
-        # NOTE: The loudness algorithm can sometimes overflow and return stange values that are
+        # NOTE: The loudness algorithm can sometimes overflow and return strange values that are
         # significantly outside of the range like in:
         # https://github.com/csteinmetz1/pyloudnorm/issues/42
         loudness = -70 if np.isinf(loudness) and loudness < 0 else loudness
