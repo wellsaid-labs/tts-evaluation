@@ -334,13 +334,13 @@ _StTqdmVar = typing.TypeVar("_StTqdmVar")
 
 
 def st_tqdm(
-    iterable: typing.Iterable[_StTqdmVar], length: typing.Optional[int] = None
+    iterable: typing.Iterable[_StTqdmVar], total: typing.Optional[int] = None
 ) -> typing.Generator[_StTqdmVar, None, None]:
     """Display a progress bar while iterating through `iterable`."""
     bar = st.progress(0)
     for i, item in enumerate(iterable):
         yield item
-        bar.progress(i / (len(iterable) if length is None else length))  # type: ignore
+        bar.progress(i / (len(iterable) if total is None else total))  # type: ignore
     bar.empty()
 
 
