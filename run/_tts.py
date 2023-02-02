@@ -231,6 +231,18 @@ def process_tts_inputs(
     return _process_tts_inputs(nlp, session_vocab, token_vocab, script, session)
 
 
+def griffin_lim_tts(
+    spec_model: SpectrogramModel, script: XMLType, session: Session
+) -> numpy.ndarray:
+    """Run TTS with griffin-lim."""
+    nlp = load_spacy_nlp(session.spkr.language)
+    session_vocab = set(spec_model.session_embed.vocab.keys())
+    token_vocab = set(spec_model.token_embed.vocab.keys())
+    _, preprocessed = _process_tts_inputs(nlp, session_vocab, token_vocab, script, session)
+    preds = spec_model(inputs=preprocessed, mode=Mode.INFER)
+    return cf.partial(griffin_lim)(preds.frames.squeeze(1).detach().numpy())
+
+
 def basic_tts(
     package: TTSPackage,
     script: XMLType,
@@ -245,18 +257,6 @@ def basic_tts(
     generator = generate_waveform(package.signal_model, splits, inputs.session)
     wave = typing.cast(torch.Tensor, torch.cat(list(generator), dim=-1))
     return wave.squeeze(0).detach().numpy()
-
-
-def griffin_lim_tts(
-    spec_model: SpectrogramModel, script: XMLType, session: Session
-) -> numpy.ndarray:
-    """Run TTS with griffin-lim."""
-    nlp = load_spacy_nlp(session.spkr.language)
-    session_vocab = set(spec_model.session_embed.vocab.keys())
-    token_vocab = set(spec_model.token_embed.vocab.keys())
-    _, preprocessed = _process_tts_inputs(nlp, session_vocab, token_vocab, script, session)
-    preds = spec_model(inputs=preprocessed, mode=Mode.INFER)
-    return cf.partial(griffin_lim)(preds.frames.squeeze(1).detach().numpy())
 
 
 class TTSResult(typing.NamedTuple):
