@@ -68,7 +68,7 @@ def main(
             sample = random.sample(passages, min(num_samples, len(passages)))
             for i, passage in enumerate(sample):
                 sesh = str(passage.session).replace("/", "__")
-                file_name = f"spk={speaker.label},sesh={sesh},id={i}.wav"
+                file_name = f"spkr={speaker.label},sesh={sesh},id={i}.wav"
                 data.append({file_name_column_name: file_name, script_column_name: passage.script})
                 mock_file_ = io.BytesIO()
                 cf.partial(lib.audio.write_audio)(mock_file_, passage[:].audio())
