@@ -565,3 +565,12 @@ def test_lengths_to_mask():
     assert torch.equal(lengths_to_mask([]), torch.empty(0, 0, dtype=torch.bool))
     assert torch.equal(lengths_to_mask(torch.tensor([])), torch.empty(0, 0, dtype=torch.bool))
     assert torch.equal(lengths_to_mask(torch.tensor([[]])), torch.empty(0, 0, dtype=torch.bool))
+
+
+def test_zip_strict():
+    """Test `lib.utils.zip_strict` is similar to `zip`."""
+    assert list(lib.utils.zip_strict((1, 2, 3), (1, 2, 3))) == [(1, 1), (2, 2), (3, 3)]
+    with pytest.raises(AssertionError):
+        assert list(lib.utils.zip_strict((1, 2, 3), (1, 2))) == [(1, 1), (2, 2), (3, 3)]
+    with pytest.raises(AssertionError):
+        assert list(lib.utils.zip_strict((1, 2), (1, 2, 3))) == [(1, 1), (2, 2), (3, 3)]

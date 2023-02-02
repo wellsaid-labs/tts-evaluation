@@ -737,3 +737,20 @@ def lengths_to_mask(
     for i, length in enumerate(lengths):
         tokens_mask[i, :length] = True
     return tokens_mask
+
+
+_ZipStrictVar = typing.TypeVar("_ZipStrictVar")
+_ZipStrictOtherVar = typing.TypeVar("_ZipStrictOtherVar")
+
+
+def zip_strict(
+    a: typing.Sequence[_ZipStrictVar], b: typing.Sequence[_ZipStrictOtherVar]  # type: ignore
+):
+    """This is an implementation of strict zip that requires iterables to be the same length.
+    NOTE: This implementation of strict zip was borrowed from here:
+    https://stackoverflow.com/questions/32954486/zip-iterators-asserting-for-equal-length-in-python/69485272#69485272
+    TODO: In Python 3.10, we could take advantage of `zip#strict`.
+    """
+    message = f"`zip_strict` requires iterators to be the same size: {len(a)} != {len(b)}"
+    assert len(a) == len(b), message
+    return zip(a, b)  # type: ignore
