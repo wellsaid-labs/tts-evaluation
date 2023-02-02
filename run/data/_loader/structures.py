@@ -320,6 +320,10 @@ class Passage:
     NOTE: This data structure has a number of invariants. Please review `check_invariants` to
     learn more about invariants that are being enforced.
 
+    NOTE: The `script`, `transcript`, and `audio_file` may contain additional data, if there
+    are additional `is_linked` `Passages`. These may be sliced with something like `alignments`
+    in order to get `Passage` specific data.
+
     TODO: The `Passage` object is difficult to test. It takes awhile to initialize. It's not
     consistent (i.e. some fields include data about the entire audio file). There is some data
     processing functions in `_data.py` that might be helpful to include in `Passage`, what data
@@ -333,8 +337,8 @@ class Passage:
     Args:
         audio_file: A voice-over of the `script`.
         session: A label used to group passages recorded together.
-        script: The `script` the `speaker` was reading from.
-        transcript: The `transcript` of the `audio_file`.
+        script: The `script` the `speaker` was reading from, this may include other voice-overs.
+        transcript: The `transcript` of the `audio_file`, this may include other voice-overs.
         alignments: Alignments (sorted) that align the `script`, `transcript` and `audio`.
         other_metadata: Additional metadata associated with this passage.
         is_linked: A flag indicating if this `Passage` is a continuation of the previous and

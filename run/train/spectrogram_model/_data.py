@@ -286,6 +286,14 @@ class Batch(_utils.Batch):
 
     inputs: Inputs
 
+    @property
+    def spec(self):
+        return self.spectrogram
+
+    @property
+    def spec_mask(self):
+        return self.spectrogram_mask
+
     def apply(self, call: typing.Callable[[torch.Tensor], torch.Tensor]) -> "Batch":
         batch: Batch = super().apply(call)
         assert isinstance(batch.inputs.token_embeddings, torch.Tensor)
