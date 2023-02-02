@@ -753,7 +753,7 @@ def power_spectrogram_to_framed_rms(
 
     Learn more:
     - Implementations of RMS:
-      https://librosa.github.io/librosa/_modules/librosa/feature/spectral.html#rms
+      https://librosa.org/doc/main/_modules/librosa/feature/spectral.html#rms
     - Opinionated discussion between LUFS and RMS:
       https://www.gearslutz.com/board/mastering-forum/1142602-lufs-really-better-than-rms-measure-loudness.html
       Also, see `test_loudness` in `test_audio.py` that replicates LUFS via RMS.
@@ -987,6 +987,11 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
             center=False,
             return_complex=False,
         )
+
+        # TODO: Normalize the spectrogram using the `window.sum()`, similar to
+        # `power_spectrogram_to_framed_rms` or `torch.stft#normalize=True`. As mentioned here,
+        # it'd help us get to 0 dbFS:
+        # https://dsp.stackexchange.com/questions/32076/fft-to-spectrum-in-decibel.
 
         if aligned:
             assert spectrogram.shape[-2] * self.frame_hop == signal.shape[1], "Invariant failure."
