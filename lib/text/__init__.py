@@ -34,6 +34,7 @@ __all__ = [
     "grapheme_to_phoneme",
     "has_digit",
     "is_normalized_vo_script",
+    "is_stripped",
     "is_voiced",
     "load_cmudict_syl",
     "load_en_core_web_sm",
@@ -47,5 +48,4 @@ __all__ = [
     "verbalize_text",
     "text_to_xml",
     "xml_to_text",
-    "is_stripped",
 ]

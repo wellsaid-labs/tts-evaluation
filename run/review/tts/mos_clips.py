@@ -56,7 +56,7 @@ from run.train.spectrogram_model._metrics import (
 st.set_page_config(layout="wide")
 
 
-def make_result(span: Span, audio: typing.Optional[np.ndarray] = None) -> typing.Dict[str, str]:
+def make_row(span: Span, audio: typing.Optional[np.ndarray] = None) -> typing.Dict[str, str]:
     audio_web_path = audio_to_web_path(span.audio() if audio is None else audio)
     return {
         "Transcript": span.transcript,
@@ -96,41 +96,41 @@ def main():
         include_dic or s.speaker not in DICTIONARY_DATASETS
     )
     generator = (s for s in generator if include_span(s))
-    results = [{"Checkpoints": "original", **make_result(next(generator))} for _ in range(num_real)]
+    rows = [{"Checkpoints": "original", **make_row(next(generator))} for _ in range(num_real)]
 
     for package, checkpoints_ in zip(packages, checkpoints_keys):
         spans = [next(generator) for _ in tqdm(range(num_fake), total=num_fake)]
         with st.spinner(f"Generating clips with `{checkpoints_}` checkpoints..."):
-            in_outs = batch_span_to_speech(package, spans)
+            results = batch_span_to_speech(package, spans)
 
-        for span, (_, pred, audio) in tqdm(zip(spans, in_outs), total=len(spans)):
+        for span, (_, pred, audio) in tqdm(zip(spans, results), total=len(spans)):
             figure_url = figure_to_url(lib.visualize.plot_alignments(pred.alignments[:, 0]))
             num_frames = pred.frames.shape[0]
             num_pause_frames = cf.partial(get_num_pause_frames)(pred.frames, None)
-            result = {
+            row = {
                 "Checkpoints": checkpoints_,
                 "Frames Per Token": num_frames / pred.num_tokens[0].item(),
                 "Num Pause Frames": num_pause_frames[0],
                 "Alignment Norm": (get_alignment_norm(pred)[0] / num_frames).item(),
                 "Alignment STD": (get_alignment_std(pred)[0] / num_frames).item(),
                 "Alignment": f'<img src="{figure_url}" />',
-                **make_result(span, audio[0]),
+                **make_row(span, audio[0]),
             }
-            results.append(result)
+            rows.append(row)
 
     if shuffle:
-        random.shuffle(results)
+        random.shuffle(rows)
 
-    for index, result in enumerate(results):
-        result["Id"] = str(index)
+    for index, row in enumerate(rows):
+        row["Id"] = str(index)
 
-    data_frame = pd.DataFrame(results)
+    data_frame = pd.DataFrame(rows)
     with st.spinner("Visualizing data..."):
         st_datatable(data_frame, title="Clips")
 
     with st.spinner("Making Zipfile..."):
-        paths = [pathlib.Path(r["Audio Path"]) for r in results]
-        archive_paths = [pathlib.Path(str(r["Id"]) + p.suffix) for r, p in zip(results, paths)]
+        paths = [pathlib.Path(r["Audio Path"]) for r in rows]
+        archive_paths = [pathlib.Path(str(r["Id"]) + p.suffix) for r, p in zip(rows, paths)]
         st_download_files("audios.zip", "Download Audio(s)", paths, archive_paths)
 
 

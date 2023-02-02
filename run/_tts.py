@@ -230,7 +230,7 @@ def _process_tts_inputs(
     return inputs, preprocessed
 
 
-def griffin_lim_text_to_speech(
+def griffin_lim_tts(
     spec_model: SpectrogramModel, script: XMLType, session: Session
 ) -> numpy.ndarray:
     """Run TTS with griffin-lim."""
@@ -242,7 +242,7 @@ def griffin_lim_text_to_speech(
     return cf.partial(griffin_lim)(preds.frames.squeeze(1).detach().numpy())
 
 
-def text_to_speech(
+def basic_tts(
     package: TTSPackage,
     script: XMLType,
     session: Session,
@@ -258,7 +258,7 @@ def text_to_speech(
     return wave.squeeze(0).detach().numpy()
 
 
-class TTSInputOutput(typing.NamedTuple):
+class TTSResult(typing.NamedTuple):
     """Text-to-speech input and output."""
 
     inputs: Inputs
@@ -268,12 +268,12 @@ class TTSInputOutput(typing.NamedTuple):
 
 def batch_span_to_speech(
     package: TTSPackage, spans: typing.List[Span], **kwargs
-) -> typing.List[TTSInputOutput]:
+) -> typing.List[TTSResult]:
     """
     NOTE: This method doesn't consider `Span` context for TTS generation.
     """
     inputs = [(XMLType(s.script), s.session) for s in spans]
-    return batch_text_to_speech(package, inputs, **kwargs)
+    return batch_tts(package, inputs, **kwargs)
 
 
 def _process_input_batch(
@@ -298,16 +298,16 @@ def _process_input_batch(
     return list(zip(xmls, typing.cast(typing.List[spacy.tokens.doc.Doc], result), seshs))
 
 
-def batch_text_to_speech(
+def batch_tts(
     package: TTSPackage,
     inputs: typing.List[typing.Tuple[XMLType, Session]],
     batch_size: int = 8,
-) -> typing.List[TTSInputOutput]:
+) -> typing.List[TTSResult]:
     """Run TTS end-to-end quickly with a verbose output."""
     inputs_ = _process_input_batch(inputs)
     inputs_ = sorted(enumerate(inputs_), key=lambda i: len(str(i[1][0])))
     batches = list(get_chunks(inputs_, batch_size))
-    results: typing.Dict[int, TTSInputOutput] = {}
+    results: typing.Dict[int, TTSResult] = {}
     logger.info(f"Processing {len(inputs)} examples with TTS models...")
     for batch in tqdm_(batches):
         xmls, docs, seshs = zip(*[i[1] for i in batch])
@@ -320,7 +320,7 @@ def batch_text_to_speech(
             idx = slice(i, i + 1)
             input_ = batch_input.get(i)
             sig = signals[0][idx, : num_samples[i]].detach().numpy()
-            results[j] = TTSInputOutput(inputs=input_, spec_model=preds[idx], sig_model=sig)
+            results[j] = TTSResult(inputs=input_, spec_model=preds[idx], sig_model=sig)
     return [results[i] for i in range(len(inputs))]
 
 
@@ -336,7 +336,7 @@ def _dequeue(queue: SimpleQueue) -> typing.Generator[bytes, None, None]:
         yield queue.get_nowait()
 
 
-def text_to_speech_ffmpeg_generator(
+def tts_ffmpeg_generator(
     package: TTSPackage,
     inputs: Inputs,
     preprocessed_inputs: PreprocessedInputs,
