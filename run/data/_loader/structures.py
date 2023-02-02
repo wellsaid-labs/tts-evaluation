@@ -812,13 +812,13 @@ def _filter_non_speech_segments(
     NOTE: To better understand the various cases, take a look at the unit tests for this function.
     """
     for slice_ in non_speech_segments:
-        indicies = list(alignments_timeline.indicies(slice_))
+        indices = list(alignments_timeline.indices(slice_))
 
-        if len(indicies) >= 3:
+        if len(indices) >= 3:
             continue
 
         # NOTE: Check if any interval is inside any other interval.
-        intervals = [alignments[i] for i in indicies]
+        intervals = [alignments[i] for i in indices]
         permutations = itertools.permutations(intervals + [(slice_.start, slice_.stop)], 2)
         if any(
             (a[0] < b[0] and b[1] < a[1]) or (a[0] == b[0] and b[1] == a[1])
@@ -831,7 +831,7 @@ def _filter_non_speech_segments(
             continue
 
         message = "Alignments should be back-to-back."
-        assert len(indicies) != 2 or abs(indicies[0] - indicies[1]) == 1, message
+        assert len(indices) != 2 or abs(indices[0] - indices[1]) == 1, message
 
         yield slice_
 
@@ -870,7 +870,7 @@ def _make_speech_segments_helper(
     speech_segments: typing.List[typing.Tuple[slice, slice]] = []
     pairs = [i for i in zip(nss, nss[1:]) if i[0].stop <= i[1].start]  # NOTE: Pauses may overlap.
     for a, b in pairs:
-        idx = list(alignments_timeline.indicies(slice(a.stop, b.start)))
+        idx = list(alignments_timeline.indices(slice(a.stop, b.start)))
         if (
             len(idx) != 0
             # NOTE: The pauses must contain all the alignments fully, not just partially.
