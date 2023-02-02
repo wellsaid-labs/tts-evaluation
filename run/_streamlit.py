@@ -12,6 +12,7 @@ import config as cf
 import numpy as np
 import tqdm
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, JsCode
+from streamlit.delta_generator import DeltaGenerator
 from third_party import LazyLoader
 
 import lib
@@ -333,7 +334,12 @@ def path_label(path: pathlib.Path) -> str:
     )
 
 
-def st_select_path(label: str, dir: pathlib.Path, suffix: str) -> pathlib.Path:
+def st_select_path(
+    label: str,
+    dir: pathlib.Path,
+    suffix: str,
+    st: DeltaGenerator = typing.cast(DeltaGenerator, st),
+) -> pathlib.Path:
     """Display a path selector for the directory `dir`."""
     options = [p for p in dir.glob("**/*") if p.suffix == suffix]
     options = sorted(options, key=lambda x: natural_keys(str(x)), reverse=True)

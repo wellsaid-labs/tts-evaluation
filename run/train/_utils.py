@@ -281,6 +281,20 @@ class CometMLExperiment:
         asset = self.log_asset(file_, file_name=file_name)
         return asset["web"] if asset is not None else asset
 
+    @staticmethod
+    def _format_key(key: str):
+        """Format argument name for HTML."""
+        if key.startswith("_"):
+            return key[1:]
+        return key.title().replace("_", " ")
+
+    @staticmethod
+    def _format_val(key: str, value: typing.Any):
+        """Format argument value for HTML."""
+        if key.startswith("_"):
+            return value
+        return html.escape(value if isinstance(value, str) else repr(value))
+
     def log_html_audio(
         self,
         session: run.data._loader.Session,
@@ -291,24 +305,24 @@ class CometMLExperiment:
 
         Args:
             audio
-            **kwargs: Additional metadata to include.
+            **kwargs: Additional metadata to include. Arguments with a underscore before their
+                name will be printed as is.
         """
-        items = [f"<p><b>Step:</b> {self.curr_step}</p>"]
-        param_label = lambda s: s.title().replace("_", " ") if " " not in s else s
-        html_repr = lambda v: html.escape(v if isinstance(v, str) else repr(v))
         kwargs = dict(session=session, **kwargs)
-        items.extend([f"<p><b>{param_label(k)}:</b> {html_repr(v)}</p>" for k, v in kwargs.items()])
+        items = [(self._format_key(k), self._format_val(k, v)) for k, v in kwargs.items()]
+        lines = [f"<p><b>Step:</b> {self.curr_step}</p>"]
+        lines.extend([f"<p><b>{k}:</b> {v}</p>" for k, v in items])
         for key, data in audio.items():
-            name = param_label(key)
+            name = self._format_key(key)
             file_name = f"step={self.curr_step},speaker={session.spkr.label},"
             file_name += f"name={name},experiment={self.get_key()}.wav"
             url = self._upload_audio(file_name, data)
-            items.append(f"<p><b>{name}:</b></p>")
+            lines.append(f"<p><b>{name}:</b></p>")
             if url is None:
-                items.append(f"Failed to upload: {file_name}")
+                lines.append(f"Failed to upload: {file_name}")
             else:
-                items.append(f'<audio controls preload="none" src="{url}"></audio>')
-        self.log_html("<section>{}</section>".format("\n".join(items)))
+                lines.append(f'<audio controls preload="none" src="{url}"></audio>')
+        self.log_html("<section>{}</section>".format("\n".join(lines)))
 
     def _handle_param(self, key: run._config.Label, value: typing.Any, max_len: int = 50) -> str:
         """Format and log complex objects in standard out."""
