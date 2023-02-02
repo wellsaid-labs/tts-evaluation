@@ -759,3 +759,9 @@ def test_text_to_xml():
     """Test `lib.text.utils.text_to_xml` escape special characters."""
     text = "Over the <<river>> and through the woods."
     assert xml_to_text(text_to_xml(text)) == text
+
+
+def test_is_stripped():
+    """Test `lib.text.utils.is_stripped` on basic case."""
+    assert not lib.text.is_stripped("  hi ")
+    assert lib.text.is_stripped("hi")

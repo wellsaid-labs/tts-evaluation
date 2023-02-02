@@ -610,7 +610,7 @@ def test_timeline():
     assert timeline._intervals[0].data.contiguous and timeline._intervals[0].dtype == numpy.float64
     assert timeline._intervals[1].data.contiguous and timeline._intervals[1].dtype == numpy.float64
     assert timeline[0.5].tolist() == [[0, 1], [0.5, 1]]
-    assert [intervals[i] for i in timeline.indicies(0.5)] == [(0, 1), (0.5, 1)]
+    assert [intervals[i] for i in timeline.indices(0.5)] == [(0, 1), (0.5, 1)]
     assert timeline.intervals(0.5) == [(0, 1), (0.5, 1)]
     assert timeline[0.5:1.5].tolist() == [[0, 1], [0.5, 1], [1, 2]]
     assert timeline[6:10].tolist() == []
@@ -625,7 +625,7 @@ def test_timeline__zero():
         timeline.start(0)
         timeline.stop(0)
     assert timeline[0.5].tolist() == []
-    assert list(timeline.indicies(0.5)) == []
+    assert list(timeline.indices(0.5)) == []
     assert timeline.intervals(0.5) == []
     assert timeline[0.5:1.5].tolist() == []
     assert timeline.num_intervals() == 0

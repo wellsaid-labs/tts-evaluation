@@ -7,7 +7,7 @@ import config as cf
 
 from run._config import (
     SIGNAL_MODEL_EXPERIMENTS_PATH,
-    config_spec_model_training_from_datasets,
+    config_sig_model_training_from_datasets,
     get_config_label,
 )
 from run._utils import Dataset
@@ -42,7 +42,7 @@ def _run_app(
     debug: bool,
 ):
     """Run signal model training."""
-    config_spec_model_training_from_datasets(train_dataset, dev_dataset, debug)
+    config_sig_model_training_from_datasets(train_dataset, dev_dataset, debug)
     cf.add(cli_config)
     comet.log_parameters({get_config_label(k): v for k, v in cf.log(lambda x: x).items()})
     return run_workers(

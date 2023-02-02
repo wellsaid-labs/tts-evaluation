@@ -105,6 +105,7 @@ def configure(overwrite: bool = False):
             max_styles=max_styles,
             max_languages=max_languages,
             num_frame_channels=_config.audio.NUM_FRAME_CHANNELS,
+            # NOTE: 396 is the size of the spaCy embeddings that are added to the model.
             max_word_vector_size=396,
             max_seq_vector_size=2,
             max_anno_vector_size=max_anno_vector_size,

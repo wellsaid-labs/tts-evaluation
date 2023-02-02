@@ -125,6 +125,7 @@ class AudioMetadata(AudioFormat):
 
     @property
     def len(self):
+        # TODO: Deprecate `length` eventually, it's too verbose and not pythonic.
         return self.length
 
     @property
@@ -1182,7 +1183,7 @@ _GroupAudioFramesIterator = typing.Iterator[typing.Tuple[_GroupAudioFramesVar, t
 def group_audio_frames(
     sample_rate: int,
     classifications: typing.Iterable[_GroupAudioFramesVar],
-    indicies: typing.Iterable[typing.List[int]],
+    indices: typing.Iterable[typing.List[int]],
     is_include: typing.Callable[[_GroupAudioFramesVar], bool],
 ) -> typing.List[typing.Tuple[float, float]]:
     """Group audio frames by `classification`.
@@ -1190,10 +1191,10 @@ def group_audio_frames(
     Args:
         ...
         classification: A classification for each frame.
-        indicies: The sample indicies represented in each frame.
+        indices: The sample indices represented in each frame.
         is_include: Callable to determine if to include a class.
     """
-    iterator: _GroupAudioFramesIterator[_GroupAudioFramesVar] = zip(classifications, indicies)
+    iterator: _GroupAudioFramesIterator[_GroupAudioFramesVar] = zip(classifications, indices)
     groups = typing.cast(
         typing.Iterable[typing.Tuple[_GroupAudioFramesVar, _GroupAudioFramesIterator]],
         itertools.groupby(iterator, key=lambda i: i[0]),
@@ -1224,10 +1225,10 @@ def _get_non_speech_segments_helper(
     frame = partial(librosa.util.frame, frame_length=frame_length, hop_length=hop_length, axis=0)
     audio = highpass_filter(audio, low_cut, sample_rate)  # NOTE: Noise reduction
     rms_level_power = signal_to_rms_power(frame(audio), axis=1)
-    min_indicies = np.arange(0, len(audio), hop_length)[: len(rms_level_power)]
-    max_indicies = np.arange(frame_length - 1, len(audio), hop_length)[: len(rms_level_power)]
-    indicies = np.stack([min_indicies, max_indicies], axis=1)
-    return indicies, rms_level_power
+    min_indices = np.arange(0, len(audio), hop_length)[: len(rms_level_power)]
+    max_indices = np.arange(frame_length - 1, len(audio), hop_length)[: len(rms_level_power)]
+    indices = np.stack([min_indices, max_indices], axis=1)
+    return indices, rms_level_power
 
 
 def get_non_speech_segments(
@@ -1251,12 +1252,12 @@ def get_non_speech_segments(
     Returns: This returns an iterable of `audio` slices in seconds representing non-speech segments.
     """
     audio = np.pad(audio, milli_to_sample(frame_length, sample_rate=audio_file.sample_rate))
-    indicies, rms_level_power = _get_non_speech_segments_helper(
+    indices, rms_level_power = _get_non_speech_segments_helper(
         audio, audio_file, low_cut, frame_length, hop_length
     )
     power_threshold = db_to_power(threshold)
     is_not_speech: typing.Callable[[bool], bool] = lambda is_speech: not is_speech
     is_speech: typing.List[bool] = list(rms_level_power > power_threshold)
-    segments = group_audio_frames(audio_file.sample_rate, is_speech, indicies, is_not_speech)
+    segments = group_audio_frames(audio_file.sample_rate, is_speech, indices, is_not_speech)
     offset = lambda a: lib.utils.clamp(a - milli_to_sec(frame_length), 0, audio_file.length)
     return [(offset(a), offset(b)) for a, b in segments]

@@ -271,12 +271,9 @@ class Speaker:
         )
 
 
-class UnprocessedSession(typing.NamedTuple):
-    spkr: Speaker
-    label: str
-
-
 # TODO: Implement `__str__` so that we have a more succinct string representation for logging
+
+
 class Session(typing.NamedTuple):
     spkr: Speaker
     label: str
@@ -286,6 +283,11 @@ class Session(typing.NamedTuple):
     # TODO: We should consider adding `spkr_tempo` to the `Speaker` object, instead. It makes
     # more sense there.
     spkr_tempo: float
+
+
+class UnprocessedSession(typing.NamedTuple):
+    spkr: Speaker
+    label: str
 
 
 class IsLinked(typing.NamedTuple):
@@ -497,7 +499,7 @@ class Passage:
 
     @property
     def speaker(self):
-        return self.session[0]
+        return self.session.spkr
 
     @property
     def doc(self) -> spacy.tokens.doc.Doc:
@@ -633,7 +635,9 @@ class Passage:
             get_ = lambda i, f: getattr(self.alignments[i], f)
             assert any(get_(0, f)[0] != get_(-1, f)[1] for f in fields)
 
-        # NOTE: `self.speech_segments` must be sorted.
+        # NOTE: `self.speech_segments` must be sorted, and do not overlap. Specifically,
+        # `speech_segments` are defined by `Alignment`s, and two speech segments may not share
+        # an `Alignment`.
         pairs = zip(self.speech_segments, self.speech_segments[1:])
         assert all(a.slice.stop <= b.slice.start for a, b in pairs)
 
@@ -697,7 +701,7 @@ class Span:
 
     @property
     def speaker(self) -> Speaker:
-        return self.passage.session[0]
+        return self.passage.session.spkr
 
     @property
     def session(self) -> Session:
@@ -878,13 +882,13 @@ def _filter_non_speech_segments(
     NOTE: To better understand the various cases, take a look at the unit tests for this function.
     """
     for slice_ in non_speech_segments:
-        indicies = list(alignments_timeline.indicies(slice_))
+        indices = list(alignments_timeline.indices(slice_))
 
-        if len(indicies) >= 3:
+        if len(indices) >= 3:
             continue
 
         # NOTE: Check if any interval is inside any other interval.
-        intervals = [alignments[i] for i in indicies]
+        intervals = [alignments[i] for i in indices]
         permutations = itertools.permutations(intervals + [(slice_.start, slice_.stop)], 2)
         if any(
             (a[0] < b[0] and b[1] < a[1]) or (a[0] == b[0] and b[1] == a[1])
@@ -897,7 +901,7 @@ def _filter_non_speech_segments(
             continue
 
         message = "Alignments should be back-to-back."
-        assert len(indicies) != 2 or abs(indicies[0] - indicies[1]) == 1, message
+        assert len(indices) != 2 or abs(indices[0] - indices[1]) == 1, message
 
         yield slice_
 
@@ -936,7 +940,7 @@ def _make_speech_segments_helper(
     speech_segments: typing.List[typing.Tuple[slice, slice]] = []
     pairs = [i for i in zip(nss, nss[1:]) if i[0].stop <= i[1].start]  # NOTE: Pauses may overlap.
     for a, b in pairs:
-        idx = list(alignments_timeline.indicies(slice(a.stop, b.start)))
+        idx = list(alignments_timeline.indices(slice(a.stop, b.start)))
         if (
             len(idx) != 0
             # NOTE: The pauses must contain all the alignments fully, not just partially.

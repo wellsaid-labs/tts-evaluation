@@ -17,16 +17,16 @@ from run._utils import Dataset
 logger = logging.getLogger(__name__)
 
 
-def _get_num_sessions(train_dataset: Dataset) -> int:
-    return len(set(psg.session for data in train_dataset.values() for psg in data))
-
-
 def _get_ratio(train_dataset: Dataset, dev_dataset: Dataset) -> float:
     train_size = sum(sum(p.segmented_audio_length() for p in d) for d in train_dataset.values())
     dev_size = sum(sum(p.segmented_audio_length() for p in d) for d in dev_dataset.values())
     ratio = train_size / dev_size
     logger.info("The training dataset is approx %fx bigger than the development dataset.", ratio)
     return ratio
+
+
+def _get_num_sessions(train_dataset: Dataset) -> int:
+    return len(set(psg.session for data in train_dataset.values() for psg in data))
 
 
 def _get_spec_model_training_configs(train_dataset: Dataset, dev_dataset: Dataset, debug: bool):
@@ -40,9 +40,8 @@ def _get_spec_model_training_configs(train_dataset: Dataset, dev_dataset: Datase
     oversample = 3
     train_steps_per_epoch = int(round(dev_steps_per_epoch * batch_size_ratio * ratio * oversample))
     train_steps_per_epoch = 1 if debug else train_steps_per_epoch
-    device_count = lib.distributed.get_device_count()
-    assert train_batch_size % device_count == 0
-    assert dev_batch_size % device_count == 0
+    assert train_batch_size % lib.distributed.get_device_count() == 0
+    assert dev_batch_size % lib.distributed.get_device_count() == 0
     num_sesh = _get_num_sessions(train_dataset)
     return train_batch_size, dev_batch_size, train_steps_per_epoch, dev_steps_per_epoch, num_sesh
 

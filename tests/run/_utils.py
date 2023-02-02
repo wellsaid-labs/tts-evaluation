@@ -61,7 +61,7 @@ def make_alignments_1d(
 
 
 def script_to_alignments(script: str) -> typing.Tuple[typing.Tuple[int, int]]:
-    """Get the indicies of each "word" in `script`.
+    """Get the indices of each "word" in `script`.
 
     Example:
         >>> script_to_alignments("This is a test")

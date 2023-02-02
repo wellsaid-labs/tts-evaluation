@@ -248,11 +248,11 @@ class SpanGenerator(typing.Iterator[struc.Span]):
         start = max(start, passage.audio_start)
 
         # NOTE: Based on the overlap, decide which alignments to include in the span.
-        indicies = list(timeline.indicies(slice(start, stop)))
+        indices = list(timeline.indices(slice(start, stop)))
         self._is_include.cache_clear()
         _filter = lambda i: self._is_include(timeline.start(i), timeline.stop(i), start, stop)
-        begin = next((i for i in iter(indicies) if _filter(i)), None)
-        end = next((i for i in reversed(indicies) if _filter(i)), None)
+        begin = next((i for i in iter(indices) if _filter(i)), None)
+        end = next((i for i in reversed(indices) if _filter(i)), None)
         if begin is None or end is None:
             return
 
@@ -323,7 +323,7 @@ def _temporary_fix_for_transcript_offset(
         if word.strip() != word:
             update = (alignment.transcript[0] - 1, alignment.transcript[1] - 1)
             alignment = alignment._replace(transcript=update)
-            logger.warning("Corrected '%s' to '%s'.", word, transcript[alignment.transcript_slice])
+            logger.warning(f"Corrected '{word}' to '{transcript[alignment.transcript_slice]}'.")
         return_.append(alignment)
     return tuple(return_)
 

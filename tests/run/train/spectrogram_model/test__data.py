@@ -71,7 +71,7 @@ def test__get_loudness():
     with torchnlp.random.fork_rng(1234):
         audio = np.random.rand(sample_rate * length) * 2 - 1
         alignment = Alignment((0, length), (0, length), (0, length))
-        loundess = _data._get_loudness_annotation(
+        loudness = _data._get_loudness_annotation(
             audio=audio,
             alignment=alignment,
             block_size=block_size,
@@ -80,9 +80,9 @@ def test__get_loudness():
             filter_class=implementation,
             get_anno=_get_loudness_annotation,
         )
-        assert loundess is not None
-        assert math.isfinite(loundess)
-        assert round(meter.integrated_loudness(audio), precision) == loundess
+        assert loudness is not None
+        assert math.isfinite(loudness)
+        assert round(meter.integrated_loudness(audio), precision) == loudness
 
 
 def test__get_loudness__short_audio():
@@ -93,7 +93,7 @@ def test__get_loudness__short_audio():
     with torchnlp.random.fork_rng(12345):
         audio = np.random.rand(int(sample_rate * length)) * 2 - 1
         alignment = Alignment((0, 1), (0, length), (0, 1))
-        loundess = _data._get_loudness_annotation(
+        loudness = _data._get_loudness_annotation(
             audio=audio,
             alignment=alignment,
             block_size=block_size,
@@ -102,7 +102,7 @@ def test__get_loudness__short_audio():
             filter_class="DeMan",
             get_anno=_get_loudness_annotation,
         )
-        assert loundess is None
+        assert loudness is None
 
 
 def test__get_loudness__quiet_audio():
@@ -111,7 +111,7 @@ def test__get_loudness__quiet_audio():
     block_size = 0.4
     audio = lib.audio.full_scale_sine_wave(sample_rate) / 10000
     alignment = Alignment((0, 1), (0, block_size), (0, 1))
-    loundess = _data._get_loudness_annotation(
+    loudness = _data._get_loudness_annotation(
         audio=audio,
         alignment=alignment,
         block_size=block_size,
@@ -120,7 +120,7 @@ def test__get_loudness__quiet_audio():
         filter_class="DeMan",
         get_anno=_get_loudness_annotation,
     )
-    assert loundess == -70
+    assert loudness == -70
 
 
 def test__get_loudness__quieter_audio():

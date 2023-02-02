@@ -231,6 +231,18 @@ def process_tts_inputs(
     return _process_tts_inputs(nlp, session_vocab, token_vocab, script, session)
 
 
+def griffin_lim_text_to_speech(
+    spec_model: SpectrogramModel, script: XMLType, session: Session
+) -> numpy.ndarray:
+    """Run TTS with griffin-lim."""
+    nlp = load_spacy_nlp(session.spkr.language)
+    session_vocab = set(spec_model.session_embed.vocab.keys())
+    token_vocab = set(spec_model.token_embed.vocab.keys())
+    _, preprocessed = _process_tts_inputs(nlp, session_vocab, token_vocab, script, session)
+    preds = spec_model(inputs=preprocessed, mode=Mode.INFER)
+    return cf.partial(griffin_lim)(preds.frames.squeeze(1).detach().numpy())
+
+
 def basic_tts(
     package: TTSPackage,
     script: XMLType,

@@ -54,7 +54,7 @@ def main():
 
     # TODO: Add a expected tempo computed based on inner tempo annotations, if we are not marking
     # the entire passage.
-    # TODO: Add a loundess computed via spectrogram.
+    # TODO: Add a loudness computed via spectrogram.
     audio_len = cf.partial(lib.audio.sample_to_sec)(wave.shape[0])
     no_tags_script = XML_PATTERN.sub("", script)
     st.info(f"Generated Tempo: {cf.partial(_get_tempo_annotation)(no_tags_script, audio_len)}")

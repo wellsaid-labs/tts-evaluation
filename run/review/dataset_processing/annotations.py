@@ -134,10 +134,10 @@ def _stats(
         "Num `Span`s (0 annotations)": sum(1 for i in annotations if len(i) == 0),
         "Percent `Span`s (0 annotations)": sum(1 for i in annotations if len(i) == 0),
         "Average Annotations Per Span": round(len(data) / len(spans), 1),
-        "Num Loundess Annotations": len(loudness_vals),
-        "Max Loundess Annotation": max(loudness_vals),
-        "Min Loundess Annotation": min(loudness_vals),
-        "Average Loundess Annotation Length": total_loudness_script_len / len(data),
+        "Num Loudness Annotations": len(loudness_vals),
+        "Max Loudness Annotation": max(loudness_vals),
+        "Min Loudness Annotation": min(loudness_vals),
+        "Average Loudness Annotation Length": total_loudness_script_len / len(data),
         "Num Tempo Annotations": len(tempo_vals),
         "Max Tempo Annotation": max(tempo_vals),
         "Min Tempo Annotation": min(tempo_vals),
@@ -156,9 +156,10 @@ def _stats(
     label = "Percent `Span`s (0 annotations)"
     stats[label] = stats["Num `Span`s (0 annotations)"] / stats["Num `Span`s"]
 
-    # TODO: Is this really how you average decibels?
+    # TODO: Decibels should not be averaged, like this. A decibel is ratio, rather, we need to
+    # covert power/energy units to get the total energy which we can then average out.
     total_loudness = sum(r["audio_len"] * r["loudness"] for r in data if r["loudness"] is not None)
-    stats["Average Loundess"] = total_loudness / stats["Total Seconds Annotated"]
+    stats["Average Loudness"] = total_loudness / stats["Total Seconds Annotated"]
 
     total_tempo = sum(r["audio_len"] * r["tempo"] for r in data)
     stats["Average Tempo"] = total_tempo / stats["Total Seconds Annotated"]

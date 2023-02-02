@@ -126,13 +126,13 @@ def get_weighted_std(tensor: torch.Tensor, dim: int = 0, strict: bool = False) -
         )
 
     # Create position matrix where the index is the position and the value is the weight
-    indicies = torch.arange(0, tensor.shape[dim], dtype=tensor.dtype, device=tensor.device)
+    indices = torch.arange(0, tensor.shape[dim], dtype=tensor.dtype, device=tensor.device)
     shape = [1] * len(tensor.shape)
     shape[dim] = tensor.shape[dim]
-    indicies = indicies.view(*shape).expand_as(tensor).float()
+    indices = indices.view(*shape).expand_as(tensor).float()
 
-    weighted_mean = (indicies * tensor).sum(dim=dim) / tensor.sum(dim=dim)
-    weighted_variance = ((indicies - weighted_mean.unsqueeze(dim=dim)) ** 2 * tensor).sum(dim=dim)
+    weighted_mean = (indices * tensor).sum(dim=dim) / tensor.sum(dim=dim)
+    weighted_variance = ((indices - weighted_mean.unsqueeze(dim=dim)) ** 2 * tensor).sum(dim=dim)
     weighted_standard_deviation = weighted_variance**0.5
 
     numel = weighted_standard_deviation.numel()
@@ -692,8 +692,8 @@ class Timeline:
         length = self._intervals[0][start_:].searchsorted(self.dtype(stop), side="right")
         return slice(start_, start_ + length)
 
-    def indicies(self, interval: typing.Union[int, float, slice]) -> typing.Iterable[int]:
-        """Similar to `make_slice` except this returns an `Iterable` of indicies."""
+    def indices(self, interval: typing.Union[int, float, slice]) -> typing.Iterable[int]:
+        """Similar to `make_slice` except this returns an `Iterable` of indices."""
         return range(*self.make_slice(interval).indices(self._intervals.shape[1]))
 
     def __getitem__(self, interval: typing.Union[int, float, slice]) -> npt.NDArray[np.float_]:

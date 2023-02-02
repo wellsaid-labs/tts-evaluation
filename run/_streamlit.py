@@ -102,17 +102,17 @@ def path_to_web_path(path: pathlib.Path) -> WebPath:
     return WebPath(web_path)
 
 
+def audio_to_web_path(audio: np.ndarray, name: str = "audio.wav", **kwargs) -> WebPath:
+    web_path = make_temp_web_dir() / name
+    cf.partial(lib.audio.write_audio)(web_path, audio, **kwargs)
+    return web_path
+
+
 def figure_to_url(figure: matplotlib.figure.Figure, name: str = "fig.png", **kwargs):
     """Create a URL that can be loaded from `streamlit`."""
     image_web_path = make_temp_web_dir() / name
     figure.savefig(str(image_web_path), **kwargs)
     return web_path_to_url(image_web_path)
-
-
-def audio_to_web_path(audio: np.ndarray, name: str = "audio.wav", **kwargs) -> WebPath:
-    web_path = make_temp_web_dir() / name
-    cf.partial(lib.audio.write_audio)(web_path, audio, **kwargs)
-    return web_path
 
 
 def audio_to_url(audio: np.ndarray, name: str = "audio.wav", **kwargs):
@@ -484,10 +484,8 @@ def st_ag_grid(
     options = GridOptionsBuilder.from_dataframe(df)
     options.configure_pagination(paginationAutoPageSize=False, paginationPageSize=page_size)
     options.configure_default_column(wrapText=True, autoHeight=True, min_column_width=1)
-    for name in audio_cols:
-        options.configure_column(name, cellRenderer=audio_renderer)
-    for name in img_cols:
-        options.configure_column(name, cellRenderer=img_renderer)
+    [options.configure_column(name, cellRenderer=audio_renderer) for name in audio_cols]
+    [options.configure_column(name, cellRenderer=img_renderer) for name in img_cols]
     return AgGrid(
         data=df,
         gridOptions=options.build(),

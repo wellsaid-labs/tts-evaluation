@@ -199,7 +199,7 @@ def tabled_T_f(hfe=False):
 
 # Check that it works fine when L_N is array
 def tabled_A_f(L_N, hfe=False):
-    """Table of A_f values for given loundess in ISO 226.
+    """Table of A_f values for given loudness in ISO 226.
 
     Parameters
     ----------
