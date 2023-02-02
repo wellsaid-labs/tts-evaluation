@@ -5,7 +5,7 @@ TODO: Create a script that downloads multiple checkpoints at various points, gen
       to generating something like this.
 TODO: Instead of using random speakers and sessions, let's consider using the choosen session
       and speakers in `deploy.sh`. Those will be deployed, anyways.
-TODO: Implement `griffin_lim_tts` to support batch generation, speeding up this script.
+TODO: Implement `batch_griffin_lim_tts` to support batch generation, speeding up this script.
 
 Usage:
     $ PYTHONPATH=. streamlit run run/review/tts/test_cases.py --runner.magicEnabled=false
