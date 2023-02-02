@@ -189,6 +189,7 @@ class SpectrogramModel(torch.nn.Module):
         lengths = torch.zeros(batch_size, dtype=torch.long, device=device)
         stopped = torch.zeros(batch_size, dtype=torch.bool, device=device)
         max_lengths = self._get_max_frames(num_tokens)
+        prev_lengths = torch.zeros(batch_size, dtype=torch.long, device=device)
         max_tokens = num_tokens.max().cpu().item() if use_tqdm else None
         progress_bar = tqdm(leave=True, unit="char(s)", total=max_tokens) if use_tqdm else None
         keep_going = lambda: (
@@ -214,17 +215,19 @@ class SpectrogramModel(torch.nn.Module):
             alignments.append(alignment.squeeze(0))
 
             if len(frames) > split_size or not keep_going():
+                num_frames = lengths - prev_lengths
                 yield Preds(
                     frames=torch.stack(frames, dim=0),
                     stop_tokens=torch.stack(stop_tokens, dim=0),
                     alignments=torch.stack(alignments, dim=0),
-                    num_frames=lengths,
-                    frames_mask=lengths_to_mask(lengths),
+                    num_frames=num_frames,
+                    frames_mask=lengths_to_mask(num_frames),
                     num_tokens=encoded.num_tokens,
                     tokens_mask=encoded.tokens_mask,
                     reached_max=reached_max,
                 )
                 frames, stop_tokens, alignments = [], [], []
+                prev_lengths = lengths.clone()
 
             if use_tqdm:
                 assert progress_bar is not None
