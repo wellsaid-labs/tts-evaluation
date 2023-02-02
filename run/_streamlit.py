@@ -338,13 +338,16 @@ def st_tqdm(
 # NOTE: This follows the examples highlighted here:
 # https://github.com/PablocFonseca/streamlit-aggrid-examples/blob/main/cell_renderer_class_example.py
 # https://github.com/PablocFonseca/streamlit-aggrid/issues/119
-renderer = 'function(params) {return `<audio controls preload="none" src="${params.value}" />`}'
-renderer = JsCode(renderer)
+audio_renderer = 'function(prms) {return `<audio controls preload="none" src="${prms.value}" />`}'
+audio_renderer = JsCode(audio_renderer)
+img_renderer = 'function(prms) {return `<img src="${prms.value}" />`}'
+img_renderer = JsCode(img_renderer)
 
 
 def st_ag_grid(
     df: pd.DataFrame,
-    audio_column_name: typing.Optional[str] = None,
+    audio_cols: typing.List[str] = [],
+    img_cols: typing.List[str] = [],
     height: int = 850,
     page_size: int = 10,
 ):
@@ -352,8 +355,8 @@ def st_ag_grid(
     options = GridOptionsBuilder.from_dataframe(df)
     options.configure_pagination(paginationAutoPageSize=False, paginationPageSize=page_size)
     options.configure_default_column(wrapText=True, autoHeight=True, min_column_width=1)
-    if audio_column_name:
-        options.configure_column(audio_column_name, cellRenderer=renderer)
+    [options.configure_column(name, cellRenderer=audio_renderer) for name in audio_cols]
+    [options.configure_column(name, cellRenderer=img_renderer) for name in img_cols]
     return AgGrid(
         data=df,
         gridOptions=options.build(),
