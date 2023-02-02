@@ -27,6 +27,7 @@ if typing.TYPE_CHECKING:  # pragma: no cover
     import altair as alt
     import librosa
     import librosa.util
+    import matplotlib.figure
     import pandas as pd
     import streamlit as st
 else:
@@ -34,6 +35,7 @@ else:
     alt = LazyLoader("alt", globals(), "altair")
     pd = LazyLoader("pd", globals(), "pandas")
     st = LazyLoader("st", globals(), "streamlit")
+    matplotlib = LazyLoader("matplotlib", globals(), "matplotlib")
 
 
 logger = logging.getLogger(__name__)
@@ -99,6 +101,13 @@ def audio_to_web_path(audio: np.ndarray, name: str = "audio.wav", **kwargs) -> W
     web_path = make_temp_web_dir() / name
     cf.partial(lib.audio.write_audio)(web_path, audio, **kwargs)
     return web_path
+
+
+def figure_to_url(figure: matplotlib.figure.Figure, name: str = "fig.png", **kwargs):
+    """Create a URL that can be loaded from `streamlit`."""
+    image_web_path = make_temp_web_dir() / name
+    figure.savefig(str(image_web_path), **kwargs)
+    return web_path_to_url(image_web_path)
 
 
 def audio_to_url(audio: np.ndarray, name: str = "audio.wav", **kwargs):

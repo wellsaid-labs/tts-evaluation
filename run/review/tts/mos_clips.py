@@ -39,9 +39,9 @@ import lib
 import run
 from run._streamlit import (
     audio_to_web_path,
+    figure_to_url,
     get_dev_dataset,
     load_tts,
-    make_temp_web_dir,
     paths_to_html_download_link,
     st_html,
     web_path_to_url,
@@ -107,8 +107,7 @@ def main():
             in_outs = batch_span_to_speech(package, spans)
 
         for span, (_, pred, audio) in tqdm(zip(spans, in_outs), total=len(spans)):
-            image_web_path = make_temp_web_dir() / "alignments.png"
-            lib.visualize.plot_alignments(pred.alignments[:, 0]).savefig(str(image_web_path))
+            figure_url = figure_to_url(lib.visualize.plot_alignments(pred.alignments[:, 0]))
             num_frames = pred.frames.shape[0]
             num_pause_frames = cf.partial(get_num_pause_frames)(pred.frames, None)
             max_pause_frames = cf.partial(get_max_pause)(pred.frames, None)
@@ -120,7 +119,7 @@ def main():
                 "Alignment Norm": (get_alignment_norm(pred)[0] / num_frames).item(),
                 "Alignment STD": (get_alignment_std(pred)[0] / num_frames).item(),
                 "Alignment Skips": get_num_skipped(pred)[0].item(),
-                "Alignment": f'<img src="{web_path_to_url(image_web_path)}" />',
+                "Alignment": f'<img src="{figure_url}" />',
                 **make_result(span, audio[0]),
             }
             results.append(result)
