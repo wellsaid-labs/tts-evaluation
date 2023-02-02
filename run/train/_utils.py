@@ -732,7 +732,8 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
         NOTE: `torch.utils.data.dataloader.DataLoader` doesn't pin tensors if CUDA isn't
         available.
         """
-        message = "Expecting `tensor` memory to be pinned before moving."
+        message = f"Expecting `tensor` ({tensor.shape}, {tensor.dtype}) memory to be "
+        message += "pinned before moving."
         assert not torch.cuda.is_available() or tensor.is_pinned(), message
         return tensor.to(device=self.device, non_blocking=True)
 
