@@ -752,3 +752,9 @@ def test_xml_to_text():
     """Test `lib.text.utils.xml_to_text` removes XML."""
     xml = "<Tomato juicy='True'>\nLet's call <Potato>the whole thing off\n</Potato></Tomato>"
     assert xml_to_text(XMLType(xml)) == "Let's call the whole thing off"
+
+
+def test_is_stripped():
+    """Test `lib.text.utils.is_stripped` on basic case."""
+    assert not lib.text.is_stripped("  hi ")
+    assert lib.text.is_stripped("hi")

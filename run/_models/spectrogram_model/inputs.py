@@ -589,7 +589,8 @@ def preprocess(
     Item = typing.Tuple[struc.Session, SpanDoc, SpanDoc, SliceAnnos, SliceAnnos, TokenAnnos]
     iter_ = typing.cast(typing.Iterator[Item], iter_)
     for sesh, span, context, loudness, tempo, respells in iter_:
-        seq_metadata = [sesh[0].label, sesh, sesh[0].dialect, sesh[0].style, sesh[0].language]
+        spkr = sesh.spkr
+        seq_metadata = [spkr.label, sesh, spkr.dialect, spkr.style, spkr.language]
         if len(inputs.seq_metadata) == 0:
             inputs.seq_metadata.extend([[] for _ in seq_metadata])
         [inputs.seq_metadata[i].append(data) for i, data in enumerate(seq_metadata)]

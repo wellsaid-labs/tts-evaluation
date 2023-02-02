@@ -195,7 +195,7 @@ def main():
     dataset, metadatas = _get_unprocessed_dataset()
     alignments = _get_alignments(dataset, metadatas, num_alignments, picker, negate)
     rows = [_gather(*a) for a in alignments]
-    st_ag_grid(pandas.DataFrame(rows), audio_column_name="clip")
+    st_ag_grid(pandas.DataFrame(rows), audio_cols=["clip"])
 
 
 if __name__ == "__main__":

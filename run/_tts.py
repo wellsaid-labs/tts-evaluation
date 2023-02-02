@@ -197,7 +197,7 @@ def _process_tts_inputs(
     session: Session,
 ) -> typing.Tuple[Inputs, PreprocessedInputs]:
     """Process TTS `script` and `session` for use with the model(s)."""
-    normalized = normalize_and_verbalize_text(script, session[0].language)
+    normalized = normalize_and_verbalize_text(script, session.spkr.language)
     if len(normalized) == 0:
         raise PublicTextValueError("Text cannot be empty.")
 
@@ -222,7 +222,7 @@ def griffin_lim_text_to_speech(
     spec_model: SpectrogramModel, script: XMLType, session: Session
 ) -> numpy.ndarray:
     """Run TTS with griffin-lim."""
-    nlp = load_spacy_nlp(session[0].language)
+    nlp = load_spacy_nlp(session.spkr.language)
     session_vocab = set(spec_model.session_embed.vocab.keys())
     token_vocab = set(spec_model.token_embed.vocab.keys())
     _, preprocessed = _process_tts_inputs(nlp, session_vocab, token_vocab, script, session)
@@ -237,7 +237,7 @@ def text_to_speech(
     split_size: int = 32,
 ) -> numpy.ndarray:
     """Run TTS end-to-end with friendly errors."""
-    nlp = load_spacy_nlp(session[0].language)
+    nlp = load_spacy_nlp(session.spkr.language)
     inputs, preprocessed = process_tts_inputs(package, nlp, script, session)
     preds = package.spec_model(inputs=preprocessed, mode=Mode.INFER)
     splits = preds.frames.transpose(0, 1).split(split_size)
@@ -274,11 +274,11 @@ def _process_input_batch(
     logger.info(f"Processing {len(inputs)} examples with spaCy...")
     seshs = [s for _, s in inputs]
     xmls = [x for x, _ in inputs]
-    langs = set(s[0].language for s in seshs)
+    langs = set(s.spkr.language for s in seshs)
     result: typing.List[typing.Optional[spacy.tokens.doc.Doc]] = [None] * len(inputs)
     for lang in langs:
         nlp = load_spacy_nlp(lang)
-        scripts = [(i, s) for i, (s, sesh) in enumerate(inputs) if sesh[0].language is lang]
+        scripts = [(i, s) for i, (s, sesh) in enumerate(inputs) if sesh.spkr.language is lang]
         normalized = (xml_to_text(XMLType(normalize_vo_script(s, lang))) for _, s in scripts)
         docs = nlp.pipe(normalized)
         for (i, _), doc in zip(scripts, docs):
@@ -307,18 +307,8 @@ def batch_text_to_speech(
         for i, (j, _) in zip(range(len(batch)), batch):
             idx = slice(i, i + 1)
             input_ = batch_input.get(i)
-            preds_ = Preds(
-                frames=preds.frames[: preds.num_frames[i], idx],
-                stop_tokens=preds.stop_tokens[: preds.num_frames[i], idx],
-                alignments=preds.alignments[: preds.num_frames[i], idx, : preds.num_tokens[i]],
-                num_frames=preds.num_frames[idx],
-                frames_mask=preds.frames_mask[idx, : preds.num_frames[i]],
-                num_tokens=preds.num_tokens[idx],
-                tokens_mask=preds.tokens_mask[idx, : preds.num_frames[i]],
-                reached_max=preds.reached_max[idx],
-            )
             sig = signals[0][idx, : num_samples[i]].detach().numpy()
-            results[j] = TTSInputOutput(inputs=input_, spec_model=preds_, sig_model=sig)
+            results[j] = TTSInputOutput(inputs=input_, spec_model=preds[idx], sig_model=sig)
     return [results[i] for i in range(len(inputs))]
 
 

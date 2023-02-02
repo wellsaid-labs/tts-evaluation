@@ -18,6 +18,7 @@ from torchnlp.random import fork_rng
 import lib
 import run
 from run._config.labels import _speaker
+from run._config.train import _config_spec_model_training
 from run._streamlit import audio_to_url, clip_audio, st_ag_grid, st_tqdm
 from run._utils import Dataset, get_datasets
 from run.data._loader import Alignment, Span, Speaker
@@ -53,11 +54,6 @@ def _get_spans(
         ...
         device_count: The number of devices used during training to set the configuration.
     """
-    with st.spinner("Configuring..."):
-        datasets = (_train_dataset, _dev_dataset)
-        config_ = run._config.make_spectrogram_model_train_config(*datasets, False, device_count)
-        cf.add(config_, overwrite=True)
-
     with st.spinner("Making generators..."):
         if speaker is not None:
             _train_dataset = {speaker: _train_dataset[speaker]}
@@ -199,6 +195,8 @@ def _distributions(data: typing.List[typing.Dict], num_cols: int = 3):
 
 def main():
     run._config.configure(overwrite=True)
+    # NOTE: The various parameters map to configurations that are not relevant for this workbook.
+    _config_spec_model_training(0, 0, 0, 0, 0, False, overwrite=True)
 
     st.title("Annotations")
     st.write("The workbook reviews the annotations that are being generated for spans.")
@@ -234,7 +232,7 @@ def main():
         df = pandas.DataFrame(data)
 
     st.subheader("Data")
-    st_ag_grid(df, audio_column_name="clip")
+    st_ag_grid(df, audio_cols=["clip"])
     _stats(spans, data, intervals)
     _distributions(data)
 

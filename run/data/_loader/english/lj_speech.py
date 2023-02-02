@@ -9,7 +9,7 @@ from torchnlp.download import download_file_maybe_extract
 
 import run
 from run.data._loader import structures as struc
-from run.data._loader.utils import conventional_dataset_loader
+from run.data._loader.utils import GetSession, conventional_dataset_loader
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import num2words
@@ -23,7 +23,7 @@ LINDA_JOHNSON = struc.Speaker("linda_johnson", struc.Style.LIBRI, struc.Dialect.
 
 def _get_session(speaker: struc.Speaker, audio_path: pathlib.Path) -> struc.Session:
     """For the LJ speech dataset, we define each chapter as an individual recording session."""
-    return struc.Session((speaker, str(audio_path.stem.rsplit("-", 1)[0])))
+    return struc.Session(speaker, str(audio_path.stem.rsplit("-", 1)[0]))
 
 
 def lj_speech_dataset(
@@ -34,7 +34,7 @@ def lj_speech_dataset(
     speaker: struc.Speaker = LINDA_JOHNSON,
     verbalize: bool = True,
     metadata_text_column: typing.Union[str, int] = 1,
-    get_session: typing.Callable[[struc.Speaker, pathlib.Path], struc.Session] = _get_session,
+    get_session: GetSession = _get_session,
     **kwargs,
 ) -> struc.UnprocessedDataset:
     """Load the Linda Johnson (LJ) Speech dataset.

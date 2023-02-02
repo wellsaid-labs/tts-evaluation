@@ -73,7 +73,7 @@ DEV_SPEAKERS.add(_loader.english.dictionary.GCP_SPEAKER)
 
 def _include_passage(passage: struc.Passage) -> bool:
     """Return `True` iff `passage` should be included in the dataset."""
-    repr_ = f"{passage.__class__.__name__}({passage.speaker.label}, {passage.session[1]}, "
+    repr_ = f"{passage.__class__.__name__}({passage.speaker.label}, {passage.session.label}, "
     repr_ += f"{(passage.script[:25] + '...') if len(passage.script) > 25 else passage.script})"
 
     if len(passage.alignments) == 0:

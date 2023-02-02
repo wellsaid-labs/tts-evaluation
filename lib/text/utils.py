@@ -873,7 +873,7 @@ def align_tokens(
 
     Returns:
         cost: The cost of alignment.
-        alignment: The alignment consisting of a sequence of indicies.
+        alignment: The alignment consisting of a sequence of indices.
     """
     # For `window_center` to be on a diagonal with an appropriate slope to align both sequences,
     # `tokens` needs to be the longer sequence.
@@ -913,7 +913,7 @@ def align_tokens(
         # a number of considerations to make:
         # 1. The window no longer guarantees that the last window will have completed both
         # sequences.
-        # 2. Smaller indicies in `row_one` have not completed as much of the sequences as larger
+        # 2. Smaller indices in `row_one` have not completed as much of the sequences as larger
         # sequences in `row_one`.
         window_center = min(i, len(other_tokens))
         row_two_window = (
@@ -983,3 +983,8 @@ def xml_to_text(xml: XMLType) -> str:
 def text_to_xml(text: str) -> XMLType:
     """Escape any special XML characters and return valid XML."""
     return XMLType(html.escape(text))
+
+
+def is_stripped(s: str) -> bool:
+    """Check if text is stripped."""
+    return s.strip() == s

@@ -308,7 +308,7 @@ def test__preprocess():
     processed = preprocess(input_, {}, {}, lambda t: len(t))
     assert processed.max_audio_len == [len(doc[:-1].text)]
     assert processed.tokens == [list(script.lower())]
-    assert processed.seq_metadata[0] == [sesh[0].label]
+    assert processed.seq_metadata[0] == [sesh.spkr.label]
     assert processed.seq_metadata[1] == [sesh]
     assert script[processed.slices[0]] == str(doc[:-1])
     casing = [

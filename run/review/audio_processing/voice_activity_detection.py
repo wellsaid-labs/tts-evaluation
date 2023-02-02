@@ -228,7 +228,7 @@ def _baseline_vad(passage: Passage, audio: np.ndarray):
 
     with st.spinner("Measuring RMS..."):
         audio_file = passage.audio_file
-        indicies, rms_level_power = _get_non_speech_segments_helper(
+        indices, rms_level_power = _get_non_speech_segments_helper(
             audio,
             audio_file,
             low_cut=low_cut,
@@ -238,9 +238,9 @@ def _baseline_vad(passage: Passage, audio: np.ndarray):
         rms_level_db = lib.audio.power_to_db(rms_level_power)
         is_not_speech: typing.Callable[[bool], bool] = lambda is_speech: not is_speech
         is_speech: typing.List[bool] = list(rms_level_db > threshold)
-        non_speech_segments = group_audio_frames(sample_rate, is_speech, indicies, is_not_speech)
+        non_speech_segments = group_audio_frames(sample_rate, is_speech, indices, is_not_speech)
         non_speech_segments_chart = make_interval_chart(non_speech_segments, strokeWidth=0)
-        seconds = np.array([_median(i) / sample_rate for i in indicies])
+        seconds = np.array([_median(i) / sample_rate for i in indices])
         chart = _chart_db_rms(seconds, rms_level_db) + non_speech_segments_chart
         st.altair_chart(chart.interactive(), use_container_width=True)
 
@@ -301,13 +301,13 @@ def _webrtc_vad(passage: Passage, audio: np.ndarray, sample_rate: int = 16000):
         is_speech: typing.List[bool] = []
         padded = np.pad(norm_audio, (0, frame_size - 1))
         frames = sliding_window_view(padded, frame_size)[::stride_size]
-        indicies = sliding_window_view(np.arange(padded.shape[0]), frame_size)[::stride_size]
+        indices = sliding_window_view(np.arange(padded.shape[0]), frame_size)[::stride_size]
         for i, frame in enumerate(frames):
             is_speech.append(vad.is_speech(frame.tobytes(), sample_rate))
             bar.progress(i / len(frames))
         bar.empty()
         is_not_speech: typing.Callable[[bool], bool] = lambda is_speech: not is_speech
-        non_speech_segments = group_audio_frames(sample_rate, is_speech, indicies, is_not_speech)
+        non_speech_segments = group_audio_frames(sample_rate, is_speech, indices, is_not_speech)
 
     with st.spinner("Visualizing..."):
         signal_chart = make_signal_chart(audio, passage.audio_file.sample_rate)
