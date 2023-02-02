@@ -27,7 +27,7 @@ from pathlib import Path
 from torchnlp.download import download_file_maybe_extract
 
 from run.data._loader import structures as struc
-from run.data._loader.utils import conventional_dataset_loader
+from run.data._loader.utils import GetSession, conventional_dataset_loader
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +75,7 @@ def m_ailabs_speech_dataset(
     check_files: typing.List[str],
     root_directory_name: str = "M-AILABS",
     metadata_pattern: str = "**/metadata.csv",
-    get_session: typing.Callable[[struc.Speaker, Path], struc.Session] = _get_session,
+    get_session: GetSession = _get_session,
 ) -> struc.UnprocessedDataset:
     """Download, extract, and process a M-AILABS dataset.
 

@@ -324,6 +324,7 @@ def _temporary_fix_for_transcript_offset(
 
 DataLoader = typing.Callable[[Path], struc.UnprocessedDataset]
 DataLoaders = typing.Dict[struc.Speaker, DataLoader]
+GetSession = typing.Callable[[struc.Speaker, Path], struc.Session]
 
 
 def _default_session(speaker: struc.Speaker, audio_path: Path) -> struc.Session:
@@ -344,7 +345,7 @@ def dataset_loader(
     scripts_suffix: str = ".csv",
     text_column: str = "Content",
     strict: bool = False,
-    get_session: typing.Callable[[struc.Speaker, Path], struc.Session] = _default_session,
+    get_session: GetSession = _default_session,
 ) -> struc.UnprocessedDataset:
     """Load an alignment text-to-speech (TTS) dataset from GCS.
 
@@ -443,7 +444,7 @@ def conventional_dataset_loader(
     metadata_kwargs={"quoting": csv.QUOTE_NONE, "header": None, "delimiter": "|"},
     audio_path_template: str = "{directory}/wavs/{file_name}.wav",
     additional_metadata: typing.Dict = {},
-    get_session: typing.Callable[[struc.Speaker, Path], struc.Session] = _default_session,
+    get_session: GetSession = _default_session,
 ) -> struc.UnprocessedDocument:
     """Load a conventional speech dataset.
 
