@@ -122,7 +122,24 @@ def audio_to_html(
     return f'<audio {attrs} src="{audio_to_url(audio, name, **kwargs)}"></audio>'
 
 
-def paths_to_html_download_link(
+# NOTE: While streamlit does provide `st.download`, it'll force the entire app to reload when it's
+# used. Here is an issue thread: https://github.com/streamlit/streamlit/issues/4382. The below
+# options don't have that backdraw.
+
+
+def _bytes_to_html_download_link(name: str, label: str, bytes_: bytes) -> str:
+    """Make a zipfile named `name` that can be downloaded with a button called `label`."""
+    web_path = make_temp_web_dir() / name
+    web_path.write_bytes(bytes_)
+    return f'<a href="{web_path_to_url(web_path)}" download="{name}">{label}</a>'
+
+
+def st_download_bytes(*args, **kwargs):
+    """Download a text file."""
+    return st_html(_bytes_to_html_download_link(*args, **kwargs))
+
+
+def _paths_to_html_download_link(
     name: str,
     label: str,
     paths: typing.List[pathlib.Path],
@@ -135,6 +152,11 @@ def paths_to_html_download_link(
         for path, archive_path in zip(paths, archive_paths_):
             file_.write(path, arcname=archive_path)
     return f'<a href="{web_path_to_url(web_path)}" download="{name}">{label}</a>'
+
+
+def st_download_files(*args, **kwargs):
+    """Create a link to download a zip file with `paths`."""
+    st_html(_paths_to_html_download_link(*args, **kwargs))
 
 
 _MapInputVar = typing.TypeVar("_MapInputVar")
