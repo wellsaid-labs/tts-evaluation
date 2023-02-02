@@ -852,7 +852,7 @@ def slice_seq(
     """
     assert all(a.stop <= b.start for (a, _), (b, _) in zip(slices, slices[1:]))
     assert all(_is_simple_slice(s) and s.stop <= length and s.start >= 0 for s, _ in slices)
-    assert max(s.stop for s, _ in slices) <= length
+    assert len(slices) == 0 or max(s.stop for s, _ in slices) <= length
     sequence = torch.zeros(length, **kwargs)
     for slice_, val in slices:
         sequence[slice_] = val
