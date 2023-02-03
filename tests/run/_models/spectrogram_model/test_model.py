@@ -546,9 +546,9 @@ def test_spectrogram_model__train_batch_padding_invariance():
 
 
 _expected_parameters = {
-    "encoder.embed_seq_metadata.0.weight": torch.tensor(1.852018),
-    "encoder.embed_seq_metadata.1.weight": torch.tensor(9.608484),
-    "encoder.embed_token_metadata.0.weight": torch.tensor(1.268590),
+    "encoder.embed_seq_meta.0.weight": torch.tensor(1.852018),
+    "encoder.embed_seq_meta.1.weight": torch.tensor(9.608484),
+    "encoder.embed_token_meta.0.weight": torch.tensor(1.268590),
     "encoder.embed_token.weight": torch.tensor(-19.686558),
     "encoder.embed_anno.0.weight": torch.tensor(-0.515247),
     "encoder.embed_anno.0.bias": torch.tensor(-0.444562),
@@ -622,9 +622,9 @@ _expected_parameters = {
 }
 
 _expected_grads = {
-    "encoder.embed_seq_metadata.0.weight": torch.tensor(-29.919094),
-    "encoder.embed_seq_metadata.1.weight": torch.tensor(-79.813225),
-    "encoder.embed_token_metadata.0.weight": torch.tensor(-2.782639),
+    "encoder.embed_seq_meta.0.weight": torch.tensor(-29.919094),
+    "encoder.embed_seq_meta.1.weight": torch.tensor(-79.813225),
+    "encoder.embed_token_meta.0.weight": torch.tensor(-2.782639),
     "encoder.embed_token.weight": torch.tensor(2.383842),
     "encoder.embed_anno.0.weight": torch.tensor(4.227918),
     "encoder.embed_anno.0.bias": torch.tensor(-4.887265),

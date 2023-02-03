@@ -266,17 +266,17 @@ class Decoder(torch.nn.Module):
 
         # [batch_size, seq_embed_size] →
         # [1, batch_size, seq_embed_size]
-        seq_metadata = encoded.seq_embed.unsqueeze(0)
+        seq_embed = encoded.seq_embed.unsqueeze(0)
 
         # [1, batch_size, seq_embed_size] →
         # [num_frames, batch_size, seq_embed_size]
-        seq_metadata = seq_metadata.expand(num_frames, -1, -1)
+        seq_embed = seq_embed.expand(num_frames, -1, -1)
 
         # [num_frames, batch_size, lstm_hidden_size] (concat)
         # [num_frames, batch_size, encoder_out_size] (concat)
         # [num_frames, batch_size, seq_embed_size] →
         # [num_frames, batch_size, lstm_hidden_size + encoder_out_size + seq_embed_size]
-        frames = torch.cat([frames, attention_contexts, seq_metadata], dim=2)
+        frames = torch.cat([frames, attention_contexts, seq_embed], dim=2)
 
         # [num_frames, batch_size, lstm_hidden_size + encoder_out_size + seq_embed_size] →
         # [num_frames, batch_size]
@@ -290,7 +290,7 @@ class Decoder(torch.nn.Module):
         # [num_frames, batch_size,
         #  lstm_hidden_size (concat) encoder_out_size (concat) seq_embed_size] →
         # [num_frames, batch_size, num_frame_channels]
-        frames = self.linear_out(torch.cat([frames, attention_contexts, seq_metadata], dim=2))
+        frames = self.linear_out(torch.cat([frames, attention_contexts, seq_embed], dim=2))
 
         hidden_state = DecoderHiddenState(
             last_attention_context=last_attention_context,

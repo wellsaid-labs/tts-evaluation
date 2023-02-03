@@ -115,8 +115,8 @@ def _make_attention(
         cum_alignment=lib.utils.pad_tensor(cum_alignment, padding, 1, value=1.0),
         window_start=torch.zeros(batch_size, dtype=torch.long),
     )
-    seq_metadata = torch.randn(batch_size, seq_embed_size)
-    encoded = Encoded(tokens, tokens_mask, tokens_mask.sum(dim=1), seq_metadata)
+    seq_embed = torch.randn(batch_size, seq_embed_size)
+    encoded = Encoded(tokens, tokens_mask, tokens_mask.sum(dim=1), seq_embed)
     return module, (encoded, query, hidden_state), (batch_size, max_num_tokens)
 
 

@@ -18,8 +18,8 @@ def test_pre_net():
         dropout=0.5,
     )
     input_ = torch.randn(num_frames, batch_size, num_frame_channels)
-    seq_metadata = torch.randn(batch_size, seq_embed_size)
-    output = pre_net(input_, seq_metadata)
+    seq_embed = torch.randn(batch_size, seq_embed_size)
+    output = pre_net(input_, seq_embed)
     assert output.dtype == torch.float
     assert output.shape == (num_frames, batch_size, size)
     output.sum().backward()

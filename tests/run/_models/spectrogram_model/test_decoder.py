@@ -58,8 +58,8 @@ def _make_encoded(
     num_tokens = torch.tensor(num_tokens)
     tokens_mask = lengths_to_mask(num_tokens)
     tokens = tokens * tokens_mask.transpose(0, 1).unsqueeze(-1)
-    seq_metadata = torch.randn(batch_size, module.seq_embed_size)
-    encoded = Encoded(tokens, tokens_mask, num_tokens, seq_metadata)
+    seq_embed = torch.randn(batch_size, module.seq_embed_size)
+    encoded = Encoded(tokens, tokens_mask, num_tokens, seq_embed)
     return encoded, (batch_size, max_num_tokens)
 
 
