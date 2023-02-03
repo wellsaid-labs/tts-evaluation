@@ -215,6 +215,29 @@ class Inputs:
                 object.__setattr__(self, field.name, call(val))
         return self
 
+    @staticmethod
+    def _pad_vec(name: str, vec: torch.Tensor, dim: int, size: typing.Optional[int] = None):
+        """Optionally pad `vec` to `size` at `dim`."""
+        if size is not None and vec.shape[dim] != size:
+            message = f"The `{name}` ({vec.shape[dim]}) size must be smaller or equal to {size}."
+            assert vec.shape[dim] <= size, message
+            vec_ = torch.zeros(*vec.shape[:dim], size, device=vec.device)
+            vec_[..., : vec.shape[dim]] = vec
+            vec = vec_
+        return vec
+
+    def get_seq_vec(self, size: typing.Optional[int] = None) -> torch.Tensor:
+        """Retrieve `self.seq_vectors` with optional padding.
+
+        Args:
+            ...
+            size: An optional `size` to pad to.
+
+        Returns:
+            torch.FloatTensor [batch_size, *]
+        """
+        return self._pad_vec("seq_vectors", self.seq_vectors, 1, size)
+
     def get_token_vec(self, name, size: typing.Optional[int] = None) -> torch.Tensor:
         """Retrieve a slice of `self.token_vectors` by `name` as set in `self.token_vector_idx`.
 
@@ -225,14 +248,8 @@ class Inputs:
         Returns:
             torch.FloatTensor [batch_size, num_tokens, *]
         """
-        embed = self.token_vectors[:, :, self.token_vector_idx[name]]
-        if size is not None and embed.shape[2] != size:
-            message = f"The `{name}` ({embed.shape[2]}) size must be smaller or equal to {size}."
-            assert embed.shape[2] <= size, message
-            embed_ = torch.zeros(*embed.shape[:2], size, device=embed.device)
-            embed_[:, :, : embed.shape[2]] = embed
-            embed = embed_
-        return embed
+        vec = self.token_vectors[:, :, self.token_vector_idx[name]]
+        return self._pad_vec(name, vec, 2, size)
 
 
 SpanDoc = typing.Union[spacy.tokens.span.Span, spacy.tokens.doc.Doc]

@@ -324,6 +324,7 @@ class Encoder(torch.nn.Module):
 
         self.max_word_vector_size = max_word_vector_size
         self.max_anno_vector_size = max_anno_vector_size
+        self.max_seq_vector_size = max_seq_vector_size
         self.annos = annos
 
         self.embed_seq_meta = ModuleList(
@@ -425,7 +426,7 @@ class Encoder(torch.nn.Module):
         seq_meta = [embed(meta, batch_first=True)[0] for embed, meta in iter_]
         seq_meta_embed = torch.cat(seq_meta, dim=1)
         # [batch_size, max_seq_vector_size] → [batch_size, seq_embed_size]
-        seq_vector_embed = self.embed_seq_vector(inputs.seq_vectors)
+        seq_vector_embed = self.embed_seq_vector(inputs.get_seq_vec(self.max_seq_vector_size))
         # [batch_size, seq_embed_size * len(max_seq_meta_vals)] (cat)
         # [batch_size, seq_embed_size] →
         # [batch_size, seq_embed_size * (len(max_seq_meta_vals) + 1)]
