@@ -64,21 +64,21 @@ class PreNet(torch.nn.Module):
                 gain = torch.nn.init.calculate_gain("relu")
                 torch.nn.init.xavier_uniform_(module.weight, gain=gain)
 
-    def __call__(self, frames: torch.Tensor, seq_metadata: torch.Tensor) -> torch.Tensor:
-        return super().__call__(frames, seq_metadata)
+    def __call__(self, frames: torch.Tensor, seq_embed: torch.Tensor) -> torch.Tensor:
+        return super().__call__(frames, seq_embed)
 
-    def forward(self, frames: torch.Tensor, seq_metadata: torch.Tensor) -> torch.Tensor:
+    def forward(self, frames: torch.Tensor, seq_embed: torch.Tensor) -> torch.Tensor:
         """
         Args:
             frames (torch.FloatTensor [num_frames, batch_size, num_frame_channels]): Spectrogram
                 frames.
-            seq_metadata (torch.FloatTensor [batch_size, seq_embed_size])
+            seq_embed (torch.FloatTensor [batch_size, seq_embed_size])
 
         Returns:
             frames (torch.FloatTensor [num_frames, batch_size, hidden_size])
         """
         # [batch_size, seq_embed_size] → [num_frames, batch_size, seq_embed_size]
-        seq_metadata = seq_metadata.unsqueeze(0).expand(frames.shape[0], -1, -1)
+        seq_embed = seq_embed.unsqueeze(0).expand(frames.shape[0], -1, -1)
         for layer in self.layers:
-            frames = layer(torch.cat([seq_metadata, frames], dim=2))
+            frames = layer(torch.cat([seq_embed, frames], dim=2))
         return frames
