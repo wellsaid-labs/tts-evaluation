@@ -773,6 +773,7 @@ _expected_alignments = [
 _expected_alignments = torch.tensor(_expected_alignments)
 # fmt: on
 
+
 def test_spectrogram_model__version():
     """Test `spectrogram_model.SpectrogramModel` has not changed since it was last tested.
 
