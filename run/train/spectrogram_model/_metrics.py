@@ -297,7 +297,7 @@ class Metrics(_utils.Metrics[MetricsKey]):
     ALIGNMENT_STD = partial(get_model_label, "alignment_std")
     STOP_TOKEN_HANG_TIME = partial(get_model_label, "stop_token_hang_time")
     PRED_PAUSE_FRAMES = partial(get_model_label, "predicted_pause_frames")
-    PRED_RATIO_SIL_FRAMES = partial(get_model_label, "predicted_pause_frames")
+    PRED_RATIO_SIL_FRAMES = partial(get_model_label, "pred_ratio_sil_frames")
     AVERAGE_PRED_RMS_LEVEL = partial(get_model_label, "average_predicted_rms_level")
     AVERAGE_RELATIVE_SPEED = partial(get_model_label, "average_relative_speed")
     AVERAGE_RELATIVE_SPEED_TRIMMED = partial(get_model_label, "average_relative_speed_trimmed")
