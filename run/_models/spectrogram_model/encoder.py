@@ -425,8 +425,7 @@ class Encoder(torch.nn.Module):
         num_tokens = tokens_mask.sum(dim=1)
 
         # [batch_size] → [batch_size, seq_embed_size * len(max_seq_meta_vals)]
-        seq_meta = [[s[i] for s in inputs.seq_meta] for i in range(inputs.num_seq_meta)]
-        iter_ = zip(self.embed_seq_meta, seq_meta)
+        iter_ = zip(self.embed_seq_meta, inputs.seq_meta_transposed)
         seq_meta = [embed(meta, batch_first=True)[0] for embed, meta in iter_]
         seq_meta_embed = torch.cat(seq_meta, dim=1)
         # [batch_size, max_seq_vector_size] → [batch_size, seq_embed_size]
@@ -442,8 +441,7 @@ class Encoder(torch.nn.Module):
         seq_embed_expanded = seq_embed.unsqueeze(1).expand(-1, tokens.shape[1], -1)
 
         # [batch_size, num_tokens] → [batch_size, num_tokens, token_meta_embed_size]
-        token_meta = [[s[i] for s in inputs.token_meta] for i in range(inputs.num_token_meta)]
-        iter_ = zip(self.embed_token_meta, token_meta)
+        iter_ = zip(self.embed_token_meta, inputs.token_meta_transposed)
         token_meta = tuple([embed(meta, batch_first=True)[0] for embed, meta in iter_])
 
         # [batch_size, num_tokens, max_anno_vector_size] →
