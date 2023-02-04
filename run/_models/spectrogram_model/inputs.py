@@ -185,6 +185,14 @@ class Inputs:
         """Get the number of metadata values per sequence."""
         return len(self.seq_meta[0])
 
+    @property
+    def seq_meta_transposed(self):
+        return [[s[i] for s in self.seq_meta] for i in range(self.num_seq_meta)]
+
+    @property
+    def token_meta_transposed(self):
+        return [[s[i] for s in self.token_meta] for i in range(self.num_token_meta)]
+
     def __len__(self):
         return len(self.tokens)
 

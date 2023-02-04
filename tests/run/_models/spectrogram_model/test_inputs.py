@@ -274,6 +274,9 @@ def _check_processed(
     """Helper function for `test_preprocess`."""
     assert processed.tokens == [list(script.lower())]
     assert processed.seq_meta[0][:2] == [sesh.spkr.label, sesh]
+    assert processed.seq_meta_transposed[0] == [sesh.spkr.label]
+    assert processed.seq_meta_transposed[1] == [sesh]
+    assert len(processed.seq_meta_transposed) == 5
     casing = [
         (Pronun.NORMAL, Casing.UPPER),  # I
         (Pronun.NORMAL, Casing.LOWER),  # n
@@ -321,6 +324,9 @@ def _check_processed(
         Context.CONTEXT,  # y
     ]
     assert processed.token_meta[0] == [casing, context]
+    assert processed.token_meta_transposed[0] == [casing]
+    assert processed.token_meta_transposed[1] == [context]
+    assert len(processed.token_meta_transposed) == 2
     seq_vector = torch.tensor([sesh.loudness, sesh.tempo])
     assert torch.equal(processed.seq_vectors, seq_vector.view(1, 2))
     assert processed.token_vector_idx == dict(
