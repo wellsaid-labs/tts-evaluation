@@ -1203,7 +1203,7 @@ def _process_sessions(
     for spkr, sesh_to_psg in spkr_to_psg.items():
         spkr_psgs = [p for psgs in sesh_to_psg.values() for p in psgs]
 
-        cache_name = f"{_process_sessions.__name__}_{spkr.label}.pickle"
+        cache_name = f"{_process_sessions.__name__}__{spkr.label}.pickle"
         cache_path = Path(os.path.commonpath(list(set(p.audio_path for p in spkr_psgs))))
         cache_path = cache_path.parent if cache_path.is_file() else cache_path
         cache_path = cache_path / cache_dir / cache_name
