@@ -408,7 +408,7 @@ class Metrics(_utils.Metrics[MetricsKey]):
             self._to_list(loudness),
             self._to_list(get_power_rms_level_sum(preds.frames, preds.frames_mask)),
             cf.partial(get_num_pause_frames)(preds.frames, preds.frames_mask),
-            cf.partial(get_num_sil_frames)(preds.frames, mask=preds.frames_mask),
+            self._to_list(cf.partial(get_num_sil_frames)(preds.frames, mask=preds.frames_mask)),
             self._to_list(preds.reached_max),
         ):
             if not (self.is_eval_infer() and has_reached_max):
