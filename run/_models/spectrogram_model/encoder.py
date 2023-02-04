@@ -328,7 +328,8 @@ class Encoder(torch.nn.Module):
         self.annos = annos
 
         self.embed_seq_meta = ModuleList(
-            NumeralizePadEmbed(n, embedding_dim=seq_embed_size) for n in max_seq_meta_vals
+            NumeralizePadEmbed(n, embedding_dim=seq_embed_size // len(max_seq_meta_vals))
+            for n in max_seq_meta_vals
         )
         self.embed_seq_vector = torch.nn.Sequential(
             torch.nn.Linear(max_seq_vector_size, seq_embed_size),
@@ -337,29 +338,32 @@ class Encoder(torch.nn.Module):
             torch.nn.ReLU(),
             layer_norm(seq_embed_size),
         )
-        num_seq_embeds = len(max_seq_meta_vals) + 1
         self.embed_seq = torch.nn.Sequential(
             torch.nn.Dropout(seq_meta_embed_dropout),
-            torch.nn.Linear(seq_embed_size * num_seq_embeds, seq_embed_size),
+            torch.nn.Linear(seq_embed_size * 2, seq_embed_size),
             torch.nn.ReLU(),
             layer_norm(seq_embed_size),
         )
         self.embed_token_meta = ModuleList(
-            NumeralizePadEmbed(n, embedding_dim=token_meta_embed_size) for n in max_token_meta_vals
+            NumeralizePadEmbed(n, embedding_dim=token_meta_embed_size // len(max_token_meta_vals))
+            for n in max_token_meta_vals
         )
         self.embed_token = NumeralizePadEmbed(max_tokens, hidden_size)
         self.embed_anno_separable = _GroupedEmbedder(
-            self.max_anno_vector_size, anno_embed_size, len(self.annos), num_anno_layers
+            self.max_anno_vector_size,
+            anno_embed_size // len(self.annos),
+            len(self.annos),
+            num_anno_layers,
         )
         self.embed_anno = torch.nn.Sequential(
-            torch.nn.Linear(anno_embed_size, anno_embed_size),
+            torch.nn.Linear(anno_embed_size // len(self.annos), anno_embed_size),
             torch.nn.ReLU(),
             layer_norm(anno_embed_size),
         )
         total_embed_size = (
             hidden_size
             + seq_embed_size
-            + token_meta_embed_size * len(max_token_meta_vals)
+            + token_meta_embed_size
             + max_word_vector_size
             + anno_embed_size
         )
@@ -389,7 +393,7 @@ class Encoder(torch.nn.Module):
         self.lstm_dropout = LockedDropout(dropout)
         self.lstm = _RightMaskedBiRNN(
             rnn_class=LSTM,
-            input_size=hidden_size * 2,
+            input_size=hidden_size * 2 + anno_embed_size,
             hidden_size=hidden_size // 2,
             num_layers=lstm_layers,
         )
@@ -397,7 +401,7 @@ class Encoder(torch.nn.Module):
 
         self.project_out = torch.nn.Sequential(
             LockedDropout(dropout),
-            torch.nn.Linear(hidden_size * 2, out_size),
+            torch.nn.Linear(hidden_size * 2 + anno_embed_size, out_size),
             layer_norm(out_size),
         )
 
@@ -466,9 +470,13 @@ class Encoder(torch.nn.Module):
         tokens_mask = tokens_mask.unsqueeze(2)
         tokens = tokens.masked_fill(~tokens_mask, 0)
         conditional = tokens.clone()
+        # [num_tokens, batch_size, hidden_size] (cat)
+        # [num_tokens, batch_size, anno_embed_size] →
+        # [num_tokens, batch_size, hidden_size + anno_embed_size] →
+        conditional = torch.cat((conditional, anno_embed), dim=2)
 
-        # [batch_size, num_tokens, hidden_size] →
-        # [batch_size, in_channels (hidden_size), sequence_length (num_tokens)]
+        # [batch_size, num_tokens, *] →
+        # [batch_size, in_channels (*), sequence_length (num_tokens)]
         tokens = tokens.transpose(1, 2)
         tokens_mask = tokens_mask.transpose(1, 2)
         conditional = conditional.transpose(1, 2)
@@ -484,8 +492,8 @@ class Encoder(torch.nn.Module):
         conditional = conditional.permute(2, 0, 1)
 
         # [num_tokens, batch_size, hidden_size] (cat)
-        # [num_tokens, batch_size, hidden_size] →
-        # [num_tokens, batch_size, hidden_size * 2]
+        # [num_tokens, batch_size, hidden_size + anno_embed_size] →
+        # [num_tokens, batch_size, hidden_size * 2 + anno_embed_size]
         juncture = torch.cat((tokens, conditional), dim=2)
 
         # [num_tokens, batch_size, hidden_size * 2] →
@@ -498,7 +506,7 @@ class Encoder(torch.nn.Module):
         # [num_tokens, batch_size, hidden_size * 2]
         tokens = torch.cat((tokens, conditional), dim=2)
 
-        # [num_tokens, batch_size, hidden_size * 3] →
+        # [num_tokens, batch_size, hidden_size * 2 + anno_embed_size] →
         # [num_tokens, batch_size, out_size]
         tokens = self.project_out(tokens).masked_fill(~tokens_mask, 0)
 

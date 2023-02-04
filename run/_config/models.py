@@ -39,7 +39,7 @@ def configure(overwrite: bool = False):
             # NOTE: These are standard choices for embedding sizing and processing.
             num_anno_layers=2,
             token_meta_embed_size=128,
-            anno_embed_size=128,
+            anno_embed_size=512,
             # SOURCE (Tacotron 2):
             # Input characters are represented using a learned 512-dimensional character embedding
             # ...
@@ -115,7 +115,7 @@ def configure(overwrite: bool = False):
             # The paper mentions their proposed model uses a 256 dimension embedding.
             # NOTE: See https://github.com/wellsaid-labs/Text-to-Speech/pull/258 to learn more about
             # this parameter.
-            seq_embed_size=128,
+            seq_embed_size=150,
         ),
         run._models.signal_model.wrapper.SignalModelWrapper: cf.Args(
             max_speakers=max_speakers,

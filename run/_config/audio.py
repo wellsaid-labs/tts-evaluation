@@ -158,6 +158,7 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
 
     # NOTE: The `DeMan` loudness implementation of ITU-R BS.1770 is sample rate independent.
     filter_class = "DeMan"
+    sil_thresh = -50
     config = {
         lib.visualize.plot_spectrogram: Args(frame_hop=FRAME_HOP),
         lib.visualize.plot_mel_spectrogram: Args(frame_hop=FRAME_HOP, **hertz_bounds),
@@ -212,8 +213,9 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
         run.train.spectrogram_model._metrics.get_num_pause_frames: Args(
             frame_hop=FRAME_HOP,
             min_length=too_long_pause_length,
-            max_loudness=-50,
+            max_loudness=sil_thresh,
         ),
+        run.train.spectrogram_model._metrics.get_num_sil_frames: Args(sil_threshold=sil_thresh),
         run._models.signal_model.wrapper.SignalModelWrapper: Args(
             ratios=[2] * math.ceil(math.log2(FRAME_HOP)),
             pred_sample_rate=2 ** math.ceil(math.log2(FRAME_HOP)),

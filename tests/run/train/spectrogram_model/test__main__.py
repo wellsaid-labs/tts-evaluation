@@ -70,7 +70,7 @@ def test_integration():
         # fmt: off
         keys = [
             metrics.ALIGNMENT_STD_SUM, metrics.ALIGNMENT_NORM_SUM,
-            metrics.NUM_REACHED_MAX, metrics.RMS_SUM_PREDICTED, metrics.RMS_SUM
+            metrics.NUM_REACHED_MAX, metrics.RMS_SUM_PRED, metrics.RMS_SUM
         ]
         # fmt: on
         for key in keys:
@@ -85,8 +85,8 @@ def test_integration():
         bucket = len(batch.spans[0].script) // metrics.TEXT_LENGTH_BUCKET_SIZE
         values = {
             MetricsKey(metrics.NUM_FRAMES_MAX): max_frames,
-            MetricsKey(metrics.NUM_FRAMES_PREDICTED): num_frames,
-            MetricsKey(metrics.NUM_FRAMES_PREDICTED, JUDY_BIEBER): num_frames,
+            MetricsKey(metrics.NUM_FRAMES_PRED): num_frames,
+            MetricsKey(metrics.NUM_FRAMES_PRED, JUDY_BIEBER): num_frames,
             MetricsKey(metrics.NUM_FRAMES): num_frames,
             MetricsKey(metrics.NUM_FRAMES, JUDY_BIEBER): num_frames,
             MetricsKey(metrics.NUM_SECONDS): num_seconds,
