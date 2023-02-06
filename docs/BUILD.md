@@ -87,6 +87,12 @@ Push the local image to our remote repository:
 docker push gcr.io/${PROJECT_ID}/speech-api-worker:${IMAGE_TAG}
 ```
 
+Get the fully qualified image digest (required for deployment configuration)
+
+```bash
+gcloud container images describe gcr.io/${PROJECT_ID}/speech-api-worker:${IMAGE_TAG}
+```
+
 Viewing a list of images in the remote repository:
 
 ```bash

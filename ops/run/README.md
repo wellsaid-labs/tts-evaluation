@@ -137,9 +137,12 @@ releases. To deploy a new model, follow these steps:
      to release you can use the command below to determine the digest:
 
      ```bash
+     # Local image
      docker inspect \
-       gcr.io/voice-service-2-313121/speech-api-worker:latest \
+       gcr.io/${PROJECT_ID}/speech-api-worker:${IMAGE_TAG} \
        --format="{{index .RepoDigests 0}}"
+     # Remote image
+     gcloud container images describe gcr.io/${PROJECT_ID}/speech-api-worker:${IMAGE_TAG}
      ```
 
      The result should look something like this:
