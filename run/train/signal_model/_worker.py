@@ -654,7 +654,7 @@ def _run_steps(
 
             timer = Timer().record_event(Timer.LOAD_DATA)
 
-        metrics.log(is_verbose=True, type_=dataset_type, cadence=Cadence.MULTI_STEP)
+        metrics.log(is_verbose=False, type_=dataset_type, cadence=Cadence.MULTI_STEP)
 
 
 def run_worker(
