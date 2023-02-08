@@ -630,6 +630,7 @@ def _run_steps(
     dataset_type: DatasetType,
     data_loader: DataLoader,
     handle_batch: _HandleBatch,
+    is_verbose: bool = False,
     **kwargs,
 ):
     """Run the `handle_batch` in a loop over `data_loader` batches."""
@@ -650,11 +651,12 @@ def _run_steps(
 
             if Context.TRAIN == context:
                 metrics.log(lambda l: l[-1:], timer, type_=dataset_type, cadence=Cadence.STEP)
-                state.comet.log_metrics(timer.get_timers(cadence=Cadence.STEP))
+                if is_verbose:
+                    state.comet.log_metrics(timer.get_timers(cadence=Cadence.STEP))
 
             timer = Timer().record_event(Timer.LOAD_DATA)
 
-        metrics.log(is_verbose=False, type_=dataset_type, cadence=Cadence.MULTI_STEP)
+        metrics.log(is_verbose=is_verbose, type_=dataset_type, cadence=Cadence.MULTI_STEP)
 
 
 def run_worker(
