@@ -86,7 +86,7 @@ def configure(overwrite: bool = False):
             # SOURCE (Tacotron 2):
             # The prediction from the previous time step is first passed through a small
             # pre-net containing 2 fully connected layers of 256 hidden ReLU units.
-            pre_net_size=256,
+            pre_net_size=1024,
             # SOURCE (Tacotron 2):
             # The prenet output and attention context vector are concatenated and
             # passed through a stack of 2 uni-directional LSTM layers with 1024 units.
@@ -96,7 +96,7 @@ def configure(overwrite: bool = False):
             # SOURCE (Tacotron 2):
             # The prediction from the previous time step is first passed through a small
             # pre-net containing 2 fully connected layers of 256 hidden ReLU units.
-            num_layers=2
+            num_layers=1
         ),
         run._models.spectrogram_model.wrapper.SpectrogramModelWrapper: cf.Args(
             max_tokens=max_tokens,
@@ -136,7 +136,7 @@ def configure(overwrite: bool = False):
         # SOURCE (Tacotron 2):
         # In order to introduce output variation at inference time, dropout with probability 0.5 is
         # applied only to layers in the pre-net of the autoregressive decoder.
-        run._models.spectrogram_model.pre_net.PreNet: cf.Args(dropout=0.5),
+        run._models.spectrogram_model.pre_net.PreNet: cf.Args(dropout=0.7),
         run._models.spectrogram_model.attention.Attention: cf.Args(dropout=0.1),
         run._models.spectrogram_model.decoder.Decoder: cf.Args(
             stop_net_dropout=0.5, stop_net_hidden_size=512
