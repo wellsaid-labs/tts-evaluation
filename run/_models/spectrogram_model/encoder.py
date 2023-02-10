@@ -328,22 +328,15 @@ class Encoder(torch.nn.Module):
         self.annos = annos
 
         self.embed_seq_meta = ModuleList(
-            NumeralizePadEmbed(n, embedding_dim=seq_embed_size // len(max_seq_meta_vals))
-            for n in max_seq_meta_vals
+            NumeralizePadEmbed(n, embedding_dim=seq_embed_size) for n in max_seq_meta_vals
         )
         self.embed_seq_vector = torch.nn.Sequential(
             torch.nn.Linear(max_seq_vector_size, seq_embed_size),
-            torch.nn.ReLU(),
+            torch.nn.GELU(),
             torch.nn.Linear(seq_embed_size, seq_embed_size),
-            torch.nn.ReLU(),
-            layer_norm(seq_embed_size),
         )
-        self.embed_seq = torch.nn.Sequential(
-            torch.nn.Dropout(seq_meta_embed_dropout),
-            torch.nn.Linear(seq_embed_size * 2, seq_embed_size),
-            torch.nn.ReLU(),
-            layer_norm(seq_embed_size),
-        )
+        self.embed_seq_dropout = torch.nn.Dropout(seq_meta_embed_dropout)
+        self.embed_seq = layer_norm(seq_embed_size)
         self.embed_token_meta = ModuleList(
             NumeralizePadEmbed(n, embedding_dim=token_meta_embed_size // len(max_token_meta_vals))
             for n in max_token_meta_vals
@@ -424,19 +417,16 @@ class Encoder(torch.nn.Module):
         # TODO: During testing, we may inject those, let's not do that.
         num_tokens = tokens_mask.sum(dim=1)
 
-        # [batch_size] → [batch_size, seq_embed_size * len(max_seq_meta_vals)]
+        # [batch_size] → [batch_size, seq_embed_size]
         iter_ = zip(self.embed_seq_meta, inputs.seq_meta_transposed)
         seq_meta = [embed(meta, batch_first=True)[0] for embed, meta in iter_]
-        seq_meta_embed = torch.cat(seq_meta, dim=1)
         # [batch_size, max_seq_vector_size] → [batch_size, seq_embed_size]
-        seq_vector_embed = self.embed_seq_vector(inputs.get_seq_vec(self.max_seq_vector_size))
-        # [batch_size, seq_embed_size * len(max_seq_meta_vals)] (cat)
-        # [batch_size, seq_embed_size] →
-        # [batch_size, seq_embed_size * (len(max_seq_meta_vals) + 1)]
-        seq_embed = torch.cat((seq_meta_embed, seq_vector_embed), dim=1)
-        # [batch_size, seq_embed_size * (len(max_seq_meta_vals) + 1)] →
+        seq_vector = self.embed_seq_vector(inputs.get_seq_vec(self.max_seq_vector_size))
+        seq_embed = torch.stack(seq_meta + [seq_vector])
+        seq_embed = self.embed_seq_dropout(seq_embed)
+        # [len(max_seq_meta_vals) + 1, batch_size, seq_embed_size] →
         # [batch_size, seq_embed_size]
-        seq_embed: torch.Tensor = self.embed_seq(seq_embed)
+        seq_embed = self.embed_seq(seq_embed.sum(dim=0))
         # [batch_size, seq_embed_size] → [batch_size, num_tokens, seq_embed_size]
         seq_embed_expanded = seq_embed.unsqueeze(1).expand(-1, tokens.shape[1], -1)
 

@@ -26,7 +26,7 @@ def configure(overwrite: bool = False):
     # NOTE: These values can be increased as needed, they preemtively allocate model
     # parameters.
     max_tokens = 1000
-    max_anno_vector_size = 3
+    max_anno_vector_size = 2
     annos = [("loudness_vector", "loudness_mask"), ("tempo_vector", "tempo_mask")]
     max_speakers = len(set(s.label for s in _config.data.DATASETS.keys()))
     max_dialects = len(set(s.dialect for s in _config.data.DATASETS.keys()))

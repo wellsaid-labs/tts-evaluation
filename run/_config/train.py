@@ -61,7 +61,7 @@ def _config_spec_model_training(
         run.train._utils.set_run_seed: cf.Args(seed=RANDOM_SEED),
         spectrogram_model._worker._State._get_optimizers: cf.Args(
             lr_multiplier_schedule=partial(
-                lib.optimizers.warmup_lr_multiplier_schedule, warmup=500
+                lib.optimizers.warmup_lr_multiplier_schedule, warmup=10_000
             ),
             # SOURCE (Tacotron 2):
             # We use the Adam optimizer [29] with β1 = 0.9, β2 = 0.999

@@ -1,14 +1,22 @@
 import config as cf
 import torch
 import torch.nn
-from torch.nn import functional
 
 
-class _AlwaysDropout(torch.nn.Dropout):
-    """Adaptation of `nn.Dropout` to apply dropout during both evaluation and training."""
+class GaussianDropout(torch.nn.Module):
+    def __init__(self, p):
+        super(GaussianDropout, self).__init__()
+        if p < 0 or p >= 1:
+            raise Exception("p value should accomplish 0 <= p < 1")
+        self.p = p
 
-    def forward(self, input_: torch.Tensor) -> torch.Tensor:
-        return functional.dropout(input=input_, p=self.p, training=True, inplace=self.inplace)
+    def forward(self, x):
+        if self.training and self.p != 0:
+            stddev = (self.p / (1.0 - self.p)) ** 0.5
+            epsilon = torch.randn_like(x) * stddev
+            return x * epsilon
+        else:
+            return x
 
 
 class PreNet(torch.nn.Module):
@@ -51,9 +59,9 @@ class PreNet(torch.nn.Module):
                     in_features=(num_frame_channels if i == 0 else size) + seq_embed_size,
                     out_features=size,
                 ),
-                torch.nn.ReLU(inplace=True),
+                torch.nn.GELU(),
+                GaussianDropout(p=dropout),
                 torch.nn.LayerNorm(size, **cf.get()),
-                _AlwaysDropout(p=dropout),
             )
             for i in range(num_layers)
         ]
@@ -77,8 +85,6 @@ class PreNet(torch.nn.Module):
         Returns:
             frames (torch.FloatTensor [num_frames, batch_size, hidden_size])
         """
-        # [batch_size, seq_embed_size] → [num_frames, batch_size, seq_embed_size]
-        seq_embed = seq_embed.unsqueeze(0).expand(frames.shape[0], -1, -1)
         for layer in self.layers:
-            frames = layer(torch.cat([seq_embed, frames], dim=2))
+            frames = layer(frames)
         return frames

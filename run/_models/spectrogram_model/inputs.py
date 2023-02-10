@@ -692,7 +692,6 @@ def _anno_vector(
     # is. A short annotation does not have much room to deviate while a long one does.
     anno_vector = (
         slice_seq([(s, value) for s, _, value in anno], **kwargs),
-        slice_seq([(s, avg) for s, _, _ in anno], **kwargs),
         slice_seq([(s, length) for s, length, _ in anno], **kwargs),
     )
     anno_vector = torch.stack(anno_vector, dim=1)
