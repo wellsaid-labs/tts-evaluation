@@ -59,6 +59,7 @@ class SpectrogramModel(torch.nn.Module):
         seq_embed_size: The size of the sequence metadata embedding.
         num_frame_channels: Number of channels in each frame (sometimes refered to as
             "Mel-frequency bins" or "FFT bins" or "FFT bands").
+        output_min: The output of this model is clamped by this value.
         output_scalar: The output of this model is scaled up by this value.
         stop_threshold: If the stop probability exceeds this value, this model stops generating
             frames.
@@ -77,6 +78,7 @@ class SpectrogramModel(torch.nn.Module):
         seq_embed_size: int,
         num_frame_channels: int,
         output_scalar: float,
+        output_min: float,
         stop_threshold: float,
         stop_token_eps: float = 1e-10,
     ):
@@ -100,6 +102,7 @@ class SpectrogramModel(torch.nn.Module):
             seq_embed_size=seq_embed_size,
             **cf.get(),
         )
+        self.output_min = output_min / output_scalar
         self.output_scalar: torch.Tensor
         self.register_buffer("output_scalar", torch.tensor(output_scalar).float())
         self.stop_token_eps: torch.Tensor
@@ -195,6 +198,7 @@ class SpectrogramModel(torch.nn.Module):
 
             lengths[~stopped] += 1
             frame = frame.masked_fill(stopped.view(1, -1, 1), 0)
+            frame = torch.clamp(frame, min=self.output_min)
             hidden_state = hidden_state._replace(last_frame=frame)  # type: ignore
             reached_max = lengths == inputs.max_audio_len
             window_start = hidden_state.attention_hidden_state.window_start
@@ -248,9 +252,11 @@ class SpectrogramModel(torch.nn.Module):
             target_mask = torch.ones(*target_frames.shape[:1], device=target_frames.device)
         assert target_mask.shape[:1] == target_frames.shape[:1], "Shapes must align."
         target_frames = target_frames / self.output_scalar
+        assert target_frames.min() >= self.output_min
         encoded = self.encoder(inputs)
         out = self.decoder(encoded, target_frames)
-        frames = out.frames.masked_fill(~target_mask.unsqueeze(2), 0) * self.output_scalar
+        frames = out.frames.masked_fill(~target_mask.unsqueeze(2), 0)
+        frames = torch.clamp(frames, min=self.output_min) * self.output_scalar
         num_tokens = encoded.num_tokens.unsqueeze(0)
         stop_tokens = self._mask_stop_token(out.stop_tokens, num_tokens, out.window_starts)
         num_frames = target_mask.sum(dim=0)

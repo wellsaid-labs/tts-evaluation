@@ -160,10 +160,7 @@ def configure(overwrite: bool = False):
             mu=255,
         ),
         run._models.spectrogram_model.wrapper.SpectrogramModelWrapper: cf.Args(
-            # NOTE: The spectrogram values range from -50 to 50. Thie scalar rescales the
-            # spectrogram to a more reasonable range for deep learning.
-            output_scalar=10.0,
-            stop_threshold=stop_threshold,
+            stop_threshold=stop_threshold
         ),
     }
     cf.add(config, overwrite)

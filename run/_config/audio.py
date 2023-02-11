@@ -159,6 +159,7 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
     # NOTE: The `DeMan` loudness implementation of ITU-R BS.1770 is sample rate independent.
     filter_class = "DeMan"
     sil_thresh = -50
+    min_decibel = -50.0
     config = {
         lib.visualize.plot_spectrogram: Args(frame_hop=FRAME_HOP),
         lib.visualize.plot_mel_spectrogram: Args(frame_hop=FRAME_HOP, **hertz_bounds),
@@ -175,14 +176,14 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
             # allowing us to make the most use of the maximum 96 dB dynamic range a 16-bit audio
             # file can provide. This is assuming that a full-scale 997 Hz sine wave is the maximum
             # dB which would be around ~47 dB. Tacotron 2's equivalent  of 0.01 (~ -40 dB).
-            min_decibel=-50.0,
+            min_decibel=min_decibel,
             # NOTE: ISO226 is one of the latest standards for determining loudness:
             # https://www.iso.org/standard/34222.html. It does have some issues though:
             # http://www.lindos.co.uk/cgi-bin/FlexiData.cgi?SOURCE=Articles&VIEW=full&id=2
             get_weighting=lib.audio.iso226_weighting,
             # NOTE: Ensure that the weighting isn't below -30 decibels; otherwise, a value may go
             # to zero which and it'll go to infinity when applying the operations in inverse.
-            min_weight=-30,
+            min_weight=-30.0,
             **hertz_bounds,
         ),
         lib.audio.griffin_lim: Args(
@@ -286,6 +287,13 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
             # on average.
             length=10,
             standard_deviation=0.75,
+        ),
+        run._models.spectrogram_model.wrapper.SpectrogramModelWrapper: cf.Args(
+            # NOTE: The spectrogram values range from -50 to 50. Thie scalar rescales the
+            # spectrogram to a more reasonable range for deep learning. This also ensures that
+            # the output respects the minimum bound.
+            output_scalar=10.0,
+            output_min=min_decibel,
         ),
     }
     cf.add(config, overwrite)

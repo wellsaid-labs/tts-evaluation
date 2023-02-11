@@ -56,7 +56,12 @@ def _run_app(
     cf.add(cli_config)
     comet.log_parameters({get_config_label(k): v for k, v in cf.log(lambda x: x).items()})
     return run_workers(
-        _worker.run_worker, comet, checkpoint, checkpoints_directory, train_dataset, dev_dataset
+        _worker.run_worker,  # type: ignore
+        comet,
+        checkpoint,
+        checkpoints_directory,
+        train_dataset,
+        dev_dataset,
     )
 
 
