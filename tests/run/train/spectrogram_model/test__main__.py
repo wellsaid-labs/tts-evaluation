@@ -15,6 +15,7 @@ from run.train.spectrogram_model._worker import (
     _log_vocab,
     _run_inference,
     _run_step,
+    exclude_from_decay,
 )
 from tests.run._utils import make_spec_worker_state, mock_distributed_data_parallel
 from tests.run.train._utils import setup_experiment
@@ -49,6 +50,15 @@ def test_integration():
         num_workers=0,
         prefetch_factor=2,
     )
+
+    # Test `exclude_from_decay` excluded the right parameters
+    no_decay, decay, groups = state._make_optimizer_groups(state.model, exclude_from_decay)
+    assert len(no_decay) == len(groups[0]["params"])
+    assert groups[0]["weight_decay"] == 0.0
+    assert len(decay) == len(groups[1]["params"])
+    assert "encoder.lstm_norm.weight" in no_decay
+    assert "decoder.linear_stop_token.1.bias" in no_decay
+    assert "encoder.norm_layers.0.weight" in no_decay
 
     # Test `_run_step` with `Metrics` and `_State`
     with set_context(Context.TRAIN, comet, state.model):

@@ -134,9 +134,7 @@ class _State:
         return model
 
     @staticmethod
-    def _make_optimizer_groups(
-        model: torch.nn.Module, exclude_from_decay: ExcludeFromDecay
-    ) -> typing.List[typing.Dict[str, typing.Any]]:
+    def _make_optimizer_groups(model: torch.nn.Module, exclude_from_decay: ExcludeFromDecay):
         """Create optimizer groups with optimizer options per group.
 
         Args:
@@ -152,7 +150,8 @@ class _State:
         decay_names, decay_params = tuple(zip(*[p for p in named_params if not exclude(*p)]))
         logger.info("Parameters excluded from weight decay: %s", no_decay_names)
         logger.info("Parameters with weight decay: %s", decay_names)
-        return [{"params": no_decay_params, "weight_decay": 0.0}, {"params": decay_params}]
+        groups = [{"params": no_decay_params, "weight_decay": 0.0}, {"params": decay_params}]
+        return no_decay_names, decay_names, groups
 
     @staticmethod
     def _get_optimizers(
@@ -173,7 +172,7 @@ class _State:
         https://github.com/pytorch/pytorch/issues/2830
         """
         params = list(filter(lambda p: p.requires_grad, model.parameters()))
-        optim_groups = _State._make_optimizer_groups(model, exclude_from_decay)
+        _, _, optim_groups = _State._make_optimizer_groups(model, exclude_from_decay)
         optimizer_ = cf.partial(optimizer)(optim_groups)
         clipper = cf.partial(lib.optimizers.AdaptiveGradientNormClipper)(params)
         scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer_, lr_multiplier_schedule)
@@ -607,7 +606,8 @@ def exclude_from_decay(
         param: The parameter name as returned by `torch.nn.Module.parameters`.
         module: The parent module for this parameter.
     """
-    return ".bias" in param_name or type(module).__name__ in (torch.nn.LayerNorm,)
+    deny_list = (torch.nn.modules.normalization.LayerNorm,)
+    return ".bias" in param_name or any(isinstance(module, m) for m in deny_list)
 
 
 def run_worker(
