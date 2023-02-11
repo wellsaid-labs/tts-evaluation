@@ -330,11 +330,11 @@ def _check_processed(
     seq_vector = torch.tensor([sesh.loudness, sesh.tempo])
     assert torch.equal(processed.seq_vectors, seq_vector.view(1, 2))
     assert processed.token_vector_idx == dict(
-        loudness_vector=slice(0, 3),
-        loudness_mask=slice(3, 4),
-        tempo_vector=slice(4, 7),
-        tempo_mask=slice(7, 8),
-        word_vector=slice(8, 404),
+        loudness_vector=slice(0, 2),
+        loudness_mask=slice(2, 3),
+        tempo_vector=slice(3, 5),
+        tempo_mask=slice(5, 6),
+        word_vector=slice(6, 402),
     )
     vocab: spacy.vocab.Vocab = nlp.vocab
     word_vector_len = nlp.meta["vectors"]["width"]
@@ -527,7 +527,6 @@ def test_preprocess__slice_anno():
     l_suffix = [0] * len(" and")
     result = [
         l_prefix + [-49.0 * 3] * l_anno_len + l_suffix,
-        l_prefix + [sesh.loudness * 4] * l_anno_len + l_suffix,
         l_prefix + [len("not about about I gain") * 2] * l_anno_len + l_suffix,
     ]
     result = torch.tensor(result, dtype=torch.float)
@@ -543,7 +542,6 @@ def test_preprocess__slice_anno():
     t_suffix = [0] * len("I gain and")
     result = [
         t_prefix + [5 * 5] * t_anno_len + t_suffix,
-        t_prefix + [sesh.tempo * 5] * t_anno_len + t_suffix,
         t_prefix + [t_anno_len * 2] * t_anno_len + t_suffix,
     ]
     result = torch.tensor(result, dtype=torch.float)

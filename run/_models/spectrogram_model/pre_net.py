@@ -56,8 +56,7 @@ class PreNet(torch.nn.Module):
         _layers = [
             torch.nn.Sequential(
                 torch.nn.Linear(
-                    in_features=(num_frame_channels if i == 0 else size) + seq_embed_size,
-                    out_features=size,
+                    in_features=num_frame_channels if i == 0 else size, out_features=size
                 ),
                 torch.nn.GELU(),
                 GaussianDropout(p=dropout),
