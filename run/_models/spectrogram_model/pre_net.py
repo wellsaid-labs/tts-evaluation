@@ -66,7 +66,7 @@ class PreNet(torch.nn.Module):
         ]
         self.layers = torch.nn.ModuleList(_layers)
 
-        for module in self.layers.modules():
+        for module in self.modules():
             if isinstance(module, torch.nn.Linear):
                 gain = torch.nn.init.calculate_gain("relu")
                 torch.nn.init.xavier_uniform_(module.weight, gain=gain)
