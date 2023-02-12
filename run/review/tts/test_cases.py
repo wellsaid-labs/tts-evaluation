@@ -58,8 +58,50 @@ V10_REGRESSIONS = [
     # - This word caused the model to overflow
     "<respell value='po-lahn-co'>|\\po\\lahn\\co|</respell>",
     "<respell value='fran-SIH-skoh'>|\\fran\\SIH\\skoh|</respell>",
+    # ("Wii")
+    "The Wii gaming console.",
+    # Paige, Jarvis ("STOP")
+    "This needs to STOP now.",
+    # Ava ("queue")
+    "We were forced to stand in a queue.",
+    # Ava ("demo")
+    "She will be showing a demo of the company's new alarm system.",
+    # Donna, Wade ("Meet" dropping t sound)
+    "We arranged to meet for lunch.",
+    # Tilda, Lee, Vanessa, Jeremy, Nicole ("ChatGPT")
+    "ChatGPT is a powerful chatbot developed by OpenAI that uses machine learning to generate human-like responses to user input.",
+    "There are several benefits to using text-to-speech with ChatGPT.",
+    "Another benefit to using text-to-speech with ChatGPT is that it can make the chatbots' responses sound more natural and human-like.",
+    "One way to enhance the user experience with ChatGPT is by using a text to speech system to convert the chatbot’s responses from text to speech, allowing users to hear the chatbot’s responses instead of reading them.",
+    # Phone numbers
+    "My phone number is 723-5670",
+    # Parenthesis
+    "However when part of my script talked about a 401(k) plan and the voiceover pronounced it four hundred and wonk",
+    "I work for a financial industry and am making lots of videos talking about 401(k)s, 457(b)s, and so on.",
 ]
 
+V10_ACCENTURE = [
+    # Wade ("EVV" pronounced with inconsistent speed)
+    "Step 2: The EVV vendor reviews the EVV Provider Onboarding Form and confirms all required fields are complete and accurate.",
+    "Within one business day of receipt, the EVV vendor will send an email to the signature authority and Program Provider/FMSA EVV System Administrator listed on the form to acknowledge receipt of the EVV Provider Onboarding Form.",
+    "The EVV vendor will advise that the submitted form is under review and the contact information for the Program Provider/FMSA EVV System Administrator on the form will be used to contact the program provider or FMSA to begin the EVV Provider Onboarding Process.",
+]
+
+V10_SYNTHESIA = [
+    # "AI", "Xelia", "studio" requesting v10 downgrade to v9
+    # https://synthesia.notion.site/Downgrade-the-WellSaid-voice-model-to-the-previous-version-v10-v9-16910e7461d244e883e61b855d4ad8c2
+    "I’m an AI avatar",
+    "Mindblowing AI tools you’ve never heard of",
+    "We are happy to support tools supporting Xelia grows",
+    "Here’s a quick overview of our studio platform",
+]
+
+V10_EMAIL = [
+    "hello@wellsaidlabs.com.",
+    "hello123@wellsaidlabs.com.",
+    "hello-123@wellsaidlabs.com.",
+    "hello_123@wellsaidlabs.com.",
+]
 
 VARIOUS_INITIALISMS = [
     "Each line will have GA Type as Payment, Paid Amount along with PAC, and GA Code.",
@@ -115,6 +157,7 @@ QUESTIONS_WITH_VARIED_INFLECTION = [
     "If you could rid the world of one thing, what would it be?",
     "What childish things do you still do as an adult?",
     "If you were to perform in the circus, what would you do?",
+    "Who is eligible for reimbursement?",
 ]
 
 RESPELLINGS = [
@@ -189,6 +232,56 @@ HARD_SCRIPTS_2 = [
     "know him. Very strange strangers they were, too.",
 ]
 
+V10_AUDIO_QUALITY_DISTORTION = [
+    # 05/2021: Tobin
+    "Tobin’s “breathing” events will become highly distorted approximately 80 percent of the time, especially when using samples of 300-400 words.",
+    # 11/2022: Ramona
+    "We hear distortion in the audio file, a hissing sound, particularly in Romana J Avatar.",
+]
+
+V10_AUDIO_QUALITY_BREATHING = [
+    # 08/2020: Isabel
+    "Isabel seems to struggle with more than one sentence. There is a bug with her breathing and the end of sentences",
+    # 2020: Kai
+    "I use Kai the most, however, I don’t always enjoy editing out all his breaths before each sentence, but still gets used most frequently.",
+    # 2020-2022: Jeremy
+    "Jeremy's voice is great- perfect speed and inflection in most cases.  The loud breaths in his speech are tough to listed to after a while.",
+]
+
+V10_AUDIO_QUALITY_HARSHNESS = [
+    # NOTE: Harshness pertaining to buzz, fuzz, hiss, artifacts
+    # 10/2022: Jeremy
+    "The Jeremy avatar has an issue where there's a static/electrical noise when he pauses between words.",
+    # 07/2021: Alana
+    "Alana B - sounded great, but then others seemed to have odd artifacts or hiss sounds"
+    # 07/2021: Sofia
+    "if memory serves, Sofia H had some rather pronounced sibilance"
+    # 07/2021: Isabel
+    "and then Isabel V had a static-like sound going on",
+]
+
+V10_AUDIO_QUALITY_LOUDNESS = [
+    # NOTE: 2020-2022
+    # NOTE: Overall, WellSaid voices suffer from inconsistent loudness between styles, and across avatars.
+    # Ava: Too soft
+    "Ava M is dramatically lower than Wade C in volume level. The recording quality varies greatly as well.",
+    # Isabel: Too soft
+    "My favourite voice was always Isabel V. But, she is too quiet.",
+    # Wade: Too soft
+    "I have noticed that some voices, like Wade, come into Storyline with super low volume.",
+    # Jeremy: Too soft
+    "When I export finalized voiceovers they download at a VERY low sound level. This problem is apparent with Jeremy.",
+    # Terra: Too loud at the beginning of sentences
+    "Terra G. is the avatar. Seems like the beginning of alot of her sentences are loud.",
+    # Wade: Inconsistent loudness between styles
+    "Wade's styles have inconsistent loudness. For example, we hear this when switching from his narration to conversational style.",
+]
+
+GREEK_SYMBOLS = [
+    # Greek letters for math
+    "Α α Β β Γ γ Δ δ Ε ε Ζ ζ Η η Θ θ Ι ι  Κ κ Λ λ Μ μ Ν ν Ξ ξ Ο ο Π π Ρ ρ Σ σ ς Τ τ Υ υ Φ φ Χ χ Ψ ψ Ω ω",
+]
+
 items = locals().items()
 TEST_CASES = {k: v for k, v in items if isinstance(v, list) and all(isinstance(t, str) for t in v)}
 
@@ -198,6 +291,7 @@ def generate_test_cases(spec_export: SpectrogramModel, test_cases: typing.List[s
     for case in test_cases:
         sesh = random.choice(vocab)
         st.info(f"Seshion: {sesh}")
+        print(sesh)
         yield griffin_lim_tts(spec_export, XMLType(case), sesh)
 
 
@@ -214,8 +308,11 @@ def generate_incremental_annotations(
         ("tempo", lib.utils.arange(0.5, 2.1, 0.1)),
     ),
 ):
+    print(speakers)
     for speaker in speakers:
         sesh_vocab = spec_export.session_embed.get_vocab()
+        st.info(sesh_vocab)
+        # print("Speaker: ", speaker)
         sesh = random.choice([s for s in sesh_vocab if s.spkr == speaker])
         st.info(f"Seshion: {sesh}")
         for tag, range in annos:
