@@ -275,6 +275,8 @@ V10_AUDIO_QUALITY_LOUDNESS = [
     "Terra G. is the avatar. Seems like the beginning of alot of her sentences are loud.",
     # Wade: Inconsistent loudness between styles
     "Wade's styles have inconsistent loudness. For example, we hear this when switching from his narration to conversational style.",
+    # James B.(UK):
+    "Whenever I create a voice with this character, initially the volume of the audio is fine, but after 15-16 seconds of the audio playing, the sound volume goes down automatically.",
 ]
 
 GREEK_SYMBOLS = [
