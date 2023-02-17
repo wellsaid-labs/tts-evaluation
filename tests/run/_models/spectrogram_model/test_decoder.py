@@ -95,6 +95,7 @@ def test_decoder():
         assert decoded.hidden_state.last_attention_context.shape == expected
 
         assert isinstance(decoded.hidden_state.attention_hidden_state, AttentionHiddenState)
+        assert isinstance(decoded.hidden_state.lstm_hidden_state, tuple)
         assert isinstance(decoded.hidden_state.lstm_one_hidden_state, tuple)
         assert isinstance(decoded.hidden_state.lstm_two_hidden_state, tuple)
 

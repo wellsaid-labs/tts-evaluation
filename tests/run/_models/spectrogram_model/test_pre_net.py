@@ -19,7 +19,8 @@ def test_pre_net():
     )
     input_ = torch.randn(num_frames, batch_size, num_frame_channels)
     seq_embed = torch.randn(batch_size, seq_embed_size)
-    output = pre_net(input_, seq_embed)
+    output, hidden_state = pre_net(input_, seq_embed)
     assert output.dtype == torch.float
     assert output.shape == (num_frames, batch_size, size)
+    assert isinstance(hidden_state, tuple)
     output.sum().backward()

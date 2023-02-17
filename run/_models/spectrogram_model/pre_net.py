@@ -1,19 +1,20 @@
+import typing
+
 import config as cf
 import torch
 import torch.nn
 
 
-class GaussianDropout(torch.nn.Module):
+class _GaussianDropout(torch.nn.Module):
     def __init__(self, p):
-        super(GaussianDropout, self).__init__()
-        if p < 0 or p >= 1:
-            raise Exception("p value should accomplish 0 <= p < 1")
+        super(_GaussianDropout, self).__init__()
+        assert p >= 0 and p < 1
         self.p = p
 
     def forward(self, x):
-        if self.training and self.p != 0:
+        if self.p != 0:
             stddev = (self.p / (1.0 - self.p)) ** 0.5
-            epsilon = torch.randn_like(x) * stddev
+            epsilon = torch.randn_like(x) * stddev + 1
             return x * epsilon
         else:
             return x
@@ -53,28 +54,25 @@ class PreNet(torch.nn.Module):
         dropout: float,
     ):
         super().__init__()
-        _layers = [
-            torch.nn.Sequential(
-                torch.nn.Linear(
-                    in_features=num_frame_channels if i == 0 else size, out_features=size
-                ),
-                torch.nn.GELU(),
-                GaussianDropout(p=dropout),
-                torch.nn.LayerNorm(size, **cf.get()),
-            )
-            for i in range(num_layers)
-        ]
-        self.layers = torch.nn.ModuleList(_layers)
+        self.encode = torch.nn.LSTM(num_frame_channels, size, num_layers)
+        self.out = torch.nn.Sequential(
+            _GaussianDropout(p=dropout), cf.partial(torch.nn.LayerNorm)(size)
+        )
 
-        for module in self.modules():
-            if isinstance(module, torch.nn.Linear):
-                gain = torch.nn.init.calculate_gain("relu")
-                torch.nn.init.xavier_uniform_(module.weight, gain=gain)
+    def __call__(
+        self,
+        frames: torch.Tensor,
+        seq_embed: torch.Tensor,
+        lstm_hidden_state: typing.Optional[typing.Tuple] = None,
+    ) -> typing.Tuple[torch.Tensor, typing.Tuple]:
+        return super().__call__(frames, seq_embed, lstm_hidden_state)
 
-    def __call__(self, frames: torch.Tensor, seq_embed: torch.Tensor) -> torch.Tensor:
-        return super().__call__(frames, seq_embed)
-
-    def forward(self, frames: torch.Tensor, seq_embed: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        frames: torch.Tensor,
+        seq_embed: torch.Tensor,
+        lstm_hidden_state: typing.Optional[typing.Tuple] = None,
+    ) -> typing.Tuple[torch.Tensor, typing.Optional[typing.Tuple]]:
         """
         Args:
             frames (torch.FloatTensor [num_frames, batch_size, num_frame_channels]): Spectrogram
@@ -83,7 +81,7 @@ class PreNet(torch.nn.Module):
 
         Returns:
             frames (torch.FloatTensor [num_frames, batch_size, hidden_size])
+            hidden_state
         """
-        for layer in self.layers:
-            frames = layer(frames)
-        return frames
+        frames, lstm_hidden_state = self.encode(frames, lstm_hidden_state)
+        return self.out(frames), lstm_hidden_state

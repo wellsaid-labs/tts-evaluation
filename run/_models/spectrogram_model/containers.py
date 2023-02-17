@@ -140,6 +140,9 @@ class DecoderHiddenState(typing.NamedTuple):
     # Padded encoding with space for the `attention` window.
     padded_encoded: Encoded
 
+    # `PreNet.lstm` hidden state.
+    lstm_hidden_state: typing.Optional[typing.Tuple[torch.Tensor, torch.Tensor]] = None
+
     # `Decoder.lstm_layer_one` hidden state.
     lstm_one_hidden_state: typing.Optional[typing.Tuple[torch.Tensor, torch.Tensor]] = None
 

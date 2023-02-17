@@ -154,6 +154,7 @@ class Decoder(torch.nn.Module):
                 window_start=torch.zeros(batch_size, device=device, dtype=torch.long),
             ),
             padded_encoded=padded_encoded,
+            lstm_hidden_state=None,
             lstm_one_hidden_state=None,
             lstm_two_hidden_state=None,
         )
@@ -194,6 +195,7 @@ class Decoder(torch.nn.Module):
             last_frame,
             attention_hidden_state,
             padded_encoded,
+            lstm_hidden_state,
             lstm_one_hidden_state,
             lstm_two_hidden_state,
         ) = hidden_state
@@ -213,7 +215,10 @@ class Decoder(torch.nn.Module):
 
         # [num_frames, batch_size, num_frame_channels] →
         # [num_frames, batch_size, pre_net_hidden_size]
-        pre_net_frames = self.pre_net(frames, encoded.seq_embed)
+        pre_net_frames, lstm_hidden_state = self.pre_net(
+            frames, encoded.seq_embed, lstm_hidden_state
+        )
+        assert lstm_hidden_state is not None
 
         # Iterate over all frames for incase teacher-forcing; in sequential prediction, iterates
         # over a single frame.
@@ -297,6 +302,7 @@ class Decoder(torch.nn.Module):
             last_frame=frames[-1].unsqueeze(0),
             attention_hidden_state=attention_hidden_state,
             padded_encoded=padded_encoded,
+            lstm_hidden_state=lstm_hidden_state,
             lstm_one_hidden_state=lstm_one_hidden_state,
             lstm_two_hidden_state=lstm_two_hidden_state,
         )
