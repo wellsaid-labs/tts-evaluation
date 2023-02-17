@@ -4,6 +4,8 @@ import config as cf
 import torch
 import torch.nn
 
+from lib.utils import LSTM
+
 
 class _GaussianDropout(torch.nn.Module):
     def __init__(self, p):
@@ -54,7 +56,7 @@ class PreNet(torch.nn.Module):
         dropout: float,
     ):
         super().__init__()
-        self.encode = torch.nn.LSTM(num_frame_channels, size, num_layers)
+        self.encode = LSTM(num_frame_channels, size, num_layers)
         self.out = torch.nn.Sequential(
             _GaussianDropout(p=dropout), cf.partial(torch.nn.LayerNorm)(size)
         )
