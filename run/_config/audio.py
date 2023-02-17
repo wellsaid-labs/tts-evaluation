@@ -292,7 +292,7 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
             # NOTE: The spectrogram values range from -50 to 50. Thie scalar rescales the
             # spectrogram to a more reasonable range for deep learning. This also ensures that
             # the output respects the minimum bound.
-            output_scalar=10.0,
+            output_scalar=50.0,
             output_min=min_decibel,
         ),
     }
