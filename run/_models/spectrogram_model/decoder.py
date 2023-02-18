@@ -65,13 +65,14 @@ class Decoder(torch.nn.Module):
         )
         self.pre_net = cf.partial(PreNet)(num_frame_channels, seq_embed_size, pre_net_size)
         self.lstm_layer_one = LSTMCell(pre_net_size + input_size, lstm_hidden_size)
-        self.lstm_layer_two = LSTM(lstm_hidden_size + input_size, lstm_hidden_size)
+        self.lstm_layer_two = LSTM(lstm_hidden_size + input_size + pre_net_size, lstm_hidden_size)
         self.attention = cf.partial(Attention)(query_hidden_size=lstm_hidden_size)
         self.linear_out = torch.nn.Linear(lstm_hidden_size + input_size, num_frame_channels)
         self.linear_stop_token = torch.nn.Sequential(
             torch.nn.Dropout(stop_net_dropout),
             torch.nn.Linear(
-                lstm_hidden_size + encoder_out_size + seq_embed_size, stop_net_hidden_size
+                lstm_hidden_size + encoder_out_size + seq_embed_size + pre_net_size,
+                stop_net_hidden_size,
             ),
             torch.nn.ReLU(),
             torch.nn.Linear(stop_net_hidden_size, 1),
@@ -281,7 +282,7 @@ class Decoder(torch.nn.Module):
         # [num_frames, batch_size, encoder_out_size] (concat)
         # [num_frames, batch_size, seq_embed_size] →
         # [num_frames, batch_size, lstm_hidden_size + encoder_out_size + seq_embed_size]
-        frames = torch.cat([frames, attention_contexts, seq_embed], dim=2)
+        frames = torch.cat([frames, pre_net_frames, attention_contexts, seq_embed], dim=2)
 
         # [num_frames, batch_size, lstm_hidden_size + encoder_out_size + seq_embed_size] →
         # [num_frames, batch_size]
