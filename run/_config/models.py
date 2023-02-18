@@ -14,11 +14,6 @@ logger = logging.getLogger(__name__)
 def configure(overwrite: bool = False):
     """Configure spectrogram and signal model."""
     # SOURCE (Tacotron 2):
-    # Attention probabilities are computed after projecting inputs and location
-    # features to 128-dimensional hidden representations.
-    encoder_out_size = 128
-
-    # SOURCE (Tacotron 2):
     # Specifically, generation completes at the first frame for which this
     # probability exceeds a threshold of 0.5.
     stop_threshold = 0.5
@@ -60,15 +55,10 @@ def configure(overwrite: bool = False):
             # bi-directional [19] LSTM [20] layer containing 512 units (256) in each
             # direction) to generate the encoded features.
             lstm_layers=2,
-            out_size=encoder_out_size,
         ),
         run._models.spectrogram_model.attention.Attention: cf.Args(
             # SOURCE (Tacotron 2):
             # Location features are computed using 32 1-D convolution filters of length 31.
-            # SOURCE (Tacotron 2):
-            # Attention probabilities are computed after projecting inputs and location
-            # features to 128-dimensional hidden representations.
-            hidden_size=128,
             conv_filter_size=9,
             # NOTE: The alignment between text and speech is monotonic; therefore, the attention
             # progression should reflect that. The `window_length` ensures the progression is
@@ -82,7 +72,6 @@ def configure(overwrite: bool = False):
             avg_frames_per_token=1.45 * (4096 / _config.audio.FRAME_SIZE),
         ),
         run._models.spectrogram_model.decoder.Decoder: cf.Args(
-            encoder_out_size=encoder_out_size,
             # SOURCE (Tacotron 2):
             # The prediction from the previous time step is first passed through a small
             # pre-net containing 2 fully connected layers of 256 hidden ReLU units.
@@ -116,6 +105,10 @@ def configure(overwrite: bool = False):
             # NOTE: See https://github.com/wellsaid-labs/Text-to-Speech/pull/258 to learn more about
             # this parameter.
             seq_embed_size=150,
+            # SOURCE (Tacotron 2):
+            # Attention probabilities are computed after projecting inputs and location
+            # features to 128-dimensional hidden representations.
+            attention_size=128,
         ),
         run._models.signal_model.wrapper.SignalModelWrapper: cf.Args(
             max_speakers=max_speakers,

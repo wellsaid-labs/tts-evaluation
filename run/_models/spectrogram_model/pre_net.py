@@ -3,20 +3,23 @@ import typing
 import config as cf
 import torch
 import torch.nn
+from torch.nn.init import _no_grad_trunc_normal_
 
 from lib.utils import LSTM
 
 
 class _GaussianDropout(torch.nn.Module):
-    def __init__(self, p):
+    def __init__(self, p, sigma: float = 4.0):
         super(_GaussianDropout, self).__init__()
         assert p >= 0 and p < 1
         self.p = p
+        self.stddev = (self.p / (1.0 - self.p)) ** 0.5
+        self.bound = self.stddev * sigma
 
     def forward(self, x):
         if self.p != 0:
-            stddev = (self.p / (1.0 - self.p)) ** 0.5
-            epsilon = torch.randn_like(x) * stddev + 1
+            epsilon = torch.empty_like(x)
+            epsilon = _no_grad_trunc_normal_(epsilon, 0, self.stddev, -self.bound, self.bound) + 1
             return x * epsilon
         else:
             return x

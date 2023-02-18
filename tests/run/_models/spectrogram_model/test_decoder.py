@@ -19,7 +19,7 @@ def _make_decoder(
     seq_embed_size=8,
     pre_net_size=3,
     lstm_hidden_size=4,
-    encoder_out_size=5,
+    attention_size=5,
     stop_net_dropout=0.5,
     stop_net_hidden_size=3,
 ) -> Decoder:
@@ -36,7 +36,7 @@ def _make_decoder(
         run._models.spectrogram_model.decoder.Decoder: cf.Args(
             pre_net_size=pre_net_size,
             lstm_hidden_size=lstm_hidden_size,
-            encoder_out_size=encoder_out_size,
+            attention_size=attention_size,
             stop_net_dropout=stop_net_dropout,
             stop_net_hidden_size=stop_net_hidden_size,
         ),
@@ -52,7 +52,7 @@ def _make_encoded(
     module: Decoder, batch_size: int = 5, max_num_tokens: int = 6
 ) -> typing.Tuple[Encoded, typing.Tuple[int, int]]:
     """Make `Encoded` for testing."""
-    tokens = torch.randn(max_num_tokens, batch_size, module.encoder_out_size)
+    tokens = torch.randn(max_num_tokens, batch_size, module.attention_size)
     num_tokens = [random.randint(1, max_num_tokens) for _ in range(batch_size)]
     num_tokens[-1] = max_num_tokens
     num_tokens = torch.tensor(num_tokens)
@@ -91,7 +91,7 @@ def test_decoder():
         assert decoded.hidden_state.last_frame.shape == expected
 
         assert decoded.hidden_state.last_attention_context.dtype == torch.float
-        expected = (batch_size, module.encoder_out_size)
+        expected = (batch_size, module.attention_size)
         assert decoded.hidden_state.last_attention_context.shape == expected
 
         assert isinstance(decoded.hidden_state.attention_hidden_state, AttentionHiddenState)
@@ -128,7 +128,7 @@ def test_decoder__target():
     assert decoded.hidden_state.last_frame.shape == (1, batch_size, module.num_frame_channels)
 
     assert decoded.hidden_state.last_attention_context.dtype == torch.float
-    expected = (batch_size, module.encoder_out_size)
+    expected = (batch_size, module.attention_size)
     assert decoded.hidden_state.last_attention_context.shape == expected
 
     assert isinstance(decoded.hidden_state.attention_hidden_state, AttentionHiddenState)
@@ -142,13 +142,13 @@ def test_decoder__pad_encoded():
     """Test `decoder.Decoder` pads encoded correctly."""
     module = _make_decoder()
     encoded, (batch_size, num_tokens) = _make_encoded(module)
-    window_length, encoder_size = module.attention.window_length - 1, module.encoder_out_size
-    beg_pad_token = torch.rand(batch_size, module.encoder_out_size)
-    end_pad_token = torch.rand(batch_size, module.encoder_out_size)
+    window_length, attention_size = module.attention.window_length - 1, module.attention_size
+    beg_pad_token = torch.rand(batch_size, module.attention_size)
+    end_pad_token = torch.rand(batch_size, module.attention_size)
     padded = module._pad_encoded(encoded, beg_pad_token, end_pad_token)
 
     assert padded.tokens.dtype == torch.float
-    assert padded.tokens.shape == (num_tokens + window_length, batch_size, encoder_size)
+    assert padded.tokens.shape == (num_tokens + window_length, batch_size, attention_size)
 
     assert padded.tokens_mask.dtype == torch.bool
     assert padded.tokens_mask.shape == (batch_size, num_tokens + window_length)

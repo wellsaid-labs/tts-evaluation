@@ -64,6 +64,7 @@ class Params(typing.NamedTuple):
 def _make_spectrogram_model(
     params: Params,
     seq_embed_size: int = 8,
+    attention_size: int = 16,
     anno_embed_size: int = 3,
     token_meta_embed_size: int = 6,
     output_scalar: float = 1.2,
@@ -76,7 +77,6 @@ def _make_spectrogram_model(
     config = {
         run._models.spectrogram_model.encoder.Encoder: cf.Args(
             seq_meta_embed_dropout=dropout,
-            out_size=16,
             hidden_size=16,
             num_conv_layers=2,
             conv_filter_size=3,
@@ -88,7 +88,6 @@ def _make_spectrogram_model(
         run._models.spectrogram_model.decoder.Decoder: cf.Args(
             pre_net_size=16,
             lstm_hidden_size=16,
-            encoder_out_size=16,
             stop_net_dropout=dropout,
             stop_net_hidden_size=16,
         ),
@@ -113,6 +112,7 @@ def _make_spectrogram_model(
         max_anno_vector_size=params.max_anno_vector_size,
         annos=params.annos,
         seq_embed_size=seq_embed_size,
+        attention_size=attention_size,
         num_frame_channels=params.num_frame_channels,
         output_scalar=output_scalar,
         output_min=params.output_min,
