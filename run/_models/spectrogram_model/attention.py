@@ -172,7 +172,8 @@ class Attention(torch.nn.Module):
         query = self.project_query(query).view(batch_size, self.hidden_size, 1)
 
         # [batch_size, hidden_size, num_tokens]
-        location_features = torch.tanh(location_features + query)
+        location_features = (location_features + query + tokens.permute(1, 2, 0)) / math.sqrt(3)
+        location_features = torch.tanh(location_features)
 
         # [batch_size, hidden_size, num_tokens] →
         # [num_tokens, batch_size, hidden_size] →
