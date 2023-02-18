@@ -172,13 +172,12 @@ class Attention(torch.nn.Module):
         query = self.project_query(query).view(batch_size, self.hidden_size, 1)
 
         # [batch_size, hidden_size, num_tokens]
-        location_features = (location_features + query + tokens.permute(1, 2, 0)) / math.sqrt(3)
-        location_features = torch.tanh(location_features)
+        score = torch.tanh((location_features + query + tokens.permute(1, 2, 0)) / math.sqrt(3))
 
         # [batch_size, hidden_size, num_tokens] →
         # [num_tokens, batch_size, hidden_size] →
         # [batch_size, num_tokens]
-        score = self.project_scores(location_features.permute(2, 0, 1)).squeeze(2).transpose(0, 1)
+        score = self.project_scores(score.permute(2, 0, 1)).squeeze(2).transpose(0, 1)
 
         score.data.masked_fill_(~tokens_mask, -math.inf)
 
