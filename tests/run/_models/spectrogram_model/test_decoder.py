@@ -17,28 +17,23 @@ from run._models.spectrogram_model.decoder import Decoder
 def _make_decoder(
     num_frame_channels=16,
     seq_embed_size=8,
-    pre_net_size=3,
-    lstm_hidden_size=4,
+    hidden_size=4,
     attention_size=5,
     stop_net_dropout=0.5,
-    stop_net_hidden_size=3,
 ) -> Decoder:
     """Make `decoder.Decoder` for testing."""
     _config = {
         run._models.spectrogram_model.pre_net.PreNet: cf.Args(num_layers=1, dropout=0.5),
         run._models.spectrogram_model.attention.Attention: cf.Args(
-            hidden_size=4,
             conv_filter_size=3,
             dropout=0.1,
             window_length=5,
             avg_frames_per_token=1.0,
         ),
         run._models.spectrogram_model.decoder.Decoder: cf.Args(
-            pre_net_size=pre_net_size,
-            lstm_hidden_size=lstm_hidden_size,
+            hidden_size=hidden_size,
             attention_size=attention_size,
             stop_net_dropout=stop_net_dropout,
-            stop_net_hidden_size=stop_net_hidden_size,
         ),
     }
     cf.add(_config, overwrite=True)
@@ -95,7 +90,7 @@ def test_decoder():
         assert decoded.hidden_state.last_attention_context.shape == expected
 
         assert isinstance(decoded.hidden_state.attention_hidden_state, AttentionHiddenState)
-        assert isinstance(decoded.hidden_state.lstm_hidden_state, tuple)
+        assert isinstance(decoded.hidden_state.pre_net_hidden_state, tuple)
         assert isinstance(decoded.hidden_state.lstm_one_hidden_state, tuple)
         assert isinstance(decoded.hidden_state.lstm_two_hidden_state, tuple)
 

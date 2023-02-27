@@ -283,7 +283,6 @@ class Encoder(torch.nn.Module):
         seq_embed_size: The size of the sequence metadata embeddings.
         token_meta_embed_size: The size of the token metadata embeddings.
         anno_embed_size: The size of the annotation embeddings.
-        seq_meta_embed_dropout: The sequence metadata embedding dropout probability.
         out_size: The size of the encoder output.
         hidden_size: The size of the encoders hidden representation. This value must be even.
         num_conv_layers: Number of convolution layers.
@@ -305,7 +304,6 @@ class Encoder(torch.nn.Module):
         seq_embed_size: int,
         token_meta_embed_size: int,
         anno_embed_size: int,
-        seq_meta_embed_dropout: float,
         out_size: int,
         hidden_size: int,
         num_conv_layers: int,
@@ -335,7 +333,7 @@ class Encoder(torch.nn.Module):
             torch.nn.GELU(),
             torch.nn.Linear(seq_embed_size, seq_embed_size),
         )
-        self.embed_seq_dropout = torch.nn.Dropout(seq_meta_embed_dropout)
+        self.embed_seq_dropout = torch.nn.Dropout(dropout)
         self.embed_seq = layer_norm(seq_embed_size)
         self.embed_token_meta = ModuleList(
             NumeralizePadEmbed(n, embedding_dim=token_meta_embed_size // len(max_token_meta_vals))

@@ -3,6 +3,8 @@ import typing
 
 import torch
 
+from run._models.spectrogram_model.pre_net import PreNetHiddenState
+
 PredsType = typing.TypeVar("PredsType", bound="Preds")
 
 
@@ -140,8 +142,8 @@ class DecoderHiddenState(typing.NamedTuple):
     # Padded encoding with space for the `attention` window.
     padded_encoded: Encoded
 
-    # `PreNet.lstm` hidden state.
-    lstm_hidden_state: typing.Optional[typing.Tuple[torch.Tensor, torch.Tensor]] = None
+    # `PreNet` hidden state.
+    pre_net_hidden_state: PreNetHiddenState = None
 
     # `Decoder.lstm_layer_one` hidden state.
     lstm_one_hidden_state: typing.Optional[typing.Tuple[torch.Tensor, torch.Tensor]] = None

@@ -73,13 +73,9 @@ def configure(overwrite: bool = False):
         ),
         run._models.spectrogram_model.decoder.Decoder: cf.Args(
             # SOURCE (Tacotron 2):
-            # The prediction from the previous time step is first passed through a small
-            # pre-net containing 2 fully connected layers of 256 hidden ReLU units.
-            pre_net_size=1024,
-            # SOURCE (Tacotron 2):
             # The prenet output and attention context vector are concatenated and
             # passed through a stack of 2 uni-directional LSTM layers with 1024 units.
-            lstm_hidden_size=1024,
+            hidden_size=1024,
         ),
         run._models.spectrogram_model.pre_net.PreNet: cf.Args(
             # SOURCE (Tacotron 2):
@@ -108,7 +104,7 @@ def configure(overwrite: bool = False):
             # SOURCE (Tacotron 2):
             # Attention probabilities are computed after projecting inputs and location
             # features to 128-dimensional hidden representations.
-            attention_size=128,
+            attention_size=256,
         ),
         run._models.signal_model.wrapper.SignalModelWrapper: cf.Args(
             max_speakers=max_speakers,
@@ -131,13 +127,9 @@ def configure(overwrite: bool = False):
         # applied only to layers in the pre-net of the autoregressive decoder.
         run._models.spectrogram_model.pre_net.PreNet: cf.Args(dropout=0.7),
         run._models.spectrogram_model.attention.Attention: cf.Args(dropout=0.1),
-        run._models.spectrogram_model.decoder.Decoder: cf.Args(
-            stop_net_dropout=0.5, stop_net_hidden_size=512
-        ),
+        run._models.spectrogram_model.decoder.Decoder: cf.Args(stop_net_dropout=0.5),
         # NOTE: This dropout approach proved effective in Comet in March 2020.
-        run._models.spectrogram_model.encoder.Encoder: cf.Args(
-            dropout=0.1, seq_meta_embed_dropout=0.1
-        ),
+        run._models.spectrogram_model.encoder.Encoder: cf.Args(dropout=0.1),
     }
     cf.add(config, overwrite)
 

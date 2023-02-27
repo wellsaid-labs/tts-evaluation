@@ -212,7 +212,6 @@ def _make_encoder(
     seq_embed_size=6,
     token_meta_embed_size=12,
     anno_embed_size=3,
-    seq_meta_embed_dropout=0.1,
     max_anno_vector_size=1,
     out_size=8,
     hidden_size=8,
@@ -244,7 +243,6 @@ def _make_encoder(
         seq_embed_size=seq_embed_size,
         token_meta_embed_size=token_meta_embed_size,
         anno_embed_size=anno_embed_size,
-        seq_meta_embed_dropout=seq_meta_embed_dropout,
         max_anno_vector_size=max_anno_vector_size,
         annos=[annos],
         out_size=out_size,
@@ -318,7 +316,7 @@ def test_encoder__filter_size():
 
 def test_encoder__padding_invariance():
     """Test `encoder.Encoder` is consistent regardless of the padding."""
-    module, arg, (_, batch_size, _) = _make_encoder(dropout=0, seq_meta_embed_dropout=0)
+    module, arg, (_, batch_size, _) = _make_encoder(dropout=0)
     expected = module(arg)
     expected.tokens.sum().backward()
     expected_grad = [p.grad for p in module.parameters() if p.grad is not None]

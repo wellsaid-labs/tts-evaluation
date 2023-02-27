@@ -1,3 +1,4 @@
+import math
 import typing
 
 import config as cf
@@ -27,10 +28,8 @@ class Decoder(torch.nn.Module):
         num_frame_channels: Number of channels in each frame (sometimes refered to as
             "Mel-frequency bins" or "FFT bins" or "FFT bands")
         seq_embed_size The size of the sequence metadata embedding.
-        pre_net_size: The size of the pre-net hidden representation and output.
-        lstm_hidden_size: The hidden size of the LSTM layers.
+        hidden_size: The hidden size the decoder layers.
         attention_size: The size of the attention hidden state.
-        stop_net_hidden_size
         stop_net_dropout: The dropout probability of the stop net.
     """
 
@@ -38,19 +37,17 @@ class Decoder(torch.nn.Module):
         self,
         num_frame_channels: int,
         seq_embed_size: int,
-        pre_net_size: int,
-        lstm_hidden_size: int,
+        hidden_size: int,
         attention_size: int,
-        stop_net_hidden_size: int,
         stop_net_dropout: float,
     ):
         super().__init__()
 
         self.num_frame_channels = num_frame_channels
         self.seq_embed_size = seq_embed_size
-        self.lstm_hidden_size = lstm_hidden_size
+        self.hidden_size = hidden_size
         self.attention_size = attention_size
-        input_size = seq_embed_size + attention_size
+        cond_size = seq_embed_size + attention_size
         self.init_state_segments = [
             self.num_frame_channels,
             1,
@@ -59,25 +56,24 @@ class Decoder(torch.nn.Module):
             self.attention_size,
         ]
         self.init_state = torch.nn.Sequential(
-            torch.nn.Linear(input_size + attention_size, input_size),
-            torch.nn.ReLU(),
-            torch.nn.Linear(input_size, sum(self.init_state_segments)),
+            torch.nn.Linear(cond_size + attention_size, cond_size),
+            torch.nn.GELU(),
+            torch.nn.Linear(cond_size, sum(self.init_state_segments)),
         )
-        self.pre_net = cf.partial(PreNet)(num_frame_channels, seq_embed_size, pre_net_size)
-        self.lstm_layer_one = LSTMCell(pre_net_size + input_size, lstm_hidden_size)
-        self.lstm_layer_two = LSTM(lstm_hidden_size + input_size + pre_net_size, lstm_hidden_size)
-        self.attention = cf.partial(Attention)(
-            query_hidden_size=lstm_hidden_size, hidden_size=attention_size
-        )
-        self.linear_out = torch.nn.Linear(lstm_hidden_size + input_size, num_frame_channels)
+        self.pre_net = cf.partial(PreNet)(num_frame_channels, hidden_size)
+        self.lstm_layer_one = LSTMCell(hidden_size + cond_size, hidden_size)
+        self.attention = cf.partial(Attention)(hidden_size, attention_size)
         self.linear_stop_token = torch.nn.Sequential(
             torch.nn.Dropout(stop_net_dropout),
-            torch.nn.Linear(
-                lstm_hidden_size + attention_size + seq_embed_size + pre_net_size,
-                stop_net_hidden_size,
-            ),
-            torch.nn.ReLU(),
-            torch.nn.Linear(stop_net_hidden_size, 1),
+            torch.nn.Linear(hidden_size + cond_size, hidden_size),
+            torch.nn.GELU(),
+            torch.nn.Linear(hidden_size, 1),
+        )
+        self.lstm_layer_two = LSTM(hidden_size + cond_size, hidden_size)
+        self.linear_out = torch.nn.Sequential(
+            torch.nn.Linear(hidden_size, hidden_size),
+            torch.nn.GELU(),
+            torch.nn.Linear(hidden_size, num_frame_channels),
         )
 
     def _pad_encoded(
@@ -157,7 +153,7 @@ class Decoder(torch.nn.Module):
                 window_start=torch.zeros(batch_size, device=device, dtype=torch.long),
             ),
             padded_encoded=padded_encoded,
-            lstm_hidden_state=None,
+            pre_net_hidden_state=None,
             lstm_one_hidden_state=None,
             lstm_two_hidden_state=None,
         )
@@ -198,7 +194,7 @@ class Decoder(torch.nn.Module):
             last_frame,
             attention_hidden_state,
             padded_encoded,
-            lstm_hidden_state,
+            pre_net_hidden_state,
             lstm_one_hidden_state,
             lstm_two_hidden_state,
         ) = hidden_state
@@ -216,14 +212,10 @@ class Decoder(torch.nn.Module):
 
         del hidden_state
 
-        # TODO: Rename `lstm_hidden_state` to `pre_net_hidden_state`, so it's better abstracted.
-
         # [num_frames, batch_size, num_frame_channels] →
         # [num_frames, batch_size, pre_net_hidden_size]
-        pre_net_frames, lstm_hidden_state = self.pre_net(
-            frames, encoded.seq_embed, lstm_hidden_state
-        )
-        assert lstm_hidden_state is not None
+        pre_net_frames, pre_net_hidden_state = self.pre_net(frames, pre_net_hidden_state)
+        assert pre_net_hidden_state is not None
 
         # Iterate over all frames for incase teacher-forcing; in sequential prediction, iterates
         # over a single frame.
@@ -242,7 +234,7 @@ class Decoder(torch.nn.Module):
 
             # frame [batch (batch_size),
             # input_size (pre_net_hidden_size + attention_size + seq_embed_size)]  →
-            # [batch_size, lstm_hidden_size]
+            # [batch_size, hidden_size]
             lstm_one_hidden_state = self.lstm_layer_one(frame, lstm_one_hidden_state)
             assert lstm_one_hidden_state is not None
             frame = lstm_one_hidden_state[0]
@@ -264,7 +256,7 @@ class Decoder(torch.nn.Module):
 
         # [num_frames, batch_size, num_tokens]
         alignments = torch.stack(alignments_list, dim=0)
-        # [num_frames, batch_size, lstm_hidden_size]
+        # [num_frames, batch_size, hidden_size]
         frames = torch.stack(frames_list, dim=0)
         # [num_frames, batch_size, attention_size]
         attention_contexts = torch.stack(attention_contexts_list, dim=0)
@@ -282,32 +274,36 @@ class Decoder(torch.nn.Module):
         # [num_frames, batch_size, seq_embed_size]
         seq_embed = seq_embed.expand(num_frames, -1, -1)
 
-        # [num_frames, batch_size, lstm_hidden_size] (concat)
+        frames = (frames + pre_net_frames) / math.sqrt(2)
+
+        # [num_frames, batch_size, hidden_size] (concat)
         # [num_frames, batch_size, attention_size] (concat)
         # [num_frames, batch_size, seq_embed_size] →
-        # [num_frames, batch_size, lstm_hidden_size + attention_size + seq_embed_size]
-        frames = torch.cat([frames, pre_net_frames, attention_contexts, seq_embed], dim=2)
+        # [num_frames, batch_size, hidden_size + attention_size + seq_embed_size]
+        frames = torch.cat([frames, attention_contexts, seq_embed], dim=2)
 
-        # [num_frames, batch_size, lstm_hidden_size + attention_size + seq_embed_size] →
+        # [num_frames, batch_size, hidden_size + attention_size + seq_embed_size] →
         # [num_frames, batch_size]
         stop_token = self.linear_stop_token(frames).squeeze(2)
 
         # frames [seq_len (num_frames), batch (batch_size),
-        # input_size (lstm_hidden_size + attention_size + seq_embed_size)] →
-        # [num_frames, batch_size, lstm_hidden_size]
+        # input_size (hidden_size + attention_size + seq_embed_size)] →
+        # [num_frames, batch_size, hidden_size]
         frames, lstm_two_hidden_state = self.lstm_layer_two(frames, lstm_two_hidden_state)
 
+        frames = (frames + pre_net_frames) / math.sqrt(2)
+
         # [num_frames, batch_size,
-        #  lstm_hidden_size (concat) attention_size (concat) seq_embed_size] →
+        #  hidden_size (concat) attention_size (concat) seq_embed_size] →
         # [num_frames, batch_size, num_frame_channels]
-        frames = self.linear_out(torch.cat([frames, attention_contexts, seq_embed], dim=2))
+        frames = self.linear_out(frames)
 
         hidden_state = DecoderHiddenState(
             last_attention_context=last_attention_context,
             last_frame=frames[-1].unsqueeze(0),
             attention_hidden_state=attention_hidden_state,
             padded_encoded=padded_encoded,
-            lstm_hidden_state=lstm_hidden_state,
+            pre_net_hidden_state=pre_net_hidden_state,
             lstm_one_hidden_state=lstm_one_hidden_state,
             lstm_two_hidden_state=lstm_two_hidden_state,
         )
