@@ -216,6 +216,8 @@ class Decoder(torch.nn.Module):
 
         del hidden_state
 
+        # TODO: Rename `lstm_hidden_state` to `pre_net_hidden_state`, so it's better abstracted.
+
         # [num_frames, batch_size, num_frame_channels] →
         # [num_frames, batch_size, pre_net_hidden_size]
         pre_net_frames, lstm_hidden_state = self.pre_net(

@@ -8,19 +8,37 @@ from torch.nn.init import _no_grad_trunc_normal_
 from lib.utils import LSTM
 
 
-class _GaussianDropout(torch.nn.Module):
+class _GaussianNoise(torch.nn.Module):
+    """Gaussian noise adds additive noise to the input `x`.
+
+    Args:
+        p: The additive noise will have standard deviation `sqrt(p / (1 - p))`. Learn more:
+            https://proceedings.mlr.press/v28/wang13a.html
+        sigma: The additive noise will have a maximum range of `std * sigma`.
+    """
+
     def __init__(self, p, sigma: float = 4.0):
-        super(_GaussianDropout, self).__init__()
+        super(_GaussianNoise, self).__init__()
         assert p >= 0 and p < 1
         self.p = p
         self.stddev = (self.p / (1.0 - self.p)) ** 0.5
         self.bound = self.stddev * sigma
 
-    def forward(self, x):
+    def __call__(self, x: torch.Tensor) -> torch.Tensor:
+        return super().__call__(x)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x (torch.FloatTensor [*, hidden_size])
+
+        Returns:
+            x (torch.FloatTensor [*, hidden_size])
+        """
         if self.p != 0:
-            epsilon = torch.empty_like(x)
-            epsilon = _no_grad_trunc_normal_(epsilon, 0, self.stddev, -self.bound, self.bound) + 1
-            return x * epsilon
+            noise = torch.empty_like(x)
+            noise = _no_grad_trunc_normal_(noise, 0, self.stddev, -self.bound, self.bound)
+            return x.std(dim=-1, keepdim=True) * noise + x
         else:
             return x
 
@@ -61,7 +79,8 @@ class PreNet(torch.nn.Module):
         super().__init__()
         self.encode = LSTM(num_frame_channels, size, num_layers)
         self.out = torch.nn.Sequential(
-            _GaussianDropout(p=dropout), cf.partial(torch.nn.LayerNorm)(size)
+            _GaussianNoise(p=dropout),
+            cf.partial(torch.nn.LayerNorm)(size),
         )
 
     def __call__(
@@ -83,10 +102,11 @@ class PreNet(torch.nn.Module):
             frames (torch.FloatTensor [num_frames, batch_size, num_frame_channels]): Spectrogram
                 frames.
             seq_embed (torch.FloatTensor [batch_size, seq_embed_size])
+            lstm_hidden_state
 
         Returns:
             frames (torch.FloatTensor [num_frames, batch_size, hidden_size])
-            hidden_state
+            lstm_hidden_state
         """
         frames, lstm_hidden_state = self.encode(frames, lstm_hidden_state)
         return self.out(frames), lstm_hidden_state
