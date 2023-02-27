@@ -8,7 +8,7 @@ from torch.nn.init import _no_grad_trunc_normal_
 from lib.utils import LSTM
 
 
-class _GaussianNoise(torch.nn.Module):
+class _GaussianDropout(torch.nn.Module):
     """Gaussian noise adds additive noise to the input `x`.
 
     Args:
@@ -18,7 +18,7 @@ class _GaussianNoise(torch.nn.Module):
     """
 
     def __init__(self, p, sigma: float = 4.0):
-        super(_GaussianNoise, self).__init__()
+        super(_GaussianDropout, self).__init__()
         assert p >= 0 and p < 1
         self.p = p
         self.stddev = (self.p / (1.0 - self.p)) ** 0.5
@@ -79,7 +79,7 @@ class PreNet(torch.nn.Module):
         super().__init__()
         self.encode = LSTM(num_frame_channels, size, num_layers)
         self.out = torch.nn.Sequential(
-            _GaussianNoise(p=dropout),
+            _GaussianDropout(p=dropout),
             cf.partial(torch.nn.LayerNorm)(size),
         )
 
