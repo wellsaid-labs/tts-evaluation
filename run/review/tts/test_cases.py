@@ -334,7 +334,6 @@ def generate_incremental_annotations(
 ):
     for speaker in speakers:
         sesh_vocab = spec_export.session_embed.get_vocab()
-        st.info(sesh_vocab)
         sesh = random.choice([s for s in sesh_vocab if s.spkr == speaker])
         st.info(f"Seshion: {sesh}")
         for tag, range in annos:
