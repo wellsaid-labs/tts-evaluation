@@ -262,7 +262,7 @@ Setup your local development environment by following [these instructions](LOCAL
             sort -n -r | \
             head -1 | \
             cut -f2- -d' ' | \
-            cut -sd / -f 2-"
+            cut -sd / -f 1-"
    )
    echo "CHECKPOINT=$CHECKPOINT"
    ```
