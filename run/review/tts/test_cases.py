@@ -266,6 +266,9 @@ V10_AUDIO_QUALITY_BREATHING = [
 
 V10_AUDIO_QUALITY_HARSHNESS = [
     # NOTE: Harshness pertaining to buzz, fuzz, hiss, artifacts
+    # NOTE: Commented out the following test cases because Alison did not find them noticeable \
+    # in datasets after investigating. Test cases are here just to keep a record, in case we want \
+    # to revisit them in the future.
     # 10/2022: Jeremy
     # "The Jeremy avatar has an issue where there's a static/electrical noise when he pauses \
     #   between words.",
@@ -313,7 +316,6 @@ def generate_test_cases(spec_export: SpectrogramModel, test_cases: typing.List[s
     for case in test_cases:
         sesh = random.choice(vocab)
         st.info(f"Seshion: {sesh}")
-        print(sesh)
         yield griffin_lim_tts(spec_export, XMLType(case), sesh)
 
 
@@ -330,11 +332,9 @@ def generate_incremental_annotations(
         ("tempo", lib.utils.arange(0.5, 2.1, 0.1)),
     ),
 ):
-    print(speakers)
     for speaker in speakers:
         sesh_vocab = spec_export.session_embed.get_vocab()
         st.info(sesh_vocab)
-        # print("Speaker: ", speaker)
         sesh = random.choice([s for s in sesh_vocab if s.spkr == speaker])
         st.info(f"Seshion: {sesh}")
         for tag, range in annos:
