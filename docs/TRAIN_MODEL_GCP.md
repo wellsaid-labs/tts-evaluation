@@ -257,12 +257,12 @@ Setup your local development environment by following [these instructions](LOCAL
    DIR_NAME='spectrogram_model' # EXAMPLE: spectrogram_model
    CHECKPOINT=$( \
     gcloud compute ssh --zone=$VM_ZONE $VM_NAME \
-        --command='cd /opt/wellsaid-labs/Text-to-Speech/disk/experiments/$DIR_NAME/; find . \
-            -name "*.pt" -mindepth 1 -printf "%T+ %P\n" | \
+        --command="cd /opt/wellsaid-labs/Text-to-Speech/disk/experiments/$DIR_NAME/; find . \
+            -name '*.pt' -mindepth 1 -printf '%T+ %P\n' | \
             sort -n -r | \
             head -1 | \
-            cut -f2- -d" " | \
-            cut -sd / -f 2-'
+            cut -f2- -d' ' | \
+            cut -sd / -f 2-"
    )
    echo "CHECKPOINT=$CHECKPOINT"
    ```
