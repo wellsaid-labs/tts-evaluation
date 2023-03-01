@@ -189,6 +189,30 @@ HARD_SCRIPTS_2 = [
     "know him. Very strange strangers they were, too.",
 ]
 
+ABBREVIATIONS_WITH_VOWELS = [
+    # NOTE: These various abbreviations consistenly were mispronounced in v11 on March 1st, 2023.
+    "ABBA (musical group) - Agnetha, Björn, Benny, Anni-Frid (first names of the band’s members)",
+    "AFK - Away From Keyboard",
+    "AFL – American Football League",
+    "AGI - Artificial General Intelligence",
+    "AWOL - Absent WithOut Leave",
+    "CSI - Crime Scene Investigation",
+    "DIY - Do It Yourself",
+    "EOW - End of Week",
+    "FAQ - Frequently Asked Questions",
+    "PAWS – Progressive Animal Welfare Society",
+    "POTUS - President of the United States",
+    "POW - Prisoner Of War",
+    "SCOTUS - Supreme Court of the United States",
+    "TBA - To Be Announced",
+    "TTYL - Talk To You Later",
+    "WTH - What The Heck (or Hell)",
+    "WWE – World Wrestling Entertainment",
+    "YAHOO (search engine) - Yet Another Hierarchical Officious Oracle",
+    "YOLO - You Only Live Once",
+    "ZIP code - Zone Improvement Plan code",
+]
+
 items = locals().items()
 TEST_CASES = {k: v for k, v in items if isinstance(v, list) and all(isinstance(t, str) for t in v)}
 
