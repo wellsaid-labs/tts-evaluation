@@ -18,7 +18,7 @@ def _make_decoder(
     num_frame_channels=16,
     seq_embed_size=8,
     hidden_size=4,
-    attention_size=5,
+    attn_size=5,
     stop_net_dropout=0.5,
 ) -> Decoder:
     """Make `decoder.Decoder` for testing."""
@@ -32,7 +32,7 @@ def _make_decoder(
         ),
         run._models.spectrogram_model.decoder.Decoder: cf.Args(
             hidden_size=hidden_size,
-            attention_size=attention_size,
+            attn_size=attn_size,
             stop_net_dropout=stop_net_dropout,
         ),
     }
@@ -47,7 +47,7 @@ def _make_encoded(
     module: Decoder, batch_size: int = 5, max_num_tokens: int = 6
 ) -> typing.Tuple[Encoded, typing.Tuple[int, int]]:
     """Make `Encoded` for testing."""
-    tokens = torch.randn(max_num_tokens, batch_size, module.attention_size)
+    tokens = torch.randn(max_num_tokens, batch_size, module.attn_size)
     num_tokens = [random.randint(1, max_num_tokens) for _ in range(batch_size)]
     num_tokens[-1] = max_num_tokens
     num_tokens = torch.tensor(num_tokens)
@@ -86,7 +86,7 @@ def test_decoder():
         assert decoded.hidden_state.last_frame.shape == expected
 
         assert decoded.hidden_state.attn_rnn_hidden_state.last_attn_context.dtype == torch.float
-        expected = (batch_size, module.attention_size)
+        expected = (batch_size, module.attn_size)
         assert decoded.hidden_state.attn_rnn_hidden_state.last_attn_context.shape == expected
 
         assert isinstance(decoded.hidden_state.attn_rnn_hidden_state, AttentionRNNHiddenState)
@@ -122,7 +122,7 @@ def test_decoder__target():
     assert decoded.hidden_state.last_frame.shape == (1, batch_size, module.num_frame_channels)
 
     assert decoded.hidden_state.attn_rnn_hidden_state.last_attn_context.dtype == torch.float
-    expected = (batch_size, module.attention_size)
+    expected = (batch_size, module.attn_size)
     assert decoded.hidden_state.attn_rnn_hidden_state.last_attn_context.shape == expected
 
     assert isinstance(decoded.hidden_state.attn_rnn_hidden_state, AttentionRNNHiddenState)
@@ -136,13 +136,13 @@ def test_decoder__pad_encoded():
     module = _make_decoder()
     encoded, (batch_size, num_tokens) = _make_encoded(module)
     window_length = module.attn_rnn.attn.window_length - 1
-    attention_size = module.attention_size
-    beg_pad_token = torch.rand(batch_size, module.attention_size)
-    end_pad_token = torch.rand(batch_size, module.attention_size)
+    attn_size = module.attn_size
+    beg_pad_token = torch.rand(batch_size, module.attn_size)
+    end_pad_token = torch.rand(batch_size, module.attn_size)
     padded = module._pad_encoded(encoded, beg_pad_token, end_pad_token)
 
     assert padded.tokens.dtype == torch.float
-    assert padded.tokens.shape == (num_tokens + window_length, batch_size, attention_size)
+    assert padded.tokens.shape == (num_tokens + window_length, batch_size, attn_size)
 
     assert padded.tokens_mask.dtype == torch.bool
     assert padded.tokens_mask.shape == (batch_size, num_tokens + window_length)

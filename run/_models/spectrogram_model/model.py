@@ -57,7 +57,7 @@ class SpectrogramModel(torch.nn.Module):
         max_anno_vector_size: The maximum number of annotation features.
         annos: The annotations to use along with their corresponding mask.
         seq_embed_size: The size of the sequence metadata embedding.
-        attention_size: The size of the attention hidden state.
+        attn_size: The size of the attention hidden state.
         num_frame_channels: Number of channels in each frame (sometimes refered to as
             "Mel-frequency bins" or "FFT bins" or "FFT bands").
         output_min: The output of this model is clamped by this value.
@@ -77,7 +77,7 @@ class SpectrogramModel(torch.nn.Module):
         max_anno_vector_size: int,
         annos: typing.Sequence[typing.Tuple[str, ...]],
         seq_embed_size: int,
-        attention_size: int,
+        attn_size: int,
         num_frame_channels: int,
         output_scalar: float,
         output_min: float,
@@ -97,13 +97,13 @@ class SpectrogramModel(torch.nn.Module):
             annos=annos,
             max_seq_meta_vals=max_seq_meta_vals,
             seq_embed_size=seq_embed_size,
-            out_size=attention_size,
+            out_size=attn_size,
             **cf.get(),
         )
         self.decoder = decoder.Decoder(
             num_frame_channels=num_frame_channels,
             seq_embed_size=seq_embed_size,
-            attention_size=attention_size,
+            attn_size=attn_size,
             **cf.get(),
         )
         self.output_min = output_min / output_scalar

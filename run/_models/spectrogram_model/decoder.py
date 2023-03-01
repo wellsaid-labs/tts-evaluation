@@ -108,7 +108,7 @@ class Decoder(torch.nn.Module):
             "Mel-frequency bins" or "FFT bins" or "FFT bands")
         seq_embed_size The size of the sequence metadata embedding.
         hidden_size: The hidden size the decoder layers.
-        attention_size: The size of the attention hidden state.
+        attn_size: The size of the attention hidden state.
         stop_net_dropout: The dropout probability of the stop net.
     """
 
@@ -117,7 +117,7 @@ class Decoder(torch.nn.Module):
         num_frame_channels: int,
         seq_embed_size: int,
         hidden_size: int,
-        attention_size: int,
+        attn_size: int,
         stop_net_dropout: float,
     ):
         super().__init__()
@@ -125,22 +125,16 @@ class Decoder(torch.nn.Module):
         self.num_frame_channels = num_frame_channels
         self.seq_embed_size = seq_embed_size
         self.hidden_size = hidden_size
-        self.attention_size = attention_size
-        cond_size = seq_embed_size + attention_size
-        self.init_state_segments = [
-            self.num_frame_channels,
-            1,
-            self.attention_size,
-            self.attention_size,
-            self.attention_size,
-        ]
+        self.attn_size = attn_size
+        cond_size = seq_embed_size + attn_size
+        self.init_state_segments = [self.num_frame_channels, 1, attn_size, attn_size, attn_size]
         self.init_state = torch.nn.Sequential(
-            torch.nn.Linear(cond_size + attention_size, cond_size),
+            torch.nn.Linear(cond_size + attn_size, cond_size),
             torch.nn.GELU(),
             torch.nn.Linear(cond_size, sum(self.init_state_segments)),
         )
         self.pre_net = cf.partial(PreNet)(num_frame_channels, hidden_size)
-        self.attn_rnn = _AttentionRNN(hidden_size + seq_embed_size, hidden_size, attention_size)
+        self.attn_rnn = _AttentionRNN(hidden_size + seq_embed_size, hidden_size, attn_size)
         self.linear_stop_token = torch.nn.Sequential(
             torch.nn.Dropout(stop_net_dropout),
             torch.nn.Linear(hidden_size + cond_size, hidden_size),
@@ -161,18 +155,18 @@ class Decoder(torch.nn.Module):
         and end of the sequence.
 
         Args:
-            beg_pad_token (torch.FloatTensor [batch_size, attention_size]): Pad token to
+            beg_pad_token (torch.FloatTensor [batch_size, attn_size]): Pad token to
                 add to the beginning of each sequence.
-            end_pad_token (torch.FloatTensor [batch_size, attention_size]): Pad token to
+            end_pad_token (torch.FloatTensor [batch_size, attn_size]): Pad token to
                 add to the end of each sequence.
         """
         device, pad_length = encoded.tokens.device, self.attn_rnn.attn.window_length // 2
-        batch_size, attention_size = encoded.tokens_mask.shape[0], self.attention_size
+        batch_size, attn_size = encoded.tokens_mask.shape[0], self.attn_size
 
         mask_padding = torch.zeros(batch_size, pad_length, device=device, dtype=torch.bool)
         # [batch_size, num_tokens] → [batch_size, num_tokens + window_length - 1]
         tokens_mask = torch.cat([mask_padding, encoded.tokens_mask, mask_padding], dim=1)
-        tokens_padding = torch.zeros(pad_length, batch_size, attention_size, device=device)
+        tokens_padding = torch.zeros(pad_length, batch_size, attn_size, device=device)
         # [num_tokens, batch_size, out_dim] → [num_tokens + window_length - 1, batch_size, out_dim]
         tokens = torch.cat([tokens_padding, encoded.tokens, tokens_padding], dim=0)
 
@@ -181,7 +175,7 @@ class Decoder(torch.nn.Module):
 
         # [batch_size, num_tokens] → [num_tokens, batch_size]
         indices = tokens_mask.logical_xor(new_mask).transpose(0, 1)
-        # [batch_size, attention_size] → [num_frames, batch_size, attention_size]
+        # [batch_size, attn_size] → [num_frames, batch_size, attn_size]
         end_pad_token = end_pad_token.unsqueeze(0).expand(*tokens.shape)
         tokens[indices] = end_pad_token[indices]
         tokens[:pad_length] = beg_pad_token.unsqueeze(0).expand(pad_length, *tokens.shape[1:])
@@ -194,12 +188,10 @@ class Decoder(torch.nn.Module):
         cum_alignment_padding = self.attn_rnn.attn.cum_alignment_padding
         window_length = self.attn_rnn.attn.window_length
 
-        # [batch_size, seq_embed_size + attention_size] →
-        # [batch_size, num_frame_channels + 1 + attention_size] →
-        # ([batch_size, num_frame_channels],
-        #  [batch_size, 1],
-        #  [batch_size, attention_size],
-        #  [batch_size, attention_size])
+        # [batch_size, seq_embed_size + attn_size] →
+        # [batch_size, num_frame_channels + 1 + attn_size] →
+        # ([batch_size, num_frame_channels], [batch_size, 1],
+        #  [batch_size, attn_size], [batch_size, attn_size])
         arange = torch.arange(0, batch_size, device=device)
         last_token = encoded.tokens[encoded.num_tokens - 1, arange]
         init_features = torch.cat([encoded.seq_embed, encoded.tokens[0], last_token], dim=1)
@@ -290,16 +282,16 @@ class Decoder(torch.nn.Module):
         frames = (pre_net_frames + attn_rnn_out) / math.sqrt(2)
 
         # [num_frames, batch_size, hidden_size] (concat)
-        # [num_frames, batch_size, attention_size] (concat)
+        # [num_frames, batch_size, attn_size] (concat)
         # [num_frames, batch_size, seq_embed_size] →
-        # [num_frames, batch_size, hidden_size + attention_size + seq_embed_size]
+        # [num_frames, batch_size, hidden_size + attn_size + seq_embed_size]
         block_input = torch.cat([frames, attn_cntxts, seq_embed], dim=2)
 
-        # [num_frames, batch_size, hidden_size + attention_size + seq_embed_size] →
+        # [num_frames, batch_size, hidden_size + attn_size + seq_embed_size] →
         # [num_frames, batch_size]
         stop_token = self.linear_stop_token(block_input).squeeze(2)
 
-        # [num_frames, batch_size, hidden_size + attention_size + seq_embed_size] →
+        # [num_frames, batch_size, hidden_size + attn_size + seq_embed_size] →
         # [num_frames, batch_size, hidden_size]
         lstm_out, lstm_hidden_state = self.lstm_out(block_input, state.lstm_hidden_state)
         frames = (pre_net_frames + lstm_out) / math.sqrt(2)

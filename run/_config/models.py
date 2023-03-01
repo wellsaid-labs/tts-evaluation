@@ -104,7 +104,7 @@ def configure(overwrite: bool = False):
             # SOURCE (Tacotron 2):
             # Attention probabilities are computed after projecting inputs and location
             # features to 128-dimensional hidden representations.
-            attention_size=256,
+            attn_size=256,
         ),
         run._models.signal_model.wrapper.SignalModelWrapper: cf.Args(
             max_speakers=max_speakers,

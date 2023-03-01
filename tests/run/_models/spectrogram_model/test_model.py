@@ -64,7 +64,7 @@ class Params(typing.NamedTuple):
 def _make_spectrogram_model(
     params: Params,
     seq_embed_size: int = 8,
-    attention_size: int = 16,
+    attn_size: int = 16,
     anno_embed_size: int = 3,
     token_meta_embed_size: int = 6,
     output_scalar: float = 1.2,
@@ -107,7 +107,7 @@ def _make_spectrogram_model(
         max_anno_vector_size=params.max_anno_vector_size,
         annos=params.annos,
         seq_embed_size=seq_embed_size,
-        attention_size=attention_size,
+        attn_size=attn_size,
         num_frame_channels=params.num_frame_channels,
         output_scalar=output_scalar,
         output_min=params.output_min,
