@@ -133,7 +133,8 @@ class SpectrogramModel(torch.nn.Module):
         Returns:
             stop_token (torch.FloatTensor [num_frames (optional), batch_size])
         """
-        at_the_end = window_start >= num_tokens - self.decoder.attention.window_length // 2 - 1
+        window_length = self.decoder.attn_rnn.attn.window_length
+        at_the_end = window_start >= num_tokens - window_length // 2 - 1
         return stop_token.masked_fill(~at_the_end, self.stop_token_eps)
 
     def _is_stop(
@@ -205,7 +206,7 @@ class SpectrogramModel(torch.nn.Module):
             frame = torch.clamp(frame, min=self.output_min)
             hidden_state = hidden_state._replace(last_frame=frame)  # type: ignore
             reached_max = lengths == inputs.max_audio_len
-            window_start = hidden_state.attention_hidden_state.window_start
+            window_start = hidden_state.attn_rnn_hidden_state.attn_hidden_state.window_start
             is_stop, stop_token = self._is_stop(stop_token, num_tokens, window_start, reached_max)
             stopped[is_stop] = True
 

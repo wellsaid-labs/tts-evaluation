@@ -243,8 +243,8 @@ def _mock_model(model: SpectrogramModel) -> typing.Callable[[int], None]:
     stop generating immediately.
     """
     _decoder_forward = model.decoder.forward
-    _attention_forward = model.decoder.attention.forward
-    window_length = model.decoder.attention.window_length
+    _attention_forward = model.decoder.attn_rnn.attn.forward
+    window_length = model.decoder.attn_rnn.attn.window_length
     offset = 0
 
     def set_stop_token_rand_offset(new_offset):
@@ -274,7 +274,9 @@ def _mock_model(model: SpectrogramModel) -> typing.Callable[[int], None]:
         )
         return context, alignment, hidden_state._replace(window_start=window_start)
 
-    model.decoder.attention.forward = types.MethodType(attention_forward, model.decoder.attention)
+    model.decoder.attn_rnn.attn.forward = types.MethodType(
+        attention_forward, model.decoder.attn_rnn.attn
+    )
 
     def decoder_forward(self: Decoder, *args, hidden_state: DecoderHiddenState, **kwargs):
         out = _decoder_forward(*args, hidden_state=hidden_state, **kwargs)  # type: ignore

@@ -10,11 +10,90 @@ from lib.utils import LSTM, LSTMCell, lengths_to_mask
 from run._models.spectrogram_model.attention import Attention
 from run._models.spectrogram_model.containers import (
     AttentionHiddenState,
+    AttentionRNNHiddenState,
     Decoded,
     DecoderHiddenState,
     Encoded,
 )
 from run._models.spectrogram_model.pre_net import PreNet
+
+_AttentionRNNOut = typing.Tuple[
+    torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, AttentionRNNHiddenState
+]
+
+
+class _AttentionRNN(torch.nn.Module):
+    """An autoregressive attention layer supported by an RNN."""
+
+    def __init__(self, input_size: int, output_size: int, attn_size: int):
+        super().__init__()
+        self.lstm = LSTMCell(input_size + attn_size, output_size)
+        self.attn = cf.partial(Attention)(output_size, attn_size)
+
+    def __call__(
+        self, query: torch.Tensor, encoded: Encoded, hidden_state: AttentionRNNHiddenState, **kwargs
+    ) -> _AttentionRNNOut:
+        return super().__call__(query, encoded, hidden_state, **kwargs)
+
+    def forward(
+        self, query: torch.Tensor, encoded: Encoded, hidden_state: AttentionRNNHiddenState, **kwargs
+    ) -> _AttentionRNNOut:
+        """
+        Args:
+            query (torch.FloatTensor [seq_length, batch_size, input_size])
+            ...
+
+        Returns:
+            rnn_outs (torch.FloatTensor [seq_length, batch_size, output_size]): The output of the
+                RNN layer.
+            attn_contexts (torch.FloatTensor [seq_length, batch_size, attn_size]): The output of the
+                attention layer.
+            alignments (torch.FloatTensor [seq_length, batch_size, num_tokens]): The attention
+                alignments.
+            window_starts (torch.FloatTensor [seq_length, batch_size]): The attention window
+                indicies.
+            hidden_state: The hidden state for attention rnn.
+        """
+        # NOTE: Iterate over all frames for incase teacher-forcing; in sequential prediction,
+        # iterates over a single frame.
+        lstm_hidden_state, last_attn_context, attn_hidden_state = hidden_state
+        lstm_out_list: typing.List[torch.Tensor] = []
+        attn_cntxts_list: typing.List[torch.Tensor] = []
+        alignments_list: typing.List[torch.Tensor] = []
+        window_start_list: typing.List[torch.Tensor] = []
+        for split in query.split(1, dim=0):
+            split = split.squeeze(0)
+
+            # [batch_size, input_size] (concat) [batch_size, attn_size] →
+            # [batch_size, input_size + attn_size]
+            split = torch.cat([split, last_attn_context], dim=1)
+
+            # [batch_size, input_size + attn_size] → [batch_size, output_size]
+            lstm_hidden_state = self.lstm(split, lstm_hidden_state)
+            assert lstm_hidden_state is not None
+            split = lstm_hidden_state[0]
+
+            # Initial attention alignment, sometimes refered to as attention weights.
+            # attn_context [batch_size, attn_size]
+            query = split.unsqueeze(0)
+            last_attn_context, alignment, attn_hidden_state = self.attn(
+                encoded, query, attn_hidden_state, **kwargs
+            )
+
+            lstm_out_list.append(split)
+            attn_cntxts_list.append(last_attn_context)
+            alignments_list.append(alignment)
+            window_start_list.append(attn_hidden_state.window_start)
+
+        lstm_out = torch.stack(lstm_out_list, dim=0)  # [seq_length, batch_size, output_size]
+        attn_cntxts = torch.stack(attn_cntxts_list, dim=0)  # [seq_length, batch_size, attn_size]
+        alignments = torch.stack(alignments_list, dim=0)  # [seq_length, batch_size, num_tokens]
+        window_starts = torch.stack(window_start_list, dim=0)  # [seq_length, batch_size]
+        hidden_state = AttentionRNNHiddenState(
+            lstm_hidden_state, last_attn_context, attn_hidden_state
+        )
+
+        return lstm_out, attn_cntxts, alignments, window_starts, hidden_state
 
 
 class Decoder(torch.nn.Module):
@@ -61,15 +140,14 @@ class Decoder(torch.nn.Module):
             torch.nn.Linear(cond_size, sum(self.init_state_segments)),
         )
         self.pre_net = cf.partial(PreNet)(num_frame_channels, hidden_size)
-        self.lstm_layer_one = LSTMCell(hidden_size + cond_size, hidden_size)
-        self.attention = cf.partial(Attention)(hidden_size, attention_size)
+        self.attn_rnn = _AttentionRNN(hidden_size + seq_embed_size, hidden_size, attention_size)
         self.linear_stop_token = torch.nn.Sequential(
             torch.nn.Dropout(stop_net_dropout),
             torch.nn.Linear(hidden_size + cond_size, hidden_size),
             torch.nn.GELU(),
             torch.nn.Linear(hidden_size, 1),
         )
-        self.lstm_layer_two = LSTM(hidden_size + cond_size, hidden_size)
+        self.lstm_out = LSTM(hidden_size + cond_size, hidden_size)
         self.linear_out = torch.nn.Sequential(
             torch.nn.Linear(hidden_size, hidden_size),
             torch.nn.GELU(),
@@ -88,7 +166,7 @@ class Decoder(torch.nn.Module):
             end_pad_token (torch.FloatTensor [batch_size, attention_size]): Pad token to
                 add to the end of each sequence.
         """
-        device, pad_length = encoded.tokens.device, self.attention.window_length // 2
+        device, pad_length = encoded.tokens.device, self.attn_rnn.attn.window_length // 2
         batch_size, attention_size = encoded.tokens_mask.shape[0], self.attention_size
 
         mask_padding = torch.zeros(batch_size, pad_length, device=device, dtype=torch.bool)
@@ -110,11 +188,11 @@ class Decoder(torch.nn.Module):
 
         return encoded._replace(tokens=tokens, tokens_mask=new_mask, num_tokens=new_num_tokens)
 
-    def _make_hidden_state(self, encoded: Encoded) -> DecoderHiddenState:
+    def _make_initial_hidden_state(self, encoded: Encoded) -> DecoderHiddenState:
         """Make an initial hidden state, if one is not provided."""
-        (_, batch_size, _), device = encoded.tokens.shape, encoded.tokens.device
-        cum_alignment_padding = self.attention.cum_alignment_padding
-        window_length = self.attention.window_length
+        batch_size, device = encoded.tokens.shape[1], encoded.tokens.device
+        cum_alignment_padding = self.attn_rnn.attn.cum_alignment_padding
+        window_length = self.attn_rnn.attn.window_length
 
         # [batch_size, seq_embed_size + attention_size] →
         # [batch_size, num_frame_channels + 1 + attention_size] →
@@ -126,7 +204,7 @@ class Decoder(torch.nn.Module):
         last_token = encoded.tokens[encoded.num_tokens - 1, arange]
         init_features = torch.cat([encoded.seq_embed, encoded.tokens[0], last_token], dim=1)
         state = self.init_state(init_features).split(self.init_state_segments, dim=-1)
-        init_frame, init_cum_alignment, init_attention_context, beg_pad_token, end_pad_token = state
+        init_frame, init_cum_alignment, init_attn_context, beg_pad_token, end_pad_token = state
 
         padded_encoded = self._pad_encoded(encoded, beg_pad_token, end_pad_token)
 
@@ -144,18 +222,16 @@ class Decoder(torch.nn.Module):
         # [batch_size, num_tokens + cum_align_padding] →
         # [batch_size, num_tokens + 2 * cum_align_padding]
         cum_alignment = functional.pad(cum_alignment, [0, padding], mode="constant", value=0.0)
+        attn_window_start = torch.zeros(batch_size, device=device, dtype=torch.long)
+        attn_hidden_state = AttentionHiddenState(cum_alignment, attn_window_start)
+        attn_rnn_hidden_state = AttentionRNNHiddenState(None, init_attn_context, attn_hidden_state)
 
         return DecoderHiddenState(
-            last_attention_context=init_attention_context,
             last_frame=init_frame.unsqueeze(0),
-            attention_hidden_state=AttentionHiddenState(
-                cum_alignment=cum_alignment,
-                window_start=torch.zeros(batch_size, device=device, dtype=torch.long),
-            ),
+            attn_rnn_hidden_state=attn_rnn_hidden_state,
             padded_encoded=padded_encoded,
             pre_net_hidden_state=None,
-            lstm_one_hidden_state=None,
-            lstm_two_hidden_state=None,
+            lstm_hidden_state=None,
         )
 
     def __call__(
@@ -165,9 +241,7 @@ class Decoder(torch.nn.Module):
         hidden_state: typing.Optional[DecoderHiddenState] = None,
         **kwargs,
     ) -> Decoded:
-        return super().__call__(
-            encoded=encoded, target_frames=target_frames, hidden_state=hidden_state, **kwargs
-        )
+        return super().__call__(encoded, target_frames, hidden_state=hidden_state, **kwargs)
 
     def forward(
         self,
@@ -183,134 +257,67 @@ class Decoder(torch.nn.Module):
                 truth frames for "teacher forcing" and loss.
             hidden_state: Hidden state from previous time steps, used to predict the next time step.
         """
-        assert target_frames is None or hidden_state is None, (
-            "Either the decoder is conditioned on `target_frames` or "
-            "the `hidden_state` but not both."
-        )
+        message = "`target_frames` or `hidden_state` can be passed in, not both."
+        assert target_frames is None or hidden_state is None, message
 
-        hidden_state = self._make_hidden_state(encoded) if hidden_state is None else hidden_state
-        (
-            last_attention_context,
-            last_frame,
-            attention_hidden_state,
-            padded_encoded,
-            pre_net_hidden_state,
-            lstm_one_hidden_state,
-            lstm_two_hidden_state,
-        ) = hidden_state
+        state = self._make_initial_hidden_state(encoded) if hidden_state is None else hidden_state
 
         # NOTE: Shift target frames backwards one step to be the source frames.
         # TODO: For training in context, `last_frame` could be a real audio frame. The only
         # issue with that is that during inference we do not have a prior audio frame, so,
         # we would need to make sure that during training `last_frame` is sometimes an initial
         # frame.
-        frames = (
-            last_frame if target_frames is None else torch.cat([last_frame, target_frames[0:-1]])
-        )
+        frames = state.last_frame
+        if target_frames is not None:
+            frames = torch.cat([state.last_frame, target_frames[0:-1]])
 
         num_frames, _, _ = frames.shape
 
-        del hidden_state
+        # [batch_size, seq_embed_size] → [num_frames, batch_size, seq_embed_size]
+        seq_embed = encoded.seq_embed.unsqueeze(0).expand(num_frames, -1, -1)
+        seq_embed = seq_embed.expand(num_frames, -1, -1)
 
         # [num_frames, batch_size, num_frame_channels] →
         # [num_frames, batch_size, pre_net_hidden_size]
-        pre_net_frames, pre_net_hidden_state = self.pre_net(frames, pre_net_hidden_state)
-        assert pre_net_hidden_state is not None
+        pre_net_frames, pre_net_hidden_state = self.pre_net(frames, state.pre_net_hidden_state)
 
-        # Iterate over all frames for incase teacher-forcing; in sequential prediction, iterates
-        # over a single frame.
-        frames_list: typing.List[torch.Tensor] = []
-        attention_contexts_list: typing.List[torch.Tensor] = []
-        alignments_list: typing.List[torch.Tensor] = []
-        window_start_list: typing.List[torch.Tensor] = []
-        for frame in pre_net_frames.split(1, dim=0):
-            frame = frame.squeeze(0)
-
-            # [batch_size, pre_net_hidden_size] (concat)
-            # [batch_size, seq_embed_size] (concat)
-            # [batch_size, attention_size] →
-            # [batch_size, pre_net_hidden_size + attention_size + seq_embed_size]
-            frame = torch.cat([frame, last_attention_context, encoded.seq_embed], dim=1)
-
-            # frame [batch (batch_size),
-            # input_size (pre_net_hidden_size + attention_size + seq_embed_size)]  →
-            # [batch_size, hidden_size]
-            lstm_one_hidden_state = self.lstm_layer_one(frame, lstm_one_hidden_state)
-            assert lstm_one_hidden_state is not None
-            frame = lstm_one_hidden_state[0]
-
-            # Initial attention alignment, sometimes refered to as attention weights.
-            # attention_context [batch_size, attention_size]
-            query = frame.unsqueeze(0)
-            last_attention_context, alignment, attention_hidden_state = self.attention(
-                encoded=padded_encoded, query=query, hidden_state=attention_hidden_state, **kwargs
-            )
-
-            frames_list.append(frame)
-            attention_contexts_list.append(last_attention_context)
-            alignments_list.append(alignment)
-            window_start_list.append(attention_hidden_state.window_start)
-
-            del alignment
-            del frame
-
-        # [num_frames, batch_size, num_tokens]
-        alignments = torch.stack(alignments_list, dim=0)
-        # [num_frames, batch_size, hidden_size]
-        frames = torch.stack(frames_list, dim=0)
-        # [num_frames, batch_size, attention_size]
-        attention_contexts = torch.stack(attention_contexts_list, dim=0)
-        # [num_frames, batch_size]
-        window_starts = torch.stack(window_start_list, dim=0)
-        del alignments_list
-        del frames_list
-        del attention_contexts_list
-
-        # [batch_size, seq_embed_size] →
-        # [1, batch_size, seq_embed_size]
-        seq_embed = encoded.seq_embed.unsqueeze(0)
-
-        # [1, batch_size, seq_embed_size] →
-        # [num_frames, batch_size, seq_embed_size]
-        seq_embed = seq_embed.expand(num_frames, -1, -1)
-
-        frames = (frames + pre_net_frames) / math.sqrt(2)
+        # [num_frames, batch_size, hidden_size] (concat) [num_frames, batch_size, seq_embed_size] →
+        # [num_frames, batch_size, hidden_size + seq_embed_size]
+        attn_rnn_inp = torch.cat([pre_net_frames, seq_embed], dim=2)
+        attn_rnn_args = (attn_rnn_inp, state.padded_encoded, state.attn_rnn_hidden_state)
+        attn_rnn_outs = self.attn_rnn(*attn_rnn_args, **kwargs)
+        attn_rnn_out, attn_cntxts, alignments, window_starts, attn_rnn_hidden_state = attn_rnn_outs
+        frames = (pre_net_frames + attn_rnn_out) / math.sqrt(2)
 
         # [num_frames, batch_size, hidden_size] (concat)
         # [num_frames, batch_size, attention_size] (concat)
         # [num_frames, batch_size, seq_embed_size] →
         # [num_frames, batch_size, hidden_size + attention_size + seq_embed_size]
-        frames = torch.cat([frames, attention_contexts, seq_embed], dim=2)
+        block_input = torch.cat([frames, attn_cntxts, seq_embed], dim=2)
 
         # [num_frames, batch_size, hidden_size + attention_size + seq_embed_size] →
         # [num_frames, batch_size]
-        stop_token = self.linear_stop_token(frames).squeeze(2)
+        stop_token = self.linear_stop_token(block_input).squeeze(2)
 
-        # frames [seq_len (num_frames), batch (batch_size),
-        # input_size (hidden_size + attention_size + seq_embed_size)] →
+        # [num_frames, batch_size, hidden_size + attention_size + seq_embed_size] →
         # [num_frames, batch_size, hidden_size]
-        frames, lstm_two_hidden_state = self.lstm_layer_two(frames, lstm_two_hidden_state)
+        lstm_out, lstm_hidden_state = self.lstm_out(block_input, state.lstm_hidden_state)
+        frames = (pre_net_frames + lstm_out) / math.sqrt(2)
 
-        frames = (frames + pre_net_frames) / math.sqrt(2)
-
-        # [num_frames, batch_size,
-        #  hidden_size (concat) attention_size (concat) seq_embed_size] →
-        # [num_frames, batch_size, num_frame_channels]
+        # [num_frames, batch_size, hidden_size] → [num_frames, batch_size, num_frame_channels]
         frames = self.linear_out(frames)
 
         hidden_state = DecoderHiddenState(
-            last_attention_context=last_attention_context,
             last_frame=frames[-1].unsqueeze(0),
-            attention_hidden_state=attention_hidden_state,
-            padded_encoded=padded_encoded,
+            padded_encoded=state.padded_encoded,
             pre_net_hidden_state=pre_net_hidden_state,
-            lstm_one_hidden_state=lstm_one_hidden_state,
-            lstm_two_hidden_state=lstm_two_hidden_state,
+            attn_rnn_hidden_state=attn_rnn_hidden_state,
+            lstm_hidden_state=lstm_hidden_state,
         )
 
         # [num_frames, batch_size, num_tokens + window_length - 1] →
         # [num_frames, batch_size, num_tokens]
-        pad_length = self.attention.window_length // 2
+        pad_length = self.attn_rnn.attn.window_length // 2
         alignments = alignments.detach()[:, :, pad_length:-pad_length]
         alignments = alignments.masked_fill(~encoded.tokens_mask.unsqueeze(0), 0)
 

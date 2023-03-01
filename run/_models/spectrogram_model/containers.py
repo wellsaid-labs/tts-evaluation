@@ -125,19 +125,28 @@ class AttentionHiddenState(typing.NamedTuple):
     window_start: torch.Tensor
 
 
+class AttentionRNNHiddenState(typing.NamedTuple):
+    """Attention RNN hidden state from previous time steps used to predict the next time step."""
+
+    # `lstm` hidden state.
+    lstm_hidden_state: typing.Optional[typing.Tuple[torch.Tensor, torch.Tensor]]
+
+    # torch.FloatTensor [batch_size, attn_size]
+    last_attn_context: torch.Tensor
+
+    # `attn` hidden state.
+    attn_hidden_state: AttentionHiddenState
+
+
 class DecoderHiddenState(typing.NamedTuple):
     """Decoder hidden state from previous time steps, used to predict the next time step."""
-
-    # `Attention` last output.
-    # torch.FloatTensor [batch_size, attention_size]
-    last_attention_context: torch.Tensor
 
     # The last predicted frame.
     # torch.FloatTensor [1, batch_size, num_frame_channels]
     last_frame: torch.Tensor
 
-    # `Decoder.attention` hidden state.
-    attention_hidden_state: AttentionHiddenState
+    # `Decoder.attn_rnn` hidden state.
+    attn_rnn_hidden_state: AttentionRNNHiddenState
 
     # Padded encoding with space for the `attention` window.
     padded_encoded: Encoded
@@ -145,11 +154,8 @@ class DecoderHiddenState(typing.NamedTuple):
     # `PreNet` hidden state.
     pre_net_hidden_state: PreNetHiddenState = None
 
-    # `Decoder.lstm_layer_one` hidden state.
-    lstm_one_hidden_state: typing.Optional[typing.Tuple[torch.Tensor, torch.Tensor]] = None
-
-    # `Decoder.lstm_layer_two` hidden state.
-    lstm_two_hidden_state: typing.Optional[typing.Tuple[torch.Tensor, torch.Tensor]] = None
+    # `Decoder.lstm` hidden state.
+    lstm_hidden_state: typing.Optional[typing.Tuple[torch.Tensor, torch.Tensor]] = None
 
 
 class Decoded(typing.NamedTuple):

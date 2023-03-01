@@ -7,7 +7,7 @@ import torch
 import run
 from lib.utils import lengths_to_mask
 from run._models.spectrogram_model.containers import (
-    AttentionHiddenState,
+    AttentionRNNHiddenState,
     DecoderHiddenState,
     Encoded,
 )
@@ -85,14 +85,13 @@ def test_decoder():
         expected = (1, batch_size, module.num_frame_channels)
         assert decoded.hidden_state.last_frame.shape == expected
 
-        assert decoded.hidden_state.last_attention_context.dtype == torch.float
+        assert decoded.hidden_state.attn_rnn_hidden_state.last_attn_context.dtype == torch.float
         expected = (batch_size, module.attention_size)
-        assert decoded.hidden_state.last_attention_context.shape == expected
+        assert decoded.hidden_state.attn_rnn_hidden_state.last_attn_context.shape == expected
 
-        assert isinstance(decoded.hidden_state.attention_hidden_state, AttentionHiddenState)
+        assert isinstance(decoded.hidden_state.attn_rnn_hidden_state, AttentionRNNHiddenState)
         assert isinstance(decoded.hidden_state.pre_net_hidden_state, tuple)
-        assert isinstance(decoded.hidden_state.lstm_one_hidden_state, tuple)
-        assert isinstance(decoded.hidden_state.lstm_two_hidden_state, tuple)
+        assert isinstance(decoded.hidden_state.lstm_hidden_state, tuple)
 
     assert decoded is not None
     (decoded.frames.sum() + decoded.stop_tokens.sum()).backward()
@@ -122,13 +121,12 @@ def test_decoder__target():
     assert decoded.hidden_state.last_frame.dtype == torch.float
     assert decoded.hidden_state.last_frame.shape == (1, batch_size, module.num_frame_channels)
 
-    assert decoded.hidden_state.last_attention_context.dtype == torch.float
+    assert decoded.hidden_state.attn_rnn_hidden_state.last_attn_context.dtype == torch.float
     expected = (batch_size, module.attention_size)
-    assert decoded.hidden_state.last_attention_context.shape == expected
+    assert decoded.hidden_state.attn_rnn_hidden_state.last_attn_context.shape == expected
 
-    assert isinstance(decoded.hidden_state.attention_hidden_state, AttentionHiddenState)
-    assert isinstance(decoded.hidden_state.lstm_one_hidden_state, tuple)
-    assert isinstance(decoded.hidden_state.lstm_two_hidden_state, tuple)
+    assert isinstance(decoded.hidden_state.attn_rnn_hidden_state, AttentionRNNHiddenState)
+    assert isinstance(decoded.hidden_state.lstm_hidden_state, tuple)
 
     (decoded.frames.sum() + decoded.stop_tokens.sum()).backward()
 
@@ -137,7 +135,8 @@ def test_decoder__pad_encoded():
     """Test `decoder.Decoder` pads encoded correctly."""
     module = _make_decoder()
     encoded, (batch_size, num_tokens) = _make_encoded(module)
-    window_length, attention_size = module.attention.window_length - 1, module.attention_size
+    window_length = module.attn_rnn.attn.window_length - 1
+    attention_size = module.attention_size
     beg_pad_token = torch.rand(batch_size, module.attention_size)
     end_pad_token = torch.rand(batch_size, module.attention_size)
     padded = module._pad_encoded(encoded, beg_pad_token, end_pad_token)
