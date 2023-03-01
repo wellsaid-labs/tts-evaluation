@@ -10,9 +10,9 @@ TODO: Implement `batch_griffin_lim_tts` to support batch generation, speeding up
 Usage:
     $ PYTHONPATH=. streamlit run run/review/tts/test_cases.py --runner.magicEnabled=false
 """
-import functools
 import random
 import typing
+from functools import partial
 
 import config as cf
 import numpy as np
@@ -203,14 +203,15 @@ def generate_test_cases(spec_export: SpectrogramModel, test_cases: typing.List[s
 
 Generator = typing.Callable[[SpectrogramModel], typing.Generator[np.ndarray, None, None]]
 OPTIONS: typing.Dict[str, Generator]
-OPTIONS = {k: functools.partial(generate_test_cases, test_cases=v) for k, v in TEST_CASES.items()}
+OPTIONS = {k: partial(generate_test_cases, test_cases=v) for k, v in TEST_CASES.items()}
 
 # TODO: Create a notebook where we go through all the speakers, on various tempos/loudnesses, and
 # then review the accuracy.
 
 
-def generate_incremental_annotations(
+def generate_annos(
     spec_export: SpectrogramModel,
+    anno: typing.Tuple[str, typing.Sequence],
     speakers: typing.Sequence[Speaker] = [
         wsl.TRISTAN_F,  # NOTE: They have a low annotation range around ±2db & ±25%.
         wsl.GIA_V,  # NOTE: They have a low annotation range around ±2db & ±25%.
@@ -219,33 +220,35 @@ def generate_incremental_annotations(
         # NOTE: They have an average range around ±3db & ±30% and have been difficult to work with.
         wsl.JUDE_D__EN_GB,
     ],
-    annos: typing.Tuple[typing.Tuple[str, typing.Sequence], ...] = (
-        ("loudness", list(lib.utils.arange(6, -9, -3))),
-        ("tempo", list(lib.utils.arange(0.5, 2.5, 0.25))),
-    ),
 ):
     for speaker in speakers:
         sesh_vocab = spec_export.session_embed.get_vocab()
         sesh = random.choice([s for s in sesh_vocab if s.spkr == speaker])
         st.info(f"Session: {sesh}")
-        for tag, range in annos:
-            for val in range:
-                xml = XMLType(f"<{tag} value='{val}'>{DEFAULT_SCRIPT}</{tag}>")
-                wave = griffin_lim_tts(spec_export, xml, sesh)
-                audio_len = cf.partial(lib.audio.sample_to_sec)(wave.shape[0])
-                tempo = cf.partial(_get_tempo_annotation)(DEFAULT_SCRIPT, audio_len)
-                loudness = cf.partial(_get_loudness_annotation)(wave)
-                st.info(
-                    f"- Tag: {tag}={val}\n"
-                    f"- Tempo: {tempo}\n"
-                    f"- Generated Griffin-Lim Loudness: {loudness}\n"
-                )
-                # TODO: Add a loundess computed via spectrogram.
-                # TODO: Use a some signal model, and then measure the loudness based on that.
-                yield wave
+        tag, range = anno
+        for val in range:
+            if tag == "tempo":
+                val = sesh.spkr_tempo + val
+            xml = XMLType(f"<{tag} value='{val}'>{DEFAULT_SCRIPT}</{tag}>")
+            wave = griffin_lim_tts(spec_export, xml, sesh)
+            audio_len = cf.partial(lib.audio.sample_to_sec)(wave.shape[0])
+            tempo = cf.partial(_get_tempo_annotation)(DEFAULT_SCRIPT, audio_len)
+            loudness = cf.partial(_get_loudness_annotation)(wave)
+            st.info(
+                f"- Tag: {tag}={val}\n"
+                f"- Tempo: {tempo}\n"
+                f"- Generated Griffin-Lim Loudness: {loudness}\n"
+            )
+            # TODO: Add a loundess computed via spectrogram.
+            # TODO: Use a some signal model, and then measure the loudness based on that.
+            yield wave
 
 
-OPTIONS = {generate_incremental_annotations.__name__: generate_incremental_annotations, **OPTIONS}
+OPTIONS = {
+    "LOUDNESS": partial(generate_annos, anno=("loudness", list(lib.utils.arange(6, -7, -3)))),
+    "TEMPO": partial(generate_annos, anno=("tempo", list(lib.utils.arange(-0.5, 0.6, 0.25)))),
+    **OPTIONS,
+}
 
 
 def main():
@@ -258,7 +261,8 @@ def main():
     label = "Spectrogram Checkpoints"
     spec_path = st_select_path(label, SPECTROGRAM_MODEL_EXPERIMENTS_PATH, PT_EXTENSION, form)
     items = OPTIONS.items()
-    option = form.selectbox("Test Cases", items, format_func=lambda i: i[0])
+    format_test_case_name = lambda i: i[0].replace("_", " ").title()
+    option = form.selectbox("Test Cases", items, format_func=format_test_case_name)
     assert option is not None
 
     if not form.form_submit_button("Submit"):
