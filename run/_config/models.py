@@ -125,7 +125,7 @@ def configure(overwrite: bool = False):
         # SOURCE (Tacotron 2):
         # In order to introduce output variation at inference time, dropout with probability 0.5 is
         # applied only to layers in the pre-net of the autoregressive decoder.
-        run._models.spectrogram_model.pre_net.PreNet: cf.Args(dropout=0.7),
+        run._models.spectrogram_model.pre_net.PreNet: cf.Args(dropout=0.4),
         run._models.spectrogram_model.attention.Attention: cf.Args(dropout=0.1),
         run._models.spectrogram_model.decoder.Decoder: cf.Args(stop_net_dropout=0.5),
         # NOTE: This dropout approach proved effective in Comet in March 2020.
