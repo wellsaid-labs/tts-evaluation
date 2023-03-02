@@ -30,7 +30,7 @@ web audio api; therefore, the server must manage it via some database.
 
 Example (Flask):
 
-      $ CHECKPOINTS=""  # Example: v9
+      $ CHECKPOINTS="v11_2023_03_01_staging"  # Example: v9
       $ python -m run.deploy.package_tts $CHECKPOINTS
       $ PYTHONPATH=. python -m run.deploy.worker
 
@@ -64,7 +64,7 @@ from run._tts import (
     process_tts_inputs,
     tts_ffmpeg_generator,
 )
-from run.data._loader import Language, Session, Speaker, english, german, portuguese, spanish
+from run.data._loader import Language, Session, Speaker, english
 
 if "NUM_CPU_THREADS" in os.environ:
     torch.set_num_threads(int(os.environ["NUM_CPU_THREADS"]))
@@ -82,128 +82,125 @@ MAX_CHARS = 10000
 TTS_PACKAGE: TTSPackage
 LANGUAGE_TO_SPACY: typing.Dict[Language, spacy.language.Language]
 SPACY: English
-# NOTE: The keys need to stay the same for backwards compatibility.
+EN = english.wsl
+TEC = EN.THE_EXPLANATION_COMPANY__CUSTOM_VOICE
+HAPPIFY = EN.HAPPIFY__CUSTOM_VOICE
 
-_SPEAKER_ID_TO_SESSION = {
+# NOTE: The keys need to stay the same for backwards compatibility.
+_SPKR_ID_TO_SESH = {
     # NOTE: These 3 are open-source voices that didn't consent to be on our platform.
     # 0: (english.m_ailabs.JUDY_BIEBER, ""),
     # 1: (english.m_ailabs.MARY_ANN, ""),
     # 2: (english.lj_speech.LINDA_JOHNSON, ""),
-    3: (english.wsl.ALANA_B, "script_3"),
-    4: (english.wsl.RAMONA_J, "7"),
-    5: (english.wsl.RAMONA_J__CUSTOM, "sukutdental_021819"),
+    3: (EN.ALANA_B, "script_3", -25, 1.15, 1.35),
+    4: (EN.RAMONA_J, "7", -25, 1.25, 1.2),
+    5: (EN.RAMONA_J__CUSTOM, "sukutdental_021819", -23, 1.3, 1.25),
     # NOTE: This is open-source voice that didn't consent to be on our platform.
     # NOTE: This speaker was released twice on accident with different ids, so it's in this list
     # twice.
     # 6: (english.lj_speech.LINDA_JOHNSON, ""),
     # NOTE: There is a new preprocessed version of Wade that has been included.
-    # 7: (english.wsl.WADE_C, ""),
-    8: (english.wsl.SOFIA_H, "14"),
+    # 7: (EN.WADE_C, ""),
+    8: (EN.SOFIA_H, "14", -23, 1.15, 1.1),
     # NOTE: David asked for his voice to be removed from the platform.
-    # 9: (english.wsl.DAVID_D, ""),
-    10: (english.wsl.VANESSA_N, "76-81"),
-    11: (english.wsl.ISABEL_V, "heather_4-21_a"),
+    # 9: (EN.DAVID_D, ""),
+    10: (EN.VANESSA_N, "76-81", -23, 1.2, 1.25),
+    11: (EN.ISABEL_V, "heather_4-21_a", -33, 1.2, 1.15),
     # NOTE: There is a new preprocessed version of Ava that has been included.
-    # 12: (english.wsl.AVA_M, ""),
-    13: (english.wsl.JEREMY_G, "copy_of_drake_jr-script_46-51"),
-    14: (english.wsl.NICOLE_L, "copy_of_wsl_-_megansinclairscript40-45"),
-    15: (english.wsl.PAIGE_L, "wsl_elise_randall_enthusiastic_script-16"),
-    16: (english.wsl.TOBIN_A, "wsl_hanuman_welch_enthusiastic_script-7"),
+    # 12: (EN.AVA_M, ""),
+    13: (EN.JEREMY_G, "copy_of_drake_jr-script_46-51", -26, 1.05, 1.1),
+    14: (EN.NICOLE_L, "copy_of_wsl_-_megansinclairscript40-45", -21, 1.15, 1.15),
+    15: (EN.PAIGE_L, "wsl_elise_randall_enthusiastic_script-16", -23, 0.9, 0.9),
+    16: (EN.TOBIN_A, "wsl_hanuman_welch_enthusiastic_script-7", -21, 0.9, 0.9),
     # NOTE: There is a new preprocessed version of Kai that has been included.
-    # 17: (english.wsl.KAI_M, ""),
-    18: (english.wsl.TRISTAN_F, "wsl_markatherlay_diphone_script-4"),
-    19: (english.wsl.PATRICK_K, "WSL_StevenWahlberg_DIPHONE_Script-6"),
-    20: (english.wsl.SOFIA_H__PROMO, "promo_script_3_walker"),
-    21: (english.wsl.DAMIAN_P__PROMO, "promo_script_2_papadopoulos"),
-    22: (english.wsl.JODI_P__PROMO, "promo_script_8_hurley"),
-    23: (english.wsl.LEE_M__PROMO, "promo_script_1_la_comb"),
-    24: (english.wsl.SELENE_R__PROMO, "promo_script_1_rousseau"),
-    25: (english.wsl.MARI_MONGE__PROMO, "promo_script_1_monge"),
-    26: (english.wsl.WADE_C__PROMO, "promo_script_3_scholl"),
-    27: (english.wsl.JOE_F__NARRATION, "johnhunerlach_enthusiastic_21"),
-    28: (english.wsl.JOE_F__RADIO, "johnhunerlach_diphone_1"),
-    29: (english.wsl.GARRY_J__STORY, "otis-jiry_the_happening_at_crossroads"),
-    30: (english.wsl.WADE_C__MANUAL_POST, "70-75"),
-    31: (english.wsl.AVA_M__MANUAL_POST, "copy_of_well_said_script_40-45-processed"),
-    32: (english.wsl.KAI_M__MANUAL_POST, "wsl_jackrutkowski_enthusiastic_script_27-processed"),
-    33: (english.wsl.JUDE_D__EN_GB, "enthusiastic_script_5_davis"),
-    34: (english.wsl.ERIC_S__EN_IE__PROMO, "promo_script_7_diamond"),
-    35: (english.wsl.CHASE_J__PROMO, "promo_script_5_daniels"),
-    36: (english.wsl.DAN_FURCA__PROMO, "furca_audio_part3"),
-    37: (english.wsl.STEVE_B__PROMO, "promo_script_1_cupit_02"),
-    38: (english.wsl.BELLA_B__PROMO, "promo_script_5_tugman"),
-    39: (english.wsl.TILDA_C__PROMO, "promo_script_6_mckell"),
-    40: (english.wsl.CHARLIE_Z__PROMO, "promo_script_5_alexander"),
-    41: (english.wsl.PAUL_B__PROMO, "promo_script_9_williams"),
-    42: (english.wsl.SOFIA_H__CONVO, "conversational_script_5_walker"),
-    43: (english.wsl.AVA_M__CONVO, "conversational_script_6_harris"),
-    44: (english.wsl.KAI_M__CONVO, "conversational_script_3_rutkowski"),
-    45: (english.wsl.NICOLE_L__CONVO, "conversational_script_1_sinclair"),
-    46: (english.wsl.WADE_C__CONVO, "conversational_script_2_scholl"),
-    47: (english.wsl.PATRICK_K__CONVO, "conversational_script_3_wahlberg"),
-    48: (english.wsl.VANESSA_N__CONVO, "conversational_script_4_murphy"),
-    49: (english.wsl.GIA_V, "narration_script_5_ruiz"),
-    50: (english.wsl.ANTONY_A, "narration_script_3_marrero"),
-    51: (english.wsl.JODI_P, "narration_script_2_hurley"),
-    52: (english.wsl.RAINE_B, "narration_script_5_black"),
-    53: (english.wsl.OWEN_C, "narration_script_5_white"),
-    54: (english.wsl.ZACH_E, "narration_script_5_jones"),
-    55: (english.wsl.GENEVIEVE_M, "narration_script_2_reppert"),
-    56: (english.wsl.JARVIS_H, "narration_script_5_hillknight"),
-    57: (english.wsl.THEO_K, "narration_script_8_kohnke"),
-    58: (english.wsl.JAMES_B, "newman_final_page_13"),
-    59: (english.wsl.TERRA_G, "narration_script_1_parrish"),
-    60: (english.wsl.PHILIP_J, "anderson_narration_script-rx_loud_01"),
-    61: (english.wsl.MARCUS_G, "furca_audio_part1"),
-    62: (english.wsl.JORDAN_T, "narration_script_1_whiteside_processed"),
-    63: (english.wsl.FIONA_H, "hughes_narration_script_1"),
-    64: (english.wsl.ROXY_T, "topping_narration_script_1processed"),
-    65: (english.wsl.DONNA_W, "brookhyser_narration_script_1"),
-    66: (english.wsl.GREG_G, "lloyd_narration_script_1"),
-    67: (english.wsl.ZOEY_O, "helen_marion-rowe_script_1_processed"),
-    68: (english.wsl.KARI_N, "noble_narration_script_1"),
-    69: (english.wsl.DIARMID_C, "cherry_narration_script_1"),
-    70: (english.wsl.ELIZABETH_U, "naration_script_6_stringer"),
-    71: (english.wsl.ALAN_T, "narration_script_1_frazer"),
-    72: (english.wsl.AVA_M__PROMO, "promo_script_1_harris"),
-    73: (english.wsl.TOBIN_A__PROMO, "promo_script_1_welch_processed"),
-    74: (english.wsl.TOBIN_A__CONVO, "conversational_script_1_welch_processed"),
+    # 17: (EN.KAI_M, ""),
+    18: (EN.TRISTAN_F, "wsl_markatherlay_diphone_script-4", -22, 1, 1.1),
+    19: (EN.PATRICK_K, "WSL_StevenWahlberg_DIPHONE_Script-6", -23, 1, 1.1),
+    20: (EN.SOFIA_H__PROMO, "promo_script_3_walker", -21, 1, 1.0),
+    21: (EN.DAMIAN_P__PROMO, "promo_script_2_papadopoulos", -25, 1.15, 1.1),
+    22: (EN.JODI_P__PROMO, "promo_script_8_hurley", -23, 1.05, 1.05),
+    23: (EN.LEE_M__PROMO, "promo_script_1_la_comb", -19, 1.1, 1.05),
+    24: (EN.SELENE_R__PROMO, "promo_script_1_rousseau", -24, 0.95, 0.95),
+    25: (EN.MARI_MONGE__PROMO, "promo_script_1_monge", -23, 1.1, 1.1),
+    26: (EN.WADE_C__PROMO, "promo_script_3_scholl", -21, 1.05, 1.05),
+    27: (EN.JOE_F__NARRATION, "johnhunerlach_enthusiastic_21", -24, 1.2, 1.1),
+    28: (EN.JOE_F__RADIO, "johnhunerlach_diphone_1", -19, 1.15, 1.1),
+    29: (EN.GARRY_J__STORY, "otis-jiry_the_happening_at_crossroads", -21, 1.2, 1.3),
+    30: (EN.WADE_C__MANUAL_POST, "70-75", -24, 1, 1.0),
+    31: (EN.AVA_M__MANUAL_POST, "copy_of_well_said_script_40-45-processed", -24, 1, 1.0),
+    32: (EN.KAI_M__MANUAL_POST, "wsl_jackrutkowski_enthusiastic_script_27-processed", -22, 1.05, 1),
+    33: (EN.JUDE_D__EN_GB, "enthusiastic_script_5_davis", -23, 1.15, 1.15),
+    34: (EN.ERIC_S__EN_IE__PROMO, "promo_script_7_diamond", -22, 1.05, 1.05),
+    35: (EN.CHASE_J__PROMO, "promo_script_5_daniels", -21, 0.95, 1.0),
+    36: (EN.DAN_FURCA__PROMO, "furca_audio_part3", -20, 1.15, 1.2),
+    37: (EN.STEVE_B__PROMO, "promo_script_1_cupit_02", -25, 1.15, 1.15),
+    38: (EN.BELLA_B__PROMO, "promo_script_5_tugman", -20, 1.15, 1.15),
+    39: (EN.TILDA_C__PROMO, "promo_script_6_mckell", -24, 1.05, 1.1),
+    40: (EN.CHARLIE_Z__PROMO, "promo_script_5_alexander", -23, 1, 1.0),
+    41: (EN.PAUL_B__PROMO, "promo_script_9_williams", -19, 1.05, 1.05),
+    42: (EN.SOFIA_H__CONVO, "conversational_script_5_walker", -22, 1.15, 1.15),
+    43: (EN.AVA_M__CONVO, "conversational_script_6_harris", -25, 0.95, 0.95),
+    44: (EN.KAI_M__CONVO, "conversational_script_3_rutkowski", -24, 0.9, 0.9),
+    45: (EN.NICOLE_L__CONVO, "conversational_script_1_sinclair", -23, 1.05, 1.05),
+    46: (EN.WADE_C__CONVO, "conversational_script_2_scholl", -18, 1.05, 1.05),
+    47: (EN.PATRICK_K__CONVO, "conversational_script_3_wahlberg", -23, 1.1, 1.05),
+    48: (EN.VANESSA_N__CONVO, "conversational_script_4_murphy", -20, 1.2, 1.2),
+    49: (EN.GIA_V, "narration_script_5_ruiz", -20, 1, 1.05),
+    50: (EN.ANTONY_A, "narration_script_3_marrero", -23, 1.15, 1.15),
+    51: (EN.JODI_P, "narration_script_2_hurley", -21, 1.1, 1.15),
+    52: (EN.RAINE_B, "narration_script_5_black", -22, 1.1, 1.1),
+    53: (EN.OWEN_C, "narration_script_5_white", -24, 1.15, 1.1),
+    54: (EN.ZACH_E, "narration_script_5_jones", -21, 1.05, 1.05),
+    55: (EN.GENEVIEVE_M, "narration_script_2_reppert", -20, 1.1, 1.05),
+    56: (EN.JARVIS_H, "narration_script_5_hillknight", -21, 1.25, 1.25),
+    57: (EN.THEO_K, "narration_script_8_kohnke", -27, 1.2, 1.15),
+    58: (EN.JAMES_B, "newman_final_page_13", -22, 1.25, 1.25),
+    59: (EN.TERRA_G, "narration_script_1_parrish", -21, 1.1, 1.25),
+    60: (EN.PHILIP_J, "anderson_narration_script-rx_loud_01", -20, 0.95, 1.0),
+    61: (EN.MARCUS_G, "furca_audio_part1", -21, 1.2, 1.2),
+    62: (EN.JORDAN_T, "narration_script_1_whiteside_processed", -21, 1.2, 1.15),
+    63: (EN.FIONA_H, "hughes_narration_script_1", -21, 1.1, 1.1),
+    64: (EN.ROXY_T, "topping_narration_script_1processed", -21, 1.15, 1.15),
+    65: (EN.DONNA_W, "brookhyser_narration_script_1", -21, 1.2, 1.15),
+    66: (EN.GREG_G, "lloyd_narration_script_1", -21, 1.05, 1.05),
+    67: (EN.ZOEY_O, "helen_marion-rowe_script_1_processed", -21, 1.3, 1.4),
+    68: (EN.KARI_N, "noble_narration_script_1", -21, 1.2, 1.15),
+    69: (EN.DIARMID_C, "cherry_narration_script_1", -21, 1.3, 1.3),
+    70: (EN.ELIZABETH_U, "naration_script_6_stringer", -21, 1.1, 1.2),
+    71: (EN.ALAN_T, "narration_script_1_frazer", -23, 1.2, 1.2),
+    72: (EN.AVA_M__PROMO, "promo_script_1_harris", -23, 0.95, 1.0),
+    73: (EN.TOBIN_A__PROMO, "promo_script_1_welch_processed", -23, 0.85, 0.8),
+    74: (EN.TOBIN_A__CONVO, "conversational_script_1_welch_processed", -23, 0.9, 0.85),
 }
-_SPEAKER_ID_TO_SESSION: typing.Dict[int, typing.Tuple[Speaker, str]] = {
-    **_SPEAKER_ID_TO_SESSION,
+_SPKR_ID_TO_SESH: typing.Dict[int, typing.Tuple[Speaker, str, float, float, float]] = {
+    **_SPKR_ID_TO_SESH,
     # NOTE: As a weak security measure, we assign random large numbers to custom voices, so
     # that they are hard to discover by querying the API. This was actually somewhat helpful
     # when we had to momentarily turn off our permissions verification during an outage.
     # NOTE: We have deprecated some of these custom voices. We didn't comment them out so that
     # we don't accidently reuse their ids.
-    11541: (english.wsl_archive.LINCOLN__CUSTOM, ""),
-    13268907: (english.wsl_archive.JOSIE__CUSTOM, ""),
-    95313811: (english.wsl_archive.JOSIE__CUSTOM__MANUAL_POST, ""),
-    50794582: (english.wsl.UNEEQ__ASB_CUSTOM_VOICE, "script-20-enthusiastic"),
-    50794583: (english.wsl.UNEEQ__ASB_CUSTOM_VOICE_COMBINED, "script-28-enthusiastic"),
-    78252076: (english.wsl.VERITONE__CUSTOM_VOICE, ""),
-    70695443: (english.wsl.SUPER_HI_FI__CUSTOM_VOICE, "promo_script_5_superhifi"),
-    64197676: (english.wsl.US_PHARMACOPEIA__CUSTOM_VOICE, "enthusiastic_script-22"),
-    41935205: (english.wsl.HAPPIFY__CUSTOM_VOICE, "anna_long_emotional_clusters_1st_half_clean"),
-    42400423: (
-        english.wsl.THE_EXPLANATION_COMPANY__CUSTOM_VOICE,
-        "is_it_possible_to_become_invisible",
-    ),
-    61137774: (english.wsl.ENERGY_INDUSTRY_ACADEMY__CUSTOM_VOICE, "sample_script_2"),
-    30610881: (english.wsl.VIACOM__CUSTOM_VOICE, "kelsey_speech_synthesis_section1"),
-    50481197: (english.wsl.HOUR_ONE_NBC__BB_CUSTOM_VOICE, "hour_one_nbc_dataset_5"),
-    77552139: (english.wsl.STUDY_SYNC__CUSTOM_VOICE, "fernandes_audio_5"),
-    25502195: (english.wsl.FIVE_NINE__CUSTOM_VOICE, "wsl_five9_audio_3"),
-    81186157: (german.wsl.FIVE9_CUSTOM_VOICE__DE_DE, "janina_five9_script8"),
-    29363869: (spanish.wsl.FIVE_NINE__CUSTOM_VOICE__ES_CO, "five9_spanish_script_8"),
-    34957054: (portuguese.wsl.FIVE_NINE__CUSTOM_VOICE__PT_BR, "five9_portuguese_script_3"),
-    45105608: (english.wsl.SELECTQUOTE__CUSTOM_VOICE, "SelectQuote_Script2"),
+    # 11541: (EN.archive.LINCOLN__CUSTOM, ""),
+    # 13268907: (EN.archive.JOSIE__CUSTOM, ""),
+    # 95313811: (EN.archive.JOSIE__CUSTOM__MANUAL_POST, ""),
+    # 50794582: (EN.UNEEQ__ASB_CUSTOM_VOICE, "script-20-enthusiastic"),
+    # 50794583: (EN.UNEEQ__ASB_CUSTOM_VOICE_COMBINED, "script-28-enthusiastic"),
+    # 78252076: (EN.VERITONE__CUSTOM_VOICE, ""),
+    70695443: (EN.SUPER_HI_FI__CUSTOM_VOICE, "promo_script_5_superhifi", -17, 0.95, 0.95),
+    64197676: (EN.US_PHARMACOPEIA__CUSTOM_VOICE, "enthusiastic_script-22", -29, 1.4, 1.4),
+    41935205: (HAPPIFY, "anna_long_emotional_clusters_1st_half_clean", -21, 1.25, 1.2),
+    42400423: (TEC, "is_it_possible_to_become_invisible", -24, 1, 1),
+    61137774: (EN.ENERGY_INDUSTRY_ACADEMY__CUSTOM_VOICE, "sample_script_2", -18, 1.15, 1.2),
+    # 30610881: (EN.VIACOM__CUSTOM_VOICE, "kelsey_speech_synthesis_section1"),
+    # 50481197: (EN.HOUR_ONE_NBC__BB_CUSTOM_VOICE, "hour_one_nbc_dataset_5"),
+    # 77552139: (EN.STUDY_SYNC__CUSTOM_VOICE, "fernandes_audio_5"),
+    25502195: (EN.FIVE_NINE__CUSTOM_VOICE, "wsl_five9_audio_3", -22, 1, 1.05),
+    # 81186157: (german.wsl.FIVE9_CUSTOM_VOICE__DE_DE, "janina_five9_script8"),
+    # 29363869: (spanish.wsl.FIVE_NINE__CUSTOM_VOICE__ES_CO, "five9_spanish_script_8"),
+    # 34957054: (portuguese.wsl.FIVE_NINE__CUSTOM_VOICE__PT_BR, "five9_portuguese_script_3"),
+    45105608: (EN.SELECTQUOTE__CUSTOM_VOICE, "SelectQuote_Script2", -19, 1.15, 1.15),
 }
-SPEAKER_ID_TO_SESSION: typing.Dict[int, Session]
-# TODO: Add the correct loudness and tempo averages for each speaker, and session.
-SPEAKER_ID_TO_SESSION = {
-    k: Session(*args, -20, 1.0, 1.0) for k, args in _SPEAKER_ID_TO_SESSION.items()
-}
+SPKR_ID_TO_SESH: typing.Dict[int, Session]
+SPKR_ID_TO_SESH = {k: Session(*args) for k, args in _SPKR_ID_TO_SESH.items()}
 
 
 class FlaskException(Exception):
@@ -258,7 +255,7 @@ def validate_and_unpack(
     tts: TTSPackage,
     language_to_spacy: typing.Dict[Language, spacy.language.Language],
     max_chars: int = MAX_CHARS,
-    speaker_id_to_session: typing.Dict[int, Session] = SPEAKER_ID_TO_SESSION,
+    spkr_id_to_sesh: typing.Dict[int, Session] = SPKR_ID_TO_SESH,
 ) -> typing.Tuple[Inputs, PreprocessedInputs]:
     """Validate and unpack the request object."""
 
@@ -283,16 +280,16 @@ def validate_and_unpack(
         message = f"Text must be a string under {max_chars} characters and more than 0 characters."
         raise FlaskException(message, code="INVALID_TEXT_LENGTH_EXCEEDED")
 
-    min_speaker_id = min(speaker_id_to_session.keys())
-    max_speaker_id = max(speaker_id_to_session.keys())
+    min_speaker_id = min(spkr_id_to_sesh.keys())
+    max_speaker_id = max(spkr_id_to_sesh.keys())
 
     if not (
         (speaker_id >= min_speaker_id and speaker_id <= max_speaker_id)
-        and speaker_id in speaker_id_to_session
+        and speaker_id in spkr_id_to_sesh
     ):
         raise FlaskException("Speaker ID is invalid.", code="INVALID_SPEAKER_ID")
 
-    session = speaker_id_to_session[speaker_id]
+    session = spkr_id_to_sesh[speaker_id]
 
     gc.collect()
 
@@ -345,7 +342,7 @@ def get_stream():
     TODO: Create an end point that accepts XML rather than JSON.
 
     Usage:
-        http://192.168.50.19:8000/api/text_to_speech/stream?speaker_id=46&text="Hello there"
+        http://127.0.0.1:8000/api/text_to_speech/stream?speaker_id=46&text="Hello there"
 
     Returns: `audio/mpeg` streamed in chunks given that the arguments are valid.
     """
@@ -368,7 +365,7 @@ if __name__ == "__main__" or "GUNICORN" in os.environ:
     app.logger.info("PyTorch version: %s", torch.__version__)
     app.logger.info("Found MKL: %s", torch.backends.mkl.is_available())
     app.logger.info("Threads: %s", torch.get_num_threads())
-    app.logger.info("Speaker Ids: %s", pprinter.pformat(SPEAKER_ID_TO_SESSION))
+    app.logger.info("Speaker Ids: %s", pprinter.pformat(SPKR_ID_TO_SESH))
 
     configure()
 
@@ -379,7 +376,17 @@ if __name__ == "__main__" or "GUNICORN" in os.environ:
     vocab = set(TTS_PACKAGE.session_vocab())
     app.logger.info("Loaded speakers: %s", "\n".join(list(set(str(s.spkr) for s in vocab))))
 
-    for session in SPEAKER_ID_TO_SESSION.values():
+    for id, other_sesh in SPKR_ID_TO_SESH.items():
+        for sesh in vocab:
+            if (
+                other_sesh.label == sesh.label
+                and other_sesh.spkr.label == sesh.spkr.label
+                and sesh != other_sesh
+            ):
+                app.logger.warning(f"Model session is different: {other_sesh} → {sesh}")
+                SPKR_ID_TO_SESH[id] = sesh
+
+    for session in SPKR_ID_TO_SESH.values():
         if session not in vocab:
             if not any(session.spkr is sesh.spkr for sesh in vocab):
                 app.logger.warning(f"Speaker not found in model vocab: {session.spkr}")

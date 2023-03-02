@@ -42,7 +42,7 @@ from run._models.spectrogram_model import (
     preprocess,
 )
 from run.data._loader import Session, Span
-from run.train.spectrogram_model._data import Batch, make_batch
+from run.train.spectrogram_model._data import InferBatch, make_batch
 
 logger = logging.getLogger(__name__)
 
@@ -101,8 +101,8 @@ class Checkpoints(enum.Enum):
 
     You can upload a new checkpoint, for example, like so:
 
-        $ gsutil -m cp -r disk/checkpoints/v11_2023_01_12_staging \
-                        gs://wellsaid_labs_checkpoints/v11_2023_01_12_staging
+        $ gsutil -m cp -r disk/checkpoints/v11_2023_03_01_staging \
+                        gs://wellsaid_labs_checkpoints/v11_2023_03_01_staging
     """
 
     """
@@ -128,6 +128,18 @@ class Checkpoints(enum.Enum):
     """
 
     V11_2023_01_12_STAGING: typing.Final = "v11_2023_01_12_staging"
+
+    """
+    These checkpoints were deployed into staging as version "11.beta.3".
+
+    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/496
+    Spectrogram Model Experiment (Step: 1,334,547):
+    https://www.comet.com/wellsaid-labs/v11-research-spectrogram/6e8d8d2d93954c5c9f34f360276cb098
+    Signal Model Experiment (Step: 242,133):
+    https://www.comet.com/wellsaid-labs/v11-research-signal/3b981f23e6c44e829ff59877e9a7ec95
+    """
+
+    V11_2023_03_01_STAGING: typing.Final = "v11_2023_03_01_staging"
 
 
 _GCS_PATH = "gs://wellsaid_labs_checkpoints/"
@@ -262,13 +274,13 @@ def basic_tts(
 class TTSResult(typing.NamedTuple):
     """The inputs and corresponding predictions from running TTS."""
 
-    inputs: Batch
+    inputs: InferBatch
     spec_model: Preds
     sig_model: numpy.ndarray
 
 
 TTSResults = typing.List[TTSResult]
-BatchGen = typing.Generator[typing.Tuple[Batch, typing.List[int]], None, None]
+BatchGen = typing.Generator[typing.Tuple[InferBatch, typing.List[int]], None, None]
 
 
 def _process_input_batch(
@@ -305,15 +317,8 @@ def make_batches(
         xmls, docs = [b[1][0] for b in batch], [b[1][1] for b in batch]
         seshs, indicies = [b[1][2] for b in batch], [i for i, _ in batch]
         batch_input = Inputs.from_xml_batch(xmls, docs, seshs)  # type: ignore
-        # NOTE: For the specific use-case where, we are generating a batch of test cases
-        # that don't have this additional metadata, it's expected the client is aware of this,
-        # and we don't need another explicit object just for typing purposes.
-        batch = Batch(
+        batch = InferBatch(
             spans=docs,
-            audio=None,  # type: ignore
-            spectrogram=None,  # type: ignore
-            spectrogram_mask=None,  # type: ignore
-            stop_token=None,  # type: ignore
             xmls=xmls,
             inputs=batch_input,
             processed=cf.partial(preprocess)(batch_input),

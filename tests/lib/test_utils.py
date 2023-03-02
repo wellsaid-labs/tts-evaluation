@@ -22,6 +22,8 @@ def test_round_():
     assert lib.utils.round_(0.4, 0.25) == 0.5
     assert lib.utils.round_(1, 4) == 0
     assert lib.utils.round_(3, 4) == 4
+    # NOTE: Without additional rounding, this regressed to: 1.1500000000000001.
+    assert lib.utils.round_(1.17, 0.05) == 1.15
 
 
 def test_random_sample():
