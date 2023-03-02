@@ -90,7 +90,6 @@ def _make_attention(
     batch_size=3,
     max_num_tokens=12,
     conv_filter_size=5,
-    dropout=0.5,
     window_length=7,
     avg_frames_per_token=1.0,
     seq_embed_size=10,
@@ -102,7 +101,6 @@ def _make_attention(
         query_hidden_size=query_hidden_size,
         hidden_size=attention_hidden_size,
         conv_filter_size=conv_filter_size,
-        dropout=dropout,
         window_length=window_length,
         avg_frames_per_token=avg_frames_per_token,
     )
@@ -190,7 +188,7 @@ def test_attention():
 
 def test_attention__batch_invariance():
     """Test `attention.Attention` is consistent regardless of the batch size."""
-    module, (encoded, query, hidden_state), (batch_size, _) = _make_attention(dropout=0)
+    module, (encoded, query, hidden_state), (batch_size, _) = _make_attention()
 
     index = random.randint(0, batch_size - 1)
     slice_ = slice(index, index + 1)
@@ -221,7 +219,7 @@ def test_attention__batch_invariance():
 
 def test_attention__padding_invariance():
     """Test `attention.Attention` is consistent regardless of the padding."""
-    module, (encoded, query, hidden_state), _ = _make_attention(dropout=0)
+    module, (encoded, query, hidden_state), _ = _make_attention()
     num_padding = 4
     padded_encoded, padded_hidden_state = _add_padding(num_padding, encoded, hidden_state)
 
@@ -255,7 +253,7 @@ def test_attention__window_invariance():
     max_num_tokens = 6
     num_padding = 5
     window_length = max_num_tokens + num_padding // 2 + 1
-    kwargs = dict(window_length=window_length, max_num_tokens=max_num_tokens, dropout=0)
+    kwargs = dict(window_length=window_length, max_num_tokens=max_num_tokens)
     module, (encoded, query, hidden_state), _ = _make_attention(**kwargs)
     encoded, hidden_state = _add_padding(num_padding, encoded, hidden_state)
 

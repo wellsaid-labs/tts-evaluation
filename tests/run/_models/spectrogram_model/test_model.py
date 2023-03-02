@@ -38,8 +38,8 @@ class Params(typing.NamedTuple):
     max_num_tokens: int = 9
     max_tokens_indices: typing.Tuple[int, ...] = (0, 1)
     min_tokens_indices: typing.Tuple[int, ...] = (2,)
-    max_word_vector_size: int = 20
-    word_vector_size: int = 17
+    max_word_vector_size: int = 11
+    word_vector_size: int = 7
     max_seq_vector_size: int = 4
     seq_vector_size: int = 2
     max_anno_vector_size: int = 10
@@ -63,10 +63,7 @@ class Params(typing.NamedTuple):
 
 def _make_spectrogram_model(
     params: Params,
-    seq_embed_size: int = 8,
-    attn_size: int = 16,
-    anno_embed_size: int = 3,
-    token_meta_embed_size: int = 6,
+    encoder_hidden_size: int = 16,
     output_scalar: float = 1.2,
     stop_threshold: float = 0.5,
     dropout: float = 0.5,
@@ -75,24 +72,13 @@ def _make_spectrogram_model(
 ) -> SpectrogramModel:
     """Make `spectrogram_model.SpectrogramModel` for testing."""
     config = {
-        run._models.spectrogram_model.encoder.Encoder: cf.Args(
-            hidden_size=16,
-            num_conv_layers=2,
-            conv_filter_size=3,
-            lstm_layers=1,
-            dropout=dropout,
-            token_meta_embed_size=token_meta_embed_size,
-            anno_embed_size=anno_embed_size,
-        ),
+        run._models.spectrogram_model.encoder.Encoder: cf.Args(num_layers=2, conv_filter_size=3),
         run._models.spectrogram_model.decoder.Decoder: cf.Args(
             hidden_size=16, stop_net_dropout=dropout
         ),
         run._models.spectrogram_model.pre_net.PreNet: cf.Args(num_layers=1, dropout=dropout),
         run._models.spectrogram_model.attention.Attention: cf.Args(
-            conv_filter_size=3,
-            dropout=dropout,
-            window_length=window_length,
-            avg_frames_per_token=1.0,
+            conv_filter_size=3, window_length=window_length, avg_frames_per_token=1.0
         ),
         torch.nn.LayerNorm: cf.Args(eps=1e-05),
     }
@@ -106,8 +92,7 @@ def _make_spectrogram_model(
         max_seq_vector_size=params.max_seq_vector_size,
         max_anno_vector_size=params.max_anno_vector_size,
         annos=params.annos,
-        seq_embed_size=seq_embed_size,
-        attn_size=attn_size,
+        encoder_hidden_size=encoder_hidden_size,
         num_frame_channels=params.num_frame_channels,
         output_scalar=output_scalar,
         output_min=params.output_min,

@@ -5,7 +5,6 @@ from functools import lru_cache
 
 import torch
 import torch.nn
-from torchnlp.nn import LockedDropout
 
 from run._models.spectrogram_model.containers import AttentionHiddenState, Encoded
 
@@ -95,7 +94,6 @@ class Attention(torch.nn.Module):
         query_hidden_size: int,
         hidden_size: int,
         conv_filter_size: int,
-        dropout: float,
         window_length: int,
         avg_frames_per_token: float,
     ):
@@ -104,7 +102,6 @@ class Attention(torch.nn.Module):
         # https://datascience.stackexchange.com/questions/23183/why-convolutions-always-use-odd-numbers-as-filter-size
         assert conv_filter_size % 2 == 1, "`conv_filter_size` must be odd"
         assert window_length % 2 == 1, "`window_length` must be odd"
-        self.dropout = dropout
         self.hidden_size = hidden_size
         self.window_length = window_length
         self.cum_alignment_padding = int((conv_filter_size - 1) / 2)
@@ -115,9 +112,7 @@ class Attention(torch.nn.Module):
             padding=0,
         )
         self.project_query = torch.nn.Linear(query_hidden_size, hidden_size)
-        self.project_scores = torch.nn.Sequential(
-            LockedDropout(dropout), torch.nn.Linear(hidden_size, 1, bias=False)
-        )
+        self.project_scores = torch.nn.Linear(hidden_size, 1, bias=False)
         self.avg_frames_per_token = avg_frames_per_token
 
     def __call__(
