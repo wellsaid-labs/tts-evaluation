@@ -14,31 +14,32 @@ from run._models.spectrogram_model.inputs import Inputs
 
 
 class _Block(torch.nn.Module):
-    def __init__(self, hidden_size: int, conv_filter_size: int):
+    def __init__(self, hidden_size: int, cond_size: int, conv_filter_size: int):
         super().__init__()
         self.norm = cf.partial(torch.nn.LayerNorm)(hidden_size)
-        self.lstm = LSTM(hidden_size, hidden_size)
-        self.conv = torch.nn.Sequential(
-            torch.nn.Conv1d(
-                in_channels=hidden_size,
-                out_channels=hidden_size,
-                kernel_size=conv_filter_size,
-                padding=int((conv_filter_size - 1) / 2),
-            ),
-            torch.nn.GELU(),
+        self.lstm = LSTM(hidden_size + cond_size, hidden_size)
+        self.conv = torch.nn.Conv1d(
+            in_channels=hidden_size,
+            out_channels=hidden_size,
+            kernel_size=conv_filter_size,
+            padding=int((conv_filter_size - 1) / 2),
         )
 
-    def forward(self, tokens: torch.Tensor, mask: torch.Tensor):
+    def __call__(
+        self, tokens: torch.Tensor, mask: torch.Tensor, cond: torch.Tensor
+    ) -> torch.Tensor:
+        return super().__call__(tokens, mask, cond)
+
+    def forward(self, tokens: torch.Tensor, mask: torch.Tensor, cond: torch.Tensor) -> torch.Tensor:
         """
         Args:
             tokens (torch.FloatTensor [batch_size, num_tokens, hidden_size])
             mask (torch.FloatTensor [batch_size, num_tokens, 1])
+            cond (torch.FloatTensor [batch_size, num_tokens, hidden_size])
         """
-        # NOTE: This could be different than `inputs.num_tokens` if `inputs.tokens` contains
-        # padding tokens which are ignored by `self.embed_token`.
-        # TODO: During testing, we may inject those, let's not do that.
         # [batch_size, num_tokens] → [batch_size]
         tokens = self.norm(tokens)
+        tokens = torch.cat([tokens, cond], dim=2)
         tokens = self.lstm(tokens.transpose(0, 1))[0].transpose(0, 1)
         tokens = tokens.masked_fill(~mask, 0)
         tokens = self.conv(tokens.transpose(1, 2)).transpose(1, 2)
@@ -104,10 +105,12 @@ class Encoder(torch.nn.Module):
         )
 
         self.norm_embed = cf.partial(torch.nn.LayerNorm)(hidden_size)
-        self.blocks = ModuleList(_Block(hidden_size, conv_filter_size) for _ in range(num_layers))
+        self.blocks = ModuleList(
+            _Block(hidden_size, hidden_size, conv_filter_size) for _ in range(num_layers)
+        )
+        self.mlp_block_norm = cf.partial(torch.nn.LayerNorm)(hidden_size)
         self.mlp_block = torch.nn.Sequential(
-            cf.partial(torch.nn.LayerNorm)(hidden_size),
-            torch.nn.Linear(hidden_size, hidden_size * 4),
+            torch.nn.Linear(hidden_size * 2, hidden_size * 4),
             torch.nn.GELU(),
             torch.nn.Linear(hidden_size * 4, hidden_size),
         )
@@ -149,17 +152,19 @@ class Encoder(torch.nn.Module):
         assert self.hidden_size >= self.max_word_vector_size
         word_vector = inputs.get_token_vec("word_vector", self.hidden_size)
 
-        feats = [tokens, seq_embed_expanded, word_vector] + anno_embeds + token_meta
+        feats = [tokens, word_vector] + anno_embeds + token_meta
         tokens = self.norm_embed(torch.stack(feats).sum(dim=0))
         tokens_mask = tokens_mask.unsqueeze(2)
         tokens = tokens.masked_fill(~tokens_mask, 0)
 
         for block in self.blocks:
-            tokens = tokens + block(tokens, tokens_mask)
+            tokens = tokens + block(tokens, tokens_mask, seq_embed_expanded)
 
         # [batch_size, num_tokens, hidden_size * 2 + anno_embed_size] →
         # [batch_size, num_tokens, out_size]
-        tokens = tokens + self.mlp_block(tokens).masked_fill(~tokens_mask, 0)
+        mlp_block_in = self.mlp_block_norm(tokens)
+        mlp_block_in = torch.cat([tokens, seq_embed_expanded], dim=2)
+        tokens = tokens + self.mlp_block(mlp_block_in).masked_fill(~tokens_mask, 0)
         tokens = self.out(tokens)
 
         tokens = pad_sequence([tokens[i][s] for i, s in enumerate(inputs.slices)])
