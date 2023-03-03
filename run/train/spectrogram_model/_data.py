@@ -281,10 +281,47 @@ def _make_stop_token(spectrogram: SequenceBatch, length: int, standard_deviation
 
 
 @dataclasses.dataclass(frozen=True)
-class Batch(_utils.Batch):
-    """Batch of preprocessed `Span` used to training or evaluating the spectrogram model."""
+class InferBatch(_utils.Batch):
+    """Batch of preprocessed `Span` used to evaluate the spectrogram model."""
 
     spans: typing.List[Span]
+
+    xmls: typing.List[XMLType]
+
+    processed: PreprocessedInputs
+
+    inputs: typing.Optional[Inputs]
+
+    def __len__(self):
+        return len(self.spans)
+
+    def __getitem__(self, key: typing.Any):
+        if not isinstance(key, (slice, int)):
+            raise TypeError
+
+        # TODO: There are several instances of this pattern in the code. Could we rewrite this
+        # using conventional list objects? And/or create an object is able to represent both
+        # a batch and an individual item?
+        if isinstance(key, int):
+            self.spans[key]  # NOTE: Raise `IndexError` if needed.
+            key = slice(key, key + 1)
+
+        return InferBatch(
+            spans=self.spans[key],
+            xmls=self.xmls[key],
+            processed=self.processed[key],
+            inputs=None if self.inputs is None else self.inputs[key],
+        )
+
+    def apply(self, call: typing.Callable[[torch.Tensor], torch.Tensor]) -> "InferBatch":
+        batch: InferBatch = super().apply(call)
+        object.__setattr__(batch, "processed", batch.processed.apply(call))
+        return batch
+
+
+@dataclasses.dataclass(frozen=True)
+class Batch(InferBatch):
+    """Batch of preprocessed `Span` used to training the spectrogram model."""
 
     audio: typing.List[torch.Tensor]
 
@@ -299,12 +336,6 @@ class Batch(_utils.Batch):
     # SequenceBatch[torch.FloatTensor [num_frames, batch_size], torch.LongTensor [1, batch_size])
     stop_token: SequenceBatch
 
-    xmls: typing.List[XMLType]
-
-    processed: PreprocessedInputs
-
-    inputs: typing.Optional[Inputs]
-
     @property
     def spec(self):
         return self.spectrogram
@@ -313,35 +344,27 @@ class Batch(_utils.Batch):
     def spec_mask(self):
         return self.spectrogram_mask
 
-    def __len__(self):
-        return len(self.spans)
-
     def __getitem__(self, key: typing.Any):
         if not isinstance(key, (slice, int)):
             raise TypeError
+
         # TODO: There are several instances of this pattern in the code. Could we rewrite this
         # using conventional list objects? And/or create an object is able to represent both
         # a batch and an individual item?
         if isinstance(key, int):
             self.spans[key]  # NOTE: Raise `IndexError` if needed.
             key = slice(key, key + 1)
+
         return Batch(
             spans=self.spans[key],
             audio=self.audio[key],
-            spectrogram=SequenceBatch(self.spectrogram[0][:, key], self.spectrogram[1][:, key]),
-            spectrogram_mask=SequenceBatch(
-                self.spectrogram_mask[0][:, key], self.spectrogram_mask[1][:, key]
-            ),
+            spectrogram=SequenceBatch(self.spec[0][:, key], self.spec[1][:, key]),
+            spectrogram_mask=SequenceBatch(self.spec_mask[0][:, key], self.spec_mask[1][:, key]),
             stop_token=SequenceBatch(self.stop_token[0][:, key], self.stop_token[1][:, key]),
             xmls=self.xmls[key],
             processed=self.processed[key],
             inputs=None if self.inputs is None else self.inputs[key],
         )
-
-    def apply(self, call: typing.Callable[[torch.Tensor], torch.Tensor]) -> "Batch":
-        batch: Batch = super().apply(call)
-        object.__setattr__(batch, "processed", batch.processed.apply(call))
-        return batch
 
 
 def make_batch(spans: typing.List[Span], max_workers: int = 6, add_inputs: bool = False) -> Batch:
