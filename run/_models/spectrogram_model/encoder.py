@@ -134,8 +134,8 @@ class Encoder(torch.nn.Module):
         self.embed_annos = ModuleList(
             torch.nn.Linear(max_anno_vector_size, hidden_size) for _ in range(len(self.annos))
         )
-
         self.norm_embed = cf.partial(torch.nn.LayerNorm)(hidden_size)
+
         self.blocks = ModuleList(
             _Block(hidden_size, hidden_size, conv_filter_size, ff_hidden_size)
             for _ in range(num_layers)
