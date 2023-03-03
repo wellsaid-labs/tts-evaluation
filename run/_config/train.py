@@ -121,7 +121,7 @@ def _config_spec_model_training(
         # improvement on the loudness and pausing of the model.
         torch.optim.AdamW: cf.Args(
             eps=10**-6,
-            weight_decay=0.01,
+            weight_decay=0.04,
             lr=5e-4,
             amsgrad=False,
             betas=(0.9, 0.999),
