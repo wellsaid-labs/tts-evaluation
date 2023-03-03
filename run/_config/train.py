@@ -84,7 +84,7 @@ def _config_spec_model_training(
             # SOURCE (Tacotron 2):
             # We use the Adam optimizer [29] with β1 = 0.9, β2 = 0.999
             optimizer=torch.optim.AdamW,
-            exclude_from_decay=spectrogram_model._worker.exclude_from_decay,
+            exclude_from_decay=exclude_from_decay,
         ),
         spectrogram_model._worker._run_step: cf.Args(
             # NOTE: This scalar calibrates the loss so that it's scale is similar to Tacotron-2.
