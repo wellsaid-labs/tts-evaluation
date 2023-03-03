@@ -101,8 +101,8 @@ class Checkpoints(enum.Enum):
 
     You can upload a new checkpoint, for example, like so:
 
-        $ gsutil -m cp -r disk/checkpoints/v11_2023_03_01_staging \
-                        gs://wellsaid_labs_checkpoints/v11_2023_03_01_staging
+        $ gsutil -m cp -r disk/checkpoints/v11_2023_03_01_staging_1 \
+                        gs://wellsaid_labs_checkpoints/v11_2023_03_01_staging_1
     """
 
     """
@@ -140,6 +140,18 @@ class Checkpoints(enum.Enum):
     """
 
     V11_2023_03_01_STAGING: typing.Final = "v11_2023_03_01_staging"
+
+    """
+    These checkpoints were deployed into staging as version "11.beta.4".
+
+    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/496
+    Spectrogram Model Experiment (Step: 1,334,547):
+    https://www.comet.com/wellsaid-labs/v11-research-spectrogram/6e8d8d2d93954c5c9f34f360276cb098
+    Signal Model Experiment (Step: 281,550):
+    https://www.comet.com/wellsaid-labs/v11-research-signal/3b981f23e6c44e829ff59877e9a7ec95
+    """
+
+    V11_2023_03_01_STAGING_1: typing.Final = "v11_2023_03_01_staging_1"
 
 
 _GCS_PATH = "gs://wellsaid_labs_checkpoints/"
