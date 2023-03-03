@@ -36,6 +36,9 @@ def configure(overwrite: bool = False):
             # 512 filters with shape 5 × 1, i.e., where each filter spans 5 characters
             num_layers=3,
             conv_filter_size=9,
+            # NOTE: Following LLaMA, we use 1536 for our feed forward layers, see more here:
+            # https://github.com/facebookresearch/llama
+            ff_hidden_size=1536,
         ),
         run._models.spectrogram_model.attention.Attention: cf.Args(
             # SOURCE (Tacotron 2):

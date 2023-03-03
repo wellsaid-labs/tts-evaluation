@@ -4,6 +4,7 @@ import typing
 import config as cf
 import torch
 import torch.nn
+import torch.nn.functional
 from torch.nn import ModuleList
 from torch.nn.utils.rnn import pad_sequence
 
@@ -13,8 +14,30 @@ from run._models.spectrogram_model.containers import Encoded
 from run._models.spectrogram_model.inputs import Inputs
 
 
+class _FeedForward(torch.nn.Module):
+    """A feed forward layer as defined for transformers.
+
+    NOTE: This SwiGLU layer is based on:
+    https://github.com/facebookresearch/llama/blob/main/llama/model.py
+    """
+
+    def __init__(self, in_size: int, out_size: int, hidden_size):
+        super().__init__()
+        self.gate = torch.nn.Linear(in_size, hidden_size, bias=False)
+        self.vals = torch.nn.Linear(in_size, hidden_size, bias=False)
+        self.out = torch.nn.Linear(hidden_size, out_size, bias=False)
+
+    def __call__(self, x: torch.Tensor) -> torch.Tensor:
+        return super().__call__(x)
+
+    def forward(self, x: torch.Tensor):
+        return self.out(torch.nn.functional.silu(self.gate(x)) * self.vals(x))
+
+
 class _Block(torch.nn.Module):
-    def __init__(self, hidden_size: int, cond_size: int, conv_filter_size: int):
+    def __init__(
+        self, hidden_size: int, cond_size: int, conv_filter_size: int, ff_hidden_size: int
+    ):
         super().__init__()
         self.norm = cf.partial(torch.nn.LayerNorm)(hidden_size)
         self.lstm = LSTM(hidden_size + cond_size, hidden_size)
@@ -24,6 +47,8 @@ class _Block(torch.nn.Module):
             kernel_size=conv_filter_size,
             padding=int((conv_filter_size - 1) / 2),
         )
+        self.ff_norm = cf.partial(torch.nn.LayerNorm)(hidden_size)
+        self.ff = _FeedForward(hidden_size + cond_size, hidden_size, ff_hidden_size)
 
     def __call__(
         self, tokens: torch.Tensor, mask: torch.Tensor, cond: torch.Tensor
@@ -38,12 +63,16 @@ class _Block(torch.nn.Module):
             cond (torch.FloatTensor [batch_size, num_tokens, hidden_size])
         """
         # [batch_size, num_tokens] → [batch_size]
-        tokens = self.norm(tokens)
-        tokens = torch.cat([tokens, cond], dim=2)
-        tokens = self.lstm(tokens.transpose(0, 1))[0].transpose(0, 1)
-        tokens = tokens.masked_fill(~mask, 0)
-        tokens = self.conv(tokens.transpose(1, 2)).transpose(1, 2)
-        return tokens
+        block = self.norm(tokens)
+        block = torch.cat([block, cond], dim=2)
+        block = self.lstm(block.transpose(0, 1))[0].transpose(0, 1)
+        block = block.masked_fill(~mask, 0)
+        block = self.conv(block.transpose(1, 2)).transpose(1, 2)
+        tokens = tokens + block
+        next_block = self.ff_norm(tokens)
+        next_block = torch.cat([next_block, cond], dim=2)
+        next_block = self.ff(next_block)
+        return tokens + next_block
 
 
 class Encoder(torch.nn.Module):
@@ -79,6 +108,7 @@ class Encoder(torch.nn.Module):
         hidden_size: int,
         num_layers: int,
         conv_filter_size: int,
+        ff_hidden_size: int,
     ):
         super().__init__()
 
@@ -107,13 +137,8 @@ class Encoder(torch.nn.Module):
 
         self.norm_embed = cf.partial(torch.nn.LayerNorm)(hidden_size)
         self.blocks = ModuleList(
-            _Block(hidden_size, hidden_size, conv_filter_size) for _ in range(num_layers)
-        )
-        self.mlp_block_norm = cf.partial(torch.nn.LayerNorm)(hidden_size)
-        self.mlp_block = torch.nn.Sequential(
-            torch.nn.Linear(hidden_size * 2, hidden_size * 4),
-            torch.nn.GELU(),
-            torch.nn.Linear(hidden_size * 4, hidden_size),
+            _Block(hidden_size, hidden_size, conv_filter_size, ff_hidden_size)
+            for _ in range(num_layers)
         )
         self.out = cf.partial(torch.nn.LayerNorm)(hidden_size)
 
@@ -159,14 +184,8 @@ class Encoder(torch.nn.Module):
         tokens = tokens.masked_fill(~tokens_mask, 0)
 
         for block in self.blocks:
-            tokens = tokens + block(tokens, tokens_mask, seq_embed_expanded)
+            tokens = block(tokens, tokens_mask, seq_embed_expanded)
 
-        # [batch_size, num_tokens, hidden_size * 2 + anno_embed_size] →
-        # [batch_size, num_tokens, out_size]
-        mlp_block_in = self.mlp_block_norm(tokens)
-        mlp_block_in = torch.cat([tokens, seq_embed_expanded], dim=2)
-        tokens = tokens + self.mlp_block(mlp_block_in).masked_fill(~tokens_mask, 0)
-        tokens = self.out(tokens)
-
+        tokens = self.out(tokens).masked_fill(~tokens_mask, 0)
         tokens = pad_sequence([tokens[i][s] for i, s in enumerate(inputs.slices)])
         return Encoded(tokens, inputs.sliced_tokens_mask, inputs.num_sliced_tokens, seq_embed)
