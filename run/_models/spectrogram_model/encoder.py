@@ -98,8 +98,9 @@ class Encoder(torch.nn.Module):
         self.embed_seq_vector = torch.nn.Linear(max_seq_vector_size, hidden_size)
         self.norm_seq_embed = cf.partial(torch.nn.LayerNorm)(hidden_size)
 
-        self.embed_token_meta = ModuleList(embed(n) for n in max_token_meta_vals)
         self.embed_token = NumeralizePadEmbed(max_tokens, hidden_size)
+        self.embed_token_meta = ModuleList(embed(n) for n in max_token_meta_vals)
+        self.embed_word_vec = torch.nn.Linear(self.max_word_vector_size, hidden_size)
         self.embed_annos = ModuleList(
             torch.nn.Linear(max_anno_vector_size, hidden_size) for _ in range(len(self.annos))
         )
@@ -149,8 +150,8 @@ class Encoder(torch.nn.Module):
         anno_embeds = [e.masked_fill(~m.bool(), 0) for e, m in zip(anno_embeds, anno_masks)]
 
         # [batch_size, num_tokens, hidden_size]
-        assert self.hidden_size >= self.max_word_vector_size
-        word_vector = inputs.get_token_vec("word_vector", self.hidden_size)
+        word_vector = inputs.get_token_vec("word_vector", self.max_word_vector_size)
+        word_vector = self.embed_word_vec(word_vector)
 
         feats = [tokens, word_vector] + anno_embeds + token_meta
         tokens = self.norm_embed(torch.stack(feats).sum(dim=0))
