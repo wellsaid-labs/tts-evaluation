@@ -34,7 +34,8 @@ logger = logging.getLogger(__name__)
 
 def round_(x: float, bucket_size: float) -> float:
     """Bin `x` into buckets."""
-    return bucket_size * round(x / bucket_size)
+    ndigits = max(str(bucket_size)[::-1].find("."), 0)
+    return round(bucket_size * round(x / bucket_size), ndigits=ndigits)
 
 
 _RandomSampleReturnType = typing.TypeVar("_RandomSampleReturnType")

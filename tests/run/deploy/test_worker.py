@@ -47,13 +47,13 @@ def test_validate_and_unpack():
 
     language_to_spacy = {Language.ENGLISH: lib.text.load_en_core_web_sm()}
     speaker_id = 0
-    speaker_id_to_session = {speaker_id: sesh}
+    spkr_id_to_sesh = {speaker_id: sesh}
     args = {"speaker_id": speaker_id, "text": script}
     validate_ = partial(
         validate_and_unpack,
         tts=package,
         language_to_spacy=language_to_spacy,
-        speaker_id_to_session=speaker_id_to_session,
+        spkr_id_to_sesh=spkr_id_to_sesh,
     )
 
     # TODO: Ensure the right message is printed.
@@ -83,7 +83,7 @@ def test_validate_and_unpack():
     with pytest.raises(FlaskException):  # `text` must be not empty
         validate_({**args, "text": ""})  # type: ignore
 
-    with pytest.raises(FlaskException):  # `speaker_id` must be in `speaker_id_to_session`
+    with pytest.raises(FlaskException):  # `speaker_id` must be in `spkr_id_to_sesh`
         validate_({**args, "speaker_id": 2**31})  # type: ignore
 
     with pytest.raises(FlaskException):  # `speaker_id` must be positive

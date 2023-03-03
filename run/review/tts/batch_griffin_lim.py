@@ -114,7 +114,6 @@ def _gather(
     # is that our average loudness per session is in LUFS whilst our spectrograms which we
     # can use to compute loudness are ISO 226 weighted with a Hann window.
     sil_thresh = -50
-    non_speech_thresh = -45
     num_pause_frames = cf.call(
         get_num_pause_frames,
         pred.frames,
@@ -212,6 +211,8 @@ def main():
 
     rows = []
     for span, (batch, pred, audio) in _st.st_tqdm(zip(spans, results), total=len(spans)):
+        # TODO: Use more generic typing so that this assertion isn't needed.
+        assert isinstance(batch, Batch)
         rows.append(_gather(span, batch, pred, audio))
 
     # TODO: Automatically find columns with PNG or WAV file paths, and display them.
