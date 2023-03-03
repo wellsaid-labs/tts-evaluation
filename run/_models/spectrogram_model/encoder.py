@@ -91,14 +91,14 @@ class Encoder(torch.nn.Module):
         self.max_seq_vector_size = max_seq_vector_size
         self.annos = annos
         self.hidden_size = hidden_size
-        numpadembed = functools.partial(NumeralizePadEmbed, embedding_dim=hidden_size)
+        embed = functools.partial(NumeralizePadEmbed, embedding_dim=hidden_size)
 
-        self.embed_seq_meta = ModuleList(numpadembed(n) for n in max_seq_meta_vals)
+        self.embed_seq_meta = ModuleList(embed(n) for n in max_seq_meta_vals)
         self.embed_seq_vector = torch.nn.Linear(max_seq_vector_size, hidden_size)
         self.norm_seq_embed = cf.partial(torch.nn.LayerNorm)(hidden_size)
 
+        self.embed_token_meta = ModuleList(embed(n) for n in max_token_meta_vals)
         self.embed_token = NumeralizePadEmbed(max_tokens, hidden_size)
-        self.embed_token_meta = ModuleList(numpadembed(n) for n in max_token_meta_vals)
         self.embed_annos = ModuleList(
             torch.nn.Linear(max_anno_vector_size, hidden_size) for _ in range(len(self.annos))
         )
