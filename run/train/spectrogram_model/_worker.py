@@ -592,24 +592,6 @@ def _run_steps(
             _log_vocab(state, dataset_type)
 
 
-def exclude_from_decay(
-    param_name: str, param: torch.nn.parameter.Parameter, module: torch.nn.Module
-) -> bool:
-    """
-    NOTE: Learn more about removing regularization from bias terms or `LayerNorm`:
-    https://stats.stackexchange.com/questions/153605/no-regularisation-term-for-bias-unit-in-neural-network/153650
-    https://github.com/huggingface/transformers/issues/4360
-    https://discuss.pytorch.org/t/weight-decay-in-the-optimizers-is-a-bad-idea-especially-with-batchnorm/16994
-
-    Args:
-        param_name: The parameter name as returned by `torch.nn.Module.named_parameters`.
-        param: The parameter name as returned by `torch.nn.Module.parameters`.
-        module: The parent module for this parameter.
-    """
-    deny_list = (torch.nn.modules.normalization.LayerNorm,)
-    return ".bias" in param_name or any(isinstance(module, m) for m in deny_list)
-
-
 def run_worker(
     device: torch.device,
     comet: CometMLExperiment,

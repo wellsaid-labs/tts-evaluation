@@ -1,4 +1,3 @@
-import math
 import typing
 
 import config as cf
@@ -279,7 +278,7 @@ class Decoder(torch.nn.Module):
         attn_rnn_args = (attn_rnn_inp, state.padded_encoded, state.attn_rnn_hidden_state)
         attn_rnn_outs = self.attn_rnn(*attn_rnn_args, **kwargs)
         attn_rnn_out, attn_cntxts, alignments, window_starts, attn_rnn_hidden_state = attn_rnn_outs
-        frames = (pre_net_frames + attn_rnn_out) / math.sqrt(2)
+        frames = pre_net_frames + attn_rnn_out
 
         # [num_frames, batch_size, hidden_size] (concat)
         # [num_frames, batch_size, attn_size] (concat)
@@ -294,7 +293,7 @@ class Decoder(torch.nn.Module):
         # [num_frames, batch_size, hidden_size + attn_size + seq_embed_size] →
         # [num_frames, batch_size, hidden_size]
         lstm_out, lstm_hidden_state = self.lstm_out(block_input, state.lstm_hidden_state)
-        frames = (pre_net_frames + lstm_out) / math.sqrt(2)
+        frames = pre_net_frames + lstm_out
 
         # [num_frames, batch_size, hidden_size] → [num_frames, batch_size, num_frame_channels]
         frames = self.linear_out(frames)

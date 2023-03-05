@@ -46,6 +46,24 @@ def _get_spec_model_training_configs(train_dataset: Dataset, dev_dataset: Datase
     return train_batch_size, dev_batch_size, train_steps_per_epoch, dev_steps_per_epoch, num_sesh
 
 
+def exclude_from_decay(
+    param_name: str, param: torch.nn.parameter.Parameter, module: torch.nn.Module
+) -> bool:
+    """
+    NOTE: Learn more about removing regularization from bias terms or `LayerNorm`:
+    https://stats.stackexchange.com/questions/153605/no-regularisation-term-for-bias-unit-in-neural-network/153650
+    https://github.com/huggingface/transformers/issues/4360
+    https://discuss.pytorch.org/t/weight-decay-in-the-optimizers-is-a-bad-idea-especially-with-batchnorm/16994
+
+    Args:
+        param_name: The parameter name as returned by `torch.nn.Module.named_parameters`.
+        param: The parameter name as returned by `torch.nn.Module.parameters`.
+        module: The parent module for this parameter.
+    """
+    deny_list = (torch.nn.modules.normalization.LayerNorm,)
+    return ".bias" in param_name or any(isinstance(module, m) for m in deny_list)
+
+
 def _config_spec_model_training(
     train_batch_size: int,
     dev_batch_size: int,
@@ -66,7 +84,7 @@ def _config_spec_model_training(
             # SOURCE (Tacotron 2):
             # We use the Adam optimizer [29] with β1 = 0.9, β2 = 0.999
             optimizer=torch.optim.AdamW,
-            exclude_from_decay=spectrogram_model._worker.exclude_from_decay,
+            exclude_from_decay=exclude_from_decay,
         ),
         spectrogram_model._worker._run_step: cf.Args(
             # NOTE: This scalar calibrates the loss so that it's scale is similar to Tacotron-2.
@@ -121,7 +139,7 @@ def _config_spec_model_training(
         # improvement on the loudness and pausing of the model.
         torch.optim.AdamW: cf.Args(
             eps=10**-6,
-            weight_decay=0.01,
+            weight_decay=0.04,
             lr=5e-4,
             amsgrad=False,
             betas=(0.9, 0.999),
