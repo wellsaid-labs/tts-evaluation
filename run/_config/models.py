@@ -31,14 +31,17 @@ def configure(overwrite: bool = False):
     # NOTE: Configure the model sizes.
     config = {
         run._models.spectrogram_model.encoder.Encoder: cf.Args(
+            dropout=0.25,
             # SOURCE (Tacotron 2):
             # which are passed through a stack of 3 convolutional layers each containing
             # 512 filters with shape 5 × 1, i.e., where each filter spans 5 characters
             num_layers=3,
             conv_filter_size=9,
+        ),
+        run._models.spectrogram_model.encoder._FeedForward: cf.Args(
             # NOTE: Following LLaMA, we use 1536 for our feed forward layers, see more here:
-            # https://github.com/facebookresearch/llama
-            ff_hidden_size=1536,
+            # https://github.com/facebookresearch/llama. This is 3x larger than the input size.
+            in_size_mult=3,
         ),
         run._models.spectrogram_model.attention.Attention: cf.Args(
             # SOURCE (Tacotron 2):
