@@ -1,4 +1,5 @@
 import functools
+import math
 import typing
 
 import config as cf
@@ -73,11 +74,11 @@ class _Block(torch.nn.Module):
         block = self.lstm(block.transpose(0, 1))[0].transpose(0, 1)
         block = block.masked_fill(~mask, 0)
         block = self.conv(block.transpose(1, 2)).transpose(1, 2)
-        tokens = tokens + block
+        tokens = (tokens + block) / math.sqrt(2)
         next_block = self.ff_norm(tokens)
         next_block = torch.cat([next_block, cond], dim=2)
         next_block = self.ff(next_block)
-        return tokens + next_block
+        return (tokens + next_block) / math.sqrt(2)
 
 
 class Encoder(torch.nn.Module):
