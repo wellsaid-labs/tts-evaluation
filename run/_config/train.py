@@ -61,7 +61,11 @@ def exclude_from_decay(
         module: The parent module for this parameter.
     """
     deny_list = (torch.nn.modules.normalization.LayerNorm,)
-    return ".bias" in param_name or any(isinstance(module, m) for m in deny_list)
+    return (
+        ".bias" in param_name
+        or "decoder.linear_out" in param_name
+        or any(isinstance(module, m) for m in deny_list)
+    )
 
 
 def _config_spec_model_training(
