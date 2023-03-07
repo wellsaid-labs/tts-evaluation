@@ -376,10 +376,10 @@ class LSTM(torch.nn.LSTM):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         num_directions = 2 if self.bidirectional else 1
-        init_hidden_state = torch.randn(self.num_layers * num_directions, 1, self.hidden_size)
-        self.init_hidden_state = Parameter(init_hidden_state)
-        init_cell_state = torch.randn(self.num_layers * num_directions, 1, self.hidden_size)
-        self.init_cell_state = Parameter(init_cell_state)
+        num_layers = self.num_layers * num_directions
+        out_size = self.hidden_size if self.proj_size == 0 else self.proj_size
+        self.init_hidden_state = Parameter(torch.randn(num_layers, 1, out_size))
+        self.init_cell_state = Parameter(torch.randn(num_layers, 1, self.hidden_size))
 
     def forward(  # type: ignore
         self,
