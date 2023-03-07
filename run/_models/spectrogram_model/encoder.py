@@ -24,8 +24,8 @@ class _FeedForward(torch.nn.Module):
 
     def __init__(self, in_size: int, out_size: int, in_size_mult: int):
         super().__init__()
-        self.proj = torch.nn.Linear(in_size, in_size_mult * 2)
-        self.out = torch.nn.Linear(in_size_mult, out_size)
+        self.proj = torch.nn.Linear(in_size, in_size * in_size_mult * 2)
+        self.out = torch.nn.Linear(in_size * in_size_mult, out_size)
 
     def __call__(self, x: torch.Tensor) -> torch.Tensor:
         return super().__call__(x)
