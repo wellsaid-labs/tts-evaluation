@@ -419,6 +419,40 @@ class LSTMCell(torch.nn.LSTMCell):
         return super().forward(input, hx=hx)
 
 
+class _LockedDropout(torch.nn.Module):
+    """Dropout with an option to dropout a dimension all-together.
+
+    Args:
+        p (float): Probability of an element in the dropout mask to be zeroed.
+    """
+
+    def __init__(self, p: float = 0.5):
+        self.p = p
+        super().__init__()
+
+    def __call__(
+        self, x: torch.Tensor, dims: typing.Optional[typing.List[int]] = None
+    ) -> torch.Tensor:
+        return super().__call__(x, dims)
+
+    def forward(
+        self, x: torch.Tensor, dims: typing.Optional[typing.List[int]] = None
+    ) -> torch.Tensor:
+        """
+        Args:
+            x (torch.FloatTensor [*]): Input to apply dropout too.
+            dims: Dimensions to dropout out all-together.
+        """
+        x = x.clone()
+        mask_shape = list(x.shape)
+        if dims is not None:
+            for dim in dims:
+                mask_shape[dim] = 1
+        mask = x.new_ones(*tuple(mask_shape), requires_grad=False)
+        mask = torch.nn.functional.dropout(mask, self.p, self.training)
+        return x * mask.expand_as(x)
+
+
 _ClampReturnType = typing.TypeVar("_ClampReturnType", float, int)
 
 
