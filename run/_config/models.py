@@ -35,8 +35,8 @@ def configure(overwrite: bool = False):
             # SOURCE (Tacotron 2):
             # which are passed through a stack of 3 convolutional layers each containing
             # 512 filters with shape 5 × 1, i.e., where each filter spans 5 characters
-            num_layers=3,
-            conv_filter_size=9,
+            num_layers=2,
+            conv_filter_size=5,
         ),
         run._models.spectrogram_model.encoder._FeedForward: cf.Args(
             # NOTE: Following LLaMA, we use 1536 for our feed forward layers, see more here:
@@ -95,6 +95,7 @@ def configure(overwrite: bool = False):
             # [19] LSTM [20] layer containing 512 units (256) in each direction) to generate the
             # encoded features.
             encoder_hidden_size=512,
+            encoder_cond_size=256,
         ),
         run._models.signal_model.wrapper.SignalModelWrapper: cf.Args(
             max_speakers=max_speakers,

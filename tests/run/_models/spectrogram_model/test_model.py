@@ -64,6 +64,7 @@ class Params(typing.NamedTuple):
 def _make_spectrogram_model(
     params: Params,
     encoder_hidden_size: int = 16,
+    encoder_cond_size: int = 8,
     output_scalar: float = 1.2,
     stop_threshold: float = 0.5,
     dropout: float = 0.5,
@@ -95,6 +96,7 @@ def _make_spectrogram_model(
         max_anno_vector_size=params.max_anno_vector_size,
         annos=params.annos,
         encoder_hidden_size=encoder_hidden_size,
+        encoder_cond_size=encoder_cond_size,
         num_frame_channels=params.num_frame_channels,
         output_scalar=output_scalar,
         output_min=params.output_min,

@@ -106,7 +106,7 @@ class Decoder(torch.nn.Module):
     Args:
         num_frame_channels: Number of channels in each frame (sometimes refered to as
             "Mel-frequency bins" or "FFT bins" or "FFT bands")
-        seq_embed_size The size of the sequence metadata embedding.
+        seq_embed_size: The size of the sequence metadata embedding.
         hidden_size: The hidden size the decoder layers.
         attn_size: The size of the attention hidden state.
         stop_net_dropout: The dropout probability of the stop net.
