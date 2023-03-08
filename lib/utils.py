@@ -423,30 +423,27 @@ class _LockedDropout(torch.nn.Module):
     """Dropout with an option to dropout a dimension all-together.
 
     Args:
-        p (float): Probability of an element in the dropout mask to be zeroed.
+        p: Probability of an element in the dropout mask to be zeroed.
+        dims: Dimensions to dropout out all-together.
     """
 
-    def __init__(self, p: float = 0.5):
+    def __init__(self, p: float = 0.5, dims: typing.Optional[typing.List[int]] = None):
         self.p = p
+        self.dims = dims
         super().__init__()
 
-    def __call__(
-        self, x: torch.Tensor, dims: typing.Optional[typing.List[int]] = None
-    ) -> torch.Tensor:
-        return super().__call__(x, dims)
+    def __call__(self, x: torch.Tensor) -> torch.Tensor:
+        return super().__call__(x)
 
-    def forward(
-        self, x: torch.Tensor, dims: typing.Optional[typing.List[int]] = None
-    ) -> torch.Tensor:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Args:
             x (torch.FloatTensor [*]): Input to apply dropout too.
-            dims: Dimensions to dropout out all-together.
         """
         x = x.clone()
         mask_shape = list(x.shape)
-        if dims is not None:
-            for dim in dims:
+        if self.dims is not None:
+            for dim in self.dims:
                 mask_shape[dim] = 1
         mask = x.new_ones(*tuple(mask_shape), requires_grad=False)
         mask = torch.nn.functional.dropout(mask, self.p, self.training)
