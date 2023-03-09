@@ -106,42 +106,34 @@ class Decoder(torch.nn.Module):
     Args:
         num_frame_channels: Number of channels in each frame (sometimes refered to as
             "Mel-frequency bins" or "FFT bins" or "FFT bands")
-        seq_embed_size: The size of the sequence metadata embedding.
         hidden_size: The hidden size the decoder layers.
         attn_size: The size of the attention hidden state.
         stop_net_dropout: The dropout probability of the stop net.
     """
 
     def __init__(
-        self,
-        num_frame_channels: int,
-        seq_embed_size: int,
-        hidden_size: int,
-        attn_size: int,
-        stop_net_dropout: float,
+        self, num_frame_channels: int, hidden_size: int, attn_size: int, stop_net_dropout: float
     ):
         super().__init__()
 
         self.num_frame_channels = num_frame_channels
-        self.seq_embed_size = seq_embed_size
         self.hidden_size = hidden_size
         self.attn_size = attn_size
-        cond_size = seq_embed_size + attn_size
         self.init_state_segments = [self.num_frame_channels, 1, attn_size, attn_size, attn_size]
         self.init_state = torch.nn.Sequential(
-            torch.nn.Linear(cond_size + attn_size, cond_size),
+            torch.nn.Linear(attn_size * 2, attn_size),
             torch.nn.GELU(),
-            torch.nn.Linear(cond_size, sum(self.init_state_segments)),
+            torch.nn.Linear(attn_size, sum(self.init_state_segments)),
         )
         self.pre_net = cf.partial(PreNet)(num_frame_channels, hidden_size)
-        self.attn_rnn = _AttentionRNN(hidden_size + seq_embed_size, hidden_size, attn_size)
+        self.attn_rnn = _AttentionRNN(hidden_size, hidden_size, attn_size)
         self.linear_stop_token = torch.nn.Sequential(
             torch.nn.Dropout(stop_net_dropout),
-            torch.nn.Linear(hidden_size + cond_size, hidden_size),
+            torch.nn.Linear(hidden_size + attn_size, hidden_size),
             torch.nn.GELU(),
             torch.nn.Linear(hidden_size, 1),
         )
-        self.lstm_out = LSTM(hidden_size + cond_size, hidden_size)
+        self.lstm_out = LSTM(hidden_size + attn_size, hidden_size)
         self.linear_out = torch.nn.Sequential(
             torch.nn.Linear(hidden_size, hidden_size),
             torch.nn.GELU(),
@@ -188,13 +180,13 @@ class Decoder(torch.nn.Module):
         cum_alignment_padding = self.attn_rnn.attn.cum_alignment_padding
         window_length = self.attn_rnn.attn.window_length
 
-        # [batch_size, seq_embed_size + attn_size] →
+        # [batch_size, attn_size * 2] →
         # [batch_size, num_frame_channels + 1 + attn_size] →
-        # ([batch_size, num_frame_channels], [batch_size, 1],
-        #  [batch_size, attn_size], [batch_size, attn_size])
+        # [batch_size, num_frame_channels], [batch_size, 1],
+        # [batch_size, attn_size], [batch_size, attn_size]
         arange = torch.arange(0, batch_size, device=device)
         last_token = encoded.tokens[encoded.num_tokens - 1, arange]
-        init_features = torch.cat([encoded.seq_embed, encoded.tokens[0], last_token], dim=1)
+        init_features = torch.cat([encoded.tokens[0], last_token], dim=1)
         state = self.init_state(init_features).split(self.init_state_segments, dim=-1)
         init_frame, init_cum_alignment, init_attn_context, beg_pad_token, end_pad_token = state
 
@@ -263,36 +255,24 @@ class Decoder(torch.nn.Module):
         if target_frames is not None:
             frames = torch.cat([state.last_frame, target_frames[0:-1]])
 
-        num_frames, _, _ = frames.shape
-
-        # [batch_size, seq_embed_size] → [num_frames, batch_size, seq_embed_size]
-        seq_embed = encoded.seq_embed.unsqueeze(0).expand(num_frames, -1, -1)
-        seq_embed = seq_embed.expand(num_frames, -1, -1)
-
         # [num_frames, batch_size, num_frame_channels] →
         # [num_frames, batch_size, pre_net_hidden_size]
         pre_net_frames, pre_net_hidden_state = self.pre_net(frames, state.pre_net_hidden_state)
 
-        # [num_frames, batch_size, hidden_size] (concat) [num_frames, batch_size, seq_embed_size] →
-        # [num_frames, batch_size, hidden_size + seq_embed_size]
-        attn_rnn_inp = torch.cat([pre_net_frames, seq_embed], dim=2)
-        attn_rnn_args = (attn_rnn_inp, state.padded_encoded, state.attn_rnn_hidden_state)
+        attn_rnn_args = (pre_net_frames, state.padded_encoded, state.attn_rnn_hidden_state)
         attn_rnn_outs = self.attn_rnn(*attn_rnn_args, **kwargs)
         attn_rnn_out, attn_cntxts, alignments, window_starts, attn_rnn_hidden_state = attn_rnn_outs
         frames = (pre_net_frames + attn_rnn_out) / math.sqrt(2)
 
         # [num_frames, batch_size, hidden_size] (concat)
         # [num_frames, batch_size, attn_size] (concat)
-        # [num_frames, batch_size, seq_embed_size] →
-        # [num_frames, batch_size, hidden_size + attn_size + seq_embed_size]
-        block_input = torch.cat([frames, attn_cntxts, seq_embed], dim=2)
+        # [num_frames, batch_size, hidden_size + attn_size]
+        block_input = torch.cat([frames, attn_cntxts], dim=2)
 
-        # [num_frames, batch_size, hidden_size + attn_size + seq_embed_size] →
-        # [num_frames, batch_size]
+        # [num_frames, batch_size, hidden_size + attn_size] → [num_frames, batch_size]
         stop_token = self.linear_stop_token(block_input).squeeze(2)
 
-        # [num_frames, batch_size, hidden_size + attn_size + seq_embed_size] →
-        # [num_frames, batch_size, hidden_size]
+        # [num_frames, batch_size, hidden_size + attn_size] → [num_frames, batch_size, hidden_size]
         lstm_out, lstm_hidden_state = self.lstm_out(block_input, state.lstm_hidden_state)
         frames = (pre_net_frames + lstm_out) / math.sqrt(2)
 

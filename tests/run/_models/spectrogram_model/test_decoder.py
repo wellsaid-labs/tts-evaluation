@@ -16,7 +16,6 @@ from run._models.spectrogram_model.decoder import Decoder
 
 def _make_decoder(
     num_frame_channels=16,
-    seq_embed_size=8,
     hidden_size=4,
     attn_size=5,
     stop_net_dropout=0.5,
@@ -36,10 +35,7 @@ def _make_decoder(
         ),
     }
     cf.add(_config, overwrite=True)
-    return cf.partial(Decoder)(
-        num_frame_channels=num_frame_channels,
-        seq_embed_size=seq_embed_size,
-    )
+    return cf.partial(Decoder)(num_frame_channels=num_frame_channels)
 
 
 def _make_encoded(
@@ -52,8 +48,7 @@ def _make_encoded(
     num_tokens = torch.tensor(num_tokens)
     tokens_mask = lengths_to_mask(num_tokens)
     tokens = tokens * tokens_mask.transpose(0, 1).unsqueeze(-1)
-    seq_embed = torch.randn(batch_size, module.seq_embed_size)
-    encoded = Encoded(tokens, tokens_mask, num_tokens, seq_embed)
+    encoded = Encoded(tokens, tokens_mask, num_tokens)
     return encoded, (batch_size, max_num_tokens)
 
 

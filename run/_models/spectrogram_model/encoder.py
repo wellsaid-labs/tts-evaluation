@@ -46,12 +46,6 @@ class _Block(torch.nn.Module):
         super().__init__()
         self.norm = cf.partial(torch.nn.LayerNorm)(hidden_size)
         self.lstm = LSTM(hidden_size + cond_size, hidden_size)
-        self.conv = torch.nn.Conv1d(
-            in_channels=hidden_size,
-            out_channels=hidden_size,
-            kernel_size=conv_filter_size,
-            padding=int((conv_filter_size - 1) / 2),
-        )
         self.ff_norm = cf.partial(torch.nn.LayerNorm)(hidden_size)
         self.ff = cf.partial(_FeedForward)(hidden_size + cond_size, hidden_size)
 
@@ -71,8 +65,6 @@ class _Block(torch.nn.Module):
         block = self.norm(tokens)
         block = torch.cat([block, cond], dim=2)
         block = self.lstm(block.transpose(0, 1))[0].transpose(0, 1)
-        block = block.masked_fill(~mask, 0)
-        block = self.conv(block.transpose(1, 2)).transpose(1, 2)
         tokens = (tokens + block) / math.sqrt(2)
         next_block = self.ff_norm(tokens)
         next_block = torch.cat([next_block, cond], dim=2)
@@ -150,6 +142,18 @@ class Encoder(torch.nn.Module):
         )
         self.norm_cond = cf.partial(torch.nn.LayerNorm)(cond_size)
 
+        self.pre_net = torch.nn.ModuleList(
+            torch.nn.Sequential(
+                torch.nn.GELU(),
+                torch.nn.Conv1d(
+                    in_channels=hidden_size,
+                    out_channels=hidden_size,
+                    kernel_size=conv_filter_size,
+                    padding=int((conv_filter_size - 1) / 2),
+                ),
+            )
+            for _ in range(num_layers)
+        )
         blocks = (_Block(hidden_size, cond_size, conv_filter_size) for _ in range(num_layers))
         self.blocks = ModuleList(blocks)
         self.out = cf.partial(torch.nn.LayerNorm)(hidden_size)
@@ -186,7 +190,7 @@ class Encoder(torch.nn.Module):
         feats = [tokens, word_vector] + token_meta
         tokens = self.norm_embed(torch.stack(feats).sum(dim=0))
         tokens_mask = tokens_mask.unsqueeze(2)
-        tokens = tokens.masked_fill(~tokens_mask, 0)
+        tokens: torch.Tensor = tokens.masked_fill(~tokens_mask, 0)
 
         # [batch_size, num_tokens, max_anno_vector_size] →
         # [batch_size, num_tokens, cond_size]
@@ -200,9 +204,16 @@ class Encoder(torch.nn.Module):
         cond = self.norm_cond(torch.stack(anno_embeds + [seq_embed_expanded]).sum(dim=0))
         cond = cond.masked_fill(~tokens_mask, 0)
 
+        # [batch_size, num_tokens, hidden_size] →
+        # [batch_size, hidden_size, num_tokens]
+        block, block_mask = tokens.transpose(1, 2), tokens_mask.transpose(1, 2)
+        for module in self.pre_net:
+            block = module(block).masked_fill(~block_mask, 0)
+        tokens = block.transpose(1, 2)
+
         for block in self.blocks:
             tokens = block(tokens, tokens_mask, cond)
 
         tokens = self.out(tokens).masked_fill(~tokens_mask, 0)
         tokens = pad_sequence([tokens[i][s] for i, s in enumerate(inputs.slices)])
-        return Encoded(tokens, inputs.sliced_tokens_mask, inputs.num_sliced_tokens, seq_embed)
+        return Encoded(tokens, inputs.sliced_tokens_mask, inputs.num_sliced_tokens)

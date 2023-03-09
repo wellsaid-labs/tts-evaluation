@@ -110,10 +110,6 @@ class Encoded(typing.NamedTuple):
     # torch.LongTensor [batch_size]
     num_tokens: torch.Tensor
 
-    # Sequence embedding
-    # torch.FloatTensor [batch_size, seq_embed_size]
-    seq_embed: torch.Tensor
-
 
 class AttentionHiddenState(typing.NamedTuple):
     """Attention hidden state from previous time steps, used to predict the next time step."""

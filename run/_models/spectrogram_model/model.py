@@ -101,10 +101,7 @@ class SpectrogramModel(torch.nn.Module):
             **cf.get(),
         )
         self.decoder = decoder.Decoder(
-            num_frame_channels=num_frame_channels,
-            seq_embed_size=encoder_cond_size,
-            attn_size=encoder_hidden_size,
-            **cf.get(),
+            num_frame_channels=num_frame_channels, attn_size=encoder_hidden_size, **cf.get()
         )
         self.output_min = output_min / output_scalar
         self.output_scalar: torch.Tensor

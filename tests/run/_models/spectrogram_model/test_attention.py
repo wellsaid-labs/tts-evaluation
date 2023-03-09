@@ -92,7 +92,6 @@ def _make_attention(
     conv_filter_size=5,
     window_length=7,
     avg_frames_per_token=1.0,
-    seq_embed_size=10,
 ) -> typing.Tuple[
     Attention, typing.Tuple[Encoded, torch.Tensor, AttentionHiddenState], typing.Tuple[int, int]
 ]:
@@ -113,8 +112,7 @@ def _make_attention(
         cum_alignment=lib.utils.pad_tensor(cum_alignment, padding, 1, value=1.0),
         window_start=torch.zeros(batch_size, dtype=torch.long),
     )
-    seq_embed = torch.randn(batch_size, seq_embed_size)
-    encoded = Encoded(tokens, tokens_mask, tokens_mask.sum(dim=1), seq_embed)
+    encoded = Encoded(tokens, tokens_mask, tokens_mask.sum(dim=1))
     return module, (encoded, query, hidden_state), (batch_size, max_num_tokens)
 
 
