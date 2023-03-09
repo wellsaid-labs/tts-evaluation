@@ -83,15 +83,11 @@ class Encoder(torch.nn.Module):
         max_seq_vector_size: The maximum size of the sequence vector.
         max_anno_vector_size: The maximum size of a annotation vector aside from the word vector.
         annos: The annotations to process.
-        num_anno_layers: The number of layers to process annotations with.
-        seq_embed_size: The size of the sequence metadata embeddings.
-        token_meta_embed_size: The size of the token metadata embeddings.
-        anno_embed_size: The size of the annotation embeddings.
-        out_size: The size of the encoder output.
         hidden_size: The size of the encoders hidden representation.
         cond_size: The size of the encoder conditional representation.
         num_layers: Number of layers for processing input.
         conv_filter_size: Size of the convolving kernel. This value must be odd.
+        dropout: The probability of dropout.
     """
 
     def __init__(
