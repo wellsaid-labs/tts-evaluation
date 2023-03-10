@@ -419,7 +419,7 @@ class LSTMCell(torch.nn.LSTMCell):
         return super().forward(input, hx=hx)
 
 
-class _LockedDropout(torch.nn.Module):
+class LockedDropout(torch.nn.Module):
     """Dropout with an option to dropout a dimension all-together.
 
     Args:
