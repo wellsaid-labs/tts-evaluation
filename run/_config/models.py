@@ -31,7 +31,6 @@ def configure(overwrite: bool = False):
     # NOTE: Configure the model sizes.
     config = {
         run._models.spectrogram_model.encoder.Encoder: cf.Args(
-            dropout=0.25,
             # SOURCE (Tacotron 2):
             # which are passed through a stack of 3 convolutional layers each containing
             # 512 filters with shape 5 × 1, i.e., where each filter spans 5 characters
@@ -95,7 +94,6 @@ def configure(overwrite: bool = False):
             # [19] LSTM [20] layer containing 512 units (256) in each direction) to generate the
             # encoded features.
             encoder_hidden_size=512,
-            encoder_cond_size=256,
         ),
         run._models.signal_model.wrapper.SignalModelWrapper: cf.Args(
             max_speakers=max_speakers,
@@ -116,6 +114,7 @@ def configure(overwrite: bool = False):
         # SOURCE (Tacotron 2):
         # In order to introduce output variation at inference time, dropout with probability 0.5 is
         # applied only to layers in the pre-net of the autoregressive decoder.
+        run._models.spectrogram_model.encoder.Encoder: cf.Args(dropout=0.25),
         run._models.spectrogram_model.pre_net.PreNet: cf.Args(dropout=0.4),
         run._models.spectrogram_model.decoder.Decoder: cf.Args(stop_net_dropout=0.5),
     }
