@@ -114,7 +114,7 @@ def configure(overwrite: bool = False):
         # SOURCE (Tacotron 2):
         # In order to introduce output variation at inference time, dropout with probability 0.5 is
         # applied only to layers in the pre-net of the autoregressive decoder.
-        run._models.spectrogram_model.encoder.Encoder: cf.Args(dropout=0.25),
+        run._models.spectrogram_model.encoder.Encoder: cf.Args(dropout=0.1),
         run._models.spectrogram_model.pre_net.PreNet: cf.Args(dropout=0.4),
         run._models.spectrogram_model.decoder.Decoder: cf.Args(stop_net_dropout=0.5),
     }
