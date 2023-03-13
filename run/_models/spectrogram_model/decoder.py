@@ -71,16 +71,15 @@ class _AttentionRNN(torch.nn.Module):
             # [batch_size, input_size + attn_size] → [batch_size, output_size]
             lstm_hidden_state = self.lstm(split, lstm_hidden_state)
             assert lstm_hidden_state is not None
-            split = lstm_hidden_state[0]
+            lstm_out = lstm_hidden_state[0]
 
             # Initial attention alignment, sometimes refered to as attention weights.
             # attn_context [batch_size, attn_size]
-            query = split.unsqueeze(0)
             last_attn_context, alignment, attn_hidden_state = self.attn(
-                encoded, query, attn_hidden_state, **kwargs
+                encoded, lstm_out.unsqueeze(0), attn_hidden_state, **kwargs
             )
 
-            lstm_out_list.append(split)
+            lstm_out_list.append(lstm_out)
             attn_cntxts_list.append(last_attn_context)
             alignments_list.append(alignment)
             window_start_list.append(attn_hidden_state.window_start)
