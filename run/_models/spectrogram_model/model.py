@@ -249,8 +249,8 @@ class SpectrogramModel(torch.nn.Module):
             target_mask (torch.BoolTensor [num_frames, batch_size])
         """
         if target_mask is None:
-            target_mask = torch.ones(*target_frames.shape[:1], device=target_frames.device)
-        assert target_mask.shape[:1] == target_frames.shape[:1], "Shapes must align."
+            target_mask = torch.ones(*target_frames.shape[:2], device=target_frames.device)
+        assert target_mask.shape[:2] == target_frames.shape[:2], "Shapes must align."
         target_frames = target_frames / self.output_scalar
         assert target_frames.min() >= self.output_min
         encoded = self.encoder(inputs)
