@@ -105,6 +105,7 @@ def _make_attention(
     )
     tokens = torch.randn(max_num_tokens, batch_size, attention_hidden_size)
     tokens_mask = torch.ones(batch_size, max_num_tokens, dtype=torch.bool)
+    tokens_mask[-1][-max_num_tokens // 2 :] = 0
     query = torch.randn(1, batch_size, query_hidden_size)
     padding = (module.cum_alignment_padding, module.cum_alignment_padding)
     cum_alignment = torch.zeros(batch_size, max_num_tokens)
