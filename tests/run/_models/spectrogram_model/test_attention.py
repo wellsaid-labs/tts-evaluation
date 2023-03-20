@@ -164,6 +164,7 @@ def test_attention():
                 if (
                     i >= last_hidden_state.window_start[k]
                     and i < last_hidden_state.window_start[k] + module.window_length
+                    and encoded.tokens_mask[k, i] != 0
                 ):
                     assert alignment[k, i] != 0  # Not Masked
                 else:
