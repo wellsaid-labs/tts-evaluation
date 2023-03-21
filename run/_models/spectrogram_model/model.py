@@ -173,9 +173,8 @@ class SpectrogramModel(torch.nn.Module):
         device = encoded.tokens.device
         num_tokens = encoded.num_tokens
 
-        assert (
-            use_tqdm and batch_size == 1 or not use_tqdm
-        ), "Progress bar not applicable for batch generation."
+        message = "Progress bar not applicable for batch generation."
+        assert use_tqdm and batch_size == 1 or not use_tqdm, message
 
         hidden_state = None
         frames, stop_tokens, alignments = [], [], []
