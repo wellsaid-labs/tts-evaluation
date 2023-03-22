@@ -118,7 +118,7 @@ class Decoder(torch.nn.Module):
         self.num_frame_channels = num_frame_channels
         self.hidden_size = hidden_size
         self.attn_size = attn_size
-        self.init_state_segments = [self.num_frame_channels, 1, attn_size, attn_size, attn_size]
+        self.init_state_segments = [self.num_frame_channels, 1] + [attn_size] * 3
         self.init_state = torch.nn.Sequential(
             torch.nn.Linear(attn_size * 2, attn_size),
             torch.nn.GELU(),
