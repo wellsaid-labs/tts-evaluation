@@ -1,7 +1,7 @@
 import functools
+import math
 import typing
 
-import config as cf
 import torch
 import torch.nn
 import torch.nn.functional
@@ -9,47 +9,24 @@ from torch.nn import ModuleList
 from torch.nn.utils.rnn import pad_sequence
 
 from lib.distributed import NumeralizePadEmbed
-from lib.utils import LSTM
 from run._models.spectrogram_model.containers import Encoded
 from run._models.spectrogram_model.inputs import Inputs
 
 
-class _FeedForward(torch.nn.Module):
-    """A feed forward layer as defined for transformers.
+class _Highway(torch.nn.Module):
+    """A Highway module similar to the one used in ELMo.
 
-    NOTE: This SwiGLU layer is based on:
-    https://github.com/facebookresearch/llama/blob/main/llama/model.py
+    Learn more here:
+    - Highway Network: https://arxiv.org/abs/1505.00387
+    - ELMo: https://arxiv.org/pdf/1802.05365.pdf
+    - ELMo Highway Implementation:
+      https://github.com/allenai/allennlp/blob/main/allennlp/modules/highway.py
     """
 
-    def __init__(self, in_size: int, out_size: int, in_size_mult: int):
-        super().__init__()
-        self.proj = torch.nn.Linear(in_size, in_size * in_size_mult * 2)
-        self.out = torch.nn.Linear(in_size * in_size_mult, out_size)
-
-    def __call__(self, x: torch.Tensor) -> torch.Tensor:
-        return super().__call__(x)
-
-    def forward(self, x: torch.Tensor):
-        """
-        Args:
-            x (torch.FloatTensor [*, in_size])
-
-        Returns:
-            x (torch.FloatTensor [*, out_size])
-        """
-        gate, val = self.proj(x).chunk(2, dim=-1)
-        return self.out(torch.nn.functional.silu(gate) * val)
-
-
-class _Block(torch.nn.Module):
     def __init__(self, hidden_size: int):
-        super().__init__()
-        self.norm = cf.partial(torch.nn.LayerNorm)(hidden_size)
-        self.lstm = LSTM(hidden_size, hidden_size, batch_first=True)
-        self.ff_norm = cf.partial(torch.nn.LayerNorm)(hidden_size)
-        self.ff = cf.partial(_FeedForward)(hidden_size, hidden_size)
+        self.highway = torch.nn.Linear(hidden_size, hidden_size * 2)
 
-    def __call__(self, tokens: torch.Tensor) -> torch.Tensor:
+    def __call__(self, tokens: torch.Tensor):
         return super().__call__(tokens)
 
     def forward(self, tokens: torch.Tensor) -> torch.Tensor:
@@ -57,8 +34,51 @@ class _Block(torch.nn.Module):
         Args:
             tokens (torch.FloatTensor [batch_size, num_tokens, hidden_size])
         """
-        tokens = tokens + self.lstm(self.norm(tokens))[0]
-        tokens = tokens + self.ff(self.ff_norm(tokens))
+        vals, gate = self.highway(tokens).chunk(2, dim=-1)
+        gate = torch.sigmoid(gate)
+        return vals * gate + tokens * (1 - gate)
+
+
+class _Block(torch.nn.Module):
+    """
+    A basic building block customized for the `Encoder`.
+    """
+
+    def __init__(self, hidden_size: int, conv_filter_size: int, num_conv_layers: int):
+        super().__init__()
+        self.conv_block = torch.nn.ModuleList(
+            torch.nn.Sequential(
+                torch.nn.GELU(),
+                torch.nn.Conv1d(
+                    in_channels=hidden_size,
+                    out_channels=hidden_size,
+                    kernel_size=conv_filter_size,
+                    padding=(conv_filter_size - 1) // 2,
+                ),
+            )
+            for _ in range(num_conv_layers)
+        )
+        conv_block_last_op = torch.nn.Sequential(
+            torch.nn.GELU(),
+            torch.nn.Conv1d(hidden_size, hidden_size, kernel_size=1),
+        )
+        self.conv_block.append(conv_block_last_op)
+        self.highway = _Highway(hidden_size)
+
+    def __call__(self, tokens: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        return super().__call__(tokens, mask)
+
+    def forward(self, tokens: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            tokens (torch.FloatTensor [batch_size, num_tokens, hidden_size])
+        """
+        block = tokens
+        for conv in self.conv_block:
+            block = block.masked_fill(~mask, 0)
+            block = conv(block.transpose(1, 2)).transpose(1, 2)
+        tokens = tokens + block
+        tokens = self.highway(tokens)
         return tokens
 
 
@@ -76,7 +96,7 @@ class Encoder(torch.nn.Module):
         hidden_size: The size of the encoders hidden representation.
         num_layers: Number of layers for processing input.
         conv_filter_size: Size of the convolving kernel. This value must be odd.
-        dropout: The probability of dropout.
+        num_conv_block_layers: The number of layers in each convolution block.
     """
 
     def __init__(
@@ -91,7 +111,7 @@ class Encoder(torch.nn.Module):
         hidden_size: int,
         num_layers: int,
         conv_filter_size: int,
-        dropout: float,
+        num_conv_block_layers: int,
     ):
         super().__init__()
 
@@ -105,15 +125,12 @@ class Encoder(torch.nn.Module):
         self.annos = annos
         self.hidden_size = hidden_size
 
-        self.dropout = torch.nn.Dropout(dropout)
-
         embed = functools.partial(NumeralizePadEmbed, embedding_dim=hidden_size)
         self.embed_seq_meta = ModuleList(embed(n) for n in max_seq_meta_vals)
         self.embed_seq_vector = torch.nn.Linear(max_seq_vector_size, hidden_size)
         self.embed_token = NumeralizePadEmbed(max_tokens, hidden_size)
         self.embed_token_meta = ModuleList(embed(n) for n in max_token_meta_vals)
         self.embed_word_vec = torch.nn.Linear(self.max_word_vector_size, hidden_size)
-        self.norm_embed = cf.partial(torch.nn.LayerNorm)(hidden_size)
         self.embed_annos = torch.nn.Conv1d(
             in_channels=max_anno_vector_size * len(self.annos),
             out_channels=hidden_size * len(self.annos),
@@ -121,23 +138,10 @@ class Encoder(torch.nn.Module):
             groups=len(self.annos),
         )
 
-        self.pre_net = torch.nn.ModuleList(
-            torch.nn.Sequential(
-                torch.nn.GELU(),
-                torch.nn.Conv1d(
-                    in_channels=hidden_size,
-                    out_channels=hidden_size,
-                    kernel_size=conv_filter_size,
-                    padding=(conv_filter_size - 1) // 2,
-                ),
-            )
-            for _ in range(num_layers)
+        self.blocks = ModuleList(
+            _Block(hidden_size, conv_filter_size, num_conv_block_layers) for _ in range(num_layers)
         )
-        self.blocks = ModuleList(_Block(hidden_size) for _ in range(num_layers))
-        self.out = torch.nn.Sequential(
-            cf.partial(torch.nn.LayerNorm)(hidden_size),
-            torch.nn.Linear(hidden_size, hidden_size * 2),
-        )
+        self.proj_out = torch.nn.Linear(hidden_size, hidden_size * 2)
 
     def __call__(self, inputs: Inputs) -> Encoded:
         return super().__call__(inputs)
@@ -175,25 +179,17 @@ class Encoder(torch.nn.Module):
         anno_embeds = [e.masked_fill(~m.bool(), 0) for e, m in zip(anno_embeds, anno_masks)]
 
         feats = [tokens, seq_embed, word_vector] + token_meta + anno_embeds
-        tokens = self.norm_embed(self.dropout(torch.stack(feats)).sum(dim=0))
+        tokens = torch.stack(feats).sum(dim=0) / math.sqrt(len(feats))
         tokens_mask = tokens_mask.unsqueeze(2)
         tokens: torch.Tensor = tokens.masked_fill(~tokens_mask, 0)
 
         # TODO: Much like our attention relies on learned token padding, we could upstream it
         # further to our convolutions.
 
-        # [batch_size, num_tokens, hidden_size] →
-        # [batch_size, hidden_size, num_tokens]
-        block, block_mask = tokens.transpose(1, 2), tokens_mask.transpose(1, 2)
-        for module in self.pre_net:
-            block = module(block).masked_fill(~block_mask, 0)
-
-        tokens = tokens + block.transpose(1, 2)
-
         for block in self.blocks:
-            tokens = block(tokens)
+            tokens = block(tokens, tokens_mask)
 
-        tokens = self.out(tokens).masked_fill(~tokens_mask, 0)
+        tokens = self.proj_out(tokens).masked_fill(~tokens_mask, 0)
         tokens = pad_sequence([tokens[i][s] for i, s in enumerate(inputs.slices)])
         tokens, token_keys = tokens.chunk(2, dim=2)
 
