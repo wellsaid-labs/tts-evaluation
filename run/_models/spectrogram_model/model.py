@@ -128,8 +128,8 @@ class SpectrogramModel(torch.nn.Module):
         Returns:
             stop_token (torch.FloatTensor [num_frames (optional), batch_size])
         """
-        window_length = self.decoder.attn_rnn.attn.window_length
-        at_the_end = window_start >= num_tokens - window_length // 2 - 1
+        window_len = self.decoder.attn_rnn.attn.window_len
+        at_the_end = window_start >= num_tokens - window_len // 2 - 1
         return stop_token.masked_fill(~at_the_end, self.stop_token_eps)
 
     def _is_stop(
@@ -169,7 +169,7 @@ class SpectrogramModel(torch.nn.Module):
             split_size
             use_tqdm: Add a progress bar for non-batch generation.
         """
-        _, batch_size, _ = encoded.tokens.shape
+        batch_size, _, _ = encoded.tokens.shape
         device = encoded.tokens.device
         num_tokens = encoded.num_tokens
 

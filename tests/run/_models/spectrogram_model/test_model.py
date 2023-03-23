@@ -67,7 +67,7 @@ def _make_spectrogram_model(
     output_scalar: float = 1.2,
     stop_threshold: float = 0.5,
     dropout: float = 0.5,
-    window_length: int = 3,
+    window_len: int = 3,
     stop_token_eps: float = 1e-10,
 ) -> SpectrogramModel:
     """Make `spectrogram_model.SpectrogramModel` for testing."""
@@ -80,7 +80,7 @@ def _make_spectrogram_model(
         ),
         run._models.spectrogram_model.pre_net.PreNet: cf.Args(num_layers=1, dropout=dropout),
         run._models.spectrogram_model.attention.Attention: cf.Args(
-            conv_filter_size=3, window_length=window_length, avg_frames_per_token=1.0
+            conv_filter_size=3, window_len=window_len, avg_frames_per_token=1.0
         ),
         torch.nn.LayerNorm: cf.Args(eps=1e-05),
     }
@@ -231,7 +231,7 @@ def _mock_model(model: SpectrogramModel) -> typing.Callable[[int], None]:
     """
     _decoder_forward = model.decoder.forward
     _attention_forward = model.decoder.attn_rnn.attn.forward
-    window_length = model.decoder.attn_rnn.attn.window_length
+    window_len = model.decoder.attn_rnn.attn.window_len
     offset = 0
 
     def set_stop_token_rand_offset(new_offset):
@@ -246,20 +246,16 @@ def _mock_model(model: SpectrogramModel) -> typing.Callable[[int], None]:
         token_skip_warning: int,
     ):
         window_start = hidden_state.window_start
-        cum_alignment_padding = self.cum_alignment_padding
-        slice_ = slice(cum_alignment_padding, -cum_alignment_padding)
+        slice_ = slice(self.padding, -self.padding)
         first_token = hidden_state.cum_alignment[:, slice_].sum() == 0
         context, alignment, hidden_state = _attention_forward(
             encoded, query, hidden_state, token_skip_warning
         )
         # NOTE: On the first iteration, `window_start` should not advance because it needs to
         # focus on the first token.
-        window_start = (
-            window_start.zero_()
-            if first_token
-            else torch.clamp(torch.min(window_start + 1, encoded.num_tokens - window_length), min=0)
-        )
-        return context, alignment, hidden_state._replace(window_start=window_start)
+        window_start_ = torch.min(window_start + 1, encoded.num_tokens - window_len)
+        window_start = window_start.zero_() if first_token else torch.clamp(window_start_, min=0)
+        return context, alignment, dataclasses.replace(hidden_state, window_start=window_start)
 
     model.decoder.attn_rnn.attn.forward = types.MethodType(
         attention_forward, model.decoder.attn_rnn.attn
@@ -356,7 +352,7 @@ def test_spectrogram_model__reached_max_all():
 def test_spectrogram_model__is_stop():
     """Test `spectrogram_model.SpectrogramModel._is_stop` basic cases."""
     params = Params()
-    model = _make_spectrogram_model(params, window_length=3, stop_threshold=0.5)
+    model = _make_spectrogram_model(params, window_len=3, stop_threshold=0.5)
     tensor = torch.tensor
     _is_stop = lambda a, b, c, d: model._is_stop(_logit(tensor(a)), tensor(b), tensor(c), tensor(d))
     # NOTE: For example, test that this handles a scenario where the window intersects the boundary
@@ -369,12 +365,12 @@ def test_spectrogram_model__is_stop():
 
 def test_spectrogram_model__stop():
     """Test `spectrogram_model.SpectrogramModel` `stop_tokens` is consistent with `lengths`,
-    `window_start`, `window_length` and masking."""
+    `window_start`, `window_len` and masking."""
     with fork_rng(123):
         params = Params(batch_size=16, max_frames=8)
         inputs, _, num_sliced_tokens, *_ = _make_inputs(params)
-        window_length = 3
-        model = _make_spectrogram_model(params, window_length=window_length)
+        window_len = 3
+        model = _make_spectrogram_model(params, window_len=window_len)
         _mock_model(model)
 
         preds = model(inputs, mode=Mode.INFER)
@@ -382,7 +378,7 @@ def test_spectrogram_model__stop():
         max_lengths = inputs.max_audio_len
         threshold = torch.sigmoid(preds.stop_tokens) >= model.stop_threshold
         for i in range(params.batch_size):  # NOTE: Only stop if the window includes the last token.
-            min_index = torch.clamp_min(num_sliced_tokens[i] - window_length, 0).item()
+            min_index = torch.clamp_min(num_sliced_tokens[i] - window_len, 0).item()
             min_index = typing.cast(int, min_index)
             threshold[:min_index, i] = False
         stopped_index = _get_index_first_nonzero(threshold)

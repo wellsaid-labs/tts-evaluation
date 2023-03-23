@@ -47,12 +47,12 @@ def configure(overwrite: bool = False):
             # Location features are computed using 32 1-D convolution filters of length 31.
             conv_filter_size=9,
             # NOTE: The alignment between text and speech is monotonic; therefore, the attention
-            # progression should reflect that. The `window_length` ensures the progression is
+            # progression should reflect that. The `window_len` ensures the progression is
             # limited.
             # NOTE: Comet visualizes the metric "attention_std", and this metric represents the
             # number of characters the model is attending too at a time. That metric can be used
-            # to set the `window_length`.
-            window_length=9,
+            # to set the `window_len`.
+            window_len=9,
             # NOTE: This value was computed with a reference frame size of 4096, and it scales
             # linearly with frame size.
             avg_frames_per_token=1.45 * (4096 / _config.audio.FRAME_SIZE),

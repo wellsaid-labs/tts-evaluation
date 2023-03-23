@@ -95,12 +95,17 @@ class Preds:
         return dataclasses.replace(self, **applied)
 
 
-class Encoded(typing.NamedTuple):
+@dataclasses.dataclass(frozen=True)
+class Encoded:
     """The model inputs encoded."""
 
     # Batch of sequences
-    # torch.FloatTensor [num_tokens, batch_size, out_dim]
+    # torch.FloatTensor [batch_size, num_tokens, out_dim]
     tokens: torch.Tensor
+
+    # Batch of sequences
+    # torch.FloatTensor [batch_size, out_dim, num_tokens]
+    token_keys: torch.Tensor
 
     # Sequence mask(s) to deliminate padding in `tokens` with `False`.
     # torch.BoolTensor [batch_size, num_tokens]
@@ -110,15 +115,34 @@ class Encoded(typing.NamedTuple):
     # torch.LongTensor [batch_size]
     num_tokens: torch.Tensor
 
+    def __getitem__(self, key):
+        return Encoded(
+            tokens=self.tokens[key],
+            token_keys=self.token_keys[key],
+            tokens_mask=self.tokens_mask[key],
+            num_tokens=self.num_tokens[key],
+        )
 
-class AttentionHiddenState(typing.NamedTuple):
+
+@dataclasses.dataclass(frozen=True)
+class AttentionHiddenState:
     """Attention hidden state from previous time steps, used to predict the next time step."""
+
+    # torch.FloatTensor [batch_size, num_tokens + 2 * cum_alignment_padding]
+    alignment: torch.Tensor
 
     # torch.FloatTensor [batch_size, num_tokens + 2 * cum_alignment_padding]
     cum_alignment: torch.Tensor
 
     # torch.LongTensor [batch_size]
     window_start: torch.Tensor
+
+    def __getitem__(self, key):
+        return AttentionHiddenState(
+            alignment=self.alignment[key],
+            cum_alignment=self.cum_alignment[key],
+            window_start=self.window_start[key],
+        )
 
 
 class AttentionRNNHiddenState(typing.NamedTuple):

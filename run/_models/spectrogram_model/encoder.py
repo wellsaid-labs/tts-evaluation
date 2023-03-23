@@ -134,7 +134,10 @@ class Encoder(torch.nn.Module):
             for _ in range(num_layers)
         )
         self.blocks = ModuleList(_Block(hidden_size) for _ in range(num_layers))
-        self.out = cf.partial(torch.nn.LayerNorm)(hidden_size)
+        self.out = torch.nn.Sequential(
+            cf.partial(torch.nn.LayerNorm)(hidden_size),
+            torch.nn.Linear(hidden_size, hidden_size * 2),
+        )
 
     def __call__(self, inputs: Inputs) -> Encoded:
         return super().__call__(inputs)
@@ -192,4 +195,13 @@ class Encoder(torch.nn.Module):
 
         tokens = self.out(tokens).masked_fill(~tokens_mask, 0)
         tokens = pad_sequence([tokens[i][s] for i, s in enumerate(inputs.slices)])
-        return Encoded(tokens, inputs.sliced_tokens_mask, inputs.num_sliced_tokens)
+        tokens, token_keys = tokens.chunk(2, dim=2)
+
+        return Encoded(
+            # [num_tokens, batch_size, out_dim] → [batch_size, num_tokens, out_dim]
+            tokens=tokens.transpose(0, 1),
+            # [num_tokens, batch_size, out_dim] → [batch_size, out_dim, num_tokens]
+            token_keys=token_keys.permute(1, 2, 0),
+            tokens_mask=inputs.sliced_tokens_mask,
+            num_tokens=inputs.num_sliced_tokens,
+        )
