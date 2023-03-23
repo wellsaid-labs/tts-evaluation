@@ -68,7 +68,7 @@ from run.data._loader import Language, Session, Speaker, english, german, portug
 if "NUM_CPU_THREADS" in os.environ:
     torch.set_num_threads(int(os.environ["NUM_CPU_THREADS"]))
 
-if __name__ == "__main__":
+if __name__ == "__main__" or os.environ.get("DEBUG") == "1":
     # NOTE: Incase this module is imported, don't run `set_basic_logging_config`.
     # NOTE: Flask documentation requests that logging is configured before `app` is created.
     set_basic_logging_config()
@@ -76,7 +76,7 @@ if __name__ == "__main__":
 app = Flask(__name__)
 pprinter = pprint.PrettyPrinter(indent=2)
 
-DEVICE = torch.device("cpu")
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 MAX_CHARS = 10000
 TTS_PACKAGE: TTSPackage
 LANGUAGE_TO_SPACY: typing.Dict[Language, spacy.language.Language]
@@ -353,6 +353,7 @@ def get_stream():
         "Cache-Control": "no-cache, no-store, must-revalidate",
         "Pragma": "no-cache",
         "Expires": "0",
+        "X-Text-Length": len(request_args.get("text")),
     }
     output_flags = ("-f", "mp3", "-b:a", "192k")
     generator = text_to_speech_ffmpeg_generator(
@@ -362,7 +363,9 @@ def get_stream():
 
 
 if __name__ == "__main__" or "GUNICORN" in os.environ:
+    app.logger.info("Device: %s", DEVICE)
     app.logger.info("PyTorch version: %s", torch.__version__)
+    app.logger.info("PyTorch CUDA version: %s", torch.version.cuda)
     app.logger.info("Found MKL: %s", torch.backends.mkl.is_available())
     app.logger.info("Threads: %s", torch.get_num_threads())
     app.logger.info("Speaker Ids: %s", pprinter.pformat(SPEAKER_ID_TO_SESSION))

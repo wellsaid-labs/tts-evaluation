@@ -125,12 +125,15 @@ function(
       min: validate.minScale,
       max: validate.maxScale
     },
-    resources: {
+    resources: (if "resources" in validate then validate.resources else {
+      // NOTE: default resources reflect our historical deployment configurations.
+      // It is recommended to move resource definitions into the deployment configuration
+      // files via the `validate.resources` property.
       requests: {
         cpu: '1',
         memory: '1G',
       },
-    },
+    }),
     concurrency: validate.concurrency,
     timeout: 10,
     restartTimeout: 10,
@@ -154,7 +157,10 @@ function(
       min: stream.minScale,
       max: stream.maxScale
     },
-    resources: {
+    resources: (if "resources" in stream then stream.resources else {
+      // NOTE: default resources reflect our historical deployment configurations.
+      // It is recommended to move resource definitions into the deployment configuration
+      // files via the `stream.resources` property.
       requests: {
         cpu: '6',
         memory: '4G',
@@ -163,7 +169,7 @@ function(
         cpu: '7',
         memory: '5G',
       },
-    },
+    }),
     concurrency: stream.concurrency,
     // NOTE: 5 minutes was decided on based on max latency values we are seeing in production as
     // well as limitations defined by maximum input lengths. Changes to these values will need to

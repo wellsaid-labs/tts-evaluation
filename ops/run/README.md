@@ -99,13 +99,31 @@ releases. To deploy a new model, follow these steps:
        "minScale": 0,
        "maxScale": 32,
        "concurrency": 1,
-       "paths": ["/api/text_to_speech/stream"]
+       "paths": ["/api/text_to_speech/stream"],
+       "resources": {
+         "requests": {
+           "cpu": "6",
+           "memory": "4G",
+           "nvidia.com/gpu": "1"
+         },
+         "limits": {
+           "cpu": "7",
+           "memory": "5G",
+           "nvidia.com/gpu": "1"
+         }
+       }
      },
      "validate": {
        "minScale": 0,
        "maxScale": 32,
        "concurrency": 4,
-       "paths": ["/api/text_to_speech/input_validated"]
+       "paths": ["/api/text_to_speech/input_validated"],
+       "resources": {
+         "requests": {
+           "cpu": "1",
+           "memory": "1G"
+         }
+       }
      },
      "traffic": [
        {
@@ -178,6 +196,12 @@ releases. To deploy a new model, follow these steps:
 
    - `stream.paths|validate.paths` option defines the http endpoints that the
      service will respond to.
+
+   - `stream.resources|validate.resources` option defines the resource requests
+     for the relevant service. See [memory](https://cloud.google.com/anthos/run/docs/configuring/memory-limits),
+     [cpu](https://cloud.google.com/anthos/run/docs/configuring/cpu),
+     and [gpu](https://cloud.google.com/anthos/run/docs/configuring/compute-power-gpu)
+     configuration details. Resource requests are limited to the node-pool(s) within the cluster.
 
 1. Deploy the configured model release. If you would like to debug the release
    manifests prior to deployment, run the `jsonnet` command below

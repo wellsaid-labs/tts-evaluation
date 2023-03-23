@@ -41,9 +41,11 @@
                 // NOTE: min 2 workers to ensure readiness probes / health checks
                 // work properly while under load
                 '--workers=' + std.max(spec.concurrency, 2),
-                "--access-logfile=-",
-                '--preload',
-              ],
+                "--access-logfile=-"
+              ] + (if "nvidia.com/gpu" in spec.resources.requests then [] else [
+                // NOTE: non-gpu deployments are able to leverage the preload feature
+                "--preload"
+              ]),
               ports: [
                 {
                   containerPort: 8000,

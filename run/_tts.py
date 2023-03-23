@@ -21,7 +21,7 @@ import spacy.tokens
 import torch
 
 from lib.environment import PT_EXTENSION, load
-from lib.utils import get_chunks, tqdm_
+from lib.utils import flatten_parameters, get_chunks, tqdm_
 from run import train
 from run._config import (
     CHECKPOINTS_PATH,
@@ -194,6 +194,13 @@ class TTSPackage:
     spec_model_step: typing.Optional[int] = None
     signal_model_comet_experiment_key: typing.Optional[str] = None
     signal_model_step: typing.Optional[int] = None
+
+    def __setstate__(self, state):
+        # NOTE: Running flatten_parameters during un-pickling in order to address the following warning:
+        # `UserWarning: RNN module weights are not part of single contiguous chunk of memory.`
+        flatten_parameters(state['spec_model'])
+        flatten_parameters(state['signal_model'])
+        object.__setattr__(self, "__dict__", state)
 
     def session_vocab(self) -> typing.Set[Session]:
         """Get the sessions these models are familiar with."""

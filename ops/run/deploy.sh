@@ -79,23 +79,29 @@ if [ $? -gt 0 ]; then
   exit 1
 fi
 
-# Wait for service to exist before attempting patch
-until kubectl get service stream -n $MODEL &> /dev/null
-do
-  echo "Waiting for existence of stream service in namespace ${MODEL}..."
-  sleep 2
-done
-# Wait for service to exist before attempting patch
-until kubectl get service validate -n $MODEL &> /dev/null
-do
-  echo "Waiting for existence of validate service in namespace ${MODEL}..."
-  sleep 2
-done
+# Patch knative-created services with kong configuration references. This is only required on the
+# initial service creation (not additional version releases).
+if [ "${VERSION}" -eq "1" ]
+then
+  # Wait for service to exist before attempting patch
+  until kubectl get service stream -n $MODEL &> /dev/null
+  do
+    echo "Waiting for existence of stream service in namespace ${MODEL}..."
+    sleep 2
+  done
+  # Wait for service to exist before attempting patch
+  until kubectl get service validate -n $MODEL &> /dev/null
+  do
+    echo "Waiting for existence of validate service in namespace ${MODEL}..."
+    sleep 2
+  done
+  kubectl patch service stream \
+    -n $MODEL \
+    -p '{"metadata":{"annotations":{"konghq.com/override":"route-stream-configuration"}}}'
+  kubectl patch service validate \
+    -n $MODEL \
+    -p '{"metadata":{"annotations":{"konghq.com/override":"route-validate-configuration"}}}'
+fi
 
-# Patch knative-created services with kong configuration references
-kubectl patch service stream \
-  -n $MODEL \
-  -p '{"metadata":{"annotations":{"konghq.com/override":"route-stream-configuration"}}}'
-kubectl patch service validate \
-  -n $MODEL \
-  -p '{"metadata":{"annotations":{"konghq.com/override":"route-validate-configuration"}}}'
+kubectl rollout status deployment/validate-$VERSION-deployment -n $MODEL
+kubectl rollout status deployment/stream-$VERSION-deployment -n $MODEL

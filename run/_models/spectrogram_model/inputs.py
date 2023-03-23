@@ -172,7 +172,7 @@ class Inputs:
     # Slice of tokens in each sequence to be voiced
     slices: typing.List[slice]
 
-    device: torch.device = torch.device("cpu")
+    device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Number of tokens after `slices` is applied
     # torch.LongTensor [batch_size]
@@ -236,7 +236,7 @@ def _token_to_tokens(
 
 def _preprocess(
     batch: typing.List[typing.Tuple[struc.Session, SpanDoc, SpanDoc]],
-    device: torch.device = torch.device("cpu"),
+    device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu"),
     respell_prob: float = 0.0,
 ) -> Inputs:
     """Preprocess `batch` into model `Inputs`.

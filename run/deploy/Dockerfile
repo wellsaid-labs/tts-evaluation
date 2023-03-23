@@ -9,9 +9,20 @@
 # https://medium.com/google-cloud/understanding-and-profiling-gce-cold-boot-time-32c209fe86ab
 # https://cloud.google.com/blog/products/gcp/three-steps-to-compute-engine-startup-time-bliss-google-cloud-performance-atlas?m=1
 
-# NOTE: Alpine does not work with PyTorch wheel due to the reliance on various symbols like
-# `__printf_chk`. Learn more: https://github.com/gliderlabs/docker-alpine/issues/149
-FROM python:3.8-slim as base
+# NOTE: cuda & pytorch versions are interdependent
+FROM nvidia/cuda:11.3.1-runtime-ubuntu18.04 as base
+
+# Exit if required TTS_PACKAGE_PATH build arg is not found. Important to prevent copying of entire dir.
+ARG TTS_PACKAGE_PATH
+RUN if [ -z "$TTS_PACKAGE_PATH" ]; then echo 'Build arg TTS_PACKAGE_PATH must be specified. Exiting.'; exit 1; fi
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  python3.8 \
+  python3.8-distutils \
+  python3.8-venv \
+  && \
+  apt-get clean && \
+  rm -rf /var/lib/apt/lists/*
 
 # Learn more about multi-stage builds:
 # https://blog.realkinetic.com/building-minimal-docker-containers-for-python-applications-37d0272c52f3
@@ -23,42 +34,41 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 WORKDIR /app
 
-RUN python3 -m venv venv
-
-ARG TTS_PACKAGE_PATH
-
-# NOTE: `COPY` experiment folder fist, so that this layer is reused the most.
-COPY $TTS_PACKAGE_PATH $TTS_PACKAGE_PATH
-COPY run/ run/
-COPY lib/ lib/
-COPY third_party/ third_party/
+ENV VIRTUAL_ENV=venv
+RUN python3.8 -m venv $VIRTUAL_ENV
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
 # Install Python Dependencies
 RUN apt-get update --fix-missing \
-  && apt-get install -y --no-install-recommends git-core gcc g++ \
+  && apt-get install -y --no-install-recommends git-core gcc g++ build-essential libpython3.8-dev
+
+RUN ${VIRTUAL_ENV}/bin/pip3 install --no-cache-dir --upgrade pip cython \
+  && ${VIRTUAL_ENV}/bin/pip3 install --no-cache-dir \
   # TODO: Consider the ideas here to reduce the size of numpy installation:
   # https://towardsdatascience.com/how-to-shrink-numpy-scipy-pandas-and-matplotlib-for-your-data-product-4ec8d7e86ee4
-  && venv/bin/pip install --no-cache-dir numpy \
+  numpy \
   flask \
   gunicorn \
-  torch==1.11.0+cpu -f https://download.pytorch.org/whl/torch_stable.html \
+  # https://pytorch.org/get-started/previous-versions/#linux-and-windows-5
+  torch==1.11.0+cu113 --extra-index-url https://download.pytorch.org/whl/cu113 \
   unidecode \
   ftfy \
   tqdm \
-  spacy==3.2.3 \
+  'spacy[cuda113]==3.2.3' \
   pythonic-config==0.6.14 \
   num2words \
   git+https://github.com/PetrochukM/PyTorch-NLP.git \
   # TODO: Automatically fetch the languages a model has, and install those.
-  && venv/bin/spacy download en_core_web_md \
+  && ${VIRTUAL_ENV}/bin/spacy download en_core_web_md \
+  && mkdir disk \
   && mkdir disk/other \
-  && venv/bin/pip uninstall -y pip \
-  && rm -rf venv/lib/python3.8/site-packages/torch/test \
-  && rm -rf venv/lib/python3.8/site-packages/caffe2 \
+  && ${VIRTUAL_ENV}/bin/pip3 uninstall -y pip \
+  && rm -rf ${VIRTUAL_ENV}/lib/python3.8/site-packages/torch/test \
+  && rm -rf ${VIRTUAL_ENV}/lib/python3.8/site-packages/caffe2 \
   # Inspired by: https://jcrist.github.io/conda-docker-tips.html
-  && find venv/ -follow -type f -name '*.pyc' -delete \
-  && find venv/ -follow -type f -name '*.a' -delete \
-  && find venv/ -follow -type f -name '*.js.map' -delete
+  && find ${VIRTUAL_ENV}/ -follow -type f -name '*.pyc' -delete \
+  && find ${VIRTUAL_ENV}/ -follow -type f -name '*.a' -delete \
+  && find ${VIRTUAL_ENV}/ -follow -type f -name '*.js.map' -delete
 
 # NOTE: ffmpeg build stage. We are manually compiling the ffmpeg binary with a limited feature set
 # based on our usage requirements (see the ffmpeg command in `worker.py`). This cuts the overall
@@ -175,6 +185,15 @@ WORKDIR /app
 
 COPY --from=builder /app/ /app/
 
+# NOTE: `COPY` experiment folder first, so that this layer is reused the most.
+COPY $TTS_PACKAGE_PATH $TTS_PACKAGE_PATH
+COPY run/ run/
+COPY lib/ lib/
+COPY third_party/ third_party/
+# NOTE: copy the gunicorn config file to root (/app) folder for automatic loading
+# https://docs.gunicorn.org/en/stable/settings.html#config
+COPY run/deploy/gunicorn.conf.py ./
+
 # NOTE: ffmpeg linking
 ENV PATH=/opt/ffmpeg/bin:$PATH
 COPY --from=ffmpeg-build /opt/ffmpeg /opt/ffmpeg
@@ -212,5 +231,15 @@ RUN echo 'Top N largest directories\n' && du -h / | sort -rh | head -100
 # https://github.com/fofanov/gunicorn/commit/e8ecc20cc547b614eaa1bed5b0bf5f3b4b4d0274
 # http://docs.gunicorn.org/en/stable/settings.html#logging
 ENV GUNICORN=1
-CMD ["venv/bin/gunicorn", "run.deploy.worker:app", "--bind=0.0.0.0:8000", "--timeout=3600", \
-  "--graceful-timeout=600", "--workers=2", "--access-logfile=-", "--preload"]
+# NOTE: this CMD is overwritten by our deployment configurations (see svc.libsonnet) and is
+# mostly used for local development
+CMD [ \
+  "venv/bin/gunicorn", \
+  "run.deploy.worker:app", \
+  "--bind=0.0.0.0:8000", \
+  "--timeout=3600", \
+  "--graceful-timeout=600", \
+  "--workers=2", \
+  "--access-logfile=-", \
+  "--config=./run/deploy/gunicorn.conf.py" \
+  ]
