@@ -203,6 +203,7 @@ def get_alignment_std(preds: Preds) -> torch.Tensor:
     alignments = preds.alignments.masked_fill(~preds.tokens_mask.unsqueeze(0), 0)
     alignments = lib.utils.get_weighted_std(alignments, dim=2)
     alignments = alignments.masked_fill(~preds.frames_mask.transpose(0, 1), 0)
+    assert not torch.any(torch.isnan(alignments)), "NaN detected."
     return alignments.sum(dim=0)
 
 

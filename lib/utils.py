@@ -122,9 +122,8 @@ def get_weighted_std(tensor: torch.Tensor, dim: int = 0, strict: bool = False) -
     """
     if strict:
         # Expects normalized weightes total of 0, 1 to ensure correct variance decisions
-        assert all(
-            math.isclose(value, 1, abs_tol=1e-3) for value in tensor.sum(dim=dim).view(-1).tolist()
-        )
+        values = tensor.sum(dim=dim).view(-1).tolist()
+        assert all(math.isclose(value, 1, abs_tol=1e-3) for value in values)
 
     # Create position matrix where the index is the position and the value is the weight
     indices = torch.arange(0, tensor.shape[dim], dtype=tensor.dtype, device=tensor.device)
@@ -133,13 +132,8 @@ def get_weighted_std(tensor: torch.Tensor, dim: int = 0, strict: bool = False) -
     indices = indices.view(*shape).expand_as(tensor).float()
 
     weighted_mean = (indices * tensor).sum(dim=dim) / tensor.sum(dim=dim)
-    weighted_variance = ((indices - weighted_mean.unsqueeze(dim=dim)) ** 2 * tensor).sum(dim=dim)
-    weighted_standard_deviation = weighted_variance**0.5
-
-    numel = weighted_standard_deviation.numel()
-    assert numel == 0 or not torch.isnan(weighted_standard_deviation.min()), "NaN detected."
-
-    return weighted_standard_deviation
+    weighted_var = ((indices - weighted_mean.unsqueeze(dim=dim)) ** 2 * tensor).sum(dim=dim)
+    return weighted_var**0.5
 
 
 # NOTE: Due the issues around recursive typing, we've included a `flatten_2d` and

@@ -106,6 +106,7 @@ class Attention(torch.nn.Module):
         self.window_len = window_len
         self.avg_frames_per_token = avg_frames_per_token
         self.padding = int((conv_filter_size - 1) / 2)
+        self.scale = math.sqrt(self.hidden_size)
         self.alignment_conv = torch.nn.Conv1d(2, hidden_size, kernel_size=conv_filter_size)
 
     def __call__(
@@ -163,7 +164,7 @@ class Attention(torch.nn.Module):
         # keys [batch_size (b), hidden_size (m), num_tokens (p)] →
         # [batch_size (b), 1 (n), num_tokens (p)]
         query = query.view(batch_size, 1, self.hidden_size)
-        score = (torch.bmm(query, keys) / math.sqrt(self.hidden_size)).squeeze(1)
+        score = (torch.bmm(query, keys) / self.scale).squeeze(1)
         score.data.masked_fill_(~tokens_mask, -math.inf)
 
         # [batch_size, num_tokens] → [batch_size, num_tokens]
