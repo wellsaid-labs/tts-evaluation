@@ -112,12 +112,9 @@ class Decoder(torch.nn.Module):
             "Mel-frequency bins" or "FFT bins" or "FFT bands")
         hidden_size: The hidden size the decoder layers.
         attn_size: The size of the attention hidden state.
-        stop_net_dropout: The dropout probability of the stop net.
     """
 
-    def __init__(
-        self, num_frame_channels: int, hidden_size: int, attn_size: int, stop_net_dropout: float
-    ):
+    def __init__(self, num_frame_channels: int, hidden_size: int, attn_size: int):
         super().__init__()
 
         self.num_frame_channels = num_frame_channels
@@ -132,9 +129,9 @@ class Decoder(torch.nn.Module):
         self.pre_net = cf.partial(PreNet)(num_frame_channels, hidden_size)
         self.attn_rnn = _AttentionRNN(hidden_size, hidden_size, attn_size)
         self.linear_stop_token = torch.nn.Sequential(
-            torch.nn.Dropout(stop_net_dropout),
             torch.nn.Linear(hidden_size + attn_size, hidden_size),
             torch.nn.GELU(),
+            torch.nn.LayerNorm(hidden_size),
             torch.nn.Linear(hidden_size, 1),
         )
         self.lstm_out = LSTM(hidden_size + attn_size, hidden_size)

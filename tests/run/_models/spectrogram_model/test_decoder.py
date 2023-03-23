@@ -14,12 +14,7 @@ from run._models.spectrogram_model.containers import (
 from run._models.spectrogram_model.decoder import Decoder
 
 
-def _make_decoder(
-    num_frame_channels=16,
-    hidden_size=4,
-    attn_size=5,
-    stop_net_dropout=0.5,
-) -> Decoder:
+def _make_decoder(num_frame_channels=16, hidden_size=4, attn_size=5) -> Decoder:
     """Make `decoder.Decoder` for testing."""
     _config = {
         run._models.spectrogram_model.pre_net.PreNet: cf.Args(num_layers=1, dropout=0.5),
@@ -29,9 +24,7 @@ def _make_decoder(
             avg_frames_per_token=1.0,
         ),
         run._models.spectrogram_model.decoder.Decoder: cf.Args(
-            hidden_size=hidden_size,
-            attn_size=attn_size,
-            stop_net_dropout=stop_net_dropout,
+            hidden_size=hidden_size, attn_size=attn_size
         ),
     }
     cf.add(_config, overwrite=True)

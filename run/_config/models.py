@@ -111,7 +111,6 @@ def configure(overwrite: bool = False):
         # In order to introduce output variation at inference time, dropout with probability 0.5 is
         # applied only to layers in the pre-net of the autoregressive decoder.
         run._models.spectrogram_model.pre_net.PreNet: cf.Args(dropout=0.4),
-        run._models.spectrogram_model.decoder.Decoder: cf.Args(stop_net_dropout=0.5),
     }
     cf.add(config, overwrite)
 
