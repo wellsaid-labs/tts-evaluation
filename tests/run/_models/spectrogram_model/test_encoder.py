@@ -28,7 +28,6 @@ def _make_encoder(
     context=3,
     num_token_meta=1,
     max_frames_per_token=4.5,
-    dropout=0.1,
 ):
     """Make `encoder.Encoder` and it's inputs for testing."""
     annos = ("anno_embed", "anno_mask")
@@ -50,7 +49,6 @@ def _make_encoder(
         hidden_size=hidden_size,
         num_layers=num_layers,
         conv_filter_size=conv_filter_size,
-        dropout=dropout,
     )
 
     # NOTE: Ensure modules like `LayerNorm` perturbs the input instead of being just an identity.
@@ -121,7 +119,7 @@ def test_encoder__filter_size():
 
 def test_encoder__padding_invariance():
     """Test `encoder.Encoder` is consistent regardless of the padding."""
-    module, arg, (_, batch_size, _) = _make_encoder(dropout=0)
+    module, arg, (_, batch_size, _) = _make_encoder()
     expected = module(arg)
     expected.tokens.sum().backward()
     expected_grad = [p.grad for p in module.parameters() if p.grad is not None]

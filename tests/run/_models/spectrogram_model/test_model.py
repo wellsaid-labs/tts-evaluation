@@ -72,9 +72,7 @@ def _make_spectrogram_model(
 ) -> SpectrogramModel:
     """Make `spectrogram_model.SpectrogramModel` for testing."""
     config = {
-        run._models.spectrogram_model.encoder.Encoder: cf.Args(
-            num_layers=2, conv_filter_size=3, dropout=dropout
-        ),
+        run._models.spectrogram_model.encoder.Encoder: cf.Args(num_layers=2, conv_filter_size=3),
         run._models.spectrogram_model.decoder.Decoder: cf.Args(
             hidden_size=16, stop_net_dropout=dropout
         ),

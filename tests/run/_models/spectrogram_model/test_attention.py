@@ -91,8 +91,7 @@ def test__window__transpose_invariance():
 
 
 def _make_attention(
-    query_hidden_size=16,
-    attention_hidden_size=8,
+    hidden_size=8,
     batch_size=3,
     max_num_tokens=12,
     conv_filter_size=5,
@@ -103,16 +102,16 @@ def _make_attention(
 ]:
     """Make `attention.Attention` and it's inputs for testing."""
     module = Attention(
-        hidden_size=attention_hidden_size,
+        hidden_size=hidden_size,
         conv_filter_size=conv_filter_size,
         window_len=window_len,
         avg_frames_per_token=avg_frames_per_token,
     )
-    tokens = torch.randn(batch_size, max_num_tokens, attention_hidden_size)
-    token_keys = torch.randn(batch_size, attention_hidden_size, max_num_tokens)
+    tokens = torch.randn(batch_size, max_num_tokens, hidden_size)
+    token_keys = torch.randn(batch_size, hidden_size, max_num_tokens)
     tokens_mask = torch.ones(batch_size, max_num_tokens, dtype=torch.bool)
     tokens_mask[-1][-max_num_tokens // 2 :] = 0
-    query = torch.randn(1, batch_size, query_hidden_size)
+    query = torch.randn(1, batch_size, hidden_size)
     padding = (module.padding, module.padding)
     cum_alignment = torch.zeros(batch_size, max_num_tokens)
     cum_alignment = lib.utils.pad_tensor(cum_alignment, padding, 1, value=1.0)

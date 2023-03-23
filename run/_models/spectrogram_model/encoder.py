@@ -24,6 +24,7 @@ class _Highway(torch.nn.Module):
     """
 
     def __init__(self, hidden_size: int):
+        super().__init__()
         self.highway = torch.nn.Linear(hidden_size, hidden_size * 2)
 
     def __call__(self, tokens: torch.Tensor):
