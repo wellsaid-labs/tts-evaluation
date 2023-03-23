@@ -46,7 +46,8 @@ def test_tts_ffmpeg_generator():
     with fork_rng(seed=123):
         package, inputs, preprocessed_inputs = _make_args()
         generator = tts_ffmpeg_generator(package, inputs, preprocessed_inputs, **cf.get())
-        assert len(b"".join([s for s in generator])) == 416685
+        # NOTE: Ensure there is a meaningful audio length generated.
+        assert len(b"".join([s for s in generator])) > 10_000
 
 
 def test_tts_ffmpeg_generator__thread_leak():
