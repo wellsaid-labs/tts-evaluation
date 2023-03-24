@@ -62,6 +62,8 @@ function(env, includeTls='true')
         // Value must match name of ClusterIssuer, see ../../tls/clusterIssuer.yaml
         'cert-manager.io/cluster-issuer': 'letsencrypt-cluster-issuer',
         'kubernetes.io/tls-acme': 'true',
+        'konghq.com/protocols':'https',
+        'konghq.com/https-redirect-status-code':'301',
       } else {}),
     },
     spec: {
