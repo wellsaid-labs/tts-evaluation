@@ -16,8 +16,14 @@ an execution runtime for the TTS service.
 2. Next, create a GKE cluster:
 
    ```bash
-   CLUSTER_NAME=$CLUSTER_NAME # ex: "staging"
-   CLUSTER_REGION=us-central1 # ex: "us-central1"
+   CLUSTER_NAME=<name> # ex: "staging"
+   CLUSTER_REGION=<region> # ex: "us-central1"
+   # The person at WellSaid Labs who is responsible for the cluster. This should
+   # be the portion of the users email before the `@` sign. For instance, if your
+   # email is `sams@wellsaidlabs.com`, then this should be `sams`.
+   OWNER=<owner>
+   IS_NON_PROD=<is_not_prod_env?> # Whether or not to label this as a non-production resource (Vanta)
+
    gcloud beta container clusters create "$CLUSTER_NAME" \
        --region "$CLUSTER_REGION" \
        --no-enable-basic-auth \
@@ -47,7 +53,17 @@ an execution runtime for the TTS service.
        --maintenance-window-end "2021-05-08T11:00:00Z" \
        --maintenance-window-recurrence "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR,SA,SU" \
        --enable-shielded-nodes \
-       --cloud-run-config=load-balancer-type=INTERNAL
+       --cloud-run-config=load-balancer-type=INTERNAL \
+       --labels vanta-owner=$OWNER,vanta-non-prod=$IS_NON_PROD
+   ```
+
+   Note you can modify cluster labels after creation, ex:
+
+   ```bash
+   # Mark cluster as non-production environment
+   gcloud container clusters update $CLUSTER_NAME --region $CLUSTER_REGION --update-labels vanta-non-prod=$IS_NON_PROD
+   # Update the Vanta owner
+   gcloud container clusters update $CLUSTER_NAME --region $CLUSTER_REGION --update-labels vanta-owner=$OWNER
    ```
 
 3. Then read the [instructions for deploying the TTS service](./run/README.md).
