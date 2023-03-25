@@ -218,13 +218,13 @@ class Decoder(torch.nn.Module):
         # token that is has attended to. Assuming the model is attending to tokens from
         # left-to-right and the model starts reading at the first token, then any padding to the
         # left of the first token should be positive to be consistent.
-        num_padded_tokens, padding = encoded_padded.tokens.shape[1], self.attn_rnn.attn.padding
-        cum_alignment = init_cum_alignment.expand(-1, padding).abs()
-        alignment = torch.zeros(batch_size, num_padded_tokens + padding * 2, device=device)
-        alignment[:, encoded_pad_len - 1] = 1.0
+        align_pad_len = self.attn_rnn.attn.padding + encoded_pad_len
+        cum_alignment = init_cum_alignment.expand(-1, align_pad_len).abs()
+        alignment = torch.zeros(batch_size, num_tokens + align_pad_len * 2, device=device)
+        alignment[:, align_pad_len - 1] = 1.0
         attn_hidden_state = AttentionHiddenState(
             alignment=alignment,
-            cum_alignment=functional.pad(cum_alignment, (0, num_padded_tokens + padding)),
+            cum_alignment=functional.pad(cum_alignment, (0, num_tokens + align_pad_len)),
             window_start=torch.zeros(batch_size, device=device, dtype=torch.long),
         )
 
