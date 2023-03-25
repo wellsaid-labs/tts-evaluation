@@ -176,7 +176,7 @@ def test_get_weighted_std__one_data_point():
 
 def test_get_weighted_std__no_data_points():
     """Test `lib.utils.get_weighted_std` returns NaN if zeros are passed."""
-    assert lib.utils.get_weighted_std(torch.tensor([0, 0, 0]), dim=0) == torch.tensor(torch.nan)
+    assert torch.isnan(lib.utils.get_weighted_std(torch.tensor([0, 0, 0]), dim=0))
 
 
 def test_get_weighted_std__zero_elements():
