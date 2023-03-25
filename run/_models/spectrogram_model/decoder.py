@@ -146,8 +146,8 @@ class Decoder(torch.nn.Module):
         pad_len: int,
         encoded: Encoded,
         beg_pad_token: torch.Tensor,
-        end_pad_token: torch.Tensor,
         beg_pad_key: torch.Tensor,
+        end_pad_token: torch.Tensor,
         end_pad_key: torch.Tensor,
     ) -> Encoded:
         """Add padding to `encoded` so that the attention module window has space at the beginning
@@ -160,9 +160,9 @@ class Decoder(torch.nn.Module):
             ...
             beg_pad_token (torch.FloatTensor [batch_size, attn_size]): Pad token to
                 add to the beginning of each sequence.
+            ...
             end_pad_token (torch.FloatTensor [batch_size, attn_size]): Pad token to
                 add to the end of each sequence.
-            ...
         """
         batch_size, _, attn_size = encoded.tokens.shape
 

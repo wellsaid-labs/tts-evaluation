@@ -129,11 +129,11 @@ def test_decoder__pad_encoded():
     pad_len = 2
     attn_size = module.attn_size
     beg_pad_token = torch.rand(batch_size, module.attn_size)
-    end_pad_token = torch.rand(batch_size, module.attn_size)
     beg_pad_key = torch.rand(batch_size, module.attn_size)
+    end_pad_token = torch.rand(batch_size, module.attn_size)
     end_pad_key = torch.rand(batch_size, module.attn_size)
     padded = module._pad_encoded(
-        pad_len, encoded, beg_pad_token, end_pad_token, beg_pad_key, end_pad_key
+        pad_len, encoded, beg_pad_token, beg_pad_key, end_pad_token, end_pad_key
     )
 
     assert padded.tokens.dtype == torch.float
