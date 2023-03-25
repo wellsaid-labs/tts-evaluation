@@ -120,7 +120,7 @@ class Decoder(torch.nn.Module):
         self.num_frame_channels = num_frame_channels
         self.hidden_size = hidden_size
         self.attn_size = attn_size
-        self.init_state_parts = [self.num_frame_channels, 1] + [attn_size] * 5
+        self.init_state_parts = [self.num_frame_channels, 1, 1] + [attn_size] * 5
         self.init_state = torch.nn.Sequential(
             torch.nn.Linear(attn_size * 4, attn_size),
             torch.nn.GELU(),
@@ -209,7 +209,7 @@ class Decoder(torch.nn.Module):
         feats = [encoded.tokens[:, 0], encoded.token_keys[:, :, 0], last_token, last_token_key]
         feats = torch.cat(feats, dim=1)
         state = self.init_state(feats).split(self.init_state_parts, dim=-1)
-        init_frame, init_cum_alignment, init_attn_cntxt, *pad_tokens = state
+        init_frame, init_cum_alignment, init_alignment, init_attn_cntxt, *pad_tokens = state
 
         encoded_pad_len = self.attn_rnn.attn.window_len // 2
         encoded_padded = self._pad_encoded(encoded_pad_len, encoded, *pad_tokens)
@@ -221,7 +221,7 @@ class Decoder(torch.nn.Module):
         align_pad_len = self.attn_rnn.attn.padding + encoded_pad_len
         cum_alignment = init_cum_alignment.expand(-1, align_pad_len).abs()
         alignment = torch.zeros(batch_size, num_tokens + align_pad_len * 2, device=device)
-        alignment[:, align_pad_len - 1] = 1.0
+        alignment[:, align_pad_len - 1] = init_alignment.abs().squeeze(1)
         attn_hidden_state = AttentionHiddenState(
             alignment=alignment,
             cum_alignment=functional.pad(cum_alignment, (0, num_tokens + align_pad_len)),
