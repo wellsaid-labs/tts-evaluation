@@ -448,8 +448,8 @@ def _visualize_inferred(args: _HandleBatchArgs, preds: Preds):
     item = preds[idx]
 
     # gold_spectrogram [num_frames, frame_channels]
-    num_frames = int(args.batch.spectrogram.lengths[0, item].item())
-    gold_spectrogram = args.batch.spectrogram.tensor[:num_frames, item]
+    num_frames = int(args.batch.spectrogram.lengths[0, idx].item())
+    gold_spectrogram = args.batch.spectrogram.tensor[:num_frames, idx]
     model = lambda n: get_model_label(n, cadence=args.cadence)
     dataset = lambda n: get_dataset_label(n, cadence=args.cadence, type_=args.dataset_type)
     _plot_mel_spectrogram = cf.partial(plot_mel_spectrogram)

@@ -221,7 +221,7 @@ class Decoder(torch.nn.Module):
         num_padded_tokens, padding = encoded_padded.tokens.shape[1], self.attn_rnn.attn.padding
         cum_alignment = init_cum_alignment.expand(-1, padding).abs()
         alignment = torch.zeros(batch_size, num_padded_tokens + padding * 2, device=device)
-        alignment[encoded_pad_len - 1] = 1.0
+        alignment[:, encoded_pad_len - 1] = 1.0
         attn_hidden_state = AttentionHiddenState(
             alignment=alignment,
             cum_alignment=functional.pad(cum_alignment, (0, num_padded_tokens + padding)),
