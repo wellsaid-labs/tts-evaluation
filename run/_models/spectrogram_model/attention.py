@@ -124,7 +124,7 @@ class Attention(torch.nn.Module):
         query: torch.Tensor,
         hidden_state: AttentionHiddenState,
         token_skip_warning: float,
-        check_invariants: bool = True,
+        check_invariants: bool = False,
     ) -> typing.Tuple[torch.Tensor, torch.Tensor, AttentionHiddenState]:
         """
         Args:
