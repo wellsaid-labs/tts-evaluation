@@ -199,7 +199,7 @@ class Decoder(torch.nn.Module):
 
     def _make_init_hidden_state(self, encoded: Encoded) -> DecoderHiddenState:
         """Make an initial hidden state, if one is not provided."""
-        batch_size, device = encoded.tokens.shape[0], encoded.tokens.device
+        (batch_size, num_tokens, _), device = encoded.tokens.shape, encoded.tokens.device
 
         idx = torch.arange(0, batch_size, device=device)
         last_token = encoded.tokens[idx, encoded.num_tokens - 1]
