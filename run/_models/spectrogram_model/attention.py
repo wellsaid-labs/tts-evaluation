@@ -159,7 +159,7 @@ class Attention(torch.nn.Module):
         # [batch_size, 1, padded_window_len] → [batch_size, hidden_size, window_len]
         cum_align_window = cum_align_window.unsqueeze(1) / self.avg_frames_per_token - 1.0
         last_align_window = last_align_window.unsqueeze(1) * 2.0 - 1.0
-        position = torch.cat([cum_align_window, last_align_window], dim=1).detach()
+        position = torch.cat([cum_align_window, last_align_window], dim=1)
         position = self.alignment_conv(position.detach())
 
         # [batch_size, hidden_size, window_len]
