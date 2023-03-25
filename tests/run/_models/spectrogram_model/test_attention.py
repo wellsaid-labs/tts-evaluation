@@ -139,13 +139,13 @@ def _add_padding(
         alignment=torch.cat([hidden_state.alignment, alignment_padding], 1),
         cum_alignment=torch.cat([hidden_state.cum_alignment, alignment_padding], 1),
     )
-    padded_encoded = dataclasses.replace(
+    encoded_padded = dataclasses.replace(
         encoded,
         tokens=torch.cat([encoded.tokens, tokens_padding], dim=1),
         token_keys=torch.cat([encoded.token_keys, token_keys_padding], dim=2),
         tokens_mask=torch.cat([encoded.tokens_mask, tokens_mask_padding], dim=1),
     )
-    return padded_encoded, padded_hidden_state
+    return encoded_padded, padded_hidden_state
 
 
 assert_almost_equal = partial(_utils.assert_almost_equal, decimal=5)
@@ -219,10 +219,10 @@ def test_attention__padding_invariance():
     """Test `attention.Attention` is consistent regardless of the padding."""
     module, (encoded, query, hidden_state), _ = _make_attention()
     num_padding = 4
-    padded_encoded, padded_hidden_state = _add_padding(num_padding, encoded, hidden_state)
+    encoded_padded, padded_hidden_state = _add_padding(num_padding, encoded, hidden_state)
 
     context, alignment, hidden_state = module(encoded, query, hidden_state)
-    padded_args = (padded_encoded, query, padded_hidden_state)
+    padded_args = (encoded_padded, query, padded_hidden_state)
     padded_context, padded_alignment, padded_hidden_state = module(*padded_args)
 
     assert_almost_equal(padded_context, context)

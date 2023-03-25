@@ -143,6 +143,7 @@ class Decoder(torch.nn.Module):
 
     def _pad_encoded(
         self,
+        pad_len: int,
         encoded: Encoded,
         beg_pad_token: torch.Tensor,
         end_pad_token: torch.Tensor,
@@ -156,31 +157,31 @@ class Decoder(torch.nn.Module):
               be best to have the encoder own this padding.
 
         Args:
+            ...
             beg_pad_token (torch.FloatTensor [batch_size, attn_size]): Pad token to
                 add to the beginning of each sequence.
             end_pad_token (torch.FloatTensor [batch_size, attn_size]): Pad token to
                 add to the end of each sequence.
             ...
         """
-        pad_length = self.attn_rnn.attn.window_len // 2
         batch_size, _, attn_size = encoded.tokens.shape
 
         # [batch_size, num_tokens, out_dim] → [batch_size, num_tokens + window_len - 1, out_dim]
-        beg_pad_token = beg_pad_token.unsqueeze(1).expand(batch_size, pad_length, attn_size)
-        tokens = pad_tensor(encoded.tokens, (pad_length, pad_length), dim=1)
-        tokens[:, :pad_length] = beg_pad_token
+        beg_pad_token = beg_pad_token.unsqueeze(1).expand(batch_size, pad_len, attn_size)
+        tokens = pad_tensor(encoded.tokens, (pad_len, pad_len), dim=1)
+        tokens[:, :pad_len] = beg_pad_token
 
         # [batch_size, out_dim, num_tokens] → [batch_size, out_dim, num_tokens + window_len - 1]
-        beg_pad_key = beg_pad_key.unsqueeze(2).expand(batch_size, attn_size, pad_length)
-        token_keys = functional.pad(encoded.token_keys, (pad_length, pad_length))
-        token_keys[:, :, :pad_length] = beg_pad_key
+        beg_pad_key = beg_pad_key.unsqueeze(2).expand(batch_size, attn_size, pad_len)
+        token_keys = functional.pad(encoded.token_keys, (pad_len, pad_len))
+        token_keys[:, :, :pad_len] = beg_pad_key
 
-        new_num_tokens = encoded.num_tokens + pad_length * 2
+        new_num_tokens = encoded.num_tokens + pad_len * 2
         new_mask = lengths_to_mask(new_num_tokens)
 
         # [batch_size, num_tokens] → [batch_size, num_tokens + window_length - 1]
-        padded_mask = functional.pad(encoded.tokens_mask, (pad_length, 0), value=1.0)
-        padded_mask = functional.pad(padded_mask, (0, pad_length))
+        padded_mask = functional.pad(encoded.tokens_mask, (pad_len, 0), value=1.0)
+        padded_mask = functional.pad(padded_mask, (0, pad_len))
         end_pad_idx = padded_mask.logical_xor(new_mask)
 
         # [batch_size, num_tokens]
@@ -190,8 +191,8 @@ class Decoder(torch.nn.Module):
 
         return dataclasses.replace(
             encoded,
-            tokens=tokens,
-            token_keys=token_keys,
+            tokens=tokens.masked_fill(~new_mask.unsqueeze(2), 0),
+            token_keys=token_keys.masked_fill(~new_mask.unsqueeze(1), 0),
             tokens_mask=new_mask,
             num_tokens=new_num_tokens,
         )
@@ -199,7 +200,6 @@ class Decoder(torch.nn.Module):
     def _make_init_hidden_state(self, encoded: Encoded) -> DecoderHiddenState:
         """Make an initial hidden state, if one is not provided."""
         batch_size, device = encoded.tokens.shape[0], encoded.tokens.device
-        window_len = self.attn_rnn.attn.window_len
 
         idx = torch.arange(0, batch_size, device=device)
         last_token = encoded.tokens[idx, encoded.num_tokens - 1]
@@ -211,22 +211,27 @@ class Decoder(torch.nn.Module):
         state = self.init_state(feats).split(self.init_state_parts, dim=-1)
         init_frame, init_cum_alignment, init_attn_cntxt, *pad_tokens = state
 
+        encoded_pad_len = self.attn_rnn.attn.window_len // 2
+        encoded_padded = self._pad_encoded(encoded_pad_len, encoded, *pad_tokens)
+
         # NOTE: The `cum_alignment` or `cum_alignment` vector has a positive value for every
         # token that is has attended to. Assuming the model is attending to tokens from
         # left-to-right and the model starts reading at the first token, then any padding to the
         # left of the first token should be positive to be consistent.
-        padding = window_len // 2 + self.attn_rnn.attn.padding
+        num_padded_tokens, padding = encoded_padded.tokens.shape[1], self.attn_rnn.attn.padding
         cum_alignment = init_cum_alignment.expand(-1, padding).abs()
+        alignment = torch.zeros(batch_size, num_padded_tokens + padding * 2, device=device)
+        alignment[encoded_pad_len - 1] = 1.0
         attn_hidden_state = AttentionHiddenState(
-            alignment=torch.zeros(batch_size, encoded.tokens.shape[1] + padding * 2, device=device),
-            cum_alignment=functional.pad(cum_alignment, (0, encoded.tokens.shape[1] + padding)),
+            alignment=alignment,
+            cum_alignment=functional.pad(cum_alignment, (0, num_padded_tokens + padding)),
             window_start=torch.zeros(batch_size, device=device, dtype=torch.long),
         )
 
         return DecoderHiddenState(
             last_frame=init_frame.unsqueeze(0),
             attn_rnn_hidden_state=AttentionRNNHiddenState(None, init_attn_cntxt, attn_hidden_state),
-            padded_encoded=self._pad_encoded(encoded, *pad_tokens),
+            encoded_padded=encoded_padded,
             pre_net_hidden_state=None,
             lstm_hidden_state=None,
         )
@@ -276,7 +281,7 @@ class Decoder(torch.nn.Module):
         # [num_frames, batch_size, num_frame_channels] → [*, pre_net_hidden_size]
         pre_net_frames, pre_net_hidden_state = self.pre_net(frames, state.pre_net_hidden_state)
 
-        attn_rnn_args = (pre_net_frames, state.padded_encoded, state.attn_rnn_hidden_state)
+        attn_rnn_args = (pre_net_frames, state.encoded_padded, state.attn_rnn_hidden_state)
         attn_rnn_outs = self.attn_rnn(*attn_rnn_args, **kwargs)
         attn_rnn_out, attn_cntxts, alignments, window_starts, attn_rnn_hidden_state = attn_rnn_outs
         frames = (pre_net_frames + attn_rnn_out) / math.sqrt(2)
@@ -297,17 +302,9 @@ class Decoder(torch.nn.Module):
 
         hidden_state = DecoderHiddenState(
             last_frame=frames[-1].unsqueeze(0),
-            padded_encoded=state.padded_encoded,
+            encoded_padded=state.encoded_padded,
             pre_net_hidden_state=pre_net_hidden_state,
             attn_rnn_hidden_state=attn_rnn_hidden_state,
             lstm_hidden_state=lstm_hidden_state,
         )
-
-        # [num_frames, batch_size, num_tokens + window_len - 1] → [*, num_tokens]
-        pad_length = self.attn_rnn.attn.window_len // 2
-        alignments = alignments.detach()[:, :, pad_length:-pad_length]
-        alignments = alignments.masked_fill(~encoded.tokens_mask.unsqueeze(0), 0)
-
-        assert (window_starts[-1] < encoded.num_tokens).all(), "Invariant failure"
-
         return Decoded(frames, stop_token, alignments, window_starts, hidden_state)

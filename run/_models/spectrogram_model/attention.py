@@ -105,7 +105,7 @@ class Attention(torch.nn.Module):
         self.hidden_size = hidden_size
         self.window_len = window_len
         self.avg_frames_per_token = avg_frames_per_token
-        self.padding = int((conv_filter_size - 1) / 2)
+        self.padding = conv_filter_size // 2
         self.scale = math.sqrt(self.hidden_size)
         self.alignment_conv = torch.nn.Conv1d(2, hidden_size, kernel_size=conv_filter_size)
 
@@ -124,6 +124,7 @@ class Attention(torch.nn.Module):
         query: torch.Tensor,
         hidden_state: AttentionHiddenState,
         token_skip_warning: float,
+        check_invariants: bool = True,
     ) -> typing.Tuple[torch.Tensor, torch.Tensor, AttentionHiddenState]:
         """
         Args:
@@ -139,7 +140,7 @@ class Attention(torch.nn.Module):
             hidden_state
         """
         batch_size, num_tokens, _ = encoded.tokens.shape
-        last_alignment, cum_alignment = hidden_state.alignment, hidden_state.cum_alignment
+        last_align, cum_alignment = hidden_state.alignment, hidden_state.cum_alignment
         win_start = hidden_state.window_start
         window_len = min(self.window_len, num_tokens)
         padded_window_len = window_len + self.padding * 2
@@ -148,8 +149,12 @@ class Attention(torch.nn.Module):
         tokens_mask, window_idx = _window(encoded.tokens_mask, win_start, window_len, 1)
         tokens = _window(encoded.tokens, win_start_, window_len, 1)[0]
         keys = _window(encoded.token_keys, win_start_, window_len, 2)[0]
-        last_align_window = _window(last_alignment, win_start, padded_window_len, 1)[0]
+        last_align_window = _window(last_align, win_start, padded_window_len, 1)[0]
         cum_align_window = _window(cum_alignment, win_start, padded_window_len, 1)[0]
+
+        if check_invariants:
+            message = "Only valid tokens are allowed in the window."
+            assert torch.all(tokens_mask[encoded.num_tokens >= self.window_len]), message
 
         # [batch_size, 1, padded_window_len] → [batch_size, hidden_size, window_len]
         cum_align_window = cum_align_window.unsqueeze(1) / self.avg_frames_per_token - 1.0
@@ -157,43 +162,51 @@ class Attention(torch.nn.Module):
         position = torch.cat([cum_align_window, last_align_window], dim=1).detach()
         position = self.alignment_conv(position.detach())
 
-        # [batch_size, hidden_size, num_tokens]
+        # [batch_size, hidden_size, window_len]
         keys = position + keys
 
         # query [batch_size (b), 1 (n), hidden_size (m)] (bmm)
-        # keys [batch_size (b), hidden_size (m), num_tokens (p)] →
-        # [batch_size (b), 1 (n), num_tokens (p)]
+        # keys [batch_size (b), hidden_size (m), window_len (p)] →
+        # [batch_size (b), 1 (n), window_len (p)]
         query = query.view(batch_size, 1, self.hidden_size)
         score = (torch.bmm(query, keys) / self.scale).squeeze(1)
         score.data.masked_fill_(~tokens_mask, -math.inf)
 
-        # [batch_size, num_tokens] → [batch_size, num_tokens]
-        alignment = torch.softmax(score, dim=1)
+        # [batch_size, window_len] → [batch_size, window_len]
+        align_window = torch.softmax(score, dim=1)
 
-        # alignment [batch_size (b), 1 (n), num_tokens (m)] (bmm)
-        # tokens [batch_size (b), num_tokens (m), hidden_size (p)] →
+        # alignment [batch_size (b), 1 (n), window_len (m)] (bmm)
+        # tokens [batch_size (b), window_len (m), hidden_size (p)] →
         # [batch_size (b), 1 (n), hidden_size (p)]
-        context = torch.bmm(alignment.unsqueeze(1), tokens)
+        context = torch.bmm(align_window.unsqueeze(1), tokens)
         context = context.squeeze(1)  # [batch_size, 1, hidden_size] → [batch_size, hidden_size]
 
-        alignment_ = last_alignment.new_zeros(*last_alignment.shape)
-        alignment = alignment_.scatter_(1, window_idx + self.padding, alignment)
+        window_idx = window_idx + self.padding
+        alignment = last_align.new_zeros(*last_align.shape).scatter_(1, window_idx, align_window)
         last_win_start = win_start
-        window_start = alignment.max(dim=1)[1] - window_len // 2 - self.padding
 
         # TODO: Cache `num_tokens - window_len` clamped at 0 so that we dont need to
         # recompute the `clamp` and subtraction each time.
-        # NOTE: `torch.clamp` does not prompt a consistent left-to-right progression. This can
+        # NOTE: `torch.min/max` does not prompt a consistent left-to-right progression. This can
         # be addressed with proper padding on the attention input.
+        window_start = alignment.max(dim=1)[1] - padded_window_len // 2
+        window_start = torch.max(last_win_start, window_start)
         window_start = torch.min(window_start, encoded.num_tokens - window_len)
         window_start = torch.clamp(window_start, min=0)
-        window_start = torch.max(last_win_start, window_start)
+
         if not math.isinf(token_skip_warning):
-            assert token_skip_warning >= 0, "The number of tokens skipped is a positive number."
+            assert token_skip_warning >= 0, "This must be a positive number."
             max_tokens_skipped = (window_start - last_win_start).max()
             if max_tokens_skipped > token_skip_warning:
                 logger.warning("Attention module skipped %d tokens.", max_tokens_skipped)
 
         hidden_state = AttentionHiddenState(alignment, cum_alignment + alignment, window_start)
 
-        return context, alignment[:, self.padding : -self.padding], hidden_state
+        unpadded_alignment = alignment[:, self.padding : -self.padding]
+        if check_invariants:
+            message = "The attention module should only align on real tokens."
+            assert alignment[:, : self.padding].sum() == 0.0, message
+            assert alignment[:, -self.padding :].sum() == 0.0, message
+            assert unpadded_alignment.masked_select(~encoded.tokens_mask).sum() == 0.0, message
+
+        return context, unpadded_alignment, hidden_state

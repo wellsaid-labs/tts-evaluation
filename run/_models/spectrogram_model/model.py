@@ -219,6 +219,7 @@ class SpectrogramModel(torch.nn.Module):
                     num_tokens=encoded.num_tokens,
                     tokens_mask=encoded.tokens_mask,
                     reached_max=reached_max,
+                    attn_win_len=self.decoder.attn_rnn.attn.window_len,
                 )
                 frames, stop_tokens, alignments = [], [], []
                 prev_lengths = lengths.clone()
@@ -268,6 +269,7 @@ class SpectrogramModel(torch.nn.Module):
             num_tokens=encoded.num_tokens,
             tokens_mask=encoded.tokens_mask,
             reached_max=num_frames >= inputs.max_audio_len,
+            attn_win_len=self.decoder.attn_rnn.attn.window_len,
         )
 
     def _generate(

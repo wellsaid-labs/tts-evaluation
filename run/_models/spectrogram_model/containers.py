@@ -21,7 +21,7 @@ class Preds:
     stop_tokens: torch.Tensor
 
     # Attention alignment between `frames` and `tokens`.
-    # torch.FloatTensor [num_frames, batch_size, num_tokens]
+    # torch.FloatTensor [num_frames, batch_size, num_tokens + attn.window_len - 1]
     alignments: torch.Tensor
 
     # The number of frames in each sequence.
@@ -44,6 +44,9 @@ class Preds:
     # torch.BoolTensor [batch_size]
     reached_max: torch.Tensor
 
+    # The window length used to generate this prediction.
+    attn_win_len: int
+
     def __post_init__(self):
         self.check_invariants()
 
@@ -60,7 +63,7 @@ class Preds:
         assert self.frames.dtype == torch.float
         assert self.stop_tokens.shape == (num_frames, batch_size)
         assert self.stop_tokens.dtype == torch.float
-        assert self.alignments.shape == (num_frames, batch_size, num_tokens)
+        assert self.alignments.shape == (num_frames, batch_size, num_tokens + self.attn_win_len - 1)
         assert self.alignments.dtype == torch.float
         assert self.num_frames.shape == (batch_size,)
         assert self.num_frames.dtype == torch.long
@@ -82,12 +85,13 @@ class Preds:
         return Preds(
             frames=self.frames[:num_frames, key],
             stop_tokens=self.stop_tokens[:num_frames, key],
-            alignments=self.alignments[:num_frames, key, :num_tokens],
+            alignments=self.alignments[:num_frames, key, : num_tokens + self.attn_win_len - 1],
             num_frames=self.num_frames[key],
             frames_mask=self.frames_mask[key, :num_frames],
             num_tokens=self.num_tokens[key],
             tokens_mask=self.tokens_mask[key, :num_tokens],
             reached_max=self.reached_max[key],
+            attn_win_len=self.attn_win_len,
         )
 
     def apply(self: PredsType, call: typing.Callable[[torch.Tensor], torch.Tensor]) -> PredsType:
@@ -169,7 +173,7 @@ class DecoderHiddenState(typing.NamedTuple):
     attn_rnn_hidden_state: AttentionRNNHiddenState
 
     # Padded encoding with space for the `attention` window.
-    padded_encoded: Encoded
+    encoded_padded: Encoded
 
     # `PreNet` hidden state.
     pre_net_hidden_state: PreNetHiddenState = None
@@ -190,7 +194,7 @@ class Decoded(typing.NamedTuple):
     stop_tokens: torch.Tensor
 
     # Attention alignment between `frames` and `tokens`.
-    # torch.FloatTensor [num_frames, batch_size, num_tokens]
+    # torch.FloatTensor [num_frames, batch_size, num_tokens + attn.window_len - 1]
     alignments: torch.Tensor
 
     # torch.LongTensor [num_frames, batch_size]

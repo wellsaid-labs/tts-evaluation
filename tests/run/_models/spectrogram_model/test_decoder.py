@@ -62,8 +62,9 @@ def test_decoder():
         assert decoded.stop_tokens.dtype == torch.float
         assert decoded.stop_tokens.shape == (1, batch_size)
 
+        window_len = module.attn_rnn.attn.window_len
         assert decoded.alignments.dtype == torch.float
-        assert decoded.alignments.shape == (1, batch_size, num_tokens)
+        assert decoded.alignments.shape == (1, batch_size, num_tokens + window_len - 1)
 
         assert decoded.window_starts.dtype == torch.long
         assert decoded.window_starts.shape == (1, batch_size)
@@ -101,8 +102,9 @@ def test_decoder__target():
     assert decoded.stop_tokens.dtype == torch.float
     assert decoded.stop_tokens.shape == (num_frames, batch_size)
 
+    window_len = module.attn_rnn.attn.window_len
     assert decoded.alignments.dtype == torch.float
-    assert decoded.alignments.shape == (num_frames, batch_size, num_tokens)
+    assert decoded.alignments.shape == (num_frames, batch_size, num_tokens + window_len - 1)
 
     assert decoded.window_starts.dtype == torch.long
     assert decoded.window_starts.shape == (num_frames, batch_size)
@@ -124,37 +126,38 @@ def test_decoder__pad_encoded():
     """Test `decoder.Decoder` pads encoded correctly."""
     module = _make_decoder()
     encoded, (batch_size, num_tokens) = _make_encoded(module)
-    window_len = module.attn_rnn.attn.window_len - 1
+    pad_len = 2
     attn_size = module.attn_size
     beg_pad_token = torch.rand(batch_size, module.attn_size)
     end_pad_token = torch.rand(batch_size, module.attn_size)
     beg_pad_key = torch.rand(batch_size, module.attn_size)
     end_pad_key = torch.rand(batch_size, module.attn_size)
-    padded = module._pad_encoded(encoded, beg_pad_token, end_pad_token, beg_pad_key, end_pad_key)
+    padded = module._pad_encoded(
+        pad_len, encoded, beg_pad_token, end_pad_token, beg_pad_key, end_pad_key
+    )
 
     assert padded.tokens.dtype == torch.float
-    assert padded.tokens.shape == (batch_size, num_tokens + window_len, attn_size)
+    assert padded.tokens.shape == (batch_size, num_tokens + pad_len * 2, attn_size)
 
     assert padded.token_keys.dtype == torch.float
-    assert padded.token_keys.shape == (batch_size, attn_size, num_tokens + window_len)
+    assert padded.token_keys.shape == (batch_size, attn_size, num_tokens + pad_len * 2)
 
     assert padded.tokens_mask.dtype == torch.bool
-    assert padded.tokens_mask.shape == (batch_size, num_tokens + window_len)
+    assert padded.tokens_mask.shape == (batch_size, num_tokens + pad_len * 2)
 
     assert padded.num_tokens.dtype == torch.long
     assert padded.num_tokens.shape == (batch_size,)
 
-    pad = window_len // 2
-    for i in range(pad):
+    for i in range(pad_len):
         idx = torch.arange(batch_size)
         assert padded.tokens_mask[idx, i].all()
-        assert padded.tokens_mask[idx, encoded.num_tokens + i + pad].all()
+        assert padded.tokens_mask[idx, encoded.num_tokens + i + pad_len].all()
         assert torch.equal(padded.tokens[idx, i], beg_pad_token)
         assert torch.equal(padded.token_keys[idx, :, i], beg_pad_key)
-        assert torch.equal(padded.tokens[idx, encoded.num_tokens + i + pad], end_pad_token)
-        assert torch.equal(padded.token_keys[idx, :, encoded.num_tokens + i + pad], end_pad_key)
+        assert torch.equal(padded.tokens[idx, encoded.num_tokens + i + pad_len], end_pad_token)
+        assert torch.equal(padded.token_keys[idx, :, encoded.num_tokens + i + pad_len], end_pad_key)
 
     assert padded.tokens.masked_select(~padded.tokens_mask.unsqueeze(2)).sum() == 0
     assert padded.token_keys.masked_select(~padded.tokens_mask.unsqueeze(1)).sum() == 0
     assert torch.equal(padded.tokens_mask.sum(dim=1), padded.num_tokens)
-    assert torch.equal(encoded.num_tokens + window_len, padded.num_tokens)
+    assert torch.equal(encoded.num_tokens + pad_len * 2, padded.num_tokens)

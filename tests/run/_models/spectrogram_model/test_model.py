@@ -275,16 +275,9 @@ def _check_preds(
     preds: Preds,
 ):
     """Check invariants for `preds`."""
+    preds.check_invariants()
     max_frames = params.max_frames if model.training else preds.num_frames.max()
     assert max_frames <= params.max_frames
-    assert preds.frames.dtype == torch.float
-    assert preds.frames.shape == (max_frames, params.batch_size, model.num_frame_channels)
-    assert preds.stop_tokens.dtype == torch.float
-    assert preds.stop_tokens.shape == (max_frames, params.batch_size)
-    assert preds.alignments.dtype == torch.float
-    assert preds.alignments.shape == (max_frames, params.batch_size, params.max_num_tokens)
-    assert preds.num_frames.dtype == torch.long
-    assert preds.num_frames.shape == (params.batch_size,)
     for i, num_frames in enumerate(preds.num_frames.tolist()):
         assert num_frames > 0
         assert num_frames <= max_frames
@@ -295,14 +288,6 @@ def _check_preds(
             assert num_frames < max_frames_per_token * num_sliced_tokens[i] or preds.reached_max[i]
         else:
             assert thresholded or preds.reached_max[i]
-    assert preds.frames_mask.dtype == torch.bool
-    assert preds.frames_mask.shape == (params.batch_size, max_frames)
-    assert preds.num_tokens.dtype == torch.long
-    assert preds.num_tokens.shape == (params.batch_size,)
-    assert preds.tokens_mask.dtype == torch.bool
-    assert preds.tokens_mask.shape == (params.batch_size, params.max_num_tokens)
-    assert preds.reached_max.dtype == torch.bool
-    assert preds.reached_max.shape == (params.batch_size,)
 
 
 def test_spectrogram_model():
@@ -465,14 +450,11 @@ def test_spectrogram_model__infer_batch_padding_invariance():
         with fork_rng(seed=123):
             preds = model(inputs[i], mode=Mode.INFER)
 
-        num_sliced_tokens_ = typing.cast(int, num_sliced_tokens[i].item())
-        length = typing.cast(int, batch_preds.num_frames[i].item())
-        assert_almost_equal(preds.reached_max, batch_preds.reached_max[i : i + 1])
-        assert_almost_equal(preds.frames, batch_preds.frames[:length, i : i + 1])
-        assert_almost_equal(preds.stop_tokens, batch_preds.stop_tokens[:length, i : i + 1])
-        batch_preds_alignments = batch_preds.alignments[:length, i : i + 1, :num_sliced_tokens_]
-        assert_almost_equal(preds.alignments, batch_preds_alignments)
-        assert_almost_equal(preds.num_frames, batch_preds.num_frames[i : i + 1])
+        assert_almost_equal(preds.reached_max, batch_preds[i : i + 1].reached_max)
+        assert_almost_equal(preds.frames, batch_preds[i : i + 1].frames)
+        assert_almost_equal(preds.stop_tokens, batch_preds[i : i + 1].stop_tokens)
+        assert_almost_equal(preds.alignments, batch_preds[i : i + 1].alignments)
+        assert_almost_equal(preds.num_frames, batch_preds[i : i + 1].num_frames)
 
 
 def test_spectrogram_model__train_batch_padding_invariance():
@@ -517,10 +499,9 @@ def test_spectrogram_model__train_batch_padding_invariance():
         grad = [p.grad for p in model.parameters() if p.grad is not None]
         model.zero_grad()
 
-    assert_almost_equal(preds.frames, batch_preds.frames[:num_frames, idx : idx + 1])
-    assert_almost_equal(preds.stop_tokens, batch_preds.stop_tokens[:num_frames, idx : idx + 1])
-    result = batch_preds.alignments[:num_frames, idx : idx + 1, :num_sliced_tokens]
-    assert_almost_equal(preds.alignments, result)
+    assert_almost_equal(preds.frames, batch_preds[idx : idx + 1].frames)
+    assert_almost_equal(preds.stop_tokens, batch_preds[idx : idx + 1].stop_tokens)
+    assert_almost_equal(preds.alignments, batch_preds[idx : idx + 1].alignments)
     [assert_almost_equal(r, e) for r, e in zip(grad, batch_grad)]
 
 
