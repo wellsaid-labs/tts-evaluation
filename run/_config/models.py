@@ -118,7 +118,7 @@ def configure(overwrite: bool = False):
         # NOTE: Window size smoothing parameter is not sensitive.
         lib.optimizers.AdaptiveGradientNormClipper: cf.Args(window_size=128, norm_type=2),
         # NOTE: The `beta` parameter is not sensitive.
-        lib.optimizers.ExponentialMovingParameterAverage: cf.Args(beta=0.9999),
+        lib.optimizers.ExponentialMovingParameterAverage: cf.Args(beta=0.999),
         run._models.signal_model.wrapper.SignalModelWrapper: cf.Args(
             # SOURCE https://en.wikipedia.org/wiki/%CE%9C-law_algorithm:
             # For a given input x, the equation for μ-law encoding is where μ = 255 in the North

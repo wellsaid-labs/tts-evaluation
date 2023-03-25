@@ -199,9 +199,8 @@ def get_alignment_std(preds: Preds) -> torch.Tensor:
     Returns:
         torch.FloatTensor [batch_size]
     """
-    alignments = lib.utils.get_weighted_std(preds.alignments, dim=2)
+    alignments = lib.utils.get_weighted_std(preds.alignments, dim=2, strict=True)
     alignments = alignments.masked_fill(~preds.frames_mask.transpose(0, 1), 0)
-    assert not torch.any(torch.isnan(alignments)), "NaN detected."
     return alignments.sum(dim=0)
 
 
