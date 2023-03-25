@@ -131,7 +131,7 @@ class Decoder(torch.nn.Module):
         self.linear_stop_token = torch.nn.Sequential(
             torch.nn.Linear(hidden_size + attn_size, hidden_size),
             torch.nn.GELU(),
-            torch.nn.LayerNorm(hidden_size),
+            cf.partial(torch.nn.LayerNorm)(hidden_size),
             torch.nn.Linear(hidden_size, 1),
         )
         self.lstm_out = LSTM(hidden_size + attn_size, hidden_size)
