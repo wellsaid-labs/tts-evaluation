@@ -65,6 +65,7 @@ class _Block(torch.nn.Module):
         )
         self.conv_block.append(conv_block_last_op)
         self.highway = _Highway(hidden_size)
+        self.scale = math.sqrt(2)
 
     def __call__(self, tokens: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
         return super().__call__(tokens, mask)
@@ -78,7 +79,7 @@ class _Block(torch.nn.Module):
         for conv in self.conv_block:
             block = block.masked_fill(~mask, 0)
             block = conv(block.transpose(1, 2)).transpose(1, 2)
-        tokens = tokens + block
+        tokens = (tokens + block) / self.scale
         tokens = self.highway(tokens)
         return tokens
 
@@ -138,6 +139,8 @@ class Encoder(torch.nn.Module):
             kernel_size=1,
             groups=len(self.annos),
         )
+        self.scale = len(self.embed_seq_meta) + len(self.embed_token_meta) + len(self.annos) + 3
+        self.scale = math.sqrt(self.scale)
 
         self.blocks = ModuleList(
             _Block(hidden_size, conv_filter_size, num_conv_block_layers) for _ in range(num_layers)
@@ -180,7 +183,7 @@ class Encoder(torch.nn.Module):
         anno_embeds = [e.masked_fill(~m.bool(), 0) for e, m in zip(anno_embeds, anno_masks)]
 
         feats = [tokens, seq_embed, word_vector] + token_meta + anno_embeds
-        tokens = torch.stack(feats).sum(dim=0) / math.sqrt(len(feats))
+        tokens = torch.stack(feats).sum(dim=0) / self.scale
         tokens_mask = tokens_mask.unsqueeze(2)
         tokens: torch.Tensor = tokens.masked_fill(~tokens_mask, 0)
 
