@@ -1,33 +1,32 @@
 # Train a Model with Google Cloud Platform (GCP) Preemptible Instances
 
-This markdown will walk you through the steps required to train a model on an GCP virtual
+This markdown will walk you through the steps required to train a model on a GCP virtual
 machine.
-
-Related Documentation:
-
-- Would you like to train a end-to-end TTS model? TODO
 
 ## Prerequisites
 
-Setup your local development environment by following [these instructions](LOCAL_SETUP.md).
+Set up your local development environment by following [these instructions](LOCAL_SETUP.md).
 
 ## Train a Model with Google Cloud Platform (GCP)
 
 ### From your local repository
 
-1. Setup your environment variables...
-
-   Also set these environment variables...
+1. Set your environment variables...
 
    ```zsh
    TRAIN_SCRIPT_PATH='path/to/train' # EXAMPLE: run/train/spectrogram_model
-   NAME=$USER"-your-instance-name" # EXAMPLE: michaelp-baseline
-   GCP_USER='your-gcp-user-name' # Example: michaelp
+   NAME=$USER"-<your-instance-name>" # EXAMPLE: michaelp-baseline
+   GCP_USER='<your-gcp-user-name>' # Example: michaelp - same as your email, <user>@wellsaidlabs.com
    TYPE='preemptible' # Either 'preemptible' or 'persistent'
    ```
 
+   ❓ LEARN MORE: Preemptible instances are much lower cost than standard/persistent VMs, with the
+   tradeoff that "Compute Engine might stop (preempt) these instances if it needs to reclaim the
+   compute capacity for allocation to other VMs." Read more:
+   [Preemptible VM instances](https://cloud.google.com/compute/docs/instances/preemptible)
+
    💡 TIP: Find zones with that support T4 GPUs here:
-   https://cloud.google.com/compute/docs/gpus/gpu-regions-zones
+   [GPU regions and zones availability](https://cloud.google.com/compute/docs/gpus/gpu-regions-zones)
 
    💡 TIP: Don't place all your preemptible instances in the same zone, just in case one zone
    runs out of capacity.
@@ -46,8 +45,15 @@ Setup your local development environment by following [these instructions](LOCAL
 
    ```zsh
    IMAGE_PROJECT='voice-research-255602'
-   IMAGE_FAMILY='your-image-family-name'    # Example: $IMAGE_FAMILY used to image your machine
+   IMAGE_FAMILY='<your-image-family-name>'    # Example: $IMAGE_FAMILY used to image your machine
    ```
+
+   Alternatively, you can specify an image instead of image family:
+
+  ```zsh
+  IMAGE_PROJECT='voice-research-255602'
+  IMAGE='<your-image-name>'
+  ```
 
 1. Create an instance for training...
 
@@ -60,15 +66,19 @@ Setup your local development environment by following [these instructions](LOCAL
       --disk-size=1024 \
       --disk-type='pd-balanced' \
       --image-project=$IMAGE_PROJECT \
-      --image-family=$IMAGE_FAMILY \
+      --image-family=$IMAGE_FAMILY \ # Or swap to --image=$IMAGE
       --metadata="startup-script-user=$GCP_USER" \
       --metadata="train-script-path=$TRAIN_SCRIPT_PATH" \
       --metadata-from-file="startup-script=run/utils/gcp/resume_training_on_start_up.sh"
    ```
 
-   ❓ LEARN MORE: See our machine type benchmarks [here](./TRAIN_MODEL_GCP_BENCHMARKS.md).
+   You can look for your image and see its status via the Google Cloud console:
+   [VM instances](https://console.cloud.google.com/compute/instances?project=voice-research-255602).
 
-   💡 TIP: The output of the startup script will be saved on the VM here:
+   ❓ LEARN MORE: See our machine type benchmarks:
+   [Train a Model with Google Cloud Platform (GCP) Benchmarks](./TRAIN_MODEL_GCP_BENCHMARKS.md).
+
+   💡 TIP: The output of the startup script will be saved on the VM at:
    `/var/log/syslog`. The relevant logs will start after
     "Starting Google Compute Engine Startup Scripts..." is logged.
 
@@ -81,7 +91,7 @@ Setup your local development environment by following [these instructions](LOCAL
    gcloud compute ssh --zone=$VM_ZONE $VM_NAME
    ```
 
-   Continue to run this command until it succeeds.
+   Continue to run this command until it succeeds. It may take up to a few minutes for the instance to be available.
 
 ### On the instance
 
@@ -100,6 +110,8 @@ Setup your local development environment by following [these instructions](LOCAL
    VM_NAME=$(python -m run.utils.gcp $TYPE most-recent --name $NAME)
    echo "VM_NAME=$VM_NAME"
    ```
+
+   💡 TIP: Make sure to set `$TYPE` and `$NAME` again if you opened a new terminal window.
 
    ```bash
    VM_ZONE=$(python -m run.utils.gcp zone --name $VM_NAME)
@@ -130,6 +142,15 @@ Setup your local development environment by following [these instructions](LOCAL
 
    . run/utils/gcp/install_drivers.sh
    . run/utils/apt_install.sh
+   ```
+
+   Run `sudo nvidia-smi` to confirm that the drivers were installed successfully.
+
+   If you get an error about GPUs not being available, or a version mismatch, you can look up the latest driver, manually install it, and reboot the instance. Go to [NVIDIA Driver Downloads](https://www.nvidia.com/Download/find.aspx), search for Product Type "Data Center / Tesla", Product Series "T-Series", Product "Tesla T4", Operating System "Linux 64-bit", CUDA Toolkit "Any", Language "English (US)", Recommended/Beta "Recommended". Use the first integer segment of the Version, such as `470` for Version "470.161.03":
+
+   ```bash
+   sudo apt install nvidia-driver-470 nvidia-dkms-470 # substitute in the latest version as applicable
+   sudo reboot
    ```
 
    **NOTE:** You will always want to be in an active `venv` whenever you want to work with python.
@@ -173,8 +194,8 @@ Setup your local development environment by following [these instructions](LOCAL
 1. For [comet](https://www.comet.ml/wellsaid-labs), name your experiment and pick a project...
 
    ```bash
-   COMET_PROJECT='your-comet-project'
-   EXPERIMENT_NAME='Your experiment name'
+   COMET_PROJECT='<your-comet-project>'
+   EXPERIMENT_NAME='<Your experiment name>'
    ```
 
 1. Start training...
@@ -188,10 +209,13 @@ Setup your local development environment by following [these instructions](LOCAL
 
    ---
    Or select a `SPECTROGRAM_CHECKPOINT`...
+
    ```
    find /opt/wellsaid-labs/Text-to-Speech/disk/experiments/spectrogram_model/ -name <step_######.pt>
    ```
+
    And store it...
+
    ```
    SPECTROGRAM_CHECKPOINT="<paste>"
    ```
@@ -208,7 +232,7 @@ Setup your local development environment by following [these instructions](LOCAL
    ```
 
    ❓ LEARN MORE: PyTorch leaves zombie processes that must be killed, check out:
-   https://leimao.github.io/blog/Kill-PyTorch-Distributed-Training-Processes/
+   <https://leimao.github.io/blog/Kill-PyTorch-Distributed-Training-Processes/>
 
 1. Detach from your screen session by typing `Ctrl-A` then `D`.
 
@@ -234,7 +258,7 @@ Setup your local development environment by following [these instructions](LOCAL
 1. Setup your environment variables again...
 
    ```zsh
-   NAME=$USER"-your-instance-name" # EXAMPLE: michaelp-baseline
+   NAME=$USER"-<your-instance-name>" # EXAMPLE: michaelp-baseline
    VM_NAME=$(python -m run.utils.gcp $TYPE most-recent --name $NAME)
    echo "VM_NAME=$VM_NAME"
    VM_ZONE=$(python -m run.utils.gcp zone --name $VM_NAME)

@@ -14,7 +14,7 @@ sync {
   delay = .2,
   delete = true,
   rsync = {
-      binary = "/usr/local/bin/rsync", -- OSX does not have updated version of rsync,
+      binary = "/opt/homebrew/bin/rsync", -- OSX does not have updated version of rsync,
                                        -- install via: `brew install rsync`
       -- NOTE: We disable SSH host key checking because GCP frequently changes it's remote
       -- host identification.
