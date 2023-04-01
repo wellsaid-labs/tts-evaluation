@@ -161,3 +161,31 @@ def test_decoder__pad_encoded():
     assert padded.token_keys.masked_select(~padded.tokens_mask.unsqueeze(1)).sum() == 0
     assert torch.equal(padded.tokens_mask.sum(dim=1), padded.num_tokens)
     assert torch.equal(encoded.num_tokens + pad_len * 2, padded.num_tokens)
+
+
+def test_decoder__make_init_hidden_state__alignments():
+    """Test `decoder.Decoder` initializes alignment state correctly."""
+    module = _make_decoder()
+    encoded, (batch_size, num_tokens) = _make_encoded(module)
+    hidden_state = module._make_init_hidden_state(encoded)
+
+    atten_pad_len, window_len = module.atten_pad_len, module.atten_window_len
+
+    cum_alignment = hidden_state.attn_rnn_hidden_state.attn_hidden_state.cum_alignment
+    assert cum_alignment.dtype == torch.float
+    assert cum_alignment.shape == (batch_size, num_tokens + module.pad_len * 2)
+    assert cum_alignment[:, module.align_pad_len :].sum() == 0
+    assert cum_alignment[:, : module.align_pad_len].sum() != 0
+
+    max_alignment = hidden_state.attn_rnn_hidden_state.attn_hidden_state.max_alignment
+    assert max_alignment.dtype == torch.float
+    assert max_alignment.shape == (batch_size, num_tokens + module.pad_len * 2)
+    assert max_alignment[:, module.align_pad_len :].sum() == 0
+    assert max_alignment[:, : module.align_pad_len].sum() != 0
+
+    alignment = hidden_state.attn_rnn_hidden_state.attn_hidden_state.alignment
+    assert alignment.dtype == torch.float
+    assert alignment.shape == (batch_size, num_tokens + module.pad_len * 2)
+    assert alignment[:, : atten_pad_len - 1].sum() == 0
+    assert alignment[:, atten_pad_len - 1 + window_len :].sum() == 0
+    assert alignment[:, atten_pad_len - 1 : atten_pad_len - 1 + window_len].sum() != 0

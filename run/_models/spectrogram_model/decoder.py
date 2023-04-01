@@ -120,12 +120,7 @@ class Decoder(torch.nn.Module):
         self.num_frame_channels = num_frame_channels
         self.hidden_size = hidden_size
         self.attn_size = attn_size
-        self.init_state_parts = [self.num_frame_channels, 1, 1] + [attn_size] * 5
-        self.init_state = torch.nn.Sequential(
-            torch.nn.Linear(attn_size * 4, attn_size),
-            torch.nn.GELU(),
-            torch.nn.Linear(attn_size, sum(self.init_state_parts)),
-        )
+
         self.pre_net = cf.partial(PreNet)(num_frame_channels, hidden_size)
         self.attn_rnn = _AttentionRNN(hidden_size, hidden_size, attn_size)
         self.linear_stop_token = torch.nn.Sequential(
@@ -139,6 +134,29 @@ class Decoder(torch.nn.Module):
             torch.nn.Linear(hidden_size, hidden_size),
             torch.nn.GELU(),
             torch.nn.Linear(hidden_size, num_frame_channels),
+        )
+
+        # NOTE: The `Encoded` tokens should be padded by `encoded_pad_len = atten_window_len // 2`
+        # so the attention window can start centered on the first token.
+        self.atten_window_len = self.attn_rnn.attn.window_len
+        self.atten_pad_len = self.attn_rnn.attn.padding
+        self.pad_len = self.atten_window_len // 2 + self.atten_pad_len
+        self.encoded_pad_len = self.atten_window_len // 2
+        self.align_pad_len = self.pad_len + self.atten_window_len // 2
+        self.init_state_parts = [
+            self.num_frame_channels,
+            # NOTE: The initial cum alignment can only have values for padding, and
+            # `atten_window_len // 2` of the current sequence. In effect, the window is centered
+            # over the last padded token.
+            self.align_pad_len,
+            self.align_pad_len,
+            self.atten_window_len,  # NOTE: The last alignment can only have `window_len` values.
+        ]
+        self.init_state_parts += [attn_size] * 5
+        self.init_state = torch.nn.Sequential(
+            torch.nn.Linear(attn_size * 4, attn_size),
+            torch.nn.GELU(),
+            torch.nn.Linear(attn_size, sum(self.init_state_parts)),
         )
 
     def _pad_encoded(
@@ -209,29 +227,24 @@ class Decoder(torch.nn.Module):
         feats = [encoded.tokens[:, 0], encoded.token_keys[:, :, 0], last_token, last_token_key]
         feats = torch.cat(feats, dim=1)
         state = self.init_state(feats).split(self.init_state_parts, dim=-1)
-        init_frame, init_cum_alignment, init_alignment, init_attn_cntxt, *pad_tokens = state
+        init_frame, init_cum_align, init_max_align, init_align, init_attn_cntxt, *pad_tokens = state
 
-        encoded_pad_len = self.attn_rnn.attn.window_len // 2
-        encoded_padded = self._pad_encoded(encoded_pad_len, encoded, *pad_tokens)
-
-        # NOTE: The `cum_alignment` or `cum_alignment` vector has a positive value for every
-        # token that is has attended to. Assuming the model is attending to tokens from
-        # left-to-right and the model starts reading at the first token, then any padding to the
-        # left of the first token should be positive to be consistent.
-        align_pad_len = self.attn_rnn.attn.padding + encoded_pad_len
-        cum_alignment = init_cum_alignment.expand(-1, align_pad_len).abs()
-        alignment = torch.zeros(batch_size, num_tokens + align_pad_len * 2, device=device)
-        alignment[:, align_pad_len - 1] = init_alignment.abs().squeeze(1)
+        align_len = num_tokens + self.pad_len * 2
+        cum_align_left_pad_len = align_len - self.align_pad_len
+        # NOTE: `alignment` is padded such that the window is centered on the last padded token.
+        align_left_pad_len = self.attn_rnn.attn.padding - 1
+        align_right_pad_len = align_len - align_left_pad_len - self.atten_window_len
         attn_hidden_state = AttentionHiddenState(
-            alignment=alignment,
-            cum_alignment=functional.pad(cum_alignment, (0, num_tokens + align_pad_len)),
+            # NOTE: The aligment values can only be positive, so we use `abs`.
+            alignment=functional.pad(init_align.relu(), (align_left_pad_len, align_right_pad_len)),
+            max_alignment=functional.pad(init_max_align.relu(), (0, cum_align_left_pad_len)),
+            cum_alignment=functional.pad(init_cum_align.relu(), (0, cum_align_left_pad_len)),
             window_start=torch.zeros(batch_size, device=device, dtype=torch.long),
         )
-
         return DecoderHiddenState(
             last_frame=init_frame.unsqueeze(0),
             attn_rnn_hidden_state=AttentionRNNHiddenState(None, init_attn_cntxt, attn_hidden_state),
-            encoded_padded=encoded_padded,
+            encoded_padded=self._pad_encoded(self.encoded_pad_len, encoded, *pad_tokens),
             pre_net_hidden_state=None,
             lstm_hidden_state=None,
         )

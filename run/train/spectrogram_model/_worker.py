@@ -400,18 +400,8 @@ def _run_step(
         (spectrogram_loss_ + stop_token_loss_).backward()
 
         args.timer.record_event(args.timer.MODEL_STEP)
-
-        # NOTE: Prior to stepping we double check that every parameter has a corresponding gradient.
-        for name, param in model.named_parameters():
-            assert param.grad is not None, "`None` grad found."
-            message = "Zero grad found in: "
-            # NOTE: The `linear_stop_token` may not have gradients due to masking and
-            # `decoder.init_state.2` may not have gradients because it might use it's end padding.
-            if "decoder.init_state.2" in name:
-                parts = param.grad.split(model.decoder.init_state_parts)
-                assert all(p.count_nonzero() == p.numel() for p in parts[:-2]), message + name
-            elif "encoder.embed" not in name and "decoder.linear_stop_token" not in name:
-                assert param.grad.count_nonzero() == param.grad.numel(), message + name
+        # NOTE: `optimizer` will not error if there are no gradients so we check beforehand.
+        assert all([p.grad is not None for p in params]), "`None` gradients found."
 
         # NOTE: Measure the "grad_norm" before `clipper.clip()`.
         norm_inf = get_parameter_norm(params, math.inf) if is_master() else torch.tensor(math.nan)

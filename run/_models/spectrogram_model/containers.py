@@ -142,6 +142,9 @@ class AttentionHiddenState:
     alignment: torch.Tensor
 
     # torch.FloatTensor [batch_size, num_tokens + 2 * cum_alignment_padding]
+    max_alignment: torch.Tensor
+
+    # torch.FloatTensor [batch_size, num_tokens + 2 * cum_alignment_padding]
     cum_alignment: torch.Tensor
 
     # torch.LongTensor [batch_size]
@@ -150,6 +153,7 @@ class AttentionHiddenState:
     def __getitem__(self, key):
         return AttentionHiddenState(
             alignment=self.alignment[key],
+            max_alignment=self.max_alignment[key],
             cum_alignment=self.cum_alignment[key],
             window_start=self.window_start[key],
         )

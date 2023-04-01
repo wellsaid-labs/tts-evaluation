@@ -107,7 +107,9 @@ class Attention(torch.nn.Module):
         self.avg_frames_per_token = avg_frames_per_token
         self.padding = conv_filter_size // 2
         self.scale = math.sqrt(self.hidden_size)
-        self.alignment_conv = torch.nn.Conv1d(2, hidden_size, kernel_size=conv_filter_size)
+        self.alignment_conv = torch.nn.Conv1d(3, hidden_size, kernel_size=conv_filter_size)
+        self.project_scores = torch.nn.Linear(hidden_size, 1, bias=False)
+        self.project_query = torch.nn.Linear(hidden_size, hidden_size)
 
     def __call__(
         self,
@@ -141,6 +143,7 @@ class Attention(torch.nn.Module):
         """
         batch_size, num_tokens, _ = encoded.tokens.shape
         last_align, cum_alignment = hidden_state.alignment, hidden_state.cum_alignment
+        max_alignment = hidden_state.max_alignment
         win_start = hidden_state.window_start
         window_len = min(self.window_len, num_tokens)
         padded_window_len = window_len + self.padding * 2
@@ -151,6 +154,7 @@ class Attention(torch.nn.Module):
         keys = _window(encoded.token_keys, win_start_, window_len, 2)[0]
         last_align_window = _window(last_align, win_start, padded_window_len, 1)[0]
         cum_align_window = _window(cum_alignment, win_start, padded_window_len, 1)[0]
+        max_align_window = _window(max_alignment, win_start, padded_window_len, 1)[0]
 
         if check_invariants:
             message = "Only valid tokens are allowed in the window."
@@ -159,17 +163,16 @@ class Attention(torch.nn.Module):
         # [batch_size, 1, padded_window_len] → [batch_size, hidden_size, window_len]
         cum_align_window = cum_align_window.unsqueeze(1) / self.avg_frames_per_token - 1.0
         last_align_window = last_align_window.unsqueeze(1) * 2.0 - 1.0
-        position = torch.cat([cum_align_window, last_align_window], dim=1)
+        max_align_window = max_align_window.unsqueeze(1) * 2.0 - 1.0
+        position = torch.cat([cum_align_window, max_align_window, last_align_window], dim=1)
         position = self.alignment_conv(position)
 
-        # [batch_size, hidden_size, window_len]
-        keys = position + keys
+        # [1, batch_size, hidden_size] → [batch_size, hidden_size, 1]
+        query = self.project_query(query).view(batch_size, self.hidden_size, 1)
 
-        # query [batch_size (b), 1 (n), hidden_size (m)] (bmm)
-        # keys [batch_size (b), hidden_size (m), window_len (p)] →
-        # [batch_size (b), 1 (n), window_len (p)]
-        query = query.view(batch_size, 1, self.hidden_size)
-        score = (torch.bmm(query, keys) / self.scale).squeeze(1)
+        # [batch_size, hidden_size, window_len] → [batch_size, window_len]
+        score = torch.tanh((position + query + keys) / math.sqrt(3))
+        score = self.project_scores(score.transpose(1, 2)).squeeze(2)
         score.data.masked_fill_(~tokens_mask, -math.inf)
 
         # [batch_size, window_len] → [batch_size, window_len]
@@ -200,7 +203,12 @@ class Attention(torch.nn.Module):
             if max_tokens_skipped > token_skip_warning:
                 logger.warning("Attention module skipped %d tokens.", max_tokens_skipped)
 
-        hidden_state = AttentionHiddenState(alignment, cum_alignment + alignment, window_start)
+        hidden_state = AttentionHiddenState(
+            alignment=alignment,
+            max_alignment=torch.stack([max_alignment, alignment]).max(dim=0)[0],
+            cum_alignment=cum_alignment + alignment,
+            window_start=window_start,
+        )
 
         unpadded_alignment = alignment[:, self.padding : -self.padding]
         if check_invariants:

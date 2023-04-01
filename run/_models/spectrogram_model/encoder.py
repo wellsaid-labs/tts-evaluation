@@ -26,6 +26,7 @@ class _Highway(torch.nn.Module):
     def __init__(self, hidden_size: int):
         super().__init__()
         self.highway = torch.nn.Linear(hidden_size, hidden_size * 2)
+        self.act = torch.nn.GELU()
 
     def __call__(self, tokens: torch.Tensor):
         return super().__call__(tokens)
@@ -37,7 +38,7 @@ class _Highway(torch.nn.Module):
         """
         vals, gate = self.highway(tokens).chunk(2, dim=-1)
         gate = torch.sigmoid(gate)
-        return vals * gate + tokens * (1 - gate)
+        return self.act(vals) * gate + tokens * (1 - gate)
 
 
 class _Block(torch.nn.Module):
