@@ -43,7 +43,6 @@ class Params(typing.NamedTuple):
     max_seq_vector_size: int = 4
     seq_vector_size: int = 2
     max_anno_vector_size: int = 10
-    output_min: float = -1.0
     annos: typing.Tuple[typing.Tuple[str, str], ...] = (
         ("anno_vector_a", "anno_mask_a"),
         ("anno_vector_b", "anno_mask_b"),
@@ -69,6 +68,7 @@ def _make_spectrogram_model(
     dropout: float = 0.5,
     window_len: int = 3,
     stop_token_eps: float = 1e-10,
+    clamp_output: bool = False,
 ) -> SpectrogramModel:
     """Make `spectrogram_model.SpectrogramModel` for testing."""
     config = {
@@ -93,9 +93,9 @@ def _make_spectrogram_model(
         encoder_hidden_size=encoder_hidden_size,
         num_frame_channels=params.num_frame_channels,
         output_scalar=output_scalar,
-        output_min=params.output_min,
         stop_threshold=stop_threshold,
         stop_token_eps=stop_token_eps,
+        clamp_output=clamp_output,
     )
 
     # NOTE: Ensure modules like `LayerNorm` perturbs the input instead of being just an identity.
@@ -127,7 +127,6 @@ def _make_inputs(params: Params):
     slice_starts = [random.randint(0, int(n) - l) for n, l in zip(num_tokens, slice_lengths)]
     slices = [slice(s, s + l) for s, l in zip(slice_starts, slice_lengths)]
     target_frames = torch.randn(params.max_frames, params.batch_size, params.num_frame_channels)
-    target_frames = torch.clamp(target_frames, min=params.output_min)
     target_lengths = torch.randint(1, params.max_frames, batch_size, dtype=torch.long)
 
     # NOTE: Ensure at least one sequence is `max_num_tokens`.

@@ -6,7 +6,6 @@ from functools import partial
 import pytest
 import torch
 
-import lib
 from run._models.spectrogram_model.attention import Attention, _window
 from run._models.spectrogram_model.containers import AttentionHiddenState, Encoded
 from tests import _utils
@@ -112,13 +111,10 @@ def _make_attention(
     tokens_mask = torch.ones(batch_size, max_num_tokens, dtype=torch.bool)
     tokens_mask[-1][-max_num_tokens // 2 :] = 0
     query = torch.randn(1, batch_size, hidden_size)
-    padding = (module.padding, module.padding)
-    cum_alignment = torch.zeros(batch_size, max_num_tokens)
-    cum_alignment = lib.utils.pad_tensor(cum_alignment, padding, 1, value=1.0)
-    alignment = torch.zeros(*cum_alignment.shape)
     hidden_state = AttentionHiddenState(
-        alignment=alignment,
-        cum_alignment=cum_alignment,
+        alignment=torch.rand(batch_size, max_num_tokens + module.padding * 2),
+        cum_alignment=torch.zeros(batch_size, max_num_tokens + module.padding * 2),
+        max_alignment=torch.rand(batch_size, max_num_tokens + module.padding * 2),
         window_start=torch.zeros(batch_size, dtype=torch.long),
     )
     encoded = Encoded(tokens, token_keys, tokens_mask, tokens_mask.sum(dim=1))
@@ -138,6 +134,7 @@ def _add_padding(
         hidden_state,
         alignment=torch.cat([hidden_state.alignment, alignment_padding], 1),
         cum_alignment=torch.cat([hidden_state.cum_alignment, alignment_padding], 1),
+        max_alignment=torch.cat([hidden_state.max_alignment, alignment_padding], 1),
     )
     encoded_padded = dataclasses.replace(
         encoded,
