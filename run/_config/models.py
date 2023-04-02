@@ -135,5 +135,6 @@ def configure(overwrite: bool = False):
         # NOTE: BERT uses `eps=1e-12` for `LayerNorm`, see here:
         # https://github.com/huggingface/transformers/blob/master/src/transformers/configuration_bert.py
         torch.nn.LayerNorm: cf.Args(eps=1e-12),
+        torch.nn.GELU: cf.Args(approximate="tanh"),
     }
     cf.add(config, overwrite)

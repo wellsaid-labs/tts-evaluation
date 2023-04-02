@@ -125,14 +125,14 @@ class Decoder(torch.nn.Module):
         self.attn_rnn = _AttentionRNN(hidden_size, hidden_size, attn_size)
         self.linear_stop_token = torch.nn.Sequential(
             torch.nn.Linear(hidden_size + attn_size, hidden_size),
-            torch.nn.GELU(),
+            cf.partial(torch.nn.GELU)(),
             cf.partial(torch.nn.LayerNorm)(hidden_size),
             torch.nn.Linear(hidden_size, 1),
         )
         self.lstm_out = LSTM(hidden_size + attn_size, hidden_size)
         self.linear_out = torch.nn.Sequential(
             torch.nn.Linear(hidden_size, hidden_size),
-            torch.nn.GELU(),
+            cf.partial(torch.nn.GELU)(),
             torch.nn.Linear(hidden_size, num_frame_channels),
         )
 
@@ -155,7 +155,7 @@ class Decoder(torch.nn.Module):
         self.init_state_parts += [attn_size] * 5
         self.init_state = torch.nn.Sequential(
             torch.nn.Linear(attn_size * 4, attn_size),
-            torch.nn.GELU(),
+            cf.partial(torch.nn.GELU)(),
             torch.nn.Linear(attn_size, sum(self.init_state_parts)),
         )
 

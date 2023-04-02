@@ -2,6 +2,7 @@ import functools
 import math
 import typing
 
+import config as cf
 import torch
 import torch.nn
 import torch.nn.functional
@@ -26,7 +27,7 @@ class _Highway(torch.nn.Module):
     def __init__(self, hidden_size: int):
         super().__init__()
         self.highway = torch.nn.Linear(hidden_size, hidden_size * 2)
-        self.act = torch.nn.GELU()
+        self.act = cf.partial(torch.nn.GELU)()
 
     def __call__(self, tokens: torch.Tensor):
         return super().__call__(tokens)
@@ -50,7 +51,7 @@ class _Block(torch.nn.Module):
         super().__init__()
         self.conv_block = torch.nn.ModuleList(
             torch.nn.Sequential(
-                torch.nn.GELU(),
+                cf.partial(torch.nn.GELU)(),
                 torch.nn.Conv1d(
                     in_channels=hidden_size,
                     out_channels=hidden_size,
@@ -61,7 +62,7 @@ class _Block(torch.nn.Module):
             for _ in range(num_conv_layers)
         )
         conv_block_last_op = torch.nn.Sequential(
-            torch.nn.GELU(),
+            cf.partial(torch.nn.GELU)(),
             torch.nn.Conv1d(hidden_size, hidden_size, kernel_size=1),
         )
         self.conv_block.append(conv_block_last_op)
