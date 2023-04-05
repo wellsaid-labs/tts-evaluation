@@ -31,55 +31,33 @@ def configure(overwrite: bool = False):
     # NOTE: Configure the model sizes.
     config = {
         run._models.spectrogram_model.encoder.Encoder: cf.Args(
-            # NOTE: These are standard choices for embedding sizing and processing.
-            num_anno_layers=2,
-            token_meta_embed_size=128,
-            anno_embed_size=512,
-            # SOURCE (Tacotron 2):
-            # Input characters are represented using a learned 512-dimensional character embedding
-            # ...
-            # which are passed through a stack of 3 convolutional layers each containing
-            # 512 filters with shape 5 × 1, i.e., where each filter spans 5 characters
-            # ...
-            # The output of the final convolutional layer is passed into a single bi-directional
-            # [19] LSTM [20] layer containing 512 units (256) in each direction) to generate the
-            # encoded features.
-            hidden_size=512,
             # SOURCE (Tacotron 2):
             # which are passed through a stack of 3 convolutional layers each containing
             # 512 filters with shape 5 × 1, i.e., where each filter spans 5 characters
-            num_conv_layers=3,
-            conv_filter_size=5,
-            # SOURCE (Tacotron 2)
-            # The output of the final convolutional layer is passed into a single
-            # bi-directional [19] LSTM [20] layer containing 512 units (256) in each
-            # direction) to generate the encoded features.
-            lstm_layers=2,
+            num_layers=4,
+            conv_filter_size=3,
+            num_conv_block_layers=2,
         ),
         run._models.spectrogram_model.attention.Attention: cf.Args(
             # SOURCE (Tacotron 2):
             # Location features are computed using 32 1-D convolution filters of length 31.
             conv_filter_size=9,
             # NOTE: The alignment between text and speech is monotonic; therefore, the attention
-            # progression should reflect that. The `window_length` ensures the progression is
+            # progression should reflect that. The `window_len` ensures the progression is
             # limited.
             # NOTE: Comet visualizes the metric "attention_std", and this metric represents the
             # number of characters the model is attending too at a time. That metric can be used
-            # to set the `window_length`.
-            window_length=9,
+            # to set the `window_len`.
+            window_len=9,
             # NOTE: This value was computed with a reference frame size of 4096, and it scales
             # linearly with frame size.
             avg_frames_per_token=1.45 * (4096 / _config.audio.FRAME_SIZE),
         ),
         run._models.spectrogram_model.decoder.Decoder: cf.Args(
             # SOURCE (Tacotron 2):
-            # The prediction from the previous time step is first passed through a small
-            # pre-net containing 2 fully connected layers of 256 hidden ReLU units.
-            pre_net_size=1024,
-            # SOURCE (Tacotron 2):
             # The prenet output and attention context vector are concatenated and
             # passed through a stack of 2 uni-directional LSTM layers with 1024 units.
-            lstm_hidden_size=1024,
+            hidden_size=1024,
         ),
         run._models.spectrogram_model.pre_net.PreNet: cf.Args(
             # SOURCE (Tacotron 2):
@@ -99,16 +77,19 @@ def configure(overwrite: bool = False):
             max_seq_vector_size=2,
             max_anno_vector_size=max_anno_vector_size,
             annos=annos,
-            # SOURCE (Transfer Learning from Speaker Verification to Multispeaker Text-To-Speech
-            #         Synthesis):
-            # The paper mentions their proposed model uses a 256 dimension embedding.
-            # NOTE: See https://github.com/wellsaid-labs/Text-to-Speech/pull/258 to learn more about
-            # this parameter.
-            seq_embed_size=150,
             # SOURCE (Tacotron 2):
             # Attention probabilities are computed after projecting inputs and location
             # features to 128-dimensional hidden representations.
-            attention_size=128,
+            # SOURCE (Tacotron 2):
+            # Input characters are represented using a learned 512-dimensional character embedding
+            # ...
+            # which are passed through a stack of 3 convolutional layers each containing
+            # 512 filters with shape 5 × 1, i.e., where each filter spans 5 characters
+            # ...
+            # The output of the final convolutional layer is passed into a single bi-directional
+            # [19] LSTM [20] layer containing 512 units (256) in each direction) to generate the
+            # encoded features.
+            encoder_hidden_size=512,
         ),
         run._models.signal_model.wrapper.SignalModelWrapper: cf.Args(
             max_speakers=max_speakers,
@@ -129,15 +110,7 @@ def configure(overwrite: bool = False):
         # SOURCE (Tacotron 2):
         # In order to introduce output variation at inference time, dropout with probability 0.5 is
         # applied only to layers in the pre-net of the autoregressive decoder.
-        run._models.spectrogram_model.pre_net.PreNet: cf.Args(dropout=0.7),
-        run._models.spectrogram_model.attention.Attention: cf.Args(dropout=0.1),
-        run._models.spectrogram_model.decoder.Decoder: cf.Args(
-            stop_net_dropout=0.5, stop_net_hidden_size=512
-        ),
-        # NOTE: This dropout approach proved effective in Comet in March 2020.
-        run._models.spectrogram_model.encoder.Encoder: cf.Args(
-            dropout=0.1, seq_meta_embed_dropout=0.1
-        ),
+        run._models.spectrogram_model.pre_net.PreNet: cf.Args(dropout=0.4),
     }
     cf.add(config, overwrite)
 
@@ -145,7 +118,7 @@ def configure(overwrite: bool = False):
         # NOTE: Window size smoothing parameter is not sensitive.
         lib.optimizers.AdaptiveGradientNormClipper: cf.Args(window_size=128, norm_type=2),
         # NOTE: The `beta` parameter is not sensitive.
-        lib.optimizers.ExponentialMovingParameterAverage: cf.Args(beta=0.9999),
+        lib.optimizers.ExponentialMovingParameterAverage: cf.Args(beta=0.999),
         run._models.signal_model.wrapper.SignalModelWrapper: cf.Args(
             # SOURCE https://en.wikipedia.org/wiki/%CE%9C-law_algorithm:
             # For a given input x, the equation for μ-law encoding is where μ = 255 in the North
@@ -162,5 +135,6 @@ def configure(overwrite: bool = False):
         # NOTE: BERT uses `eps=1e-12` for `LayerNorm`, see here:
         # https://github.com/huggingface/transformers/blob/master/src/transformers/configuration_bert.py
         torch.nn.LayerNorm: cf.Args(eps=1e-12),
+        torch.nn.GELU: cf.Args(approximate="tanh"),
     }
     cf.add(config, overwrite)

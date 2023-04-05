@@ -304,24 +304,21 @@ def _visualize_source_vs_target(args: _HandleBatchArgs, preds: Preds):
     if not is_master():
         return
 
-    item = random.randint(0, len(args.batch) - 1)
-    spectrogram_length = int(args.batch.spectrogram.lengths[0, item].item())
-    text_length = int(preds.num_tokens[item].item())
+    idx = random.randint(0, len(args.batch) - 1)
+    item = preds[idx]
 
     # predicted_spectrogram, gold_spectrogram [num_frames, frame_channels]
-    predicted_spectrogram = preds.frames[:spectrogram_length, item]
-    gold_spectrogram = args.batch.spectrogram.tensor[:spectrogram_length, item]
+    spectrogram_length = int(args.batch.spectrogram.lengths[0, idx].item())
+    gold_spectrogram = args.batch.spectrogram.tensor[:spectrogram_length, idx]
+    predicted_delta = abs(gold_spectrogram - item.frames)
 
-    predicted_delta = abs(gold_spectrogram - predicted_spectrogram)
-    predicted_alignments = preds.alignments[:spectrogram_length, item, :text_length]
-    predicted_stop_token = preds.stop_tokens[:spectrogram_length, item]
     model = partial(get_model_label, cadence=args.cadence)
     dataset = partial(get_dataset_label, cadence=args.cadence, type_=args.dataset_type)
     figures = {
         model("spectrogram_delta"): plot_mel_spectrogram(predicted_delta, **cf.get()),
-        model("predicted_spectrogram"): plot_mel_spectrogram(predicted_spectrogram, **cf.get()),
-        model("alignment"): plot_alignments(predicted_alignments),
-        model("stop_token"): plot_logits(predicted_stop_token),
+        model("predicted_spectrogram"): plot_mel_spectrogram(item.frames, **cf.get()),
+        model("alignment"): plot_alignments(item.alignments),
+        model("stop_token"): plot_logits(item.stop_tokens),
         dataset("gold_spectrogram"): plot_mel_spectrogram(gold_spectrogram, **cf.get()),
     }
     args.state.comet.log_figures(figures)
@@ -358,6 +355,8 @@ def _run_step(
         stop_token_loss_multiplier: A callable to determine the stop token multiplier based on the
             step.
     """
+    model = typing.cast(SpectrogramModel, args.state.model.module)
+
     args.timer.record_event(args.timer.MODEL_FORWARD)
     preds = args.state.model(
         inputs=args.batch.processed,
@@ -403,6 +402,7 @@ def _run_step(
         args.timer.record_event(args.timer.MODEL_STEP)
         # NOTE: `optimizer` will not error if there are no gradients so we check beforehand.
         assert all([p.grad is not None for p in params]), "`None` gradients found."
+
         # NOTE: Measure the "grad_norm" before `clipper.clip()`.
         norm_inf = get_parameter_norm(params, math.inf) if is_master() else torch.tensor(math.nan)
         assert not is_master() or torch.isfinite(norm_inf), f"Gradient was too large {norm_inf}."
@@ -425,7 +425,6 @@ def _run_step(
         _visualize_source_vs_target(args, preds)
 
     args.timer.record_event(args.timer.MEASURE_METRICS)
-    model = typing.cast(SpectrogramModel, args.state.model.module)
     values: MetricsValues = {
         **args.metrics.get_dataset_values(args.batch, preds),
         **args.metrics.get_alignment_values(args.batch, preds),
@@ -447,42 +446,37 @@ def _visualize_inferred(args: _HandleBatchArgs, preds: Preds):
     if not is_master():
         return
 
-    item = random.randint(0, len(args.batch) - 1)
-    num_frames = int(args.batch.spectrogram.lengths[0, item].item())
-    num_frames_predicted = int(preds.num_frames[item].item())
-    text_length = int(preds.num_tokens[item].item())
-    # gold_spectrogram [num_frames, frame_channels]
-    gold_spectrogram = args.batch.spectrogram.tensor[:num_frames, item]
-    # spectrogram [num_frames, frame_channels]
-    predicted_spectrogram = preds.frames[:num_frames_predicted, item]
-    predicted_alignments = preds.alignments[:num_frames_predicted, item, :text_length]
-    predicted_stop_token = preds.stop_tokens[:num_frames_predicted, item]
+    idx = random.randint(0, len(args.batch) - 1)
+    item = preds[idx]
 
+    # gold_spectrogram [num_frames, frame_channels]
+    num_frames = int(args.batch.spectrogram.lengths[0, idx].item())
+    gold_spectrogram = args.batch.spectrogram.tensor[:num_frames, idx]
     model = lambda n: get_model_label(n, cadence=args.cadence)
     dataset = lambda n: get_dataset_label(n, cadence=args.cadence, type_=args.dataset_type)
     _plot_mel_spectrogram = cf.partial(plot_mel_spectrogram)
     figures = (
         (dataset("gold_spectrogram"), _plot_mel_spectrogram, gold_spectrogram),
-        (model("predicted_spectrogram"), _plot_mel_spectrogram, predicted_spectrogram),
-        (model("alignment"), plot_alignments, predicted_alignments),
-        (model("stop_token"), plot_logits, predicted_stop_token),
+        (model("predicted_spectrogram"), _plot_mel_spectrogram, item.frames),
+        (model("alignment"), plot_alignments, item.alignments),
+        (model("stop_token"), plot_logits, item.stop_tokens),
     )
     assets = args.state.comet.log_figures({l: v(n) for l, v, n in figures})
     audio = {
-        "predicted_griffin_lim_audio": griffin_lim(predicted_spectrogram.cpu().numpy(), **cf.get()),
+        "predicted_griffin_lim_audio": griffin_lim(item.frames.cpu().numpy(), **cf.get()),
         "gold_griffin_lim_audio": griffin_lim(gold_spectrogram.cpu().numpy(), **cf.get()),
-        "gold_audio": args.batch.audio[item].cpu().numpy(),
+        "gold_audio": args.batch.audio[idx].cpu().numpy(),
     }
     log_npy = args.state.comet.log_npy
-    npy_urls = {f"{l} Array": log_npy(l, args.batch.spans[item].speaker, a) for l, _, a in figures}
+    npy_urls = {f"{l} Array": log_npy(l, args.batch.spans[idx].speaker, a) for l, _, a in figures}
     link = lambda h: "Failed to upload." if h is None else f'<a href="{h}">{h}</a>'
     args.state.comet.log_html_audio(
         audio=audio,
         context=args.state.comet.context,
-        text=args.batch.spans[item].script,
-        xml=args.batch.xmls[item],
-        session=args.batch.spans[item].session,
-        predicted_loudness=get_average_db_rms_level(predicted_spectrogram.unsqueeze(1)).item(),
+        text=args.batch.spans[idx].script,
+        xml=args.batch.xmls[idx],
+        session=args.batch.spans[idx].session,
+        predicted_loudness=get_average_db_rms_level(item.frames.unsqueeze(1)).item(),
         gold_loudness=get_average_db_rms_level(gold_spectrogram.unsqueeze(1)).item(),
         **{f"_{k} Figure": link(v) for k, v in assets.items()},
         **{f"_{k}": link(v) for k, v in npy_urls.items()},
@@ -590,24 +584,6 @@ def _run_steps(
         metrics.log(is_verbose=is_verbose, type_=dataset_type, cadence=Cadence.MULTI_STEP)
         if Context.TRAIN == context:
             _log_vocab(state, dataset_type)
-
-
-def exclude_from_decay(
-    param_name: str, param: torch.nn.parameter.Parameter, module: torch.nn.Module
-) -> bool:
-    """
-    NOTE: Learn more about removing regularization from bias terms or `LayerNorm`:
-    https://stats.stackexchange.com/questions/153605/no-regularisation-term-for-bias-unit-in-neural-network/153650
-    https://github.com/huggingface/transformers/issues/4360
-    https://discuss.pytorch.org/t/weight-decay-in-the-optimizers-is-a-bad-idea-especially-with-batchnorm/16994
-
-    Args:
-        param_name: The parameter name as returned by `torch.nn.Module.named_parameters`.
-        param: The parameter name as returned by `torch.nn.Module.parameters`.
-        module: The parent module for this parameter.
-    """
-    deny_list = (torch.nn.modules.normalization.LayerNorm,)
-    return ".bias" in param_name or any(isinstance(module, m) for m in deny_list)
 
 
 def run_worker(

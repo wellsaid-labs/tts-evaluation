@@ -5,6 +5,7 @@ import config as cf
 import pytest
 
 from run._config import Cadence, DatasetType, config_spec_model_training_from_datasets
+from run._config.train import exclude_from_decay
 from run._models.spectrogram_model import SpectrogramModel
 from run.data._loader.english.m_ailabs import JUDY_BIEBER
 from run.train._utils import Context, Timer, set_context
@@ -15,7 +16,6 @@ from run.train.spectrogram_model._worker import (
     _log_vocab,
     _run_inference,
     _run_step,
-    exclude_from_decay,
 )
 from tests.run._utils import make_spec_worker_state, mock_distributed_data_parallel
 from tests.run.train._utils import setup_experiment
@@ -56,9 +56,9 @@ def test_integration():
     assert len(no_decay) == len(groups[0]["params"])
     assert groups[0]["weight_decay"] == 0.0
     assert len(decay) == len(groups[1]["params"])
-    assert "encoder.lstm_norm.weight" in no_decay
-    assert "decoder.linear_stop_token.1.bias" in no_decay
-    assert "encoder.norm_layers.0.weight" in no_decay
+    assert "decoder.linear_stop_token.0.bias" in no_decay
+    assert "decoder.linear_out.0.weight" in no_decay
+    assert "decoder.pre_net.out.1.weight" in no_decay
 
     # Test `_run_step` with `Metrics` and `_State`
     with set_context(Context.TRAIN, comet, state.model):
