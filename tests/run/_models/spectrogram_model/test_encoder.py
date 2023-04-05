@@ -28,7 +28,6 @@ def _make_encoder(
     context=3,
     num_token_meta=1,
     max_frames_per_token=4.5,
-    dropout=0.1,
 ):
     """Make `encoder.Encoder` and it's inputs for testing."""
     annos = ("anno_embed", "anno_mask")
@@ -50,7 +49,6 @@ def _make_encoder(
         hidden_size=hidden_size,
         num_layers=num_layers,
         conv_filter_size=conv_filter_size,
-        dropout=dropout,
     )
 
     # NOTE: Ensure modules like `LayerNorm` perturbs the input instead of being just an identity.
@@ -86,7 +84,10 @@ def test_encoder():
     encoded = module(arg)
 
     assert encoded.tokens.dtype == torch.float
-    assert encoded.tokens.shape == (num_tokens, batch_size, hidden_size)
+    assert encoded.tokens.shape == (batch_size, num_tokens, hidden_size)
+
+    assert encoded.token_keys.dtype == torch.float
+    assert encoded.token_keys.shape == (batch_size, hidden_size, num_tokens)
 
     assert encoded.tokens_mask.dtype == torch.bool
     assert encoded.tokens_mask.shape == (batch_size, num_tokens)
@@ -94,8 +95,9 @@ def test_encoder():
     assert encoded.num_tokens.dtype == torch.long
     assert encoded.num_tokens.shape == (batch_size,)
 
-    mask_ = ~encoded.tokens_mask.transpose(0, 1).unsqueeze(-1)
-    assert encoded.tokens.masked_select(mask_).sum() == 0
+    mask_ = ~encoded.tokens_mask
+    assert encoded.tokens.masked_select(mask_.unsqueeze(2)).sum() == 0
+    assert encoded.token_keys.masked_select(mask_.unsqueeze(1)).sum() == 0
     assert torch.equal(encoded.tokens_mask.sum(dim=1), encoded.num_tokens)
     assert encoded.num_tokens.tolist(), [len(t) for t in arg.tokens]
 
@@ -108,7 +110,8 @@ def test_encoder__filter_size():
         kwargs = dict(conv_filter_size=filter_size)
         module, arg, (num_tokens, batch_size, hidden_size) = _make_encoder(**kwargs)
         encoded = module(arg)
-        assert encoded.tokens.shape == (num_tokens, batch_size, hidden_size)
+        assert encoded.tokens.shape == (batch_size, num_tokens, hidden_size)
+        assert encoded.token_keys.shape == (batch_size, hidden_size, num_tokens)
         assert encoded.tokens_mask.shape == (batch_size, num_tokens)
         assert encoded.num_tokens.shape == (batch_size,)
         encoded.tokens.sum().backward()
@@ -116,7 +119,7 @@ def test_encoder__filter_size():
 
 def test_encoder__padding_invariance():
     """Test `encoder.Encoder` is consistent regardless of the padding."""
-    module, arg, (_, batch_size, _) = _make_encoder(dropout=0)
+    module, arg, (_, batch_size, _) = _make_encoder()
     expected = module(arg)
     expected.tokens.sum().backward()
     expected_grad = [p.grad for p in module.parameters() if p.grad is not None]

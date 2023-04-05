@@ -60,11 +60,10 @@ class SpectrogramModel(torch.nn.Module):
         attn_size: The size of the attention hidden state.
         num_frame_channels: Number of channels in each frame (sometimes refered to as
             "Mel-frequency bins" or "FFT bins" or "FFT bands").
-        output_min: The output of this model is clamped by this value.
         output_scalar: The output of this model is scaled up by this value.
-        stop_threshold: If the stop probability exceeds this value, this model stops generating
-            frames.
+        stop_threshold: If the stop probability exceeds this value, this model stops generation.
         stop_token_eps: The stop probability assigned to the initial frames.
+        clamp_output: If to clamp the output at a the maximum and minimum values seen before.
     """
 
     def __init__(
@@ -79,15 +78,24 @@ class SpectrogramModel(torch.nn.Module):
         encoder_hidden_size: int,
         num_frame_channels: int,
         output_scalar: float,
-        output_min: float,
         stop_threshold: float,
         stop_token_eps: float = 1e-10,
+        clamp_output: bool = True,
     ):
         super().__init__()
+
+        self.grad_enabled = None
+        self.output_min: torch.Tensor
+        self.output_max: torch.Tensor
+        self.output_scalar: torch.Tensor
+        self.stop_token_eps: torch.Tensor
+
         self.num_frame_channels = num_frame_channels
         self.stop_threshold = stop_threshold
         self.max_tokens = max_tokens
-        self.encoder = encoder.Encoder(
+        self.clamp_output = clamp_output
+
+        self.encoder = cf.partial(encoder.Encoder)(
             max_tokens=max_tokens,
             max_token_meta_vals=max_token_meta_vals,
             max_word_vector_size=max_word_vector_size,
@@ -96,17 +104,17 @@ class SpectrogramModel(torch.nn.Module):
             annos=annos,
             max_seq_meta_vals=max_seq_meta_vals,
             hidden_size=encoder_hidden_size,
-            **cf.get(),
         )
-        self.decoder = decoder.Decoder(
-            num_frame_channels=num_frame_channels, attn_size=encoder_hidden_size, **cf.get()
+
+        self.decoder = cf.partial(decoder.Decoder)(
+            num_frame_channels=num_frame_channels,
+            attn_size=encoder_hidden_size,
         )
-        self.output_min = output_min / output_scalar
-        self.output_scalar: torch.Tensor
+
+        self.register_buffer("output_min", torch.tensor([math.inf] * num_frame_channels))
+        self.register_buffer("output_max", torch.tensor([-math.inf] * num_frame_channels))
         self.register_buffer("output_scalar", torch.tensor(output_scalar).float())
-        self.stop_token_eps: torch.Tensor
         self.register_buffer("stop_token_eps", torch.logit(torch.tensor(stop_token_eps)))
-        self.grad_enabled = None
 
     def allow_unk_on_eval(self, val: bool):
         """If `True` then the "unknown token" may be used during evaluation, otherwise this will
@@ -128,8 +136,8 @@ class SpectrogramModel(torch.nn.Module):
         Returns:
             stop_token (torch.FloatTensor [num_frames (optional), batch_size])
         """
-        window_length = self.decoder.attn_rnn.attn.window_length
-        at_the_end = window_start >= num_tokens - window_length // 2 - 1
+        window_len = self.decoder.attn_rnn.attn.window_len
+        at_the_end = window_start >= num_tokens - window_len // 2 - 1
         return stop_token.masked_fill(~at_the_end, self.stop_token_eps)
 
     def _is_stop(
@@ -169,7 +177,7 @@ class SpectrogramModel(torch.nn.Module):
             split_size
             use_tqdm: Add a progress bar for non-batch generation.
         """
-        _, batch_size, _ = encoded.tokens.shape
+        batch_size, _, _ = encoded.tokens.shape
         device = encoded.tokens.device
         num_tokens = encoded.num_tokens
 
@@ -196,8 +204,10 @@ class SpectrogramModel(torch.nn.Module):
             )
 
             lengths[~stopped] += 1
+            if self.clamp_output:
+                frame = torch.min(frame, self.output_max.view(1, 1, -1))
+                frame = torch.max(frame, self.output_min.view(1, 1, -1))
             frame = frame.masked_fill(stopped.view(1, -1, 1), 0)
-            frame = torch.clamp(frame, min=self.output_min)
             hidden_state = hidden_state._replace(last_frame=frame)  # type: ignore
             reached_max = lengths == inputs.max_audio_len
             window_start = hidden_state.attn_rnn_hidden_state.attn_hidden_state.window_start
@@ -219,6 +229,7 @@ class SpectrogramModel(torch.nn.Module):
                     num_tokens=encoded.num_tokens,
                     tokens_mask=encoded.tokens_mask,
                     reached_max=reached_max,
+                    attn_win_len=self.decoder.attn_rnn.attn.window_len,
                 )
                 frames, stop_tokens, alignments = [], [], []
                 prev_lengths = lengths.clone()
@@ -250,24 +261,34 @@ class SpectrogramModel(torch.nn.Module):
         if target_mask is None:
             target_mask = torch.ones(*target_frames.shape[:2], device=target_frames.device)
         assert target_mask.shape[:2] == target_frames.shape[:2], "Shapes must align."
-        target_frames = target_frames / self.output_scalar
-        assert target_frames.min() >= self.output_min
+
+        with torch.no_grad():
+            target_frames = target_frames / self.output_scalar
+            self.output_min = torch.min(target_frames.min(dim=0)[0].min(dim=0)[0], self.output_min)
+            self.output_max = torch.max(target_frames.max(dim=0)[0].max(dim=0)[0], self.output_max)
+
         encoded = self.encoder(inputs)
         out = self.decoder(encoded, target_frames)
-        frames = out.frames.masked_fill(~target_mask.unsqueeze(2), 0)
-        frames = torch.clamp(frames, min=self.output_min) * self.output_scalar
+
+        frames = out.frames
+        if self.clamp_output:
+            frames = torch.min(frames, self.output_max.view(1, 1, -1))
+            frames = torch.max(frames, self.output_min.view(1, 1, -1))
+        frames = frames * self.output_scalar
+        frames = frames.masked_fill(~target_mask.unsqueeze(2), 0)
+
         num_tokens = encoded.num_tokens.unsqueeze(0)
-        stop_tokens = self._mask_stop_token(out.stop_tokens, num_tokens, out.window_starts)
         num_frames = target_mask.sum(dim=0)
         return Preds(
             frames=frames,
-            stop_tokens=stop_tokens,
+            stop_tokens=self._mask_stop_token(out.stop_tokens, num_tokens, out.window_starts),
             alignments=out.alignments,
             num_frames=target_mask.sum(dim=0),
             frames_mask=target_mask.transpose(0, 1),
             num_tokens=encoded.num_tokens,
             tokens_mask=encoded.tokens_mask,
             reached_max=num_frames >= inputs.max_audio_len,
+            attn_win_len=self.decoder.attn_rnn.attn.window_len,
         )
 
     def _generate(

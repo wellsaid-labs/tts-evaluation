@@ -34,25 +34,21 @@ def configure(overwrite: bool = False):
             # SOURCE (Tacotron 2):
             # which are passed through a stack of 3 convolutional layers each containing
             # 512 filters with shape 5 × 1, i.e., where each filter spans 5 characters
-            num_layers=2,
-            conv_filter_size=5,
-        ),
-        run._models.spectrogram_model.encoder._FeedForward: cf.Args(
-            # NOTE: Following LLaMA, we use 1536 for our feed forward layers, see more here:
-            # https://github.com/facebookresearch/llama. This is 3x larger than the input size.
-            in_size_mult=3,
+            num_layers=4,
+            conv_filter_size=3,
+            num_conv_block_layers=2,
         ),
         run._models.spectrogram_model.attention.Attention: cf.Args(
             # SOURCE (Tacotron 2):
             # Location features are computed using 32 1-D convolution filters of length 31.
             conv_filter_size=9,
             # NOTE: The alignment between text and speech is monotonic; therefore, the attention
-            # progression should reflect that. The `window_length` ensures the progression is
+            # progression should reflect that. The `window_len` ensures the progression is
             # limited.
             # NOTE: Comet visualizes the metric "attention_std", and this metric represents the
             # number of characters the model is attending too at a time. That metric can be used
-            # to set the `window_length`.
-            window_length=9,
+            # to set the `window_len`.
+            window_len=9,
             # NOTE: This value was computed with a reference frame size of 4096, and it scales
             # linearly with frame size.
             avg_frames_per_token=1.45 * (4096 / _config.audio.FRAME_SIZE),
@@ -114,9 +110,7 @@ def configure(overwrite: bool = False):
         # SOURCE (Tacotron 2):
         # In order to introduce output variation at inference time, dropout with probability 0.5 is
         # applied only to layers in the pre-net of the autoregressive decoder.
-        run._models.spectrogram_model.encoder.Encoder: cf.Args(dropout=0.1),
         run._models.spectrogram_model.pre_net.PreNet: cf.Args(dropout=0.4),
-        run._models.spectrogram_model.decoder.Decoder: cf.Args(stop_net_dropout=0.5),
     }
     cf.add(config, overwrite)
 
@@ -124,7 +118,7 @@ def configure(overwrite: bool = False):
         # NOTE: Window size smoothing parameter is not sensitive.
         lib.optimizers.AdaptiveGradientNormClipper: cf.Args(window_size=128, norm_type=2),
         # NOTE: The `beta` parameter is not sensitive.
-        lib.optimizers.ExponentialMovingParameterAverage: cf.Args(beta=0.9999),
+        lib.optimizers.ExponentialMovingParameterAverage: cf.Args(beta=0.999),
         run._models.signal_model.wrapper.SignalModelWrapper: cf.Args(
             # SOURCE https://en.wikipedia.org/wiki/%CE%9C-law_algorithm:
             # For a given input x, the equation for μ-law encoding is where μ = 255 in the North
@@ -141,5 +135,6 @@ def configure(overwrite: bool = False):
         # NOTE: BERT uses `eps=1e-12` for `LayerNorm`, see here:
         # https://github.com/huggingface/transformers/blob/master/src/transformers/configuration_bert.py
         torch.nn.LayerNorm: cf.Args(eps=1e-12),
+        torch.nn.GELU: cf.Args(approximate="tanh"),
     }
     cf.add(config, overwrite)

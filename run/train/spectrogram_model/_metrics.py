@@ -187,8 +187,7 @@ def get_alignment_norm(preds: Preds) -> torch.Tensor:
     Returns:
         torch.FloatTensor [batch_size]
     """
-    alignments = preds.alignments.masked_fill(~preds.tokens_mask.unsqueeze(0), 0)
-    alignments = alignments.norm(dim=2, p=math.inf)  # type: ignore
+    alignments = preds.alignments.norm(dim=2, p=math.inf)  # type: ignore
     alignments = alignments.masked_fill(~preds.frames_mask.transpose(0, 1), 0)
     return alignments.sum(dim=0)
 
@@ -200,8 +199,7 @@ def get_alignment_std(preds: Preds) -> torch.Tensor:
     Returns:
         torch.FloatTensor [batch_size]
     """
-    alignments = preds.alignments.masked_fill(~preds.tokens_mask.unsqueeze(0), 0)
-    alignments = lib.utils.get_weighted_std(alignments, dim=2)
+    alignments = lib.utils.get_weighted_std(preds.alignments, dim=2, strict=True)
     alignments = alignments.masked_fill(~preds.frames_mask.transpose(0, 1), 0)
     return alignments.sum(dim=0)
 
