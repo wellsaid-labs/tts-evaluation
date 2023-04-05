@@ -33,11 +33,11 @@ def _get_spec_model_training_configs(train_dataset: Dataset, dev_dataset: Datase
     """Get configurations for various values like batch size and steps per epoch using the train
     and dev datasets."""
     ratio = _get_ratio(train_dataset, dev_dataset)
-    train_batch_size = 28 if debug else 56
-    batch_size_ratio = 4
+    train_batch_size = 32 if debug else 128
+    batch_size_ratio = 2
     dev_batch_size = train_batch_size * batch_size_ratio
     dev_steps_per_epoch = 1 if debug else 64
-    oversample = 3
+    oversample = 5
     train_steps_per_epoch = int(round(dev_steps_per_epoch * batch_size_ratio * ratio * oversample))
     train_steps_per_epoch = 1 if debug else train_steps_per_epoch
     assert train_batch_size % lib.distributed.get_device_count() == 0
@@ -61,7 +61,11 @@ def exclude_from_decay(
         module: The parent module for this parameter.
     """
     deny_list = (torch.nn.modules.normalization.LayerNorm,)
-    return ".bias" in param_name or any(isinstance(module, m) for m in deny_list)
+    return (
+        ".bias" in param_name
+        or "decoder.linear_out" in param_name
+        or any(isinstance(module, m) for m in deny_list)
+    )
 
 
 def _config_spec_model_training(
@@ -139,8 +143,8 @@ def _config_spec_model_training(
         # improvement on the loudness and pausing of the model.
         torch.optim.AdamW: cf.Args(
             eps=10**-6,
-            weight_decay=0.04,
-            lr=5e-4,
+            weight_decay=0.1,
+            lr=1e-3,
             amsgrad=False,
             betas=(0.9, 0.999),
         ),

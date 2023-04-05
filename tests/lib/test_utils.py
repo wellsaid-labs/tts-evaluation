@@ -164,16 +164,19 @@ def test_get_weighted_std():
     tensor = torch.tensor(
         [[[0.3333333, 0.3333333, 0.3333334], [0, 0.5, 0.5]], [[0, 0.5, 0.5], [0, 0.5, 0.5]]]
     )
-    assert_almost_equal(
-        lib.utils.get_weighted_std(tensor, dim=2),
-        torch.tensor([[0.8164966106414795, 0.50], [0.50, 0.50]]),
-    )
+    expected = torch.tensor([[0.8164966106414795, 0.50], [0.50, 0.50]])
+    assert_almost_equal(lib.utils.get_weighted_std(tensor, dim=2), expected)
 
 
 def test_get_weighted_std__one_data_point():
     """Test `lib.utils.get_weighted_std` computes the correct standard deviation for one data
     point."""
     assert lib.utils.get_weighted_std(torch.tensor([0, 1, 0]), dim=0) == torch.zeros(1)
+
+
+def test_get_weighted_std__no_data_points():
+    """Test `lib.utils.get_weighted_std` returns NaN if zeros are passed."""
+    assert torch.isnan(lib.utils.get_weighted_std(torch.tensor([0, 0, 0]), dim=0))
 
 
 def test_get_weighted_std__zero_elements():

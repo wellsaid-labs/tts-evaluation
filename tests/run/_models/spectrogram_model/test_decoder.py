@@ -14,47 +14,36 @@ from run._models.spectrogram_model.containers import (
 from run._models.spectrogram_model.decoder import Decoder
 
 
-def _make_decoder(
-    num_frame_channels=16,
-    seq_embed_size=8,
-    hidden_size=4,
-    attn_size=5,
-    stop_net_dropout=0.5,
-) -> Decoder:
+def _make_decoder(num_frame_channels=16, hidden_size=4, attn_size=5) -> Decoder:
     """Make `decoder.Decoder` for testing."""
     _config = {
         run._models.spectrogram_model.pre_net.PreNet: cf.Args(num_layers=1, dropout=0.5),
         run._models.spectrogram_model.attention.Attention: cf.Args(
             conv_filter_size=3,
-            dropout=0.1,
-            window_length=5,
+            window_len=5,
             avg_frames_per_token=1.0,
         ),
         run._models.spectrogram_model.decoder.Decoder: cf.Args(
-            hidden_size=hidden_size,
-            attn_size=attn_size,
-            stop_net_dropout=stop_net_dropout,
+            hidden_size=hidden_size, attn_size=attn_size
         ),
     }
     cf.add(_config, overwrite=True)
-    return cf.partial(Decoder)(
-        num_frame_channels=num_frame_channels,
-        seq_embed_size=seq_embed_size,
-    )
+    return cf.partial(Decoder)(num_frame_channels=num_frame_channels)
 
 
 def _make_encoded(
     module: Decoder, batch_size: int = 5, max_num_tokens: int = 6
 ) -> typing.Tuple[Encoded, typing.Tuple[int, int]]:
     """Make `Encoded` for testing."""
-    tokens = torch.randn(max_num_tokens, batch_size, module.attn_size)
+    tokens = torch.randn(batch_size, max_num_tokens, module.attn_size)
+    token_keys = torch.randn(batch_size, module.attn_size, max_num_tokens)
     num_tokens = [random.randint(1, max_num_tokens) for _ in range(batch_size)]
     num_tokens[-1] = max_num_tokens
     num_tokens = torch.tensor(num_tokens)
     tokens_mask = lengths_to_mask(num_tokens)
-    tokens = tokens * tokens_mask.transpose(0, 1).unsqueeze(-1)
-    seq_embed = torch.randn(batch_size, module.seq_embed_size)
-    encoded = Encoded(tokens, tokens_mask, num_tokens, seq_embed)
+    tokens = tokens * tokens_mask.unsqueeze(2)
+    token_keys = token_keys * tokens_mask.unsqueeze(1)
+    encoded = Encoded(tokens, token_keys, tokens_mask, num_tokens)
     return encoded, (batch_size, max_num_tokens)
 
 
@@ -73,8 +62,9 @@ def test_decoder():
         assert decoded.stop_tokens.dtype == torch.float
         assert decoded.stop_tokens.shape == (1, batch_size)
 
+        window_len = module.attn_rnn.attn.window_len
         assert decoded.alignments.dtype == torch.float
-        assert decoded.alignments.shape == (1, batch_size, num_tokens)
+        assert decoded.alignments.shape == (1, batch_size, num_tokens + window_len - 1)
 
         assert decoded.window_starts.dtype == torch.long
         assert decoded.window_starts.shape == (1, batch_size)
@@ -112,8 +102,9 @@ def test_decoder__target():
     assert decoded.stop_tokens.dtype == torch.float
     assert decoded.stop_tokens.shape == (num_frames, batch_size)
 
+    window_len = module.attn_rnn.attn.window_len
     assert decoded.alignments.dtype == torch.float
-    assert decoded.alignments.shape == (num_frames, batch_size, num_tokens)
+    assert decoded.alignments.shape == (num_frames, batch_size, num_tokens + window_len - 1)
 
     assert decoded.window_starts.dtype == torch.long
     assert decoded.window_starts.shape == (num_frames, batch_size)
@@ -135,29 +126,66 @@ def test_decoder__pad_encoded():
     """Test `decoder.Decoder` pads encoded correctly."""
     module = _make_decoder()
     encoded, (batch_size, num_tokens) = _make_encoded(module)
-    window_length = module.attn_rnn.attn.window_length - 1
+    pad_len = 2
     attn_size = module.attn_size
     beg_pad_token = torch.rand(batch_size, module.attn_size)
+    beg_pad_key = torch.rand(batch_size, module.attn_size)
     end_pad_token = torch.rand(batch_size, module.attn_size)
-    padded = module._pad_encoded(encoded, beg_pad_token, end_pad_token)
+    end_pad_key = torch.rand(batch_size, module.attn_size)
+    padded = module._pad_encoded(
+        pad_len, encoded, beg_pad_token, beg_pad_key, end_pad_token, end_pad_key
+    )
 
     assert padded.tokens.dtype == torch.float
-    assert padded.tokens.shape == (num_tokens + window_length, batch_size, attn_size)
+    assert padded.tokens.shape == (batch_size, num_tokens + pad_len * 2, attn_size)
+
+    assert padded.token_keys.dtype == torch.float
+    assert padded.token_keys.shape == (batch_size, attn_size, num_tokens + pad_len * 2)
 
     assert padded.tokens_mask.dtype == torch.bool
-    assert padded.tokens_mask.shape == (batch_size, num_tokens + window_length)
+    assert padded.tokens_mask.shape == (batch_size, num_tokens + pad_len * 2)
 
     assert padded.num_tokens.dtype == torch.long
     assert padded.num_tokens.shape == (batch_size,)
 
-    pad = window_length // 2
-    for i in range(pad):
-        arange = torch.arange(batch_size)
-        assert padded.tokens_mask[arange, i].all()
-        assert padded.tokens_mask[arange, encoded.num_tokens + i + pad].all()
-        assert torch.equal(padded.tokens[i, arange], beg_pad_token)
-        assert torch.equal(padded.tokens[encoded.num_tokens + i + pad, arange], end_pad_token)
+    for i in range(pad_len):
+        idx = torch.arange(batch_size)
+        assert padded.tokens_mask[idx, i].all()
+        assert padded.tokens_mask[idx, encoded.num_tokens + i + pad_len].all()
+        assert torch.equal(padded.tokens[idx, i], beg_pad_token)
+        assert torch.equal(padded.token_keys[idx, :, i], beg_pad_key)
+        assert torch.equal(padded.tokens[idx, encoded.num_tokens + i + pad_len], end_pad_token)
+        assert torch.equal(padded.token_keys[idx, :, encoded.num_tokens + i + pad_len], end_pad_key)
 
-    assert padded.tokens.masked_select(~padded.tokens_mask.transpose(0, 1).unsqueeze(-1)).sum() == 0
+    assert padded.tokens.masked_select(~padded.tokens_mask.unsqueeze(2)).sum() == 0
+    assert padded.token_keys.masked_select(~padded.tokens_mask.unsqueeze(1)).sum() == 0
     assert torch.equal(padded.tokens_mask.sum(dim=1), padded.num_tokens)
-    assert torch.equal(encoded.num_tokens + window_length, padded.num_tokens)
+    assert torch.equal(encoded.num_tokens + pad_len * 2, padded.num_tokens)
+
+
+def test_decoder__make_init_hidden_state__alignments():
+    """Test `decoder.Decoder` initializes alignment state correctly."""
+    module = _make_decoder()
+    encoded, (batch_size, num_tokens) = _make_encoded(module)
+    hidden_state = module._make_init_hidden_state(encoded)
+
+    atten_pad_len, window_len = module.atten_pad_len, module.atten_window_len
+
+    cum_alignment = hidden_state.attn_rnn_hidden_state.attn_hidden_state.cum_alignment
+    assert cum_alignment.dtype == torch.float
+    assert cum_alignment.shape == (batch_size, num_tokens + module.pad_len * 2)
+    assert cum_alignment[:, module.align_pad_len :].sum() == 0
+    assert cum_alignment[:, : module.align_pad_len].sum() != 0
+
+    max_alignment = hidden_state.attn_rnn_hidden_state.attn_hidden_state.max_alignment
+    assert max_alignment.dtype == torch.float
+    assert max_alignment.shape == (batch_size, num_tokens + module.pad_len * 2)
+    assert max_alignment[:, module.align_pad_len :].sum() == 0
+    assert max_alignment[:, : module.align_pad_len].sum() != 0
+
+    alignment = hidden_state.attn_rnn_hidden_state.attn_hidden_state.alignment
+    assert alignment.dtype == torch.float
+    assert alignment.shape == (batch_size, num_tokens + module.pad_len * 2)
+    assert alignment[:, : atten_pad_len - 1].sum() == 0
+    assert alignment[:, atten_pad_len - 1 + window_len :].sum() == 0
+    assert alignment[:, atten_pad_len - 1 : atten_pad_len - 1 + window_len].sum() != 0
