@@ -173,7 +173,7 @@ def _get_tempo_annotation(text: str, audio_len: float, bucket_size: float):
         bucket_size: The bucket size for rounding in seconds.
     """
     avg = run._config.lang.get_avg_audio_length(text)
-    return lib.utils.round_(audio_len / avg, bucket_size)
+    return lib.utils.round_(avg / audio_len, bucket_size)
 
 
 def _get_loudness_annotation(
