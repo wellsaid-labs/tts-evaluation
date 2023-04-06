@@ -36,7 +36,7 @@ from run.train.spectrogram_model._worker import Checkpoint
 st.set_page_config(layout="wide")
 
 
-@st.experimental_singleton()
+@st.cache_resource()
 def _make_examples(spec_path, num_samples, include_dic):
     """Make examples and cache results."""
     with st.spinner("Loading and exporting model(s)..."):

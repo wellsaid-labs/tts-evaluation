@@ -29,6 +29,7 @@ from run.data._loader.structures import (
     _maybe_normalize_vo_script,
     _process_sessions,
     _remove_ambiguous_abbrev,
+    _strip_unvoiced,
     has_a_mistranscription,
     make_passages,
 )
@@ -573,6 +574,29 @@ def test_has_a_mistranscription__span():
     assert has_a_mistranscription(passages[0][1:])
     assert has_a_mistranscription(passages[1][:])
     assert not has_a_mistranscription(passages[1][1:])
+
+
+def test__strip_unvoiced():
+    """Test `_strip_unvoiced` strips punctuation from text."""
+    text = "...hi..."
+    stripped = _strip_unvoiced(text, (0, len(text)), language=Language.ENGLISH)
+    assert stripped == (len("..."), len("...hi"))
+
+    text = "hi..."
+    stripped = _strip_unvoiced(text, (0, len(text)), language=Language.ENGLISH)
+    assert stripped == (0, len("hi"))
+
+    text = "...hi"
+    stripped = _strip_unvoiced(text, (0, len(text)), language=Language.ENGLISH)
+    assert stripped == (len("..."), len("...hi"))
+
+    text = "..."
+    stripped = _strip_unvoiced(text, (0, len(text)), language=Language.ENGLISH)
+    assert stripped == (0, 0)
+
+    text = ""
+    stripped = _strip_unvoiced(text, (0, len(text)), language=Language.ENGLISH)
+    assert stripped == (0, 0)
 
 
 def test_spacy_context():

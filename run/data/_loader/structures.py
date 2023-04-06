@@ -113,6 +113,16 @@ def has_a_mistranscription(span: typing.Union[Passage, Span]) -> bool:
     return any(_is_alignment_voiced(p, a) for p, s in slices for a in p.nonalignments[s])
 
 
+def _strip_unvoiced(text: str, align: IntInt, **kwargs) -> IntInt:
+    """Get an alignment stripped of any unvoiced characters at either end."""
+    updated = [align[0], align[1]]
+    while updated[1] > updated[0] and not run._config.is_voiced(text[updated[1] - 1], **kwargs):
+        updated[1] -= 1
+    while updated[0] < updated[1] and not run._config.is_voiced(text[updated[0]], **kwargs):
+        updated[0] += 1
+    return tuple(updated)
+
+
 _alignment_dtype = [
     ("script", np.dtype([("start", np.uint32), ("stop", np.uint32)])),
     ("audio", np.dtype([("start", np.float32), ("stop", np.float32)])),
@@ -728,6 +738,24 @@ class Span:
             for s in self.passage.speech_segments
             if s.script_slice.start >= self.script_slice.start
             and s.script_slice.stop <= self.script_slice.stop
+        ]
+
+    @property
+    def speech_segments_stripped(self) -> typing.List[Alignment]:
+        """Get speech segments like in `speech_segments` except any unvoiced characters are
+        stripped from either end.
+
+        NOTE: A speech segment starts and ends on speech, so any unvoiced characters are not
+        technically apart of the speech segment.
+        TODO: Should all speech segments be stripped?
+        """
+        return [
+            Alignment(
+                _strip_unvoiced(self.script, a.script, language=self.speaker.language),
+                a.audio,
+                _strip_unvoiced(self.transcript, a.transcript, language=self.speaker.language),
+            )
+            for a in self.speech_segments
         ]
 
     @property

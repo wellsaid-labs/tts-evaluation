@@ -36,7 +36,7 @@ st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 logger = logging.getLogger(__name__)
 
 
-@st.experimental_singleton()
+@st.cache_resource()
 def _get_unprocessed_dataset():
     dataset = cf.partial(get_unprocessed_dataset)()
     documents = [p for d in dataset.values() for p in d]
@@ -93,7 +93,7 @@ def _is_casing_ambiguous(script: str, transcript: str):
     return _is_stand_casing(script) != _is_stand_casing(transcript)
 
 
-@st.experimental_singleton()
+@st.cache_resource()
 def _get_alignments(
     _dataset: UnprocessedDataset,
     _metadatas: typing.Dict[pathlib.Path, AudioMetadata],

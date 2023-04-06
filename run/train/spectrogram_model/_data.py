@@ -104,7 +104,7 @@ def _get_loudness_annotation(
 def _random_loudness_annotations(span: Span, signal: numpy.ndarray, **kwargs) -> SliceAnnos:
     """Create random annotations that represent the loudness in `span.script`."""
     annotations: SliceAnnos = []
-    alignments = cf.partial(_random_nonoverlapping_alignments)(span.speech_segments)
+    alignments = cf.partial(_random_nonoverlapping_alignments)(span.speech_segments_stripped)
     for alignment in alignments:
         sample_rate = span.audio_file.sample_rate
         loudness_ = cf.call(_get_loudness_annotation, signal, sample_rate, alignment, **kwargs)
@@ -131,7 +131,7 @@ def _random_tempo_annotations(span: Span, **kwargs) -> SliceAnnos:
         span
     """
     annotations: SliceAnnos = []
-    alignments = cf.partial(_random_nonoverlapping_alignments)(span.speech_segments)
+    alignments = cf.partial(_random_nonoverlapping_alignments)(span.speech_segments_stripped)
     for alignment in alignments:
         annotation = cf.partial(_get_tempo_annotation)(span, alignment, **kwargs)
         annotations.append((alignment.script_slice, annotation))

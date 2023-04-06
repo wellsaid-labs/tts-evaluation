@@ -57,7 +57,7 @@ STREAMLIT_STATIC_TEMP_PATH = STREAMLIT_STATIC_PRIVATE_PATH / "temp"
 STREAMLIT_STATIC_SYMLINK_PATH = STREAMLIT_STATIC_PRIVATE_PATH / "symlink"
 
 
-@st.experimental_memo()
+@st.cache_data()
 def load_tts(checkpoints_key: str, **kwargs):
     return package_tts(*CHECKPOINTS_LOADERS[Checkpoints[checkpoints_key]](**kwargs))
 
@@ -67,11 +67,11 @@ WebPath = typing.NewType("WebPath", pathlib.Path)
 RelativeUrl = typing.NewType("RelativeUrl", str)
 
 
-@st.experimental_singleton()
+@st.cache_resource()
 def make_temp_root_dir():
     """Make a temporary directory accessible via HTTP in the streamlit app.
 
-    NOTE: With `experimental_singleton`, this function runs once per session.
+    NOTE: With `cache_resource`, this function runs once per session.
     """
     assert pathlib.Path(st.__file__).parent in STREAMLIT_STATIC_TEMP_PATH.parents
     if STREAMLIT_STATIC_TEMP_PATH.exists():
@@ -188,7 +188,7 @@ def map_(
         return list(iterator)
 
 
-@st.experimental_singleton()
+@st.cache_resource()
 def read_wave_audio(*args, **kwargs) -> np.ndarray:
     """Read audio slice, and cache."""
     return lib.audio.read_wave_audio(*args, **kwargs)
@@ -229,7 +229,7 @@ def clip_audio(audio: np.ndarray, span: Span, alignment: Alignment):
     return audio[start_:stop_]
 
 
-@st.experimental_singleton()
+@st.cache_resource()
 def get_dataset(speaker_labels: typing.FrozenSet[str]) -> Dataset:
     """Load dataset subset, and cache."""
     logger.info("Loading dataset...")
@@ -240,7 +240,7 @@ def get_dataset(speaker_labels: typing.FrozenSet[str]) -> Dataset:
     return dataset
 
 
-@st.experimental_singleton()
+@st.cache_resource()
 def get_datasets() -> typing.Tuple[Dataset, Dataset]:
     """Load train and dev dataset, and cache."""
     return run._utils.get_datasets(False)
@@ -251,7 +251,7 @@ def get_dev_dataset() -> Dataset:
     return get_datasets()[1]
 
 
-@st.experimental_singleton()
+@st.cache_resource()
 def get_spans(
     _train_dataset: Dataset,
     _dev_dataset: Dataset,
@@ -313,7 +313,7 @@ def _random_speech_segments(_train_dataset: Dataset):
             yield span
 
 
-@st.experimental_singleton()
+@st.cache_resource()
 def get_speech_segments(
     _train_dataset: Dataset, speaker: typing.Optional[Speaker], num_spans: int
 ) -> typing.Tuple[typing.List[Span], typing.List[np.ndarray]]:
@@ -329,7 +329,7 @@ def get_speech_segments(
     return spans, signals
 
 
-@st.experimental_singleton()
+@st.cache_resource()
 def fast_grapheme_to_phoneme(text: str):
     """Fast grapheme to phoneme, cached."""
     return lib.text.grapheme_to_phoneme([text], separator="|")[0]
@@ -394,7 +394,7 @@ def dataset_passages(dataset: Dataset) -> typing.Iterator[Passage]:
         yield from passages
 
 
-@st.experimental_singleton()
+@st.cache_resource()
 def load_en_core_web_md(*args, **kwargs):
     return lib.text.load_spacy_nlp("en_core_web_md", *args, **kwargs)
 

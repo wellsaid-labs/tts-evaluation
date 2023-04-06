@@ -299,7 +299,8 @@ def main():
     with st.spinner("Generating Annotations..."):
         with fork_rng(seed=random_seed):
             intervals = [
-                cf.partial(_random_nonoverlapping_alignments)(s.speech_segments) for s in spans
+                cf.partial(_random_nonoverlapping_alignments)(s.speech_segments_stripped)
+                for s in spans
             ]
 
     with st.spinner("Assembling data..."):
