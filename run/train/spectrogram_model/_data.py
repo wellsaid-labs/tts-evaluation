@@ -109,7 +109,7 @@ def _random_loudness_annotations(span: Span, signal: numpy.ndarray, **kwargs) ->
         sample_rate = span.audio_file.sample_rate
         loudness_ = cf.call(_get_loudness_annotation, signal, sample_rate, alignment, **kwargs)
         if loudness_ is not None:
-            annotations.append((alignment.script_slice, loudness_))
+            annotations.append((alignment.script_slice, loudness_ - span.session.loudness))
     return annotations
 
 
@@ -281,10 +281,47 @@ def _make_stop_token(spectrogram: SequenceBatch, length: int, standard_deviation
 
 
 @dataclasses.dataclass(frozen=True)
-class Batch(_utils.Batch):
-    """Batch of preprocessed `Span` used to training or evaluating the spectrogram model."""
+class InferBatch(_utils.Batch):
+    """Batch of preprocessed `Span` used to evaluate the spectrogram model."""
 
     spans: typing.List[Span]
+
+    xmls: typing.List[XMLType]
+
+    processed: PreprocessedInputs
+
+    inputs: typing.Optional[Inputs]
+
+    def __len__(self):
+        return len(self.spans)
+
+    def __getitem__(self, key: typing.Any):
+        if not isinstance(key, (slice, int)):
+            raise TypeError
+
+        # TODO: There are several instances of this pattern in the code. Could we rewrite this
+        # using conventional list objects? And/or create an object is able to represent both
+        # a batch and an individual item?
+        if isinstance(key, int):
+            self.spans[key]  # NOTE: Raise `IndexError` if needed.
+            key = slice(key, key + 1)
+
+        return InferBatch(
+            spans=self.spans[key],
+            xmls=self.xmls[key],
+            processed=self.processed[key],
+            inputs=None if self.inputs is None else self.inputs[key],
+        )
+
+    def apply(self, call: typing.Callable[[torch.Tensor], torch.Tensor]) -> "InferBatch":
+        batch: InferBatch = super().apply(call)
+        object.__setattr__(batch, "processed", batch.processed.apply(call))
+        return batch
+
+
+@dataclasses.dataclass(frozen=True)
+class Batch(InferBatch):
+    """Batch of preprocessed `Span` used to training the spectrogram model."""
 
     audio: typing.List[torch.Tensor]
 
@@ -299,10 +336,6 @@ class Batch(_utils.Batch):
     # SequenceBatch[torch.FloatTensor [num_frames, batch_size], torch.LongTensor [1, batch_size])
     stop_token: SequenceBatch
 
-    xmls: typing.List[XMLType]
-
-    processed: PreprocessedInputs
-
     @property
     def spec(self):
         return self.spectrogram
@@ -311,21 +344,30 @@ class Batch(_utils.Batch):
     def spec_mask(self):
         return self.spectrogram_mask
 
-    def apply(self, call: typing.Callable[[torch.Tensor], torch.Tensor]) -> "Batch":
-        batch: Batch = super().apply(call)
-        token_embed = batch.processed.token_embeddings_padded
-        set_ = object.__setattr__
-        set_(batch.processed, "token_embeddings_padded", call(token_embed))
-        set_(batch.processed, "num_tokens", call(batch.processed.num_tokens))
-        set_(batch.processed, "tokens_mask", call(batch.processed.tokens_mask))
-        set_(batch.processed, "max_audio_len_tensor", call(batch.processed.max_audio_len_tensor))
-        return batch
+    def __getitem__(self, key: typing.Any):
+        if not isinstance(key, (slice, int)):
+            raise TypeError
 
-    def __len__(self):
-        return len(self.spans)
+        # TODO: There are several instances of this pattern in the code. Could we rewrite this
+        # using conventional list objects? And/or create an object is able to represent both
+        # a batch and an individual item?
+        if isinstance(key, int):
+            self.spans[key]  # NOTE: Raise `IndexError` if needed.
+            key = slice(key, key + 1)
+
+        return Batch(
+            spans=self.spans[key],
+            audio=self.audio[key],
+            spectrogram=SequenceBatch(self.spec[0][:, key], self.spec[1][:, key]),
+            spectrogram_mask=SequenceBatch(self.spec_mask[0][:, key], self.spec_mask[1][:, key]),
+            stop_token=SequenceBatch(self.stop_token[0][:, key], self.stop_token[1][:, key]),
+            xmls=self.xmls[key],
+            processed=self.processed[key],
+            inputs=None if self.inputs is None else self.inputs[key],
+        )
 
 
-def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
+def make_batch(spans: typing.List[Span], max_workers: int = 6, add_inputs: bool = False) -> Batch:
     """
     NOTE: In Janurary 2020, this function profiled like so:
     - 27% for `_signals_to_spectrograms`
@@ -356,7 +398,7 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
     inputs = Inputs(
         session=[s.session for s in spans],
         span=[s.spacy for s in spans],
-        context=[cf.partial(s.spacy_context)() for s in spans],
+        context=[s.spacy for s in spans],
         loudness=[_random_loudness_annotations(s, a) for s, a in zip(spans, signals_)],
         tempo=[_random_tempo_annotations(s) for s in spans],
         respells=[cf.partial(_random_respelling_annotations)(s) for s in spans],
@@ -365,9 +407,6 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
     # `inputs` into XML.
     xmls = [inputs.to_xml(i, include_context=True) for i in range(len(inputs))]
     processed = cf.partial(preprocess)(inputs)
-    # NOTE: These tensors are not needed, and are taking up memory.
-    object.__setattr__(processed, "token_embeddings", None)
-
     return Batch(
         # NOTE: Prune unused attributes from `Passage` by creating a new `Passage`, in order to
         # reduce batch size, which in turn makes it easier to send to other processes, for example.
@@ -378,6 +417,8 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6) -> Batch:
         stop_token=cf.partial(_make_stop_token)(spectrogram),
         xmls=xmls,
         processed=processed,
+        # NOTE: `inputs` with spaCy objects can be intensive so pickle, so it's optional.
+        inputs=inputs if add_inputs else None,
     )
 
 

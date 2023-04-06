@@ -6,10 +6,10 @@ import pytest
 
 import lib
 from run._config import RESPELLING_DELIM
-from run.data._loader import Language, Session
+from run.data._loader import Language
 from run.data._loader.english.m_ailabs import JUDY_BIEBER
 from run.deploy.worker import FlaskException, validate_and_unpack
-from tests.run._utils import make_mock_tts_package
+from tests.run._utils import make_mock_tts_package, make_session
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ def test_flask_exception():
 
 def test_validate_and_unpack():
     """Test `validate_and_unpack` handles all sorts of arguments."""
-    sesh = Session(JUDY_BIEBER, "sesh")
+    sesh = make_session(JUDY_BIEBER, "sesh")
     script = "This is a exposé. ABC."
     _, package = make_mock_tts_package()
 
@@ -47,13 +47,13 @@ def test_validate_and_unpack():
 
     language_to_spacy = {Language.ENGLISH: lib.text.load_en_core_web_sm()}
     speaker_id = 0
-    speaker_id_to_session = {speaker_id: sesh}
+    spkr_id_to_sesh = {speaker_id: sesh}
     args = {"speaker_id": speaker_id, "text": script}
     validate_ = partial(
         validate_and_unpack,
         tts=package,
         language_to_spacy=language_to_spacy,
-        speaker_id_to_session=speaker_id_to_session,
+        spkr_id_to_sesh=spkr_id_to_sesh,
     )
 
     # TODO: Ensure the right message is printed.
@@ -83,7 +83,7 @@ def test_validate_and_unpack():
     with pytest.raises(FlaskException):  # `text` must be not empty
         validate_({**args, "text": ""})  # type: ignore
 
-    with pytest.raises(FlaskException):  # `speaker_id` must be in `speaker_id_to_session`
+    with pytest.raises(FlaskException):  # `speaker_id` must be in `spkr_id_to_sesh`
         validate_({**args, "speaker_id": 2**31})  # type: ignore
 
     with pytest.raises(FlaskException):  # `speaker_id` must be positive

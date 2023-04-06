@@ -12,9 +12,6 @@ from run._config import (
     config_sig_model_training_from_datasets,
     config_spec_model_training_from_datasets,
 )
-from run.data._loader.english.lj_speech import LINDA_JOHNSON
-from run.data._loader.english.m_ailabs import JUDY_BIEBER
-from run.data._loader.structures import Language
 from run.train._utils import Context, Timer, save_checkpoint, set_context
 from run.train.signal_model._metrics import Metrics
 from run.train.signal_model._worker import (
@@ -22,7 +19,7 @@ from run.train.signal_model._worker import (
     _HandleBatchArgs,
     _run_step,
     _visualize_inferred,
-    _visualize_select_cases,
+    _visualize_tts,
 )
 from tests.run._utils import make_spec_and_sig_worker_state, mock_distributed_data_parallel
 from tests.run.train._utils import setup_experiment
@@ -75,14 +72,7 @@ def test_integration():
     # Test inference visualizations
     with set_context(Context.EVALUATE_INFERENCE, comet, *state.models, ema=state.ema):
         _visualize_inferred(state, dev_loader, DatasetType.DEV)
-        _visualize_select_cases(
-            state,
-            DatasetType.TEST,
-            Cadence.MULTI_STEP,
-            cases=[(Language.ENGLISH, "Hi There")],
-            speakers={JUDY_BIEBER, LINDA_JOHNSON},
-            num_cases=1,
-        )
+        _visualize_tts(state, dev_loader, DatasetType.DEV)
 
     # Test loading and saving a checkpoint
     with mock.patch("run.train.signal_model._worker.DistributedDataParallel") as module:

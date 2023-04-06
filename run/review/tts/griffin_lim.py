@@ -30,14 +30,15 @@ def main():
     spec_export = spec_ckpt.export()
 
     format_speaker: typing.Callable[[Speaker], str] = lambda s: s.label
-    speakers = sorted(set(s[0] for s in spec_export.session_embed.get_vocab()))
+    speakers = sorted(set(s.spkr for s in spec_export.session_embed.get_vocab()))
     speaker = st.selectbox("Speaker", options=speakers, format_func=format_speaker)  # type: ignore
     speaker = typing.cast(Speaker, speaker)
     assert speaker.name is not None
 
     spk_sesh = spec_export.session_embed.get_vocab()
-    sessions = sorted([s for s in spk_sesh if s[0] == speaker], key=lambda s: natural_keys(s[1]))
-    session = st.selectbox("Session", options=sessions, format_func=lambda s: s[1])
+    sesh_sort_key: typing.Callable[[Session], typing.List] = lambda s: natural_keys(s.label)
+    sessions = sorted([s for s in spk_sesh if s.spkr == speaker], key=sesh_sort_key)
+    session = st.selectbox("Session", options=sessions, format_func=lambda s: s.label)
     session = typing.cast(Session, session)
 
     form = st.form(key="form")

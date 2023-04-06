@@ -42,6 +42,7 @@ from run._models.spectrogram_model import (
     preprocess,
 )
 from run.data._loader import Session, Span
+from run.train.spectrogram_model._data import InferBatch, make_batch
 
 logger = logging.getLogger(__name__)
 
@@ -100,8 +101,8 @@ class Checkpoints(enum.Enum):
 
     You can upload a new checkpoint, for example, like so:
 
-        $ gsutil -m cp -r disk/checkpoints/v11_2023_01_05_staging \
-                        gs://wellsaid_labs_checkpoints/v11_2023_01_05_staging
+        $ gsutil -m cp -r disk/checkpoints/v11_2023_03_06_staging \
+                        gs://wellsaid_labs_checkpoints/v11_2023_03_06_staging
     """
 
     """
@@ -115,6 +116,54 @@ class Checkpoints(enum.Enum):
     """
 
     V11_2023_01_05_STAGING: typing.Final = "v11_2023_01_05_staging"
+
+    """
+    These checkpoints were deployed into staging as version "11.beta.2".
+
+    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/473
+    Spectrogram Model Experiment (Step: 675,720):
+    https://www.comet.com/wellsaid-labs/v11-research-spectrogram/597e5ed553e0488e8382959f59e51ae8
+    Signal Model Experiment (Step: 625,041):
+    https://www.comet.com/wellsaid-labs/v11-research-signal/1be0f2d8cd03423888777b656e4543ad
+    """
+
+    V11_2023_01_12_STAGING: typing.Final = "v11_2023_01_12_staging"
+
+    """
+    These checkpoints were deployed into staging as version "11.beta.3".
+
+    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/496
+    Spectrogram Model Experiment (Step: 1,334,547):
+    https://www.comet.com/wellsaid-labs/v11-research-spectrogram/6e8d8d2d93954c5c9f34f360276cb098
+    Signal Model Experiment (Step: 242,133):
+    https://www.comet.com/wellsaid-labs/v11-research-signal/3b981f23e6c44e829ff59877e9a7ec95
+    """
+
+    V11_2023_03_01_STAGING: typing.Final = "v11_2023_03_01_staging"
+
+    """
+    These checkpoints were deployed into staging as version "11.beta.4".
+
+    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/496
+    Spectrogram Model Experiment (Step: 1,334,547):
+    https://www.comet.com/wellsaid-labs/v11-research-spectrogram/6e8d8d2d93954c5c9f34f360276cb098
+    Signal Model Experiment (Step: 281,550):
+    https://www.comet.com/wellsaid-labs/v11-research-signal/3b981f23e6c44e829ff59877e9a7ec95
+    """
+
+    V11_2023_03_01_STAGING_1: typing.Final = "v11_2023_03_01_staging_1"
+
+    """
+    These checkpoints were deployed into staging as version "11.beta.5".
+
+    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/496
+    Spectrogram Model Experiment (Step: 1,334,547):
+    https://www.comet.com/wellsaid-labs/v11-research-spectrogram/6e8d8d2d93954c5c9f34f360276cb098
+    Signal Model Experiment (Step: 788,340):
+    https://www.comet.com/wellsaid-labs/v11-research-signal/3b981f23e6c44e829ff59877e9a7ec95
+    """
+
+    V11_2023_03_06_STAGING: typing.Final = "v11_2023_03_06_staging"
 
 
 _GCS_PATH = "gs://wellsaid_labs_checkpoints/"
@@ -247,21 +296,15 @@ def basic_tts(
 
 
 class TTSResult(typing.NamedTuple):
-    """Text-to-speech input and output."""
+    """The inputs and corresponding predictions from running TTS."""
 
-    inputs: Inputs
+    inputs: InferBatch
     spec_model: Preds
     sig_model: numpy.ndarray
 
 
-def batch_span_to_speech(
-    package: TTSPackage, spans: typing.List[Span], **kwargs
-) -> typing.List[TTSResult]:
-    """
-    NOTE: This method doesn't consider `Span` context for TTS generation.
-    """
-    inputs = [(XMLType(s.script), s.session) for s in spans]
-    return batch_tts(package, inputs, **kwargs)
+TTSResults = typing.List[TTSResult]
+BatchGen = typing.Generator[typing.Tuple[InferBatch, typing.List[int]], None, None]
 
 
 def _process_input_batch(
@@ -286,30 +329,77 @@ def _process_input_batch(
     return list(zip(xmls, typing.cast(typing.List[spacy.tokens.doc.Doc], result), seshs))
 
 
-def batch_tts(
-    package: TTSPackage,
-    inputs: typing.List[typing.Tuple[XMLType, Session]],
-    batch_size: int = 8,
-) -> typing.List[TTSResult]:
-    """Run TTS end-to-end quickly with a verbose output."""
-    inputs_ = _process_input_batch(inputs)
-    inputs_ = sorted(enumerate(inputs_), key=lambda i: len(str(i[1][0])))
-    batches = list(get_chunks(inputs_, batch_size))
-    results: typing.Dict[int, TTSResult] = {}
-    logger.info(f"Processing {len(inputs)} examples with TTS models...")
+def make_batches(
+    inputs: typing.List[typing.Tuple[XMLType, Session]], batch_size: int = 8
+) -> BatchGen:
+    """Generate a sorted batch of inputs for batch TTS generation."""
+    processed: typing.List[typing.Tuple[XMLType, spacy.tokens.doc.Doc, Session]]
+    processed = _process_input_batch(inputs)
+    sorted_ = sorted(enumerate(processed), key=lambda i: len(str(i[1][0])))
+    batches = list(get_chunks(sorted_, batch_size))
     for batch in tqdm_(batches):
-        xmls, docs, seshs = zip(*[i[1] for i in batch])
+        xmls, docs = [b[1][0] for b in batch], [b[1][1] for b in batch]
+        seshs, indicies = [b[1][2] for b in batch], [i for i, _ in batch]
         batch_input = Inputs.from_xml_batch(xmls, docs, seshs)  # type: ignore
-        preds = package.spec_model(batch_input, mode=Mode.INFER)
-        spectrogram = preds.frames.transpose(0, 1)
-        signals = package.signal_model(spectrogram, batch_input.session, preds.frames_mask)
+        batch = InferBatch(
+            spans=docs,
+            xmls=xmls,
+            inputs=batch_input,
+            processed=cf.partial(preprocess)(batch_input),
+        )
+        yield batch, indicies
+
+
+def make_training_batches(spans: typing.List[Span], batch_size: int = 8) -> BatchGen:
+    """Generate a sorted batch of inputs for batch TTS generation with similar processing to
+    the training pipeline."""
+    spans_ = sorted(enumerate(spans), key=lambda s: s[1].audio_length)
+    batches = list(get_chunks(spans_, batch_size))
+    for batch in tqdm_(batches):
+        batch_ = make_batch([s for _, s in batch], add_inputs=True)
+        indicies = [i for i, _ in batch]
+        assert batch_.inputs is not None
+        yield batch_, indicies
+
+
+def batch_tts(package: TTSPackage, batch_gen: BatchGen) -> TTSResults:
+    """Run TTS on batches generated by `batch_gen`"""
+    results: typing.Dict[int, TTSResult] = {}
+    for batch, indicies in batch_gen:
+        device = package.spec_model.output_scalar.device
+        batch = batch.apply(lambda t: t.to(device))
+        preds = package.spec_model(batch.processed, mode=Mode.INFER)
+        spec = preds.frames.transpose(0, 1)
+        assert batch.inputs is not None
+        signals = package.signal_model(spec, batch.inputs.session, preds.frames_mask)
         num_samples = preds.num_frames * package.signal_model.upscale_factor
-        for i, (j, _) in zip(range(len(batch)), batch):
-            idx = slice(i, i + 1)
-            input_ = batch_input.get(i)
-            sig = signals[0][idx, : num_samples[i]].detach().numpy()
-            results[j] = TTSResult(inputs=input_, spec_model=preds[idx], sig_model=sig)
-    return [results[i] for i in range(len(inputs))]
+        batch, preds = batch.apply(lambda t: t.cpu()), preds.apply(lambda t: t.cpu())
+        for i, j in zip(range(len(batch)), indicies):
+            key = slice(i, i + 1)
+            signal = signals[0][key, : num_samples[i]].cpu().detach().numpy()
+            results[j] = TTSResult(inputs=batch[key], spec_model=preds[key], sig_model=signal)
+    return [results[i] for i in range(len(results))]
+
+
+def batch_griffin_lim_tts(
+    spec_model: SpectrogramModel, batch_gen: BatchGen, **kwargs
+) -> TTSResults:
+    """Run TTS with griffin lim on batches generated by `batch_gen`"""
+    # TODO: Add an option to add a streamlit progress bar when this is being used. Let's consider
+    # moving this functionality to `_streamlit.py` because it's only used with in workbooks.
+    results: typing.Dict[int, TTSResult] = {}
+    for batch, indicies in batch_gen:
+        device = spec_model.output_scalar.device
+        # TODO: Rename `apply` to indicate that it's in-place.
+        batch = batch.apply(lambda t: t.to(device))
+        preds = spec_model(batch.processed, mode=Mode.INFER)
+        batch, preds = batch.apply(lambda t: t.cpu()), preds.apply(lambda t: t.cpu())
+        for i, j in zip(range(preds.frames.shape[1]), indicies):
+            key = slice(i, i + 1)
+            pred = preds[key]
+            signal = cf.call(griffin_lim, pred.frames[:, 0].cpu().detach().numpy(), **kwargs)
+            results[j] = TTSResult(inputs=batch[key], spec_model=pred, sig_model=signal)
+    return [results[i] for i in range(len(results))]
 
 
 def _enqueue(out: typing.IO[bytes], queue: SimpleQueue):

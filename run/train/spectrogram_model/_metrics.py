@@ -15,7 +15,7 @@ import torch.utils
 import torch.utils.data
 
 import lib
-from lib.audio import power_spectrogram_to_framed_rms, power_to_db
+from lib.audio import amp_to_power, db_to_power, power_spectrogram_to_framed_rms, power_to_db
 from lib.distributed import is_master
 from run._config import GetLabel, get_dataset_label, get_model_label
 from run._models.spectrogram_model import Preds, SpectrogramModel
@@ -23,6 +23,33 @@ from run.data._loader import Speaker
 from run.train import _utils
 from run.train._utils import Context, Timer
 from run.train.spectrogram_model._data import Batch
+
+
+def get_hang_time(
+    stop_token: torch.Tensor, mask: torch.Tensor, num_frames: torch.Tensor, threshold: float
+) -> torch.Tensor:
+    """Get the number of frames after stop token reached `threshold`, this is metric is closely
+    aligned to the number of non-speech frames there at the end.
+
+    Args:
+        stop_token (torch.FloatTensor [num_frames, batch_size])
+        mask (torch.FloatTensor [batch_size, num_frames])
+        num_frames (torch.FloatTensor [batch_size])
+
+    Returns:
+        torch.FloatTensor [batch_size]
+    """
+    if stop_token.numel() == 0:
+        return torch.empty(0, device=stop_token.device)
+
+    # [num_frames, batch_size]
+    is_potential_stop = torch.sigmoid(stop_token) >= threshold
+    is_potential_stop = is_potential_stop.masked_fill(~mask.transpose(0, 1), 0)
+    # [num_frames, batch_size] → [batch_size]
+    had_potential_stop = is_potential_stop.sum(dim=0) != 0
+    first_potential_stop = is_potential_stop.long().argmax(dim=0)
+    return (num_frames - first_potential_stop - 1) * had_potential_stop
+
 
 """
 TODO: In order to support `get_rms_level`, the signal used to compute the spectrogram should
@@ -53,10 +80,10 @@ length of 2048, frame hop of 512 and a sample rate of 24000), doesn't practicall
 """
 
 
-def get_power_rms_level_sum(
-    db_spectrogram: torch.Tensor, mask: typing.Optional[torch.Tensor] = None, **kwargs
-) -> torch.Tensor:
-    """Get the sum of the power RMS level for each frame in the spectrogram.
+def get_loudness_in_amps(
+    db_spectrogram: torch.Tensor, mask: typing.Optional[torch.Tensor], **kwargs
+):
+    """Get the RMS AMP loudness for each frame in the `db_spectrogram`.
 
     Args:
         db_spectrogram (torch.FloatTensor [num_frames, batch_size, frame_channels])
@@ -64,12 +91,40 @@ def get_power_rms_level_sum(
         **kwargs: Additional key word arguments passed to `power_spectrogram_to_framed_rms`.
 
     Returns:
+        (torch.FloatTensor [batch_size, num_frames])
+    """
+    # [num_frames, batch_size, frame_channels] → [batch_size, num_frames, frame_channels]
+    power_frames = db_to_power(db_spectrogram.transpose(0, 1))
+    # [batch_size, num_frames, frame_channels] → [batch_size, num_frames]
+    frame_rms_level = cf.call(power_spectrogram_to_framed_rms, power_frames, **kwargs)
+    return frame_rms_level if mask is None else frame_rms_level * mask
+
+
+def get_num_sil_frames(
+    db_spectrogram: torch.Tensor,
+    sil_threshold: float,
+    mask: typing.Optional[torch.Tensor] = None,
+    **kwargs,
+):
+    """Get the number of silent frames with a loudness lower than `sil_threshold`.
+
+    Returns:
         torch.FloatTensor [batch_size]
     """
-    spectrogram = typing.cast(torch.Tensor, lib.audio.db_to_power(db_spectrogram.transpose(0, 1)))
-    # [batch_size, num_frames, frame_channels] → [batch_size, num_frames]
-    rms = cf.partial(power_spectrogram_to_framed_rms)(spectrogram, **kwargs)
-    return (rms if mask is None else rms * mask).pow(2).sum(dim=1)
+    # [batch_size, num_frames]
+    db_loudness = lib.audio.amp_to_db(get_loudness_in_amps(db_spectrogram, mask, **kwargs))
+    return ((db_loudness < sil_threshold) * mask).sum(dim=1)
+
+
+def get_power_rms_level_sum(
+    db_spectrogram: torch.Tensor, mask: typing.Optional[torch.Tensor] = None, **kwargs
+) -> torch.Tensor:
+    """Get the sum of the power RMS level for each frame in the spectrogram.
+
+    Returns:
+        torch.FloatTensor [batch_size]
+    """
+    return amp_to_power(get_loudness_in_amps(db_spectrogram, mask, **kwargs)).sum(dim=1)
 
 
 def get_average_db_rms_level(
@@ -132,8 +187,7 @@ def get_alignment_norm(preds: Preds) -> torch.Tensor:
     Returns:
         torch.FloatTensor [batch_size]
     """
-    alignments = preds.alignments.masked_fill(~preds.tokens_mask.unsqueeze(0), 0)
-    alignments = alignments.norm(dim=2, p=math.inf)  # type: ignore
+    alignments = preds.alignments.norm(dim=2, p=math.inf)  # type: ignore
     alignments = alignments.masked_fill(~preds.frames_mask.transpose(0, 1), 0)
     return alignments.sum(dim=0)
 
@@ -145,8 +199,7 @@ def get_alignment_std(preds: Preds) -> torch.Tensor:
     Returns:
         torch.FloatTensor [batch_size]
     """
-    alignments = preds.alignments.masked_fill(~preds.tokens_mask.unsqueeze(0), 0)
-    alignments = lib.utils.get_weighted_std(alignments, dim=2)
+    alignments = lib.utils.get_weighted_std(preds.alignments, dim=2, strict=True)
     alignments = alignments.masked_fill(~preds.frames_mask.transpose(0, 1), 0)
     return alignments.sum(dim=0)
 
@@ -179,10 +232,21 @@ class Metrics(_utils.Metrics[MetricsKey]):
             metric. The metric is bounded at [0, 1].
         ALIGNMENT_STD: This metric measures the standard deviation of an alignment. As the alignment
             is more focused, this metrics goes to zero.
-        PREDICTED_PAUSE_FRAMES: The percentage of predicted frames inside of a pause.
-        AVERAGE_PREDICTED_RMS_LEVEL: The average loudness per predicted frame.
+        STOP_TOKEN_HANG_TIME_SUM: The metric measures the number of frames after the model started
+            to predict a stop. Essentially, this measures how many silence or breathing frames
+            there are before the model stops generating.
+        PRED_PAUSE_FRAMES: The percentage of predicted frames inside of a pause.
+        PRED_RATIO_SIL_FRAMES: The percentage of silent frames.
+        AVERAGE_PRED_RMS_LEVEL: The average loudness per predicted frame.
         AVERAGE_RELATIVE_SPEED: The number of predicted frames divided by the number of frames.
-        AVERAGE_RMS_LEVEL_DELTA: The delta between `AVERAGE_PREDICTED_RMS_LEVEL` and
+        AVERAGE_RELATIVE_SPEED_TRIMMED: This similar to `AVERAGE_RELATIVE_SPEED`, except we
+            remove any hanging frames from predicted frames. A hanging frame is defined by
+            `STOP_TOKEN_HANG_TIME_SUM`. This metric will always be slightly under 100% due
+            to the trimming; however, it may be more stable than `AVERAGE_RELATIVE_SPEED`.
+        AVERAGE_RELATIVE_SPEED_NON_SIL: This similar to `AVERAGE_RELATIVE_SPEED`, except we
+            remove any silent frames from predicted frames. This metric will always be slightly
+            under 100%; however, it may be more stable than `AVERAGE_RELATIVE_SPEED`.
+        AVERAGE_RMS_LEVEL_DELTA: The delta between `AVERAGE_PRED_RMS_LEVEL` and
             `AVERAGE_RMS_LEVEL`.
         GRADIENT_INFINITY_NORM: The total infinity norm of all parameter gradients.
         GRADIENT_TWO_NORM: The total 2-norm of all parameter gradients.
@@ -195,21 +259,22 @@ class Metrics(_utils.Metrics[MetricsKey]):
     (
         ALIGNMENT_NORM_SUM,
         ALIGNMENT_STD_SUM,
+        STOP_TOKEN_HANG_TIME_SUM,
         DATA_QUEUE_SIZE,
         MAX_FRAMES_PER_TOKEN,
         NUM_CORRECT_STOP_TOKEN,
         NUM_FRAMES_MAX,
-        NUM_FRAMES_PREDICTED,
+        NUM_FRAMES_PRED,
         NUM_FRAMES,
         NUM_REACHED_MAX,
         NUM_SECONDS,
         NUM_SPANS_PER_TEXT_LENGTH,
         NUM_SPANS,
         NUM_TOKENS,
-        RMS_SUM_PREDICTED,
+        RMS_SUM_PRED,
         RMS_SUM,
-        NUM_PAUSE_FRAMES_PREDICTED,
-        NUM_PAUSE_FRAMES,
+        NUM_PAUSE_FRAMES_PRED,
+        NUM_SIL_FRAMES_PRED,
         SPECTROGRAM_LOSS_SUM,
         STOP_TOKEN_LOSS_SUM,
         *_,
@@ -217,7 +282,6 @@ class Metrics(_utils.Metrics[MetricsKey]):
 
     NUM_SPANS_ = partial(get_dataset_label, "num_spans")
     AVERAGE_NUM_FRAMES = partial(get_dataset_label, "average_num_frames")
-    PAUSE_FRAMES = partial(get_dataset_label, "pause_frames")
     AVERAGE_RMS_LEVEL = partial(get_dataset_label, "average_rms_level")
     MAX_NUM_FRAMES = partial(get_dataset_label, "max_num_frames")
     AVERAGE_FRAMES_PER_TOKEN = partial(get_dataset_label, "average_frames_per_token")
@@ -229,9 +293,13 @@ class Metrics(_utils.Metrics[MetricsKey]):
 
     ALIGNMENT_NORM = partial(get_model_label, "alignment_norm")
     ALIGNMENT_STD = partial(get_model_label, "alignment_std")
-    PREDICTED_PAUSE_FRAMES = partial(get_model_label, "predicted_pause_frames")
-    AVERAGE_PREDICTED_RMS_LEVEL = partial(get_model_label, "average_predicted_rms_level")
+    STOP_TOKEN_HANG_TIME = partial(get_model_label, "stop_token_hang_time")
+    PRED_PAUSE_FRAMES = partial(get_model_label, "predicted_pause_frames")
+    PRED_RATIO_SIL_FRAMES = partial(get_model_label, "pred_ratio_sil_frames")
+    AVERAGE_PRED_RMS_LEVEL = partial(get_model_label, "average_predicted_rms_level")
     AVERAGE_RELATIVE_SPEED = partial(get_model_label, "average_relative_speed")
+    AVERAGE_RELATIVE_SPEED_TRIMMED = partial(get_model_label, "average_relative_speed_trimmed")
+    AVERAGE_RELATIVE_SPEED_NON_SIL = partial(get_model_label, "average_relative_speed_non_sil")
     AVERAGE_RMS_LEVEL_DELTA = partial(get_model_label, "average_rms_level_delta")
     REACHED_MAX_FRAMES = partial(get_model_label, "reached_max_frames")
     SPECTROGRAM_LOSS = partial(get_model_label, "spectrogram_loss")
@@ -305,10 +373,13 @@ class Metrics(_utils.Metrics[MetricsKey]):
     def get_alignment_values(self, batch: Batch, preds: Preds) -> MetricsValues:
         values, _reduce = self._make_values()
 
-        for span, std, norm, length, has_reached_max in zip(
+        for span, std, norm, hang_time, length, has_reached_max in zip(
             batch.spans,
             self._to_list(get_alignment_std(preds)),
             self._to_list(get_alignment_norm(preds)),
+            self._to_list(
+                cf.partial(get_hang_time)(preds.stop_tokens, preds.frames_mask, preds.num_frames)
+            ),
             self._to_list(preds.num_frames),
             self._to_list(preds.reached_max),
         ):
@@ -320,7 +391,8 @@ class Metrics(_utils.Metrics[MetricsKey]):
                 for speaker in [None, span.speaker]:
                     _reduce(self.ALIGNMENT_NORM_SUM, speaker, v=norm)
                     _reduce(self.ALIGNMENT_STD_SUM, speaker, v=std)
-                    _reduce(self.NUM_FRAMES_PREDICTED, speaker, v=length)
+                    _reduce(self.STOP_TOKEN_HANG_TIME_SUM, speaker, v=hang_time)
+                    _reduce(self.NUM_FRAMES_PRED, speaker, v=length)
 
         return dict(values)
 
@@ -329,20 +401,20 @@ class Metrics(_utils.Metrics[MetricsKey]):
 
         spectrogram_mask = batch.spectrogram_mask.tensor.transpose(0, 1)
         loudness = get_power_rms_level_sum(batch.spectrogram.tensor, spectrogram_mask)
-        for span, loudness, pred_loudness, num_pause, num_pause_pred, has_reached_max in zip(
+        for span, loudness, pred_loudness, num_pause_pred, num_sil_pred, has_reached_max in zip(
             batch.spans,
             self._to_list(loudness),
             self._to_list(get_power_rms_level_sum(preds.frames, preds.frames_mask)),
-            cf.partial(get_num_pause_frames)(batch.spectrogram.tensor, spectrogram_mask),
             cf.partial(get_num_pause_frames)(preds.frames, preds.frames_mask),
+            self._to_list(cf.partial(get_num_sil_frames)(preds.frames, mask=preds.frames_mask)),
             self._to_list(preds.reached_max),
         ):
             if not (self.is_eval_infer() and has_reached_max):
                 for speaker in [None, span.speaker]:
-                    _reduce(self.RMS_SUM_PREDICTED, speaker, v=pred_loudness)
+                    _reduce(self.RMS_SUM_PRED, speaker, v=pred_loudness)
                     _reduce(self.RMS_SUM, speaker, v=loudness)
-                    _reduce(self.NUM_PAUSE_FRAMES, speaker, v=num_pause)
-                    _reduce(self.NUM_PAUSE_FRAMES_PREDICTED, speaker, v=num_pause_pred)
+                    _reduce(self.NUM_PAUSE_FRAMES_PRED, speaker, v=num_pause_pred)
+                    _reduce(self.NUM_SIL_FRAMES_PRED, speaker, v=num_sil_pred)
 
         return dict(values)
 
@@ -377,10 +449,16 @@ class Metrics(_utils.Metrics[MetricsKey]):
         for speaker, reduce, div in self._iter_permutations(select, is_verbose):
             spectrogram_loss = div(self.SPECTROGRAM_LOSS_SUM, self.NUM_FRAMES) / num_frame_channels
             total_spans = reduce(self.NUM_SPANS) + reduce(self.NUM_REACHED_MAX)
+            num_frames_pred = reduce(self.NUM_FRAMES_PRED)
+            num_frames_pred_trimmed = num_frames_pred - reduce(self.STOP_TOKEN_HANG_TIME_SUM)
+            num_frames_non_sil = num_frames_pred - reduce(self.NUM_SIL_FRAMES_PRED)
             update = {
-                self.ALIGNMENT_NORM: div(self.ALIGNMENT_NORM_SUM, self.NUM_FRAMES_PREDICTED),
-                self.ALIGNMENT_STD: div(self.ALIGNMENT_STD_SUM, self.NUM_FRAMES_PREDICTED),
-                self.AVERAGE_RELATIVE_SPEED: div(self.NUM_FRAMES_PREDICTED, self.NUM_FRAMES),
+                self.ALIGNMENT_NORM: div(self.ALIGNMENT_NORM_SUM, self.NUM_FRAMES_PRED),
+                self.ALIGNMENT_STD: div(self.ALIGNMENT_STD_SUM, self.NUM_FRAMES_PRED),
+                self.STOP_TOKEN_HANG_TIME: div(self.STOP_TOKEN_HANG_TIME_SUM, self.NUM_SPANS),
+                self.AVERAGE_RELATIVE_SPEED: div(self.NUM_FRAMES_PRED, self.NUM_FRAMES),
+                self.AVERAGE_RELATIVE_SPEED_TRIMMED: div(num_frames_pred_trimmed, self.NUM_FRAMES),
+                self.AVERAGE_RELATIVE_SPEED_NON_SIL: div(num_frames_non_sil, self.NUM_FRAMES),
                 self.STOP_TOKEN_ACCURACY: div(self.NUM_CORRECT_STOP_TOKEN, self.NUM_FRAMES),
                 self.STOP_TOKEN_LOSS: div(self.STOP_TOKEN_LOSS_SUM, self.NUM_FRAMES),
                 self.REACHED_MAX_FRAMES: reduce(self.NUM_REACHED_MAX) / total_spans,
@@ -436,16 +514,14 @@ class Metrics(_utils.Metrics[MetricsKey]):
     def _get_loudness_metrics(self, select: _utils.MetricsSelect, is_verbose: bool) -> _GetMetrics:
         metrics = {}
         for speaker, _, div in self._iter_permutations(select, is_verbose):
-            predicted_rms = power_to_db(div(self.RMS_SUM_PREDICTED, self.NUM_FRAMES_PREDICTED))
+            predicted_rms = power_to_db(div(self.RMS_SUM_PRED, self.NUM_FRAMES_PRED))
             rms = power_to_db(div(self.RMS_SUM, self.NUM_FRAMES))
             update = {
-                self.AVERAGE_PREDICTED_RMS_LEVEL: predicted_rms,
+                self.AVERAGE_PRED_RMS_LEVEL: predicted_rms,
                 self.AVERAGE_RMS_LEVEL: rms,
                 self.AVERAGE_RMS_LEVEL_DELTA: predicted_rms - rms,
-                self.PAUSE_FRAMES: div(self.NUM_PAUSE_FRAMES, self.NUM_FRAMES),
-                self.PREDICTED_PAUSE_FRAMES: div(
-                    self.NUM_PAUSE_FRAMES_PREDICTED, self.NUM_FRAMES_PREDICTED
-                ),
+                self.PRED_PAUSE_FRAMES: div(self.NUM_PAUSE_FRAMES_PRED, self.NUM_FRAMES_PRED),
+                self.PRED_RATIO_SIL_FRAMES: div(self.NUM_SIL_FRAMES_PRED, self.NUM_FRAMES_PRED),
             }
             metrics.update({partial(k, speaker=speaker): v for k, v in update.items()})
         return metrics

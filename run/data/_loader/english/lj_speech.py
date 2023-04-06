@@ -21,9 +21,9 @@ logger = logging.getLogger(__name__)
 LINDA_JOHNSON = struc.Speaker("linda_johnson", struc.Style.LIBRI, struc.Dialect.EN_US)
 
 
-def _get_session(speaker: struc.Speaker, audio_path: pathlib.Path) -> struc.Session:
+def _get_session(speaker: struc.Speaker, audio_path: pathlib.Path) -> struc.UnprocessedSession:
     """For the LJ speech dataset, we define each chapter as an individual recording session."""
-    return struc.Session(speaker, str(audio_path.stem.rsplit("-", 1)[0]))
+    return struc.UnprocessedSession(speaker, str(audio_path.stem.rsplit("-", 1)[0]))
 
 
 def lj_speech_dataset(

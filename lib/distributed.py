@@ -291,13 +291,16 @@ class NumeralizePadEmbed(torch.nn.Module, typing.Generic[_NumeralizePadEmbedVar]
 
         max_embeddings = len(self.vocab) + max_embeddings
         self.embed = torch.nn.Embedding(max_embeddings, *args, padding_idx=self.pad_idx, **kwargs)
-        self.weight = self.embed.weight
         self.num_embeddings = self.embed.num_embeddings
         self.embedding_dim = self.embed.embedding_dim
         self.padding_idx = self.embed.padding_idx
 
         self._new_tokens = set()
         self._unk_tokens = set()  # NOTE: Track unknown tokens seen during evaluation
+
+    @property
+    def weight(self):
+        return self.embed.weight
 
     @typing.overload
     def get_vocab(

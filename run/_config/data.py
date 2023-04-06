@@ -2,6 +2,7 @@ import copy
 import functools
 import itertools
 import logging
+import math
 import typing
 
 import config as cf
@@ -176,7 +177,11 @@ def _get_tempo_annotation(text: str, audio_len: float, bucket_size: float):
 
 
 def _get_loudness_annotation(
-    audio: np.ndarray, sample_rate: int, block_size: float, precision: int, **kwargs
+    audio: typing.Union[np.ndarray, typing.List[np.ndarray]],
+    sample_rate: int,
+    block_size: float,
+    precision: int,
+    **kwargs,
 ) -> typing.Optional[float]:
     """Get the loudness in LUFS for `audio`.
 
@@ -194,10 +199,18 @@ def _get_loudness_annotation(
     Returns: The loudness in LUFS with a range of 0 to -70 LUFS in alignment with ITU-R BS.1770-4.
         This returns `None` if the loudness cannot be computed.
     """
-    meter = lib.audio.get_pyloudnorm_meter(sample_rate, block_size=block_size, **kwargs)
     sec_to_sample_ = functools.partial(lib.audio.sec_to_sample, sample_rate=sample_rate)
+
+    if isinstance(audio, list):
+        # TODO: Test if zero padding affects the loudness computation; whilst this would be
+        # disheartening, it shouldn't have a big impact, either way. Hopefully, the algorithm
+        # is invariant to padding.
+        padding = np.zeros((sec_to_sample_(block_size),))
+        audio = np.concatenate([n for a in audio for n in (a, padding)][:-1])
+
+    meter = lib.audio.get_pyloudnorm_meter(sample_rate, block_size=block_size, **kwargs)
     if audio.shape[0] >= sec_to_sample_(block_size):
-        loudness = round(meter.integrated_loudness(audio), precision)
+        loudness = round(float(meter.integrated_loudness(audio)), precision)
         # NOTE: This algorithm returns negative infinity if the loudness is less than -70 LUFS. We
         # return -70 LUFS instead to keep the output finite.
         # NOTE: This number is not parameterized because this specific number is specified in
@@ -205,150 +218,11 @@ def _get_loudness_annotation(
         # NOTE: The loudness algorithm can sometimes overflow and return strange values that are
         # significantly outside of the range like in:
         # https://github.com/csteinmetz1/pyloudnorm/issues/42
-        loudness = -70 if np.isinf(loudness) and loudness < 0 else loudness
-        return None if loudness > 0 or loudness < -70 else loudness
+        loudness = -70.0 if math.isinf(loudness) and loudness < 0 else loudness
+        assert loudness >= -70 and loudness <= 0
+        assert isinstance(loudness, float)
+        return loudness
     return None
-
-
-# TODO: Let's group these test cases together so that we can compare too each other. We can pick
-# a group of test cases every time.
-ENGLISH_TEST_CASES = [
-    # NOTE: These statements have a mix of heteronyms, initialisms, hard words (locations,
-    # medical terms, technical terms), etc for testing pronunciation.
-    "For more updates on covid nineteen, please contact us via the URL at the bottom of the "
-    "screen, or visit our office in Seattle at the address shown here.",
-    "I've listed INTJ on my resume because it's important for me that you understand how I "
-    "conduct myself in stressful situations.",
-    "The website is live and you can access your records via the various APIs slash URLs or use "
-    "the Studio as an alternate avenue.",
-    "The nurses will resume the triage conduct around the oropharyngeal and test for "
-    "tachydysrhythmia to ensure the patient lives another day.",
-    "Access your clusters using the Kubernetes API. You can alternate between the CLI and the "
-    "web interface.",
-    "Live from Seattle, it's AIQTV, with the governor's special address on the coronavirus. Don't "
-    "forget to record this broadcast for viewing later.",
-    "Let's add a row on our assay tracking sheet so we can build out the proper egress "
-    "measurements.",
-    "Hello! Can you put this contractor into a supervisory role?",
-    # NOTE: These test various initialisms
-    "Each line will have GA Type as Payment, Paid Amount along with PAC, and GA Code.",
-    "Properly use and maintain air-line breathing systems and establish a uniform procedure "
-    "for all employees, for both LACC and LCLA contractors, to follow when working jobs that "
-    "require the use of fresh air.",
-    "QCBS is a method of selecting transaction advisors based on both the quality of their "
-    "technical proposals and the costs shown in their financial proposals.",
-    "HSPs account for fifteen to twenty percent of the population.",
-    "We used to have difficulty with AOA and AMA, but now we are A-okay.",
-    "As far as AIs go, ours is pretty great!",
-    # NOTE: These questions each have a different expected inflection.
-    "If you can instantly become an expert in something, what would it be?",
-    "What led to the two of you having a disagreement?",
-    "Why do some words sound funny to us?",
-    "What are your plans for dealing with it?",
-    "There may be times where you have to RDP to a node and manually collect logs for some "
-    "reason. So, another question you may have is, exactly where on disk are all these logs?",
-    "How common are HSPs?",
-    "If you could rid the world of one thing, what would it be?",
-    "What childish things do you still do as an adult?",
-    "If you were to perform in the circus, what would you do?",
-    # NOTE: All these questions should have an upward inflection at the end.
-    "Have you ever hidden a snack so that nobody else would find it and eat it first?",
-    "Can fish see air like we see water?",
-    "Are you a messy person?",
-    "Did you have cats growing up?",
-    "Do you consider yourself an adventurous person?",
-    "Do you have any weird food combos?",
-    "Do you respond to texts fast?",
-    "Have you ever been stalked by an animal that later became your pet?",
-    "If you have made it this far, do you relate to any of these signs? Are you a highly "
-    "sensitive person?",
-    "Have you started, but not found success, with a platform requiring monthly payments?",
-    "When deciding between organic and non-organic coffees, is the price premium worth it?",
-    "Can you make yourself disappear?",
-    "Do mice really eat cheese?",
-    "Do you believe in any conspiracy theories?",
-    "Have elves always lived at the North Pole?",
-    "Have you ever been on the radio?",
-    "Have you ever done something embarrassing in front of the office CCTV cameras?",
-    "In your opinion, are giant spiders worse than giant chickens?",
-    "What is the process for making your favorite dish?",
-    "Would you like to be part of the UK Royal Family?",
-    "Did you ever try DIY projects?",
-    "Can people from NASA catch the flu?",
-    "Do you watch ESPN at night?",
-    "Will AI replace humans?",
-    "Can our AI say AI?",
-    # NOTE: Test cases with a variety of lengths, respellings, and punctuation marks.
-    "WellSaid Labs.",
-    "Livingroom",
-    "Ophthalmologist",
-    "ACLA",
-    "ACLA.",  # NOTE: `ACLA` sometimes gets cut-off, this is a test to see how a period affects it.
-    "NASA",
-    "Why?",
-    'Ready to find out ""more""?',
-    "Thisss isrealy awhsome.",
-    "Topic two:     Is an NRA right for my rate?.",
-    'Internet Assigned Numbers Authority ("""I-eigh n Eigh""")',
-    '"""G-E-ran""" is an abbreviation for GSM EDGE',
-    "epidermolysis bullosa (ep-ih-dur-MOL-uh-sis buhl-LOE-sah) (epi-dermo-lysiss) is a group of",
-    "Harry lay in his dark cupboard much later, wishing he had a watch. He didn't know what time "
-    "it was and he couldn't be sure the Dursleys were asleep yet. Until they were, he couldn't "
-    "risk sneaking to the kitchen for some food. He'd lived with the Dursleys almost ten years, "
-    "ten miserable years, as long as he could remember, ever since he'd been a baby and his "
-    "parents had died in that car crash. He couldn't remember being in the car when his parents "
-    "had died. Sometimes, when he strained his memory during long hours in his cupboard, he came "
-    "up with a strange vision: a blinding flash of green light and a burning pain on his "
-    "forehead. This, he supposed, was the crash, though he couldn't imagine where all the green "
-    "light came from. He couldn't remember his parents at all. His aunt and uncle never spoke "
-    "about them, and of course he was forbidden to ask questions. There were no photographs of "
-    "them in the house. When he had been younger, Harry had dreamed and dreamed of some unknown "
-    "relation coming to take him away, but it had never happened; the Dursleys were his only "
-    "family. Yet sometimes he thought (or maybe hoped) that strangers in the street seemed to "
-    "know him. Very strange strangers they were, too.",
-    # NOTE: Test respellings
-    # TODO: Adjust respellings based on latest conventions.
-    "I see in “Happening at <respell value='se-FOHR-u'>Sephora</respell>” I have two new brands"
-    "requesting store-led events for the same day.",
-    "Welcome to the <respell value='su-LAHR-es'>Solares</respell> Injury and Illness Prevention "
-    "Program Training.",
-    "The <respell value='pur-AY-toh'>Pareto</respell> principle was named after Italian economist "
-    "Vilfredo <respell value='pu-RAY-toh'>Pareto</respell>.",
-    "We would like to nominate <respell value='AY-vu'>Avu</respell> for her phenomenal "
-    "recordings.",
-    "To use your self-help AI, please enable the Affirmations feature on the "
-    "<respell value='KAHN-sohl'>console</respell> so that you can "
-    "<respell value='kuhn-SOHL'>console</respell> yourself.",
-    "Too much sand? Tired of cacti? <respell value='dee-ZURT'>desert</respell> the "
-    "<respell value='DEZ-urt'>desert</respell> now, with caravan adventures!",
-    "If you want to get the good food at the <respell value='bu-FAY'>buffet</respell>, you have "
-    "to be willing to "
-    "<respell value='BUF-et'>buffet</respell> and punch your way to the front of the line.",
-    "Does <respell value='BEE-u-loh-ZHEEK'>biologique</respell> "
-    "<respell value='ru-SHURSH'>recherche</respell> really work?",
-    # NOTE: Test v10 regressions
-    # NOTE: Respellings are formatted like they were inputted in v10
-    # - Difficult acronyms
-    "It took six Ph.Ds to design a VCR a five-year-old could use.",
-    # - "Cape Cod" was repeated
-    "It is ironic that today's least "
-    "<respell value='PAH-pyuh-lay-tuhd'>|\\PAH\\pyuh\\lay\\tuhd\\|</respell> town on Cape Cod",
-    # - Short sentences were cut off
-    "Taking sides early - I feel like... I feel like that's a recipe for disaster. It is.",
-    "manager. Egan",
-    "then walked away without taking any questions. Wow,",
-    "Thanks! For..",
-    "using your ears. Why?",
-    "Yes. Are you ready to play? Yeah.",
-    # - This question generated a long silence, after "morning"
-    "Can you tell me more about what happened that morning?",
-    # - This word was pronounced incorrectly
-    "anemone",
-    # - This word caused the model to overflow
-    "<respell value='po-lahn-co'>|\\po\\lahn\\co|</respell>",
-    "<respell value='fran-SIH-skoh'>|\\fran\\SIH\\skoh|</respell>",
-]
-TEST_CASES = [(struc.Language.ENGLISH, t) for t in ENGLISH_TEST_CASES]
 
 
 def configure(overwrite: bool = False):
@@ -377,9 +251,6 @@ def configure(overwrite: bool = False):
         ),
         run.data._loader.structures.Span.spacy_context: cf.Args(max_words=20),
         run._utils.SpanGenerator: cf.Args(max_seconds=15, include_span=_include_span),
-        run.train._utils.process_select_cases: cf.Args(
-            cases=TEST_CASES, speakers=DEV_SPEAKERS, num_cases=15
-        ),
         # NOTE: `min_no_intervals_prob` was set at 10% to ensure the model is exposed to some
         # data that has no annotations; however, our preference is for the model to train with
         # more annotations because it should "stabalize" it. As in, the model would not need to
@@ -389,6 +260,10 @@ def configure(overwrite: bool = False):
             min_no_intervals_prob=0.1,
             avg_alignments=3,
             include_annotation=_include_annotation,
+        ),
+        run.data._loader.structures._process_sessions: cf.Args(
+            get_loudness=cf.partial(_get_loudness_annotation),
+            get_tempo=cf.partial(_get_tempo_annotation),
         ),
         run.train.spectrogram_model._data._get_tempo_annotation: cf.Args(
             get_anno=cf.partial(_get_tempo_annotation)
