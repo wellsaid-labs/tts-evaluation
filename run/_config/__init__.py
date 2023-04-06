@@ -27,6 +27,7 @@ from run._config.labels import (
     get_timer_label,
 )
 from run._config.lang import (
+    RESPELLING_DELIM,
     STT_CONFIGS,
     LanguageCode,
     get_spoken_chars,
@@ -77,6 +78,7 @@ __all__ = [
     "get_model_label",
     "get_signal_model_label",
     "get_timer_label",
+    "RESPELLING_DELIM",
     "STT_CONFIGS",
     "LanguageCode",
     "get_spoken_chars",

@@ -5,8 +5,12 @@ from __future__ import annotations
 import dataclasses
 import itertools
 import logging
+import math
+import os
+import pickle
 import re
 import typing
+from collections import defaultdict
 from dataclasses import field
 from enum import Enum
 from functools import partial
@@ -22,6 +26,7 @@ from third_party import LazyLoader
 import lib
 import run
 from lib.audio import AudioMetadata, get_audio_metadata
+from lib.text import is_stripped
 from lib.utils import Timeline, Tuple, flatten_2d, tqdm_
 from run import _config
 from run.data import _loader
@@ -272,12 +277,70 @@ class Speaker:
 class Session(typing.NamedTuple):
     spkr: Speaker
     label: str
+    # NOTE: This loudness value is in LUFS.
+    loudness: float
+    tempo: float
+    # TODO: We should consider adding `spkr_tempo` to the `Speaker` object, instead. It makes
+    # more sense there.
+    spkr_tempo: float
+
+
+class UnprocessedSession(typing.NamedTuple):
+    spkr: Speaker
+    label: str
 
 
 class IsLinked(typing.NamedTuple):
     script: bool = False
     transcript: bool = False
     audio: bool = False
+
+
+def _check_passage_invariants(psg: typing.Union[UnprocessedPassage, Passage]):
+    """Check passage datastructure invariants."""
+    # TODO: Add an invariant that there is one `session` per audio file, at the moment, we
+    # don't have invariants that cycle through all of `passages`.
+    audio_length = math.inf
+    if isinstance(psg, Passage):
+        dtype = alignment_dtype["audio"]["stop"].type
+        audio_length = max(dtype(psg.audio_file.length), psg.audio_file.length)
+
+    batch = [psg.alignments] + ([psg.nonalignments] if isinstance(psg, Passage) else [])
+    batch = [a for a in batch if a is not None]
+    for alignments in batch:
+        # TODO: Should we consider updating this from `<=` to `<`?
+        assert all(a.script[0] <= a.script[1] for a in alignments)
+        assert all(a.transcript[0] <= a.transcript[1] for a in alignments)
+
+        # NOTE: Consecutive `Alignment`s may overlap since there is no distinct boundaries
+        # between words, the script and transcript may not overlap between two consecutive
+        # `Alignment`s.
+        # NOTE: `alignments` must be sorted.
+        pairs = zip(alignments, alignments[1:])
+        assert all(a.script[1] <= b.script[0] for a, b in pairs)
+        assert all(a.transcript[1] <= b.transcript[0] for a, b in pairs)
+        # NOTE: The `audio` alignments may overlap by a little bit, at the edges.
+        assert all(a.audio[0] < b.audio[1] for a, b in pairs)
+
+        if len(alignments) != 0:
+            assert max(Alignment._get(alignments, "audio")) <= audio_length
+            assert max(Alignment._get(alignments, "script")) <= len(psg.script)
+            assert max(Alignment._get(alignments, "transcript")) <= len(psg.transcript)
+            assert min(Alignment._get(alignments, "audio")) >= 0
+            assert min(Alignment._get(alignments, "script")) >= 0
+            assert min(Alignment._get(alignments, "transcript")) >= 0
+
+    if psg.alignments is not None:
+        # NOTE: The `audio` alignments may overlap by a little bit, at the edges; therefore,
+        # `nonalignments` does not always strickly follow this rule.
+        # TODO: Should `nonalignments` be normalized to this invariant?
+        assert all(a.audio[0] <= a.audio[1] for a in psg.alignments)
+
+        # NOTE: `psg.alignments` must not have extra whitespaces on it's edges.
+        slices = (psg.script[a.script_slice] for a in psg.alignments)
+        assert all(is_stripped(s) for s in slices)
+        slices = (psg.transcript[a.transcript_slice] for a in psg.alignments)
+        assert all(is_stripped(s) for s in slices)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -296,16 +359,36 @@ class UnprocessedPassage:
     """
 
     audio_path: Path
-    session: Session
+    session: UnprocessedSession
     script: str
     transcript: str
     alignments: typing.Optional[typing.Tuple[Alignment, ...]] = None
     other_metadata: typing.Dict = field(default_factory=dict)
     is_linked: IsLinked = field(default_factory=IsLinked)
 
+    def __post_init__(self):
+        self.check_invariants()
+
     @property
     def speaker(self):
         return self.session.spkr
+
+    @property
+    def aligned_audio_length(self) -> float:
+        assert self.alignments is not None
+        if len(self.alignments) == 0:
+            return 0.0
+        return self.alignments[-1].audio[-1] - self.alignments[0].audio[0]
+
+    @property
+    def aligned_script(self) -> str:
+        assert self.alignments is not None
+        if len(self.alignments) == 0:
+            return ""
+        return self.script[self.alignments[0].script[0] : self.alignments[-1].script[-1]]
+
+    def check_invariants(self):
+        _check_passage_invariants(self)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -534,6 +617,8 @@ class Passage:
         assert hasattr(self, "passages")
         assert hasattr(self, "index")
 
+        _check_passage_invariants(self)
+
         assert self is self.passages[self.index]
         assert self.prev is None or self == self.prev.next
         assert self.next is None or self == self.next.prev
@@ -550,42 +635,11 @@ class Passage:
             get_ = lambda i, f: getattr(self.alignments[i], f)
             assert any(get_(0, f)[0] != get_(-1, f)[1] for f in fields)
 
-        assert all(a.script[0] <= a.script[1] for a in self.alignments)
-        assert all(a.audio[0] <= a.audio[1] for a in self.alignments)
-        assert all(a.transcript[0] <= a.transcript[1] for a in self.alignments)
-
-        # NOTE: `self.alignments` must not have extra whitespaces on it's edges.
-        slices = (self.script[a.script_slice] for a in self.alignments)
-        assert all(lib.text.is_stripped(s) for s in slices)
-        slices = (self.transcript[a.transcript_slice] for a in self.alignments)
-        assert all(lib.text.is_stripped(s) for s in slices)
-
         # NOTE: `self.speech_segments` must be sorted, and do not overlap. Specifically,
         # `speech_segments` are defined by `Alignment`s, and two speech segments may not share
         # an `Alignment`.
         pairs = zip(self.speech_segments, self.speech_segments[1:])
         assert all(a.slice.stop <= b.slice.start for a, b in pairs)
-
-        for alignments in (self.nonalignments, self.alignments):
-            # NOTE: Consecutive `Alignment`s may overlap since there is no distinct boundaries
-            # between words, the script and transcript may not overlap between two consecutive
-            # `Alignment`s.
-            # NOTE: `self.alignments`, and `self.nonalignments` must be sorted.
-            pairs = zip(alignments, alignments[1:])
-            assert all(a.script[1] <= b.script[0] for a, b in pairs)
-            assert all(a.transcript[1] <= b.transcript[0] for a, b in pairs)
-            # NOTE: The `audio` alignments may overlap by a little bit, at the edges.
-            assert all(a.audio[0] < b.audio[1] for a, b in pairs)
-
-            if len(alignments) != 0:
-                dtype = alignment_dtype["audio"]["stop"].type
-                max_length = max(dtype(self.audio_file.length), self.audio_file.length)
-                assert max(Alignment._get(alignments, "audio")) <= max_length
-                assert max(Alignment._get(alignments, "script")) <= len(self.script)
-                assert max(Alignment._get(alignments, "transcript")) <= len(self.transcript)
-                assert min(Alignment._get(alignments, "audio")) >= 0
-                assert min(Alignment._get(alignments, "script")) >= 0
-                assert min(Alignment._get(alignments, "transcript")) >= 0
 
         return self
 
@@ -665,6 +719,16 @@ class Span:
             audio=(self.audio_start, self.audio_stop),
             transcript=(self._first.transcript[0], self._last.transcript[-1]),
         )
+
+    @property
+    def speech_segments(self) -> typing.List[Alignment]:
+        """Get speech segments inside this `self.script` represented by alignments."""
+        return [
+            self._offset(s.alignment)
+            for s in self.passage.speech_segments
+            if s.script_slice.start >= self.script_slice.start
+            and s.script_slice.stop <= self.script_slice.stop
+        ]
 
     @property
     def other_metadata(self):
@@ -1041,12 +1105,15 @@ def _filter_existing_paths(audio_paths: typing.Set[Path]) -> typing.Set[Path]:
     logger.info(f"Checking if {len(audio_paths)} audio files exist...")
     all_parents = set(p.parent for p in audio_paths)
     all_audio_paths = set(f for p in all_parents for f in p.iterdir() if f.is_file())
+    not_existant = [p.name for p in audio_paths - all_audio_paths]
+    if len(not_existant) > 0:
+        logger.warning(f"Unable to find {len(not_existant)} audio paths:\n{not_existant}")
     return audio_paths.intersection(all_audio_paths)
 
 
 def _normalize_audio_files(
     dataset: UnprocessedDataset, no_tqdm: bool
-) -> typing.Dict[Path, AudioMetadata]:
+) -> typing.Tuple[UnprocessedDataset, typing.Dict[Path, AudioMetadata]]:
     """Map every audio file to a normalized audio file.
 
     TODO: In order to encourage parallelism, the longest files should be run through
@@ -1054,14 +1121,17 @@ def _normalize_audio_files(
     """
     get_audio_metadata_ = partial(get_audio_metadata, add_tqdm=not no_tqdm)
     audio_paths = set(p.audio_path for l in dataset for p in l)
-    audio_paths = list(_filter_existing_paths(audio_paths))
+    audio_paths = _filter_existing_paths(audio_paths)
+    new_dataset = [[p for p in d if p.audio_path in audio_paths] for d in dataset]
+    audio_paths = list(audio_paths)
     audio_files = get_audio_metadata_(audio_paths)
     with ThreadPool() as pool:
         logger.info(f"Normalizing and caching {len(audio_files)} audio files...")
         maybe_norm = cf.partial(_loader.utils.maybe_normalize_audio_and_cache)
         iter_ = pool.imap(maybe_norm, audio_files)
         normal_audio_paths = list(tqdm_(iter_, total=len(audio_files), disable=no_tqdm))
-    return {a: n for a, n in zip(audio_paths, get_audio_metadata_(normal_audio_paths))}
+    normalized = {a: n for a, n in zip(audio_paths, get_audio_metadata_(normal_audio_paths))}
+    return new_dataset, normalized
 
 
 def _get_non_speech_segments(
@@ -1088,6 +1158,91 @@ def _get_non_speech_segments(
         generator = pool.imap(get_nss_and_cache, audio_files)
         non_speech_segments = list(tqdm_(generator, total=len(audio_files), disable=no_tqdm))
     return {a: n for a, n in zip(audio_files, non_speech_segments)}
+
+
+def _process_sessions(
+    dataset: UnprocessedDataset,
+    meta: typing.Dict[Path, AudioMetadata],
+    get_loudness: typing.Callable[[typing.List[np.ndarray]], float],
+    get_tempo: typing.Callable[[str, float], float],
+    cache_dir: typing.Union[Path, str],
+    no_tqdm: bool,
+) -> typing.Dict[UnprocessedSession, Session]:
+    """Process `UnprocessedSession` by calculating and caching some stats.
+
+    TODO: This is largely glue code, so it isn't tested much. In the future, let's refactor
+          `structures` to avoid having glue code for, caching, filtering, coalescing, etc. How
+          can we pipeline this better?
+    TODO: The cache could be further parameterized by `get_loudess` or `get_tempo` params, so it's
+          invalidated correctly.
+    TODO: The cache path should be created using `_config/environment.py` to prevent collisions.
+    TODO: The progress bar should take into account the number of audio files, not just sessions.
+
+    Args:
+        ...
+        meta: A lookup from audio path to the audio metadata.
+        get_loudness: A callable for getting the average loudness for a list of audio files.
+        get_tempo: A callable for getting the average tempo given text and audio length.
+        cache_dir: A directory name to store cache'd results.
+        ...
+
+    Returns: A lookup from unprocessed session to the processed session.
+    """
+    all_psgs = [p for psgs in dataset for p in psgs]
+
+    message = "There must be one session per audio file."
+    pairs = set((p.session, p.audio_path) for p in all_psgs)
+    assert len(pairs) == len(set(p.audio_path for p in all_psgs)), message
+
+    SeshToPsg = typing.Dict[UnprocessedSession, typing.List[UnprocessedPassage]]
+    spkr_to_psg: typing.Dict[Speaker, SeshToPsg] = defaultdict(lambda: defaultdict(list))
+    for psg in all_psgs:
+        spkr_to_psg[psg.session.spkr][psg.session].append(psg)
+
+    processed: typing.Dict[UnprocessedSession, Session] = {}
+    for spkr, sesh_to_psg in spkr_to_psg.items():
+        spkr_psgs = [p for psgs in sesh_to_psg.values() for p in psgs]
+
+        cache_name = f"{_process_sessions.__name__}__{spkr.label}.pickle"
+        cache_path = Path(os.path.commonpath(list(set(p.audio_path for p in spkr_psgs))))
+        cache_path = cache_path.parent if cache_path.is_file() else cache_path
+        cache_path = cache_path / cache_dir / cache_name
+        if cache_path.exists():
+            processed.update(pickle.loads(cache_path.read_bytes()))
+            continue
+
+        total_audio_len = 0
+        full_script = []
+        updates: typing.Dict[UnprocessedSession, Session] = {}
+        for sesh, sesh_psgs in tqdm_(sesh_to_psg.items(), disable=no_tqdm):
+            audio_paths = list(set(p.audio_path for p in sesh_psgs))
+            audio_meta = [meta[p] for p in audio_paths]
+            audios = [_loader.utils._read_audio_cached(f, memmap=True) for f in audio_meta]
+            # TODO: This tempo estimate assumes that the entire aligned script was read with
+            # no mistranscriptions. How can we make it easy to just get the aligned script
+            # and audio data?
+            audio_len = sum(
+                (m.len for m in audio_meta)
+                if any(p.alignments is None for p in sesh_psgs)
+                else (p.aligned_audio_length for p in sesh_psgs)
+            )
+            script = " ".join(
+                (p.script for p in sesh_psgs)
+                if any(p.alignments is None for p in sesh_psgs)
+                else (p.aligned_script for p in sesh_psgs)
+            )
+            tempo = get_tempo(script, audio_len)
+            updates[sesh] = Session(*sesh, get_loudness(audios), tempo, 0)
+            total_audio_len += audio_len
+            full_script.append(script)
+        spkr_tempo = get_tempo(" ".join(full_script), total_audio_len)
+        updates = {a: b._replace(spkr_tempo=spkr_tempo) for a, b in updates.items()}
+
+        cache_path.parent.mkdir(exist_ok=True)
+        cache_path.write_bytes(pickle.dumps(updates))
+        processed.update(updates)
+
+    return processed
 
 
 def _normalize_scripts(
@@ -1156,6 +1311,9 @@ def _normalize_alignments(
 def _make_speech_segments(passage: Passage) -> typing.List[Span]:
     """Make `speech_segments` for `passage`."""
     length = passage.audio_file.length
+    # TODO: Speech segments are intended to be speech segments and some of the conventional
+    # datasets are not trimmed, they have unessecary pausing at the beginning and end. We need to
+    # either remove them or trim them to continue using them, at least.
     if len(passage.alignments) == 1 and passage.alignments[0].audio == (0, length):
         return [passage[:]]
     speech_segments = _make_speech_segments_helper(
@@ -1177,9 +1335,6 @@ def make_passages(
 
     NOTE: This function processes passages in a batch; therefore, it is ideal to pass as many
     items at once as possible.
-    TODO: Add `check_invariants` to `UnprocessedPassage`, so that we can enforce invariants
-    that this code relies on.
-    TODO: Load the correct spaCy model based on language.
 
     Args:
         dataset: Dataset with a list of documents each with a list of passsages.
@@ -1188,27 +1343,32 @@ def make_passages(
     no_tqdm = not add_tqdm
     tqdm = partial(tqdm_, disable=no_tqdm)
 
-    logger.info(f"[{label}] Normalizing audio files...")
-    normalized_audio_files = _normalize_audio_files(dataset, no_tqdm)
-
-    logger.info(f"[{label}] Getting non-speech segments...")
-    non_speech_segments = _get_non_speech_segments(dataset, normalized_audio_files, no_tqdm)
-
     logger.info(f"[{label}] Normalizing scripts...")
     dataset = _normalize_scripts(label, dataset, no_tqdm)
+
+    logger.info(f"[{label}] Normalizing audio files...")
+    dataset, updated_audio_files = _normalize_audio_files(dataset, no_tqdm)
+
+    logger.info(f"[{label}] Processing sessions, gathering statistics...")
+    sessions = cf.partial(_process_sessions)(dataset, updated_audio_files, no_tqdm=no_tqdm)
+
+    logger.info(f"[{label}] Getting non-speech segments...")
+    non_speech_segments = _get_non_speech_segments(dataset, updated_audio_files, no_tqdm)
+
+    # NOTE: This cache would have a lot after running the above.
+    _loader.utils._read_audio_cached.cache_clear()
 
     logger.info(f"[{label}] Making passages...")
     documents: typing.List[typing.List[Passage]] = [[] for _ in range(len(dataset))]
     iterator = tqdm([(i, p) for i, d in enumerate(dataset) for p in d])
     for i, item in iterator:
-        if item.audio_path not in normalized_audio_files:
-            logger.warning(f"[{label}] Skipping, audio path ({item.audio_path.name}) isn't a file.")
-            continue
-        attrs = ("session", "script", "transcript", "other_metadata", "is_linked")
+        attrs = ("script", "transcript", "other_metadata", "is_linked")
         kwargs = {**kwargs, **{a: getattr(item, a) for a in attrs}}
-        audio_file = normalized_audio_files[item.audio_path]
+        audio_file = updated_audio_files[item.audio_path]
         alignments = _normalize_alignments(item, audio_file)
-        documents[i].append(Passage(audio_file=audio_file, alignments=alignments, **kwargs))
+        session = sessions[item.session]
+        passage = Passage(session=session, audio_file=audio_file, alignments=alignments, **kwargs)
+        documents[i].append(passage)
 
     logger.info(f"[{label}] Linking passages...")
     for doc in tqdm(documents):

@@ -24,9 +24,15 @@ import run
 from lib.audio import sec_to_sample
 from lib.distributed import get_rank, get_world_size, is_initialized
 from lib.samplers import BucketBatchSampler
-from lib.utils import Tuple, flatten_2d, lengths_to_mask
-from run._models.spectrogram_model import preprocess_spans
-from run._models.spectrogram_model.model import Inputs
+from lib.text import XMLType, load_cmudict_syl, respell
+from lib.utils import flatten_2d, lengths_to_mask, random_nonoverlapping_intervals
+from run._models.spectrogram_model import (
+    Inputs,
+    PreprocessedInputs,
+    SliceAnnos,
+    TokenAnnos,
+    preprocess,
+)
 from run.data._loader.structures import Alignment, Span, Speaker
 from run.train import _utils
 
@@ -42,107 +48,116 @@ logger = logging.getLogger(__name__)
 
 
 def _random_nonoverlapping_alignments(
-    alignments: Tuple[Alignment], max_alignments: int
+    alignments: typing.Iterable[Alignment],
+    avg_alignments: int,
+    min_no_intervals_prob: float,
+    include_annotation: typing.Callable[[Alignment], bool] = lambda a: True,
 ) -> typing.Tuple[Alignment, ...]:
-    """Generate a random set of non-overlapping alignments, such that every point in the
-    time-series has an equal probability of getting sampled inside an alignment.
+    """Generate a random set of non-overlapping alignments.
 
-    NOTE: The length of the sampled alignments is non-uniform.
+    NOTE: This will undershoot `avg_alignments` for several reasons because the alignments might
+          overlap and be filtered out.
 
     Args:
         alignments
-        max_alignments: The maximum number of alignments to generate.
+        avg_alignments: The average number of alignments to return when alignments are returned.
+        min_no_intervals_prob: The minimum probability for sampling no intervals. In practice,
+            no intervals will be sampled at a slightly higher rate due to the implementation
+            quirks.
+
+    Returns: A tuple of non-overlapping alignments that start and end on a boundary. This may
+        return no intervals in some cases.
     """
+    if random.random() < min_no_intervals_prob:
+        return tuple()
+
     get_ = lambda a, i: tuple([getattr(a, f)[i] for f in Alignment._fields])
     # NOTE: Each of these is a synchronization point along which we can match up the script
     # character, transcript character, and audio sample. We can use any of these points for
     # cutting.
     bounds = flatten_2d([[get_(a, 0), get_(a, -1)] for a in alignments])
-    num_cuts = random.randint(0, int(lib.utils.clamp(max_alignments, min_=0, max_=len(bounds) - 1)))
-
-    if num_cuts == 0:
-        return tuple()
-
-    if num_cuts == 1:
-        tuple_ = lambda i: (bounds[0][i], bounds[-1][i])
-        alignment = Alignment(tuple_(0), tuple_(1), tuple_(2))
-        return tuple([alignment]) if random.choice((True, False)) else tuple()
-
-    # NOTE: Functionally, this is similar to a 50% dropout on intervals.
-    # NOTE: Each alignment is expected to be included half of the time.
-    intervals = bounds[:1] + random.sample(bounds[1:-1], num_cuts - 1) + bounds[-1:]
-    return_ = [
-        Alignment((a[0], b[0]), (a[1], b[1]), (a[2], b[2]))
-        for a, b in zip(intervals, intervals[1:])
-        if random.choice((True, False))
-    ]
-    return tuple(return_)
+    # NOTE: Depending on the parameters, this has some probability of generating no intervals.
+    indicies = random_nonoverlapping_intervals(len(bounds), avg_alignments)
+    intervals = [(bounds[a], bounds[b]) for (a, b) in indicies]
+    # NOTE: Alignments may have overlapping audio segments, we remove those. In practice, this
+    # doesn't happen that often in our data, as reviewed in:
+    # `run/review/dataset_processing/span_annotation_generation.py`
+    ret_ = [Alignment((a[0], b[0]), (a[1], b[1]), (a[2], b[2])) for a, b in intervals]
+    ret_ = [a for a in ret_ if a.audio[0] < a.audio[1] and include_annotation(a)]
+    # NOTE: Intervals should not overlap with respect to the script.
+    assert all(a.script_slice.stop <= b.script_slice.start for a, b in zip(ret_, ret_[1:]))
+    return tuple(ret_)
 
 
-def _get_loudness(
+def _get_loudness_annotation(
     audio: numpy.ndarray,
     sample_rate: int,
     alignment: Alignment,
-    block_size: float,
-    precision: int,
+    get_anno: typing.Callable[..., typing.Optional[float]],
     **kwargs,
 ) -> typing.Optional[float]:
-    """Get the loudness in LUFS for an `alignment` in `audio`.
-
-    TODO: `integrated_loudness` filters our quiet sections from the loudness computations.
-    Should this be disabled?
-
-    Args:
-        ...
-        precision: The number of decimal places to round LUFS.
-        ...
-    """
-    meter = lib.audio.get_pyloudnorm_meter(sample_rate, block_size=block_size, **kwargs)
     sec_to_sample_ = functools.partial(sec_to_sample, sample_rate=sample_rate)
     slice_ = audio[sec_to_sample_(alignment.audio[0]) : sec_to_sample_(alignment.audio[1])]
-    if slice_.shape[0] >= sec_to_sample_(block_size):
-        return round(meter.integrated_loudness(slice_), precision)
-    return None
+    return get_anno(slice_, sample_rate=sample_rate, **kwargs)
 
 
-def _random_loudness_annotations(
-    span: Span, signal: numpy.ndarray, max_annotations: int
-) -> typing.Tuple[torch.Tensor, torch.Tensor]:
-    """
-    Args:
-        ...
-        max_annotations: The maximum expected loudness intervals within a text segment.
-    """
-    loudness = torch.zeros(len(span.script))
-    loudness_mask = torch.zeros(len(span.script), dtype=torch.bool)
-    for alignment in _random_nonoverlapping_alignments(span.alignments, max_annotations):
-        loudness_ = _get_loudness(signal, span.audio_file.sample_rate, alignment, **cf.get())
+def _random_loudness_annotations(span: Span, signal: numpy.ndarray, **kwargs) -> SliceAnnos:
+    """Create random annotations that represent the loudness in `span.script`."""
+    annotations: SliceAnnos = []
+    alignments = cf.partial(_random_nonoverlapping_alignments)(span.speech_segments)
+    for alignment in alignments:
+        sample_rate = span.audio_file.sample_rate
+        loudness_ = cf.call(_get_loudness_annotation, signal, sample_rate, alignment, **kwargs)
         if loudness_ is not None:
-            loudness[alignment.script_slice] = loudness_
-            loudness_mask[alignment.script_slice] = True
-    return loudness, loudness_mask
+            annotations.append((alignment.script_slice, loudness_ - span.session.loudness))
+    return annotations
 
 
-def _random_speed_annotations(
-    span: Span, max_annotations: int, precision: int
-) -> typing.Tuple[torch.Tensor, torch.Tensor]:
-    """
+def _get_tempo_annotation(
+    span: Span, alignment: Alignment, get_anno: typing.Callable[..., float], **kwargs
+) -> float:
+    return get_anno(span.script[alignment.script_slice], alignment.audio_len, **kwargs)
+
+
+def _random_tempo_annotations(span: Span, **kwargs) -> SliceAnnos:
+    """Create random annotations that represent the speaking tempo in `span.script`.
+
+    TODO: We should investigate a more accurate speech tempo, there are a couple options here:
+    https://en.wikipedia.org/wiki/Speech_tempo
+    TODO: We should investiage the correlation of speech tempo to audio length depending on the
+    audio length. Are there thresholds for which it is more likely to be incorrect?
+
     Args:
         span
-        max_annotations: The maximum expected speed intervals within a text segment.
-        precision: The number of decimal places to round phonemes per second.
     """
-    speed = torch.zeros(len(span.script))
-    speed_mask = torch.zeros(len(span.script), dtype=torch.bool)
-    for alignment in _random_nonoverlapping_alignments(span.alignments, max_annotations):
-        # TODO: Instead of using characters per second, we could estimate the number of phonemes
-        # with `grapheme_to_phoneme`. This might be slow, so we'd need to do so in a batch.
-        # `grapheme_to_phoneme` can only estimate the number of phonemes because we can't
-        # incorporate sufficient context to get the actual phonemes pronounced by the speaker.
-        second_per_char = alignment.audio_len / alignment.script_len
-        speed[alignment.script_slice] = round(second_per_char, precision)
-        speed_mask[alignment.script_slice] = True
-    return speed, speed_mask
+    annotations: SliceAnnos = []
+    alignments = cf.partial(_random_nonoverlapping_alignments)(span.speech_segments)
+    for alignment in alignments:
+        annotation = cf.partial(_get_tempo_annotation)(span, alignment, **kwargs)
+        annotations.append((alignment.script_slice, annotation))
+    return annotations
+
+
+def _random_respelling_annotations(span: Span, prob: float, delim: str) -> TokenAnnos:
+    """Create random annotations for different respellings in `span.script`.
+
+    NOTE: We annotate only basic scenarios. A more complex scenario, for example,
+          is apostrophes. spaCy, by default, splits some (not all) words on apostrophes while our
+          pronunciation dictionary does not; therefore, those words will not be found in it.
+    """
+    annotations: TokenAnnos = {}
+    tokens = list(span.spacy)
+    for prev, token, next_ in zip([None] + tokens[:-1], tokens, tokens[1:] + [None]):
+        if random.random() > prob:
+            continue
+        if prev is not None and len(prev.whitespace_) == 0 and not prev.is_punct:
+            continue
+        if next_ is not None and len(token.whitespace_) == 0 and not next_.is_punct:
+            continue
+        respelling = respell(token.text, load_cmudict_syl(), delim)
+        if respelling is not None:
+            annotations[token] = respelling
+    return annotations
 
 
 def _pad_and_trim_signal(signal: numpy.ndarray) -> torch.Tensor:
@@ -193,7 +208,7 @@ def _signals_to_spectrograms(
     signal_to_spectrogram = _get_signal_to_db_mel_spectrogram(**kwargs)
     signals_ = stack_and_pad_tensors(signals)
     db_mel_spectrogram = signal_to_spectrogram(signals_.tensor, aligned=True)
-    lengths = signals_.lengths // signal_to_spectrogram.frame_hop
+    lengths = torch.div(signals_.lengths, signal_to_spectrogram.frame_hop, rounding_mode="floor")
     mask = lengths_to_mask(lengths)
     db_mel_spectrogram = (db_mel_spectrogram * mask.unsqueeze(-1)).transpose(0, 1)
     return (
@@ -266,10 +281,47 @@ def _make_stop_token(spectrogram: SequenceBatch, length: int, standard_deviation
 
 
 @dataclasses.dataclass(frozen=True)
-class Batch(_utils.Batch):
-    """Batch of preprocessed `Span` used to training or evaluating the spectrogram model."""
+class InferBatch(_utils.Batch):
+    """Batch of preprocessed `Span` used to evaluate the spectrogram model."""
 
     spans: typing.List[Span]
+
+    xmls: typing.List[XMLType]
+
+    processed: PreprocessedInputs
+
+    inputs: typing.Optional[Inputs]
+
+    def __len__(self):
+        return len(self.spans)
+
+    def __getitem__(self, key: typing.Any):
+        if not isinstance(key, (slice, int)):
+            raise TypeError
+
+        # TODO: There are several instances of this pattern in the code. Could we rewrite this
+        # using conventional list objects? And/or create an object is able to represent both
+        # a batch and an individual item?
+        if isinstance(key, int):
+            self.spans[key]  # NOTE: Raise `IndexError` if needed.
+            key = slice(key, key + 1)
+
+        return InferBatch(
+            spans=self.spans[key],
+            xmls=self.xmls[key],
+            processed=self.processed[key],
+            inputs=None if self.inputs is None else self.inputs[key],
+        )
+
+    def apply(self, call: typing.Callable[[torch.Tensor], torch.Tensor]) -> "InferBatch":
+        batch: InferBatch = super().apply(call)
+        object.__setattr__(batch, "processed", batch.processed.apply(call))
+        return batch
+
+
+@dataclasses.dataclass(frozen=True)
+class Batch(InferBatch):
+    """Batch of preprocessed `Span` used to training the spectrogram model."""
 
     audio: typing.List[torch.Tensor]
 
@@ -284,8 +336,6 @@ class Batch(_utils.Batch):
     # SequenceBatch[torch.FloatTensor [num_frames, batch_size], torch.LongTensor [1, batch_size])
     stop_token: SequenceBatch
 
-    inputs: Inputs
-
     @property
     def spec(self):
         return self.spectrogram
@@ -294,19 +344,30 @@ class Batch(_utils.Batch):
     def spec_mask(self):
         return self.spectrogram_mask
 
-    def apply(self, call: typing.Callable[[torch.Tensor], torch.Tensor]) -> "Batch":
-        batch: Batch = super().apply(call)
-        assert isinstance(batch.inputs.token_embeddings, torch.Tensor)
-        object.__setattr__(batch.inputs, "token_embeddings", call(batch.inputs.token_embeddings))
-        object.__setattr__(batch.inputs, "num_tokens", call(batch.inputs.num_tokens))
-        object.__setattr__(batch.inputs, "tokens_mask", call(batch.inputs.tokens_mask))
-        return batch
+    def __getitem__(self, key: typing.Any):
+        if not isinstance(key, (slice, int)):
+            raise TypeError
 
-    def __len__(self):
-        return len(self.spans)
+        # TODO: There are several instances of this pattern in the code. Could we rewrite this
+        # using conventional list objects? And/or create an object is able to represent both
+        # a batch and an individual item?
+        if isinstance(key, int):
+            self.spans[key]  # NOTE: Raise `IndexError` if needed.
+            key = slice(key, key + 1)
+
+        return Batch(
+            spans=self.spans[key],
+            audio=self.audio[key],
+            spectrogram=SequenceBatch(self.spec[0][:, key], self.spec[1][:, key]),
+            spectrogram_mask=SequenceBatch(self.spec_mask[0][:, key], self.spec_mask[1][:, key]),
+            stop_token=SequenceBatch(self.stop_token[0][:, key], self.stop_token[1][:, key]),
+            xmls=self.xmls[key],
+            processed=self.processed[key],
+            inputs=None if self.inputs is None else self.inputs[key],
+        )
 
 
-def make_batch(spans: typing.List[Span], max_workers: int = 6, respell_prob: float = 0.0) -> Batch:
+def make_batch(spans: typing.List[Span], max_workers: int = 6, add_inputs: bool = False) -> Batch:
     """
     NOTE: In Janurary 2020, this function profiled like so:
     - 27% for `_signals_to_spectrograms`
@@ -328,11 +389,24 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6, respell_prob: flo
     assert len(spans) > 0, "Batch must have at least one item."
 
     with futures.ThreadPoolExecutor(max_workers=min(max_workers, len(spans))) as pool:
+        # TODO: Should `audio` be cached so that we do not need to pass it around? It is a slightly
+        # redunant to pass it around.
         signals_ = list(pool.map(lambda s: s.audio(), spans))
         signals_ = typing.cast(typing.List[numpy.ndarray], signals_)
     signals = [_pad_and_trim_signal(s) for s in signals_]
     spectrogram, spectrogram_mask = _signals_to_spectrograms(signals)
-
+    inputs = Inputs(
+        session=[s.session for s in spans],
+        span=[s.spacy for s in spans],
+        context=[s.spacy for s in spans],
+        loudness=[_random_loudness_annotations(s, a) for s, a in zip(spans, signals_)],
+        tempo=[_random_tempo_annotations(s) for s in spans],
+        respells=[cf.partial(_random_respelling_annotations)(s) for s in spans],
+    )
+    # NOTE: `inputs` has a spaCy `Span` which is difficult to `pickle`, so instead, we seralize
+    # `inputs` into XML.
+    xmls = [inputs.to_xml(i, include_context=True) for i in range(len(inputs))]
+    processed = cf.partial(preprocess)(inputs)
     return Batch(
         # NOTE: Prune unused attributes from `Passage` by creating a new `Passage`, in order to
         # reduce batch size, which in turn makes it easier to send to other processes, for example.
@@ -341,12 +415,15 @@ def make_batch(spans: typing.List[Span], max_workers: int = 6, respell_prob: flo
         spectrogram=spectrogram,
         spectrogram_mask=spectrogram_mask,
         stop_token=cf.partial(_make_stop_token)(spectrogram),
-        inputs=preprocess_spans(spans, respell_prob=respell_prob),
+        xmls=xmls,
+        processed=processed,
+        # NOTE: `inputs` with spaCy objects can be intensive so pickle, so it's optional.
+        inputs=inputs if add_inputs else None,
     )
 
 
 class DataProcessor(typing.Mapping[int, Batch]):
-    def __init__(self, dataset: run._utils.Dataset, batch_size: int, step: int = 0, **kwargs):
+    def __init__(self, generator: run._utils.SpanGenerator, batch_size: int, step: int = 0):
         """Given an index, generate the appropriate batch indefinitely.
 
         NOTE: Our training procedure is similar to BERT, the examples are randomly sampled
@@ -365,8 +442,7 @@ class DataProcessor(typing.Mapping[int, Batch]):
         - Checkpoint the random state of every worker, and use it to restart those workers. We'd
           likely need to setup a communication channel with workers, in order to implement this.
         """
-        iter_ = cf.partial(run._utils.SpanGenerator)(dataset, **kwargs)
-        iter_ = BucketBatchSampler(iter_, batch_size, False, self._data_iterator_sort_key)
+        iter_ = BucketBatchSampler(generator, batch_size, False, self._data_iterator_sort_key)
         iter_ = DeterministicSampler(iter_, run._config.RANDOM_SEED + step, cuda=False)
         if is_initialized():
             iter_ = DistributedBatchSampler(iter_, num_replicas=get_world_size(), rank=get_rank())
@@ -384,7 +460,7 @@ class DataProcessor(typing.Mapping[int, Batch]):
         return sys.maxsize
 
     def __getitem__(self, index) -> Batch:
-        return cf.partial(make_batch)(self.index_to_spans[index])
+        return make_batch(self.index_to_spans[index])
 
 
 def train_get_weight(speaker: Speaker, dataset_size: float):

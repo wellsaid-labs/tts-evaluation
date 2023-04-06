@@ -1,5 +1,6 @@
 import functools
 
+from lib.text import text_to_xml, xml_to_text
 from run._config import (
     is_normalized_vo_script,
     is_sound_alike,
@@ -91,8 +92,8 @@ def text_normalize_and_verbalize_text():
         "seven twenty-five AM. Run thirteen miles, eat two thousand calories, nap for ten to "
         "fifteen minutes, and eat dinner with Doctor Amelia Fern at seven oh clock tonight.",
     )
-
-    assert text_out == normalize_and_verbalize_text(text_in, Language.ENGLISH)
+    out = normalize_and_verbalize_text(text_to_xml(text_in), Language.ENGLISH)
+    assert text_out == xml_to_text(out)
 
 
 def test__get_long_abbrevs():

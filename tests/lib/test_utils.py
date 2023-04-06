@@ -2,6 +2,7 @@ import math
 import pathlib
 import tempfile
 import typing
+from collections import defaultdict
 
 import numpy
 import pytest
@@ -11,7 +12,7 @@ import torch.nn
 from torchnlp.random import fork_rng
 
 import lib
-from lib.utils import Timeline, TimelineMap, lengths_to_mask, pad_tensor
+from lib.utils import Timeline, TimelineMap, lengths_to_mask, offset_slices, pad_tensor
 from tests._utils import assert_almost_equal
 
 
@@ -21,6 +22,8 @@ def test_round_():
     assert lib.utils.round_(0.4, 0.25) == 0.5
     assert lib.utils.round_(1, 4) == 0
     assert lib.utils.round_(3, 4) == 4
+    # NOTE: Without additional rounding, this regressed to: 1.1500000000000001.
+    assert lib.utils.round_(1.17, 0.05) == 1.15
 
 
 def test_random_sample():
@@ -30,6 +33,115 @@ def test_random_sample():
         assert lib.utils.random_sample([1, 2, 3, 4], 0) == []
         assert lib.utils.random_sample([1, 2, 3, 4], 2) == [4, 1]
         assert lib.utils.random_sample([1, 2, 3, 4], 5) == [1, 4, 3, 2]
+
+
+def test_random_nonoverlapping_intervals():
+    """Test `lib.utils.random_nonoverlapping_intervals` handles the basic case(s)."""
+    assert lib.utils.random_nonoverlapping_intervals(2, 1) == ((0, 1),)
+    assert lib.utils.random_nonoverlapping_intervals(2, 0) == tuple()
+
+
+def _get_distribution(**kwargs):
+    with fork_rng(1234):
+        total_intervals = 0
+        total_interval_length = 0
+        no_intervals = 0
+        distribution = defaultdict(int)
+        num_bounds = 30
+        buckets = [0] * (num_bounds - 1)
+        passes = 1000
+        for _ in range(passes):
+            intervals = lib.utils.random_nonoverlapping_intervals(num_bounds, **kwargs)
+            no_intervals += len(intervals) == 0
+            total_intervals += len(intervals)
+            total_interval_length += sum(b - a for a, b in intervals)
+            for a, b in intervals:
+                distribution[b - a] += 1
+                assert b - a > 0
+                for i in range(a, b):
+                    buckets[i] += 1
+    return buckets, distribution, no_intervals, passes, total_interval_length, total_intervals
+
+
+def test_random_nonoverlapping_intervals__distribution():
+    """Test `lib.utils.random_nonoverlapping_intervals` has the correct distribution."""
+    (
+        buckets,
+        distribution,
+        no_intervals,
+        passes,
+        total_interval_length,
+        total_intervals,
+    ) = _get_distribution(avg_intervals=3)
+    assert no_intervals == 27  # NOTE: Only 3% of the time there are no annotations
+    # NOTE: Like expected, there are 3 annotations on average
+    assert total_intervals / passes == 2.957
+    assert total_interval_length / passes == 9.637
+    # NOTE: Around 86% of our annotations would be 1 to 5 units long. There is certainly a
+    # bias toward shorter segments.
+    assert distribution == {
+        1: 1526,
+        2: 498,
+        3: 257,
+        4: 155,
+        5: 109,
+        6: 61,
+        7: 58,
+        8: 50,
+        9: 30,
+        10: 29,
+        11: 17,
+        12: 23,
+        13: 16,
+        14: 12,
+        15: 8,
+        16: 12,
+        17: 13,
+        18: 8,
+        19: 9,
+        20: 3,
+        21: 5,
+        22: 2,
+        23: 1,
+        24: 5,
+        25: 7,
+        26: 2,
+        27: 3,
+        28: 2,
+        29: 36,
+    }
+    # NOTE: There is an equal probability that each bucket of data is found inside an interval.
+    assert buckets == [
+        318,
+        330,
+        332,
+        332,
+        333,
+        347,
+        319,
+        333,
+        327,
+        337,
+        345,
+        341,
+        336,
+        327,
+        331,
+        325,
+        324,
+        319,
+        337,
+        344,
+        323,
+        324,
+        340,
+        353,
+        335,
+        331,
+        330,
+        329,
+        335,
+    ]
 
 
 def test_mean():
@@ -52,16 +164,19 @@ def test_get_weighted_std():
     tensor = torch.tensor(
         [[[0.3333333, 0.3333333, 0.3333334], [0, 0.5, 0.5]], [[0, 0.5, 0.5], [0, 0.5, 0.5]]]
     )
-    assert_almost_equal(
-        lib.utils.get_weighted_std(tensor, dim=2),
-        torch.tensor([[0.8164966106414795, 0.50], [0.50, 0.50]]),
-    )
+    expected = torch.tensor([[0.8164966106414795, 0.50], [0.50, 0.50]])
+    assert_almost_equal(lib.utils.get_weighted_std(tensor, dim=2), expected)
 
 
 def test_get_weighted_std__one_data_point():
     """Test `lib.utils.get_weighted_std` computes the correct standard deviation for one data
     point."""
     assert lib.utils.get_weighted_std(torch.tensor([0, 1, 0]), dim=0) == torch.zeros(1)
+
+
+def test_get_weighted_std__no_data_points():
+    """Test `lib.utils.get_weighted_std` returns NaN if zeros are passed."""
+    assert torch.isnan(lib.utils.get_weighted_std(torch.tensor([0, 0, 0]), dim=0))
 
 
 def test_get_weighted_std__zero_elements():
@@ -567,6 +682,24 @@ def test_lengths_to_mask():
     assert torch.equal(lengths_to_mask(torch.tensor([[]])), torch.empty(0, 0, dtype=torch.bool))
 
 
+def test_offset_slices():
+    """Test `offset_slices` updates `slices` based on a list of updates."""
+    assert offset_slices([slice(1, 3)], []) == [slice(1, 3)]
+    assert offset_slices([slice(1, 3)], [(slice(0, 1), 0)]) == [slice(0, 2)]
+    assert offset_slices([slice(1, 3)], [(slice(1, 2), 0)]) == [slice(1, 2)]
+    assert offset_slices([slice(1, 3)], [(slice(1, 3), 0)]) == [slice(1, 1)]
+    assert offset_slices([slice(1, 3)], [(slice(1, 3), 5)]) == [slice(1, 6)]
+    assert offset_slices([slice(1, 3)], [(slice(2, 3), 0)]) == [slice(1, 2)]
+    assert offset_slices([slice(1, 3)], [(slice(3, 4), 0)]) == [slice(1, 3)]
+
+    expected = [slice(0, 1), slice(1, 2), slice(3, 4)]
+    assert offset_slices([slice(0, 1), slice(1, 3), slice(4, 5)], [(slice(1, 2), 0)]) == expected
+    updates = [(slice(0, 1), 0), (slice(1, 2), 0)]
+    assert offset_slices([slice(0, 1), slice(1, 2)], updates) == [slice(0, 0), slice(0, 0)]
+    updates = [(slice(0, 1), 2), (slice(1, 2), 2)]
+    assert offset_slices([slice(0, 1), slice(1, 2)], updates) == [slice(0, 2), slice(2, 4)]
+
+
 def test_arange():
     """Test `lib.utils.arange` is similar to `range`."""
     assert list(range(0, 10, 1)) == list(lib.utils.arange(0, 10, 1))
@@ -586,3 +719,23 @@ def test_zip_strict():
         assert list(lib.utils.zip_strict((1, 2, 3), (1, 2))) == [(1, 1), (2, 2), (3, 3)]
     with pytest.raises(AssertionError):
         assert list(lib.utils.zip_strict((1, 2), (1, 2, 3))) == [(1, 1), (2, 2), (3, 3)]
+
+
+def test_slice_seq():
+    """Test `lib.utils.slice_seq` on basic cases."""
+    slices = [(slice(0, 1), 1.0), (slice(3, 5), 3.0)]
+    result = lib.utils.slice_seq(slices, 5)
+    expected = torch.tensor([1.0, 0.0, 0.0, 3.0, 3.0])
+    assert torch.equal(result, expected)
+
+    with pytest.raises(AssertionError):  # Error on overlap
+        lib.utils.slice_seq([(slice(0, 1), 1.0), (slice(0, 1), 3.0)], 5)
+
+    with pytest.raises(AssertionError):  # Error on funky step size
+        lib.utils.slice_seq([(slice(0, 1, 2), 1.0)], 5)
+
+    with pytest.raises(AssertionError):  # Error on if not sorted
+        lib.utils.slice_seq([(slice(2, 3), 1.0), (slice(1, 2), 1.0)], 5)
+
+    with pytest.raises(AssertionError):  # Error length too small
+        lib.utils.slice_seq([(slice(0, 7), 1.0)], 5)

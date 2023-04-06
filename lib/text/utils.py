@@ -1,5 +1,6 @@
 import enum
 import functools
+import html
 import logging
 import pathlib
 import re
@@ -943,8 +944,9 @@ def align_tokens(
                 token = tokens[i]
                 other_token = other_tokens[j - 1]
                 if token == other_token or allow_substitution(token, other_token):
-                    substition_cost = Levenshtein.distance(token, other_token)  # type: ignore
-                    substition_cost = row_one[j - 1 - row_one_window[0]] + substition_cost
+                    substition_cost = row_one[j - 1 - row_one_window[0]]
+                    assert substition_cost is not None
+                    substition_cost += Levenshtein.distance(token, other_token)  # type: ignore
                     alignment = (j - 1, i) if flipped else (i, j - 1)
                     substition_path = row_one_paths[j - 1 - row_one_window[0]]
                     substition_path = [p + [alignment] for p in substition_path]
@@ -966,6 +968,21 @@ def align_tokens(
         typing.cast(int, row_one[-1]),
         row_one_paths[-1][0],
     )
+
+
+XMLType = typing.NewType("XML", str)
+
+XML_PATTERN = re.compile(r"(<[^>]*>)")
+
+
+def xml_to_text(xml: XMLType) -> str:
+    """Lossy conversion from `xml` to `text` by removing any xml markings."""
+    return html.unescape(re.sub(XML_PATTERN, "", xml).strip())
+
+
+def text_to_xml(text: str) -> XMLType:
+    """Escape any special XML characters and return valid XML."""
+    return XMLType(html.escape(text))
 
 
 def is_stripped(s: str) -> bool:

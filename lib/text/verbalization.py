@@ -3,7 +3,7 @@ TODO: Utilize spaCy 3.0 for entity identification [inconsistent, unreliable in 2
 TODO: Add a classifier which checks if a string has any non-standard words. This should be
 helpful for finding test cases, and ensuring that nothing was missed. For example, it could look
 for the presence of numbers.
-TODO: Accept a spaCy `Doc` as an arguement, use it's metadata to normalize non-standard words...
+TODO: Accept a spaCy `Doc` as an argument, use it's metadata to normalize non-standard words...
 
 We'd need to normalize at the `Token` rather than `Span` level so that each word as an embedding.
 It's also preferrable to use the embeddings prior to normalization because the text spaCy trained
@@ -12,13 +12,14 @@ for rearranging them when verbalizing monetary values. Keep in mind, if we are u
 prior to verbalization, we should do the same thing during training.
 """
 import functools
+import html
 import logging
 import re
 import typing
 
 from num2words import num2words
 
-from lib.text import load_en_english
+from lib.text import XML_PATTERN, XMLType, load_en_english
 from lib.text.non_standard_words import (
     ACRONYMS,
     CURRENCIES,
@@ -34,7 +35,6 @@ from lib.text.non_standard_words import (
     TIME_ZONES,
     UNITS_ABBREVIATIONS,
     VERBALIZED_SYMBOLS_VERBALIZED,
-    WEB_INITIALISMS,
 )
 
 logger = logging.getLogger(__name__)
@@ -289,7 +289,9 @@ _WHITE_SPACES = re.compile(r"\s+")
 
 def _verbalize_url(
     protocol: typing.Optional[str],
+    protocol_suffix: typing.Optional[str],
     www_subdomain: typing.Optional[str],
+    www_subdomain_suffix: typing.Optional[str],
     subdomain: typing.Optional[str],
     domain_name: str,
     domain_extension: str,
@@ -298,21 +300,27 @@ def _verbalize_url(
     """Verbalize a URL (e.g. https://www.wellsaidlabs.com, wellsaidlabs.com, rhyan@wellsaidlabs.com)
 
     Args:
-        protocol (e.g. "http://", "https://")
-        www_subdomain (e.g. "www.")
+        protocol (e.g. "http", "https")
+        protocol_suffix (e.g. "://")
+        www_subdomain (e.g. "www")
+        www_subdomain_suffix (e.g. ".")
         subdomain (e.g. "help.")
         domain_name (e.g. "wellsaidlabs")
         domain_extension (e.g. "com", "org")
         remainder (e.g. "/things-to-do", ":80/path/to/myfile.html?key1=value1#SomewhereInTheFile")
     """
+    assert (protocol is None) == (protocol_suffix is None)
+    assert (www_subdomain is None) == (www_subdomain_suffix is None)
     return_ = ""
     # CASE: Email
     if protocol is None and www_subdomain is None and subdomain is None and "@" in domain_name:
         return_ += " at ".join(domain_name.split("@")) + " " + " ".join([".", domain_extension])
     else:  # CASE: Web Address
         # NOTE: Handle prefixes (e.g. "http://", "https://", "www.")
-        prefixes = [protocol, www_subdomain]
-        return_ += " " + " ".join(" ".join(list(m)) for m in prefixes if m is not None)
+        if protocol is not None and protocol_suffix is not None:
+            return_ += " " + " ".join([protocol.upper(), " ".join(list(protocol_suffix))])
+        if www_subdomain is not None and www_subdomain_suffix is not None:
+            return_ += " " + " ".join([www_subdomain.upper(), " ".join(list(www_subdomain_suffix))])
         suffixes = [subdomain, domain_name, ".", domain_extension, remainder]
         return_ += " ".join(m for m in suffixes if m is not None)
 
@@ -322,10 +330,6 @@ def _verbalize_url(
     digits = (c for w in return_.split(" ") for c in w if c.isdigit())
     for char in digits:
         return_ = return_.replace(char, f" {_num2words(char)} ")
-
-    # Pronounce "HTTP", "HTTPS", "WWW"
-    for s in WEB_INITIALISMS.keys():
-        return_ = return_.replace(s, WEB_INITIALISMS[s])
 
     return _WHITE_SPACES.sub(" ", return_).strip()
 
@@ -544,14 +548,14 @@ class RegExPatterns:
         # NOTE: Learn more about the autonomy of a URL here:
         # https://developer.mozilla.org/en-US/docs/Learn/Common_questions/What_is_a_URL
         r"\b"
-        r"(https?:\/\/)?"  # GROUP 1 (Optional): Protocol
-        r"(www\.)?"  # GROUP 2 (Optional): World wide web subdomain
-        r"([a-zA-Z]+\.)?"  # Group 3 (Optional): Other subdomain
-        r"([-a-zA-Z0-9@:%_\+~#=]{2,256})"  # Group 4: Domain name
+        r"(?:(https?)(:\/\/))?"  # GROUP 1 & 2 (Optional): Protocol
+        r"(?:(www)(\.))?"  # GROUP 3 & 4 (Optional): World wide web subdomain
+        r"([a-zA-Z]+\.)?"  # Group 5 (Optional): Other subdomain
+        r"([-a-zA-Z0-9@:%_\+~#=]{2,256})"  # Group 6: Domain name
         r"\."
-        r"([a-z]{2,4})"  # Group 6: Domain extension
+        r"([a-z]{2,4})"  # Group 7: Domain extension
         r"\b"
-        r"([-a-zA-Z0-9@:%_\+.~#?&//=]*)"  # Group 7: Port, path, parameters and anchor
+        r"([-a-zA-Z0-9@:%_\+.~#?&//=]*)"  # Group 8: Port, path, parameters and anchor
         r"\b"
     )
     FRACTIONS: typing.Final[typing.Pattern[str]] = re.compile(
@@ -622,48 +626,66 @@ def ensure_period(sent: str, span_text: str) -> str:
     return sent + "." if span_text[-1] == "." and sent[-1] != "." else sent
 
 
-def verbalize_text(text: str) -> str:
-    """Takes in a text string and, in an intentional and controlled manner, verbalizes numerals and
-    non-standard-words in plain English. The order of events is important. Normalizing generic
-    digits before normalizing money cases specifically, for example, will yield incomplete and
-    inaccurate results.
+def _verbalize_text(text: str):
+    """Helper function for `verbalize_text`."""
+    # NOTE: The order of events is important. Normalizing generic digits before normalizing money
+    # cases specifically, for example, will yield incomplete and inaccurate results.
+    # NOTE: The order is based on specificity, the verbalizers start nuanced and generalize.
+    sent = text
+    sent = _apply(sent, RegExPatterns.MONEY, _verbalize_money)
+    sent = _apply(sent, RegExPatterns.MONEY_REVERSED, _verbalize_money__reversed)
+    sent = _apply(sent, RegExPatterns.ORDINALS, _verbalize_ordinal)
+    sent = _apply(sent, RegExPatterns.TIMES, _verbalize_time)
+    sent = ensure_period(sent, text)
+    sent = _apply(sent, RegExPatterns.PHONE_NUMBERS, _verbalize_phone_number)
+    sent = _apply(sent, RegExPatterns.TOLL_FREE_PHONE_NUMBERS, _verbalize_phone_number)
+    sent = _apply(
+        sent, RegExPatterns.ALTERNATIVE_PHONE_NUMBERS, _verbalize_alternative_phone_number
+    )
+    sent = _apply(sent, RegExPatterns.DECADES, _verbalize_decade)
+    sent = _apply(sent, RegExPatterns.YEARS, _verbalize_year)
+    sent = _apply(sent, RegExPatterns.PERCENTS, _verbalize_percent)
+    sent = _apply(sent, RegExPatterns.NUMBER_SIGNS, _verbalize_number_sign)
+    sent = _apply(sent, RegExPatterns.NUMBER_RANGE, _verbalize_generic_number)
+    sent = _apply(sent, RegExPatterns.URLS, _verbalize_url)
+    sent = _apply(
+        sent, RegExPatterns.MEASUREMENT_ABBREVIATIONS, _verbalize_measurement_abbreviation
+    )
+    sent = _apply(sent, RegExPatterns.ABBREVIATED_TIMES, _verbalize_abbreviated_time)
+    sent = ensure_period(sent, text)
+    sent = _apply(sent, RegExPatterns.FRACTIONS, _verbalize_fraction)
+    sent = _apply(sent, RegExPatterns.GENERIC_DIGIT, _verbalize_generic_number, True)
+    sent = _apply(sent, RegExPatterns.ISOLATED_GENERIC_DIGIT, _verbalize_generic_number, True)
+    sent = _apply(sent, RegExPatterns.GENERIC_VERBALIZED_SYMBOL, _verbalize_generic_symbol, True)
+    sent = html.escape(sent)
+    # NOTE: `_verbalize_acronym` may add HTML, so it is added last, and we escape any `html` chars.
+    sent = _apply(sent, RegExPatterns.ACRONYMS, _verbalize_acronym)
+    sent = ensure_period(sent, text)
+    sent = _apply(sent, RegExPatterns.ABBREVIATIONS, _verbalize_abbreviation)
+    return sent
+
+
+def _is_tag(text: str):
+    return text.startswith("<") and text.endswith(">")
+
+
+def verbalize_text(xml: XMLType) -> XMLType:
+    """Verbalize numerals and non-standard-words into plain English.
+
+    NOTE: This splits up the text on HTML tags, so unfortunately no context is passed on.
     """
     nlp = load_en_english()
     nlp.add_pipe("sentencizer")
     sents = []
-    nlp_sents = nlp(text).sents
-    for span in nlp_sents:
-        sent = span.text
-        sent = _apply(sent, RegExPatterns.MONEY, _verbalize_money)
-        sent = _apply(sent, RegExPatterns.MONEY_REVERSED, _verbalize_money__reversed)
-        sent = _apply(sent, RegExPatterns.ORDINALS, _verbalize_ordinal)
-        sent = _apply(sent, RegExPatterns.TIMES, _verbalize_time)
-        sent = ensure_period(sent, span.text)
-        sent = _apply(sent, RegExPatterns.PHONE_NUMBERS, _verbalize_phone_number)
-        sent = _apply(sent, RegExPatterns.TOLL_FREE_PHONE_NUMBERS, _verbalize_phone_number)
-        sent = _apply(
-            sent, RegExPatterns.ALTERNATIVE_PHONE_NUMBERS, _verbalize_alternative_phone_number
-        )
-        sent = _apply(sent, RegExPatterns.DECADES, _verbalize_decade)
-        sent = _apply(sent, RegExPatterns.YEARS, _verbalize_year)
-        sent = _apply(sent, RegExPatterns.PERCENTS, _verbalize_percent)
-        sent = _apply(sent, RegExPatterns.NUMBER_SIGNS, _verbalize_number_sign)
-        sent = _apply(sent, RegExPatterns.NUMBER_RANGE, _verbalize_generic_number)
-        sent = _apply(sent, RegExPatterns.URLS, _verbalize_url)
-        sent = _apply(
-            sent, RegExPatterns.MEASUREMENT_ABBREVIATIONS, _verbalize_measurement_abbreviation
-        )
-        sent = _apply(sent, RegExPatterns.ABBREVIATED_TIMES, _verbalize_abbreviated_time)
-        sent = ensure_period(sent, span.text)
-        sent = _apply(sent, RegExPatterns.FRACTIONS, _verbalize_fraction)
-        sent = _apply(sent, RegExPatterns.ACRONYMS, _verbalize_acronym)
-        sent = ensure_period(sent, span.text)
-        sent = _apply(sent, RegExPatterns.ABBREVIATIONS, _verbalize_abbreviation)
-        sent = _apply(sent, RegExPatterns.GENERIC_DIGIT, _verbalize_generic_number, True)
-        sent = _apply(sent, RegExPatterns.ISOLATED_GENERIC_DIGIT, _verbalize_generic_number, True)
-        sent = _apply(
-            sent, RegExPatterns.GENERIC_VERBALIZED_SYMBOL, _verbalize_generic_symbol, True
-        )
+    splits = XML_PATTERN.split(xml)
+    # TODO: Let's consider processing the entire string together, without tags, to preserve context.
+    docs = list(nlp.pipe(html.unescape(s) for s in splits if not _is_tag(s)))
+    for split in splits:
+        if _is_tag(split):
+            sents.append(split)
+            continue
 
-        sents.extend([sent, span[-1].whitespace_])
-    return "".join(sents)
+        for span in docs.pop(0).sents:
+            sents.extend([_verbalize_text(span.text), span[-1].whitespace_])
+
+    return XMLType("".join(sents))

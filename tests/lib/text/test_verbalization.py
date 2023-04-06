@@ -1,5 +1,7 @@
+import html
 import typing
 
+from lib.text import text_to_xml
 from lib.text.non_standard_words import _norm
 from lib.text.verbalization import (
     RegExPatterns,
@@ -527,8 +529,9 @@ _tests_urls = [
     ("staging.wellsaidlabs.com", "staging dot wellsaidlabs dot com"),
     (
         "you just need to visit www.ArizonaGuide.com to see for yourself",
-        "you just need to visit ::DUH-buh-yoo-DUH-buh-yoo-DUH-buh-yoo:: dot ArizonaGuide dot com "
-        "to see for yourself",
+        "you just need to visit "
+        "<respell value='DUH-buh-yoo-DUH-buh-yoo-DUH-buh-yoo'>www</respell> dot ArizonaGuide dot "
+        "com to see for yourself",
     ),
     ("find us at Dianetics.org", "find us at Dianetics dot org"),
     (
@@ -542,30 +545,37 @@ _tests_urls = [
     ),
     (
         "www.gov.nf.ca/tourism",
-        "::DUH-buh-yoo-DUH-buh-yoo-DUH-buh-yoo:: dot gov dot nf dot ca slash tourism",
+        "<respell value='DUH-buh-yoo-DUH-buh-yoo-DUH-buh-yoo'>www</respell> dot gov dot nf dot "
+        "ca slash tourism",
     ),
     (
         "https://www.foxwoods.com",
-        "::AYCH-tee-tee-pee-EHS:: colon slash slash ::DUH-buh-yoo-DUH-buh-yoo-DUH-buh-yoo:: dot "
-        "foxwoods dot com",
+        "<respell value='AYCH-tee-tee-pee-EHS'>https</respell> colon slash slash "
+        "<respell value='DUH-buh-yoo-DUH-buh-yoo-DUH-buh-yoo'>www</respell> dot foxwoods dot com",
     ),
     (
         "http://www.example.com:80/path/to/myfile.html?key1=value1#SomewhereInTheFile",
-        "::AYCH-tee-tee-PEE:: colon slash slash ::DUH-buh-yoo-DUH-buh-yoo-DUH-buh-yoo:: dot "
-        "example dot com colon eight zero slash path slash to slash myfile dot html question mark "
-        "key one equals value one hash SomewhereInTheFile",
+        "<respell value='AYCH-tee-tee-PEE'>http</respell> colon slash slash "
+        "<respell value='DUH-buh-yoo-DUH-buh-yoo-DUH-buh-yoo'>www</respell> dot example dot com "
+        "colon eight zero slash path slash to "
+        "slash myfile dot html question mark key one equals value one hash SomewhereInTheFile",
     ),
     (
         "https://www.FDLE.state.fl.us",
-        "::AYCH-tee-tee-pee-EHS:: colon slash slash ::DUH-buh-yoo-DUH-buh-yoo-DUH-buh-yoo:: dot "
-        "FDLE dot state dot fl dot us",
+        "<respell value='AYCH-tee-tee-pee-EHS'>https</respell> colon slash slash "
+        "<respell value='DUH-buh-yoo-DUH-buh-yoo-DUH-buh-yoo'>www</respell> dot FDLE "
+        "dot state dot fl dot us",
     ),
 ]
 
 
 def test___urls():
     """Test `RegExPatterns.URLS` matching and `_verbalize_url` verbalization."""
-    assert_verbalized(_tests_urls, RegExPatterns.URLS, _verbalize_url)
+    for text_in, text_out in _tests_urls:
+        text_in = _norm(text_in)
+        text_in = _apply(text_in, RegExPatterns.URLS, _verbalize_url)
+        text_in = _apply(text_in, RegExPatterns.ACRONYMS, _verbalize_acronym)
+        assert text_in == text_out
 
 
 _tests_acronyms = [
@@ -902,7 +912,8 @@ def test_verbalize_text():
             "Do you want to learn how to turn $200 into a grand!? Call 1-800-MONEY-4-ME now or "
             "visit www.money4me.com/now!",
             "Do you want to learn how to turn two hundred dollars into a grand!? Call one, eight "
-            "hundred, MONEY, four, ME now or visit ::DUH-buh-yoo-DUH-buh-yoo-DUH-buh-yoo:: dot "
+            "hundred, MONEY, four, ME now or visit "
+            "<respell value='DUH-buh-yoo-DUH-buh-yoo-DUH-buh-yoo'>www</respell> dot "
             "money four me dot com slash now!",
         ),
         (
@@ -1025,6 +1036,7 @@ def test_verbalize_text():
             "Number five. Dilbar | five hundred and eleven feet",
         ),
         # NOTE: < as a parenthesis is not supported due to it's rarity.
+        # NOTE: This handles escaped HTML characters.
         (
             "hen, one day I get an email from her: From: Christie <xxxxxxxxxxxx@yahoo.com> ",
             "hen, one day I get an email from her: From: Christie less than xxxxxxxxxxxx at "
@@ -1067,7 +1079,8 @@ def test_verbalize_text():
         # NOTE: This is a regression test that error'd in production.
         (
             "Expectations From `Tidy Floor’:\nI consider www.tidyfloor.com to be my brain child.",
-            "Expectations From 'Tidy Floor':\nI consider ::DUH-buh-yoo-DUH-buh-yoo-DUH-buh-yoo:: "
+            "Expectations From 'Tidy Floor':\nI consider "
+            "<respell value='DUH-buh-yoo-DUH-buh-yoo-DUH-buh-yoo'>www</respell> "
             "dot tidyfloor dot com to be my brain child.",
         ),
         # NOTE: This is a regression test that error'd in production.
@@ -1085,8 +1098,8 @@ def test_verbalize_text():
         ),
     ]
     for text_in, text_out in tests:
-        assert verbalize_text(_norm(text_in)) == text_out
+        assert html.unescape(verbalize_text(text_to_xml(_norm(text_in)))) == text_out
 
     for _, tests in all_tests:
         for text_in, text_out in tests:
-            assert verbalize_text(_norm(text_in)) == text_out
+            assert html.unescape(verbalize_text(text_to_xml(_norm(text_in)))) == text_out

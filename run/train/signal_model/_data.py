@@ -180,7 +180,7 @@ class DataProcessor(torch.utils.data.IterableDataset):
         """Sample slices from a batch of predicted spectrograms."""
         batch = spectrogram_model_module._data.make_batch(spans)
         preds = self.spectrogram_model(
-            inputs=batch.inputs,
+            inputs=batch.processed,
             target_frames=batch.spectrogram.tensor,
             target_mask=batch.spectrogram_mask.tensor,
             mode=run._models.spectrogram_model.Mode.FORWARD,

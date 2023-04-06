@@ -7,7 +7,6 @@ import logging
 import math
 import pathlib
 import random
-import types
 import typing
 from functools import partial
 
@@ -20,7 +19,6 @@ import torch.utils
 import torch.utils.data
 from third_party import get_parameter_norm
 from torch.nn.functional import binary_cross_entropy_with_logits, mse_loss
-from torchnlp.random import fork_rng
 from torchnlp.utils import get_total_parameters
 
 import lib
@@ -30,7 +28,7 @@ from lib.utils import log_runtime
 from lib.visualize import plot_alignments, plot_logits, plot_mel_spectrogram
 from run._config import Cadence, DatasetType, get_dataset_label, get_model_label
 from run._models.spectrogram_model import Mode, Preds, SpectrogramModel
-from run._utils import Dataset, SpanGeneratorGetWeight
+from run._utils import Dataset, SpanGenerator, SpanGeneratorGetWeight
 from run.data._loader.structures import Speaker
 from run.train import _utils
 from run.train._utils import (
@@ -49,7 +47,6 @@ from run.train.spectrogram_model._metrics import (
     Metrics,
     MetricsKey,
     MetricsValues,
-    get_alignment_norm,
     get_average_db_rms_level,
 )
 
@@ -137,9 +134,7 @@ class _State:
         return model
 
     @staticmethod
-    def _make_optimizer_groups(
-        model: torch.nn.Module, exclude_from_decay: ExcludeFromDecay
-    ) -> typing.List[typing.Dict[str, typing.Any]]:
+    def _make_optimizer_groups(model: torch.nn.Module, exclude_from_decay: ExcludeFromDecay):
         """Create optimizer groups with optimizer options per group.
 
         Args:
@@ -155,7 +150,8 @@ class _State:
         decay_names, decay_params = tuple(zip(*[p for p in named_params if not exclude(*p)]))
         logger.info("Parameters excluded from weight decay: %s", no_decay_names)
         logger.info("Parameters with weight decay: %s", decay_names)
-        return [{"params": no_decay_params, "weight_decay": 0.0}, {"params": decay_params}]
+        groups = [{"params": no_decay_params, "weight_decay": 0.0}, {"params": decay_params}]
+        return no_decay_names, decay_names, groups
 
     @staticmethod
     def _get_optimizers(
@@ -176,7 +172,7 @@ class _State:
         https://github.com/pytorch/pytorch/issues/2830
         """
         params = list(filter(lambda p: p.requires_grad, model.parameters()))
-        optim_groups = _State._make_optimizer_groups(model, exclude_from_decay)
+        _, _, optim_groups = _State._make_optimizer_groups(model, exclude_from_decay)
         optimizer_ = cf.partial(optimizer)(optim_groups)
         clipper = cf.partial(lib.optimizers.AdaptiveGradientNormClipper)(params)
         scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer_, lr_multiplier_schedule)
@@ -236,24 +232,48 @@ def _worker_init_fn():
     set_run_seed(**cf.get())
 
 
+def _get_data_generator(
+    train_dataset: Dataset,
+    dev_dataset: Dataset,
+    train_get_weight: SpanGeneratorGetWeight,
+    dev_get_weight: SpanGeneratorGetWeight,
+    **_,
+):
+    """Initialize training and development data generators."""
+    train = cf.partial(SpanGenerator)(train_dataset, get_weight=train_get_weight)
+    dev = cf.partial(SpanGenerator)(dev_dataset, get_weight=dev_get_weight)
+    return train, dev
+
+
+def _get_data_processors(
+    train_gen: SpanGenerator,
+    dev_gen: SpanGenerator,
+    step: int,
+    train_batch_size: int,
+    dev_batch_size: int,
+    **_,
+):
+    """Initialize training and development data processors."""
+    train = DataProcessor(train_gen, train_batch_size, step)
+    dev = DataProcessor(dev_gen, dev_batch_size, step)
+    return train, dev
+
+
 def _get_data_loaders(
     state: _State,
     train_dataset: Dataset,
     dev_dataset: Dataset,
-    train_batch_size: int,
-    dev_batch_size: int,
     train_steps_per_epoch: int,
     dev_steps_per_epoch: int,
-    train_get_weight: SpanGeneratorGetWeight,
-    dev_get_weight: SpanGeneratorGetWeight,
     num_workers: int,
     prefetch_factor: int,
+    **kwargs,
 ) -> typing.Tuple[DataLoader[Batch], DataLoader[Batch]]:
     """Initialize training and development data loaders."""
     step = int(state.step.item())
-    train = DataProcessor(train_dataset, train_batch_size, step, get_weight=train_get_weight)
-    dev = DataProcessor(dev_dataset, dev_batch_size, step, get_weight=dev_get_weight)
-    kwargs: typing.Dict[str, typing.Any] = dict(
+    train_gen, dev_gen = cf.call(_get_data_generator, train_dataset, dev_dataset, **kwargs)
+    train, dev = cf.call(_get_data_processors, train_gen, dev_gen, step, **kwargs)
+    kw: typing.Dict[str, typing.Any] = dict(
         num_workers=num_workers,
         device=state.device,
         prefetch_factor=prefetch_factor,
@@ -262,8 +282,8 @@ def _get_data_loaders(
     train = typing.cast(torch.utils.data.Dataset, train)
     dev = typing.cast(torch.utils.data.Dataset, dev)
     return (
-        DataLoader(train, num_steps_per_epoch=train_steps_per_epoch, **kwargs),
-        DataLoader(dev, num_steps_per_epoch=dev_steps_per_epoch, **kwargs),
+        DataLoader(train, num_steps_per_epoch=train_steps_per_epoch, **kw),
+        DataLoader(dev, num_steps_per_epoch=dev_steps_per_epoch, **kw),
     )
 
 
@@ -280,32 +300,25 @@ class _HandleBatchArgs(typing.NamedTuple):
 
 
 def _visualize_source_vs_target(args: _HandleBatchArgs, preds: Preds):
-    """Visualize predictions as compared to the original `batch`.
-
-    TODO: Add `pick` so that we can find examples which perform poorly in training, and hence are
-    probably bad examples. Also, this should log the audio, for analysis.
-    """
+    """Visualize predictions as compared to the original `batch`."""
     if not is_master():
         return
 
-    item = random.randint(0, len(args.batch) - 1)
-    spectrogram_length = int(args.batch.spectrogram.lengths[0, item].item())
-    text_length = int(preds.num_tokens[item].item())
+    idx = random.randint(0, len(args.batch) - 1)
+    item = preds[idx]
 
     # predicted_spectrogram, gold_spectrogram [num_frames, frame_channels]
-    predicted_spectrogram = preds.frames[:spectrogram_length, item]
-    gold_spectrogram = args.batch.spectrogram.tensor[:spectrogram_length, item]
+    spectrogram_length = int(args.batch.spectrogram.lengths[0, idx].item())
+    gold_spectrogram = args.batch.spectrogram.tensor[:spectrogram_length, idx]
+    predicted_delta = abs(gold_spectrogram - item.frames)
 
-    predicted_delta = abs(gold_spectrogram - predicted_spectrogram)
-    predicted_alignments = preds.alignments[:spectrogram_length, item, :text_length]
-    predicted_stop_token = preds.stop_tokens[:spectrogram_length, item]
     model = partial(get_model_label, cadence=args.cadence)
     dataset = partial(get_dataset_label, cadence=args.cadence, type_=args.dataset_type)
     figures = {
         model("spectrogram_delta"): plot_mel_spectrogram(predicted_delta, **cf.get()),
-        model("predicted_spectrogram"): plot_mel_spectrogram(predicted_spectrogram, **cf.get()),
-        model("alignment"): plot_alignments(predicted_alignments),
-        model("stop_token"): plot_logits(predicted_stop_token),
+        model("predicted_spectrogram"): plot_mel_spectrogram(item.frames, **cf.get()),
+        model("alignment"): plot_alignments(item.alignments),
+        model("stop_token"): plot_logits(item.stop_tokens),
         dataset("gold_spectrogram"): plot_mel_spectrogram(gold_spectrogram, **cf.get()),
     }
     args.state.comet.log_figures(figures)
@@ -342,9 +355,11 @@ def _run_step(
         stop_token_loss_multiplier: A callable to determine the stop token multiplier based on the
             step.
     """
+    model = typing.cast(SpectrogramModel, args.state.model.module)
+
     args.timer.record_event(args.timer.MODEL_FORWARD)
     preds = args.state.model(
-        inputs=args.batch.inputs,
+        inputs=args.batch.processed,
         target_frames=args.batch.spectrogram.tensor,
         target_mask=args.batch.spectrogram_mask.tensor,
         mode=Mode.FORWARD,
@@ -387,6 +402,7 @@ def _run_step(
         args.timer.record_event(args.timer.MODEL_STEP)
         # NOTE: `optimizer` will not error if there are no gradients so we check beforehand.
         assert all([p.grad is not None for p in params]), "`None` gradients found."
+
         # NOTE: Measure the "grad_norm" before `clipper.clip()`.
         norm_inf = get_parameter_norm(params, math.inf) if is_master() else torch.tensor(math.nan)
         assert not is_master() or torch.isfinite(norm_inf), f"Gradient was too large {norm_inf}."
@@ -409,7 +425,6 @@ def _run_step(
         _visualize_source_vs_target(args, preds)
 
     args.timer.record_event(args.timer.MEASURE_METRICS)
-    model = typing.cast(SpectrogramModel, args.state.model.module)
     values: MetricsValues = {
         **args.metrics.get_dataset_values(args.batch, preds),
         **args.metrics.get_alignment_values(args.batch, preds),
@@ -423,29 +438,7 @@ def _run_step(
     args.metrics.update(values)
 
 
-def _min_alignment_norm(_: _HandleBatchArgs, preds: Preds) -> int:
-    """Get the index of the prediction that has the smallest alignment norm."""
-    return int(torch.argmin(get_alignment_norm(preds)))
-
-
-def _max_num_frames_diff(args: _HandleBatchArgs, preds: Preds) -> int:
-    """Get the index of the prediction that most deviates from the original spectrogram length."""
-    return int(torch.argmax((args.batch.spectrogram.lengths - preds.num_frames).abs()))
-
-
-def _random_sequence(args: _HandleBatchArgs, preds: Preds) -> int:
-    """Get a random batch index."""
-    return random.randint(0, len(args.batch) - 1)
-
-
-class _Pick(typing.Protocol):
-    """Get a batch index given the arguments and predictions."""
-
-    def __call__(self, args: _HandleBatchArgs, preds: Preds) -> int:
-        ...
-
-
-def _visualize_inferred(args: _HandleBatchArgs, preds: Preds, pick: _Pick = _random_sequence):
+def _visualize_inferred(args: _HandleBatchArgs, preds: Preds):
     """Run in inference mode and visualize results.
 
     TODO: Visualize any related text annotations.
@@ -453,50 +446,40 @@ def _visualize_inferred(args: _HandleBatchArgs, preds: Preds, pick: _Pick = _ran
     if not is_master():
         return
 
-    pick_label = typing.cast(types.MethodType, pick).__name__
-    item = pick(args, preds)
-    num_frames = int(args.batch.spectrogram.lengths[0, item].item())
-    num_frames_predicted = int(preds.num_frames[item].item())
-    text_length = int(preds.num_tokens[item].item())
-    # gold_spectrogram [num_frames, frame_channels]
-    gold_spectrogram = args.batch.spectrogram.tensor[:num_frames, item]
-    # spectrogram [num_frames, frame_channels]
-    predicted_spectrogram = preds.frames[:num_frames_predicted, item]
-    predicted_alignments = preds.alignments[:num_frames_predicted, item, :text_length]
-    predicted_stop_token = preds.stop_tokens[:num_frames_predicted, item]
+    idx = random.randint(0, len(args.batch) - 1)
+    item = preds[idx]
 
-    model = lambda n: get_model_label(f"{n}/{pick_label}", cadence=args.cadence)
-    dataset = lambda n: get_dataset_label(
-        f"{n}/{pick_label}", cadence=args.cadence, type_=args.dataset_type
-    )
+    # gold_spectrogram [num_frames, frame_channels]
+    num_frames = int(args.batch.spectrogram.lengths[0, idx].item())
+    gold_spectrogram = args.batch.spectrogram.tensor[:num_frames, idx]
+    model = lambda n: get_model_label(n, cadence=args.cadence)
+    dataset = lambda n: get_dataset_label(n, cadence=args.cadence, type_=args.dataset_type)
     _plot_mel_spectrogram = cf.partial(plot_mel_spectrogram)
     figures = (
         (dataset("gold_spectrogram"), _plot_mel_spectrogram, gold_spectrogram),
-        (model("predicted_spectrogram"), _plot_mel_spectrogram, predicted_spectrogram),
-        (model("alignment"), plot_alignments, predicted_alignments),
-        (model("stop_token"), plot_logits, predicted_stop_token),
+        (model("predicted_spectrogram"), _plot_mel_spectrogram, item.frames),
+        (model("alignment"), plot_alignments, item.alignments),
+        (model("stop_token"), plot_logits, item.stop_tokens),
     )
     assets = args.state.comet.log_figures({l: v(n) for l, v, n in figures})
     audio = {
-        "predicted_griffin_lim_audio": griffin_lim(predicted_spectrogram.cpu().numpy(), **cf.get()),
+        "predicted_griffin_lim_audio": griffin_lim(item.frames.cpu().numpy(), **cf.get()),
         "gold_griffin_lim_audio": griffin_lim(gold_spectrogram.cpu().numpy(), **cf.get()),
-        "gold_audio": args.batch.audio[item].cpu().numpy(),
+        "gold_audio": args.batch.audio[idx].cpu().numpy(),
     }
     log_npy = args.state.comet.log_npy
-    npy_urls = {f"{l} Array": log_npy(l, args.batch.spans[item].speaker, a) for l, _, a in figures}
+    npy_urls = {f"{l} Array": log_npy(l, args.batch.spans[idx].speaker, a) for l, _, a in figures}
     link = lambda h: "Failed to upload." if h is None else f'<a href="{h}">{h}</a>'
     args.state.comet.log_html_audio(
         audio=audio,
         context=args.state.comet.context,
-        text=args.batch.spans[item].script,
-        reconstructed_text=args.batch.inputs.reconstruct_text(item)[args.batch.inputs.slices[item]],
-        reconstructed_text_context=args.batch.inputs.reconstruct_text(item),
-        session=args.batch.spans[item].session,
-        predicted_loudness=get_average_db_rms_level(predicted_spectrogram.unsqueeze(1)).item(),
+        text=args.batch.spans[idx].script,
+        xml=args.batch.xmls[idx],
+        session=args.batch.spans[idx].session,
+        predicted_loudness=get_average_db_rms_level(item.frames.unsqueeze(1)).item(),
         gold_loudness=get_average_db_rms_level(gold_spectrogram.unsqueeze(1)).item(),
-        pick_function=pick_label,
-        **{f"{k} Figure": link(v) for k, v in assets.items()},
-        **{k: link(v) for k, v in npy_urls.items()},
+        **{f"_{k} Figure": link(v) for k, v in assets.items()},
+        **{f"_{k}": link(v) for k, v in npy_urls.items()},
     )
 
 
@@ -508,13 +491,12 @@ def _run_inference(args: _HandleBatchArgs):
     """
     args.timer.record_event(args.timer.MODEL_FORWARD)
     model = typing.cast(SpectrogramModel, args.state.model.module)
-    preds = model(args.batch.inputs, mode=Mode.INFER)
+    preds = model(args.batch.processed, mode=Mode.INFER)
     preds = typing.cast(Preds, preds)
 
     if args.visualize:
         args.timer.record_event(args.timer.VISUALIZE_PREDICTIONS)
-        for pick in [_random_sequence, _max_num_frames_diff, _min_alignment_norm]:
-            _visualize_inferred(args, preds, pick)
+        _visualize_inferred(args, preds)
 
     args.timer.record_event(args.timer.MEASURE_METRICS)
     values: MetricsValues = {
@@ -525,48 +507,6 @@ def _run_inference(args: _HandleBatchArgs):
     }
     args.timer.record_event(args.timer.GATHER_METRICS)
     args.metrics.update(values)
-
-
-def _visualize_select_cases(state: _State, dataset_type: DatasetType, cadence: Cadence, **kw):
-    """Run spectrogram model in inference mode and visualize a test case."""
-    if not is_master():
-        return
-
-    model = typing.cast(SpectrogramModel, state.model.module)
-    sesh_vocab = model.session_embed.get_vocab()
-    inputs, preds = cf.partial(_utils.process_select_cases)(model, sesh_vocab, **kw)
-
-    for item in range(len(inputs.doc)):
-        text_length = int(preds.num_tokens[item].item())
-        num_frames_predicted = int(preds.num_frames[item].item())
-        # spectrogram [num_frames, frame_channels]
-        predicted_spectrogram = preds.frames[:num_frames_predicted, item]
-        predicted_alignments = preds.alignments[:num_frames_predicted, item, :text_length]
-        predicted_stop_token = preds.stop_tokens[:num_frames_predicted, item]
-
-        model = partial(get_model_label, cadence=cadence)
-        _plot_mel_spectrogram = cf.partial(plot_mel_spectrogram)
-        figures = (
-            (model("predicted_spectrogram"), _plot_mel_spectrogram, predicted_spectrogram),
-            (model("alignment"), plot_alignments, predicted_alignments),
-            (model("stop_token"), plot_logits, predicted_stop_token),
-        )
-        assets = state.comet.log_figures({l: v(n) for l, v, n in figures})
-        audio = cf.partial(griffin_lim)(predicted_spectrogram.cpu().numpy())
-        log_npy = state.comet.log_npy
-        npy_urls = {f"{l} Array": log_npy(l, inputs.session[item][0], a) for l, _, a in figures}
-        link = lambda h: "Failed to upload." if h is None else f'<a href="{h}">{h}</a>'
-        state.comet.log_html_audio(
-            randomly_sampled_case=item,
-            audio={"predicted_griffin_lim_audio": audio},
-            context=state.comet.context,
-            text=str(inputs.doc[item]),
-            session=inputs.session[item],
-            predicted_loudness=get_average_db_rms_level(predicted_spectrogram.unsqueeze(1)).item(),
-            dataset_type=dataset_type,
-            **{f"{k} Figure": link(v) for k, v in assets.items()},
-            **{k: link(v) for k, v in npy_urls.items()},
-        )
 
 
 _HandleBatch = typing.Callable[[_HandleBatchArgs], None]
@@ -614,6 +554,7 @@ def _run_steps(
     dataset_type: DatasetType,
     data_loader: DataLoader,
     handle_batch: _HandleBatch,
+    is_verbose: bool = False,
     **kwargs,
 ):
     """Run the `handle_batch` in a loop over `data_loader` batches."""
@@ -635,30 +576,14 @@ def _run_steps(
 
             if Context.TRAIN == context:
                 metrics.log(lambda l: l[-1:], timer, type_=dataset_type, cadence=Cadence.STEP)
-                state.comet.log_metrics(timer.get_timers(cadence=Cadence.STEP))
+                if is_verbose:
+                    state.comet.log_metrics(timer.get_timers(cadence=Cadence.STEP))
 
             timer = Timer().record_event(Timer.LOAD_DATA)
 
-        metrics.log(is_verbose=True, type_=dataset_type, cadence=Cadence.MULTI_STEP)
+        metrics.log(is_verbose=is_verbose, type_=dataset_type, cadence=Cadence.MULTI_STEP)
         if Context.TRAIN == context:
             _log_vocab(state, dataset_type)
-
-
-def exclude_from_decay(
-    param_name: str, param: torch.nn.parameter.Parameter, module: torch.nn.Module
-) -> bool:
-    """
-    NOTE: Learn more about removing regularization from bias terms or `LayerNorm`:
-    https://stats.stackexchange.com/questions/153605/no-regularisation-term-for-bias-unit-in-neural-network/153650
-    https://github.com/huggingface/transformers/issues/4360
-    https://discuss.pytorch.org/t/weight-decay-in-the-optimizers-is-a-bad-idea-especially-with-batchnorm/16994
-
-    Args:
-        param_name: The parameter name as returned by `torch.nn.Module.named_parameters`.
-        param: The parameter name as returned by `torch.nn.Module.parameters`.
-        module: The parent module for this parameter.
-    """
-    return ".bias" in param_name or type(module).__name__ in (torch.nn.LayerNorm,)
 
 
 def run_worker(
@@ -693,10 +618,4 @@ def run_worker(
     while True:
         steps_per_epoch = train_loader.num_steps_per_epoch
         [_run_steps(state, *args, steps_per_epoch=steps_per_epoch) for args in contexts]
-
-        with set_context(Context.EVALUATE_INFERENCE, state.comet, state.model, ema=state.ema):
-            assert comet.curr_epoch is not None
-            with fork_rng(comet.curr_epoch):
-                _visualize_select_cases(state, DatasetType.TEST, Cadence.MULTI_STEP)
-
         save_checkpoint(state.to_checkpoint(), checkpoints_directory, f"step_{state.step.item()}")

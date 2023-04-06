@@ -4,6 +4,8 @@ TODO:
 - Add a script for creating a batch of instances.
 - Add a script for updating a machine's start up script for signal model training, like so:
 https://cloud.google.com/compute/docs/instance-groups/rolling-out-updates-to-managed-instance-groups
+- Add a disk cache for zones tried recently so that they are not tried again for at least 5 minutes,
+  even in another process.
 """
 import logging
 import math
@@ -69,10 +71,11 @@ def _has_made_preemptible_instance(name: str, zone: str, poll_interval: int = 1)
         time.sleep(poll_interval)
 
 
-def _get_zones() -> typing.List[str]:
+def _get_zones(preferred_zone: typing.List[str]) -> typing.List[str]:
     """Get a list of available zones."""
     zones_op = compute.zones().list(project=project).execute()
-    return [z["name"] for z in zones_op["items"]]
+    sort_key = lambda z: (z in preferred_zone,)
+    return sorted([z["name"] for z in zones_op["items"]], reverse=True, key=sort_key)
 
 
 def _make_preemptible_instance(
@@ -81,6 +84,7 @@ def _make_preemptible_instance(
     template_op: typing.Dict,
     health_check: str,
     exclude_zone: typing.List[str],
+    preferred_zone: typing.List[str],
 ):
     """Create a preemptible instance."""
     try:
@@ -100,7 +104,7 @@ def _make_preemptible_instance(
     except googleapiclient.errors.HttpError as error:
         logger.warning(error._get_reason())
 
-    for zone in _get_zones() if zone is None else [zone]:
+    for zone in _get_zones(preferred_zone) if zone is None else [zone]:
         if zone in exclude_zone:
             continue
 
@@ -142,9 +146,10 @@ def _make_and_watch_persistent_instance(
     zone: typing.Optional[str],
     template_op: typing.Dict,
     exclude_zone: typing.List[str],
+    preferred_zone: typing.List[str],
 ):
     """Create and then watch a presistent instance."""
-    for zone in _get_zones() if zone is None else [zone]:
+    for zone in _get_zones(preferred_zone) if zone is None else [zone]:
         if zone in exclude_zone:
             continue
 
@@ -183,6 +188,7 @@ def _make_instance(
     metadata_from_file: typing.List[str],
     health_check: typing.Optional[str],
     exclude_zone: typing.List[str],
+    preferred_zone: typing.List[str],
     preemptible: bool,
 ):
     """Create a managed and preemptible instance named NAME in ZONE.
@@ -267,11 +273,12 @@ def _make_instance(
     template_op = _wait_for_operation(template_op["name"])
     logger.info("Created instance template: %s", template_op["targetLink"])
 
+    args = (exclude_zone, preferred_zone)
     if preemptible:
         assert health_check is not None
-        _make_preemptible_instance(name, zone, template_op, health_check, exclude_zone)
+        _make_preemptible_instance(name, zone, template_op, health_check, *args)
     else:
-        _make_and_watch_persistent_instance(name, zone, template_op, exclude_zone)
+        _make_and_watch_persistent_instance(name, zone, template_op, *args)
 
 
 @persistent_app.command("make-instance")
@@ -290,6 +297,7 @@ def make_persistent_instance(
     metadata_from_file: typing.List[str] = typer.Option([]),
     health_check: str = typer.Option(None),
     exclude_zone: typing.List[str] = typer.Option([]),
+    preferred_zone: typing.List[str] = typer.Option([]),
 ):
     return _make_instance(**locals(), preemptible=False)
 
@@ -310,6 +318,7 @@ def make_preemptible_instance(
     metadata_from_file: typing.List[str] = typer.Option([]),
     health_check: str = typer.Option("check-ssh"),
     exclude_zone: typing.List[str] = typer.Option([]),
+    preferred_zone: typing.List[str] = typer.Option([]),
 ):
     return _make_instance(**locals(), preemptible=True)
 

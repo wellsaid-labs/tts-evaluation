@@ -14,13 +14,16 @@ import typing
 from queue import SimpleQueue
 from subprocess import PIPE
 
+import config as cf
 import numpy
 import spacy
 import spacy.language
 import spacy.tokens
 import torch
 
+from lib.audio import griffin_lim
 from lib.environment import PT_EXTENSION, load
+from lib.text import XMLType, xml_to_text
 from lib.utils import get_chunks, tqdm_
 from run import train
 from run._config import (
@@ -36,10 +39,10 @@ from run._models.spectrogram_model import (
     Preds,
     PreprocessedInputs,
     SpectrogramModel,
-    norm_respellings,
-    preprocess_inputs,
+    preprocess,
 )
 from run.data._loader import Session, Span
+from run.train.spectrogram_model._data import InferBatch, make_batch
 
 logger = logging.getLogger(__name__)
 
@@ -98,50 +101,69 @@ class Checkpoints(enum.Enum):
 
     You can upload a new checkpoint, for example, like so:
 
-        $ gsutil -m cp -r disk/checkpoints/v10_2022_06_15_staging \
-                        gs://wellsaid_labs_checkpoints/v10_2022_06_15_staging
+        $ gsutil -m cp -r disk/checkpoints/v11_2023_03_06_staging \
+                        gs://wellsaid_labs_checkpoints/v11_2023_03_06_staging
     """
 
     """
-    These checkpoints were deployed into staging as version "10.beta.1".
+    These checkpoints were deployed into staging as version "11.beta.1".
 
-    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/409
-    Spectrogram Model Experiment (Step: 527,553):
-    https://www.comet.ml/wellsaid-labs/michael-spectrogram-model-03-2022/669e69f9a8db4dd3aa20386a4b195150
-    Signal Model Experiment (Step: 827,151):
-    https://www.comet.ml/wellsaid-labs/michael-signal-model-2022-04/a2d2e4b313e7490098ca2f3b4935f6d6
+    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/468
+    Spectrogram Model Experiment (Step: 208,347):
+    https://www.comet.com/wellsaid-labs/v11-research-spectrogram/8fd4e8c2ed0946f78b0e82ef7e748c86
+    Signal Model Experiment (Step: 546,207):
+    https://www.comet.com/wellsaid-labs/v11-research-signal/c212a0b20d124578b3ac77846c3eb934
     """
 
-    V10_2022_05_03_STAGING: typing.Final = "v10_2022_05_03_staging"
+    V11_2023_01_05_STAGING: typing.Final = "v11_2023_01_05_staging"
 
     """
-    These checkpoints were deployed into staging as version "10.beta.2".
+    These checkpoints were deployed into staging as version "11.beta.2".
 
-    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/389
-    Spectrogram Model Experiment (Step: 885,735):
-    https://www.comet.ml/wellsaid-labs/michael-spectrogram-model-03-2022/f43e617f5ab74eddb2eb8239b5fc10f0
-    Signal Model Experiment (Step: 1,331,883):
-    https://www.comet.ml/wellsaid-labs/michael-signal-model-2022-04/db35cf6b0e07463692af2a90c80724bb
+    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/473
+    Spectrogram Model Experiment (Step: 675,720):
+    https://www.comet.com/wellsaid-labs/v11-research-spectrogram/597e5ed553e0488e8382959f59e51ae8
+    Signal Model Experiment (Step: 625,041):
+    https://www.comet.com/wellsaid-labs/v11-research-signal/1be0f2d8cd03423888777b656e4543ad
     """
 
-    V10_2022_06_08_STAGING: typing.Final = "v10_2022_06_08_staging"
+    V11_2023_01_12_STAGING: typing.Final = "v11_2023_01_12_staging"
 
     """
-    These checkpoints were deployed into staging as version "10.beta.3".
+    These checkpoints were deployed into staging as version "11.beta.3".
 
-    NOTE: This is the model that also went into production. We discovered late into the testing
-    process that `v10_2022_06_08_staging` had consistently faint mic pops at the end of clips. We
-    decided to pick a different model, that was somewhat worse on other metrics, but it had less
-    mic pops.
-
-    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/389
-    Spectrogram Model Experiment (Step: 1,843,641):
-    https://www.comet.ml/wellsaid-labs/michael-spectrogram-model-03-2022/bc51533a6c874938ae0043b6b0e56d59
-    Signal Model Experiment (Step: 1,331,883):
-    https://www.comet.ml/wellsaid-labs/michael-signal-model-2022-04/db35cf6b0e07463692af2a90c80724bb
+    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/496
+    Spectrogram Model Experiment (Step: 1,334,547):
+    https://www.comet.com/wellsaid-labs/v11-research-spectrogram/6e8d8d2d93954c5c9f34f360276cb098
+    Signal Model Experiment (Step: 242,133):
+    https://www.comet.com/wellsaid-labs/v11-research-signal/3b981f23e6c44e829ff59877e9a7ec95
     """
 
-    V10_2022_06_15_STAGING: typing.Final = "v10_2022_06_15_staging"
+    V11_2023_03_01_STAGING: typing.Final = "v11_2023_03_01_staging"
+
+    """
+    These checkpoints were deployed into staging as version "11.beta.4".
+
+    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/496
+    Spectrogram Model Experiment (Step: 1,334,547):
+    https://www.comet.com/wellsaid-labs/v11-research-spectrogram/6e8d8d2d93954c5c9f34f360276cb098
+    Signal Model Experiment (Step: 281,550):
+    https://www.comet.com/wellsaid-labs/v11-research-signal/3b981f23e6c44e829ff59877e9a7ec95
+    """
+
+    V11_2023_03_01_STAGING_1: typing.Final = "v11_2023_03_01_staging_1"
+
+    """
+    These checkpoints were deployed into staging as version "11.beta.5".
+
+    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/496
+    Spectrogram Model Experiment (Step: 1,334,547):
+    https://www.comet.com/wellsaid-labs/v11-research-spectrogram/6e8d8d2d93954c5c9f34f360276cb098
+    Signal Model Experiment (Step: 788,340):
+    https://www.comet.com/wellsaid-labs/v11-research-signal/3b981f23e6c44e829ff59877e9a7ec95
+    """
+
+    V11_2023_03_06_STAGING: typing.Final = "v11_2023_03_06_staging"
 
 
 _GCS_PATH = "gs://wellsaid_labs_checkpoints/"
@@ -204,24 +226,28 @@ class PublicSpeakerValueError(ValueError):
     pass
 
 
-def process_tts_inputs(
-    nlp: spacy.language.Language, package: TTSPackage, script: str, session: Session
+def _process_tts_inputs(
+    nlp: spacy.language.Language,
+    session_vocab: typing.Set[Session],
+    token_vocab: typing.Set[str],
+    script: XMLType,
+    session: Session,
 ) -> typing.Tuple[Inputs, PreprocessedInputs]:
-    """Process TTS `script`, `speaker` and `session` for use with the model(s)."""
+    """Process TTS `script` and `session` for use with the model(s)."""
     normalized = normalize_and_verbalize_text(script, session.spkr.language)
     if len(normalized) == 0:
         raise PublicTextValueError("Text cannot be empty.")
 
-    inputs = Inputs([session], [nlp(norm_respellings(normalized))])
-    preprocessed = preprocess_inputs(inputs)
+    inputs = Inputs.from_xml(normalized, nlp(xml_to_text(normalized)), session)
+    preprocessed = cf.partial(preprocess)(inputs)
 
     tokens = typing.cast(typing.List[str], set(preprocessed.tokens[0]))
-    excluded = [t for t in tokens if t not in package.spec_model.token_embed.vocab]
+    excluded = [t for t in tokens if t not in token_vocab]
     if len(excluded) > 0:
         difference = ", ".join([repr(c)[1:-1] for c in sorted(set(excluded))])
         raise PublicTextValueError("Text cannot contain these characters: %s" % difference)
 
-    if session not in package.session_vocab():
+    if session not in session_vocab:
         # NOTE: We do not expose speaker information in the `ValueError` because this error
         # is passed on to the public via the API.
         raise PublicSpeakerValueError("Speaker is not available.")
@@ -229,16 +255,40 @@ def process_tts_inputs(
     return inputs, preprocessed
 
 
+def process_tts_inputs(
+    package: TTSPackage,
+    nlp: spacy.language.Language,
+    script: XMLType,
+    session: Session,
+) -> typing.Tuple[Inputs, PreprocessedInputs]:
+    """Process TTS `script` and `session` for use with the model(s) in `package`."""
+    token_vocab = set(package.spec_model.token_embed.vocab.keys())
+    session_vocab = package.session_vocab()
+    return _process_tts_inputs(nlp, session_vocab, token_vocab, script, session)
+
+
+def griffin_lim_tts(
+    spec_model: SpectrogramModel, script: XMLType, session: Session
+) -> numpy.ndarray:
+    """Run TTS with griffin-lim."""
+    nlp = load_spacy_nlp(session.spkr.language)
+    session_vocab = set(spec_model.session_embed.vocab.keys())
+    token_vocab = set(spec_model.token_embed.vocab.keys())
+    _, preprocessed = _process_tts_inputs(nlp, session_vocab, token_vocab, script, session)
+    preds = spec_model(inputs=preprocessed, mode=Mode.INFER)
+    return cf.partial(griffin_lim)(preds.frames.squeeze(1).detach().numpy())
+
+
 def basic_tts(
     package: TTSPackage,
-    script: str,
+    script: XMLType,
     session: Session,
     split_size: int = 32,
 ) -> numpy.ndarray:
     """Run TTS end-to-end with friendly errors."""
     nlp = load_spacy_nlp(session.spkr.language)
-    inputs, preprocessed_inputs = process_tts_inputs(nlp, package, script, session)
-    preds = package.spec_model(inputs=preprocessed_inputs, mode=Mode.INFER)
+    inputs, preprocessed = process_tts_inputs(package, nlp, script, session)
+    preds = package.spec_model(inputs=preprocessed, mode=Mode.INFER)
     splits = preds.frames.transpose(0, 1).split(split_size)
     generator = generate_waveform(package.signal_model, splits, inputs.session)
     wave = typing.cast(torch.Tensor, torch.cat(list(generator), dim=-1))
@@ -246,65 +296,110 @@ def basic_tts(
 
 
 class TTSResult(typing.NamedTuple):
-    """Text-to-speech input and output."""
+    """The inputs and corresponding predictions from running TTS."""
 
-    inputs: Inputs
+    inputs: InferBatch
     spec_model: Preds
     sig_model: numpy.ndarray
 
 
-def batch_span_to_speech(
-    package: TTSPackage, spans: typing.List[Span], **kwargs
-) -> typing.List[TTSResult]:
-    """
-    NOTE: This method doesn't consider `Span` context for TTS generation.
-    """
-    inputs = [(s.script, s.session) for s in spans]
-    return batch_tts(package, inputs, **kwargs)
+TTSResults = typing.List[TTSResult]
+BatchGen = typing.Generator[typing.Tuple[InferBatch, typing.List[int]], None, None]
 
 
-def _multilingual_spacy_pipe(
-    inputs: typing.List[typing.Tuple[str, Session]]
-) -> typing.List[typing.Tuple[spacy.tokens.doc.Doc, Session]]:
-    """Efficiently pipe `inputs` through spaCy with batching per language."""
+def _process_input_batch(
+    inputs: typing.List[typing.Tuple[XMLType, Session]]
+) -> typing.List[typing.Tuple[XMLType, spacy.tokens.doc.Doc, Session]]:
+    """Efficiently process text with spaCy and text normalization.
+
+    TODO: Should this support script verbalization?
+    """
+    logger.info(f"Processing {len(inputs)} examples with spaCy...")
     seshs = [s for _, s in inputs]
+    xmls = [x for x, _ in inputs]
     langs = set(s.spkr.language for s in seshs)
     result: typing.List[typing.Optional[spacy.tokens.doc.Doc]] = [None] * len(inputs)
     for lang in langs:
         nlp = load_spacy_nlp(lang)
         scripts = [(i, s) for i, (s, sesh) in enumerate(inputs) if sesh.spkr.language is lang]
-        docs = nlp.pipe(s for _, s in scripts)
+        normalized = (xml_to_text(XMLType(normalize_vo_script(s, lang))) for _, s in scripts)
+        docs = nlp.pipe(normalized)
         for (i, _), doc in zip(scripts, docs):
             result[i] = doc
-    return list(zip(typing.cast(typing.List[spacy.tokens.doc.Doc], result), seshs))
+    return list(zip(xmls, typing.cast(typing.List[spacy.tokens.doc.Doc], result), seshs))
 
 
-def batch_tts(
-    package: TTSPackage, inputs: typing.List[typing.Tuple[str, Session]], batch_size: int = 8
-) -> typing.List[TTSResult]:
-    """Run TTS end-to-end quickly with a verbose output."""
-    inputs = [(normalize_vo_script(script, sesh.spkr.language), sesh) for script, sesh in inputs]
-    logger.info(f"Processing {len(inputs)} examples with spaCy...")
-    inputs_ = list(enumerate(_multilingual_spacy_pipe(inputs)))
-    inputs_ = sorted(inputs_, key=lambda i: len(str(i[1][0])))
+def make_batches(
+    inputs: typing.List[typing.Tuple[XMLType, Session]], batch_size: int = 8
+) -> BatchGen:
+    """Generate a sorted batch of inputs for batch TTS generation."""
+    processed: typing.List[typing.Tuple[XMLType, spacy.tokens.doc.Doc, Session]]
+    processed = _process_input_batch(inputs)
+    sorted_ = sorted(enumerate(processed), key=lambda i: len(str(i[1][0])))
+    batches = list(get_chunks(sorted_, batch_size))
+    for batch in tqdm_(batches):
+        xmls, docs = [b[1][0] for b in batch], [b[1][1] for b in batch]
+        seshs, indicies = [b[1][2] for b in batch], [i for i, _ in batch]
+        batch_input = Inputs.from_xml_batch(xmls, docs, seshs)  # type: ignore
+        batch = InferBatch(
+            spans=docs,
+            xmls=xmls,
+            inputs=batch_input,
+            processed=cf.partial(preprocess)(batch_input),
+        )
+        yield batch, indicies
+
+
+def make_training_batches(spans: typing.List[Span], batch_size: int = 8) -> BatchGen:
+    """Generate a sorted batch of inputs for batch TTS generation with similar processing to
+    the training pipeline."""
+    spans_ = sorted(enumerate(spans), key=lambda s: s[1].audio_length)
+    batches = list(get_chunks(spans_, batch_size))
+    for batch in tqdm_(batches):
+        batch_ = make_batch([s for _, s in batch], add_inputs=True)
+        indicies = [i for i, _ in batch]
+        assert batch_.inputs is not None
+        yield batch_, indicies
+
+
+def batch_tts(package: TTSPackage, batch_gen: BatchGen) -> TTSResults:
+    """Run TTS on batches generated by `batch_gen`"""
     results: typing.Dict[int, TTSResult] = {}
-    logger.info(f"Processing {len(inputs)} examples with TTS models...")
-    for batch in tqdm_(list(get_chunks(inputs_, batch_size))):
-        batch_input = Inputs(doc=[i[1][0] for i in batch], session=[i[1][1] for i in batch])
-        preds = package.spec_model(inputs=batch_input, mode=Mode.INFER)
-        spectrogram = preds.frames.transpose(0, 1)
-        signals = package.signal_model(spectrogram, batch_input.session, preds.frames_mask)
+    for batch, indicies in batch_gen:
+        device = package.spec_model.output_scalar.device
+        batch = batch.apply(lambda t: t.to(device))
+        preds = package.spec_model(batch.processed, mode=Mode.INFER)
+        spec = preds.frames.transpose(0, 1)
+        assert batch.inputs is not None
+        signals = package.signal_model(spec, batch.inputs.session, preds.frames_mask)
         num_samples = preds.num_frames * package.signal_model.upscale_factor
-        more_results = {
-            j: TTSResult(
-                inputs=Inputs(doc=[batch_input.doc[i]], session=[batch_input.session[i]]),
-                spec_model=preds[i : i + 1],
-                sig_model=signals[0][i : i + 1, : num_samples[i]].detach().numpy(),
-            )
-            for i, (j, _) in zip(range(len(batch)), batch)
-        }
-        results.update(more_results)
-    return [results[i] for i in range(len(inputs))]
+        batch, preds = batch.apply(lambda t: t.cpu()), preds.apply(lambda t: t.cpu())
+        for i, j in zip(range(len(batch)), indicies):
+            key = slice(i, i + 1)
+            signal = signals[0][key, : num_samples[i]].cpu().detach().numpy()
+            results[j] = TTSResult(inputs=batch[key], spec_model=preds[key], sig_model=signal)
+    return [results[i] for i in range(len(results))]
+
+
+def batch_griffin_lim_tts(
+    spec_model: SpectrogramModel, batch_gen: BatchGen, **kwargs
+) -> TTSResults:
+    """Run TTS with griffin lim on batches generated by `batch_gen`"""
+    # TODO: Add an option to add a streamlit progress bar when this is being used. Let's consider
+    # moving this functionality to `_streamlit.py` because it's only used with in workbooks.
+    results: typing.Dict[int, TTSResult] = {}
+    for batch, indicies in batch_gen:
+        device = spec_model.output_scalar.device
+        # TODO: Rename `apply` to indicate that it's in-place.
+        batch = batch.apply(lambda t: t.to(device))
+        preds = spec_model(batch.processed, mode=Mode.INFER)
+        batch, preds = batch.apply(lambda t: t.cpu()), preds.apply(lambda t: t.cpu())
+        for i, j in zip(range(preds.frames.shape[1]), indicies):
+            key = slice(i, i + 1)
+            pred = preds[key]
+            signal = cf.call(griffin_lim, pred.frames[:, 0].cpu().detach().numpy(), **kwargs)
+            results[j] = TTSResult(inputs=batch[key], spec_model=pred, sig_model=signal)
+    return [results[i] for i in range(len(results))]
 
 
 def _enqueue(out: typing.IO[bytes], queue: SimpleQueue):
