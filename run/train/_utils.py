@@ -373,7 +373,6 @@ class CometMLExperiment:
 
 @dataclasses.dataclass(frozen=True)
 class Checkpoint:
-
     comet_experiment_key: str
     step: int
 
@@ -599,7 +598,7 @@ def apply_to_tensors(
     dict_: dict = data._asdict() if is_named_tuple else dataclass_as_dict(data)  # type: ignore
     apply = lambda v: call(v) if torch.is_tensor(v) else apply_to_tensors(v, call, is_return)
     if is_return:
-        return data.__class__(**{k: apply(v) for k, v in dict_.items()})   # type: ignore
+        return data.__class__(**{k: apply(v) for k, v in dict_.items()})  # type: ignore
     else:
         [apply(value) for value in dict_.values()]
 
@@ -854,7 +853,6 @@ def run_workers(
 
 @dataclasses.dataclass(frozen=True)
 class MetricsKey:
-
     label: str
 
 

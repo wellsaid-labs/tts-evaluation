@@ -23,13 +23,11 @@ logger = logging.getLogger(__name__)
 
 
 class Pronun(enum.Enum):
-
     NORMAL: typing.Final = "normal"
     RESPELLING: typing.Final = "respelling"
 
 
 class Casing(enum.Enum):
-
     LOWER: typing.Final = "lower"
     UPPER: typing.Final = "upper"
     NO_CASING: typing.Final = "no casing"
@@ -533,7 +531,8 @@ class InputsWrapper:
             span: The spaCy document built on text from that XML.
             session_vocab: A vocabulary mapping avatar IDs in XML to sessions.
         """
-        assert span.text == span[:].text, "The text must be stripped."
+        if span.text != span[:].text.strip():
+            raise PublicValueError("The text must be stripped of white spaces.")
 
         # TODO: Make sure that annotations within annotations are not accepted. The model isn't
         # trained with that in mind. We don't allow overlapping annotations, either. It'd be

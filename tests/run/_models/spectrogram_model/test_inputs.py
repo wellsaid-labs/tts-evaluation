@@ -81,22 +81,6 @@ def test_inputs_wrapper__from_xml__annotatations():
     assert expected.to_xml(0) == f"<{Sch.SPEAK} {Sch._VALUE}='-1'>{xml}</{Sch.SPEAK}>"
 
 
-def test_inputs_wrapper__from_xml__whitespace_error():
-    """
-    Test `InputsWrapper.from_xml` with a whitespace at the end, which spaCy does not
-    consider a token.
-    """
-    script = "this is a test "
-    with pytest.raises(AssertionError):
-        InputsWrapper.from_xml(XMLType(script), load_en_english()(script), make_session())
-
-
-def test_inputs_wrapper__from_xml__newline():
-    """Test `InputsWrapper.from_xml` with a newline at the end, which spaCy considers a token."""
-    script = "this is a test\n"
-    InputsWrapper.from_xml(XMLType(script), load_en_english()(script), make_session())
-
-
 def test_inputs_wrapper__from_xml__nested_slice_anno_error():
     """Test `InputsWrapper.from_xml` does not accept nested slice annotations, like loudness."""
     start = f"<{Sch.LOUDNESS} {Sch._VALUE}='-20.0'>"
@@ -104,6 +88,22 @@ def test_inputs_wrapper__from_xml__nested_slice_anno_error():
     xml = XMLType(f"{start}this {start}is{end} a test{end}")
     script = xml_to_text(xml)
     with pytest.raises(PublicValueError, match=r".*loudness annotations cannot not be nested*"):
+        InputsWrapper.from_xml(xml, load_en_english()(script), make_session())
+
+
+def test_inputs_wrapper__from_xml__trim_spaces_error():
+    """Test `InputsWrapper.from_xml` does not accept untrimmed spaces."""
+    start = f"<{Sch.LOUDNESS} {Sch._VALUE}='-20.0'>"
+    end = f"</{Sch.LOUDNESS}>"
+
+    xml = XMLType(f" {start}this is a test{end} ")
+    script = xml_to_text(xml)
+    with pytest.raises(PublicValueError, match=r".*must be stripped of white spaces*"):
+        InputsWrapper.from_xml(xml, load_en_english()(script), make_session())
+
+    xml = XMLType(f"{start} this is a test {end}")
+    script = xml_to_text(xml)
+    with pytest.raises(PublicValueError, match=r".*must be stripped of white spaces*"):
         InputsWrapper.from_xml(xml, load_en_english()(script), make_session())
 
 

@@ -432,7 +432,6 @@ RESPELLING_ALPHABET: typing.Dict[str, str] = {
 
 
 class ARPAbetStress(enum.Enum):
-
     NONE: typing.Final = "0"
     PRIMARY: typing.Final = "1"
     SECONDARY: typing.Final = "2"
@@ -977,7 +976,7 @@ XML_PATTERN = re.compile(r"(<[^>]*>)")
 
 def xml_to_text(xml: XMLType) -> str:
     """Lossy conversion from `xml` to `text` by removing any xml markings."""
-    return html.unescape(re.sub(XML_PATTERN, "", xml).strip())
+    return html.unescape(re.sub(XML_PATTERN, "", xml))
 
 
 def text_to_xml(text: str) -> XMLType:
