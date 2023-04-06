@@ -58,12 +58,12 @@ def _metadata_path_to_book(metadata_path: Path, root: Path, dialect: struc.Diale
     return Book(getattr(struc.Dialect, root.name.upper()), speaker, book_title)
 
 
-def _get_session(speaker: struc.Speaker, audio_path: Path) -> struc.Session:
+def _get_session(speaker: struc.Speaker, audio_path: Path) -> struc.UnprocessedSession:
     """For the M-AILABS speech dataset, we define each chapter as an individual recording
     session."""
     chapter = audio_path.stem.rsplit("_", 1)[0]
     label = f"{audio_path.parent.parent.name}/{audio_path.parent.name}/{chapter}"
-    return struc.Session(speaker, label)
+    return struc.UnprocessedSession(speaker, label)
 
 
 def m_ailabs_speech_dataset(

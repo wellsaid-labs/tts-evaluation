@@ -883,8 +883,6 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
         get_weighting: Given a `np.ndarray` of frequencies this returns a weighting in
             decibels. Weighting in an effort to account for the relative loudness perceived by the
             human ear, as the ear is less sensitive to low audio frequencies.
-        eps: The minimum amplitude to `log` avoiding the discontinuity at `log(0)`. This
-            is similar to `min_decibel` but it operates on the amplitude scale.
         **kwargs: Additional arguments passed to `_mel_filters`.
     """
 
@@ -898,18 +896,16 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
         min_decibel: float,
         get_weighting: typing.Callable[[npt.NDArray[np.float_], int], npt.NDArray[np.float_]],
         min_weight: float,
-        eps: float = 1e-10,
         **kwargs,
     ):
         super().__init__()
 
         self.register_buffer("window", window)
-        self.register_buffer("min_decibel", torch.tensor(min_decibel).float())
+        self.min_decibel = min_decibel
         self.fft_length = fft_length
         self.frame_hop = frame_hop
         self.sample_rate = sample_rate
         self.num_mel_bins = num_mel_bins
-        self.eps = eps
         self.get_weighting = get_weighting
 
         mel_basis = _mel_filters(sample_rate, num_mel_bins, fft_length=self.fft_length, **kwargs)
@@ -957,7 +953,6 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
         """
         assert signal.dtype == torch.float32, "Invalid argument."
         assert isinstance(self.window, torch.Tensor)
-        assert isinstance(self.min_decibel, torch.Tensor)
         assert isinstance(self.mel_basis, torch.Tensor)
         assert isinstance(self.weighting, torch.Tensor)
 
@@ -1020,15 +1015,15 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
         weighted_power_spectrogram = power_spectrogram * self.weighting
         # power_mel_spectrogram [batch_size, num_mel_bins, num_frames]
         power_mel_spectrogram = torch.matmul(self.mel_basis, weighted_power_spectrogram)
-        db_mel_spectrogram = power_to_db(power_mel_spectrogram, eps=self.eps)
-        db_mel_spectrogram = torch.max(self.min_decibel, db_mel_spectrogram).transpose(-2, -1)
+        eps = db_to_power(self.min_decibel)
+        db_mel_spectrogram = power_to_db(power_mel_spectrogram, eps=eps).transpose(-2, -1)
         db_mel_spectrogram = db_mel_spectrogram if has_batch_dim else db_mel_spectrogram.squeeze(0)
 
         if intermediate:
             # TODO: Simplify the `tranpose` and `squeeze`s.
             db_spectrogram = power_to_db(weighted_power_spectrogram).transpose(-2, -1)
-            db_spectrogram = torch.max(self.min_decibel, db_spectrogram)
-            spectrogram = torch.sqrt(torch.clamp(power_spectrogram, min=self.eps)).transpose(-2, -1)
+            db_spectrogram = torch.clamp(db_spectrogram, min=self.min_decibel)
+            spectrogram = torch.sqrt(torch.clamp(power_spectrogram, min=eps)).transpose(-2, -1)
             db_spectrogram = db_spectrogram if has_batch_dim else db_spectrogram.squeeze(0)
             spectrogram = spectrogram if has_batch_dim else spectrogram.squeeze(0)
             return Spectrograms(db_mel_spectrogram, db_spectrogram, spectrogram)

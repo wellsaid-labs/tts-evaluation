@@ -599,7 +599,7 @@ def apply_to_tensors(
     dict_: dict = data._asdict() if is_named_tuple else dataclass_as_dict(data)  # type: ignore
     apply = lambda v: call(v) if torch.is_tensor(v) else apply_to_tensors(v, call, is_return)
     if is_return:
-        return data.__class__(**{k: apply(v) for k, v in dict_.items()})
+        return data.__class__(**{k: apply(v) for k, v in dict_.items()})   # type: ignore
     else:
         [apply(value) for value in dict_.values()]
 
@@ -613,6 +613,7 @@ class Batch:
         """Apply `call` to `SequenceBatch` in `Batch`."""
         # TODO: Given that this has a specific use case with `SequenceBatch` it shouldn't
         # have a generic name like `apply`.
+        # TODO: Use `apply_to_tensors` to apply recursively too all `NameTuple`s or `dataclass`s.
         apply = lambda o: apply_to_tensors(o, call, True) if isinstance(o, SequenceBatch) else o
         dict_ = lib.utils.dataclass_as_dict(self)
         return dataclasses.replace(self, **{k: apply(v) for k, v in dict_.items()})

@@ -21,25 +21,32 @@ from run.data._loader.structures import (
     Session,
     Span,
     UnprocessedPassage,
+    UnprocessedSession,
     _check_updated_script,
     _filter_non_speech_segments,
     _is_stand_abbrev_consistent,
     _make_speech_segments_helper,
     _maybe_normalize_vo_script,
+    _process_sessions,
     _remove_ambiguous_abbrev,
     has_a_mistranscription,
     make_passages,
 )
 from run.data._loader.utils import get_non_speech_segments_and_cache
 from tests._utils import TEST_DATA_PATH
-from tests.run._utils import make_passage, make_session, script_to_alignments
+from tests.run._utils import (
+    make_passage,
+    make_session,
+    make_unprocessed_session,
+    script_to_alignments,
+)
 
 TEST_DATA_LJ = TEST_DATA_PATH / "audio" / "bit(rate(lj_speech,24000),32).wav"
 
 
 def make_unprocessed_passage(
     audio_path: pathlib.Path = pathlib.Path("."),
-    session: Session = make_session(),
+    session: UnprocessedSession = make_unprocessed_session(),
     script: str = "",
     transcript: str = "",
     alignments: typing.Optional[typing.Tuple[Alignment, ...]] = None,
@@ -292,7 +299,7 @@ def test_passage_span__identity():
     alignment = Alignment((0, len(script)), (0.0, metadata.length), (0, len(script)))
     passage = Passage(
         audio_file=metadata,
-        session=Session(LINDA_JOHNSON, audio_path.name),
+        session=make_session(LINDA_JOHNSON, audio_path.name),
         script=script,
         transcript=script,
         alignments=Alignment.stow([alignment]),
@@ -342,7 +349,7 @@ def _make_unprocessed_passage(
     found = [(find_script(script, t), find_transcript(transcript, t)) for t in tokens]
     return UnprocessedPassage(
         audio_path=TEST_DATA_LJ,
-        session=make_session(),
+        session=make_unprocessed_session(),
         script=script,
         transcript=transcript,
         alignments=tuple(Alignment(s, (0.0, 0.0), t) for s, t in found),
@@ -642,3 +649,43 @@ def test__remove_ambiguous_casing():
     passage = _remove_ambiguous_abbrev("", passage)
     assert passage.alignments is not None
     assert [a.script for a in passage.alignments] == list(script_to_alignments(normalized))
+
+
+def test__process_sessions():
+    """Test `_process_sessions` handles a basic case, with multiple passages and
+    optional alignments."""
+    meta = lib.audio.get_audio_metadata(TEST_DATA_LJ)
+    passage = make_unprocessed_passage(
+        audio_path=TEST_DATA_LJ,
+        script="abcd",
+        transcript="abcd",
+        alignments=(Alignment((0, 3), (0, 1), (0, 1)),),
+    )
+    other_audio_file = TEST_DATA_PATH / "audio" / "hilary.wav"
+    other_meta = lib.audio.get_audio_metadata(other_audio_file)
+    other_passage = make_unprocessed_passage(
+        audio_path=other_audio_file,
+        session=make_unprocessed_session(name="no alignments"),
+        script="abcd",
+        transcript="abcd",
+    )
+    kwargs = dict(
+        meta={TEST_DATA_LJ: meta, other_audio_file: other_meta},
+        get_loudness=lambda l: sum([n.mean() for n in l]),
+        get_tempo=lambda s, f: f / len(s),
+        no_tqdm=True,
+    )
+    processed = cf.call(_process_sessions, [[passage], [other_passage]], **kwargs)
+    assert len(processed) == 2
+    assert processed[passage.session] == Session(
+        *passage.session,
+        1.240387064171955e-06,
+        1 / len("abc"),
+        (other_meta.len + 1) / len("abc abcd"),
+    )
+    assert processed[other_passage.session] == Session(
+        *other_passage.session,
+        3.3791247915360145e-06,
+        other_meta.len / len("abcd"),
+        (other_meta.len + 1) / len("abc abcd"),
+    )

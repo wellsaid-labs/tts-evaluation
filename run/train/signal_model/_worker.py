@@ -535,8 +535,7 @@ def _visualize_inferred(
 
     batch = typing.cast(Batch, next(iter(data_loader)))
     item = random.randint(0, len(batch.batch) - 1)
-    length = batch.preds.num_frames[item]
-    spectrogram = batch.preds.frames[:length, item : item + 1]
+    spectrogram = batch.preds[item : item + 1].frames
     spectrogram = spectrogram.transpose(0, 1).to(state.device)
     session = [s.session for s in batch.batch.spans][item : item + 1]
     splits = spectrogram.split(split_size)
@@ -577,7 +576,7 @@ def _visualize_tts(
 
     batch = typing.cast(Batch, next(iter(data_loader)))
     item = random.randint(0, len(batch.batch) - 1)
-    inputs = batch.batch.processed.get(item)
+    inputs = batch.batch.processed[item]
     span = batch.batch.spans[item]
     # NOTE: The `spectrogram_model` runs on CPU to conserve GPU memory.
     preds = state.spec_model(inputs=inputs, mode=run._models.spectrogram_model.Mode.INFER)
@@ -630,6 +629,7 @@ def _run_steps(
     dataset_type: DatasetType,
     data_loader: DataLoader,
     handle_batch: _HandleBatch,
+    is_verbose: bool = False,
     **kwargs,
 ):
     """Run the `handle_batch` in a loop over `data_loader` batches."""
@@ -650,11 +650,12 @@ def _run_steps(
 
             if Context.TRAIN == context:
                 metrics.log(lambda l: l[-1:], timer, type_=dataset_type, cadence=Cadence.STEP)
-                state.comet.log_metrics(timer.get_timers(cadence=Cadence.STEP))
+                if is_verbose:
+                    state.comet.log_metrics(timer.get_timers(cadence=Cadence.STEP))
 
             timer = Timer().record_event(Timer.LOAD_DATA)
 
-        metrics.log(is_verbose=True, type_=dataset_type, cadence=Cadence.MULTI_STEP)
+        metrics.log(is_verbose=is_verbose, type_=dataset_type, cadence=Cadence.MULTI_STEP)
 
 
 def run_worker(

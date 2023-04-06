@@ -34,7 +34,9 @@ logger = logging.getLogger(__name__)
 
 def round_(x: float, bucket_size: float) -> float:
     """Bin `x` into buckets."""
-    return bucket_size * round(x / bucket_size)
+    # NOTE: Without additional rounding, the results can sometimes be not exact: 1.1500000000000001
+    ndigits = max(str(bucket_size)[::-1].find("."), 0)
+    return round(bucket_size * round(x / bucket_size), ndigits=ndigits)
 
 
 _RandomSampleReturnType = typing.TypeVar("_RandomSampleReturnType")
@@ -121,9 +123,8 @@ def get_weighted_std(tensor: torch.Tensor, dim: int = 0, strict: bool = False) -
     """
     if strict:
         # Expects normalized weightes total of 0, 1 to ensure correct variance decisions
-        assert all(
-            math.isclose(value, 1, abs_tol=1e-3) for value in tensor.sum(dim=dim).view(-1).tolist()
-        )
+        values = tensor.sum(dim=dim).view(-1).tolist()
+        assert all(math.isclose(value, 1, abs_tol=1e-3) for value in values)
 
     # Create position matrix where the index is the position and the value is the weight
     indices = torch.arange(0, tensor.shape[dim], dtype=tensor.dtype, device=tensor.device)
@@ -132,13 +133,8 @@ def get_weighted_std(tensor: torch.Tensor, dim: int = 0, strict: bool = False) -
     indices = indices.view(*shape).expand_as(tensor).float()
 
     weighted_mean = (indices * tensor).sum(dim=dim) / tensor.sum(dim=dim)
-    weighted_variance = ((indices - weighted_mean.unsqueeze(dim=dim)) ** 2 * tensor).sum(dim=dim)
-    weighted_standard_deviation = weighted_variance**0.5
-
-    numel = weighted_standard_deviation.numel()
-    assert numel == 0 or not torch.isnan(weighted_standard_deviation.min()), "NaN detected."
-
-    return weighted_standard_deviation
+    weighted_var = ((indices - weighted_mean.unsqueeze(dim=dim)) ** 2 * tensor).sum(dim=dim)
+    return weighted_var**0.5
 
 
 # NOTE: Due the issues around recursive typing, we've included a `flatten_2d` and
@@ -289,7 +285,7 @@ def disk_cache(path: pathlib.Path):
 
             return result
 
-        wrapper.clear_cache = lambda: path.unlink() if path.exists() else None
+        wrapper.clear_cache = lambda: path.unlink() if path.exists() else None  # type: ignore
 
         return typing.cast(_CacheReturnDecoratorFunction, wrapper)
 
@@ -375,10 +371,10 @@ class LSTM(torch.nn.LSTM):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         num_directions = 2 if self.bidirectional else 1
-        init_hidden_state = torch.randn(self.num_layers * num_directions, 1, self.hidden_size)
-        self.init_hidden_state = Parameter(init_hidden_state)
-        init_cell_state = torch.randn(self.num_layers * num_directions, 1, self.hidden_size)
-        self.init_cell_state = Parameter(init_cell_state)
+        num_layers = self.num_layers * num_directions
+        out_size = self.hidden_size if self.proj_size == 0 else self.proj_size
+        self.init_hidden_state = Parameter(torch.randn(num_layers, 1, out_size))
+        self.init_cell_state = Parameter(torch.randn(num_layers, 1, self.hidden_size))
 
     def forward(  # type: ignore
         self,
@@ -416,6 +412,37 @@ class LSTMCell(torch.nn.LSTMCell):
                 self.init_cell_state.expand(input.shape[0], -1).contiguous(),
             )
         return super().forward(input, hx=hx)
+
+
+class LockedDropout(torch.nn.Module):
+    """Dropout with an option to dropout a dimension all-together.
+
+    Args:
+        p: Probability of an element in the dropout mask to be zeroed.
+        dims: Dimensions to dropout out all-together.
+    """
+
+    def __init__(self, p: float = 0.5, dims: typing.Optional[typing.List[int]] = None):
+        self.p = p
+        self.dims = dims
+        super().__init__()
+
+    def __call__(self, x: torch.Tensor) -> torch.Tensor:
+        return super().__call__(x)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x (torch.FloatTensor [*]): Input to apply dropout too.
+        """
+        x = x.clone()
+        mask_shape = list(x.shape)
+        if self.dims is not None:
+            for dim in self.dims:
+                mask_shape[dim] = 1
+        mask = x.new_ones(*tuple(mask_shape), requires_grad=False)
+        mask = torch.nn.functional.dropout(mask, self.p, self.training)
+        return x * mask.expand_as(x)
 
 
 _ClampReturnType = typing.TypeVar("_ClampReturnType", float, int)
@@ -836,3 +863,24 @@ def zip_strict(
     message = f"`zip_strict` requires iterators to be the same size: {len(a)} != {len(b)}"
     assert len(a) == len(b), message
     return zip(a, b)  # type: ignore
+
+
+def slice_seq(
+    slices: typing.List[typing.Tuple[slice, float]], length: int, **kwargs
+) -> torch.Tensor:
+    """Create a 1-d `Tensor` representing `slices`.
+
+    Args:
+        slices: A list of sorted non-overlapping simple slices.
+        length: The length of the returned `Tensor`.
+
+    Returns:
+        (torch.FloatTensor [length])
+    """
+    assert all(a.stop <= b.start for (a, _), (b, _) in zip(slices, slices[1:]))
+    assert all(_is_simple_slice(s) and s.stop <= length and s.start >= 0 for s, _ in slices)
+    assert len(slices) == 0 or max(s.stop for s, _ in slices) <= length
+    sequence = torch.zeros(length, **kwargs)
+    for slice_, val in slices:
+        sequence[slice_] = val
+    return sequence

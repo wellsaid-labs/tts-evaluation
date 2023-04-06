@@ -7,7 +7,6 @@ import torch
 
 import lib
 import run
-from run._models.spectrogram_model import Preds
 from run.train.spectrogram_model import _data, _metrics
 from tests._utils import TEST_DATA_PATH, assert_almost_equal
 
@@ -43,28 +42,31 @@ def run_around_tests():
     cf.purge()
 
 
-def _make_preds(
-    alignments: torch.Tensor, tokens_mask: torch.Tensor, frames_mask: torch.Tensor
-) -> Preds:
-    """Make `Preds` for computing metrics.
+def test_get_hang_time():
+    """Test `_metrics.get_hang_time` counts hang time after a threshold is reached."""
+    stop_token_ = [
+        [0, 0, 1],  # Test no hang frames
+        [0, 1, 0],  # Test one hang frame
+        [0, 0, 0],  # Test no hang frames
+        [0, 1, 0],  # Test masked last frame (no hang frame)
+    ]
+    stop_token = torch.tensor(stop_token_).transpose(0, 1).float().logit()
+    frames_mask_ = [
+        [1, 1, 1],
+        [1, 1, 1],
+        [1, 1, 1],
+        [1, 1, 0],  # Test that a masked frame is ignored
+    ]
+    frames_mask = torch.tensor(frames_mask_).bool()
+    hang_time = _metrics.get_hang_time(stop_token, frames_mask, frames_mask.sum(dim=1), 0.5)
+    assert hang_time.tolist() == [0.0, 1.0, 0.0, 0.0]
 
-    Args:
-        alignments (torch.FloatTensor [num_frames, batch_size, num_tokens])
-        tokens_mask (torch.BoolTensor [batch_size, num_tokens])
-        frames_mask (torch.BoolTensor [batch_size, num_frames])
-    """
-    num_frames, batch_size, _ = tuple(alignments.shape)
-    num_frame_channels = 1
-    return Preds(
-        frames=torch.zeros(num_frames, batch_size, num_frame_channels),
-        stop_tokens=torch.zeros(num_frames, batch_size),
-        alignments=alignments,
-        num_frames=frames_mask.sum(dim=1),
-        frames_mask=frames_mask,
-        num_tokens=tokens_mask.sum(dim=1),
-        tokens_mask=tokens_mask,
-        reached_max=torch.zeros(batch_size, dtype=torch.bool),
-    )
+
+def test_get_hang_time__zero_elements():
+    """Test `_metrics.get_hang_time` handles zero elements correctly."""
+    stop_token = torch.empty(0, 0)
+    mask = torch.empty(0, 0, dtype=torch.bool)
+    assert _metrics.get_hang_time(stop_token, mask, torch.empty(0), 0.5).shape == (0,)
 
 
 def _get_db_spectrogram(signal, **kwargs) -> torch.Tensor:

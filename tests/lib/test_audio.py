@@ -562,6 +562,14 @@ def test_power_to_db__float():
     np.testing.assert_almost_equal(result, input_, decimal=5)
 
 
+def test_power_to_db__eps():
+    """Test `power_to_db` and `db_to_power` are consistent with regards to `eps`."""
+    eps = db_to_power(-50)
+    assert power_to_db(db_to_power(-51), eps) == -50
+    assert power_to_db(db_to_power(-50), eps) == -50
+    assert power_to_db(db_to_power(-49), eps) == -49
+
+
 def test_signal_to_rms__full_scale_square_wave():
     """Test `lib.audio.signal_to_rms` on a standard 0 dBFS signal."""
     rms = lib.audio.signal_to_rms(lib.audio.full_scale_square_wave())
@@ -744,9 +752,9 @@ def test_signal_to_db_mel_spectrogram():
     n_fft = 2048
     win_length = 2048
     hop_length = 512
-    amin = 1e-10
     n_mels = 128
     min_decibel = -50.0
+    amin = db_to_power(min_decibel)
 
     metadata = lib.audio.get_audio_metadata(TEST_DATA_LJ)
     signal = lib.audio.read_audio(TEST_DATA_LJ)
@@ -765,7 +773,6 @@ def test_signal_to_db_mel_spectrogram():
     log_S = librosa.perceptual_weighting(
         S,
         librosa.fft_frequencies(sr=metadata.sample_rate, n_fft=n_fft),
-        amin=amin,
         top_db=None,
     ).astype(np.float32)
     melspec = librosa.feature.melspectrogram(
@@ -777,8 +784,7 @@ def test_signal_to_db_mel_spectrogram():
         fmax=None,
         fmin=0.0,
     )
-    melspec = librosa.power_to_db(melspec, amin=amin, top_db=None)  # type: ignore
-    melspec = np.maximum(melspec, min_decibel).transpose()
+    melspec = librosa.power_to_db(melspec, amin=amin, top_db=None).transpose()  # type: ignore
 
     module = cf.partial(SignalTodBMelSpectrogram)(
         fft_length=n_fft,
@@ -791,7 +797,6 @@ def test_signal_to_db_mel_spectrogram():
         min_decibel=min_decibel,
         get_weighting=lambda f, *_: librosa.A_weighting(f),
         lower_hertz=0,
-        eps=amin,
     )
     other_mel_spectrogram = module(torch.tensor(signal)).detach().numpy()
 
@@ -934,12 +939,11 @@ def test__loudness():
             sample_rate=metadata.sample_rate,
             num_mel_bins=128,
             window=window,
-            min_decibel=float("-inf"),
+            min_decibel=power_to_db(1e-10),
             # NOTE: Our `k_weighting` implementation predicts a different `offset` than -0.691 which
             # is required by the original guidelines.
             get_weighting=partial(lib.audio.k_weighting, offset=-0.691),
             min_weight=float("-inf"),
-            eps=1e-10,
             lower_hertz=0,
             upper_hertz=20000,
         )

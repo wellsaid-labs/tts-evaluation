@@ -3,6 +3,7 @@ import multiprocessing
 import multiprocessing.pool
 import os
 import pathlib
+import random
 import shutil
 import tempfile
 import typing
@@ -20,9 +21,12 @@ import run
 from lib.audio import AudioMetadata, sec_to_sample
 from lib.environment import ROOT_PATH
 from lib.text import natural_keys
+from run._config.data import _include_span
 from run._tts import CHECKPOINTS_LOADERS, Checkpoints, package_tts
 from run._utils import Dataset
-from run.data._loader import Alignment, Passage, Span
+from run.data._loader import Alignment, Passage, Span, Speaker
+from run.data._loader import structures as struc
+from run.train.spectrogram_model._worker import _get_data_generator
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import altair as alt
@@ -54,8 +58,8 @@ STREAMLIT_STATIC_SYMLINK_PATH = STREAMLIT_STATIC_PRIVATE_PATH / "symlink"
 
 
 @st.experimental_memo()
-def load_tts(checkpoints_key: str):
-    return package_tts(*CHECKPOINTS_LOADERS[Checkpoints[checkpoints_key]]())
+def load_tts(checkpoints_key: str, **kwargs):
+    return package_tts(*CHECKPOINTS_LOADERS[Checkpoints[checkpoints_key]](**kwargs))
 
 
 # A `Path` to a file or directory accessible via HTTP in the streamlit app.
@@ -146,7 +150,10 @@ def _paths_to_html_download_link(
     paths: typing.List[pathlib.Path],
     archive_paths: typing.Optional[typing.List[pathlib.Path]] = None,
 ) -> str:
-    """Make a zipfile named `name` that can be downloaded with a button called `label`."""
+    """Make a zipfile named `name` that can be downloaded with a button called `label`.
+
+    TODO: Implement a utility like `st_download_bytes` for `paths_to_html_download_link`.
+    """
     web_path = make_temp_web_dir() / name
     archive_paths_ = [p.name for p in paths] if archive_paths is None else archive_paths
     with zipfile.ZipFile(web_path, "w") as file_:
@@ -234,11 +241,92 @@ def get_dataset(speaker_labels: typing.FrozenSet[str]) -> Dataset:
 
 
 @st.experimental_singleton()
+def get_datasets() -> typing.Tuple[Dataset, Dataset]:
+    """Load train and dev dataset, and cache."""
+    return run._utils.get_datasets(False)
+
+
 def get_dev_dataset() -> Dataset:
-    """Load dev dataset, and cache."""
-    with st.spinner("Loading dataset..."):
-        _, dev_dataset = run._utils.get_datasets(False)
-    return dev_dataset
+    """Load dev dataset and cache."""
+    return get_datasets()[1]
+
+
+@st.experimental_singleton()
+def get_spans(
+    _train_dataset: Dataset,
+    _dev_dataset: Dataset,
+    num_spans: int,
+    speaker: typing.Optional[Speaker] = None,
+    is_dev_speakers: bool = True,
+    is_train_spans: bool = True,
+    include_dic: bool = True,
+    device_count: int = 4,
+) -> typing.List[Span]:
+    """Get `num_spans` spans from `_train_dataset` for `speaker`. This uses the same code path
+    as a training run so it ensures we are analyzing training data directly.
+
+    Args:
+        ...
+        speaker: Pick a speaker to generate spans for.
+        num_spans: The number of spans to generate.
+        is_dev_speakers: Get spans only for development speakers.
+        is_train_spans: Get spans from the training dataset.
+        include_dic: Include dictionary datasets that are sometimes used in development; however,
+            may not be as applicable for applied use cases.
+        device_count: The number of devices used during training to set the configuration.
+    """
+    with st.spinner("Making generators..."):
+        if is_dev_speakers:
+            _train_dataset = {s: _train_dataset[s] for s in _dev_dataset.keys()}
+
+        if speaker is not None:
+            _train_dataset = {speaker: _train_dataset[speaker]}
+            _dev_dataset = {speaker: _dev_dataset[speaker]}
+
+        train_gen, dev_gen = cf.partial(_get_data_generator)(_train_dataset, _dev_dataset)
+        gen = train_gen if is_train_spans else dev_gen
+
+    with st.spinner("Making spans..."):
+        gen = (s for s in gen if include_dic or s.speaker.style is not struc.Style.DICT)
+        spans = [next(gen) for _ in st_tqdm(range(num_spans), num_spans)]
+
+    return spans
+
+
+def _random_speech_segments(_train_dataset: Dataset):
+    """Get random speech segments while balancing each of the speakers.
+
+    NOTE: This implementation of sampling speech segments is simpler than others. This is because
+          in other implementations we are trying to sample an interval of data. To ensure we
+          sample proportionally, we need to oversample longer passages. In this case, we are
+          directly sampling from a fixed pool of non-overlapping spans. With that in mind, we
+          can just sample uniformly, and ensure that every alignment has an equal chance of
+          getting sampled.
+    """
+    counter = {s: 0.0 for s in _train_dataset.keys()}
+    data = {k: [s for p in v for s in p.speech_segments] for k, v in _train_dataset.items()}
+    while True:
+        speaker = lib.utils.corrected_random_choice(counter)
+        span = random.choice(data[speaker])
+        if _include_span(span):
+            counter[span.speaker] += span.audio_length
+            yield span
+
+
+@st.experimental_singleton()
+def get_speech_segments(
+    _train_dataset: Dataset, speaker: typing.Optional[Speaker], num_spans: int
+) -> typing.Tuple[typing.List[Span], typing.List[np.ndarray]]:
+    """Get `num_spans` speech segments from `_train_dataset` for `speaker`."""
+    with st.spinner("Making spans..."):
+        _train_dataset = _train_dataset if speaker is None else {speaker: _train_dataset[speaker]}
+        train_gen = _random_speech_segments(_train_dataset)
+        spans = [next(train_gen) for _ in st_tqdm(range(num_spans), num_spans)]
+
+    with st.spinner("Loading audio..."):
+        signals = [s.audio() for s in st_tqdm(spans)]
+
+    return spans, signals
 
 
 @st.experimental_singleton()

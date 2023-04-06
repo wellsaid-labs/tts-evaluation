@@ -40,7 +40,9 @@ logger = logging.getLogger(__name__)
 def _get_unprocessed_dataset():
     dataset = cf.partial(get_unprocessed_dataset)()
     documents = [p for d in dataset.values() for p in d]
-    metadatas = _normalize_audio_files(documents, False)
+    _, metadatas = _normalize_audio_files(documents, False)
+    # TODO: This needs to be fixed, oops.
+    assert len(documents) == len(metadatas), "There are some documents that were filtered out."
     return dataset, metadatas
 
 

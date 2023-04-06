@@ -5,6 +5,7 @@ import config as cf
 import pytest
 
 from run._config import Cadence, DatasetType, config_spec_model_training_from_datasets
+from run._config.train import exclude_from_decay
 from run._models.spectrogram_model import SpectrogramModel
 from run.data._loader.english.m_ailabs import JUDY_BIEBER
 from run.train._utils import Context, Timer, set_context
@@ -50,6 +51,15 @@ def test_integration():
         prefetch_factor=2,
     )
 
+    # Test `exclude_from_decay` excluded the right parameters
+    no_decay, decay, groups = state._make_optimizer_groups(state.model, exclude_from_decay)
+    assert len(no_decay) == len(groups[0]["params"])
+    assert groups[0]["weight_decay"] == 0.0
+    assert len(decay) == len(groups[1]["params"])
+    assert "decoder.linear_stop_token.0.bias" in no_decay
+    assert "decoder.linear_out.0.weight" in no_decay
+    assert "decoder.pre_net.out.1.weight" in no_decay
+
     # Test `_run_step` with `Metrics` and `_State`
     with set_context(Context.TRAIN, comet, state.model):
         timer = Timer()
@@ -70,7 +80,7 @@ def test_integration():
         # fmt: off
         keys = [
             metrics.ALIGNMENT_STD_SUM, metrics.ALIGNMENT_NORM_SUM,
-            metrics.NUM_REACHED_MAX, metrics.RMS_SUM_PREDICTED, metrics.RMS_SUM
+            metrics.NUM_REACHED_MAX, metrics.RMS_SUM_PRED, metrics.RMS_SUM
         ]
         # fmt: on
         for key in keys:
@@ -85,8 +95,8 @@ def test_integration():
         bucket = len(batch.spans[0].script) // metrics.TEXT_LENGTH_BUCKET_SIZE
         values = {
             MetricsKey(metrics.NUM_FRAMES_MAX): max_frames,
-            MetricsKey(metrics.NUM_FRAMES_PREDICTED): num_frames,
-            MetricsKey(metrics.NUM_FRAMES_PREDICTED, JUDY_BIEBER): num_frames,
+            MetricsKey(metrics.NUM_FRAMES_PRED): num_frames,
+            MetricsKey(metrics.NUM_FRAMES_PRED, JUDY_BIEBER): num_frames,
             MetricsKey(metrics.NUM_FRAMES): num_frames,
             MetricsKey(metrics.NUM_FRAMES, JUDY_BIEBER): num_frames,
             MetricsKey(metrics.NUM_SECONDS): num_seconds,
