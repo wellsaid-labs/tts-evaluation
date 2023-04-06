@@ -1,9 +1,11 @@
+import dataclasses
 import typing
 
 import torch
 
 
-class Preds(typing.NamedTuple):
+@dataclasses.dataclass(frozen=True)
+class Preds:
     """The model predictions and related metadata."""
 
     # Spectrogram frames.
@@ -27,7 +29,7 @@ class Preds(typing.NamedTuple):
     frames_mask: torch.Tensor
 
     # The number of tokens in each sequence.
-    # torch.LongTensor [num_tokens]
+    # torch.LongTensor [batch_size]
     num_tokens: torch.Tensor
 
     # Sequence mask(s) to deliminate token padding with `False`.
@@ -37,6 +39,52 @@ class Preds(typing.NamedTuple):
     # If `True` the sequence has reached `self.max_frames_per_token`.
     # torch.BoolTensor [batch_size]
     reached_max: torch.Tensor
+
+    def __post_init__(self):
+        self.check_invariants()
+
+    def check_invariants(self):
+        """Check various invariants for `Preds`."""
+        # TODO: Let's consider writing invariants for the values each of these metrics have, for
+        # example, `alignments` should be between 0 and 1.
+        # TODO: Let's consider writing invariants to check everything is on the same device.
+        batch_size = self.num_tokens.shape[0]
+        num_frame_channels = self.frames.shape[2]
+        num_frames = self.num_frames.max() if self.num_frames.numel() != 0 else 0
+        num_tokens = self.num_tokens.max() if self.num_tokens.numel() != 0 else 0
+        assert self.frames.shape == (num_frames, batch_size, num_frame_channels)
+        assert self.frames.dtype == torch.float
+        assert self.stop_tokens.shape == (num_frames, batch_size)
+        assert self.stop_tokens.dtype == torch.float
+        assert self.alignments.shape == (num_frames, batch_size, num_tokens)
+        assert self.alignments.dtype == torch.float
+        assert self.num_frames.shape == (batch_size,)
+        assert self.num_frames.dtype == torch.long
+        assert self.frames_mask.shape == (batch_size, num_frames)
+        assert self.frames_mask.dtype == torch.bool
+        assert self.num_tokens.shape == (batch_size,)
+        assert self.num_frames.dtype == torch.long
+        assert self.tokens_mask.shape == (batch_size, num_tokens)
+        assert self.tokens_mask.dtype == torch.bool
+        assert self.reached_max.shape == (batch_size,)
+        assert self.reached_max.dtype == torch.bool
+
+    def __len__(self):
+        return self.num_tokens.shape[0]
+
+    def __getitem__(self, key):
+        num_frames = self.num_frames[key].max()
+        num_tokens = self.num_tokens[key].max()
+        return Preds(
+            frames=self.frames[:num_frames, key],
+            stop_tokens=self.stop_tokens[:num_frames, key],
+            alignments=self.alignments[:num_frames, key, :num_tokens],
+            num_frames=self.num_frames[key],
+            frames_mask=self.frames_mask[key, :num_frames],
+            num_tokens=self.num_tokens[key],
+            tokens_mask=self.tokens_mask[key, :num_tokens],
+            reached_max=self.reached_max[key],
+        )
 
 
 class Encoded(typing.NamedTuple):

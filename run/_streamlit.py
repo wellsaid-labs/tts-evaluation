@@ -12,6 +12,7 @@ import config as cf
 import numpy as np
 import tqdm
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, JsCode
+from streamlit.delta_generator import DeltaGenerator
 from third_party import LazyLoader
 
 import lib
@@ -27,6 +28,7 @@ if typing.TYPE_CHECKING:  # pragma: no cover
     import altair as alt
     import librosa
     import librosa.util
+    import matplotlib.figure
     import pandas as pd
     import streamlit as st
 else:
@@ -34,6 +36,7 @@ else:
     alt = LazyLoader("alt", globals(), "altair")
     pd = LazyLoader("pd", globals(), "pandas")
     st = LazyLoader("st", globals(), "streamlit")
+    matplotlib = LazyLoader("matplotlib", globals(), "matplotlib")
 
 
 logger = logging.getLogger(__name__)
@@ -101,6 +104,13 @@ def audio_to_web_path(audio: np.ndarray, name: str = "audio.wav", **kwargs) -> W
     return web_path
 
 
+def figure_to_url(figure: matplotlib.figure.Figure, name: str = "fig.png", **kwargs):
+    """Create a URL that can be loaded from `streamlit`."""
+    image_web_path = make_temp_web_dir() / name
+    figure.savefig(str(image_web_path), **kwargs)
+    return web_path_to_url(image_web_path)
+
+
 def audio_to_url(audio: np.ndarray, name: str = "audio.wav", **kwargs):
     """Create a URL that can be loaded from `streamlit`."""
     return web_path_to_url(audio_to_web_path(audio, name, **kwargs))
@@ -113,7 +123,24 @@ def audio_to_html(
     return f'<audio {attrs} src="{audio_to_url(audio, name, **kwargs)}"></audio>'
 
 
-def paths_to_html_download_link(
+# NOTE: While streamlit does provide `st.download`, it'll force the entire app to reload when it's
+# used. Here is an issue thread: https://github.com/streamlit/streamlit/issues/4382. The below
+# options don't have that backdraw.
+
+
+def _bytes_to_html_download_link(name: str, label: str, bytes_: bytes) -> str:
+    """Make a zipfile named `name` that can be downloaded with a button called `label`."""
+    web_path = make_temp_web_dir() / name
+    web_path.write_bytes(bytes_)
+    return f'<a href="{web_path_to_url(web_path)}" download="{name}">{label}</a>'
+
+
+def st_download_bytes(*args, **kwargs):
+    """Download a text file."""
+    return st_html(_bytes_to_html_download_link(*args, **kwargs))
+
+
+def _paths_to_html_download_link(
     name: str,
     label: str,
     paths: typing.List[pathlib.Path],
@@ -126,6 +153,11 @@ def paths_to_html_download_link(
         for path, archive_path in zip(paths, archive_paths_):
             file_.write(path, arcname=archive_path)
     return f'<a href="{web_path_to_url(web_path)}" download="{name}">{label}</a>'
+
+
+def st_download_files(*args, **kwargs):
+    """Create a link to download a zip file with `paths`."""
+    st_html(_paths_to_html_download_link(*args, **kwargs))
 
 
 _MapInputVar = typing.TypeVar("_MapInputVar")
@@ -302,7 +334,12 @@ def path_label(path: pathlib.Path) -> str:
     )
 
 
-def st_select_path(label: str, dir: pathlib.Path, suffix: str) -> pathlib.Path:
+def st_select_path(
+    label: str,
+    dir: pathlib.Path,
+    suffix: str,
+    st: DeltaGenerator = typing.cast(DeltaGenerator, st),
+) -> pathlib.Path:
     """Display a path selector for the directory `dir`."""
     options = [p for p in dir.glob("**/*") if p.suffix == suffix]
     options = sorted(options, key=lambda x: natural_keys(str(x)), reverse=True)
@@ -325,26 +362,29 @@ _StTqdmVar = typing.TypeVar("_StTqdmVar")
 
 
 def st_tqdm(
-    iterable: typing.Iterable[_StTqdmVar], length: typing.Optional[int] = None
+    iterable: typing.Iterable[_StTqdmVar], total: typing.Optional[int] = None
 ) -> typing.Generator[_StTqdmVar, None, None]:
     """Display a progress bar while iterating through `iterable`."""
     bar = st.progress(0)
     for i, item in enumerate(iterable):
         yield item
-        bar.progress(i / (len(iterable) if length is None else length))  # type: ignore
+        bar.progress(i / (len(iterable) if total is None else total))  # type: ignore
     bar.empty()
 
 
 # NOTE: This follows the examples highlighted here:
 # https://github.com/PablocFonseca/streamlit-aggrid-examples/blob/main/cell_renderer_class_example.py
 # https://github.com/PablocFonseca/streamlit-aggrid/issues/119
-renderer = 'function(params) {return `<audio controls preload="none" src="${params.value}" />`}'
-renderer = JsCode(renderer)
+audio_renderer = 'function(prms) {return `<audio controls preload="none" src="${prms.value}" />`}'
+audio_renderer = JsCode(audio_renderer)
+img_renderer = 'function(prms) {return `<img src="${prms.value}" />`}'
+img_renderer = JsCode(img_renderer)
 
 
 def st_ag_grid(
     df: pd.DataFrame,
-    audio_column_name: typing.Optional[str] = None,
+    audio_cols: typing.List[str] = [],
+    img_cols: typing.List[str] = [],
     height: int = 850,
     page_size: int = 10,
 ):
@@ -352,8 +392,8 @@ def st_ag_grid(
     options = GridOptionsBuilder.from_dataframe(df)
     options.configure_pagination(paginationAutoPageSize=False, paginationPageSize=page_size)
     options.configure_default_column(wrapText=True, autoHeight=True, min_column_width=1)
-    if audio_column_name:
-        options.configure_column(audio_column_name, cellRenderer=renderer)
+    [options.configure_column(name, cellRenderer=audio_renderer) for name in audio_cols]
+    [options.configure_column(name, cellRenderer=img_renderer) for name in img_cols]
     return AgGrid(
         data=df,
         gridOptions=options.build(),

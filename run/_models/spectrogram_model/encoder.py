@@ -22,7 +22,7 @@ def _roll_helper(
     indices = torch.arange(0, length, device=device)
     dimension = num_dimensions + dimension if dimension < 0 else dimension
     # EXAMPLE:
-    # indicies.shape == (3,)
+    # indices.shape == (3,)
     # tensor.shape == (1, 2, 3, 4, 5)
     # indices_shape == [1, 1, 3, 1, 1]
     indices_shape = [1] * dimension + [-1] + [1] * (num_dimensions - dimension - 1)

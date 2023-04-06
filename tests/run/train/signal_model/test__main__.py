@@ -9,8 +9,8 @@ import lib
 from run._config import (
     Cadence,
     DatasetType,
-    make_signal_model_train_config,
-    make_spectrogram_model_train_config,
+    config_sig_model_training_from_datasets,
+    config_spec_model_training_from_datasets,
 )
 from run.data._loader.english.lj_speech import LINDA_JOHNSON
 from run.data._loader.english.m_ailabs import JUDY_BIEBER
@@ -37,8 +37,8 @@ def run_around_tests():
 
 def test_integration():
     train_dataset, dev_dataset, comet, device = setup_experiment()
-    cf.add(make_spectrogram_model_train_config(train_dataset, dev_dataset, True))
-    cf.add(make_signal_model_train_config(train_dataset, dev_dataset, True))
+    config_spec_model_training_from_datasets(train_dataset, dev_dataset, True)
+    config_sig_model_training_from_datasets(train_dataset, dev_dataset, True)
     _, state, __ = make_spec_and_sig_worker_state(comet, device)
 
     batch_size = 1

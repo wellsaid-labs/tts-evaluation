@@ -28,7 +28,7 @@ class SignalModelWrapper(SignalModel):
         spectrogram_mask: typing.Optional[torch.Tensor] = None,
         pad_input: bool = True,
     ) -> typing.Tuple[torch.Tensor, torch.Tensor]:
-        seq_metadata = [[typing.cast(typing.Hashable, s[0].label) for s in session], session]
+        seq_metadata = [[typing.cast(typing.Hashable, s.spkr.label) for s in session], session]
         return super().__call__(spectrogram, seq_metadata, spectrogram_mask, pad_input)
 
 

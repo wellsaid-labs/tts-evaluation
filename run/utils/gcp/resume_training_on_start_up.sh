@@ -10,8 +10,14 @@ function get_attribute_value() {
   get_metadata_value "instance/attributes/$1"
 }
 
-TRAIN_SCRIPT_PATH=$(get_attribute_value train-script-path)
-STARTUP_SCRIPT_USER=$(get_attribute_value startup-script-user)
+for line in $(cat /etc/environment); do export $line; done
+
+if [ -z "$1" ]; then
+  TRAIN_SCRIPT_PATH=$(get_attribute_value train-script-path)
+  STARTUP_SCRIPT_USER=$(get_attribute_value startup-script-user)
+  echo "Setting environment variables..."
+  echo "TRAIN_SCRIPT_PATH=$TRAIN_SCRIPT_PATH" >>/etc/environment
+fi
 
 if [ -f /opt/wellsaid-labs/AUTO_START_FROM_CHECKPOINT ]; then
   echo 'Restarting from the latest checkpoint...'
@@ -20,7 +26,3 @@ if [ -f /opt/wellsaid-labs/AUTO_START_FROM_CHECKPOINT ]; then
       . venv/bin/activate;
       PYTHONPATH=. python $TRAIN_SCRIPT_PATH resume;'"
 fi
-
-echo "Setting environment variables..."
-echo "TRAIN_SCRIPT_PATH=$TRAIN_SCRIPT_PATH" >>/etc/environment
-

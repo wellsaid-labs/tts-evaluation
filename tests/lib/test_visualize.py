@@ -13,6 +13,10 @@ def test_plot_logits():
     assert isinstance(lib.visualize.plot_logits(torch.rand(5)), matplotlib.figure.Figure)
 
 
+def test_plot_loudness():
+    assert isinstance(lib.visualize.plot_loudness(torch.rand(5)), matplotlib.figure.Figure)
+
+
 def test_plot_waveform():
     assert isinstance(lib.visualize.plot_waveform(torch.rand(5), 24000), matplotlib.figure.Figure)
 

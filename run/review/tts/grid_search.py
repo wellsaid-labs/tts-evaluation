@@ -31,12 +31,11 @@ from run._config import (
 from run._streamlit import (
     audio_to_web_path,
     path_label,
-    paths_to_html_download_link,
-    st_html,
+    st_download_files,
     st_select_paths,
     web_path_to_url,
 )
-from run._tts import TTSPackage, get_session_vocab, text_to_speech
+from run._tts import TTSPackage, basic_tts, get_session_vocab
 from run.data._loader import Session, Speaker
 
 st.set_page_config(layout="wide")
@@ -48,7 +47,7 @@ def get_sample_sessions(
     """For each `speaker` randomly sample `max_sessions`."""
     sessions_sample = []
     for speaker in speakers:
-        speaker_sessions = [s for s in sessions if s[0] == speaker]
+        speaker_sessions = [s for s in sessions if s.spkr == speaker]
         sessions_sample.extend(lib.utils.random_sample(speaker_sessions, max_sessions))
     return sessions_sample
 
@@ -100,10 +99,10 @@ def main():
         script,
     ) in enumerate(iter_):
         package = TTSPackage(spec_model, sig_model)
-        audio = text_to_speech(package, script, session)
+        audio = basic_tts(package, script, session)
         sesh = str(session).replace("/", "__")
-        speaker = session[0]
-        name = f"i={i},spec={spec_path.stem},sig={sig_path.stem},spk={speaker.label},"
+        speaker = session.spkr
+        name = f"i={i},spec={spec_path.stem},sig={sig_path.stem},spkr={speaker.label},"
         name += f"sesh={sesh},script={id(script)}.wav"
         audio_web_path = audio_to_web_path(audio, name=name)
         row = {
@@ -111,7 +110,7 @@ def main():
             "Spectrogam Model": path_label(spec_path),
             "Signal Model": path_label(sig_path),
             "Speaker": speaker.label,
-            "Session": session[1],
+            "Session": session.label,
             "Script": f"'{script[:25]}...'",
         }
         rows.append(row)
@@ -122,8 +121,7 @@ def main():
 
     with st.spinner("Making Zipfile..."):
         st.text("")
-        label = "📁 Download Audio(s) (zip)"
-        st_html(paths_to_html_download_link(f"{file_name}.zip", label, paths))
+        st_download_files(f"{file_name}.zip", "📁 Download Audio(s) (zip)", paths)
 
 
 if __name__ == "__main__":

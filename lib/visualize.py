@@ -71,6 +71,22 @@ def plot_logits(logits: typing.Union[torch.Tensor, np.ndarray]) -> "matplotlib.f
     return figure
 
 
+def plot_loudness(loudness: typing.Union[torch.Tensor, np.ndarray]) -> "matplotlib.figure.Figure":
+    """Given a time-series of decibel values, plot a line graph.
+
+    Args:
+        loudness (numpy.array or torch.Tensor [sequence_length])
+    """
+    logits = loudness if isinstance(loudness, torch.Tensor) else torch.tensor(loudness)
+    logits = logits.detach().cpu().numpy()
+    figure = pyplot.figure()
+    pyplot.plot(list(range(len(logits))), logits, marker=".", linestyle="solid")
+    pyplot.ylabel("Loudness")
+    pyplot.xlabel("Timestep")
+    pyplot.close(figure)
+    return figure
+
+
 def plot_waveform(
     signal: typing.Union[torch.Tensor, np.ndarray], sample_rate: int
 ) -> "matplotlib.figure.Figure":

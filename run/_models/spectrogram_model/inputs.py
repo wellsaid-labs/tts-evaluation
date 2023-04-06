@@ -249,7 +249,8 @@ def _preprocess(
     for sesh, context_span, span in batch:
         tokens = [t for token in context_span for t in _token_to_tokens(token, span, respell_prob)]
 
-        seq_metadata = [sesh[0].label, sesh, sesh[0].dialect, sesh[0].style, sesh[0].language]
+        spkr = sesh.spkr
+        seq_metadata = [spkr.label, sesh, spkr.dialect, spkr.style, spkr.language]
         for i, data in enumerate(seq_metadata):
             if len(inputs.seq_metadata) == i:
                 inputs.seq_metadata.append([])

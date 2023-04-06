@@ -11,14 +11,8 @@ import lib
 import run
 from lib.text import natural_keys
 from run._config import DEFAULT_SCRIPT
-from run._streamlit import (
-    audio_to_web_path,
-    load_tts,
-    paths_to_html_download_link,
-    st_html,
-    web_path_to_url,
-)
-from run._tts import CHECKPOINTS_LOADERS, batch_text_to_speech
+from run._streamlit import audio_to_web_path, load_tts, st_download_files, st_html, web_path_to_url
+from run._tts import CHECKPOINTS_LOADERS, batch_tts
 from run.data._loader import Session, Speaker
 
 
@@ -34,18 +28,18 @@ def main():
         tts = load_tts(checkpoint)
 
     format_speaker: typing.Callable[[Speaker], str] = lambda s: s.label
-    speakers = sorted(sesh[0] for sesh in tts.session_vocab())
+    speakers = sorted(sesh.spkr for sesh in tts.session_vocab())
     speaker = st.selectbox("Speaker", options=speakers, format_func=format_speaker)  # type: ignore
     speaker = typing.cast(Speaker, speaker)
     assert speaker.name is not None
     speaker_name = speaker.name.split()[0].lower()
 
     spk_sesh = tts.session_vocab()
-    sessions = sorted([sesh for spk, sesh in spk_sesh if spk == speaker], key=natural_keys)
+    sessions = sorted([sesh for spkr, sesh in spk_sesh if spkr == speaker], key=natural_keys)
 
     all_sessions: bool = st.checkbox("Sample all %d sessions" % len(sessions))
     selected_sessions = sessions if all_sessions else st.multiselect("Session(s)", options=sessions)
-    selected_sessions = [Session((speaker, name)) for name in selected_sessions]
+    selected_sessions = [Session(speaker, name) for name in selected_sessions]
 
     if len(selected_sessions) == 0:
         return
@@ -63,14 +57,14 @@ def main():
     with st.spinner("Generating audio..."):
         inputs = [(script, s) for s in selected_sessions]
         inputs = [i for i in inputs for _ in range(num_clips)]
-        for i, generated in enumerate(batch_text_to_speech(tts, inputs)):
+        for i, generated in enumerate(batch_tts(tts, inputs)):
             clip_num = i % num_clips + 1
             sesh = inputs[i][-1][1]
             sesh = sesh[:-4] if (sesh.endswith(".wav") or sesh.endswith(".mp3")) else sesh
             if clip_num == 1:
                 st.markdown(f"##### Session: **{sesh}**")
             st.markdown(f"###### Clip: **{clip_num}**")
-            name = f"spk={speaker_name},sesh={sesh},clp={clip_num}.wav"
+            name = f"spkr={speaker_name},sesh={sesh},clp={clip_num}.wav"
             audio_web_path = audio_to_web_path(generated.sig_model, name)
             st_html(f'<audio controls src="{web_path_to_url(audio_web_path)}"></audio>')
             paths.append(audio_web_path)
@@ -78,7 +72,7 @@ def main():
     with st.spinner("Making zipfile..."):
         st.text("")
         zip_name = f"{speaker_name}_samples.zip"
-        st_html(paths_to_html_download_link(zip_name, f"📁 Download All {len(paths)} (zip)", paths))
+        st_download_files(zip_name, f"📁 Download All {len(paths)} (zip)", paths)
 
     st.success(f"Finished! {lib.utils.mazel_tov()}")
 

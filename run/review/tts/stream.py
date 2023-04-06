@@ -37,7 +37,7 @@ from run._tts import (
     PreprocessedInputs,
     TTSPackage,
     process_tts_inputs,
-    text_to_speech_ffmpeg_generator,
+    tts_ffmpeg_generator,
 )
 from run.data._loader import Session, Speaker
 
@@ -65,7 +65,7 @@ def _generation_service(
 ):
     """Generate a voice over from `input` using `tts` and store the results in `file_path`."""
     with file_path.open("ab") as file_:
-        for bytes_ in text_to_speech_ffmpeg_generator(tts, input, preprocessed, **cf.get()):
+        for bytes_ in tts_ffmpeg_generator(tts, input, preprocessed, **cf.get()):
             if len(bytes_) > 0:
                 file_.write(bytes_)
     is_streaming.clear()
@@ -151,12 +151,13 @@ def main():
         tts = load_tts(checkpoint)
 
     format_speaker: typing.Callable[[Speaker], str] = lambda s: str(s)
-    speakers = sorted((s[0] for s in tts.session_vocab()), key=lambda k: str(k))
+    speakers = sorted((s.spkr for s in tts.session_vocab()), key=lambda k: str(k))
     speaker = st.selectbox("Speaker", options=speakers, format_func=format_speaker)  # type: ignore
 
     sessions = tts.session_vocab()
-    format_session: typing.Callable[[Session], str] = lambda s: s[1]
-    sessions = sorted((s for s in sessions if s[0] == speaker), key=lambda s: natural_keys(s[1]))
+    format_session: typing.Callable[[Session], str] = lambda s: s.label
+    sesh_sort_key: typing.Callable[[Session], typing.List] = lambda s: natural_keys(s.label)
+    sessions = sorted((s for s in sessions if s.spkr == speaker), key=sesh_sort_key)
     session = st.selectbox("Session", options=sessions, format_func=format_session)  # type: ignore
     session = typing.cast(Session, session)
     script = st.text_area("Script", value=DEFAULT_SCRIPT, height=300)

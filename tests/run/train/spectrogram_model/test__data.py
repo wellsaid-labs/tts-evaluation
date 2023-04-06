@@ -68,7 +68,7 @@ def test__get_loudness():
     with torchnlp.random.fork_rng(12345):
         audio = np.random.rand(sample_rate * length) * 2 - 1  # type: ignore
         alignment = Alignment((0, length), (0, length), (0, length))
-        loundess = _data._get_loudness(
+        loudness = _data._get_loudness(
             audio=audio,
             alignment=alignment,
             block_size=block_size,
@@ -76,9 +76,9 @@ def test__get_loudness():
             sample_rate=sample_rate,
             filter_class=implementation,
         )
-        assert loundess is not None
-        assert math.isfinite(loundess)
-        assert round(meter.integrated_loudness(audio), precision) == loundess
+        assert loudness is not None
+        assert math.isfinite(loudness)
+        assert round(meter.integrated_loudness(audio), precision) == loudness
 
 
 def test__signals_to_spectrograms():
