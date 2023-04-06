@@ -46,8 +46,41 @@ assert FRAME_SIZE % 4 == 0
 FRAME_HOP = FRAME_SIZE // 4
 
 
-def _get_max_audio_length(text: str, frames_per_second: float) -> int:
+def _get_max_audio_len_in_frames(text: str, frames_per_second: float) -> int:
+    """Get the max audio length in frames."""
     return math.ceil(run._config.lang.get_max_audio_length(text) * frames_per_second)
+
+
+# NOTE: The annotation values and lengths can be reviewed in the
+# `run/review/dataset_processing/annotations.py` workbook which provides basic statistics and
+# and clips to review.
+# NOTE: Usually, for training, it's helpful if the data is within a range of -1 to 1. These
+# normalization functions help adjust for that.
+
+
+def _norm_anno_len(val: float, avg_anno_length: float = 40.5) -> float:
+    """Normalize a annotation length with an average around `avg_anno_length` characters.
+    This is bounded to 1 so this value doesn't grow unbounded for longer annotations.
+    """
+    return min(val / avg_anno_length - 1, 1.0)
+
+
+def _norm_anno_loudness(val: float, compression: float = 50) -> float:
+    """Normalize a annotation loudness value which is from 35 to -60 db centered at 0 db."""
+    return val / compression
+
+
+def _norm_tempo(val: float, avg_val: float = 1.0) -> float:
+    """Normalize a annotation tempo value which is from 0.5x to 5x with an average around 1x."""
+    return val - avg_val
+
+
+def _norm_sesh_loudness(val: float, avg_val: float = -21, compression: float = 50) -> float:
+    """Normalize a session loudness value which is from -5 to -70 db with an average around -21 db.
+
+    NOTE: LUFS by definition cannot be less than -70 db, or more than 0db.
+    """
+    return (val - avg_val) / compression
 
 
 def configure(sample_rate: int = 24000, overwrite: bool = False):
@@ -125,6 +158,7 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
 
     # NOTE: The `DeMan` loudness implementation of ITU-R BS.1770 is sample rate independent.
     filter_class = "DeMan"
+    sil_thresh = -50
     config = {
         lib.visualize.plot_spectrogram: Args(frame_hop=FRAME_HOP),
         lib.visualize.plot_mel_spectrogram: Args(frame_hop=FRAME_HOP, **hertz_bounds),
@@ -148,7 +182,7 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
             get_weighting=lib.audio.iso226_weighting,
             # NOTE: Ensure that the weighting isn't below -30 decibels; otherwise, a value may go
             # to zero which and it'll go to infinity when applying the operations in inverse.
-            min_weight=-30,
+            min_weight=-30.0,
             **hertz_bounds,
         ),
         lib.audio.griffin_lim: Args(
@@ -172,11 +206,16 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
             **hertz_bounds,
         ),
         lib.audio.get_pyloudnorm_meter: Args(filter_class=filter_class),
+        # TODO: Some speakers, like Heather, speak at around -40 db to -50db,
+        # and pauses are at best -60 db. While speakers like Donnla, may have silences around
+        # -45 db. We should use session avg loudness, to create a threshold that is more general.
+        # There is some preliminary work on that in `batch_griffin_lim.py`
         run.train.spectrogram_model._metrics.get_num_pause_frames: Args(
             frame_hop=FRAME_HOP,
             min_length=too_long_pause_length,
-            max_loudness=-50,
+            max_loudness=sil_thresh,
         ),
+        run.train.spectrogram_model._metrics.get_num_sil_frames: Args(sil_threshold=sil_thresh),
         run._models.signal_model.wrapper.SignalModelWrapper: Args(
             ratios=[2] * math.ceil(math.log2(FRAME_HOP)),
             pred_sample_rate=2 ** math.ceil(math.log2(FRAME_HOP)),
@@ -214,29 +253,25 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
             block_size=0.400, precision=0, filter_class=filter_class
         ),
         run._models.spectrogram_model.inputs.preprocess: Args(
-            # NOTE: The average values were calculated through the `span_annotation_generation.py`
-            # workbook.
-            # NOTE: The LUFS range is approximately from 0 to -80 db so a offset and compression of
-            # 50 will bring that range from roughly 1 to -1.
-            # NOTE: The `avg_anno_length` was set with the
-            # `run/review/dataset_processing/annotations.py` workbook which provides basic
-            # statistics on annotation length.
-            loudness_kwargs=dict(val_average=-21, val_compression=50, avg_anno_length=40.5),
-            # NOTE: The tempo range is approximately from 0.04 to 0.2 sec per char so a offset and
-            # compression of 0.1 will bring that range from roughly 1 to -1.
-            tempo_kwargs=dict(val_average=1.0, val_compression=1, avg_anno_length=40.5),
-            get_max_audio_length=partial(
-                _get_max_audio_length, frames_per_second=frames_per_second
+            get_max_audio_len=partial(
+                _get_max_audio_len_in_frames, frames_per_second=frames_per_second
             ),
+            norm_anno_len=_norm_anno_len,
+            norm_anno_loudness=_norm_anno_loudness,
+            norm_sesh_loudness=_norm_sesh_loudness,
+            norm_tempo=_norm_tempo,
         ),
         run._models.spectrogram_model.inputs.InputsWrapper.check_invariants: Args(
-            # TODO: Consider adding filtering for outlier annotations and reducing the allowable
-            # range.
-            # NOTE: The LUFS range is approximately from -15 to -70 db, this gives a bit more
-            # wiggle room.
-            # NOTE: LUFS by definition cannot be less than -70 db.
-            min_loudness=-70,
-            max_loudness=-5,
+            # NOTE: The annotation min and max values can be reviewed in the
+            # `run/review/dataset_processing/annotations.py` workbook.
+            # NOTE: The LUFS range is approximately centered on our loudest a recording session
+            # (-10db) and quietest recording session (-40db). With a range of -5db to -70db,
+            # centered on those recording sessions, the quietest recording session could
+            # be 35db louder and the loudest recording session could be -60db quieter.
+            # TODO: We should consider adding filtering for outlier annotations and reducing the
+            # allowable range.
+            min_loudness=-60,
+            max_loudness=35,
             # NOTE: The tempo range is approximately from 10% to 1000% slower than faster than
             # average.
             # TODO: We should refine this a bit more, and find stricter bounds.
@@ -251,6 +286,12 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
             # on average.
             length=10,
             standard_deviation=0.75,
+        ),
+        run._models.spectrogram_model.wrapper.SpectrogramModelWrapper: cf.Args(
+            # NOTE: The spectrogram values range from -50 to 50. Thie scalar rescales the
+            # spectrogram to a more reasonable range for deep learning. This also ensures that
+            # the output respects the minimum bound.
+            output_scalar=50.0
         ),
     }
     cf.add(config, overwrite)

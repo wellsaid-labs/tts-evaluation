@@ -36,5 +36,6 @@ def configure(overwrite: bool = False):
     config = {
         run._utils.get_unprocessed_dataset: cf.Args(path=DATA_PATH),
         run.data._loader.utils._cache_path: cf.Args(cache_dir=TTS_DISK_CACHE_NAME),
+        run.data._loader.structures._process_sessions: cf.Args(cache_dir=TTS_DISK_CACHE_NAME),
     }
     cf.add(config, overwrite=overwrite)

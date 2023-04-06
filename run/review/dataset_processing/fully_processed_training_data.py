@@ -8,7 +8,6 @@ Usage:
 import logging
 
 import config as cf
-import torch
 
 import lib
 import run
@@ -33,22 +32,30 @@ def main():
         print(f"XML: '{batch.xmls[seq_idx]}'")
         print(
             "Sequence Metadata:",
-            processed.seq_metadata[0][seq_idx],
-            processed.seq_metadata[1][seq_idx],
-            processed.seq_metadata[2][seq_idx],
-            processed.seq_metadata[3][seq_idx],
-            processed.seq_metadata[4][seq_idx],
+            processed.seq_meta[0][seq_idx],
+            processed.seq_meta[1][seq_idx],
+            processed.seq_meta[2][seq_idx],
+            processed.seq_meta[3][seq_idx],
+            processed.seq_meta[4][seq_idx],
         )
         iter_ = zip(
             processed.tokens[seq_idx],
-            processed.token_metadata[0][seq_idx],
-            processed.token_metadata[1][seq_idx],
+            processed.token_meta[0][seq_idx],
+            processed.token_meta[1][seq_idx],
         )
         for idx, (token, casing, cntxt) in enumerate(iter_):
             print(f"Token: '{repr(token)}'")
             print("Token Metadata:", casing, cntxt)
-            assert isinstance(processed.token_embeddings, torch.Tensor)
-            print("Annotations:", processed.anno_embeddings)
+            annos = (
+                "loudness_anno_embed",
+                "loudness_anno_mask",
+                "sesh_loudness_embed",
+                "tempo_anno_embed",
+                "tempo_anno_mask",
+                "sesh_tempo_embed",
+            )
+            for anno in annos:
+                print(anno, processed.get_token_vec(anno)[idx])
         print("=" * 10)
 
 

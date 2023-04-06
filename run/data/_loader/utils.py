@@ -45,6 +45,12 @@ def read_audio(audio_file: AudioMetadata, *args, **kwargs) -> np.ndarray:
     return audio
 
 
+@functools.lru_cache(maxsize=None)
+def _read_audio_cached(audio_file: AudioMetadata, *args, **kwargs) -> np.ndarray:
+    """A cached utility used for processing passages quickly."""
+    return read_audio(audio_file, *args, **kwargs)
+
+
 def normalize_audio_suffix(path: Path, suffix: str) -> Path:
     """Normalize the last suffix to `suffix` in `path`."""
     assert len(path.suffixes) == 1, "`path` has multiple suffixes."
@@ -147,7 +153,7 @@ def get_non_speech_segments_and_cache(
         except ValueError:
             cache_path.unlink()
 
-    audio = read_audio(audio_file, memmap=True)
+    audio = _read_audio_cached(audio_file, memmap=True)
     vad: typing.List[FloatFloat] = lib.audio.get_non_speech_segments(audio, audio_file, **kwargs_)
     np.save(cache_path, np.array(vad), allow_pickle=False)
     return Timeline(vad)
@@ -324,12 +330,12 @@ def _temporary_fix_for_transcript_offset(
 
 DataLoader = typing.Callable[[Path], struc.UnprocessedDataset]
 DataLoaders = typing.Dict[struc.Speaker, DataLoader]
-GetSession = typing.Callable[[struc.Speaker, Path], struc.Session]
+GetSession = typing.Callable[[struc.Speaker, Path], struc.UnprocessedSession]
 
 
-def _default_session(speaker: struc.Speaker, audio_path: Path) -> struc.Session:
+def _default_session(speaker: struc.Speaker, audio_path: Path) -> struc.UnprocessedSession:
     """By default, this assumes that each audio file was recorded, individually."""
-    return struc.Session(speaker, audio_path.stem)
+    return struc.UnprocessedSession(speaker, audio_path.stem)
 
 
 def dataset_loader(

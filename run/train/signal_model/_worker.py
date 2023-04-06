@@ -18,7 +18,6 @@ import torch.utils.data._utils.worker
 from third_party import get_parameter_norm
 from torch.nn.functional import binary_cross_entropy_with_logits, l1_loss, mse_loss
 from torch.nn.parallel import DistributedDataParallel
-from torchnlp.random import fork_rng
 from torchnlp.utils import get_total_parameters
 
 import lib
@@ -536,8 +535,7 @@ def _visualize_inferred(
 
     batch = typing.cast(Batch, next(iter(data_loader)))
     item = random.randint(0, len(batch.batch) - 1)
-    length = batch.preds.num_frames[item]
-    spectrogram = batch.preds.frames[:length, item : item + 1]
+    spectrogram = batch.preds[item : item + 1].frames
     spectrogram = spectrogram.transpose(0, 1).to(state.device)
     session = [s.session for s in batch.batch.spans][item : item + 1]
     splits = spectrogram.split(split_size)
@@ -566,49 +564,59 @@ def _visualize_inferred(
 
 
 @lib.utils.log_runtime
-def _visualize_select_cases(
-    state: _State, dataset_type: DatasetType, cadence: Cadence, split_size: int = 32, **kw
+def _visualize_tts(
+    state: _State,
+    data_loader: DataLoader,
+    dataset_type: DatasetType,
+    split_size: int = 32,
 ):
-    """Run spectrogram and signal model in inference mode and visualize results.
-
-    TODO: Generate spectrograms individually is slow(ish), for now, the user can download the audio
-    and generate them manually, in the future they could be generated in a batch.
-    """
+    """Run spectrogram and signal model in inference mode and visualize results."""
     if not is_master():
         return
 
+    batch = typing.cast(Batch, next(iter(data_loader)))
+    item = random.randint(0, len(batch.batch) - 1)
+    inputs = batch.batch.processed[item]
+    span = batch.batch.spans[item]
     # NOTE: The `spectrogram_model` runs on CPU to conserve GPU memory.
+    preds = state.spec_model(inputs=inputs, mode=run._models.spectrogram_model.Mode.INFER)
+    splits = preds.frames.transpose(0, 1).to(state.device).split(split_size, dim=1)
     model = typing.cast(SignalModel, state.model.module)
-    sesh_vocab = model.session_embed.get_vocab()
-    inputs, preds = cf.partial(_utils.process_select_cases)(state.spec_model, sesh_vocab, **kw)
-    splits = preds.frames.to(state.device).transpose(0, 1).split(split_size, dim=1)
-    waves = list(generate_waveform(model, splits, inputs.session))
-    waves = typing.cast(torch.Tensor, torch.cat(waves, dim=-1))
-
-    for item in range(len(inputs)):
-        label = partial(get_model_label, cadence=cadence)
-        num_tokens = preds.num_tokens[item]
-        num_frames = preds.num_frames[item]
-        frames = preds.frames[:num_frames, item]
-        wave = waves[item, : num_frames * model.upscale_factor]
-        figures = {
-            label("predicted_spectrogram"): plot_mel_spectrogram(frames, **cf.get()),
-            label("alignment"): plot_alignments(preds.alignments[:num_frames, item, :num_tokens]),
-            label("stop_token"): plot_logits(preds.stop_tokens[:num_frames, item]),
-        }
-        state.comet.log_figures(figures)
-        audio = {
-            "predicted_griffin_lim_audio": griffin_lim(frames.numpy(), **cf.get()),
-            "predicted_signal_model_audio": wave.cpu().numpy(),
-        }
-        state.comet.log_html_audio(
-            randomly_sampled_case=item,
-            audio=audio,
-            context=state.comet.context,
-            xml=str(inputs.to_xml(item, include_context=True)),
-            session=inputs.session[item],
-            dataset_type=dataset_type,
-        )
+    predicted = list(generate_waveform(model, splits, [span.session]))
+    predicted = typing.cast(torch.Tensor, torch.cat(predicted, dim=-1)).squeeze(0)
+    target = batch.batch.audio[item]
+    model_label = partial(get_model_label, cadence=Cadence.STEP)
+    data_label = partial(get_dataset_label, cadence=Cadence.STEP, type_=dataset_type)
+    num_frames = batch.batch.spectrogram.lengths[:, item]
+    gold_spectrogram = batch.batch.spectrogram.tensor[:num_frames, item]
+    frames = preds.frames.squeeze(1)
+    figures = {
+        data_label("gold_spectrogram"): plot_mel_spectrogram(gold_spectrogram, **cf.get()),
+        model_label("predicted_spectrogram"): plot_mel_spectrogram(frames, **cf.get()),
+        model_label("alignment"): plot_alignments(preds.alignments.squeeze(1)),
+        model_label("stop_token"): plot_logits(preds.stop_tokens.squeeze(1)),
+    }
+    state.comet.log_figures(figures)
+    audio = {
+        "predicted_griffin_lim_audio": griffin_lim(frames.numpy(), **cf.get()),
+        "gold_griffin_lim_audio": griffin_lim(gold_spectrogram.numpy(), **cf.get()),
+        "predicted_signal_model_audio": predicted.cpu().numpy(),
+        "gold_audio": target.numpy(),
+    }
+    state.comet.log_html_audio(
+        audio=audio,
+        context=state.comet.context,
+        xml=batch.batch.xmls[item],
+        session=span.session,
+        dataset_type=dataset_type,
+    )
+    _log_specs(
+        state,
+        (get_dataset_label, target.to(state.device)),
+        (get_model_label, predicted),
+        cadence=Cadence.STEP,
+        type_=dataset_type,
+    )
 
 
 _HandleBatch = typing.Callable[[_HandleBatchArgs], None]
@@ -621,6 +629,7 @@ def _run_steps(
     dataset_type: DatasetType,
     data_loader: DataLoader,
     handle_batch: _HandleBatch,
+    is_verbose: bool = False,
     **kwargs,
 ):
     """Run the `handle_batch` in a loop over `data_loader` batches."""
@@ -641,11 +650,12 @@ def _run_steps(
 
             if Context.TRAIN == context:
                 metrics.log(lambda l: l[-1:], timer, type_=dataset_type, cadence=Cadence.STEP)
-                state.comet.log_metrics(timer.get_timers(cadence=Cadence.STEP))
+                if is_verbose:
+                    state.comet.log_metrics(timer.get_timers(cadence=Cadence.STEP))
 
             timer = Timer().record_event(Timer.LOAD_DATA)
 
-        metrics.log(is_verbose=True, type_=dataset_type, cadence=Cadence.MULTI_STEP)
+        metrics.log(is_verbose=is_verbose, type_=dataset_type, cadence=Cadence.MULTI_STEP)
 
 
 def run_worker(
@@ -686,9 +696,7 @@ def run_worker(
         with set_context(Context.EVALUATE_INFERENCE, state.comet, *state.models, ema=state.ema):
             _visualize_inferred(state, dev_loader, DatasetType.DEV)
 
-        with set_context(Context.EVALUATE_INFERENCE, state.comet, *state.models, ema=state.ema):
-            assert comet.curr_epoch is not None
-            with fork_rng(comet.curr_epoch):
-                _visualize_select_cases(state, DatasetType.TEST, Cadence.MULTI_STEP)
+        with set_context(Context.EVALUATE_TTS, state.comet, *state.models, ema=state.ema):
+            _visualize_tts(state, dev_loader, DatasetType.DEV)
 
         save_checkpoint(state.to_checkpoint(), checkpoints_directory, f"step_{state.step.item()}")

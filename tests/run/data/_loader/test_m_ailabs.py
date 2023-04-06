@@ -26,7 +26,7 @@ def test_m_ailabs_speech_dataset(mock_urlretrieve):
         path = directory / archive.parent.name / "en_US/by_book/female/judy_bieber"
         assert passages[0] == run.data._loader.structures.UnprocessedPassage(
             audio_path=path / "dorothy_and_wizard_oz/wavs/dorothy_and_wizard_oz_01_f000001.wav",
-            session=run.data._loader.Session(
+            session=run.data._loader.structures.UnprocessedSession(
                 JUDY_BIEBER, "dorothy_and_wizard_oz/wavs/dorothy_and_wizard_oz_01"
             ),
             script="To My Readers.",

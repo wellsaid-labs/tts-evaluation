@@ -12,8 +12,8 @@ import run
 from lib.text import XMLType, natural_keys
 from run._config import DEFAULT_SCRIPT
 from run._streamlit import audio_to_web_path, load_tts, st_download_files, st_html, web_path_to_url
-from run._tts import CHECKPOINTS_LOADERS, batch_tts
-from run.data._loader import Session, Speaker
+from run._tts import CHECKPOINTS_LOADERS, batch_tts, make_batches
+from run.data._loader import Speaker
 
 
 def main():
@@ -34,30 +34,34 @@ def main():
     assert speaker.name is not None
     speaker_name = speaker.name.split()[0].lower()
 
-    spk_sesh = tts.session_vocab()
-    sessions = sorted([sesh for spkr, sesh in spk_sesh if spkr == speaker], key=natural_keys)
+    seshs = tts.session_vocab()
+    seshs = sorted([s for s in seshs if s.spkr == speaker], key=lambda s: natural_keys(s.label))
+    all_sesh: bool = st.checkbox("Sample all %d sessions" % len(seshs))
+    seshs = st.multiselect(
+        "Session(s)",
+        options=seshs,
+        default=seshs if all_sesh else [],
+        format_func=lambda s: s.label,
+    )
 
-    all_sessions: bool = st.checkbox("Sample all %d sessions" % len(sessions))
-    selected_sessions = sessions if all_sessions else st.multiselect("Session(s)", options=sessions)
-    selected_sessions = [Session(speaker, name) for name in selected_sessions]
-
-    if len(selected_sessions) == 0:
+    if len(seshs) == 0:
         return
 
     frm = st.form(key="form")
     script: str = XMLType(frm.text_area("Script", value=DEFAULT_SCRIPT, height=150))
 
     label = "Number of Clips Per Session"
-    num_clips: int = frm.number_input(label, min_value=1, max_value=None, value=5)
+    num_clips = typing.cast(int, frm.number_input(label, min_value=1, max_value=None, value=5))
 
     if not frm.form_submit_button("Submit"):
         return
 
     paths = []
     with st.spinner("Generating audio..."):
-        inputs = [(script, s) for s in selected_sessions]
+        inputs = [(script, s) for s in seshs]
         inputs = [i for i in inputs for _ in range(num_clips)]
-        for i, generated in enumerate(batch_tts(tts, inputs)):
+        batches = make_batches(inputs)
+        for i, generated in enumerate(batch_tts(tts, batches)):
             clip_num = i % num_clips + 1
             sesh = inputs[i][-1][1]
             sesh = sesh[:-4] if (sesh.endswith(".wav") or sesh.endswith(".mp3")) else sesh

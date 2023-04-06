@@ -22,6 +22,8 @@ def test_round_():
     assert lib.utils.round_(0.4, 0.25) == 0.5
     assert lib.utils.round_(1, 4) == 0
     assert lib.utils.round_(3, 4) == 4
+    # NOTE: Without additional rounding, this regressed to: 1.1500000000000001.
+    assert lib.utils.round_(1.17, 0.05) == 1.15
 
 
 def test_random_sample():
@@ -162,16 +164,19 @@ def test_get_weighted_std():
     tensor = torch.tensor(
         [[[0.3333333, 0.3333333, 0.3333334], [0, 0.5, 0.5]], [[0, 0.5, 0.5], [0, 0.5, 0.5]]]
     )
-    assert_almost_equal(
-        lib.utils.get_weighted_std(tensor, dim=2),
-        torch.tensor([[0.8164966106414795, 0.50], [0.50, 0.50]]),
-    )
+    expected = torch.tensor([[0.8164966106414795, 0.50], [0.50, 0.50]])
+    assert_almost_equal(lib.utils.get_weighted_std(tensor, dim=2), expected)
 
 
 def test_get_weighted_std__one_data_point():
     """Test `lib.utils.get_weighted_std` computes the correct standard deviation for one data
     point."""
     assert lib.utils.get_weighted_std(torch.tensor([0, 1, 0]), dim=0) == torch.zeros(1)
+
+
+def test_get_weighted_std__no_data_points():
+    """Test `lib.utils.get_weighted_std` returns NaN if zeros are passed."""
+    assert torch.isnan(lib.utils.get_weighted_std(torch.tensor([0, 0, 0]), dim=0))
 
 
 def test_get_weighted_std__zero_elements():
@@ -714,3 +719,23 @@ def test_zip_strict():
         assert list(lib.utils.zip_strict((1, 2, 3), (1, 2))) == [(1, 1), (2, 2), (3, 3)]
     with pytest.raises(AssertionError):
         assert list(lib.utils.zip_strict((1, 2), (1, 2, 3))) == [(1, 1), (2, 2), (3, 3)]
+
+
+def test_slice_seq():
+    """Test `lib.utils.slice_seq` on basic cases."""
+    slices = [(slice(0, 1), 1.0), (slice(3, 5), 3.0)]
+    result = lib.utils.slice_seq(slices, 5)
+    expected = torch.tensor([1.0, 0.0, 0.0, 3.0, 3.0])
+    assert torch.equal(result, expected)
+
+    with pytest.raises(AssertionError):  # Error on overlap
+        lib.utils.slice_seq([(slice(0, 1), 1.0), (slice(0, 1), 3.0)], 5)
+
+    with pytest.raises(AssertionError):  # Error on funky step size
+        lib.utils.slice_seq([(slice(0, 1, 2), 1.0)], 5)
+
+    with pytest.raises(AssertionError):  # Error on if not sorted
+        lib.utils.slice_seq([(slice(2, 3), 1.0), (slice(1, 2), 1.0)], 5)
+
+    with pytest.raises(AssertionError):  # Error length too small
+        lib.utils.slice_seq([(slice(0, 7), 1.0)], 5)

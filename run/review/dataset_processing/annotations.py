@@ -1,11 +1,28 @@
 """ Streamlit application for reviewing generated annotations.
 
+TODO: It appears some speakers have like Patrick, Wade, Sofia have a relatively small variation
+      in loudness while having a much larger variation in tempo. This is unexpected because I'd
+      imagine speakers that are speaking consistently would be consistent in both dimensions.
+      Let's investigate this, and document our understanding of variation in these datasets
+      with examples.
+TODO: Tobin has a 3x higher duplication rate and our other speakers. Joe and Garry are more like
+      2x higher. While some duplication rate is expected (the data is being randomly sampled), this
+      should be relatively even accross the board, unless we are oversampling certain portions
+      of the data. Given that we use estimators to weigh each passage and speaker, it's likely
+      those are off, and it'd be interesting to investigate Tobin specifically. Given the
+      complexity of our pipeline with many different samplers and filtering rules, it might
+      be beneficial to implement a dynamic algorithm for recalibrating our sampling weights
+      based on the number of duplicates seen. This would be similar to how we dynamically sample
+      speakers based on the number of audio seconds we've already generated for each speaker.
+
 Usage:
     $ PYTHONPATH=. streamlit run run/review/dataset_processing/annotations.py \
         --runner.magicEnabled=false
 """
 import logging
 import typing
+from collections import defaultdict
+from statistics import stdev
 
 import config as cf
 import numpy
@@ -19,54 +36,25 @@ import lib
 import run
 from run._config.labels import _speaker
 from run._config.train import _config_spec_model_training
-from run._streamlit import audio_to_url, clip_audio, st_ag_grid, st_tqdm
-from run._utils import Dataset, get_datasets
-from run.data._loader import Alignment, Span, Speaker
+from run._streamlit import (
+    audio_to_url,
+    clip_audio,
+    get_datasets,
+    get_spans,
+    st_ag_grid,
+    st_download_bytes,
+    st_tqdm,
+)
+from run.data._loader import Alignment, Session, Span, Speaker
 from run.train.spectrogram_model._data import (
     _get_loudness_annotation,
     _get_tempo_annotation,
     _random_nonoverlapping_alignments,
 )
-from run.train.spectrogram_model._worker import _get_data_generator
 
 lib.environment.set_basic_logging_config(reset=True)
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 logger = logging.getLogger(__name__)
-
-
-@st.experimental_singleton()
-def _get_datasets() -> typing.Tuple[Dataset, Dataset]:
-    return get_datasets(False)
-
-
-@st.experimental_singleton()
-def _get_spans(
-    _train_dataset: Dataset,
-    _dev_dataset: Dataset,
-    speaker: typing.Optional[Speaker],
-    num_spans: int,
-    device_count: int = 4,
-) -> typing.Tuple[typing.List[Span], typing.List[numpy.ndarray]]:
-    """Get `num_spans` spans from `_train_dataset` for `speaker`. This uses the same code path
-    as a training run so it ensures we are analyzing training data directly.
-
-    Args:
-        ...
-        device_count: The number of devices used during training to set the configuration.
-    """
-    with st.spinner("Making generators..."):
-        if speaker is not None:
-            _train_dataset = {speaker: _train_dataset[speaker]}
-            _dev_dataset = {speaker: _dev_dataset[speaker]}
-        train_gen, _ = cf.partial(_get_data_generator)(_train_dataset, _dev_dataset)
-
-    with st.spinner("Making spans..."):
-        spans = [next(train_gen) for _ in st_tqdm(range(num_spans), num_spans)]
-
-    with st.spinner("Loading audio..."):
-        signals = [s.audio() for s in st_tqdm(spans)]
-
-    return spans, signals
 
 
 def _annotate(text: str, alignment: Alignment, prefix: str = "<<<", suffix: str = ">>>") -> str:
@@ -82,27 +70,40 @@ def _gather_data(span_idx: int, span: Span, anno: Alignment, clip: numpy.ndarray
         ...
     """
     doc = span.spacy.as_doc()
-    script_len = anno.script[1] - anno.script[0]
-    text = span.script[anno.script[0] : anno.script[1]]
-    spacy_span = doc.char_span(anno.script[0], anno.script[1], alignment_mode="expand")
+    text = span.script[anno.script_slice]
+    spacy_span = doc.char_span(*anno.script, alignment_mode="expand")
     assert spacy_span is not None
-    assert len(spacy_span.text) <= script_len, "Invalid annotation"
+    assert len(spacy_span.text) <= anno.script_len, "Invalid annotation"
+    loudness = cf.partial(_get_loudness_annotation)(clip, span.audio_file.sample_rate, anno)
+    tempo = cf.partial(_get_tempo_annotation)(span, anno)
+    # TODO: Consider adding this to the `Span` implementation for hashing, equality, etc.
+    key = (
+        span.passage.audio_file.path.name,
+        (span.audio_start + anno.audio[0], anno.audio_len),
+    )
 
     return {
         "index": span_idx,
+        "key": key,
         "anno_script": repr(_annotate(span.script, anno)),
-        "loudness": cf.partial(_get_loudness_annotation)(clip, span.audio_file.sample_rate, anno),
         "tempo": cf.partial(_get_tempo_annotation)(span, anno),
+        "diff_loudness": loudness if loudness is None else loudness - span.session.loudness,
+        "audio_len": round(anno.audio_len, 2),
         "clip": audio_to_url(clip_audio(clip, span, anno)),
-        "speaker": repr(span.session[0]),
-        "session": span.session[1],
+        "speaker": repr(span.session.spkr),
+        "session": span.session.label,
+        "loudness": loudness,
+        "diff_tempo": tempo - span.session.spkr_tempo,
+        "sesh_loudness": span.session.loudness,
+        "sesh_tempo": span.session.tempo,
+        "num_words": len(text.split()),
         "num_alignments": len(span.alignments),
         "script": text,
-        "transcript": span.transcript[anno.transcript[0] : anno.transcript[1]],
-        "num_words": len(text.split()),
-        "audio_len": round(anno.audio[1] - anno.audio[0], 2),
-        "script_len": script_len,
-        "transcript_len": anno.transcript[1] - anno.transcript[0],
+        "transcript": span.transcript[anno.transcript_slice],
+        "script_len": anno.script_len,
+        "transcript_len": anno.transcript_len,
+        "anno_script_slice": anno.script,
+        "_session": span.session,
     }
 
 
@@ -169,9 +170,9 @@ def _stats(
     )
 
 
-def _distributions(data: typing.List[typing.Dict], num_cols: int = 3):
+def _anno_value_distributions(data: typing.List[typing.Dict], num_cols: int = 3):
     """Plot the distribution of various data points."""
-    st.subheader("Distributions")
+    st.subheader("Annotation Value Distributions")
     distributions = (
         ("Loudness Values", 1, [r["loudness"] for r in data if r["loudness"] is not None]),
         ("Tempo Values", 0.01, [r["tempo"] for r in data]),
@@ -193,6 +194,76 @@ def _distributions(data: typing.List[typing.Dict], num_cols: int = 3):
         col.plotly_chart(fig, use_container_width=True)
 
 
+def _speakers_variability(data: typing.List[typing.Dict]):
+    """Show a table summarizing the speakers variation in loudness and tempo.
+
+    NOTE: We choose to demonstrate range by looking at the 10th or 100th example because we only
+          need 10s of examples per speaker to demonstrate range, probably.
+    """
+    st.subheader("Speaker Variability Statistics")
+    filters = (
+        ("[0 long]", lambda r: r["audio_len"] >= 1),
+        ("[1 no filter]", lambda _: True),
+        ("[2 short]", lambda r: r["audio_len"] < 1),
+    )
+    attrs = (("diff_loudness", "loudness"), ("diff_tempo", "spkr_tempo"))
+
+    stats: typing.Dict[Speaker, typing.Dict[str, typing.Any]] = defaultdict(dict)
+    for filter_name, filter_ in filters:
+        for diff, avg in attrs:
+            spkr_anno: typing.Dict[Speaker, typing.List[float]] = defaultdict(list)
+            spkr_dups: typing.Dict[Speaker, typing.Set] = defaultdict(set)
+            for row in data:
+                if row[diff] is not None and filter_(row):
+                    spkr_anno[row["_session"].spkr].append(row[diff])
+                    spkr_dups[row["_session"].spkr].add(row["key"])
+
+            for spkr, vals in spkr_anno.items():
+                v = sorted(vals)
+                prefix = f"[2] {filter_name}"
+                percent = int(round(0.01 * len(v)))
+                min_max: typing.Dict[str, typing.Optional[typing.Tuple[float, float]]] = {
+                    f"{prefix} `{diff}` 10th": (v[10], v[-10]) if len(v) > 10 else None,
+                    f"{prefix} `{diff}` 100th": (v[100], v[-100]) if len(v) > 100 else None,
+                    f"{prefix} `{diff}` 5%": (v[percent * 5], v[-(percent * 5 + 1)]),
+                }
+                items = min_max.items()
+                plus_minus = {f"{k} ±": v if v is None else (v[1] - v[0]) / 2 for k, v in items}
+                num_unique = spkr_dups[spkr]
+                stats[spkr] = {
+                    f"{prefix} Num `{diff}` Vals": len(v),
+                    f"{prefix} Num `{diff}` Dups": len(v) - len(num_unique),
+                    f"{prefix} % `{diff}` Dups": (1 - (len(num_unique) / len(v))) * 100,
+                    f"{prefix} `{diff}` Stdev": stdev(v) if len(v) > 2 else None,
+                    **plus_minus,
+                    **min_max,
+                    **stats[spkr],
+                }
+
+    seshs: typing.Set[Session] = set(r["_session"] for r in data)
+    for diff, avg in attrs:
+        for sesh in seshs:
+            s = stats[sesh.spkr]
+
+            key = "[1] Sesh"
+            s[key] = s[key] if key in s else set()
+            s[key].add(sesh.label)
+
+            key = f"[1] Sesh `{avg}`"
+            val = float(getattr(sesh, avg))  # TODO: Remove
+            s[key] = s[key] if key in s else set()
+            s[key].add(val)
+
+    indicies = list(sorted(set(k for v in stats.values() for k in v.keys())))
+    rows = {repr(s): [v[k] if k in v else None for k in indicies] for s, v in stats.items()}
+    df = pandas.DataFrame(rows, index=indicies)
+    st.dataframe(df, use_container_width=True)
+    name = "speaker_variability.csv"
+    st_download_bytes(name, "📁 Download", df.to_csv().encode("utf-8"))
+    st.dataframe(df.T, use_container_width=True)
+    st_download_bytes(name, "📁 Download", df.T.to_csv().encode("utf-8"))
+
+
 def main():
     run._config.configure(overwrite=True)
     # NOTE: The various parameters map to configurations that are not relevant for this workbook.
@@ -202,10 +273,11 @@ def main():
     st.write("The workbook reviews the annotations that are being generated for spans.")
 
     if st.sidebar.button("Clear Dataset Cache"):
-        _get_datasets.clear()
-    train_dataset, dev_dataset = _get_datasets()
+        get_datasets.clear()
 
-    form = st.form("settings")
+    train_dataset, dev_dataset = get_datasets()
+
+    form: DeltaGenerator = st.form("settings")
     question = "How many span(s) do you want to generate?"
     # NOTE: Too many spans could cause the `streamlit` to refresh and start over, this has happened
     # around 5000 spans.
@@ -214,10 +286,15 @@ def main():
     speakers = [None] + list(train_dataset.keys())
     speaker: typing.Optional[Speaker] = form.selectbox("Speaker", speakers, format_func=format_func)
     random_seed: int = form.number_input("What seed should we use?", value=123)  # type: ignore
+    load_individual = form.checkbox("Load individual annotations", value=True)
+    load_distributions = form.checkbox("Load annotation value distributions", value=False)
     if not form.form_submit_button("Submit"):
         return
 
-    spans, clips = _get_spans(train_dataset, dev_dataset, speaker, num_spans)
+    spans = get_spans(train_dataset, dev_dataset, num_spans, speaker, is_dev_speakers=False)
+
+    with st.spinner("Loading audio..."):
+        clips = [s.audio() for s in st_tqdm(spans)]
 
     with st.spinner("Generating Annotations..."):
         with fork_rng(seed=random_seed):
@@ -227,14 +304,19 @@ def main():
 
     with st.spinner("Assembling data..."):
         data = []
-        for idx, (span, annos, clip) in enumerate(zip(spans, intervals, clips)):
-            data.extend(_gather_data(idx, span, a, clip) for a in annos)
+        for i, (span, annos, clip) in enumerate(zip(spans, intervals, clips)):
+            data.extend(_gather_data(i, span, a, clip) for a in annos)
         df = pandas.DataFrame(data)
 
-    st.subheader("Data")
-    st_ag_grid(df, audio_cols=["clip"])
+    if load_individual:
+        st.subheader("Individual Annotations")
+        st_ag_grid(df, audio_cols=["clip"])
+
+    _speakers_variability(data)
     _stats(spans, data, intervals)
-    _distributions(data)
+
+    if load_distributions:
+        _anno_value_distributions(data)
 
 
 if __name__ == "__main__":

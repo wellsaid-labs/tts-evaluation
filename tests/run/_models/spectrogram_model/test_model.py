@@ -30,57 +30,53 @@ assert_almost_equal = lambda *a, **k: _utils.assert_almost_equal(*a, **k, decima
 
 class Params(typing.NamedTuple):
     max_tokens: int = 17
-    max_seq_meta_values: typing.Tuple[int, int] = (3, 5)
+    max_seq_meta_vals: typing.Tuple[int, int] = (3, 5)
     max_token_meta_values: typing.Tuple[int] = (7,)
     num_frame_channels: int = 6
     batch_size: int = 5
     max_frames: int = 5
-    max_num_tokens: int = 11
+    max_num_tokens: int = 9
     max_tokens_indices: typing.Tuple[int, ...] = (0, 1)
     min_tokens_indices: typing.Tuple[int, ...] = (2,)
-    max_word_vector_size: int = 20
-    max_anno_features: int = 10
+    max_word_vector_size: int = 11
+    word_vector_size: int = 7
+    max_seq_vector_size: int = 4
+    seq_vector_size: int = 2
+    max_anno_vector_size: int = 10
+    annos: typing.Tuple[typing.Tuple[str, str], ...] = (
+        ("anno_vector_a", "anno_mask_a"),
+        ("anno_vector_b", "anno_mask_b"),
+    )
 
     @property
     def max_frames_per_token(self) -> float:
         return self.max_frames / self.max_num_tokens
 
+    @property
+    def token_vector_idx(self):
+        annos = [i for a in self.annos for i in a]
+        indicies = {a: slice(i, i + 1) for i, a in enumerate(annos)}
+        slice_ = slice(len(annos), len(annos) + self.word_vector_size)
+        return {**indicies, "word_vector": slice_}
+
 
 def _make_spectrogram_model(
     params: Params,
-    seq_meta_embed_size: int = 8,
-    token_meta_embed_size: int = 6,
+    encoder_hidden_size: int = 16,
     output_scalar: float = 1.2,
     stop_threshold: float = 0.5,
     dropout: float = 0.5,
-    window_length: int = 3,
+    window_len: int = 3,
     stop_token_eps: float = 1e-10,
+    clamp_output: bool = False,
 ) -> SpectrogramModel:
     """Make `spectrogram_model.SpectrogramModel` for testing."""
     config = {
-        run._models.spectrogram_model.encoder.Encoder: cf.Args(
-            seq_meta_embed_dropout=dropout,
-            out_size=16,
-            hidden_size=16,
-            num_conv_layers=2,
-            conv_filter_size=3,
-            lstm_layers=1,
-            dropout=dropout,
-        ),
-        run._models.spectrogram_model.decoder.Decoder: cf.Args(
-            pre_net_size=16,
-            lstm_hidden_size=16,
-            encoder_out_size=16,
-            stop_net_dropout=dropout,
-            stop_net_hidden_size=16,
-        ),
-        run._models.spectrogram_model.pre_net.PreNet: cf.Args(num_layers=1, dropout=dropout),
+        run._models.spectrogram_model.encoder.Encoder: cf.Args(num_layers=2, conv_filter_size=3),
+        run._models.spectrogram_model.decoder.Decoder: cf.Args(hidden_size=16),
+        run._models.spectrogram_model.pre_net.PreNet: cf.Args(dropout=dropout),
         run._models.spectrogram_model.attention.Attention: cf.Args(
-            hidden_size=4,
-            conv_filter_size=3,
-            dropout=dropout,
-            window_length=window_length,
-            avg_frames_per_token=1.0,
+            conv_filter_size=3, window_len=window_len, avg_frames_per_token=1.0
         ),
         torch.nn.LayerNorm: cf.Args(eps=1e-05),
     }
@@ -88,16 +84,18 @@ def _make_spectrogram_model(
 
     model = SpectrogramModel(
         max_tokens=params.max_tokens,
-        max_seq_meta_values=params.max_seq_meta_values,
-        max_token_meta_values=params.max_token_meta_values,
-        max_token_embed_size=params.max_word_vector_size + params.max_anno_features,
-        max_anno_features=params.max_anno_features,
-        token_meta_embed_size=token_meta_embed_size,
-        seq_meta_embed_size=seq_meta_embed_size,
+        max_seq_meta_vals=params.max_seq_meta_vals,
+        max_token_meta_vals=params.max_token_meta_values,
+        max_word_vector_size=params.max_word_vector_size,
+        max_seq_vector_size=params.max_seq_vector_size,
+        max_anno_vector_size=params.max_anno_vector_size,
+        annos=params.annos,
+        encoder_hidden_size=encoder_hidden_size,
         num_frame_channels=params.num_frame_channels,
         output_scalar=output_scalar,
         stop_threshold=stop_threshold,
         stop_token_eps=stop_token_eps,
+        clamp_output=clamp_output,
     )
 
     # NOTE: Ensure modules like `LayerNorm` perturbs the input instead of being just an identity.
@@ -111,20 +109,20 @@ def _make_inputs(params: Params):
     batch_size = (params.batch_size,)
     seq_size = (params.batch_size, params.max_num_tokens)
     tokens = torch.randint(1, params.max_tokens, seq_size).tolist()
-    seq_meta_a = torch.randint(0, params.max_seq_meta_values[0], batch_size).tolist()
-    seq_meta_b = torch.randint(0, params.max_seq_meta_values[1], batch_size).tolist()
+    seq_meta_a = torch.randint(0, params.max_seq_meta_vals[0], batch_size).tolist()
+    seq_meta_b = torch.randint(0, params.max_seq_meta_vals[1], batch_size).tolist()
+    seq_vectors = torch.randn(params.batch_size, params.seq_vector_size)
     token_meta_a = torch.randint(0, params.max_token_meta_values[0], seq_size).tolist()
     num_tokens = torch.randint(1, params.max_num_tokens, batch_size, dtype=torch.long)
     word_vector_mask = torch.rand((*seq_size, 1)) < 0.5
-    word_vector = torch.randn(*seq_size, params.max_word_vector_size) * word_vector_mask
+    word_vector = torch.randn(*seq_size, params.word_vector_size) * word_vector_mask
     anno_vector_a_mask = torch.rand(seq_size) < 0.5
     anno_vector_a = torch.randn(*seq_size) * anno_vector_a_mask
     anno_vector_b_mask = torch.rand(seq_size) < 0.5
     anno_vector_b = torch.randn(*seq_size) * anno_vector_b_mask
     anno_tensors = (anno_vector_a, anno_vector_a_mask, anno_vector_b, anno_vector_b_mask)
     anno_vector = torch.stack(anno_tensors, dim=2)
-    assert anno_vector.shape[2] <= params.max_anno_features
-    token_vector = list(torch.cat((anno_vector, word_vector), dim=2).unbind())
+    token_vector = torch.cat((anno_vector, word_vector), dim=2)
     slice_lengths = [random.randint(max(int(n) - 3, 1), int(n)) for n in num_tokens]
     slice_starts = [random.randint(0, int(n) - l) for n, l in zip(num_tokens, slice_lengths)]
     slices = [slice(s, s + l) for s, l in zip(slice_starts, slice_lengths)]
@@ -148,19 +146,21 @@ def _make_inputs(params: Params):
     for i in range(params.batch_size):
         tokens[i] = tokens[i][: num_tokens[i]]
         token_meta_a[i] = token_meta_a[i][: num_tokens[i]]
-        token_vector[i] = token_vector[i][: num_tokens[i]]
+        token_vector[i, num_tokens[i] :].fill_(0)
 
     num_sliced_tokens = torch.tensor([s.stop - s.start for s in slices])
+    max_audio_len = (params.max_frames_per_token * num_sliced_tokens).ceil().long()
     target_mask = lengths_to_mask(target_lengths).transpose(0, 1)  # [num_frames, batch_size]
 
     inputs = Inputs(
         tokens=tokens,
-        seq_metadata=[seq_meta_a, seq_meta_b],
-        token_metadata=[token_meta_a],
-        token_embeddings=token_vector,
+        seq_meta=list(zip(seq_meta_a, seq_meta_b)),
+        token_meta=[[m] for m in token_meta_a],
+        seq_vectors=seq_vectors,
+        token_vector_idx=params.token_vector_idx,
+        token_vectors=token_vector,
         slices=slices,
-        num_anno=anno_vector.shape[2],
-        max_audio_len=[int(n * params.max_frames_per_token) for n in num_sliced_tokens],
+        max_audio_len=max_audio_len,
     )
 
     return inputs, num_tokens, num_sliced_tokens, target_frames, target_mask, target_lengths
@@ -194,7 +194,7 @@ def _rand_logit(*shape: int, offset=0) -> torch.Tensor:
         >>> set_seed(123); _make_size_invariant_random_tensor(2)
         tensor([0.4721, 1.2948])
         >>> set_seed(123); _make_size_invariant_random_tensor(3)
-        tensor([ 0.4721,  1.2948, -0.0914])
+        tensor([0.4721, 1.2948, -0.0914])
     """
     with fork_rng(random.randint(0, 2**16)):
         return_ = torch.zeros(*shape)
@@ -225,8 +225,8 @@ def _mock_model(model: SpectrogramModel) -> typing.Callable[[int], None]:
     stop generating immediately.
     """
     _decoder_forward = model.decoder.forward
-    _attention_forward = model.decoder.attention.forward
-    window_length = model.decoder.attention.window_length
+    _attention_forward = model.decoder.attn_rnn.attn.forward
+    window_len = model.decoder.attn_rnn.attn.window_len
     offset = 0
 
     def set_stop_token_rand_offset(new_offset):
@@ -241,22 +241,20 @@ def _mock_model(model: SpectrogramModel) -> typing.Callable[[int], None]:
         token_skip_warning: int,
     ):
         window_start = hidden_state.window_start
-        cum_alignment_padding = self.cum_alignment_padding
-        slice_ = slice(cum_alignment_padding, -cum_alignment_padding)
+        slice_ = slice(self.padding, -self.padding)
         first_token = hidden_state.cum_alignment[:, slice_].sum() == 0
         context, alignment, hidden_state = _attention_forward(
             encoded, query, hidden_state, token_skip_warning
         )
         # NOTE: On the first iteration, `window_start` should not advance because it needs to
         # focus on the first token.
-        window_start = (
-            window_start.zero_()
-            if first_token
-            else torch.clamp(torch.min(window_start + 1, encoded.num_tokens - window_length), min=0)
-        )
-        return context, alignment, hidden_state._replace(window_start=window_start)
+        window_start_ = torch.min(window_start + 1, encoded.num_tokens - window_len)
+        window_start = window_start.zero_() if first_token else torch.clamp(window_start_, min=0)
+        return context, alignment, dataclasses.replace(hidden_state, window_start=window_start)
 
-    model.decoder.attention.forward = types.MethodType(attention_forward, model.decoder.attention)
+    model.decoder.attn_rnn.attn.forward = types.MethodType(
+        attention_forward, model.decoder.attn_rnn.attn
+    )
 
     def decoder_forward(self: Decoder, *args, hidden_state: DecoderHiddenState, **kwargs):
         out = _decoder_forward(*args, hidden_state=hidden_state, **kwargs)  # type: ignore
@@ -276,16 +274,9 @@ def _check_preds(
     preds: Preds,
 ):
     """Check invariants for `preds`."""
+    preds.check_invariants()
     max_frames = params.max_frames if model.training else preds.num_frames.max()
     assert max_frames <= params.max_frames
-    assert preds.frames.dtype == torch.float
-    assert preds.frames.shape == (max_frames, params.batch_size, model.num_frame_channels)
-    assert preds.stop_tokens.dtype == torch.float
-    assert preds.stop_tokens.shape == (max_frames, params.batch_size)
-    assert preds.alignments.dtype == torch.float
-    assert preds.alignments.shape == (max_frames, params.batch_size, params.max_num_tokens)
-    assert preds.num_frames.dtype == torch.long
-    assert preds.num_frames.shape == (params.batch_size,)
     for i, num_frames in enumerate(preds.num_frames.tolist()):
         assert num_frames > 0
         assert num_frames <= max_frames
@@ -296,14 +287,6 @@ def _check_preds(
             assert num_frames < max_frames_per_token * num_sliced_tokens[i] or preds.reached_max[i]
         else:
             assert thresholded or preds.reached_max[i]
-    assert preds.frames_mask.dtype == torch.bool
-    assert preds.frames_mask.shape == (params.batch_size, max_frames)
-    assert preds.num_tokens.dtype == torch.long
-    assert preds.num_tokens.shape == (params.batch_size,)
-    assert preds.tokens_mask.dtype == torch.bool
-    assert preds.tokens_mask.shape == (params.batch_size, params.max_num_tokens)
-    assert preds.reached_max.dtype == torch.bool
-    assert preds.reached_max.shape == (params.batch_size,)
 
 
 def test_spectrogram_model():
@@ -322,10 +305,12 @@ def test_spectrogram_model__train():
     """Test `spectrogram_model.SpectrogramModel` handles a basic training case."""
     params = Params()
     inputs, _, num_sliced_tokens, target_frames, target_mask, _ = _make_inputs(params)
-    model = _make_spectrogram_model(params)
+    model = _make_spectrogram_model(params, clamp_output=True)
     _mock_model(model)
     preds = model(inputs, target_frames, target_mask=target_mask)
     _check_preds(params, model, num_sliced_tokens, preds)
+    assert model.output_max.max() == target_frames.max() / model.output_scalar
+    assert model.output_min.min() == target_frames.min() / model.output_scalar
     (preds.frames.sum() + preds.stop_tokens.sum()).backward()
 
 
@@ -349,7 +334,7 @@ def test_spectrogram_model__reached_max_all():
 def test_spectrogram_model__is_stop():
     """Test `spectrogram_model.SpectrogramModel._is_stop` basic cases."""
     params = Params()
-    model = _make_spectrogram_model(params, window_length=3, stop_threshold=0.5)
+    model = _make_spectrogram_model(params, window_len=3, stop_threshold=0.5)
     tensor = torch.tensor
     _is_stop = lambda a, b, c, d: model._is_stop(_logit(tensor(a)), tensor(b), tensor(c), tensor(d))
     # NOTE: For example, test that this handles a scenario where the window intersects the boundary
@@ -362,21 +347,20 @@ def test_spectrogram_model__is_stop():
 
 def test_spectrogram_model__stop():
     """Test `spectrogram_model.SpectrogramModel` `stop_tokens` is consistent with `lengths`,
-    `window_start`, `window_length` and masking."""
+    `window_start`, `window_len` and masking."""
     with fork_rng(123):
         params = Params(batch_size=16, max_frames=8)
         inputs, _, num_sliced_tokens, *_ = _make_inputs(params)
-        window_length = 3
-        model = _make_spectrogram_model(params, window_length=window_length)
+        window_len = 3
+        model = _make_spectrogram_model(params, window_len=window_len)
         _mock_model(model)
 
         preds = model(inputs, mode=Mode.INFER)
 
-        max_lengths = (num_sliced_tokens.float() * params.max_frames_per_token).long()
-        max_lengths = torch.clamp(max_lengths, min=1)
+        max_lengths = inputs.max_audio_len
         threshold = torch.sigmoid(preds.stop_tokens) >= model.stop_threshold
         for i in range(params.batch_size):  # NOTE: Only stop if the window includes the last token.
-            min_index = torch.clamp_min(num_sliced_tokens[i] - window_length, 0).item()
+            min_index = torch.clamp_min(num_sliced_tokens[i] - window_len, 0).item()
             min_index = typing.cast(int, min_index)
             threshold[:min_index, i] = False
         stopped_index = _get_index_first_nonzero(threshold)
@@ -410,8 +394,8 @@ def test_spectrogram_model__infer_train():
 def _set_embedding_vocab(model: SpectrogramModel, params: Params):
     """Update `model` vocab so it can be run in inference mode."""
     model.encoder.embed_token.update_tokens(list(range(params.max_tokens)))
-    for i, max_values in enumerate(params.max_seq_meta_values):
-        embedding = typing.cast(NumeralizePadEmbed, model.encoder.embed_seq_metadata[i])
+    for i, max_values in enumerate(params.max_seq_meta_vals):
+        embedding = typing.cast(NumeralizePadEmbed, model.encoder.embed_seq_meta[i])
         embedding.update_tokens(list(range(max_values)))
 
 
@@ -454,7 +438,7 @@ def test_spectrogram_model__infer_generate():
 def test_spectrogram_model__infer_batch_padding_invariance():
     """Test `spectrogram_model.SpectrogramModel` infer ouput is batch and padding invariant."""
     params = Params()
-    inputs, num_tokens, num_sliced_tokens, *_ = _make_inputs(params)
+    inputs, _, num_sliced_tokens, *_ = _make_inputs(params)
     model = _make_spectrogram_model(params, dropout=0)
     set_stop_token_rand_offset = _mock_model(model)
 
@@ -464,29 +448,14 @@ def test_spectrogram_model__infer_batch_padding_invariance():
 
     for i in range(params.batch_size):
         set_stop_token_rand_offset(i)
-        num_tokens_ = typing.cast(int, num_tokens[i].item())
         with fork_rng(seed=123):
-            inputs_ = dataclasses.replace(
-                inputs,
-                tokens=[t[:num_tokens_] for t in inputs.tokens][i : i + 1],
-                seq_metadata=[m[i : i + 1] for m in inputs.seq_metadata],
-                token_metadata=[
-                    [s[:num_tokens_] for s in m[i : i + 1]] for m in inputs.token_metadata
-                ],
-                token_embeddings=[t[:num_tokens_] for t in inputs.token_embeddings][i : i + 1],
-                slices=inputs.slices[i : i + 1],
-                max_audio_len=inputs.max_audio_len[i : i + 1],
-            )
-            preds = model(inputs_, mode=Mode.INFER)
+            preds = model(inputs[i], mode=Mode.INFER)
 
-        num_sliced_tokens_ = typing.cast(int, num_sliced_tokens[i].item())
-        length = typing.cast(int, batch_preds.num_frames[i].item())
-        assert_almost_equal(preds.reached_max, batch_preds.reached_max[i : i + 1])
-        assert_almost_equal(preds.frames, batch_preds.frames[:length, i : i + 1])
-        assert_almost_equal(preds.stop_tokens, batch_preds.stop_tokens[:length, i : i + 1])
-        batch_preds_alignments = batch_preds.alignments[:length, i : i + 1, :num_sliced_tokens_]
-        assert_almost_equal(preds.alignments, batch_preds_alignments)
-        assert_almost_equal(preds.num_frames, batch_preds.num_frames[i : i + 1])
+        assert_almost_equal(preds.reached_max, batch_preds[i : i + 1].reached_max)
+        assert_almost_equal(preds.frames, batch_preds[i : i + 1].frames)
+        assert_almost_equal(preds.stop_tokens, batch_preds[i : i + 1].stop_tokens)
+        assert_almost_equal(preds.alignments, batch_preds[i : i + 1].alignments)
+        assert_almost_equal(preds.num_frames, batch_preds[i : i + 1].num_frames)
 
 
 def test_spectrogram_model__train_batch_padding_invariance():
@@ -502,9 +471,9 @@ def test_spectrogram_model__train_batch_padding_invariance():
     assert params.max_num_tokens > padding * 3
     num_tokens = params.max_num_tokens - padding
     batch_inputs.tokens[idx] = batch_inputs.tokens[idx][:num_tokens]
-    batch_inputs.token_embeddings[idx] = batch_inputs.token_embeddings[idx][:num_tokens]
-    for metadata in batch_inputs.token_metadata:
-        metadata[idx] = metadata[idx][:num_tokens]
+    batch_inputs.token_vectors[idx, num_tokens:].fill_(0)
+    for j in range(batch_inputs.num_token_meta):
+        batch_inputs.token_meta[idx][j] = batch_inputs.token_meta[idx][j][:num_tokens]
     slice_ = slice(padding, num_tokens - padding)
     num_sliced_tokens = slice_.stop - slice_.start
     batch_inputs.slices[idx] = slice_
@@ -521,18 +490,9 @@ def test_spectrogram_model__train_batch_padding_invariance():
         model.zero_grad()
 
     num_frames = typing.cast(int, target_lengths[idx].item())
-    idx_ = slice(idx, idx + 1)
-    inputs = dataclasses.replace(
-        batch_inputs,
-        tokens=batch_inputs.tokens[idx_],
-        seq_metadata=[m[idx_] for m in batch_inputs.seq_metadata],
-        token_metadata=[[s for s in m[idx_]] for m in batch_inputs.token_metadata],
-        token_embeddings=batch_inputs.token_embeddings[idx_],
-        slices=batch_inputs.slices[idx_],
-        max_audio_len=batch_inputs.max_audio_len[idx_],
-    )
-    target_mask = target_mask[:num_frames, idx_]
-    target_frames = target_frames[:num_frames, idx_]
+    inputs = batch_inputs[idx]
+    target_mask = target_mask[:num_frames, idx : idx + 1]
+    target_frames = target_frames[:num_frames, idx : idx + 1]
 
     with fork_rng(seed=123):
         preds = model(inputs, target_frames=target_frames, target_mask=target_mask)
@@ -540,240 +500,260 @@ def test_spectrogram_model__train_batch_padding_invariance():
         grad = [p.grad for p in model.parameters() if p.grad is not None]
         model.zero_grad()
 
-    assert_almost_equal(preds.frames, batch_preds.frames[:num_frames, idx_])
-    assert_almost_equal(preds.stop_tokens, batch_preds.stop_tokens[:num_frames, idx_])
-    result = batch_preds.alignments[:num_frames, idx_, :num_sliced_tokens]
-    assert_almost_equal(preds.alignments, result)
+    assert_almost_equal(preds.frames, batch_preds[idx : idx + 1].frames)
+    assert_almost_equal(preds.stop_tokens, batch_preds[idx : idx + 1].stop_tokens)
+    assert_almost_equal(preds.alignments, batch_preds[idx : idx + 1].alignments)
     [assert_almost_equal(r, e) for r, e in zip(grad, batch_grad)]
 
 
 _expected_parameters = {
-    "encoder.embed_seq_metadata.0.weight": torch.tensor(1.852018),
-    "encoder.embed_seq_metadata.1.weight": torch.tensor(9.608484),
-    "encoder.embed_token_metadata.0.weight": torch.tensor(1.268590),
-    "encoder.embed_token.weight": torch.tensor(-19.686558),
-    "encoder.embed_anno.0.weight": torch.tensor(-0.515247),
-    "encoder.embed_anno.0.bias": torch.tensor(-0.444562),
-    "encoder.embed_anno.2.weight": torch.tensor(-0.173128),
-    "encoder.embed_anno.2.bias": torch.tensor(-0.034205),
-    "encoder.embed_anno.4.weight": torch.tensor(-4.253194),
-    "encoder.embed_anno.4.bias": torch.tensor(1.322851),
-    "encoder.embed.0.weight": torch.tensor(-1.117358),
-    "encoder.embed.0.bias": torch.tensor(-0.124495),
-    "encoder.embed.2.weight": torch.tensor(-1.802696),
-    "encoder.embed.2.bias": torch.tensor(-0.167022),
-    "encoder.embed.4.weight": torch.tensor(3.417824),
-    "encoder.embed.4.bias": torch.tensor(-2.517295),
-    "encoder.conv_layers.0.1.weight": torch.tensor(-0.958008),
-    "encoder.conv_layers.0.1.bias": torch.tensor(-0.102842),
-    "encoder.conv_layers.1.1.weight": torch.tensor(-2.953365),
-    "encoder.conv_layers.1.1.bias": torch.tensor(0.022060),
-    "encoder.norm_layers.0.weight": torch.tensor(4.577718),
-    "encoder.norm_layers.0.bias": torch.tensor(-0.761458),
-    "encoder.norm_layers.1.weight": torch.tensor(3.238918),
-    "encoder.norm_layers.1.bias": torch.tensor(2.790632),
-    "encoder.lstm.rnn_layers.0.0.weight_ih_l0": torch.tensor(-3.652131),
-    "encoder.lstm.rnn_layers.0.0.weight_hh_l0": torch.tensor(1.398460),
-    "encoder.lstm.rnn_layers.0.0.bias_ih_l0": torch.tensor(1.733211),
-    "encoder.lstm.rnn_layers.0.0.bias_hh_l0": torch.tensor(-1.098471),
-    "encoder.lstm.rnn_layers.0.0.init_hidden_state": torch.tensor(2.117465),
-    "encoder.lstm.rnn_layers.0.0.init_cell_state": torch.tensor(4.676821),
-    "encoder.lstm.rnn_layers.0.1.weight_ih_l0": torch.tensor(11.619355),
-    "encoder.lstm.rnn_layers.0.1.weight_hh_l0": torch.tensor(-3.790668),
-    "encoder.lstm.rnn_layers.0.1.bias_ih_l0": torch.tensor(-1.488367),
-    "encoder.lstm.rnn_layers.0.1.bias_hh_l0": torch.tensor(0.223798),
-    "encoder.lstm.rnn_layers.0.1.init_hidden_state": torch.tensor(-2.553659),
-    "encoder.lstm.rnn_layers.0.1.init_cell_state": torch.tensor(-1.680955),
-    "encoder.lstm_norm.weight": torch.tensor(-4.309731),
-    "encoder.lstm_norm.bias": torch.tensor(-3.387039),
-    "encoder.project_out.1.weight": torch.tensor(0.518785),
-    "encoder.project_out.1.bias": torch.tensor(-0.004707),
-    "encoder.project_out.2.weight": torch.tensor(-4.151481),
-    "encoder.project_out.2.bias": torch.tensor(0.099431),
-    "decoder.init_state.0.weight": torch.tensor(-4.552614),
-    "decoder.init_state.0.bias": torch.tensor(-0.061705),
-    "decoder.init_state.2.weight": torch.tensor(-3.814329),
-    "decoder.init_state.2.bias": torch.tensor(-1.229276),
-    "decoder.pre_net.layers.0.0.weight": torch.tensor(0.328073),
-    "decoder.pre_net.layers.0.0.bias": torch.tensor(-0.518337),
-    "decoder.pre_net.layers.0.2.weight": torch.tensor(-4.130414),
-    "decoder.pre_net.layers.0.2.bias": torch.tensor(3.660183),
-    "decoder.lstm_layer_one.weight_ih": torch.tensor(-2.638722),
-    "decoder.lstm_layer_one.weight_hh": torch.tensor(-0.150317),
-    "decoder.lstm_layer_one.bias_ih": torch.tensor(1.041038),
-    "decoder.lstm_layer_one.bias_hh": torch.tensor(-0.374360),
-    "decoder.lstm_layer_one.init_hidden_state": torch.tensor(0.614631),
-    "decoder.lstm_layer_one.init_cell_state": torch.tensor(4.569544),
-    "decoder.lstm_layer_two.weight_ih_l0": torch.tensor(-0.418454),
-    "decoder.lstm_layer_two.weight_hh_l0": torch.tensor(6.479007),
-    "decoder.lstm_layer_two.bias_ih_l0": torch.tensor(-2.019958),
-    "decoder.lstm_layer_two.bias_hh_l0": torch.tensor(1.541070),
-    "decoder.lstm_layer_two.init_hidden_state": torch.tensor(5.815588),
-    "decoder.lstm_layer_two.init_cell_state": torch.tensor(9.060997),
-    "decoder.attention.alignment_conv.weight": torch.tensor(1.035867),
-    "decoder.attention.alignment_conv.bias": torch.tensor(-0.528715),
-    "decoder.attention.project_query.weight": torch.tensor(2.014140),
-    "decoder.attention.project_query.bias": torch.tensor(0.099615),
-    "decoder.attention.project_scores.1.weight": torch.tensor(-0.234625),
-    "decoder.linear_out.weight": torch.tensor(2.222932),
-    "decoder.linear_out.bias": torch.tensor(-0.137687),
-    "decoder.linear_stop_token.1.weight": torch.tensor(1.959174),
-    "decoder.linear_stop_token.1.bias": torch.tensor(-0.677653),
-    "decoder.linear_stop_token.3.weight": torch.tensor(0.763183),
-    "decoder.linear_stop_token.3.bias": torch.tensor(0.145512),
+    "encoder.embed_seq_meta.0.embed.weight": torch.tensor(16.943052),
+    "encoder.embed_seq_meta.1.embed.weight": torch.tensor(5.409315),
+    "encoder.embed_seq_vector.weight": torch.tensor(1.958080),
+    "encoder.embed_seq_vector.bias": torch.tensor(-0.596941),
+    "encoder.embed_token.embed.weight": torch.tensor(-7.434854),
+    "encoder.embed_token_meta.0.embed.weight": torch.tensor(-13.164258),
+    "encoder.embed_word_vec.weight": torch.tensor(-0.219317),
+    "encoder.embed_word_vec.bias": torch.tensor(0.251124),
+    "encoder.norm_embed.weight": torch.tensor(-2.418278),
+    "encoder.norm_embed.bias": torch.tensor(-2.455902),
+    "encoder.embed_annos.weight": torch.tensor(0.081344),
+    "encoder.embed_annos.bias": torch.tensor(1.285097),
+    "encoder.pre_net.0.1.weight": torch.tensor(-1.260459),
+    "encoder.pre_net.0.1.bias": torch.tensor(-0.382393),
+    "encoder.pre_net.1.1.weight": torch.tensor(-1.222551),
+    "encoder.pre_net.1.1.bias": torch.tensor(-0.565423),
+    "encoder.blocks.0.norm.weight": torch.tensor(0.653282),
+    "encoder.blocks.0.norm.bias": torch.tensor(4.182391),
+    "encoder.blocks.0.lstm.weight_ih_l0": torch.tensor(-1.739493),
+    "encoder.blocks.0.lstm.weight_hh_l0": torch.tensor(-4.145900),
+    "encoder.blocks.0.lstm.bias_ih_l0": torch.tensor(0.652574),
+    "encoder.blocks.0.lstm.bias_hh_l0": torch.tensor(-0.179724),
+    "encoder.blocks.0.lstm.init_hidden_state": torch.tensor(-1.262706),
+    "encoder.blocks.0.lstm.init_cell_state": torch.tensor(4.626403),
+    "encoder.blocks.0.ff_norm.weight": torch.tensor(-0.041233),
+    "encoder.blocks.0.ff_norm.bias": torch.tensor(3.236254),
+    "encoder.blocks.0.ff.proj.weight": torch.tensor(4.980308),
+    "encoder.blocks.0.ff.proj.bias": torch.tensor(1.961943),
+    "encoder.blocks.0.ff.out.weight": torch.tensor(0.204000),
+    "encoder.blocks.0.ff.out.bias": torch.tensor(-0.071591),
+    "encoder.blocks.1.norm.weight": torch.tensor(2.795757),
+    "encoder.blocks.1.norm.bias": torch.tensor(-6.156712),
+    "encoder.blocks.1.lstm.weight_ih_l0": torch.tensor(1.433082),
+    "encoder.blocks.1.lstm.weight_hh_l0": torch.tensor(-4.329137),
+    "encoder.blocks.1.lstm.bias_ih_l0": torch.tensor(-0.781742),
+    "encoder.blocks.1.lstm.bias_hh_l0": torch.tensor(-0.194515),
+    "encoder.blocks.1.lstm.init_hidden_state": torch.tensor(-0.540895),
+    "encoder.blocks.1.lstm.init_cell_state": torch.tensor(-3.302565),
+    "encoder.blocks.1.ff_norm.weight": torch.tensor(-1.193851),
+    "encoder.blocks.1.ff_norm.bias": torch.tensor(-0.808373),
+    "encoder.blocks.1.ff.proj.weight": torch.tensor(-6.975581),
+    "encoder.blocks.1.ff.proj.bias": torch.tensor(1.617217),
+    "encoder.blocks.1.ff.out.weight": torch.tensor(-1.744055),
+    "encoder.blocks.1.ff.out.bias": torch.tensor(-0.158968),
+    "encoder.out.weight": torch.tensor(-3.959515),
+    "encoder.out.bias": torch.tensor(-1.373152),
+    "decoder.init_state.0.weight": torch.tensor(-1.840380),
+    "decoder.init_state.0.bias": torch.tensor(0.145609),
+    "decoder.init_state.2.weight": torch.tensor(-3.298804),
+    "decoder.init_state.2.bias": torch.tensor(0.223963),
+    "decoder.pre_net.encode.weight_ih_l0": torch.tensor(1.066760),
+    "decoder.pre_net.encode.weight_hh_l0": torch.tensor(-2.127719),
+    "decoder.pre_net.encode.bias_ih_l0": torch.tensor(-0.735991),
+    "decoder.pre_net.encode.bias_hh_l0": torch.tensor(0.385362),
+    "decoder.pre_net.encode.init_hidden_state": torch.tensor(5.968543),
+    "decoder.pre_net.encode.init_cell_state": torch.tensor(4.274887),
+    "decoder.pre_net.out.1.weight": torch.tensor(2.158975),
+    "decoder.pre_net.out.1.bias": torch.tensor(6.258615),
+    "decoder.attn_rnn.lstm.weight_ih": torch.tensor(3.227081),
+    "decoder.attn_rnn.lstm.weight_hh": torch.tensor(2.475742),
+    "decoder.attn_rnn.lstm.bias_ih": torch.tensor(-0.379075),
+    "decoder.attn_rnn.lstm.bias_hh": torch.tensor(-1.337197),
+    "decoder.attn_rnn.lstm.init_hidden_state": torch.tensor(1.553586),
+    "decoder.attn_rnn.lstm.init_cell_state": torch.tensor(3.268224),
+    "decoder.attn_rnn.attn.alignment_conv.weight": torch.tensor(-2.089337),
+    "decoder.attn_rnn.attn.alignment_conv.bias": torch.tensor(2.710139),
+    "decoder.attn_rnn.attn.project_query.weight": torch.tensor(0.562974),
+    "decoder.attn_rnn.attn.project_query.bias": torch.tensor(-0.635165),
+    "decoder.attn_rnn.attn.project_scores.weight": torch.tensor(0.374247),
+    "decoder.linear_stop_token.1.weight": torch.tensor(-0.518477),
+    "decoder.linear_stop_token.1.bias": torch.tensor(0.105098),
+    "decoder.linear_stop_token.3.weight": torch.tensor(-1.250005),
+    "decoder.linear_stop_token.3.bias": torch.tensor(0.062122),
+    "decoder.lstm_out.weight_ih_l0": torch.tensor(17.202736),
+    "decoder.lstm_out.weight_hh_l0": torch.tensor(-2.934480),
+    "decoder.lstm_out.bias_ih_l0": torch.tensor(1.368614),
+    "decoder.lstm_out.bias_hh_l0": torch.tensor(0.442680),
+    "decoder.lstm_out.init_hidden_state": torch.tensor(4.561096),
+    "decoder.lstm_out.init_cell_state": torch.tensor(6.946077),
+    "decoder.linear_out.0.weight": torch.tensor(1.415857),
+    "decoder.linear_out.0.bias": torch.tensor(-0.893772),
+    "decoder.linear_out.2.weight": torch.tensor(1.002060),
+    "decoder.linear_out.2.bias": torch.tensor(0.137269),
 }
 
 _expected_grads = {
-    "encoder.embed_seq_metadata.0.weight": torch.tensor(-29.919094),
-    "encoder.embed_seq_metadata.1.weight": torch.tensor(-79.813225),
-    "encoder.embed_token_metadata.0.weight": torch.tensor(-2.782639),
-    "encoder.embed_token.weight": torch.tensor(2.383842),
-    "encoder.embed_anno.0.weight": torch.tensor(4.227918),
-    "encoder.embed_anno.0.bias": torch.tensor(-4.887265),
-    "encoder.embed_anno.2.weight": torch.tensor(70.545288),
-    "encoder.embed_anno.2.bias": torch.tensor(36.659855),
-    "encoder.embed_anno.4.weight": torch.tensor(-11.038326),
-    "encoder.embed_anno.4.bias": torch.tensor(8.870480),
-    "encoder.embed.0.weight": torch.tensor(-71.652191),
-    "encoder.embed.0.bias": torch.tensor(-5.248698),
-    "encoder.embed.2.weight": torch.tensor(73.600769),
-    "encoder.embed.2.bias": torch.tensor(16.179394),
-    "encoder.embed.4.weight": torch.tensor(-5.704032),
-    "encoder.embed.4.bias": torch.tensor(-1.720087),
-    "encoder.conv_layers.0.1.weight": torch.tensor(19.459681),
-    "encoder.conv_layers.0.1.bias": torch.tensor(3.175056),
-    "encoder.conv_layers.1.1.weight": torch.tensor(-0.802662),
-    "encoder.conv_layers.1.1.bias": torch.tensor(-1.064252),
-    "encoder.norm_layers.0.weight": torch.tensor(13.825806),
-    "encoder.norm_layers.0.bias": torch.tensor(-13.439140),
-    "encoder.norm_layers.1.weight": torch.tensor(-42.703293),
-    "encoder.norm_layers.1.bias": torch.tensor(3.497506),
-    "encoder.lstm.rnn_layers.0.0.weight_ih_l0": torch.tensor(-9.971325),
-    "encoder.lstm.rnn_layers.0.0.weight_hh_l0": torch.tensor(0.751405),
-    "encoder.lstm.rnn_layers.0.0.bias_ih_l0": torch.tensor(-1.579176),
-    "encoder.lstm.rnn_layers.0.0.bias_hh_l0": torch.tensor(-1.579176),
-    "encoder.lstm.rnn_layers.0.0.init_hidden_state": torch.tensor(-0.092618),
-    "encoder.lstm.rnn_layers.0.0.init_cell_state": torch.tensor(-0.281054),
-    "encoder.lstm.rnn_layers.0.1.weight_ih_l0": torch.tensor(-10.558510),
-    "encoder.lstm.rnn_layers.0.1.weight_hh_l0": torch.tensor(0.546101),
-    "encoder.lstm.rnn_layers.0.1.bias_ih_l0": torch.tensor(1.104011),
-    "encoder.lstm.rnn_layers.0.1.bias_hh_l0": torch.tensor(1.104011),
-    "encoder.lstm.rnn_layers.0.1.init_hidden_state": torch.tensor(0.342603),
-    "encoder.lstm.rnn_layers.0.1.init_cell_state": torch.tensor(0.508274),
-    "encoder.lstm_norm.weight": torch.tensor(-17.635391),
-    "encoder.lstm_norm.bias": torch.tensor(5.752861),
-    "encoder.project_out.1.weight": torch.tensor(-0.000010),
-    "encoder.project_out.1.bias": torch.tensor(0.000004),
-    "encoder.project_out.2.weight": torch.tensor(-21.025402),
-    "encoder.project_out.2.bias": torch.tensor(28.131565),
-    "decoder.init_state.0.weight": torch.tensor(-2.648980),
-    "decoder.init_state.0.bias": torch.tensor(-0.903231),
-    "decoder.init_state.2.weight": torch.tensor(24.273449),
-    "decoder.init_state.2.bias": torch.tensor(2.582769),
-    "decoder.pre_net.layers.0.0.weight": torch.tensor(-5.161791),
-    "decoder.pre_net.layers.0.0.bias": torch.tensor(-1.811457),
-    "decoder.pre_net.layers.0.2.weight": torch.tensor(-2.433525),
-    "decoder.pre_net.layers.0.2.bias": torch.tensor(-0.411948),
-    "decoder.lstm_layer_one.weight_ih": torch.tensor(-14.825934),
-    "decoder.lstm_layer_one.weight_hh": torch.tensor(-0.833654),
-    "decoder.lstm_layer_one.bias_ih": torch.tensor(2.163858),
-    "decoder.lstm_layer_one.bias_hh": torch.tensor(2.163858),
-    "decoder.lstm_layer_one.init_hidden_state": torch.tensor(0.259958),
-    "decoder.lstm_layer_one.init_cell_state": torch.tensor(0.875450),
-    "decoder.lstm_layer_two.weight_ih_l0": torch.tensor(-85.576233),
-    "decoder.lstm_layer_two.weight_hh_l0": torch.tensor(-1.953106),
-    "decoder.lstm_layer_two.bias_ih_l0": torch.tensor(1.107665),
-    "decoder.lstm_layer_two.bias_hh_l0": torch.tensor(1.107665),
-    "decoder.lstm_layer_two.init_hidden_state": torch.tensor(-0.495610),
-    "decoder.lstm_layer_two.init_cell_state": torch.tensor(-1.247253),
-    "decoder.attention.alignment_conv.weight": torch.tensor(-0.969161),
-    "decoder.attention.alignment_conv.bias": torch.tensor(0.288607),
-    "decoder.attention.project_query.weight": torch.tensor(-0.600842),
-    "decoder.attention.project_query.bias": torch.tensor(0.288607),
-    "decoder.attention.project_scores.1.weight": torch.tensor(-1.757438),
-    "decoder.linear_out.weight": torch.tensor(53.109726),
-    "decoder.linear_out.bias": torch.tensor(-54.563400),
-    "decoder.linear_stop_token.1.weight": torch.tensor(-16.366018),
-    "decoder.linear_stop_token.1.bias": torch.tensor(2.052802),
-    "decoder.linear_stop_token.3.weight": torch.tensor(14.696085),
-    "decoder.linear_stop_token.3.bias": torch.tensor(4.593737),
+    "encoder.embed_seq_meta.0.embed.weight": torch.tensor(-0.066338),
+    "encoder.embed_seq_meta.1.embed.weight": torch.tensor(-0.066338),
+    "encoder.embed_seq_vector.weight": torch.tensor(0.082776),
+    "encoder.embed_seq_vector.bias": torch.tensor(-0.066338),
+    "encoder.embed_token.embed.weight": torch.tensor(-0.017105),
+    "encoder.embed_token_meta.0.embed.weight": torch.tensor(0.035062),
+    "encoder.embed_word_vec.weight": torch.tensor(0.327195),
+    "encoder.embed_word_vec.bias": torch.tensor(0.120810),
+    "encoder.norm_embed.weight": torch.tensor(0.001755),
+    "encoder.norm_embed.bias": torch.tensor(0.005967),
+    "encoder.embed_annos.weight": torch.tensor(-0.026988),
+    "encoder.embed_annos.bias": torch.tensor(-0.052589),
+    "encoder.pre_net.0.1.weight": torch.tensor(-0.220374),
+    "encoder.pre_net.0.1.bias": torch.tensor(-0.030864),
+    "encoder.pre_net.1.1.weight": torch.tensor(-0.000000),
+    "encoder.pre_net.1.1.bias": torch.tensor(-0.000000),
+    "encoder.blocks.0.norm.weight": torch.tensor(0.040254),
+    "encoder.blocks.0.norm.bias": torch.tensor(0.001197),
+    "encoder.blocks.0.lstm.weight_ih_l0": torch.tensor(0.428562),
+    "encoder.blocks.0.lstm.weight_hh_l0": torch.tensor(0.112785),
+    "encoder.blocks.0.lstm.bias_ih_l0": torch.tensor(0.200992),
+    "encoder.blocks.0.lstm.bias_hh_l0": torch.tensor(0.200992),
+    "encoder.blocks.0.lstm.init_hidden_state": torch.tensor(-0.014722),
+    "encoder.blocks.0.lstm.init_cell_state": torch.tensor(-0.000284),
+    "encoder.blocks.0.ff_norm.weight": torch.tensor(-0.035857),
+    "encoder.blocks.0.ff_norm.bias": torch.tensor(0.057972),
+    "encoder.blocks.0.ff.proj.weight": torch.tensor(1.182941),
+    "encoder.blocks.0.ff.proj.bias": torch.tensor(0.341060),
+    "encoder.blocks.0.ff.out.weight": torch.tensor(-0.000000),
+    "encoder.blocks.0.ff.out.bias": torch.tensor(-0.000000),
+    "encoder.blocks.1.norm.weight": torch.tensor(-0.082201),
+    "encoder.blocks.1.norm.bias": torch.tensor(0.091741),
+    "encoder.blocks.1.lstm.weight_ih_l0": torch.tensor(1.316781),
+    "encoder.blocks.1.lstm.weight_hh_l0": torch.tensor(0.094078),
+    "encoder.blocks.1.lstm.bias_ih_l0": torch.tensor(-0.194272),
+    "encoder.blocks.1.lstm.bias_hh_l0": torch.tensor(-0.194272),
+    "encoder.blocks.1.lstm.init_hidden_state": torch.tensor(-0.016610),
+    "encoder.blocks.1.lstm.init_cell_state": torch.tensor(-0.035311),
+    "encoder.blocks.1.ff_norm.weight": torch.tensor(-0.006801),
+    "encoder.blocks.1.ff_norm.bias": torch.tensor(-0.011287),
+    "encoder.blocks.1.ff.proj.weight": torch.tensor(-0.214220),
+    "encoder.blocks.1.ff.proj.bias": torch.tensor(-0.032677),
+    "encoder.blocks.1.ff.out.weight": torch.tensor(-0.000000),
+    "encoder.blocks.1.ff.out.bias": torch.tensor(-0.000000),
+    "encoder.out.weight": torch.tensor(1.020916),
+    "encoder.out.bias": torch.tensor(1.051214),
+    "decoder.init_state.0.weight": torch.tensor(0.189184),
+    "decoder.init_state.0.bias": torch.tensor(-0.010299),
+    "decoder.init_state.2.weight": torch.tensor(0.147908),
+    "decoder.init_state.2.bias": torch.tensor(0.293262),
+    "decoder.pre_net.encode.weight_ih_l0": torch.tensor(0.130525),
+    "decoder.pre_net.encode.weight_hh_l0": torch.tensor(-4.105129),
+    "decoder.pre_net.encode.bias_ih_l0": torch.tensor(-1.432487),
+    "decoder.pre_net.encode.bias_hh_l0": torch.tensor(-1.432488),
+    "decoder.pre_net.encode.init_hidden_state": torch.tensor(-0.125631),
+    "decoder.pre_net.encode.init_cell_state": torch.tensor(-0.303121),
+    "decoder.pre_net.out.1.weight": torch.tensor(-0.177572),
+    "decoder.pre_net.out.1.bias": torch.tensor(2.784616),
+    "decoder.attn_rnn.lstm.weight_ih": torch.tensor(0.138957),
+    "decoder.attn_rnn.lstm.weight_hh": torch.tensor(-0.037687),
+    "decoder.attn_rnn.lstm.bias_ih": torch.tensor(-0.021458),
+    "decoder.attn_rnn.lstm.bias_hh": torch.tensor(-0.021458),
+    "decoder.attn_rnn.lstm.init_hidden_state": torch.tensor(0.073046),
+    "decoder.attn_rnn.lstm.init_cell_state": torch.tensor(0.042865),
+    "decoder.attn_rnn.attn.alignment_conv.weight": torch.tensor(-0.062420),
+    "decoder.attn_rnn.attn.alignment_conv.bias": torch.tensor(0.020186),
+    "decoder.attn_rnn.attn.project_query.weight": torch.tensor(-0.008898),
+    "decoder.attn_rnn.attn.project_query.bias": torch.tensor(0.020186),
+    "decoder.attn_rnn.attn.project_scores.weight": torch.tensor(0.543210),
+    "decoder.linear_stop_token.1.weight": torch.tensor(-26.615719),
+    "decoder.linear_stop_token.1.bias": torch.tensor(-4.563582),
+    "decoder.linear_stop_token.3.weight": torch.tensor(37.938263),
+    "decoder.linear_stop_token.3.bias": torch.tensor(7.429334),
+    "decoder.lstm_out.weight_ih_l0": torch.tensor(3.578972),
+    "decoder.lstm_out.weight_hh_l0": torch.tensor(0.279987),
+    "decoder.lstm_out.bias_ih_l0": torch.tensor(0.513433),
+    "decoder.lstm_out.bias_hh_l0": torch.tensor(0.513433),
+    "decoder.lstm_out.init_hidden_state": torch.tensor(-0.006695),
+    "decoder.lstm_out.init_cell_state": torch.tensor(-0.037581),
+    "decoder.linear_out.0.weight": torch.tensor(96.716957),
+    "decoder.linear_out.0.bias": torch.tensor(11.800383),
+    "decoder.linear_out.2.weight": torch.tensor(41.281086),
+    "decoder.linear_out.2.bias": torch.tensor(6.859480),
 }
 
 # fmt: off
 # NOTE: `test_spectrogram_model__version` tests the model accross multiple cases: one frame,
 # multiple frames, and max frames.
 _expected_frames = [
-    [ 1.366075,  1.245820,  1.046142,  0.858820,  0.816668,  0.743831,  0.819121,  1.133023,
-      1.259643,  1.204182,  1.160060,  1.050212],
-    [ 2.653476,  2.369536,  2.352416,  2.279980,  2.238275,  2.082993,  2.071112,  2.020142,
-      2.044245,  2.040308,  2.027943,  1.964504],
-    [ 0.375175,  0.000000,  0.000000,  0.000000,  0.000000,  0.000000,  0.000000,  0.000000,
-      0.000000,  0.000000,  0.000000,  0.000000],
-    [ 1.378470,  1.257034,  1.803847,  1.820856,  1.994045,  2.132876,  2.101607,  2.028780,
-      2.145771,  2.229941,  2.076566,  0.000000],
-    [ 1.527878,  1.394192,  1.702764,  1.652411,  1.389725,  1.342866,  0.000000,  0.000000,
-      0.000000,  0.000000,  0.000000,  0.000000],
-    [ 2.258687,  1.955694,  2.321157,  2.353877,  2.370153,  2.397995,  2.449710,  2.438354,
-      0.000000,  0.000000,  0.000000,  0.000000],
-    [ 1.481529,  1.272664,  1.025689,  0.000000,  0.000000,  0.000000,  0.000000,  0.000000,
-      0.000000,  0.000000,  0.000000,  0.000000],
-    [ 0.621059,  1.035297,  1.078354,  1.854820,  2.199958,  2.191419,  2.193977,  1.832925,
-      0.000000,  0.000000,  0.000000,  0.000000],
-    [ 0.047801, -0.050726,  0.000000,  0.000000,  0.000000,  0.000000,  0.000000,  0.000000,
-      0.000000,  0.000000,  0.000000,  0.000000],
-    [ 0.229594,  0.162643, -0.067939, -0.553439, -0.781329, -0.980638, -0.998462, -1.063241,
-      0.000000,  0.000000,  0.000000,  0.000000]
+    [0.183752, 1.263783, 0.199781, 0.180702, 0.517118, 0.212449, -0.028916, 0.002912,
+     0.265127, 0.919176, 0.896476, 0.482225, 0.289585],
+    [-0.368306, 0.530756, 0.544356, -0.394061, 0.297002, 0.331881, 0.257461, 1.034235,
+     0.403439, 0.211838, -0.186634, 0.919892, -0.087571],
+    [-0.338226, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000,
+     0.000000, 0.000000, 0.000000, 0.000000, 0.000000],
+    [0.515775, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000,
+     0.000000, 0.000000, 0.000000, 0.000000, 0.000000],
+    [0.368340, 0.530839, -0.307036, 0.343490, -0.338309, 0.523675, 0.451867, 0.291560,
+     0.419088, 0.000000, 0.000000, 0.000000, 0.000000],
+    [0.310652, 0.991464, 0.344260, 0.745572, 0.698335, 0.000000, 0.000000, 0.000000,
+     0.000000, 0.000000, 0.000000, 0.000000, 0.000000],
+    [0.419979, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000,
+     0.000000, 0.000000, 0.000000, 0.000000, 0.000000],
+    [-0.093053, 0.388644, 0.576656, 0.425759, 0.334013, 0.381638, 0.000000, 0.000000,
+     0.000000, 0.000000, 0.000000, 0.000000, 0.000000],
+    [-0.412254, 0.183834, 0.745491, 0.282927, 0.000000, 0.000000, 0.000000, 0.000000,
+     0.000000, 0.000000, 0.000000, 0.000000, 0.000000],
+    [0.532618, 0.043094, -0.454403, -0.066790, 0.507632, 0.000000, 0.000000, 0.000000,
+     0.000000, 0.000000, 0.000000, 0.000000, 0.000000]
 ]
 _expected_frames = torch.tensor(_expected_frames)
 # NOTE: For first, the `stop_token` always predicts `_e` because the `window_start` largely stays
 # at zero and the the number of tokens is larger than the window length.
 _expected_stop_tokens = [
     [1.000001e-10, 1.000001e-10, 1.000001e-10, 1.000001e-10, 1.000001e-10, 1.000001e-10,
-      1.000001e-10, 1.000001e-10, 1.000001e-10, 1.000001e-10, 1.000001e-10, 1.000001e-10],
+     1.000001e-10, 1.000001e-10, 1.000001e-10, 1.000001e-10, 1.000001e-10, 1.000001e-10,
+     1.000001e-10],
     [1.000001e-10, 1.000001e-10, 1.000001e-10, 1.000001e-10, 1.000001e-10, 1.000001e-10,
-      1.000001e-10, 1.000001e-10, 1.000001e-10, 1.000001e-10, 1.000001e-10, 1.000001e-10],
-    [6.244421e-01, 5.727453e-01, 6.267647e-01, 6.121179e-01, 6.279113e-01, 6.334319e-01,
-      5.954402e-01, 5.853063e-01, 5.746242e-01, 5.874828e-01, 5.459400e-01, 5.466809e-01],
+     1.000001e-10, 1.000001e-10, 1.000001e-10, 1.000001e-10, 1.000001e-10, 1.000001e-10,
+     1.000001e-10],
+    [5.321714e-01, 4.596499e-01, 4.261609e-01, 4.970221e-01, 4.883769e-01, 4.768900e-01,
+     5.123591e-01, 5.069470e-01, 5.980458e-01, 6.112827e-01, 4.309723e-01, 4.888828e-01,
+     5.710340e-01],
+    [5.310367e-01, 4.092691e-01, 2.978090e-01, 5.097395e-01, 5.316379e-01, 5.086237e-01,
+     4.216758e-01, 4.298418e-01, 4.224053e-01, 5.799737e-01, 4.692875e-01, 4.130270e-01,
+     3.984516e-01],
     [1.000001e-10, 1.000001e-10, 1.000001e-10, 1.000001e-10, 1.000001e-10, 1.000001e-10,
-      1.000001e-10, 1.000001e-10, 1.000001e-10, 1.000001e-10, 1.000001e-10, 1.000001e-10],
-    [1.000001e-10, 1.000001e-10, 1.000001e-10, 1.000001e-10, 1.000001e-10, 5.424259e-01,
-      5.785822e-01, 6.454517e-01, 5.604892e-01, 5.773947e-01, 5.413802e-01, 6.879032e-01],
+     1.000001e-10, 1.000001e-10, 1.000001e-10, 1.000001e-10, 1.000001e-10, 1.000001e-10,
+     1.000001e-10],
+    [4.290667e-01, 4.141870e-01, 4.219839e-01, 3.779531e-01, 4.659240e-01, 4.300356e-01,
+     4.380225e-01, 5.496593e-01, 4.252779e-01, 5.273933e-01, 4.084761e-01, 5.602357e-01,
+     3.986839e-01],
+    [5.220850e-01, 4.824966e-01, 4.969140e-01, 5.737752e-01, 5.758968e-01, 4.623605e-01,
+     5.255774e-01, 5.266117e-01, 5.025638e-01, 5.024447e-01, 4.906588e-01, 5.561344e-01,
+     4.958811e-01],
+    [1.000001e-10, 1.000001e-10, 4.643380e-01, 4.572891e-01, 4.905357e-01, 4.647149e-01,
+     4.850212e-01, 4.393467e-01, 4.432347e-01, 5.412685e-01, 4.294289e-01, 4.272121e-01,
+     4.232338e-01],
+    [1.000001e-10, 1.000001e-10, 3.882686e-01, 5.215589e-01, 4.624801e-01, 5.913907e-01,
+     4.645633e-01, 4.939559e-01, 4.764597e-01, 4.003231e-01, 3.691745e-01, 5.222153e-01,
+     4.719032e-01],
     [1.000001e-10, 1.000001e-10, 1.000001e-10, 1.000001e-10, 1.000001e-10, 1.000001e-10,
-      1.000001e-10, 1.000001e-10, 1.000001e-10, 5.857375e-01, 6.492345e-01, 5.392531e-01],
-    [1.000001e-10, 1.000001e-10, 6.934602e-01, 7.317717e-01, 6.126302e-01, 4.913065e-01,
-      5.253308e-01, 5.496082e-01, 5.310274e-01, 4.809340e-01, 6.426164e-01, 4.557088e-01],
-    [1.000001e-10, 1.000001e-10, 1.000001e-10, 1.000001e-10, 1.000001e-10, 1.000001e-10,
-      1.000001e-10, 7.313493e-01, 5.528712e-01, 7.301527e-01, 6.137644e-01, 6.180637e-01],
-    [1.000001e-10, 6.698847e-01, 7.360702e-01, 6.912283e-01, 5.621150e-01, 5.999660e-01,
-      5.553227e-01, 5.823148e-01, 5.631109e-01, 5.482294e-01, 6.312528e-01, 6.071500e-01],
-    [1.000001e-10, 1.000001e-10, 1.000001e-10, 1.000001e-10, 1.000001e-10, 1.000001e-10,
-      1.000001e-10, 1.000001e-10, 1.000001e-10, 1.000001e-10, 5.599211e-01, 5.575398e-01]
+     1.000001e-10, 1.000001e-10, 1.000001e-10, 1.000001e-10, 1.000001e-10, 1.000001e-10,
+     1.000001e-10]
 ]
 _expected_stop_tokens = torch.tensor(_expected_stop_tokens)
 _expected_alignments = [
-    [0.960883, 1.852487, 1.671617, 1.771577, 1.002615, 1.599182, 1.373143, 1.135456, 0.000000,
-      0.000000, 0.000000],
-    [1.931316, 2.188295, 2.800028, 2.172840, 1.894981, 0.394679, 0.000000, 0.000000, 0.000000,
-      0.000000, 0.000000],
-    [3.201679, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000,
-      0.000000, 0.000000],
-    [1.179194, 1.584349, 2.378683, 2.081485, 2.022616, 1.072133, 0.732867, 0.324633, 0.000000,
-      0.000000, 0.000000],
-    [0.879053, 1.263301, 1.416670, 1.421922, 2.446049, 2.049813, 0.000000, 0.000000, 0.000000,
-      0.000000, 0.000000],
-    [0.923566, 1.920799, 1.970317, 2.439686, 2.306876, 1.220054, 0.563905, 0.000000, 0.000000,
-      0.000000, 0.000000],
-    [0.919206, 1.537302, 2.564836, 2.630302, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000,
-      0.000000, 0.000000],
-    [0.950684, 1.205644, 1.862708, 1.628725, 2.235595, 1.830989, 1.587425, 0.000000, 0.000000,
-      0.000000, 0.000000],
-    [0.986724, 3.219990, 3.139766, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000,
-      0.000000, 0.000000],
-    [0.869615, 1.670807, 2.509629, 2.598578, 2.468219, 1.078097, 0.170666, 0.000000, 0.000000,
-      0.000000, 0.000000]
+    [3.351704, 3.407894, 0.992016, 1.017579, 1.006448, 0.679579, 0.399382, 0.000000, 0.000000],
+    [0.638879, 2.319791, 3.363157, 3.010255, 1.213306, 1.025604, 0.804627, 0.345509, 0.000000],
+    [5.705660, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000],
+    [4.500727, 4.553255, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000],
+    [3.892905, 3.668438, 1.062833, 1.284568, 0.763787, 0.000000, 0.000000, 0.000000, 0.000000],
+    [2.730651, 4.887575, 4.362044, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000],
+    [3.810284, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000],
+    [0.944268, 1.212941, 3.770082, 4.431189, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000],
+    [3.828095, 4.338525, 3.425868, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000],
+    [5.616264, 4.049974, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000]
 ]
 _expected_alignments = torch.tensor(_expected_alignments)
 # fmt: on
+
 
 def test_spectrogram_model__version():
     """Test `spectrogram_model.SpectrogramModel` has not changed since it was last tested.
@@ -788,7 +768,7 @@ def test_spectrogram_model__version():
         inputs, _, _, target_frames, _, _ = _make_inputs(params)
         val = torch.randn(1)
         print("Rand", val)
-        assert_almost_equal(val, torch.tensor(-0.273233))
+        assert_almost_equal(val, torch.tensor(-0.28274))
 
     with fork_rng(123456):
         model = _make_spectrogram_model(params)
@@ -805,9 +785,9 @@ def test_spectrogram_model__version():
         print("Alignments", preds.alignments.sum(dim=0))
         assert_almost_equal(preds.alignments.sum(dim=0), _expected_alignments)
         print("Num Frames", preds.num_frames)
-        assert_almost_equal(preds.num_frames, torch.tensor([12, 12, 1, 11, 6, 8, 3, 8, 2, 8]))
+        assert_almost_equal(preds.num_frames, torch.tensor([13, 13, 1, 1, 9, 5, 1, 6, 4, 5]))
         print("Reached Max", preds.reached_max)
-        expected = torch.tensor([True, True, True, True, False, True, False, True, False, True])
+        expected = torch.tensor([True, True, False, False, True, True, False, True, False, True])
         assert_almost_equal(preds.reached_max, expected)
 
     with fork_rng(seed=123):
@@ -825,13 +805,13 @@ def test_spectrogram_model__version():
         (spectrogram_loss.sum() + stop_token_loss.sum()).backward()
 
         print("Spectrogram Loss", spectrogram_loss.sum())
-        assert_almost_equal(spectrogram_loss.sum(), torch.tensor(133.995667))
+        assert_almost_equal(spectrogram_loss.sum(), torch.tensor(11.564344))
         print("Stop Token Loss", stop_token_loss.sum())
-        assert_almost_equal(stop_token_loss.sum(), torch.tensor(6.975104))
+        assert_almost_equal(stop_token_loss.sum(), torch.tensor(10.039842))
         grads = [(n, p.grad) for n, p in model.named_parameters() if p.grad is not None]
         _utils.print_params("_expected_grads", grads)
         for name, grad in grads:
             assert_almost_equal(_expected_grads[name], grad.sum())
         val = torch.randn(1)
         print("Rand", val)
-        assert_almost_equal(val, torch.tensor(-1.050120))
+        assert_almost_equal(val, torch.tensor(0.704654))
