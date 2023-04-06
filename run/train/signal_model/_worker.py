@@ -535,8 +535,7 @@ def _visualize_inferred(
 
     batch = typing.cast(Batch, next(iter(data_loader)))
     item = random.randint(0, len(batch.batch) - 1)
-    length = batch.preds.num_frames[item]
-    spectrogram = batch.preds.frames[:length, item : item + 1]
+    spectrogram = batch.preds[item : item + 1].frames
     spectrogram = spectrogram.transpose(0, 1).to(state.device)
     session = [s.session for s in batch.batch.spans][item : item + 1]
     splits = spectrogram.split(split_size)
