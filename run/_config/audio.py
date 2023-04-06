@@ -182,7 +182,7 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
             get_weighting=lib.audio.iso226_weighting,
             # NOTE: Ensure that the weighting isn't below -30 decibels; otherwise, a value may go
             # to zero which and it'll go to infinity when applying the operations in inverse.
-            min_weight=-30,
+            min_weight=-30.0,
             **hertz_bounds,
         ),
         lib.audio.griffin_lim: Args(
@@ -286,6 +286,12 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
             # on average.
             length=10,
             standard_deviation=0.75,
+        ),
+        run._models.spectrogram_model.wrapper.SpectrogramModelWrapper: cf.Args(
+            # NOTE: The spectrogram values range from -50 to 50. Thie scalar rescales the
+            # spectrogram to a more reasonable range for deep learning. This also ensures that
+            # the output respects the minimum bound.
+            output_scalar=50.0
         ),
     }
     cf.add(config, overwrite)

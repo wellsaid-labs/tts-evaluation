@@ -2,6 +2,7 @@ import dataclasses
 import enum
 import functools
 import html
+import logging
 import pathlib
 import typing
 
@@ -14,9 +15,11 @@ from lxml import etree
 from torch.nn.utils.rnn import pad_sequence
 
 from lib.text import XMLType, text_to_xml
-from lib.utils import lengths_to_mask, offset_slices, slice_seq, zip_strict
+from lib.utils import call_once, lengths_to_mask, offset_slices, slice_seq, zip_strict
 from run._config.lang import is_voiced
 from run.data._loader import structures as struc
+
+logger = logging.getLogger(__name__)
 
 
 class Pronun(enum.Enum):
@@ -227,6 +230,8 @@ class Inputs:
     def _pad_vec(name: str, vec: torch.Tensor, dim: int, size: typing.Optional[int] = None):
         """Optionally pad `vec` to `size` at `dim`."""
         if size is not None and vec.shape[dim] != size:
+            message = f"Try to reduce padding by reducing size of `{name}` to `{vec.shape[dim]}`."
+            call_once(logger.warning, message)
             message = f"The `{name}` ({vec.shape[dim]}) size must be smaller or equal to {size}."
             assert vec.shape[dim] <= size, message
             vec_ = torch.zeros(*vec.shape[:dim], size, device=vec.device)
@@ -692,7 +697,6 @@ def _anno_vector(
     # is. A short annotation does not have much room to deviate while a long one does.
     anno_vector = (
         slice_seq([(s, value) for s, _, value in anno], **kwargs),
-        slice_seq([(s, avg) for s, _, _ in anno], **kwargs),
         slice_seq([(s, length) for s, length, _ in anno], **kwargs),
     )
     anno_vector = torch.stack(anno_vector, dim=1)

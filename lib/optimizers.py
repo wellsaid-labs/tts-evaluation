@@ -146,6 +146,17 @@ class ExponentialMovingParameterAverage:
         self.restore()
 
 
+def constant_lr_multiplier_schedule(step: int) -> float:
+    """A constant learning rate multiplier schedule.
+
+    Args:
+        step: The current step.
+
+    Returns: Learning rate multiplier.
+    """
+    return 1.0
+
+
 def warmup_lr_multiplier_schedule(step: int, warmup: int) -> float:
     """Basic learning rate multiplier schedule.
 

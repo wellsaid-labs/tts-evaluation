@@ -410,7 +410,7 @@ def combine(
     for csv in csvs[1:]:
         df_csv = pandas.read_csv(csv)
         df_csv["__csv"] = csv
-        df = df.append(df_csv, ignore_index=True)
+        df = df.append(df_csv, ignore_index=True)  # type: ignore
     df.to_csv(dest, index=False)
 
 

@@ -56,7 +56,7 @@ def main(
     train_dataset, dev_dataset = run._utils.get_datasets(debug)
     train_dataset = {} if use_dev_dataset else train_dataset
 
-    sessions = {sesh.spkr: sesh for sesh in run.deploy.worker.SPEAKER_ID_TO_SESSION.values()}
+    sessions = {sesh.spkr: sesh for sesh in run.deploy.worker.SPKR_ID_TO_SESH.values()}
     data = []
     logger.info(f"Writing Zip file to {path}")
     with zipfile.ZipFile(path, "w") as file_:

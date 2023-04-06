@@ -51,7 +51,7 @@ def main():
     script: str = XMLType(frm.text_area("Script", value=DEFAULT_SCRIPT, height=150))
 
     label = "Number of Clips Per Session"
-    num_clips: int = frm.number_input(label, min_value=1, max_value=None, value=5)
+    num_clips = typing.cast(int, frm.number_input(label, min_value=1, max_value=None, value=5))
 
     if not frm.form_submit_button("Submit"):
         return

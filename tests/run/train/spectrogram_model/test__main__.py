@@ -5,6 +5,7 @@ import config as cf
 import pytest
 
 from run._config import Cadence, DatasetType, config_spec_model_training_from_datasets
+from run._config.train import exclude_from_decay
 from run._models.spectrogram_model import SpectrogramModel
 from run.data._loader.english.m_ailabs import JUDY_BIEBER
 from run.train._utils import Context, Timer, set_context
@@ -49,6 +50,15 @@ def test_integration():
         num_workers=0,
         prefetch_factor=2,
     )
+
+    # Test `exclude_from_decay` excluded the right parameters
+    no_decay, decay, groups = state._make_optimizer_groups(state.model, exclude_from_decay)
+    assert len(no_decay) == len(groups[0]["params"])
+    assert groups[0]["weight_decay"] == 0.0
+    assert len(decay) == len(groups[1]["params"])
+    assert "decoder.linear_stop_token.0.bias" in no_decay
+    assert "decoder.linear_out.0.weight" in no_decay
+    assert "decoder.pre_net.out.1.weight" in no_decay
 
     # Test `_run_step` with `Metrics` and `_State`
     with set_context(Context.TRAIN, comet, state.model):
