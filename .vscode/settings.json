@@ -44,5 +44,13 @@
   "reflowMarkdown.preferredLineLength": 100,
   "markdownlint.config": {
     "no-trailing-punctuation": false
-  }
+  },
+  "spellright.language": [
+    "en"
+  ],
+  "spellright.documentTypes": [
+    "markdown",
+    "latex",
+    "plaintext"
+  ]
 }

@@ -10,7 +10,7 @@ def test_pre_net():
     hidden_size = 64
     num_frame_channels = 60
     pre_net = run._models.spectrogram_model.pre_net.PreNet(
-        hidden_size=hidden_size, num_frame_channels=num_frame_channels, num_layers=2, dropout=0.5
+        hidden_size=hidden_size, num_frame_channels=num_frame_channels, dropout=0.5
     )
     input_ = torch.randn(num_frames, batch_size, num_frame_channels)
     output, hidden_state = pre_net(input_)

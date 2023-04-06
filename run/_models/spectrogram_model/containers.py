@@ -138,13 +138,13 @@ class Encoded:
 class AttentionHiddenState:
     """Attention hidden state from previous time steps, used to predict the next time step."""
 
-    # torch.FloatTensor [batch_size, num_tokens + 2 * cum_alignment_padding]
+    # torch.FloatTensor [batch_size, num_tokens + 2 * Attention.padding]
     alignment: torch.Tensor
 
-    # torch.FloatTensor [batch_size, num_tokens + 2 * cum_alignment_padding]
+    # torch.FloatTensor [batch_size, num_tokens + 2 * Attention.padding]
     max_alignment: torch.Tensor
 
-    # torch.FloatTensor [batch_size, num_tokens + 2 * cum_alignment_padding]
+    # torch.FloatTensor [batch_size, num_tokens + 2 * Attention.padding]
     cum_alignment: torch.Tensor
 
     # torch.LongTensor [batch_size]

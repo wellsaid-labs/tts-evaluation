@@ -62,7 +62,6 @@ class PreNet(torch.nn.Module):
         num_frame_channels: Number of channels in each frame (sometimes refered to as
             "Mel-frequency bins" or "FFT bins" or "FFT bands").
         hidden_size: The size of the hidden representation and output.
-        num_layers: Number of layers for processing frames.
         dropout: Dropout probability of the Gaussian Dropout layer used as an information
             bottleneck.
 
@@ -71,9 +70,9 @@ class PreNet(torch.nn.Module):
           https://arxiv.org/pdf/1712.05884.pdf
     """
 
-    def __init__(self, num_frame_channels: int, hidden_size: int, num_layers: int, dropout: float):
+    def __init__(self, num_frame_channels: int, hidden_size: int, dropout: float):
         super().__init__()
-        self.encode = LSTM(num_frame_channels, hidden_size, num_layers)
+        self.rnn = LSTM(num_frame_channels, hidden_size)
         self.out = torch.nn.Sequential(
             _GaussianDropout(p=dropout),
             cf.partial(torch.nn.LayerNorm)(hidden_size),
@@ -99,5 +98,5 @@ class PreNet(torch.nn.Module):
             frames (torch.FloatTensor [num_frames, batch_size, hidden_size])
             hidden_state
         """
-        frames, hidden_state = self.encode(frames, hidden_state)
+        frames, hidden_state = self.rnn(frames, hidden_state)
         return self.out(frames), hidden_state

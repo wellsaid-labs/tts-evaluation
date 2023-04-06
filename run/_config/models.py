@@ -23,10 +23,12 @@ def configure(overwrite: bool = False):
     max_tokens = 1000
     max_anno_vector_size = 2
     annos = [("loudness_vector", "loudness_mask"), ("tempo_vector", "tempo_mask")]
-    max_speakers = len(set(s.label for s in _config.data.DATASETS.keys()))
-    max_dialects = len(set(s.dialect for s in _config.data.DATASETS.keys()))
-    max_styles = len(set(s.style for s in _config.data.DATASETS.keys()))
-    max_languages = len(set(s.language for s in _config.data.DATASETS.keys()))
+
+    # NOTE: We add additional space for extra data in the future.
+    max_speakers = len(set(s.label for s in _config.data.DATASETS.keys())) * 3
+    max_dialects = len(set(s.dialect for s in _config.data.DATASETS.keys())) * 3
+    max_styles = len(set(s.style for s in _config.data.DATASETS.keys())) * 3
+    max_languages = len(set(s.language for s in _config.data.DATASETS.keys())) * 3
 
     # NOTE: Configure the model sizes.
     config = {
@@ -58,12 +60,6 @@ def configure(overwrite: bool = False):
             # The prenet output and attention context vector are concatenated and
             # passed through a stack of 2 uni-directional LSTM layers with 1024 units.
             hidden_size=1024,
-        ),
-        run._models.spectrogram_model.pre_net.PreNet: cf.Args(
-            # SOURCE (Tacotron 2):
-            # The prediction from the previous time step is first passed through a small
-            # pre-net containing 2 fully connected layers of 256 hidden ReLU units.
-            num_layers=1
         ),
         run._models.spectrogram_model.wrapper.SpectrogramModelWrapper: cf.Args(
             max_tokens=max_tokens,

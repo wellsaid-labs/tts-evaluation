@@ -343,7 +343,7 @@ def _multivariate_regression(
     regression.fit(X, Y)
     df = pandas.DataFrame(data={"Coef": regression.coef_}, index=feats)
     df = df.sort_values(by=["Coef"], ascending=False)
-    fig, rsquared = _correlate(y, Y, feats_name, regression.predict(X))
+    fig, rsquared = _correlate(y, Y, feats_name, regression.predict(X))  # type: ignore
     return df, regression.intercept_, rsquared, fig
 
 

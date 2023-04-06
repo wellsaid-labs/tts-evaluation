@@ -56,8 +56,6 @@ class _AttentionRNN(torch.nn.Module):
                 indicies.
             hidden_state: The hidden state for attention rnn.
         """
-        # NOTE: Iterate over all frames for incase teacher-forcing; in sequential prediction,
-        # iterates over a single frame.
         lstm_hidden_state, last_attn_context, attn_hidden_state = hidden_state
         lstm_out_list: typing.List[torch.Tensor] = []
         attn_cntxts_list: typing.List[torch.Tensor] = []

@@ -47,7 +47,7 @@ class LazyLoader(types.ModuleType):
 
     def __call__(self, *args, **kwargs):
         module = self._load()
-        return module(*args, **kwargs)
+        return module(*args, **kwargs)  # type: ignore
 
     def __getattr__(self, item):
         module = self._load()

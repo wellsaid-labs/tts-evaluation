@@ -56,8 +56,7 @@ class SpectrogramModel(torch.nn.Module):
         max_seq_vector_size: The maximum size of the sequence embedding.
         max_anno_vector_size: The maximum number of annotation features.
         annos: The annotations to use along with their corresponding mask.
-        seq_embed_size: The size of the sequence metadata embedding.
-        attn_size: The size of the attention hidden state.
+        encoder_hidden_size: The size of the encoder hidden state.
         num_frame_channels: Number of channels in each frame (sometimes refered to as
             "Mel-frequency bins" or "FFT bins" or "FFT bands").
         output_scalar: The output of this model is scaled up by this value.

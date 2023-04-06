@@ -149,7 +149,9 @@ def _config_spec_model_training(
             betas=(0.9, 0.999),
         ),
         run._models.spectrogram_model.wrapper.SpectrogramModelWrapper: cf.Args(
+            # NOTE: We add additional space for extra data in the future.
             max_sessions=num_sesh
+            * 3
         ),
     }
     cf.add(config, **kwargs)
