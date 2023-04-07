@@ -7,7 +7,8 @@
 # argument precedence: https://docs.gunicorn.org/en/stable/settings.html.
 
 # @see https://docs.gunicorn.org/en/stable/settings.html#access-log-format
-access_log_format='%(h)s %(l)s %(t)s "%(r)s" %(s)s text_length[%({x-text-length}o)s] response_time_ms[%(M)s] response_size_bytes[%(b)s] "%(a)s"'
+access_log_format = '%(h)s %(l)s %(t)s "%(r)s" %(s)s text_length[%({x-text-length}o)s] '
+access_log_format += 'response_time_ms[%(M)s] response_size_bytes[%(b)s] "%(a)s"'
 
 # TODO: leaving this here as a potential consideration for speeding up the model initialization
 # in each worker.

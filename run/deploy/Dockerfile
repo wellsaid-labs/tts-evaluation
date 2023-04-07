@@ -54,7 +54,7 @@ RUN ${VIRTUAL_ENV}/bin/pip3 install --no-cache-dir --upgrade pip cython \
   unidecode \
   ftfy \
   tqdm \
-  'spacy[cuda113]==3.2.3' \
+  spacy==3.2.3 \
   pythonic-config==0.6.14 \
   num2words \
   git+https://github.com/PetrochukM/PyTorch-NLP.git \

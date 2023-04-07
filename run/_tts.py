@@ -198,8 +198,8 @@ class TTSPackage:
     def __setstate__(self, state):
         # NOTE: Running flatten_parameters during un-pickling in order to address the following warning:
         # `UserWarning: RNN module weights are not part of single contiguous chunk of memory.`
-        flatten_parameters(state['spec_model'])
-        flatten_parameters(state['signal_model'])
+        flatten_parameters(state["spec_model"])
+        flatten_parameters(state["signal_model"])
         object.__setattr__(self, "__dict__", state)
 
     def session_vocab(self) -> typing.Set[Session]:
@@ -231,7 +231,7 @@ class PublicSpeakerValueError(ValueError):
 
 
 def process_tts_inputs(
-    nlp: spacy.language.Language, package: TTSPackage, script: str, session: Session
+    nlp: spacy.language.Language, package: TTSPackage, script: str, session: Session, **kw
 ) -> typing.Tuple[Inputs, PreprocessedInputs]:
     """Process TTS `script`, `speaker` and `session` for use with the model(s)."""
     normalized = normalize_and_verbalize_text(script, session[0].language)
@@ -239,7 +239,7 @@ def process_tts_inputs(
         raise PublicTextValueError("Text cannot be empty.")
 
     inputs = Inputs([session], [nlp(norm_respellings(normalized))])
-    preprocessed = preprocess_inputs(inputs)
+    preprocessed = preprocess_inputs(inputs, **kw)
 
     tokens = typing.cast(typing.List[str], set(preprocessed.tokens[0]))
     excluded = [t for t in tokens if t not in package.spec_model.token_embed.vocab]

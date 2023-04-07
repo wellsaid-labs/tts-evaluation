@@ -421,7 +421,6 @@ RESPELLING_ALPHABET: typing.Dict[str, str] = {
 
 
 class ARPAbetStress(enum.Enum):
-
     NONE: typing.Final = "0"
     PRIMARY: typing.Final = "1"
     SECONDARY: typing.Final = "2"
