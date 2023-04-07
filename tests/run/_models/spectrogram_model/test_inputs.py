@@ -154,9 +154,8 @@ def test__inputs_wrapper__from_xml__token_annotations():
     """Test `InputsWrapper.from_xml` validates respellings."""
     _check_anno(Sch.RESPELL, "scientific", "SY-uhn-TIH-fihk")
     _check_anno(Sch.RESPELL, "S.C.I.E.N.T.I.F.I.C", "SY-uhn-TIH-fihk")
-
-    with pytest.raises(PublicValueError):
-        _check_anno(Sch.RESPELL, "don't", "dont")  # SpaCy considers this two tokens
+    _check_anno(Sch.RESPELL, "scientific-process", "SY-uhn-TIH-fihk")  # Multiple words
+    _check_anno(Sch.RESPELL, "don't", "dont")  # SpaCy considers this two tokens
 
     with pytest.raises(PublicValueError):
         _check_anno(Sch.RESPELL, "scientific", "")  # No value
@@ -184,9 +183,6 @@ def test__inputs_wrapper__from_xml__token_annotations():
 
     with pytest.raises(PublicValueError):
         _check_anno(Sch.RESPELL, "scientific", "Sy-uhn-TIH-fihk")  # Mix capitalization
-
-    with pytest.raises(PublicValueError):
-        _check_anno(Sch.RESPELL, "scientific-process", "SY-uhn-TIH-fihk")  # Multiple words
 
     with pytest.raises(PublicValueError):
         _check_anno(Sch.RESPELL, "entific", "SY-uhn-TIH-fihk", "sci")  # Prefix

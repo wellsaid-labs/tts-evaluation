@@ -370,11 +370,8 @@ class InputsWrapper:
 
         # NOTE: Check that `context` fully contains `span`...
         for context, span in zip_strict(self.context, self.span):
-            no_context = isinstance(span, spacy.tokens.doc.Doc)
-            has_context = context is not span
-            assert has_context or no_context
-            assert all(token in context for token in span)
-            assert sum(token in span for token in context) == len(span)
+            assert context[:].doc == span[:].doc
+            assert context[:].start <= span[:].start and context[:].end >= span[:].end
             # NOTE: It's possible that a `Doc` object does not pass this check, since some
             # characters are not considered spaCy tokens, like white spaces. This selects all the
             # spaCy tokens and checks if they represent the entire `Doc`.
@@ -534,7 +531,7 @@ class InputsWrapper:
         if span.text != span[:].text.strip():
             raise PublicValueError("The text must be stripped of white spaces.")
 
-        span = span if isinstance(span, spacy.tokens.span.Span) else span[:]
+        assert context is None or span[:].doc == context[:].doc
 
         # TODO: Make sure that annotations within annotations are not accepted. The model isn't
         # trained with that in mind. We don't allow overlapping annotations, either. It'd be
@@ -582,19 +579,21 @@ class InputsWrapper:
         offset = 0
         for slice_, value in annotations[_Schema.RESPELL]:
             token = span.char_span(*tuple(slice_))
+            if token is None:
+                raise PublicValueError("Respelling must wrap some text.")
             if len(token) > 1:
                 logger.warning(f"Merging '{token.text}' into one token, for compatibility.")
                 with span.doc.retokenize() as retokenizer:
                     retokenizer.merge(token)
                     offset += len(token) - 1
-        span = span.doc[span.start : span.end - offset]
+        if isinstance(span, spacy.tokens.span.Span):
+            span = span.doc[span.start : span.end - offset]
+        if context is not None and isinstance(context, spacy.tokens.span.Span):
+            context = context.doc[context.start : context.end - offset]
 
         respells = {}
         for slice_, value in annotations[_Schema.RESPELL]:
-            token = span.char_span(*tuple(slice_))
-            if token is None or len(token) != 1:
-                raise PublicValueError("Respelling must wrap some text.")
-            respells[token[0]] = value
+            respells[span.char_span(*tuple(slice_))[0]] = value
 
         slice_annos: typing.Dict[_Schema, SliceAnnos] = {}
         for tag in [_Schema.LOUDNESS, _Schema.TEMPO]:

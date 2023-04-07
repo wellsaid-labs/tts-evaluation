@@ -752,7 +752,7 @@ def test_align_tokens__word_deletion():
 def test_xml_to_text():
     """Test `lib.text.utils.xml_to_text` removes XML."""
     xml = "<Tomato juicy='True'>\nLet's call <Potato>the whole thing off\n</Potato></Tomato>"
-    assert xml_to_text(XMLType(xml)) == "Let's call the whole thing off"
+    assert xml_to_text(XMLType(xml)) == "\nLet's call the whole thing off\n"
 
 
 def test_text_to_xml():

@@ -166,7 +166,7 @@ def _include_annotation(annotation: struc.Alignment):
     return True
 
 
-def _get_tempo_annotation(text: str, audio_len: float, bucket_size: float):
+def _get_tempo_annotation(text: str, audio_len: float, bucket_size: float) -> float:
     """Get a tempo annotation in actual length vs expected length.
 
     Args:
@@ -174,6 +174,9 @@ def _get_tempo_annotation(text: str, audio_len: float, bucket_size: float):
         audio_len: The audio length in seconds.
         bucket_size: The bucket size for rounding in seconds.
     """
+    if audio_len == 0:
+        return math.nan
+
     avg = run._config.lang.get_avg_audio_length(text)
     return lib.utils.round_(avg / audio_len, bucket_size)
 
