@@ -240,7 +240,7 @@ def _process_tts_inputs(
     token_vocab: typing.Set[str],
     script: XMLType,
     session: Session,
-    **kwargs,
+    **kw,
 ) -> typing.Tuple[Inputs, PreprocessedInputs]:
     """Process TTS `script` and `session` for use with the model(s)."""
     normalized = normalize_and_verbalize_text(script, session.spkr.language)
@@ -248,7 +248,7 @@ def _process_tts_inputs(
         raise PublicTextValueError("Text cannot be empty.")
 
     inputs = Inputs.from_xml(normalized, nlp(xml_to_text(normalized)), session)
-    preprocessed = cf.call(preprocess, inputs, **kwargs)
+    preprocessed = cf.call(preprocess, inputs, **kw)
 
     tokens = typing.cast(typing.List[str], set(preprocessed.tokens[0]))
     excluded = [t for t in tokens if t not in token_vocab]
