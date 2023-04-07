@@ -218,8 +218,6 @@ Once the model is deployed, it should be accessible via the Kong gateway
 interface. You may need to follow the guide for
 [generating a Kong Consumer api key](../gateway/README.md) in the gateway docs.
 
-Make sure to update the `speaker_id`, consulting `run/deploy/worker.py` if needed.
-
 ```bash
 # Assumes staging environment
 curl https://staging.tts.wellsaidlabs.com/api/text_to_speech/stream \

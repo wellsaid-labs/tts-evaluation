@@ -165,17 +165,6 @@ class Checkpoints(enum.Enum):
 
     V11_2023_03_06_STAGING: typing.Final = "v11_2023_03_06_staging"
 
-    """
-    These checkpoints for EIA's updated v10 custom voice were deployed into staging as "v10-eia".
-    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/449
-    Spectrogram Model Experiment (Step: 984,060):
-    https://www.comet.com/wellsaid-labs/v10-custom-voice-spectrogram/7c657d85392e40948b38254b16004db5
-    Signal Model Experiment (Step: 960,204):
-    https://www.comet.com/wellsaid-labs/v10-custom-voice-signal/efe318375a704abf8d145afa0b0976a3
-    """
-
-    V10_EIA: typing.Final = "v10_2022_12_07_eia_custom_voice"
-
 
 _GCS_PATH = "gs://wellsaid_labs_checkpoints/"
 CHECKPOINTS_LOADERS = {
