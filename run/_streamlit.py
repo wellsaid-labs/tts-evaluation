@@ -3,6 +3,7 @@ import multiprocessing
 import multiprocessing.pool
 import os
 import pathlib
+import random
 import shutil
 import tempfile
 import typing
@@ -12,6 +13,7 @@ import config as cf
 import numpy as np
 import tqdm
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, JsCode
+from streamlit.delta_generator import DeltaGenerator
 from third_party import LazyLoader
 
 import lib
@@ -19,14 +21,18 @@ import run
 from lib.audio import AudioMetadata, sec_to_sample
 from lib.environment import ROOT_PATH
 from lib.text import natural_keys
+from run._config.data import _include_span
 from run._tts import CHECKPOINTS_LOADERS, Checkpoints, package_tts
 from run._utils import Dataset
-from run.data._loader import Alignment, Passage, Span
+from run.data._loader import Alignment, Passage, Span, Speaker
+from run.data._loader import structures as struc
+from run.train.spectrogram_model._worker import _get_data_generator
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import altair as alt
     import librosa
     import librosa.util
+    import matplotlib.figure
     import pandas as pd
     import streamlit as st
 else:
@@ -34,6 +40,7 @@ else:
     alt = LazyLoader("alt", globals(), "altair")
     pd = LazyLoader("pd", globals(), "pandas")
     st = LazyLoader("st", globals(), "streamlit")
+    matplotlib = LazyLoader("matplotlib", globals(), "matplotlib")
 
 
 logger = logging.getLogger(__name__)
@@ -50,9 +57,9 @@ STREAMLIT_STATIC_TEMP_PATH = STREAMLIT_STATIC_PRIVATE_PATH / "temp"
 STREAMLIT_STATIC_SYMLINK_PATH = STREAMLIT_STATIC_PRIVATE_PATH / "symlink"
 
 
-@st.experimental_singleton()
-def load_tts(checkpoints_key: str):
-    return package_tts(*CHECKPOINTS_LOADERS[Checkpoints[checkpoints_key]]())
+@st.cache_data()
+def load_tts(checkpoints_key: str, **kwargs):
+    return package_tts(*CHECKPOINTS_LOADERS[Checkpoints[checkpoints_key]](**kwargs))
 
 
 # A `Path` to a file or directory accessible via HTTP in the streamlit app.
@@ -60,11 +67,11 @@ WebPath = typing.NewType("WebPath", pathlib.Path)
 RelativeUrl = typing.NewType("RelativeUrl", str)
 
 
-@st.experimental_singleton()
+@st.cache_resource()
 def make_temp_root_dir():
     """Make a temporary directory accessible via HTTP in the streamlit app.
 
-    NOTE: With `experimental_singleton`, this function runs once per session.
+    NOTE: With `cache_resource`, this function runs once per session.
     """
     assert pathlib.Path(st.__file__).parent in STREAMLIT_STATIC_TEMP_PATH.parents
     if STREAMLIT_STATIC_TEMP_PATH.exists():
@@ -101,6 +108,13 @@ def audio_to_web_path(audio: np.ndarray, name: str = "audio.wav", **kwargs) -> W
     return web_path
 
 
+def figure_to_url(figure: matplotlib.figure.Figure, name: str = "fig.png", **kwargs):
+    """Create a URL that can be loaded from `streamlit`."""
+    image_web_path = make_temp_web_dir() / name
+    figure.savefig(str(image_web_path), **kwargs)
+    return web_path_to_url(image_web_path)
+
+
 def audio_to_url(audio: np.ndarray, name: str = "audio.wav", **kwargs):
     """Create a URL that can be loaded from `streamlit`."""
     return web_path_to_url(audio_to_web_path(audio, name, **kwargs))
@@ -113,19 +127,44 @@ def audio_to_html(
     return f'<audio {attrs} src="{audio_to_url(audio, name, **kwargs)}"></audio>'
 
 
-def paths_to_html_download_link(
+# NOTE: While streamlit does provide `st.download`, it'll force the entire app to reload when it's
+# used. Here is an issue thread: https://github.com/streamlit/streamlit/issues/4382. The below
+# options don't have that backdraw.
+
+
+def _bytes_to_html_download_link(name: str, label: str, bytes_: bytes) -> str:
+    """Make a zipfile named `name` that can be downloaded with a button called `label`."""
+    web_path = make_temp_web_dir() / name
+    web_path.write_bytes(bytes_)
+    return f'<a href="{web_path_to_url(web_path)}" download="{name}">{label}</a>'
+
+
+def st_download_bytes(*args, **kwargs):
+    """Download a text file."""
+    return st_html(_bytes_to_html_download_link(*args, **kwargs))
+
+
+def _paths_to_html_download_link(
     name: str,
     label: str,
     paths: typing.List[pathlib.Path],
     archive_paths: typing.Optional[typing.List[pathlib.Path]] = None,
 ) -> str:
-    """Make a zipfile named `name` that can be downloaded with a button called `label`."""
+    """Make a zipfile named `name` that can be downloaded with a button called `label`.
+
+    TODO: Implement a utility like `st_download_bytes` for `paths_to_html_download_link`.
+    """
     web_path = make_temp_web_dir() / name
     archive_paths_ = [p.name for p in paths] if archive_paths is None else archive_paths
     with zipfile.ZipFile(web_path, "w") as file_:
         for path, archive_path in zip(paths, archive_paths_):
             file_.write(path, arcname=archive_path)
     return f'<a href="{web_path_to_url(web_path)}" download="{name}">{label}</a>'
+
+
+def st_download_files(*args, **kwargs):
+    """Create a link to download a zip file with `paths`."""
+    st_html(_paths_to_html_download_link(*args, **kwargs))
 
 
 _MapInputVar = typing.TypeVar("_MapInputVar")
@@ -149,7 +188,7 @@ def map_(
         return list(iterator)
 
 
-@st.experimental_singleton()
+@st.cache_resource()
 def read_wave_audio(*args, **kwargs) -> np.ndarray:
     """Read audio slice, and cache."""
     return lib.audio.read_wave_audio(*args, **kwargs)
@@ -157,7 +196,7 @@ def read_wave_audio(*args, **kwargs) -> np.ndarray:
 
 def span_audio(span: run.data._loader.Span) -> np.ndarray:
     """Get `span` audio using cached `read_wave_audio`."""
-    return read_wave_audio(span.passage.audio_file, span.audio_start, span.audio_length)
+    return read_wave_audio(span.audio_file, span.audio_start, span.audio_length)
 
 
 def passage_audio(passage: run.data._loader.Passage) -> np.ndarray:
@@ -166,9 +205,20 @@ def passage_audio(passage: run.data._loader.Passage) -> np.ndarray:
     return read_wave_audio(passage.audio_file, passage.audio_start, length)
 
 
+def alignment_audio(
+    span: typing.Union[run.data._loader.Span, run.data._loader.Passage], alignment: Alignment
+) -> np.ndarray:
+    """Get `span` or `Passage` audio using cached `read_wave_audio`."""
+    return read_wave_audio(
+        span.audio_file,
+        span.audio_start + alignment.audio[0],
+        span.audio_start + alignment.audio[1],
+    )
+
+
 def metadata_alignment_audio(metadata: AudioMetadata, alignment: Alignment) -> np.ndarray:
     """Get `alignment` audio using cached `read_wave_audio`."""
-    return read_wave_audio(metadata, alignment.audio[0], alignment.audio[1] - alignment.audio[0])
+    return read_wave_audio(metadata, alignment.audio[0], alignment.audio_len)
 
 
 def clip_audio(audio: np.ndarray, span: Span, alignment: Alignment):
@@ -179,7 +229,7 @@ def clip_audio(audio: np.ndarray, span: Span, alignment: Alignment):
     return audio[start_:stop_]
 
 
-@st.experimental_singleton()
+@st.cache_resource()
 def get_dataset(speaker_labels: typing.FrozenSet[str]) -> Dataset:
     """Load dataset subset, and cache."""
     logger.info("Loading dataset...")
@@ -190,15 +240,96 @@ def get_dataset(speaker_labels: typing.FrozenSet[str]) -> Dataset:
     return dataset
 
 
-@st.experimental_singleton()
+@st.cache_resource()
+def get_datasets() -> typing.Tuple[Dataset, Dataset]:
+    """Load train and dev dataset, and cache."""
+    return run._utils.get_datasets(False)
+
+
 def get_dev_dataset() -> Dataset:
-    """Load dev dataset, and cache."""
-    with st.spinner("Loading dataset..."):
-        _, dev_dataset = run._utils.get_datasets(False)
-    return dev_dataset
+    """Load dev dataset and cache."""
+    return get_datasets()[1]
 
 
-@st.experimental_singleton()
+@st.cache_resource()
+def get_spans(
+    _train_dataset: Dataset,
+    _dev_dataset: Dataset,
+    num_spans: int,
+    speaker: typing.Optional[Speaker] = None,
+    is_dev_speakers: bool = True,
+    is_train_spans: bool = True,
+    include_dic: bool = True,
+    device_count: int = 4,
+) -> typing.List[Span]:
+    """Get `num_spans` spans from `_train_dataset` for `speaker`. This uses the same code path
+    as a training run so it ensures we are analyzing training data directly.
+
+    Args:
+        ...
+        speaker: Pick a speaker to generate spans for.
+        num_spans: The number of spans to generate.
+        is_dev_speakers: Get spans only for development speakers.
+        is_train_spans: Get spans from the training dataset.
+        include_dic: Include dictionary datasets that are sometimes used in development; however,
+            may not be as applicable for applied use cases.
+        device_count: The number of devices used during training to set the configuration.
+    """
+    with st.spinner("Making generators..."):
+        if is_dev_speakers:
+            _train_dataset = {s: _train_dataset[s] for s in _dev_dataset.keys()}
+
+        if speaker is not None:
+            _train_dataset = {speaker: _train_dataset[speaker]}
+            _dev_dataset = {speaker: _dev_dataset[speaker]}
+
+        train_gen, dev_gen = cf.partial(_get_data_generator)(_train_dataset, _dev_dataset)
+        gen = train_gen if is_train_spans else dev_gen
+
+    with st.spinner("Making spans..."):
+        gen = (s for s in gen if include_dic or s.speaker.style is not struc.Style.DICT)
+        spans = [next(gen) for _ in st_tqdm(range(num_spans), num_spans)]
+
+    return spans
+
+
+def _random_speech_segments(_train_dataset: Dataset):
+    """Get random speech segments while balancing each of the speakers.
+
+    NOTE: This implementation of sampling speech segments is simpler than others. This is because
+          in other implementations we are trying to sample an interval of data. To ensure we
+          sample proportionally, we need to oversample longer passages. In this case, we are
+          directly sampling from a fixed pool of non-overlapping spans. With that in mind, we
+          can just sample uniformly, and ensure that every alignment has an equal chance of
+          getting sampled.
+    """
+    counter = {s: 0.0 for s in _train_dataset.keys()}
+    data = {k: [s for p in v for s in p.speech_segments] for k, v in _train_dataset.items()}
+    while True:
+        speaker = lib.utils.corrected_random_choice(counter)
+        span = random.choice(data[speaker])
+        if _include_span(span):
+            counter[span.speaker] += span.audio_length
+            yield span
+
+
+@st.cache_resource()
+def get_speech_segments(
+    _train_dataset: Dataset, speaker: typing.Optional[Speaker], num_spans: int
+) -> typing.Tuple[typing.List[Span], typing.List[np.ndarray]]:
+    """Get `num_spans` speech segments from `_train_dataset` for `speaker`."""
+    with st.spinner("Making spans..."):
+        _train_dataset = _train_dataset if speaker is None else {speaker: _train_dataset[speaker]}
+        train_gen = _random_speech_segments(_train_dataset)
+        spans = [next(train_gen) for _ in st_tqdm(range(num_spans), num_spans)]
+
+    with st.spinner("Loading audio..."):
+        signals = [s.audio() for s in st_tqdm(spans)]
+
+    return spans, signals
+
+
+@st.cache_resource()
 def fast_grapheme_to_phoneme(text: str):
     """Fast grapheme to phoneme, cached."""
     return lib.text.grapheme_to_phoneme([text], separator="|")[0]
@@ -263,7 +394,7 @@ def dataset_passages(dataset: Dataset) -> typing.Iterator[Passage]:
         yield from passages
 
 
-@st.experimental_singleton()
+@st.cache_resource()
 def load_en_core_web_md(*args, **kwargs):
     return lib.text.load_spacy_nlp("en_core_web_md", *args, **kwargs)
 
@@ -284,10 +415,23 @@ def st_html(html: str):
 
 def path_label(path: pathlib.Path) -> str:
     """Get a short label for `path`."""
-    return str(path.relative_to(ROOT_PATH)) + "/" if path.is_dir() else str(path.name)
+    return (
+        str(path.relative_to(ROOT_PATH)) + "/"
+        if path.is_dir()
+        else f"{path.parent.name}/{path.name}"
+    )
 
 
-def st_select_path(label: str, dir: pathlib.Path, suffix: str) -> pathlib.Path:
+# TODO: Offer options to override `st` throughout the utility functions or consider integrating with
+# their `DeltaGenerator`.
+
+
+def st_select_path(
+    label: str,
+    dir: pathlib.Path,
+    suffix: str,
+    st: DeltaGenerator = typing.cast(DeltaGenerator, st),
+) -> pathlib.Path:
     """Display a path selector for the directory `dir`."""
     options = [p for p in dir.glob("**/*") if p.suffix == suffix]
     options = sorted(options, key=lambda x: natural_keys(str(x)), reverse=True)
@@ -310,26 +454,29 @@ _StTqdmVar = typing.TypeVar("_StTqdmVar")
 
 
 def st_tqdm(
-    iterable: typing.Iterable[_StTqdmVar], length: typing.Optional[int] = None
+    iterable: typing.Iterable[_StTqdmVar], total: typing.Optional[int] = None
 ) -> typing.Generator[_StTqdmVar, None, None]:
     """Display a progress bar while iterating through `iterable`."""
     bar = st.progress(0)
     for i, item in enumerate(iterable):
         yield item
-        bar.progress(i / (len(iterable) if length is None else length))  # type: ignore
+        bar.progress(i / (len(iterable) if total is None else total))  # type: ignore
     bar.empty()
 
 
 # NOTE: This follows the examples highlighted here:
 # https://github.com/PablocFonseca/streamlit-aggrid-examples/blob/main/cell_renderer_class_example.py
 # https://github.com/PablocFonseca/streamlit-aggrid/issues/119
-renderer = 'function(params) {return `<audio controls preload="none" src="${params.value}" />`}'
-renderer = JsCode(renderer)
+audio_renderer = 'function(prms) {return `<audio controls preload="none" src="${prms.value}" />`}'
+audio_renderer = JsCode(audio_renderer)
+img_renderer = 'function(prms) {return `<img src="${prms.value}" />`}'
+img_renderer = JsCode(img_renderer)
 
 
 def st_ag_grid(
     df: pd.DataFrame,
-    audio_column_name: typing.Optional[str] = None,
+    audio_cols: typing.List[str] = [],
+    img_cols: typing.List[str] = [],
     height: int = 850,
     page_size: int = 10,
 ):
@@ -337,8 +484,8 @@ def st_ag_grid(
     options = GridOptionsBuilder.from_dataframe(df)
     options.configure_pagination(paginationAutoPageSize=False, paginationPageSize=page_size)
     options.configure_default_column(wrapText=True, autoHeight=True, min_column_width=1)
-    if audio_column_name:
-        options.configure_column(audio_column_name, cellRenderer=renderer)
+    [options.configure_column(name, cellRenderer=audio_renderer) for name in audio_cols]
+    [options.configure_column(name, cellRenderer=img_renderer) for name in img_cols]
     return AgGrid(
         data=df,
         gridOptions=options.build(),

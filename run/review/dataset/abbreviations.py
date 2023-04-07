@@ -36,11 +36,13 @@ st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 logger = logging.getLogger(__name__)
 
 
-@st.experimental_singleton()
+@st.cache_resource()
 def _get_unprocessed_dataset():
     dataset = cf.partial(get_unprocessed_dataset)()
     documents = [p for d in dataset.values() for p in d]
-    metadatas = _normalize_audio_files(documents, False)
+    _, metadatas = _normalize_audio_files(documents, False)
+    # TODO: This needs to be fixed, oops.
+    assert len(documents) == len(metadatas), "There are some documents that were filtered out."
     return dataset, metadatas
 
 
@@ -91,7 +93,7 @@ def _is_casing_ambiguous(script: str, transcript: str):
     return _is_stand_casing(script) != _is_stand_casing(transcript)
 
 
-@st.experimental_singleton()
+@st.cache_resource()
 def _get_alignments(
     _dataset: UnprocessedDataset,
     _metadatas: typing.Dict[pathlib.Path, AudioMetadata],
@@ -150,8 +152,8 @@ def _get_alignments(
 
 def _gather(passage: UnprocessedPassage, alignment: Alignment, clip: numpy.ndarray):
     """Gather data on `alignment`."""
-    script = passage.script[alignment.script[0] : alignment.script[1]]
-    transcript = passage.transcript[alignment.transcript[0] : alignment.transcript[1]]
+    script = passage.script[alignment.script_slice]
+    transcript = passage.transcript[alignment.transcript_slice]
     return {
         "script": script,
         "transcript": transcript,
@@ -195,7 +197,7 @@ def main():
     dataset, metadatas = _get_unprocessed_dataset()
     alignments = _get_alignments(dataset, metadatas, num_alignments, picker, negate)
     rows = [_gather(*a) for a in alignments]
-    st_ag_grid(pandas.DataFrame(rows), audio_column_name="clip")
+    st_ag_grid(pandas.DataFrame(rows), audio_cols=["clip"])
 
 
 if __name__ == "__main__":

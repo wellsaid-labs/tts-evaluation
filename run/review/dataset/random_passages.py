@@ -56,7 +56,7 @@ def main(
     train_dataset, dev_dataset = run._utils.get_datasets(debug)
     train_dataset = {} if use_dev_dataset else train_dataset
 
-    sessions = {sesh[0]: sesh for sesh in run.deploy.worker.SPEAKER_ID_TO_SESSION.values()}
+    sessions = {sesh.spkr: sesh for sesh in run.deploy.worker.SPKR_ID_TO_SESH.values()}
     data = []
     logger.info(f"Writing Zip file to {path}")
     with zipfile.ZipFile(path, "w") as file_:
@@ -68,7 +68,7 @@ def main(
             sample = random.sample(passages, min(num_samples, len(passages)))
             for i, passage in enumerate(sample):
                 sesh = str(passage.session).replace("/", "__")
-                file_name = f"spk={speaker.label},sesh={sesh},id={i}.wav"
+                file_name = f"spkr={speaker.label},sesh={sesh},id={i}.wav"
                 data.append({file_name_column_name: file_name, script_column_name: passage.script})
                 mock_file_ = io.BytesIO()
                 cf.partial(lib.audio.write_audio)(mock_file_, passage[:].audio())

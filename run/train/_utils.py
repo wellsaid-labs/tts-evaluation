@@ -18,7 +18,6 @@ import os
 import pathlib
 import platform
 import pprint
-import random
 import resource
 import sys
 import time
@@ -53,11 +52,8 @@ from run._config import (
     get_dataset_label,
     get_model_label,
     get_timer_label,
-    load_spacy_nlp,
 )
-from run._models.spectrogram_model import Inputs, Mode, Preds, SpectrogramModel
 from run._utils import Dataset, get_datasets
-from run.data._loader.structures import Language, Session, Speaker
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import comet_ml
@@ -82,6 +78,7 @@ class Context(enum.Enum):
     TRAIN: typing.Final = "train"
     EVALUATE: typing.Final = "evaluate"
     EVALUATE_INFERENCE: typing.Final = "evaluate_inference"
+    EVALUATE_TTS: typing.Final = "evaluate_tts"
 
 
 class CometMLExperiment:
@@ -280,6 +277,20 @@ class CometMLExperiment:
         asset = self.log_asset(file_, file_name=file_name)
         return asset["web"] if asset is not None else asset
 
+    @staticmethod
+    def _format_key(key: str):
+        """Format argument name for HTML."""
+        if key.startswith("_"):
+            return key[1:]
+        return key.title().replace("_", " ")
+
+    @staticmethod
+    def _format_val(key: str, value: typing.Any):
+        """Format argument value for HTML."""
+        if key.startswith("_"):
+            return value
+        return html.escape(value if isinstance(value, str) else repr(value))
+
     def log_html_audio(
         self,
         session: run.data._loader.Session,
@@ -290,24 +301,24 @@ class CometMLExperiment:
 
         Args:
             audio
-            **kwargs: Additional metadata to include.
+            **kwargs: Additional metadata to include. Arguments with a underscore before their
+                name will be printed as is.
         """
-        items = [f"<p><b>Step:</b> {self.curr_step}</p>"]
-        param_label = lambda s: s.title().replace("_", " ") if " " not in s else s
-        html_repr = lambda v: v if isinstance(v, str) else html.escape(repr(v))
         kwargs = dict(session=session, **kwargs)
-        items.extend([f"<p><b>{param_label(k)}:</b> {html_repr(v)}</p>" for k, v in kwargs.items()])
+        items = [(self._format_key(k), self._format_val(k, v)) for k, v in kwargs.items()]
+        lines = [f"<p><b>Step:</b> {self.curr_step}</p>"]
+        lines.extend([f"<p><b>{k}:</b> {v}</p>" for k, v in items])
         for key, data in audio.items():
-            name = param_label(key)
-            file_name = f"step={self.curr_step},speaker={session[0].label},"
+            name = self._format_key(key)
+            file_name = f"step={self.curr_step},speaker={session.spkr.label},"
             file_name += f"name={name},experiment={self.get_key()}.wav"
             url = self._upload_audio(file_name, data)
-            items.append(f"<p><b>{name}:</b></p>")
+            lines.append(f"<p><b>{name}:</b></p>")
             if url is None:
-                items.append(f"Failed to upload: {file_name}")
+                lines.append(f"Failed to upload: {file_name}")
             else:
-                items.append(f'<audio controls preload="none" src="{url}"></audio>')
-        self.log_html("<section>{}</section>".format("\n".join(items)))
+                lines.append(f'<audio controls preload="none" src="{url}"></audio>')
+        self.log_html("<section>{}</section>".format("\n".join(lines)))
 
     def _handle_param(self, key: run._config.Label, value: typing.Any, max_len: int = 50) -> str:
         """Format and log complex objects in standard out."""
@@ -362,7 +373,6 @@ class CometMLExperiment:
 
 @dataclasses.dataclass(frozen=True)
 class Checkpoint:
-
     comet_experiment_key: str
     step: int
 
@@ -588,7 +598,7 @@ def apply_to_tensors(
     dict_: dict = data._asdict() if is_named_tuple else dataclass_as_dict(data)  # type: ignore
     apply = lambda v: call(v) if torch.is_tensor(v) else apply_to_tensors(v, call, is_return)
     if is_return:
-        return data.__class__(**{k: apply(v) for k, v in dict_.items()})
+        return data.__class__(**{k: apply(v) for k, v in dict_.items()})  # type: ignore
     else:
         [apply(value) for value in dict_.values()]
 
@@ -602,6 +612,7 @@ class Batch:
         """Apply `call` to `SequenceBatch` in `Batch`."""
         # TODO: Given that this has a specific use case with `SequenceBatch` it shouldn't
         # have a generic name like `apply`.
+        # TODO: Use `apply_to_tensors` to apply recursively too all `NameTuple`s or `dataclass`s.
         apply = lambda o: apply_to_tensors(o, call, True) if isinstance(o, SequenceBatch) else o
         dict_ = lib.utils.dataclass_as_dict(self)
         return dataclasses.replace(self, **{k: apply(v) for k, v in dict_.items()})
@@ -732,7 +743,8 @@ class DataLoader(typing.Iterable[DataLoaderVar], typing.Generic[DataLoaderVar]):
         NOTE: `torch.utils.data.dataloader.DataLoader` doesn't pin tensors if CUDA isn't
         available.
         """
-        message = "Expecting `tensor` memory to be pinned before moving."
+        message = f"Expecting `tensor` ({tensor.shape}, {tensor.dtype}) memory to be "
+        message += "pinned before moving."
         assert not torch.cuda.is_available() or tensor.is_pinned(), message
         return tensor.to(device=self.device, non_blocking=True)
 
@@ -841,7 +853,6 @@ def run_workers(
 
 @dataclasses.dataclass(frozen=True)
 class MetricsKey:
-
     label: str
 
 
@@ -983,22 +994,3 @@ class Timer:
                 label = get_timer_label(name, device=Device.CUDA, **kwargs)
                 times[label] += prev.cuda.elapsed_time(next.cuda) / 1000
         return dict(times)
-
-
-def process_select_cases(
-    model: SpectrogramModel,
-    avail_sessions: typing.Set[Session],
-    cases: typing.List[typing.Tuple[Language, str]],
-    speakers: typing.Set[Speaker],
-    num_cases: int = 5,
-) -> typing.Tuple[Inputs, Preds]:
-    """Get the spectrogram model prediction for `num_cases` sampled from `cases` limited to
-    `speakers`."""
-    cases = [random.choice(cases) for _ in range(num_cases)]
-    docs = [load_spacy_nlp(l)(t) for (l, t) in cases]
-    # NOTE: `seshs` is sorted so `random.choice` produces consistent results.
-    vocab = sorted(avail_sessions)
-    seshs = [[s for s in vocab if s[0].language is l and s[0] in speakers] for l, _ in cases]
-    seshs = [random.choice(choices) for choices in seshs]
-    inputs_ = Inputs(seshs, docs)
-    return inputs_, model(inputs_, mode=Mode.INFER)

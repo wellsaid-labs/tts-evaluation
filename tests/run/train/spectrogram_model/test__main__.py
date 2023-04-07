@@ -4,11 +4,10 @@ from unittest import mock
 import config as cf
 import pytest
 
-from run._config import Cadence, DatasetType, make_spectrogram_model_train_config
+from run._config import Cadence, DatasetType, config_spec_model_training_from_datasets
+from run._config.train import exclude_from_decay
 from run._models.spectrogram_model import SpectrogramModel
-from run.data._loader.english.lj_speech import LINDA_JOHNSON
 from run.data._loader.english.m_ailabs import JUDY_BIEBER
-from run.data._loader.structures import Language
 from run.train._utils import Context, Timer, set_context
 from run.train.spectrogram_model._metrics import Metrics, MetricsKey
 from run.train.spectrogram_model._worker import (
@@ -17,7 +16,6 @@ from run.train.spectrogram_model._worker import (
     _log_vocab,
     _run_inference,
     _run_step,
-    _visualize_select_cases,
 )
 from tests.run._utils import make_spec_worker_state, mock_distributed_data_parallel
 from tests.run.train._utils import setup_experiment
@@ -32,7 +30,7 @@ def run_around_tests():
 
 def test_integration():
     train_dataset, dev_dataset, comet, device = setup_experiment()
-    cf.add(make_spectrogram_model_train_config(train_dataset, dev_dataset, True))
+    config_spec_model_training_from_datasets(train_dataset, dev_dataset, True)
     state = make_spec_worker_state(comet, device)
 
     assert state.model.module == state.model  # Ensure the mock worked
@@ -53,6 +51,15 @@ def test_integration():
         prefetch_factor=2,
     )
 
+    # Test `exclude_from_decay` excluded the right parameters
+    no_decay, decay, groups = state._make_optimizer_groups(state.model, exclude_from_decay)
+    assert len(no_decay) == len(groups[0]["params"])
+    assert groups[0]["weight_decay"] == 0.0
+    assert len(decay) == len(groups[1]["params"])
+    assert "decoder.linear_stop_token.0.bias" in no_decay
+    assert "decoder.linear_out.0.weight" in no_decay
+    assert "decoder.pre_net.out.1.weight" in no_decay
+
     # Test `_run_step` with `Metrics` and `_State`
     with set_context(Context.TRAIN, comet, state.model):
         timer = Timer()
@@ -65,15 +72,15 @@ def test_integration():
         assert state.step.item() == 1
 
         is_not_diff = lambda b, v: len(set(b) - set(v.keys())) == 0
-        characters = [c for s in batch.inputs.tokens for c in s]
+        characters = [c for s in batch.processed.tokens for c in s]
         assert is_not_diff(characters, model.token_embed.vocab)
         assert is_not_diff((s.speaker.label for s in batch.spans), model.speaker_embed.vocab)
         assert is_not_diff((s.session for s in batch.spans), model.session_embed.vocab)
 
         # fmt: off
         keys = [
-            metrics.ALIGNMENT_NUM_SKIPS, metrics.ALIGNMENT_STD_SUM, metrics.ALIGNMENT_NORM_SUM,
-            metrics.NUM_REACHED_MAX, metrics.RMS_SUM_PREDICTED, metrics.RMS_SUM
+            metrics.ALIGNMENT_STD_SUM, metrics.ALIGNMENT_NORM_SUM,
+            metrics.NUM_REACHED_MAX, metrics.RMS_SUM_PRED, metrics.RMS_SUM
         ]
         # fmt: on
         for key in keys:
@@ -83,13 +90,13 @@ def test_integration():
 
         max_frames = [[batch.spectrogram.lengths.max().item()]]
         num_frames = [[batch.spectrogram.lengths.sum().item()]]
-        num_tokens = [[sum(len(t) for t in batch.inputs.tokens)]]
+        num_tokens = [[sum(len(t) for t in batch.processed.tokens)]]
         num_seconds = [[sum(s.audio_length for s in batch.spans)]]
         bucket = len(batch.spans[0].script) // metrics.TEXT_LENGTH_BUCKET_SIZE
         values = {
             MetricsKey(metrics.NUM_FRAMES_MAX): max_frames,
-            MetricsKey(metrics.NUM_FRAMES_PREDICTED): num_frames,
-            MetricsKey(metrics.NUM_FRAMES_PREDICTED, JUDY_BIEBER): num_frames,
+            MetricsKey(metrics.NUM_FRAMES_PRED): num_frames,
+            MetricsKey(metrics.NUM_FRAMES_PRED, JUDY_BIEBER): num_frames,
             MetricsKey(metrics.NUM_FRAMES): num_frames,
             MetricsKey(metrics.NUM_FRAMES, JUDY_BIEBER): num_frames,
             MetricsKey(metrics.NUM_SECONDS): num_seconds,
@@ -121,15 +128,6 @@ def test_integration():
 
         metrics.log(lambda l: l[-1:], type_=DatasetType.TRAIN, cadence=Cadence.STEP)
         metrics.log(is_verbose=True, type_=DatasetType.TRAIN, cadence=Cadence.MULTI_STEP)
-
-        _visualize_select_cases(
-            state,
-            DatasetType.TEST,
-            Cadence.MULTI_STEP,
-            cases=[(Language.ENGLISH, "Hi There")],
-            speakers={JUDY_BIEBER, LINDA_JOHNSON},
-            num_cases=1,
-        )
 
     # Test loading and saving a checkpoint
     with mock.patch("torch.nn.parallel.DistributedDataParallel") as module:

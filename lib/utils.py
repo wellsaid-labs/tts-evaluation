@@ -34,7 +34,9 @@ logger = logging.getLogger(__name__)
 
 def round_(x: float, bucket_size: float) -> float:
     """Bin `x` into buckets."""
-    return bucket_size * round(x / bucket_size)
+    # NOTE: Without additional rounding, the results can sometimes be not exact: 1.1500000000000001
+    ndigits = max(str(bucket_size)[::-1].find("."), 0)
+    return round(bucket_size * round(x / bucket_size), ndigits=ndigits)
 
 
 _RandomSampleReturnType = typing.TypeVar("_RandomSampleReturnType")
@@ -45,6 +47,40 @@ def random_sample(
 ) -> typing.List[_RandomSampleReturnType]:
     """Random sample function that doesn't error if `list_` is smaller than `sample_size`."""
     return random.sample(list_, min(len(list_), sample_size))
+
+
+def random_nonoverlapping_intervals(
+    num_bounds: int, avg_intervals: float
+) -> typing.Tuple[typing.Tuple[int, int], ...]:
+    """Generate a random set of non-overlapping intervals.
+
+    NOTE:
+    - This tends to bias toward smaller intervals.
+    - This has no preference for a particular bucket, and samples from the entire sequence equally.
+
+    TODO: This will undershoot `avg_intervals` in total because it does not properly account for
+        times when the `num_cuts` is less than `avg_intervals`.
+
+    Args:
+        num_bounds: The number of interval boundaries to sample from.
+        avg_intervals: The average number of intervals to return.
+
+    Returns: A tuple of non-overlapping intervals that start and end on a boundary. This may
+        return no intervals in some cases.
+    """
+    assert avg_intervals >= 0, "The average intervals must be a non-negative number."
+    assert num_bounds >= 2, "There must be at least a starting and ending boundary."
+    max_cuts = num_bounds - 2
+    num_cuts = random.randint(0, int(max_cuts))
+    max_intervals = num_cuts + 1
+    prob = avg_intervals / max_intervals
+
+    if num_cuts == 0:
+        return ((0, num_bounds - 1),) if random.random() < prob else tuple()
+
+    bounds = list(range(num_bounds))
+    cuts = bounds[:1] + sorted(random.sample(bounds[1:-1], num_cuts)) + bounds[-1:]
+    return tuple([(a, b) for a, b in zip(cuts, cuts[1:]) if random.random() < prob])
 
 
 def mean(list_: typing.Iterable[float]) -> float:
@@ -87,24 +123,18 @@ def get_weighted_std(tensor: torch.Tensor, dim: int = 0, strict: bool = False) -
     """
     if strict:
         # Expects normalized weightes total of 0, 1 to ensure correct variance decisions
-        assert all(
-            math.isclose(value, 1, abs_tol=1e-3) for value in tensor.sum(dim=dim).view(-1).tolist()
-        )
+        values = tensor.sum(dim=dim).view(-1).tolist()
+        assert all(math.isclose(value, 1, abs_tol=1e-3) for value in values)
 
     # Create position matrix where the index is the position and the value is the weight
-    indicies = torch.arange(0, tensor.shape[dim], dtype=tensor.dtype, device=tensor.device)
+    indices = torch.arange(0, tensor.shape[dim], dtype=tensor.dtype, device=tensor.device)
     shape = [1] * len(tensor.shape)
     shape[dim] = tensor.shape[dim]
-    indicies = indicies.view(*shape).expand_as(tensor).float()
+    indices = indices.view(*shape).expand_as(tensor).float()
 
-    weighted_mean = (indicies * tensor).sum(dim=dim) / tensor.sum(dim=dim)
-    weighted_variance = ((indicies - weighted_mean.unsqueeze(dim=dim)) ** 2 * tensor).sum(dim=dim)
-    weighted_standard_deviation = weighted_variance**0.5
-
-    numel = weighted_standard_deviation.numel()
-    assert numel == 0 or not torch.isnan(weighted_standard_deviation.min()), "NaN detected."
-
-    return weighted_standard_deviation
+    weighted_mean = (indices * tensor).sum(dim=dim) / tensor.sum(dim=dim)
+    weighted_var = ((indices - weighted_mean.unsqueeze(dim=dim)) ** 2 * tensor).sum(dim=dim)
+    return weighted_var**0.5
 
 
 # NOTE: Due the issues around recursive typing, we've included a `flatten_2d` and
@@ -255,7 +285,7 @@ def disk_cache(path: pathlib.Path):
 
             return result
 
-        wrapper.clear_cache = lambda: path.unlink() if path.exists() else None
+        wrapper.clear_cache = lambda: path.unlink() if path.exists() else None  # type: ignore
 
         return typing.cast(_CacheReturnDecoratorFunction, wrapper)
 
@@ -341,10 +371,10 @@ class LSTM(torch.nn.LSTM):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         num_directions = 2 if self.bidirectional else 1
-        init_hidden_state = torch.randn(self.num_layers * num_directions, 1, self.hidden_size)
-        self.init_hidden_state = Parameter(init_hidden_state)
-        init_cell_state = torch.randn(self.num_layers * num_directions, 1, self.hidden_size)
-        self.init_cell_state = Parameter(init_cell_state)
+        num_layers = self.num_layers * num_directions
+        out_size = self.hidden_size if self.proj_size == 0 else self.proj_size
+        self.init_hidden_state = Parameter(torch.randn(num_layers, 1, out_size))
+        self.init_cell_state = Parameter(torch.randn(num_layers, 1, self.hidden_size))
 
     def forward(  # type: ignore
         self,
@@ -382,6 +412,37 @@ class LSTMCell(torch.nn.LSTMCell):
                 self.init_cell_state.expand(input.shape[0], -1).contiguous(),
             )
         return super().forward(input, hx=hx)
+
+
+class LockedDropout(torch.nn.Module):
+    """Dropout with an option to dropout a dimension all-together.
+
+    Args:
+        p: Probability of an element in the dropout mask to be zeroed.
+        dims: Dimensions to dropout out all-together.
+    """
+
+    def __init__(self, p: float = 0.5, dims: typing.Optional[typing.List[int]] = None):
+        self.p = p
+        self.dims = dims
+        super().__init__()
+
+    def __call__(self, x: torch.Tensor) -> torch.Tensor:
+        return super().__call__(x)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x (torch.FloatTensor [*]): Input to apply dropout too.
+        """
+        x = x.clone()
+        mask_shape = list(x.shape)
+        if self.dims is not None:
+            for dim in self.dims:
+                mask_shape[dim] = 1
+        mask = x.new_ones(*tuple(mask_shape), requires_grad=False)
+        mask = torch.nn.functional.dropout(mask, self.p, self.training)
+        return x * mask.expand_as(x)
 
 
 _ClampReturnType = typing.TypeVar("_ClampReturnType", float, int)
@@ -658,8 +719,8 @@ class Timeline:
         length = self._intervals[0][start_:].searchsorted(self.dtype(stop), side="right")
         return slice(start_, start_ + length)
 
-    def indicies(self, interval: typing.Union[int, float, slice]) -> typing.Iterable[int]:
-        """Similar to `make_slice` except this returns an `Iterable` of indicies."""
+    def indices(self, interval: typing.Union[int, float, slice]) -> typing.Iterable[int]:
+        """Similar to `make_slice` except this returns an `Iterable` of indices."""
         return range(*self.make_slice(interval).indices(self._intervals.shape[1]))
 
     def __getitem__(self, interval: typing.Union[int, float, slice]) -> npt.NDArray[np.float_]:
@@ -737,3 +798,89 @@ def lengths_to_mask(
     for i, length in enumerate(lengths):
         tokens_mask[i, :length] = True
     return tokens_mask
+
+
+def _is_simple_slice(s: slice):
+    """Check if `s` is "simple" as-in it doesn't have negative indicies or a step size."""
+    return s.step is None and s.start <= s.stop and s.start >= 0 and s.stop >= 0
+
+
+def offset_slices(slices: typing.List[slice], updates: typing.List[typing.Tuple[slice, int]]):
+    """Shift `slices` according to a list of `updates` to the underlying index represented by
+    a previous slice and updated length.
+
+    TODO: This algorithm can be re-written in linear time.
+
+    Args:
+        slices: An initial list of sorted slices.
+        updates: A list of updates to a underlying index expressed by a previous and updated length.
+            For example, an update like `(slice(1, 3), 1)` indicates that an index was
+            removed between 1 and 3.
+
+    Returns: Updates slices with start and stop updated.
+    """
+    assert all(_is_simple_slice(s) for s in slices), "`slices` must use simple slices"
+    assert all(_is_simple_slice(s) for s, _ in updates), "`updates` must use simple slices"
+    assert all(a.start <= b.start for a, b in zip(slices, slices[1:])), "`slices` must be sorted."
+    updates = sorted(updates, key=lambda i: i[0].start, reverse=True)
+    for prev, len_ in updates:
+        offset = len_ - (prev.stop - prev.start)
+        for i in reversed(range(len(slices))):
+            if prev.stop <= slices[i].start:
+                slices[i] = slice(slices[i].start + offset, slices[i].stop + offset)
+            elif prev.start >= slices[i].start and prev.stop <= slices[i].stop:
+                slices[i] = slice(slices[i].start, slices[i].stop + offset)
+            elif prev.stop > slices[i].stop:
+                break
+            else:
+                message = f"`updates` slice `{prev}` overlaps with `slices` `{slices[i]}`"
+                raise ValueError(f"{message}, this is not supported.")
+    return slices
+
+
+def arange(start: float, stop: float, step: float) -> typing.Generator[float, None, None]:
+    """Similar to `range` but with floating values."""
+    val = start
+    # NOTE: This handles rounding errors, so if val is close enough to `stop`, it stops.
+    stop = stop - step / 2
+    while val < stop if step >= 0 else val > stop:
+        yield val
+        val += step
+
+
+_ZipStrictVar = typing.TypeVar("_ZipStrictVar")
+_ZipStrictOtherVar = typing.TypeVar("_ZipStrictOtherVar")
+
+
+def zip_strict(
+    a: typing.Sequence[_ZipStrictVar], b: typing.Sequence[_ZipStrictOtherVar]  # type: ignore
+):
+    """This is an implementation of strict zip that requires iterables to be the same length.
+    NOTE: This implementation of strict zip was borrowed from here:
+    https://stackoverflow.com/questions/32954486/zip-iterators-asserting-for-equal-length-in-python/69485272#69485272
+    TODO: In Python 3.10, we could take advantage of `zip#strict`.
+    """
+    message = f"`zip_strict` requires iterators to be the same size: {len(a)} != {len(b)}"
+    assert len(a) == len(b), message
+    return zip(a, b)  # type: ignore
+
+
+def slice_seq(
+    slices: typing.List[typing.Tuple[slice, float]], length: int, **kwargs
+) -> torch.Tensor:
+    """Create a 1-d `Tensor` representing `slices`.
+
+    Args:
+        slices: A list of sorted non-overlapping simple slices.
+        length: The length of the returned `Tensor`.
+
+    Returns:
+        (torch.FloatTensor [length])
+    """
+    assert all(a.stop <= b.start for (a, _), (b, _) in zip(slices, slices[1:]))
+    assert all(_is_simple_slice(s) and s.stop <= length and s.start >= 0 for s, _ in slices)
+    assert len(slices) == 0 or max(s.stop for s, _ in slices) <= length
+    sequence = torch.zeros(length, **kwargs)
+    for slice_, val in slices:
+        sequence[slice_] = val
+    return sequence

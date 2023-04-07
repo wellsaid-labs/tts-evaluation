@@ -4,7 +4,7 @@ scipy
 
 # NOTE: For optimized `torch` install, visit https://pytorch.org and follow the "Get Started"
 # guide.
-torch==1.11.0
+torch==1.13.1
 
 # Language Library
 git+https://github.com/PetrochukM/PyTorch-NLP
@@ -21,13 +21,13 @@ nltk
 # Audio Library
 librosa==0.8.1
 pyloudnorm
-torchaudio==0.11.0
+torchaudio==0.13.1
 
 # Visualization Library
 matplotlib
-comet-ml[cpu_logging]==3.28.2
+comet-ml
 tabulate
-streamlit==1.14.0
+streamlit
 altair
 git+https://github.com/wellsaid-labs/streamlit-mui-datatable
 streamlit-aggrid
@@ -46,7 +46,7 @@ isort
 
 # Utils
 tqdm # Progress bar
-python-Levenshtein # Sequence alignment
+python-Levenshtein==0.12.2 # Sequence alignment
 pythonic-config # Organize hyperparameters
 pandas
 retry
@@ -54,6 +54,9 @@ typer
 watchdog
 threadpoolctl
 pip-licenses
+lxml
+psutil # For Comet CPU logging
+typeguard==2.13.3 # For `pythonic-config`
 
 # Web
 flask

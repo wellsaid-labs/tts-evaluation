@@ -124,6 +124,11 @@ class AudioMetadata(AudioFormat):
         return sample_to_sec(self.num_samples, self.sample_rate)
 
     @property
+    def len(self):
+        # TODO: Deprecate `length` eventually, it's too verbose and not pythonic.
+        return self.length
+
+    @property
     def format(self):
         return AudioFormat(
             sample_rate=self.sample_rate,
@@ -482,7 +487,9 @@ REFERENCE_SAMPLE_RATE = 48000
 
 
 def full_scale_sine_wave(
-    sample_rate: int = REFERENCE_SAMPLE_RATE, frequency: float = REFERENCE_FREQUENCY
+    sample_rate: int = REFERENCE_SAMPLE_RATE,
+    frequency: float = REFERENCE_FREQUENCY,
+    length: typing.Optional[int] = None,
 ) -> np.ndarray:
     """Full-scale sine wave is used to define the maximum peak level for a dBFS unit.
 
@@ -493,19 +500,21 @@ def full_scale_sine_wave(
     Returns:
         `np.ndarray` of length `sample_rate`
     """
-    x = np.arange(sample_rate, dtype=np.float32)  # type: ignore
+    x = np.arange(sample_rate if length is None else length, dtype=np.float32)  # type: ignore
     return np.sin(2 * np.pi * frequency * (x / sample_rate)).astype(np.float32)  # type: ignore
 
 
 def full_scale_square_wave(
-    sample_rate: int = REFERENCE_SAMPLE_RATE, frequency: float = REFERENCE_FREQUENCY
+    sample_rate: int = REFERENCE_SAMPLE_RATE,
+    frequency: float = REFERENCE_FREQUENCY,
+    length: typing.Optional[int] = None,
 ) -> np.ndarray:
     """Full-scale square wave is also used to define the maximum peak level for a dBFS unit.
 
     Returns:
         `np.ndarray` of length `sample_rate`
     """
-    x = np.arange(sample_rate, dtype=np.float32)  # type: ignore
+    x = np.arange(sample_rate if length is None else length, dtype=np.float32)  # type: ignore
     x = scipy_signal.square(2 * np.pi * frequency * (x / sample_rate))  # type: ignore
     return x.astype(np.float32)  # type: ignore
 
@@ -753,7 +762,7 @@ def power_spectrogram_to_framed_rms(
 
     Learn more:
     - Implementations of RMS:
-      https://librosa.github.io/librosa/_modules/librosa/feature/spectral.html#rms
+      https://librosa.org/doc/main/_modules/librosa/feature/spectral.html#rms
     - Opinionated discussion between LUFS and RMS:
       https://www.gearslutz.com/board/mastering-forum/1142602-lufs-really-better-than-rms-measure-loudness.html
       Also, see `test_loudness` in `test_audio.py` that replicates LUFS via RMS.
@@ -874,8 +883,6 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
         get_weighting: Given a `np.ndarray` of frequencies this returns a weighting in
             decibels. Weighting in an effort to account for the relative loudness perceived by the
             human ear, as the ear is less sensitive to low audio frequencies.
-        eps: The minimum amplitude to `log` avoiding the discontinuity at `log(0)`. This
-            is similar to `min_decibel` but it operates on the amplitude scale.
         **kwargs: Additional arguments passed to `_mel_filters`.
     """
 
@@ -889,18 +896,16 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
         min_decibel: float,
         get_weighting: typing.Callable[[npt.NDArray[np.float_], int], npt.NDArray[np.float_]],
         min_weight: float,
-        eps: float = 1e-10,
         **kwargs,
     ):
         super().__init__()
 
         self.register_buffer("window", window)
-        self.register_buffer("min_decibel", torch.tensor(min_decibel).float())
+        self.min_decibel = min_decibel
         self.fft_length = fft_length
         self.frame_hop = frame_hop
         self.sample_rate = sample_rate
         self.num_mel_bins = num_mel_bins
-        self.eps = eps
         self.get_weighting = get_weighting
 
         mel_basis = _mel_filters(sample_rate, num_mel_bins, fft_length=self.fft_length, **kwargs)
@@ -948,7 +953,6 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
         """
         assert signal.dtype == torch.float32, "Invalid argument."
         assert isinstance(self.window, torch.Tensor)
-        assert isinstance(self.min_decibel, torch.Tensor)
         assert isinstance(self.mel_basis, torch.Tensor)
         assert isinstance(self.weighting, torch.Tensor)
 
@@ -988,6 +992,11 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
             return_complex=False,
         )
 
+        # TODO: Normalize the spectrogram using the `window.sum()`, similar to
+        # `power_spectrogram_to_framed_rms` or `torch.stft#normalize=True`. As mentioned here,
+        # it'd help us get to 0 dbFS:
+        # https://dsp.stackexchange.com/questions/32076/fft-to-spectrum-in-decibel.
+
         if aligned:
             assert spectrogram.shape[-2] * self.frame_hop == signal.shape[1], "Invariant failure."
 
@@ -1006,15 +1015,15 @@ class SignalTodBMelSpectrogram(torch.nn.Module):
         weighted_power_spectrogram = power_spectrogram * self.weighting
         # power_mel_spectrogram [batch_size, num_mel_bins, num_frames]
         power_mel_spectrogram = torch.matmul(self.mel_basis, weighted_power_spectrogram)
-        db_mel_spectrogram = power_to_db(power_mel_spectrogram, eps=self.eps)
-        db_mel_spectrogram = torch.max(self.min_decibel, db_mel_spectrogram).transpose(-2, -1)
+        eps = db_to_power(self.min_decibel)
+        db_mel_spectrogram = power_to_db(power_mel_spectrogram, eps=eps).transpose(-2, -1)
         db_mel_spectrogram = db_mel_spectrogram if has_batch_dim else db_mel_spectrogram.squeeze(0)
 
         if intermediate:
             # TODO: Simplify the `tranpose` and `squeeze`s.
             db_spectrogram = power_to_db(weighted_power_spectrogram).transpose(-2, -1)
-            db_spectrogram = torch.max(self.min_decibel, db_spectrogram)
-            spectrogram = torch.sqrt(torch.clamp(power_spectrogram, min=self.eps)).transpose(-2, -1)
+            db_spectrogram = torch.clamp(db_spectrogram, min=self.min_decibel)
+            spectrogram = torch.sqrt(torch.clamp(power_spectrogram, min=eps)).transpose(-2, -1)
             db_spectrogram = db_spectrogram if has_batch_dim else db_spectrogram.squeeze(0)
             spectrogram = spectrogram if has_batch_dim else spectrogram.squeeze(0)
             return Spectrograms(db_mel_spectrogram, db_spectrogram, spectrogram)
@@ -1169,7 +1178,7 @@ _GroupAudioFramesIterator = typing.Iterator[typing.Tuple[_GroupAudioFramesVar, t
 def group_audio_frames(
     sample_rate: int,
     classifications: typing.Iterable[_GroupAudioFramesVar],
-    indicies: typing.Iterable[typing.List[int]],
+    indices: typing.Iterable[typing.List[int]],
     is_include: typing.Callable[[_GroupAudioFramesVar], bool],
 ) -> typing.List[typing.Tuple[float, float]]:
     """Group audio frames by `classification`.
@@ -1177,10 +1186,10 @@ def group_audio_frames(
     Args:
         ...
         classification: A classification for each frame.
-        indicies: The sample indicies represented in each frame.
+        indices: The sample indices represented in each frame.
         is_include: Callable to determine if to include a class.
     """
-    iterator: _GroupAudioFramesIterator[_GroupAudioFramesVar] = zip(classifications, indicies)
+    iterator: _GroupAudioFramesIterator[_GroupAudioFramesVar] = zip(classifications, indices)
     groups = typing.cast(
         typing.Iterable[typing.Tuple[_GroupAudioFramesVar, _GroupAudioFramesIterator]],
         itertools.groupby(iterator, key=lambda i: i[0]),
@@ -1211,10 +1220,10 @@ def _get_non_speech_segments_helper(
     frame = partial(librosa.util.frame, frame_length=frame_length, hop_length=hop_length, axis=0)
     audio = highpass_filter(audio, low_cut, sample_rate)  # NOTE: Noise reduction
     rms_level_power = signal_to_rms_power(frame(audio), axis=1)
-    min_indicies = np.arange(0, len(audio), hop_length)[: len(rms_level_power)]
-    max_indicies = np.arange(frame_length - 1, len(audio), hop_length)[: len(rms_level_power)]
-    indicies = np.stack([min_indicies, max_indicies], axis=1)
-    return indicies, rms_level_power
+    min_indices = np.arange(0, len(audio), hop_length)[: len(rms_level_power)]
+    max_indices = np.arange(frame_length - 1, len(audio), hop_length)[: len(rms_level_power)]
+    indices = np.stack([min_indices, max_indices], axis=1)
+    return indices, rms_level_power
 
 
 def get_non_speech_segments(
@@ -1238,12 +1247,12 @@ def get_non_speech_segments(
     Returns: This returns an iterable of `audio` slices in seconds representing non-speech segments.
     """
     audio = np.pad(audio, milli_to_sample(frame_length, sample_rate=audio_file.sample_rate))
-    indicies, rms_level_power = _get_non_speech_segments_helper(
+    indices, rms_level_power = _get_non_speech_segments_helper(
         audio, audio_file, low_cut, frame_length, hop_length
     )
     power_threshold = db_to_power(threshold)
     is_not_speech: typing.Callable[[bool], bool] = lambda is_speech: not is_speech
     is_speech: typing.List[bool] = list(rms_level_power > power_threshold)
-    segments = group_audio_frames(audio_file.sample_rate, is_speech, indicies, is_not_speech)
+    segments = group_audio_frames(audio_file.sample_rate, is_speech, indices, is_not_speech)
     offset = lambda a: lib.utils.clamp(a - milli_to_sec(frame_length), 0, audio_file.length)
     return [(offset(a), offset(b)) for a, b in segments]

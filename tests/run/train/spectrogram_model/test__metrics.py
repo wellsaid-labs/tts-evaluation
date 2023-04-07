@@ -7,7 +7,6 @@ import torch
 
 import lib
 import run
-from run._models.spectrogram_model import Preds
 from run.train.spectrogram_model import _data, _metrics
 from tests._utils import TEST_DATA_PATH, assert_almost_equal
 
@@ -43,37 +42,15 @@ def run_around_tests():
     cf.purge()
 
 
-def _make_preds(
-    alignments: torch.Tensor, tokens_mask: torch.Tensor, frames_mask: torch.Tensor
-) -> Preds:
-    """Make `Preds` for computing metrics.
-
-    Args:
-        alignments (torch.FloatTensor [num_frames, batch_size, num_tokens])
-        tokens_mask (torch.BoolTensor [batch_size, num_tokens])
-        frames_mask (torch.BoolTensor [batch_size, num_frames])
-    """
-    return Preds(
-        frames=torch.tensor(0),
-        stop_tokens=torch.tensor(0),
-        alignments=alignments,
-        num_frames=frames_mask.sum(dim=1),
-        frames_mask=frames_mask,
-        num_tokens=tokens_mask.sum(dim=1),
-        tokens_mask=tokens_mask,
-        reached_max=torch.tensor(0),
-    )
-
-
-def test_get_num_skipped():
-    """Test `_metrics.get_num_skipped` counts skipped tokens correctly."""
-    alignments_ = [
-        [[1, 0, 0], [0, 1, 0], [0, 0, 1]],  # Test no skips
-        [[1, 0, 0], [0, 1, 0], [0, 1, 0]],  # Test skipped
-        [[1, 0, 0], [0, 1, 0], [0, 1, 0]],
-        [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+def test_get_hang_time():
+    """Test `_metrics.get_hang_time` counts hang time after a threshold is reached."""
+    stop_token_ = [
+        [0, 0, 1],  # Test no hang frames
+        [0, 1, 0],  # Test one hang frame
+        [0, 0, 0],  # Test no hang frames
+        [0, 1, 0],  # Test masked last frame (no hang frame)
     ]
-    alignments = torch.tensor(alignments_).transpose(0, 1).float()
+    stop_token = torch.tensor(stop_token_).transpose(0, 1).float().logit()
     frames_mask_ = [
         [1, 1, 1],
         [1, 1, 1],
@@ -81,119 +58,15 @@ def test_get_num_skipped():
         [1, 1, 0],  # Test that a masked frame is ignored
     ]
     frames_mask = torch.tensor(frames_mask_).bool()
-    tokens_mask_ = [
-        [1, 1, 1],
-        [1, 1, 1],
-        [1, 1, 0],  # Test that a masked token cannot be skipped
-        [1, 1, 1],
-    ]
-    tokens_mask = torch.tensor(tokens_mask_).bool()
-    num_skips = _metrics.get_num_skipped(_make_preds(alignments, tokens_mask, frames_mask))
-    assert num_skips.tolist() == [0.0, 1.0, 0.0, 1.0]
+    hang_time = _metrics.get_hang_time(stop_token, frames_mask, frames_mask.sum(dim=1), 0.5)
+    assert hang_time.tolist() == [0.0, 1.0, 0.0, 0.0]
 
 
-def test_get_num_skipped__zero_elements():
-    """Test `_metrics.get_num_skipped` handles zero elements correctly."""
-    preds = _make_preds(
-        torch.empty(1024, 0, 1024),
-        torch.empty(0, 1024, dtype=torch.bool),
-        torch.empty(0, 1024, dtype=torch.bool),
-    )
-    assert _metrics.get_num_skipped(preds).shape == (0,)
-
-
-def test_get_num_jumps():
-    """Test `_metrics.get_num_jumps` counts jumps correctly."""
-    alignments_ = [
-        [[1, 0, 0], [0, 1, 0], [0, 0, 1]],  # Test no jumps
-        [[1, 0, 0], [0, 0, 1], [0, 0, 1]],  # Test one jump
-        [[0, 0, 1], [1, 0, 0], [0, 0, 1]],  # Test three jumps, including backwards jumps
-        [[1, 0, 0], [0, 0.25, 0.75], [0, 0.25, 0.75]],  # Test masked token with no jumps
-        [[1, 0, 0], [1, 0, 0], [0, 0, 1]],  # Test masked frame with no jumps
-    ]
-    alignments = torch.tensor(alignments_).transpose(0, 1).float()
-    frames_mask_ = [
-        [1, 1, 1],
-        [1, 1, 1],
-        [1, 1, 1],
-        [1, 1, 1],
-        [1, 1, 0],  # Test that a masked frame is ignored
-    ]
-    frames_mask = torch.tensor(frames_mask_).bool()
-    tokens_mask_ = [
-        [1, 1, 1],
-        [1, 1, 1],
-        [1, 1, 1],
-        [1, 1, 0],  # Test that a masked token cannot be selected
-        [1, 1, 1],
-    ]
-    tokens_mask = torch.tensor(tokens_mask_).bool()
-    num_skips = _metrics.get_num_jumps(_make_preds(alignments, tokens_mask, frames_mask))
-    assert num_skips.tolist() == [0.0, 1.0, 3.0, 0.0, 0.0]
-
-
-def test_get_num_jumps__zero_elements():
-    """Test `_metrics.get_num_jumps` handles zero elements correctly."""
-    preds = _make_preds(
-        torch.empty(1024, 0, 1024),
-        torch.empty(0, 1024, dtype=torch.bool),
-        torch.empty(0, 1024, dtype=torch.bool),
-    )
-    assert _metrics.get_num_jumps(preds).shape == (0,)
-
-
-def test_get_num_small_max():
-    """Test `_metrics.get_num_small_max` counts jumps correctly."""
-    alignments_ = [
-        [[1, 0, 0], [0, 1, 0], [0, 0, 1]],  # Test non small focus
-        [[1, 0, 0], [0, 0.9, 0.1], [0, 0.1, 0.9]],  # Test two small focus
-        [[1, 0, 0], [0, 1, 0], [0, 0, 1]],  # Test masked last token
-        [[1, 0, 0], [0, 0.9, 0.1], [0, 0.1, 0.9]],  # Test masked last frame
-    ]
-    alignments = torch.tensor(alignments_).transpose(0, 1).float()
-    frames_mask_ = [
-        [1, 1, 1],
-        [1, 1, 1],
-        [1, 1, 1],
-        [1, 1, 0],  # Test that a masked frame is ignored
-    ]
-    frames_mask = torch.tensor(frames_mask_).bool()
-    tokens_mask_ = [
-        [1, 1, 1],
-        [1, 1, 1],
-        [1, 1, 0],  # Test that a masked token cannot be selected
-        [1, 1, 1],
-    ]
-    tokens_mask = torch.tensor(tokens_mask_).bool()
-    num_skips = _metrics.get_num_small_max(_make_preds(alignments, tokens_mask, frames_mask), 0.95)
-    assert num_skips.tolist() == [0.0, 2.0, 1.0, 1.0]
-
-
-def test_get_num_repeated():
-    """Test `_metrics.get_num_repeated` counts repeated tokens correctly."""
-    alignments_ = [
-        [[1, 0, 0], [0, 1, 0], [0, 0, 1]],  # Test no repeats
-        [[1, 0, 0], [0, 1, 0], [0, 1, 0]],  # Test one repeated
-        [[1, 0, 0], [0, 0, 1], [0, 0, 1]],  # Test masked last token (no repeats)
-        [[1, 0, 0], [0, 1, 0], [0, 1, 0]],  # Test masked last frame (no repeats)
-    ]
-    alignments = torch.tensor(alignments_).transpose(0, 1).float()
-    frames_mask_ = [
-        [1, 1, 1],
-        [1, 1, 1],
-        [1, 1, 1],
-        [1, 1, 0],  # Test that a masked frame is ignored
-    ]
-    frames_mask = torch.tensor(frames_mask_).bool()
-    tokens_mask_ = [
-        [1, 1, 1],
-        [1, 1, 1],
-        [1, 1, 0],  # Test that a masked token cannot be selected
-        [1, 1, 1],
-    ]
-    tokens_mask = torch.tensor(tokens_mask_).bool()
-    num_skips = _metrics.get_num_repeated(_make_preds(alignments, tokens_mask, frames_mask), 1.0)
-    assert num_skips.tolist() == [0.0, 1.0, 0.0, 0.0]
+def test_get_hang_time__zero_elements():
+    """Test `_metrics.get_hang_time` handles zero elements correctly."""
+    stop_token = torch.empty(0, 0)
+    mask = torch.empty(0, 0, dtype=torch.bool)
+    assert _metrics.get_hang_time(stop_token, mask, torch.empty(0), 0.5).shape == (0,)
 
 
 def _get_db_spectrogram(signal, **kwargs) -> torch.Tensor:

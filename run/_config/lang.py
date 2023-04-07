@@ -1,15 +1,17 @@
 import logging
 import re
+import string
 import typing
 from functools import lru_cache, partial
 
 import config as cf
 import spacy.language
+import unidecode
 from third_party import LazyLoader
 
 import lib
 import run
-from lib.text import grapheme_to_phoneme
+from lib.text import XMLType, grapheme_to_phoneme
 from lib.utils import identity
 from run.data._loader import Language
 
@@ -51,6 +53,8 @@ _NON_ASCII_MARKS: typing.Dict[Language, frozenset] = {
 }
 _NON_ASCII_ALL = {l: _NON_ASCII_CHARS[l].union(_NON_ASCII_MARKS[l]) for l in Language}
 
+RESPELLING_DELIM = "-"
+
 
 def normalize_vo_script(text: str, language: Language) -> str:
     return lib.text.normalize_vo_script(text, _NON_ASCII_ALL[language])
@@ -64,11 +68,11 @@ def is_voiced(text: str, language: Language) -> bool:
     return lib.text.is_voiced(text, _NON_ASCII_CHARS[language])
 
 
-def normalize_and_verbalize_text(text: str, language: Language) -> str:
-    text = normalize_vo_script(text, language)
+def normalize_and_verbalize_text(text: XMLType, language: Language) -> XMLType:
+    text = XMLType(normalize_vo_script(text, language))
+    # TODO: Given that `verbalize_text` is language specific and it's WSL specific, I'd consider
+    # moving it to `run` instead of `lib`.
     if language == Language.ENGLISH:
-        # TODO: Given that `verbalize_text` is language specific and it's WSL specific, I'd consider
-        # moving it to `run` instead of `lib`.
         return lib.text.verbalize_text(text)
     return text
 
@@ -108,10 +112,7 @@ except ImportError:
 
 @lru_cache(maxsize=2**20)
 def _grapheme_to_phoneme(grapheme: str) -> str:
-    """Fast grapheme to phoneme implementation where punctuation is ignored.
-
-    NOTE: Use private `_line_grapheme_to_phoneme` for performance...
-    """
+    """Fast grapheme to phoneme implementation where punctuation is ignored."""
     return grapheme_to_phoneme([grapheme], separator="|")[0]
 
 
@@ -133,13 +134,24 @@ def _remove_letter_casing(a: str) -> str:
     return a.lower()
 
 
+def _get_norm_spoken_chars(text: str, language: Language):
+    """Get the spoken characters in `text` with character normalization."""
+    if language is Language.ENGLISH:
+        return unidecode.unidecode(get_spoken_chars(text, language))
+    return get_spoken_chars(text, language)
+
+
 @lru_cache(maxsize=2**20)
 def _is_sound_alike(a: str, b: str, language: Language) -> bool:
     a = normalize_vo_script(a, language)
     b = normalize_vo_script(b, language)
-    spoken_chars = partial(get_spoken_chars, language=language)
-    sound_out = _SOUND_OUT[language] if language in _SOUND_OUT else identity
-    return any(func(a) == func(b) for func in (_remove_letter_casing, spoken_chars, sound_out))
+    normalizers = (
+        _remove_letter_casing,
+        partial(get_spoken_chars, language=language),
+        partial(_get_norm_spoken_chars, language=language),
+        _SOUND_OUT[language] if language in _SOUND_OUT else identity,
+    )
+    return any(norm(a) == norm(b) for norm in normalizers)
 
 
 def is_sound_alike(a: str, b: str, language: Language) -> bool:
@@ -210,7 +222,20 @@ def get_avg_audio_length(text: str) -> float:
           main model to predict this. We could have a small LSTM. These would be a bit less
           interpretable; however, they might be far more accurate.
     """
-    counts = {p: text.count(p) for p in ["-", "!", ",", ".", '"', " ", "'", "?"]}
+    seconds = [
+        (0.3267, "\n"),
+        (0.3190, ":"),
+        (0.2491, "!"),
+        (0.2118, ","),
+        (0.1892, ";"),
+        (0.1556, "?"),
+        (0.1247, "-"),
+        (0.1118, "."),
+        (0.1041, '"'),
+        (0.0151, " "),
+        (0.0000, "'"),
+    ]
+    counts = {p: text.count(p) for _, p in seconds}
     num_counted_punc = sum(counts.values())
     num_upper = sum(c.isupper() for c in text)
     num_lower = sum(c.islower() for c in text)
@@ -231,45 +256,40 @@ def get_avg_audio_length(text: str) -> float:
     # them with a seconds value. It was developed using this workbook
     # `run/review/dataset_processing/text_audio_length_correlation.py`. It has a r=0.946
     # correlation with audio length.
-    seconds = (
-        (0.2228, "num_initials"),
-        (0.1288, "-"),
-        (0.1112, "!"),
-        (0.0952, ","),
-        (0.0943, "num_upper"),
-        (0.0815, "num_other_punc"),
-        (0.0575, "num_lower"),
-        (0.0487, "."),
-        (0.0372, '"'),
-        (0.0289, " "),
-        (0.0000, "'"),
-        (0.0000, "?"),
-    )
+    seconds = seconds + [
+        (0.3055, "num_initials"),
+        (0.0767, "num_other_punc"),
+        (0.0779, "num_upper"),
+        (0.0623, "num_lower"),
+    ]
     assert len(seconds) == len(counts)
-    # NOTE: Our linear correlation found an intercept of 0.1561 seconds. This likely means that
-    # on average our clips have 70 milliseconds of silent padding on either side. This is about
-    # in-line with our processing which adds 50 milliseconds of padding. See the configuration for
-    # `_make_speech_segments_helper.pad`.
-    return sum(counts[feat] * val for val, feat in seconds) + 0.1561
+    # TODO: Our linear correlation found an intercept of 0.2781 seconds. This likely means that
+    # on average our clips have 139 milliseconds of silent padding on either side. This is larger
+    # than our processing which adds 50 milliseconds of padding. See the configuration for
+    # `_make_speech_segments_helper.pad`. Let's investigate better trimming.
+    return sum(counts[feat] * val for val, feat in seconds) + 0.2781
 
 
 def get_max_audio_length(text: str) -> float:
     """Predict the maximum audio length given `text`.
 
     NOTE: This approach models max audio length based on the slowest speaker and the biggest offset.
-          In this case, the slowest speakers spoke on average 32% slower than the average when
-          analyzing speech segments. They were at most 600 milliseconds off of that pace, at
-          anytime. It was developed using this workbook
+          In this case, the slowest speakers spoke on average 20% slower than the average when
+          analyzing training data spans; however, our slowest speaker could deliver content as much
+          as 60% slower. They were at most 500 milliseconds off of that pace, at anytime. It was
+          developed using this workbook
           `run/review/dataset_processing/text_audio_length_correlation.py`.
-    NOTE: Using speech segments in our data, this ensures that 99.97% of the time, the audio length
-          is smaller than this maximum audio length, after analyzing 30k segments. The cases
-          are buggy because extenuated pauses should not have been included in speech segments.
-    TODO: Measure how well this aligns with spans, not just speech segments, which may include
-          longer pauses. It should scale well because spans are longer, so, it'll tend toward
-          the average much more.
+    NOTE: This ensures that 99.976% of the time, in our training data (excluding non-dev speakers),
+          the audio length is smaller than this maximum audio length, after analyzing 50k segments.
+          The cases are buggy because extenuated pauses should not have been included in spans,
+          see `SpanGenerator.max_pause` in `run._config.audio`.
+    NOTE: We do not use the speakers tempo to determine the maximum audio length because anyone
+          could deliver content at any pace. This effort is to determine the slowest realistic
+          maximum audio length for this content, not for this speaker.
+    TODO: Let's consider filtering out the remaining .024% of spans with this rule.
     """
-    slowest_pace = 1.4
-    max_offset_from_slowest_pace = 0.6
+    slowest_pace = 1.6
+    max_offset_from_slowest_pace = 0.5
     return get_avg_audio_length(text) * slowest_pace + max_offset_from_slowest_pace
 
 
@@ -282,5 +302,14 @@ def configure(overwrite: bool = False):
     config = {
         run._utils._get_debug_datasets: cf.Args(speakers=debug_speakers),
         run._utils.get_unprocessed_dataset: cf.Args(language=LANGUAGE),
+        # TODO: In the future, we may add respelling support based on language, for now,
+        # we only support `ascii_lowercase` characters.
+        run._models.spectrogram_model.inputs.InputsWrapper.check_invariants: cf.Args(
+            valid_respelling_chars=string.ascii_lowercase,
+            respelling_delim=RESPELLING_DELIM,
+        ),
+        run.train.spectrogram_model._data._random_respelling_annotations: cf.Args(
+            delim=RESPELLING_DELIM
+        ),
     }
     cf.add(config, overwrite)

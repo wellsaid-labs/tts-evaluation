@@ -1,12 +1,15 @@
 import copy
+import functools
 import itertools
 import logging
+import math
+import typing
 
 import config as cf
+import numpy as np
 
 import lib
 import run
-from run._models.spectrogram_model.inputs import norm_respellings
 from run.data import _loader
 from run.data._loader import structures as struc
 
@@ -33,16 +36,16 @@ del DATASETS[_loader.portuguese.librivox.RND__LIBRIVOX__FELIPE_PT]
 del DATASETS[_loader.portuguese.librivox.RND__LIBRIVOX__LENI_PT]
 del DATASETS[_loader.portuguese.librivox.RND__LIBRIVOX__MIRAMONTES_PT]
 del DATASETS[_loader.portuguese.librivox.RND__LIBRIVOX__SANDRALUNA_PT]
+# NOTE: The `AVA_M`, `KAI_M`, and `WADE_C` datasets are duplicate datasets.
+# There is an improved version of their datasets already in `DATASETS`.
+del DATASETS[_loader.english.wsl.AVA_M]
+del DATASETS[_loader.english.wsl.KAI_M]
+del DATASETS[_loader.english.wsl.WADE_C]
 
 # TODO: Remove any non-production datasets from `WSL_DATASETS` so we don't evaluate on them.
 DEV_SPEAKERS = _loader.WSL_DATASETS.copy()
 # NOTE: The `MARI_MONGE__PROMO` dataset is too short for evaluation, at 15 minutes long.
 del DEV_SPEAKERS[_loader.english.wsl.MARI_MONGE__PROMO]
-# NOTE: The `AVA_M`, `KAI_M`, and `WADE_C` datasets are duplicate datasets.
-# There is an improved version of their datasets already in `dev_speakers`.
-del DEV_SPEAKERS[_loader.english.wsl.AVA_M]
-del DEV_SPEAKERS[_loader.english.wsl.KAI_M]
-del DEV_SPEAKERS[_loader.english.wsl.WADE_C]
 # NOTE: The `RAMONA_J__CUSTOM` dataset isn't included in the studio.
 del DEV_SPEAKERS[_loader.english.wsl.RAMONA_J__CUSTOM]
 # NOTE: Elizabeth's dataset is low quality & might be fixed or re-recorded. Tobin's did not differ
@@ -71,7 +74,7 @@ DEV_SPEAKERS.add(_loader.english.dictionary.GCP_SPEAKER)
 
 def _include_passage(passage: struc.Passage) -> bool:
     """Return `True` iff `passage` should be included in the dataset."""
-    repr_ = f"{passage.__class__.__name__}({passage.speaker.label}, {passage.session[1]}, "
+    repr_ = f"{passage.__class__.__name__}({passage.speaker.label}, {passage.session.label}, "
     repr_ += f"{(passage.script[:25] + '...') if len(passage.script) > 25 else passage.script})"
 
     if len(passage.alignments) == 0:
@@ -106,16 +109,18 @@ def _include_span(span: struc.Span):
     """Return `True` iff `span` should be included in the dataset.
 
     TODO: The dataset metrics show that 2% of Heather's dataset still has pauses longer than 1s.
-    Can we filter them out in accordance to `too_long_pause_length`?
+          Can we filter them out in accordance to `too_long_pause_length`?
     TODO: How can we filter out all non-standard words that haven't been normalized, yet? We could
-    normalize the script before hand, removing all non-standard words. Afterwards, we can verify
-    with Google STT that it matches the voice over.
+          normalize the script before hand, removing all non-standard words. Afterwards, we can
+          verify with Google STT that it matches the voice over.
     TODO: The character "." is ambiguous. It is sometimes prounced "dot" and sometimes it's silent.
-    There may be some inconsistency between eSpeak and the voice over with regards to ".".
+          There may be some inconsistency between eSpeak and the voice over with regards to ".".
+    TODO: Add a filter using `get_max_audio_length`, it'll help filter out clips with excessive
+          silence. It'll also make sure that clips actually subscribe to this limit.
     """
     script = str(span.spacy_context(**cf.get()))
 
-    if "<" in script or ">" in script:
+    if "<" in script or ">" in script or "&" in script:
         return False
 
     # NOTE: Questions in `NARR` style voices tend to fall flat, largely due to the content
@@ -146,138 +151,84 @@ def _include_span(span: struc.Span):
     return True
 
 
-ENGLISH_TEST_CASES = [
-    # NOTE: These statements have a mix of heteronyms, initialisms, hard words (locations,
-    # medical terms, technical terms), etc for testing pronunciation.
-    "For more updates on covid nineteen, please contact us via the URL at the bottom of the "
-    "screen, or visit our office in Seattle at the address shown here.",
-    "I've listed INTJ on my resume because it's important for me that you understand how I "
-    "conduct myself in stressful situations.",
-    "The website is live and you can access your records via the various APIs slash URLs or use "
-    "the Studio as an alternate avenue.",
-    "The nurses will resume the triage conduct around the oropharyngeal and test for "
-    "tachydysrhythmia to ensure the patient lives another day.",
-    "Access your clusters using the Kubernetes API. You can alternate between the CLI and the "
-    "web interface.",
-    "Live from Seattle, it's AIQTV, with the governor's special address on the coronavirus. Don't "
-    "forget to record this broadcast for viewing later.",
-    "Let's add a row on our assay tracking sheet so we can build out the proper egress "
-    "measurements.",
-    "Hello! Can you put this contractor into a supervisory role?",
-    # NOTE: These test various initialisms
-    "Each line will have GA Type as Payment, Paid Amount along with PAC, and GA Code.",
-    "Properly use and maintain air-line breathing systems and establish a uniform procedure "
-    "for all employees, for both LACC and LCLA contractors, to follow when working jobs that "
-    "require the use of fresh air.",
-    "QCBS is a method of selecting transaction advisors based on both the quality of their "
-    "technical proposals and the costs shown in their financial proposals.",
-    "HSPs account for fifteen to twenty percent of the population.",
-    "We used to have difficulty with AOA and AMA, but now we are A-okay.",
-    "As far as AIs go, ours is pretty great!",
-    # NOTE: These questions each have a different expected inflection.
-    "If you can instantly become an expert in something, what would it be?",
-    "What led to the two of you having a disagreement?",
-    "Why do some words sound funny to us?",
-    "What are your plans for dealing with it?",
-    "There may be times where you have to RDP to a node and manually collect logs for some "
-    "reason. So, another question you may have is, exactly where on disk are all these logs?",
-    "How common are HSPs?",
-    "If you could rid the world of one thing, what would it be?",
-    "What childish things do you still do as an adult?",
-    "If you were to perform in the circus, what would you do?",
-    # NOTE: All these questions should have an upward inflection at the end.
-    "Have you ever hidden a snack so that nobody else would find it and eat it first?",
-    "Can fish see air like we see water?",
-    "Are you a messy person?",
-    "Did you have cats growing up?",
-    "Do you consider yourself an adventurous person?",
-    "Do you have any weird food combos?",
-    "Do you respond to texts fast?",
-    "Have you ever been stalked by an animal that later became your pet?",
-    "If you have made it this far, do you relate to any of these signs? Are you a highly "
-    "sensitive person?",
-    "Have you started, but not found success, with a platform requiring monthly payments?",
-    "When deciding between organic and non-organic coffees, is the price premium worth it?",
-    "Can you make yourself disappear?",
-    "Do mice really eat cheese?",
-    "Do you believe in any conspiracy theories?",
-    "Have elves always lived at the North Pole?",
-    "Have you ever been on the radio?",
-    "Have you ever done something embarrassing in front of the office CCTV cameras?",
-    "In your opinion, are giant spiders worse than giant chickens?",
-    "What is the process for making your favorite dish?",
-    "Would you like to be part of the UK Royal Family?",
-    "Did you ever try DIY projects?",
-    "Can people from NASA catch the flu?",
-    "Do you watch ESPN at night?",
-    "Will AI replace humans?",
-    "Can our AI say AI?",
-    # NOTE: Test cases with a variety of lengths, respellings, and punctuation marks.
-    "WellSaid Labs.",
-    "Livingroom",
-    "Ophthalmologist",
-    "ACLA",
-    "ACLA.",  # NOTE: `ACLA` sometimes gets cut-off, this is a test to see how a period affects it.
-    "NASA",
-    "Why?",
-    'Ready to find out ""more""?',
-    "Thisss isrealy awhsome.",
-    "Topic two:     Is an NRA right for my rate?.",
-    'Internet Assigned Numbers Authority ("""I-eigh n Eigh""")',
-    '"""G-E-ran""" is an abbreviation for GSM EDGE',
-    "epidermolysis bullosa (ep-ih-dur-MOL-uh-sis buhl-LOE-sah) (epi-dermo-lysiss) is a group of",
-    "Harry lay in his dark cupboard much later, wishing he had a watch. He didn't know what time "
-    "it was and he couldn't be sure the Dursleys were asleep yet. Until they were, he couldn't "
-    "risk sneaking to the kitchen for some food. He'd lived with the Dursleys almost ten years, "
-    "ten miserable years, as long as he could remember, ever since he'd been a baby and his "
-    "parents had died in that car crash. He couldn't remember being in the car when his parents "
-    "had died. Sometimes, when he strained his memory during long hours in his cupboard, he came "
-    "up with a strange vision: a blinding flash of green light and a burning pain on his "
-    "forehead. This, he supposed, was the crash, though he couldn't imagine where all the green "
-    "light came from. He couldn't remember his parents at all. His aunt and uncle never spoke "
-    "about them, and of course he was forbidden to ask questions. There were no photographs of "
-    "them in the house. When he had been younger, Harry had dreamed and dreamed of some unknown "
-    "relation coming to take him away, but it had never happened; the Dursleys were his only "
-    "family. Yet sometimes he thought (or maybe hoped) that strangers in the street seemed to "
-    "know him. Very strange strangers they were, too.",
-    # NOTE: Test respellings
-    # TODO: Adjust respellings based on latest conventions.
-    "I see in “Happening at ::se-FOHR-u::” I have two new brands requesting store-led events "
-    "for the same day.",
-    "Welcome to the ::su-LAHR-es:: Injury and Illness Prevention Program Training.",
-    "The ::pur-AY-toh:: principle was named after Italian economist Vilfredo ::pu-RAY-toh::.",
-    "We would like to nominate ::AY-vu:: for her phenomenal recordings.",
-    "To use your self-help AI, please enable the Affirmations feature on the ::KAHN-sohl:: so "
-    "that you can ::kuhn-SOHL:: yourself.",
-    "Too much sand? Tired of cacti? ::dee-ZURT:: the ::DEZ-urt:: now, with caravan adventures!",
-    "If you want to get the good food at the ::bu-FAY::, you have to be willing to "
-    "::BUF-et:: and punch your way to the front of the line.",
-    "Does ::BEE-u-loh-ZHEEK:: ::ru-SHURSH:: really work?",
-    # NOTE: Test v10 regressions
-    # - Difficult acronyms
-    "It took six Ph.Ds to design a VCR a five-year-old could use.",
-    # - "Cape Cod" was repeated
-    "It is ironic that today's least ::PAH-pyuh-lay-tuhd:: town on Cape Cod",
-    # - Short sentences were cut off
-    "Taking sides early - I feel like... I feel like that's a recipe for disaster. It is.",
-    "manager. Egan",
-    "then walked away without taking any questions. Wow,",
-    "Thanks! For..",
-    "using your ears. Why?",
-    "Yes. Are you ready to play? Yeah.",
-    # - This question generated a long silence, after "morning"
-    "Can you tell me more about what happened that morning?",
-    # - This word was pronounced incorrectly
-    "anemone",
-    # - This word caused the model to overflow
-    "::po-lahn-co::",
-    "::fran-SIH-skoh::",
-]
-TEST_CASES = [(struc.Language.ENGLISH, norm_respellings(t)) for t in ENGLISH_TEST_CASES]
+def _include_annotation(annotation: struc.Alignment):
+    """Return `True` iff `annotation` should be included in the dataset."""
+    # TODO: This criteria matches the the above `Span` criteria, and could be fleshed out more.
+    # Generally, we've found that `Alignment`s which are too fast or too short, are error prone.
+    if annotation.audio_len < 0.2:
+        return False
+
+    if annotation.audio_len / annotation.script_len < 0.04:
+        return False
+
+    return True
+
+
+def _get_tempo_annotation(text: str, audio_len: float, bucket_size: float):
+    """Get a tempo annotation in actual length vs expected length.
+
+    Args:
+        ...
+        audio_len: The audio length in seconds.
+        bucket_size: The bucket size for rounding in seconds.
+    """
+    avg = run._config.lang.get_avg_audio_length(text)
+    return lib.utils.round_(avg / audio_len, bucket_size)
+
+
+def _get_loudness_annotation(
+    audio: typing.Union[np.ndarray, typing.List[np.ndarray]],
+    sample_rate: int,
+    block_size: float,
+    precision: int,
+    **kwargs,
+) -> typing.Optional[float]:
+    """Get the loudness in LUFS for `audio`.
+
+    NOTE: `integrated_loudness` filters out quiet sections from the loudness computations.
+    NOTE: The minimum audio length for calculating loudness is the `block_size` which is typically
+          around 400ms.
+    TODO: Let's investigate how well this matches with folks expectations of loudness, the LUFS
+          algorithm isn't built to match perception accross the entire range. LUFS uses
+          K-weighting which was initially built for music/radio.
+
+    Args:
+        ...
+        precision: The number of decimal places to round LUFS.
+
+    Returns: The loudness in LUFS with a range of 0 to -70 LUFS in alignment with ITU-R BS.1770-4.
+        This returns `None` if the loudness cannot be computed.
+    """
+    sec_to_sample_ = functools.partial(lib.audio.sec_to_sample, sample_rate=sample_rate)
+
+    if isinstance(audio, list):
+        # TODO: Test if zero padding affects the loudness computation; whilst this would be
+        # disheartening, it shouldn't have a big impact, either way. Hopefully, the algorithm
+        # is invariant to padding.
+        padding = np.zeros((sec_to_sample_(block_size),))
+        audio = np.concatenate([n for a in audio for n in (a, padding)][:-1])
+
+    meter = lib.audio.get_pyloudnorm_meter(sample_rate, block_size=block_size, **kwargs)
+    if audio.shape[0] >= sec_to_sample_(block_size):
+        loudness = round(float(meter.integrated_loudness(audio)), precision)
+        # NOTE: This algorithm returns negative infinity if the loudness is less than -70 LUFS. We
+        # return -70 LUFS instead to keep the output finite.
+        # NOTE: This number is not parameterized because this specific number is specified in
+        # the LUFS algorithm specification, ITU-R BS.1770-4.
+        # NOTE: The loudness algorithm can sometimes overflow and return strange values that are
+        # significantly outside of the range like in:
+        # https://github.com/csteinmetz1/pyloudnorm/issues/42
+        loudness = -70.0 if math.isinf(loudness) and loudness < 0 else loudness
+        assert loudness >= -70 and loudness <= 0
+        assert isinstance(loudness, float)
+        return loudness
+    return None
 
 
 def configure(overwrite: bool = False):
     """Configure modules that process data, other than audio."""
+    cf.add({_get_tempo_annotation: cf.Args(bucket_size=0.05)}, overwrite)
+
     # TODO: Remove `BETH_CAMERON__CUSTOM` from the `WSL_DATASETS` groups because it has it's own
     # custom script.
     groups = [set(itertools.chain(_loader.WSL_DATASETS.keys(), _loader.RND_DATASETS.keys()))]
@@ -300,8 +251,27 @@ def configure(overwrite: bool = False):
         ),
         run.data._loader.structures.Span.spacy_context: cf.Args(max_words=20),
         run._utils.SpanGenerator: cf.Args(max_seconds=15, include_span=_include_span),
-        run.train._utils.process_select_cases: cf.Args(
-            cases=TEST_CASES, speakers=DEV_SPEAKERS, num_cases=15
+        # NOTE: `min_no_intervals_prob` was set at 10% to ensure the model is exposed to some
+        # data that has no annotations; however, our preference is for the model to train with
+        # more annotations because it should "stabalize" it. As in, the model would not need to
+        # guess as much which creates an easier training environment.
+        # NOTE: We gueestimated that users would have around 3 annotations per clip in Studio.
+        run.train.spectrogram_model._data._random_nonoverlapping_alignments: cf.Args(
+            min_no_intervals_prob=0.1,
+            avg_alignments=3,
+            include_annotation=_include_annotation,
         ),
+        run.data._loader.structures._process_sessions: cf.Args(
+            get_loudness=cf.partial(_get_loudness_annotation),
+            get_tempo=cf.partial(_get_tempo_annotation),
+        ),
+        run.train.spectrogram_model._data._get_tempo_annotation: cf.Args(
+            get_anno=cf.partial(_get_tempo_annotation)
+        ),
+        run.train.spectrogram_model._data._get_loudness_annotation: cf.Args(
+            get_anno=cf.partial(_get_loudness_annotation)
+        ),
+        # NOTE: We expect users to respell approx 5 - 10% of words.
+        run.train.spectrogram_model._data._random_respelling_annotations: cf.Args(prob=0.1),
     }
     cf.add(config, overwrite)

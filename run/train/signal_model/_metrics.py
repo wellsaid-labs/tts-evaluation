@@ -101,7 +101,7 @@ class Metrics(_utils.Metrics[MetricsKey]):
         values, _reduce = self._make_values()
 
         for index, num_samples, num_frames in zip(
-            batch.indicies,
+            batch.indices,
             self._to_list(batch.target_signal.lengths),
             self._to_list(batch.spectrogram.lengths),
         ):
@@ -151,7 +151,7 @@ class Metrics(_utils.Metrics[MetricsKey]):
         values, _reduce = self._make_values()
 
         for index, fake_pred, real_pred, gen_pred, real_loss, fake_loss, gen_loss in zip(
-            batch.indicies,
+            batch.indices,
             self._to_list(torch.sigmoid(fake_logits) > threshold),
             self._to_list(torch.sigmoid(real_logits) > threshold),
             self._to_list(torch.sigmoid(generator_logits) > threshold),
@@ -188,7 +188,7 @@ class Metrics(_utils.Metrics[MetricsKey]):
         """
         values, _reduce = self._make_values()
         for index, l1_loss, mse_loss in zip(
-            batch.indicies,
+            batch.indices,
             self._to_list(l1_losses),
             self._to_list(mse_losses),
         ):

@@ -565,6 +565,14 @@ DIRECTIONS: typing.Final[typing.Dict[str, str]] = {
     "W": "west",
 }
 
+WEB_INITIALISMS: typing.Final[typing.Dict[str, str]] = {
+    "HTTPS": "<respell value='AYCH-tee-tee-pee-EHS'>https</respell>",
+    "HTTP": "<respell value='AYCH-tee-tee-PEE'>http</respell>",
+    "WWW": "<respell value='DUH-buh-yoo-DUH-buh-yoo-DUH-buh-yoo'>www</respell>",
+}
+
+# TODO: Should we consider renaming this to highlight that it also contains initialisms?
+
 ACRONYMS: typing.Final[typing.Dict[str, str]] = {
     **ORGANIZATIONS,
     **EVENTS,
@@ -574,6 +582,7 @@ ACRONYMS: typing.Final[typing.Dict[str, str]] = {
     **STAR_WARS,
     **DIRECTIONS,
     **GENERAL,
+    **WEB_INITIALISMS,
 }
 
 ############
@@ -642,16 +651,3 @@ VERBALIZED_SYMBOLS_VERBALIZED: typing.Final[typing.Dict[str, str]]
 VERBALIZED_SYMBOLS_VERBALIZED = {_norm(k): v for k, v in _VERBALIZED_SYMBOLS_VERBALIZED.items()}
 
 HYPHENS: typing.Tuple[str, ...] = tuple(_norm(t) for t in ("-", "—", "–"))
-
-
-###################
-# INITIALISMS #
-###################
-
-# NOTE: This doesn't depend on the respelling implementation because pronunciation is independent
-# from verbalization. This, similar to users, relies on our data pipeline.
-WEB_INITIALISMS: typing.Final[typing.Dict[str, str]] = {
-    "h t t p s": "::AYCH-tee-tee-pee-EHS::",
-    "h t t p": "::AYCH-tee-tee-PEE::",
-    "w w w": "::DUH-buh-yoo-DUH-buh-yoo-DUH-buh-yoo::",
-}

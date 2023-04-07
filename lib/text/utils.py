@@ -1,5 +1,6 @@
 import enum
 import functools
+import html
 import logging
 import pathlib
 import re
@@ -431,7 +432,6 @@ RESPELLING_ALPHABET: typing.Dict[str, str] = {
 
 
 class ARPAbetStress(enum.Enum):
-
     NONE: typing.Final = "0"
     PRIMARY: typing.Final = "1"
     SECONDARY: typing.Final = "2"
@@ -648,6 +648,9 @@ SPACES_REGEX = re.compile(r"\s+")
 @functools.lru_cache(maxsize=2**20)
 def get_spoken_chars(text: str, punc_regex: re.Pattern) -> str:
     """Remove all unspoken characters from string including spaces, marks, casing, etc.
+
+    NOTE: This is not called `get_voiced_chars` because "un-voiced" and "voiced" characters
+          has a specific linguistic meaning tied to the pronunciation of a character.
 
     Example:
         >>> get_spoken_chars('123 abc !.?')
@@ -869,7 +872,7 @@ def align_tokens(
 
     Returns:
         cost: The cost of alignment.
-        alignment: The alignment consisting of a sequence of indicies.
+        alignment: The alignment consisting of a sequence of indices.
     """
     # For `window_center` to be on a diagonal with an appropriate slope to align both sequences,
     # `tokens` needs to be the longer sequence.
@@ -909,7 +912,7 @@ def align_tokens(
         # a number of considerations to make:
         # 1. The window no longer guarantees that the last window will have completed both
         # sequences.
-        # 2. Smaller indicies in `row_one` have not completed as much of the sequences as larger
+        # 2. Smaller indices in `row_one` have not completed as much of the sequences as larger
         # sequences in `row_one`.
         window_center = min(i, len(other_tokens))
         row_two_window = (
@@ -940,8 +943,9 @@ def align_tokens(
                 token = tokens[i]
                 other_token = other_tokens[j - 1]
                 if token == other_token or allow_substitution(token, other_token):
-                    substition_cost = Levenshtein.distance(token, other_token)  # type: ignore
-                    substition_cost = row_one[j - 1 - row_one_window[0]] + substition_cost
+                    substition_cost = row_one[j - 1 - row_one_window[0]]
+                    assert substition_cost is not None
+                    substition_cost += Levenshtein.distance(token, other_token)  # type: ignore
                     alignment = (j - 1, i) if flipped else (i, j - 1)
                     substition_path = row_one_paths[j - 1 - row_one_window[0]]
                     substition_path = [p + [alignment] for p in substition_path]
@@ -963,3 +967,23 @@ def align_tokens(
         typing.cast(int, row_one[-1]),
         row_one_paths[-1][0],
     )
+
+
+XMLType = typing.NewType("XML", str)
+
+XML_PATTERN = re.compile(r"(<[^>]*>)")
+
+
+def xml_to_text(xml: XMLType) -> str:
+    """Lossy conversion from `xml` to `text` by removing any xml markings."""
+    return html.unescape(re.sub(XML_PATTERN, "", xml))
+
+
+def text_to_xml(text: str) -> XMLType:
+    """Escape any special XML characters and return valid XML."""
+    return XMLType(html.escape(text))
+
+
+def is_stripped(s: str) -> bool:
+    """Check if text is stripped."""
+    return s.strip() == s

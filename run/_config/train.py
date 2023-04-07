@@ -29,36 +29,66 @@ def _get_num_sessions(train_dataset: Dataset) -> int:
     return len(set(psg.session for data in train_dataset.values() for psg in data))
 
 
-def make_spectrogram_model_train_config(
-    train_dataset: Dataset, dev_dataset: Dataset, debug: bool
-) -> cf.Config:
-    """Make additional configuration for spectrogram model training."""
+def _get_spec_model_training_configs(train_dataset: Dataset, dev_dataset: Dataset, debug: bool):
+    """Get configurations for various values like batch size and steps per epoch using the train
+    and dev datasets."""
     ratio = _get_ratio(train_dataset, dev_dataset)
-
-    train_batch_size = 28 if debug else 56
-    batch_size_ratio = 4
+    train_batch_size = 32 if debug else 128
+    batch_size_ratio = 2
     dev_batch_size = train_batch_size * batch_size_ratio
     dev_steps_per_epoch = 1 if debug else 64
-    oversample = 3
+    oversample = 5
     train_steps_per_epoch = int(round(dev_steps_per_epoch * batch_size_ratio * ratio * oversample))
     train_steps_per_epoch = 1 if debug else train_steps_per_epoch
     assert train_batch_size % lib.distributed.get_device_count() == 0
     assert dev_batch_size % lib.distributed.get_device_count() == 0
+    num_sesh = _get_num_sessions(train_dataset)
+    return train_batch_size, dev_batch_size, train_steps_per_epoch, dev_steps_per_epoch, num_sesh
 
+
+def exclude_from_decay(
+    param_name: str, param: torch.nn.parameter.Parameter, module: torch.nn.Module
+) -> bool:
+    """
+    NOTE: Learn more about removing regularization from bias terms or `LayerNorm`:
+    https://stats.stackexchange.com/questions/153605/no-regularisation-term-for-bias-unit-in-neural-network/153650
+    https://github.com/huggingface/transformers/issues/4360
+    https://discuss.pytorch.org/t/weight-decay-in-the-optimizers-is-a-bad-idea-especially-with-batchnorm/16994
+
+    Args:
+        param_name: The parameter name as returned by `torch.nn.Module.named_parameters`.
+        param: The parameter name as returned by `torch.nn.Module.parameters`.
+        module: The parent module for this parameter.
+    """
+    deny_list = (torch.nn.modules.normalization.LayerNorm,)
+    return (
+        ".bias" in param_name
+        or "decoder.linear_out" in param_name
+        or any(isinstance(module, m) for m in deny_list)
+    )
+
+
+def _config_spec_model_training(
+    train_batch_size: int,
+    dev_batch_size: int,
+    train_steps_per_epoch: int,
+    dev_steps_per_epoch: int,
+    num_sesh: int,
+    debug: bool,
+    **kwargs,
+):
+    """Make additional configurations for spectrogram model training."""
     spectrogram_model = run.train.spectrogram_model
-
-    return {
+    config = {
         run.train._utils.set_run_seed: cf.Args(seed=RANDOM_SEED),
-        # NOTE: We expect users to respell approx 5 - 10% of words.
-        spectrogram_model._data.make_batch: cf.Args(respell_prob=0.1),
         spectrogram_model._worker._State._get_optimizers: cf.Args(
             lr_multiplier_schedule=partial(
-                lib.optimizers.warmup_lr_multiplier_schedule, warmup=500
+                lib.optimizers.warmup_lr_multiplier_schedule, warmup=10_000
             ),
             # SOURCE (Tacotron 2):
             # We use the Adam optimizer [29] with β1 = 0.9, β2 = 0.999
             optimizer=torch.optim.AdamW,
-            exclude_from_decay=spectrogram_model._worker.exclude_from_decay,
+            exclude_from_decay=exclude_from_decay,
         ),
         spectrogram_model._worker._run_step: cf.Args(
             # NOTE: This scalar calibrates the loss so that it's scale is similar to Tacotron-2.
@@ -66,7 +96,7 @@ def make_spectrogram_model_train_config(
             # NOTE: This value is the average spectrogram length in the training dataset.
             # NOTE: This value was computed with a reference frame size of 4096, and it scales
             # linearly with frame size.
-            average_spectrogram_length=91.04 * (4096 / FRAME_SIZE),
+            average_spectrogram_length=87.485 * (4096 / FRAME_SIZE),
             # NOTE: This starts to decay the stop token loss as soon as it converges so it doesn't
             # overfit. Also, this ensures that the model doesn't unnecessarily prioritize the stop
             # token loss when it has already converged.
@@ -78,6 +108,14 @@ def make_spectrogram_model_train_config(
                 multiplier=0.001,
             ),
         ),
+        spectrogram_model._worker._get_data_generator: cf.Args(
+            train_get_weight=spectrogram_model._data.train_get_weight,
+            dev_get_weight=spectrogram_model._data.dev_get_weight,
+        ),
+        spectrogram_model._worker._get_data_processors: cf.Args(
+            train_batch_size=train_batch_size,
+            dev_batch_size=dev_batch_size,
+        ),
         spectrogram_model._worker._get_data_loaders: cf.Args(
             # SOURCE: Tacotron 2
             # To train the feature prediction network, we apply the standard maximum-likelihood
@@ -85,21 +123,18 @@ def make_spectrogram_model_train_config(
             # the decoder side, also referred to as teacher-forcing) with a batch size of 64 on a
             # single GPU.
             # NOTE: Batch size parameters set after experimentation on a 2 Px100 GPU.
-            train_batch_size=train_batch_size,
-            dev_batch_size=dev_batch_size,
             train_steps_per_epoch=train_steps_per_epoch,
             dev_steps_per_epoch=int(dev_steps_per_epoch),
-            train_get_weight=spectrogram_model._data.train_get_weight,
-            dev_get_weight=spectrogram_model._data.dev_get_weight,
             num_workers=2,
             prefetch_factor=2 if debug else 10,
         ),
         spectrogram_model._metrics.Metrics._get_model_metrics: cf.Args(
             num_frame_channels=NUM_FRAME_CHANNELS
         ),
-        # NOTE: Based on the alignment visualizations, if the maximum alignment is less than 30%
-        # then a misalignment has likely occured.
-        spectrogram_model._metrics.get_num_small_max: cf.Args(threshold=0.3),
+        # NOTE: This parameter was set via the workbook `run/review/tts/batch_griffin_lim.py`. It
+        # is closely aligned to the number of silent frames at the end of each sequence; however,
+        # it's a bit more robust.
+        spectrogram_model._metrics.get_hang_time: cf.Args(threshold=0.03),
         # SOURCE (Tacotron 2):
         # We use the Adam optimizer with β1 = 0.9, β2 = 0.999, eps = 10−6 learning rate of 10−3
         # We also apply L2 regularization with weight 10−6
@@ -108,20 +143,30 @@ def make_spectrogram_model_train_config(
         # improvement on the loudness and pausing of the model.
         torch.optim.AdamW: cf.Args(
             eps=10**-6,
-            weight_decay=0.01,
-            lr=5e-4,
+            weight_decay=0.1,
+            lr=1e-3,
             amsgrad=False,
             betas=(0.9, 0.999),
         ),
         run._models.spectrogram_model.wrapper.SpectrogramModelWrapper: cf.Args(
-            max_sessions=_get_num_sessions(train_dataset),
+            # NOTE: We add additional space for extra data in the future.
+            max_sessions=num_sesh
+            * 3
         ),
     }
+    cf.add(config, **kwargs)
 
 
-def make_signal_model_train_config(
+def config_spec_model_training_from_datasets(
     train_dataset: Dataset, dev_dataset: Dataset, debug: bool
-) -> cf.Config:
+):
+    configs = _get_spec_model_training_configs(train_dataset, dev_dataset, debug)
+    _config_spec_model_training(*configs, debug)
+
+
+def config_sig_model_training_from_datasets(
+    train_dataset: Dataset, dev_dataset: Dataset, debug: bool, **kwargs
+):
     """Make additional configuration for signal model training."""
     ratio = _get_ratio(train_dataset, dev_dataset)
 
@@ -155,7 +200,7 @@ def make_signal_model_train_config(
     signal_model = run.train.signal_model
     _State, _worker = signal_model._worker._State, signal_model._worker
 
-    return {
+    config = {
         run.train._utils.set_run_seed: cf.Args(seed=RANDOM_SEED),
         signal_model._worker._get_data_loaders: cf.Args(
             # SOURCE (Tacotron 2):
@@ -204,3 +249,4 @@ def make_signal_model_train_config(
             max_sessions=_get_num_sessions(train_dataset),
         ),
     }
+    cf.add(config, **kwargs)

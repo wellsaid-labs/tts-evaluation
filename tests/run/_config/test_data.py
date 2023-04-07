@@ -1,6 +1,7 @@
 import config as cf
 import pytest
 
+from run._config.audio import configure as configure_audio
 from run._config.data import _include_passage, _include_span, configure
 from run.data import _loader
 from run.data._loader import structures as struc
@@ -9,6 +10,7 @@ from tests.run._utils import make_alignments_1d, make_alignments_2d, make_passag
 
 @pytest.fixture(autouse=True)
 def run_around_test():
+    configure_audio()
     configure()
     yield
     cf.purge()

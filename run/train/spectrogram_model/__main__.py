@@ -7,8 +7,8 @@ import config as cf
 
 from run._config import (
     SPECTROGRAM_MODEL_EXPERIMENTS_PATH,
+    config_spec_model_training_from_datasets,
     get_config_label,
-    make_spectrogram_model_train_config,
 )
 from run._utils import Dataset
 from run.train._utils import CometMLExperiment, resume_experiment, run_workers, start_experiment
@@ -52,11 +52,16 @@ def _run_app(
     TODO: Should we consider setting OMP num threads similarly:
     https://github.com/pytorch/pytorch/issues/22260
     """
-    cf.add(make_spectrogram_model_train_config(train_dataset, dev_dataset, debug))
+    config_spec_model_training_from_datasets(train_dataset, dev_dataset, debug)
     cf.add(cli_config)
     comet.log_parameters({get_config_label(k): v for k, v in cf.log(lambda x: x).items()})
     return run_workers(
-        _worker.run_worker, comet, checkpoint, checkpoints_directory, train_dataset, dev_dataset
+        _worker.run_worker,  # type: ignore
+        comet,
+        checkpoint,
+        checkpoints_directory,
+        train_dataset,
+        dev_dataset,
     )
 
 

@@ -1,6 +1,4 @@
-import collections
 import math
-import typing
 
 import config as cf
 import librosa
@@ -12,9 +10,12 @@ from torchnlp.encoders.text import SequenceBatch
 
 import lib
 import run
+from run._config.data import _get_loudness_annotation
+from run._models.spectrogram_model import SliceAnnos, TokenAnnos
 from run.data._loader import Alignment
 from run.train.spectrogram_model import _data
-from tests._utils import assert_almost_equal, assert_uniform_distribution
+from tests._utils import assert_almost_equal
+from tests.run._utils import make_passage
 
 
 @pytest.fixture(autouse=True, scope="module")
@@ -26,37 +27,39 @@ def run_around_tests():
 
 
 def test__random_nonoverlapping_alignments():
-    """Test `_data._random_nonoverlapping_alignments` samples uniformly given a uniform
-    distribution of alignments."""
+    """Test `_data._random_nonoverlapping_alignments` on a basic case."""
+    with torchnlp.random.fork_rng(123):
+        make = lambda a, b: Alignment((a, b), (a, b), (a, b))
+        alignments = Alignment.stow([make(0, 1), make(1, 2), make(2, 3), make(3, 4), make(4, 5)])
+        intervals = _data._random_nonoverlapping_alignments(alignments, 2, 0)
+        assert intervals == (
+            Alignment(script=(0, 4), audio=(0.0, 4.0), transcript=(0, 4)),
+            Alignment(script=(4, 5), audio=(4.0, 5.0), transcript=(4, 5)),
+        )
+
+
+def test__random_nonoverlapping_alignments__no_intervals():
+    """Test `_data._random_nonoverlapping_alignments` returns no intervals consistently if
+    `min_no_intervals_prob` is 100%."""
     make = lambda a, b: Alignment((a, b), (a, b), (a, b))
     alignments = Alignment.stow([make(0, 1), make(1, 2), make(2, 3), make(3, 4), make(4, 5)])
-    counter: typing.Counter[int] = collections.Counter()
-    for i in range(100000):
-        for sample in _data._random_nonoverlapping_alignments(alignments, 3):
-            for i in range(sample.script[0], sample.script[1]):
-                counter[i] += 1
-    assert set(counter.keys()) == set(range(0, 5))
-    assert_uniform_distribution(counter, abs=0.02)
+    for _ in range(10):
+        intervals = _data._random_nonoverlapping_alignments(alignments, 3, 1)
+        assert len(intervals) == 0
 
 
-def test__random_nonoverlapping_alignments__empty():
-    """Test `_data._random_nonoverlapping_alignments` handles empty list."""
-    input_ = Alignment.stow([])
-    assert _data._random_nonoverlapping_alignments(input_, 3) == tuple()
-
-
-def test__random_nonoverlapping_alignments__large_max():
-    """Test `_data._random_nonoverlapping_alignments` handles a large maximum."""
+def test__random_nonoverlapping_alignments__overlapping():
+    """Test `_data._random_nonoverlapping_alignments` returns no intervals consistently if all
+    the alignments are overlapping."""
     make = lambda a, b: Alignment((a, b), (a, b), (a, b))
-    with torchnlp.random.fork_rng(1234):
-        alignments = Alignment.stow(
-            [make(0, 1), make(1, 2), make(2, 3), make(3, 4), make(4, 5)],
-        )
-        assert len(_data._random_nonoverlapping_alignments(alignments, 1000000)) == 6
+    alignments = Alignment.stow([make(0, 0), make(0, 0), make(0, 0), make(0, 0), make(0, 0)])
+    for _ in range(10):
+        intervals = _data._random_nonoverlapping_alignments(alignments, 3, 0)
+        assert len(intervals) == 0
 
 
 def test__get_loudness():
-    """Test `_data._get_loudnes` slices, measures, and rounds loudness correctly."""
+    """Test `_data._get_loudness` slices, measures, and rounds loudness correctly."""
     sample_rate = 1000
     length = 10
     implementation = "K-weighting"
@@ -65,20 +68,143 @@ def test__get_loudness():
     meter = lib.audio.get_pyloudnorm_meter(
         sample_rate=sample_rate, filter_class=implementation, block_size=block_size
     )
-    with torchnlp.random.fork_rng(12345):
-        audio = np.random.rand(sample_rate * length) * 2 - 1  # type: ignore
+    with torchnlp.random.fork_rng(1234):
+        audio = np.random.rand(sample_rate * length) * 2 - 1
         alignment = Alignment((0, length), (0, length), (0, length))
-        loundess = _data._get_loudness(
+        loudness = _data._get_loudness_annotation(
             audio=audio,
             alignment=alignment,
             block_size=block_size,
             precision=precision,
             sample_rate=sample_rate,
             filter_class=implementation,
+            get_anno=_get_loudness_annotation,
         )
-        assert loundess is not None
-        assert math.isfinite(loundess)
-        assert round(meter.integrated_loudness(audio), precision) == loundess
+        assert loudness is not None
+        assert math.isfinite(loudness)
+        assert round(meter.integrated_loudness(audio), precision) == loudness
+
+
+def test__get_loudness__short_audio():
+    """Test `_data._get_loudness` handles short audio."""
+    sample_rate = 1000
+    block_size = 0.4
+    length = block_size - 0.1
+    with torchnlp.random.fork_rng(12345):
+        audio = np.random.rand(int(sample_rate * length)) * 2 - 1
+        alignment = Alignment((0, 1), (0, length), (0, 1))
+        loudness = _data._get_loudness_annotation(
+            audio=audio,
+            alignment=alignment,
+            block_size=block_size,
+            precision=5,
+            sample_rate=sample_rate,
+            filter_class="DeMan",
+            get_anno=_get_loudness_annotation,
+        )
+        assert loudness is None
+
+
+def test__get_loudness__quiet_audio():
+    """Test `_data._get_loudness` handles quiet audio that is less than -70 LUFS."""
+    sample_rate = 1000
+    block_size = 0.4
+    audio = lib.audio.full_scale_sine_wave(sample_rate) / 10000
+    alignment = Alignment((0, 1), (0, block_size), (0, 1))
+    loudness = _data._get_loudness_annotation(
+        audio=audio,
+        alignment=alignment,
+        block_size=block_size,
+        precision=5,
+        sample_rate=sample_rate,
+        filter_class="DeMan",
+        get_anno=_get_loudness_annotation,
+    )
+    assert loudness == -70
+
+
+def test__get_loudness__quieter_audio():
+    """Test `_data._get_loudness` handles quiet audio that is less than -70 LUFS.
+
+    NOTE: This tends to overflow, like described in:
+    https://github.com/csteinmetz1/pyloudnorm/issues/42
+    """
+    sample_rate = 1000
+    block_size = 0.4
+    audio = lib.audio.full_scale_sine_wave(sample_rate) / 100000
+    alignment = Alignment((0, 1), (0, block_size), (0, 1))
+    with pytest.raises(AssertionError):
+        _data._get_loudness_annotation(
+            audio=audio,
+            alignment=alignment,
+            block_size=block_size,
+            precision=5,
+            sample_rate=sample_rate,
+            filter_class="DeMan",
+            get_anno=_get_loudness_annotation,
+        )
+
+
+def test__random_loudness_annotations():
+    """Test `_data._random_loudness_annotations` on a basic case."""
+    with torchnlp.random.fork_rng(123456):
+        span = make_passage(script="This is a test.")[:]
+        length = int(span.audio_file.sample_rate * span.alignments[-1].audio[-1])
+        signal = lib.audio.full_scale_sine_wave(span.audio_file.sample_rate, 20, length)
+        out = _data._random_loudness_annotations(span, signal, precision=0)
+        # NOTE: These loudness values are irregular because the sample rate is so small.
+        expected: SliceAnnos = [
+            (slice(0, 4), -49),
+            (slice(4, 5), -49),
+            (slice(5, 7), -49),
+            (slice(8, 9), -49),
+            (slice(9, 10), -49),
+        ]
+        assert expected == out
+
+
+def test__random_tempo_annotations():
+    """Test `_data._random_tempo_annotations` on a basic case."""
+    with torchnlp.random.fork_rng(123456):
+        span = make_passage(script="This is a test.")[:]
+        get_tempo_anno = lambda t, *_, **__: len(t)
+        out = _data._random_tempo_annotations(span, get_anno=get_tempo_anno)
+        expected: SliceAnnos = [
+            (slice(0, 4), 4),
+            (slice(4, 5), 1),
+            (slice(5, 7), 2),
+            (slice(8, 9), 1),
+            (slice(9, 10), 1),
+        ]
+        assert expected == out
+
+
+def test__random_respelling_annotations():
+    """Test `_random_respelling_annotations` on a basic case."""
+    with torchnlp.random.fork_rng(123456):
+        span = make_passage(script="Don't People from EDGE catch-the-flu?")[:]
+        annotations = _data._random_respelling_annotations(span, prob=1.0, delim="-")
+        expected: TokenAnnos = {
+            span.spacy[2]: "PEE-puhl",
+            span.spacy[5]: "KACH",
+            span.spacy[9]: "FLOO",
+        }
+        assert annotations == expected
+
+
+def test__random_respelling_annotations__prob_zero():
+    """Test `_random_respelling_annotations` respects `prob`."""
+    span = make_passage(script="Don't People from EDGE catch-the-flu?")[:]
+    annotations = _data._random_respelling_annotations(span, prob=0, delim="-")
+    assert annotations == {}
+
+
+def test__random_respelling_annotations__appostrophe():
+    """Test `_random_respelling_annotations` does not annotate a apostrophed word."""
+    with torchnlp.random.fork_rng(123456):
+        span = make_passage(script="Catch Catch's")[:]
+        annotations = _data._random_respelling_annotations(span, prob=1.0, delim="-")
+        assert annotations == {span.spacy[0]: "KACH"}
 
 
 def test__signals_to_spectrograms():

@@ -114,8 +114,8 @@ class Batch(_utils.Batch):
 
     preds: Preds
 
-    # `batch` `indicies` used to generate this batch of slices.
-    indicies: typing.List[int]
+    # `batch` `indices` used to generate this batch of slices.
+    indices: typing.List[int]
 
     # SequenceBatch[torch.FloatTensor [batch_size, num_frames, frame_channels],
     #               torch.LongTensor [batch_size])
@@ -135,7 +135,7 @@ class Batch(_utils.Batch):
     session: typing.List[Session]
 
     def __len__(self):
-        return len(self.indicies)
+        return len(self.indices)
 
 
 class DataProcessor(torch.utils.data.IterableDataset):
@@ -180,7 +180,7 @@ class DataProcessor(torch.utils.data.IterableDataset):
         """Sample slices from a batch of predicted spectrograms."""
         batch = spectrogram_model_module._data.make_batch(spans)
         preds = self.spectrogram_model(
-            inputs=batch.inputs,
+            inputs=batch.processed,
             target_frames=batch.spectrogram.tensor,
             target_mask=batch.spectrogram_mask.tensor,
             mode=run._models.spectrogram_model.Mode.FORWARD,
@@ -190,17 +190,17 @@ class DataProcessor(torch.utils.data.IterableDataset):
         num_batches = int(math.floor(num_frames / self.slice_size / self.batch_size))
         get_spectrogram = lambda i: preds.frames[: batch.spectrogram.lengths[:, i], i]
         for _ in range(num_batches):
-            indicies = torch.multinomial(weights, self.batch_size, replacement=True).tolist()
-            slices = [self._slice(get_spectrogram(i), batch.audio[i]) for i in indicies]
+            indices = torch.multinomial(weights, self.batch_size, replacement=True).tolist()
+            slices = [self._slice(get_spectrogram(i), batch.audio[i]) for i in indices]
             yield Batch(
                 batch=batch,
                 preds=preds,
-                indicies=indicies,
+                indices=indices,
                 spectrogram=self._stack([s.spectrogram for s in slices]),
                 spectrogram_mask=self._stack([s.spectrogram_mask for s in slices]),
                 target_signal=self._stack([s.target_signal for s in slices]),
                 signal_mask=self._stack([s.signal_mask for s in slices]),
-                session=[batch.spans[i].session for i in indicies],
+                session=[batch.spans[i].session for i in indices],
             )
 
     def __iter__(self) -> typing.Iterator[Batch]:
