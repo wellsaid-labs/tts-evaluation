@@ -394,19 +394,24 @@ def test_preprocess__respelling():
     """Test that `preprocess` handles apostrophes, dashes, initialisms and existing respellings."""
     nlp = load_spacy_nlp(Language.ENGLISH)
     xml = XMLType(
-        "n't <respell value='PEE-puhl'>people</respell> from EDGE "
-        "<respell value='KACH'>catch</respell>-the-<respell value='FLOO'>flu</respell>"
+        "<respell value='doh-NT'>don't</respell> <respell value='PEE-puhl'>people</respell> from "
+        "EDGE <respell value='KACH'>catch</respell>-the-<respell value='FLOO'>flu</respell>"
     )
-    script = "Don't people from EDGE catch-the-flu?"
+    script = "Why don't people from EDGE catch-the-flu?"
     doc = nlp(script)
     inp = InputsWrapper.from_xml(xml, doc[1:-1], make_session(), doc)
     processed = preprocess(inp, lambda t: len(t), identity, identity, identity, identity)
     casing = [
-        (Pronun.NORMAL, Casing.UPPER),  # D
-        (Pronun.NORMAL, Casing.LOWER),  # o
-        (Pronun.NORMAL, Casing.LOWER),  # n
-        (Pronun.NORMAL, Casing.NO_CASING),  # '
-        (Pronun.NORMAL, Casing.LOWER),  # t
+        (Pronun.NORMAL, Casing.UPPER),  # W
+        (Pronun.NORMAL, Casing.LOWER),  # h
+        (Pronun.NORMAL, Casing.LOWER),  # y
+        (Pronun.NORMAL, Casing.NO_CASING),  #
+        (Pronun.RESPELLING, Casing.LOWER),  # d
+        (Pronun.RESPELLING, Casing.LOWER),  # o
+        (Pronun.RESPELLING, Casing.LOWER),  # h
+        (Pronun.RESPELLING, Casing.NO_CASING),  # -
+        (Pronun.RESPELLING, Casing.UPPER),  # N
+        (Pronun.RESPELLING, Casing.UPPER),  # T
         (Pronun.NORMAL, Casing.NO_CASING),
         (Pronun.RESPELLING, Casing.UPPER),  # P
         (Pronun.RESPELLING, Casing.UPPER),  # E
@@ -443,11 +448,16 @@ def test_preprocess__respelling():
         (Pronun.NORMAL, Casing.NO_CASING),  # ?
     ]
     context = [
-        Context.CONTEXT,  # D
-        Context.CONTEXT,  # o
-        Context.SCRIPT_START,  # n
-        Context.SCRIPT,  # '
-        Context.SCRIPT,  # t
+        Context.CONTEXT,  # W
+        Context.CONTEXT,  # h
+        Context.CONTEXT,  # y
+        Context.CONTEXT,  #
+        Context.SCRIPT_START,  # d
+        Context.SCRIPT,  # o
+        Context.SCRIPT,  # h
+        Context.SCRIPT,  # -
+        Context.SCRIPT,  # N
+        Context.SCRIPT,  # T
         Context.SCRIPT,
         Context.SCRIPT,  # P
         Context.SCRIPT,  # E
@@ -486,7 +496,7 @@ def test_preprocess__respelling():
     assert processed.token_meta[0] == [casing, context]
 
     # NOTE: Double check that respellings were replaced.
-    tokens = "n't pee-puhl from edge kach-the-floo"
+    tokens = "doh-nt pee-puhl from edge kach-the-floo"
     assert "".join(processed.tokens[0][processed.slices[0]]) == tokens  # type: ignore
 
     # NOTE: Double check respellings have the correct word vectors.
@@ -496,8 +506,15 @@ def test_preprocess__respelling():
         assert_almost_equal(word_vectors[idx][-expected.shape[0] :], expected)
 
     # NOTE: Double check regular words have not been affected.
-    expected = torch.from_numpy(nlp.vocab["n't"].vector)
-    for idx in range(len("Do"), len("Don't")):
+    expected = torch.from_numpy(nlp.vocab["from"].vector)
+    for idx in range(len("why doh-NT pee-puhl "), len("why doh-NT pee-puhl from")):
+        assert_almost_equal(word_vectors[idx][-expected.shape[0] :], expected)
+
+    # TODO: `from_xml` modifies the underlying `doc` object in instances like this. It shouldn't
+    # do that...
+    assert doc[1].tensor is not None and sum(doc[1].tensor) != 0
+    expected = torch.from_numpy(doc[1].vector)
+    for idx in range(len("why "), len("why doh-NT")):
         assert_almost_equal(word_vectors[idx][-expected.shape[0] :], expected)
 
 

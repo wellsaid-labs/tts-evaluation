@@ -534,6 +534,8 @@ class InputsWrapper:
         if span.text != span[:].text.strip():
             raise PublicValueError("The text must be stripped of white spaces.")
 
+        span = span if isinstance(span, spacy.tokens.span.Span) else span[:]
+
         # TODO: Make sure that annotations within annotations are not accepted. The model isn't
         # trained with that in mind. We don't allow overlapping annotations, either. It'd be
         # another extreneous level of complexity to explain to customers.
@@ -570,11 +572,28 @@ class InputsWrapper:
         assert text == span.text, "The `Span` must have the same text as the XML."
         assert session is not None
 
+        # NOTE: To help handle cases like "don't" which spaCy considers two tokens, we merge
+        # multiple tokens into one, so that the client can still respell those words.
+        # TODO: This work-around is not used during training, and should be avoided during
+        # inference. It will not provide good results because multiple tokens are getting merged
+        # together.
+        # TODO: This is modifying the document which was passed to this function, it shouldn't
+        # modify the clients object.
+        offset = 0
+        for slice_, value in annotations[_Schema.RESPELL]:
+            token = span.char_span(*tuple(slice_))
+            if len(token) > 1:
+                logger.warning(f"Merging '{token.text}' into one token, for compatibility.")
+                with span.doc.retokenize() as retokenizer:
+                    retokenizer.merge(token)
+                    offset += len(token) - 1
+        span = span.doc[span.start : span.end - offset]
+
         respells = {}
         for slice_, value in annotations[_Schema.RESPELL]:
             token = span.char_span(*tuple(slice_))
             if token is None or len(token) != 1:
-                raise PublicValueError("Respelling must wrap a single word.")
+                raise PublicValueError("Respelling must wrap some text.")
             respells[token[0]] = value
 
         slice_annos: typing.Dict[_Schema, SliceAnnos] = {}
