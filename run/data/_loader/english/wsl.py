@@ -42,6 +42,8 @@ KAI_M__MANUAL_POST = narr(
     post=True,
 )
 JOE_F__NARRATION = narr("joe_f", "Joe F (Narration)", "john_hunerlach__narration")
+# Previously miscategorized as promo
+CHASE_J = narr("chase_j", "Chase J (Narration)", "christopher_daniels__promo")
 TRISTAN_F = narr("tristan_f", "Tristan F", "mark_atherlay")
 NICOLE_L = narr("nicole_l", "Nicole L", "megan_sinclair")
 WADE_C = narr("wade_c", "Wade C", "sam_scholl")
@@ -65,7 +67,6 @@ JARVIS_H = narr("jarvis_h", "Alexander Hill Knight (en_GB)", "alexander_hill_kni
 JODI_P = narr("jodi_p", "Jodi P", "dana_hurley")
 OWEN_C = narr("owen_c", "Owen C", "marc_white")
 THEO_K = narr("theo_k", "Theo K (en_AU)", "piotr_kohnke", Dia.EN_AU)
-ZACH_E = narr("zach_e", "Zach E", "seth_jones")
 GENEVIEVE_M = narr("genevieve_m", "Genevieve M", "sophie_reppert")
 # TODO: Update `en_GB` to `en_UK` for consistency.
 # Cleaned 04/2023:
@@ -131,13 +132,14 @@ promo = partial(make, style=struc.Style.PROMO)
 SOFIA_H__PROMO = promo(SOFIA_H.label, "Sofia H (Promo V2)", "sofia_h__promo__v2")
 # Cleaned 04/2023:
 AVA_M__PROMO = promo(AVA_M.label, "Ava M (Promo, V2)", "ava_m__promo__v2")
+# Previously miscategorized as narration
+ZACH_E__PROMO = promo("zach_e", "Zach E", "seth_jones")
 ERIC_S__EN_IE__PROMO = promo(
     "eric_s__en_ie",
     "Eric S (Promo, Ireland)",
     "brian_diamond__en_ie__promo",
     Dia.EN_IE,
 )
-CHASE_J__PROMO = promo("chase_j", "Chase J (Promo)", "christopher_daniels__promo")
 # Cleaned 04/2023:
 DAMIAN_P__PROMO = promo("damian_p", "Damian P (Promo, V2)", "damian_p__promo__en_ca__v2", Dia.EN_CA)
 JODI_P__PROMO = promo(JODI_P.label, "Jodi P (Promo)", "dana_hurley__promo")
