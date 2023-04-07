@@ -39,9 +39,9 @@ def _assert_rename(name: str, renamed: str, **kwargs):
 
 
 @contextlib.contextmanager
-def _mock_directory() -> typing.Iterator[
-    typing.Tuple[Path, Path, Path, typing.List[Path], typing.List[Path]]
-]:
+def _mock_directory() -> (
+    typing.Iterator[typing.Tuple[Path, Path, Path, typing.List[Path], typing.List[Path]]]
+):
     """Create a temporary directory with empty files for testing."""
     with tempfile.TemporaryDirectory() as directory_:
         directory = Path(directory_)
