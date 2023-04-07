@@ -43,7 +43,7 @@ def configure(overwrite: bool = False):
         run._models.spectrogram_model.attention.Attention: cf.Args(
             # SOURCE (Tacotron 2):
             # Location features are computed using 32 1-D convolution filters of length 31.
-            conv_filter_size=9,
+            conv_filter_size=17,
             # NOTE: The alignment between text and speech is monotonic; therefore, the attention
             # progression should reflect that. The `window_len` ensures the progression is
             # limited.
@@ -131,6 +131,5 @@ def configure(overwrite: bool = False):
         # NOTE: BERT uses `eps=1e-12` for `LayerNorm`, see here:
         # https://github.com/huggingface/transformers/blob/master/src/transformers/configuration_bert.py
         torch.nn.LayerNorm: cf.Args(eps=1e-12),
-        torch.nn.GELU: cf.Args(approximate="tanh"),
     }
     cf.add(config, overwrite)

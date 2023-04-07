@@ -123,16 +123,13 @@ class Decoder(torch.nn.Module):
         self.attn_rnn = _AttentionRNN(hidden_size, hidden_size, attn_size)
         self.linear_stop_token = torch.nn.Sequential(
             torch.nn.Linear(hidden_size + attn_size, hidden_size),
-            cf.partial(torch.nn.GELU)(),
+            torch.nn.Mish(),
             cf.partial(torch.nn.LayerNorm)(hidden_size),
             torch.nn.Linear(hidden_size, 1),
         )
         self.lstm_out = LSTM(hidden_size + attn_size, hidden_size)
-        self.linear_out = torch.nn.Sequential(
-            torch.nn.Linear(hidden_size, hidden_size),
-            cf.partial(torch.nn.GELU)(),
-            torch.nn.Linear(hidden_size, num_frame_channels),
-        )
+        self.proj_out = torch.nn.Linear(hidden_size, hidden_size * 2)
+        self.linear_out = torch.nn.Linear(hidden_size, num_frame_channels)
 
         # NOTE: The `Encoded` tokens should be padded by `encoded_pad_len = atten_window_len // 2`
         # so the attention window can start centered on the first token.
@@ -153,7 +150,7 @@ class Decoder(torch.nn.Module):
         self.init_state_parts += [attn_size] * 5
         self.init_state = torch.nn.Sequential(
             torch.nn.Linear(attn_size * 4, attn_size),
-            cf.partial(torch.nn.GELU)(),
+            torch.nn.Mish(),
             torch.nn.Linear(attn_size, sum(self.init_state_parts)),
         )
 
@@ -309,7 +306,9 @@ class Decoder(torch.nn.Module):
         frames = (pre_net_frames + lstm_out) / math.sqrt(2)
 
         # [num_frames, batch_size, hidden_size] → [*, num_frame_channels]
-        frames = self.linear_out(frames)
+        frames = self.proj_out(frames)
+        val, gate = frames.chunk(2, dim=2)
+        frames = self.linear_out(torch.nn.functional.mish(gate) * val)
 
         hidden_state = DecoderHiddenState(
             last_frame=frames[-1].unsqueeze(0),
