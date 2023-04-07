@@ -23,13 +23,11 @@ logger = logging.getLogger(__name__)
 
 
 class Pronun(enum.Enum):
-
     NORMAL: typing.Final = "normal"
     RESPELLING: typing.Final = "respelling"
 
 
 class Casing(enum.Enum):
-
     LOWER: typing.Final = "lower"
     UPPER: typing.Final = "upper"
     NO_CASING: typing.Final = "no casing"

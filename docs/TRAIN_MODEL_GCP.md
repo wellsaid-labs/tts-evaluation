@@ -1,15 +1,11 @@
 # Train a Model with Google Cloud Platform (GCP) Preemptible Instances
 
-This markdown will walk you through the steps required to train a model on an GCP virtual
+This markdown will walk you through the steps required to train a model on a GCP virtual
 machine.
-
-Related Documentation:
-
-- Would you like to train a end-to-end TTS model? TODO
 
 ## Prerequisites
 
-Setup your local development environment by following [these instructions](LOCAL_SETUP.md).
+Set up your local development environment by following [these instructions](LOCAL_SETUP.md).
 
 ## Train a Model with Google Cloud Platform (GCP)
 
@@ -26,8 +22,13 @@ Setup your local development environment by following [these instructions](LOCAL
    export TYPE='preemptible' # Either 'preemptible' or 'persistent'
    ```
 
+   ❓ LEARN MORE: Preemptible instances are much lower cost than standard/persistent VMs, with the
+   tradeoff that "Compute Engine might stop (preempt) these instances if it needs to reclaim the
+   compute capacity for allocation to other VMs." Read more:
+   [Preemptible VM instances](https://cloud.google.com/compute/docs/instances/preemptible)
+
    💡 TIP: Find zones with that support T4 GPUs here:
-   <https://cloud.google.com/compute/docs/gpus/gpu-regions-zones>
+   [GPU regions and zones availability](https://cloud.google.com/compute/docs/gpus/gpu-regions-zones)
 
    💡 TIP: Don't place all your preemptible instances in the same zone, just in case one zone
    runs out of capacity.
@@ -46,8 +47,15 @@ Setup your local development environment by following [these instructions](LOCAL
 
    ```zsh
    IMAGE_PROJECT='voice-research-255602'
-   IMAGE_FAMILY='your-image-family-name'    # Example: $IMAGE_FAMILY used to image your machine
+   IMAGE_FAMILY='<your-image-family-name>'    # Example: $IMAGE_FAMILY used to image your machine
    ```
+
+   Alternatively, you can specify an image instead of image family:
+
+  ```zsh
+  IMAGE_PROJECT='voice-research-255602'
+  IMAGE='<your-image-name>'
+  ```
 
 1. Create an instance for training...
 
@@ -60,7 +68,7 @@ Setup your local development environment by following [these instructions](LOCAL
       --disk-size=1024 \
       --disk-type='pd-balanced' \
       --image-project=$IMAGE_PROJECT \
-      --image-family=$IMAGE_FAMILY \
+      --image-family=$IMAGE_FAMILY \  # Or swap to --image=$IMAGE
       --metadata="startup-script-user=$USER" \
       --metadata="train-script-path=$TRAIN_SCRIPT_PATH" \
       --metadata-from-file="startup-script=run/utils/gcp/resume_training_on_start_up.sh"
@@ -71,7 +79,13 @@ Setup your local development environment by following [these instructions](LOCAL
 
    ❓ LEARN MORE: See our machine type benchmarks [here](./TRAIN_MODEL_GCP_BENCHMARKS.md).
 
-   💡 TIP: The output of the startup script will be saved on the VM here:
+   📙 NOTE: You can look for your image and see its status via the Google Cloud console:
+   [VM instances](https://console.cloud.google.com/compute/instances?project=voice-research-255602).
+
+   ❓ LEARN MORE: See our machine type benchmarks:
+   [Train a Model with Google Cloud Platform (GCP) Benchmarks](./TRAIN_MODEL_GCP_BENCHMARKS.md).
+
+   💡 TIP: The output of the startup script will be saved on the VM at:
    `/var/log/syslog`. The relevant logs will start after
     "Starting Google Compute Engine Startup Scripts..." is logged.
 
@@ -85,7 +99,7 @@ Setup your local development environment by following [these instructions](LOCAL
    gcloud compute ssh --zone=$VM_ZONE $VM_NAME
    ```
 
-   Continue to run this command until it succeeds.
+   Continue to run this command until it succeeds. It may take up to a few minutes for the instance to be available.
 
    💡 TIP: Preemptible machines will be periodically recreated, so you will need fetch a new
    `VM_NAME` and `VM_IP`, every so often.
@@ -183,8 +197,8 @@ Setup your local development environment by following [these instructions](LOCAL
 1. For [comet](https://www.comet.ml/wellsaid-labs), name your experiment and pick a project...
 
    ```bash
-   COMET_PROJECT='your-comet-project'
-   EXPERIMENT_NAME='Your experiment name'
+   COMET_PROJECT='<your-comet-project>'
+   EXPERIMENT_NAME='<Your experiment name>'
    ```
 
 1. Start training...

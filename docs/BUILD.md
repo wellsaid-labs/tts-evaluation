@@ -7,10 +7,11 @@ directory.
 
 ## Building the Docker image
 
-_Naming Convention_: voiceModel.deployment.version # Example v9.viacom.00
+_Naming Convention_: `voiceModel.deployment.version # Example v9.viacom.00`
 _Hint_: See precedence for image tagging by running
 
 ```bash
+PROJECT_ID="voice-service-2-313121"
 gcloud container images list-tags gcr.io/${PROJECT_ID}/speech-api-worker
 ```
 
@@ -18,9 +19,9 @@ Set image variables and build Docker image:
 
 ```bash
 PROJECT_ID="voice-service-2-313121"
-CHECKPOINTS="" # Example: "v9" (see list of Checkpoints in [run/_tts.py](/run/_tts.py)])
+CHECKPOINTS="" # Example: "v10_2022_q3_marketplace_expansion" (see list of Checkpoints in [run/_tts.py](/run/_tts.py)])
 TTS_PACKAGE_PATH=$(python -m run.deploy.package_tts $CHECKPOINTS)
-IMAGE_TAG="" # Example: v9.00
+IMAGE_TAG="" # Example: v10.marketplace-2022-q3.00
 
 docker build -f run/deploy/Dockerfile \
     --build-arg TTS_PACKAGE_PATH=${TTS_PACKAGE_PATH} \
@@ -67,6 +68,7 @@ Then fix, and rebuild from the top ^^
 Prior to pushing the docker image, ensure the proper GKE context is set:
 
 ```bash
+PROJECT_ID="voice-service-2-313121"
 CLUSTER_NAME="" # Example: "staging"
 gcloud config set project $PROJECT_ID
 gcloud config set container/cluster $CLUSTER_NAME
@@ -83,6 +85,12 @@ Push the local image to our remote repository:
 
 ```bash
 docker push gcr.io/${PROJECT_ID}/speech-api-worker:${IMAGE_TAG}
+```
+
+Get the fully qualified image digest (required for deployment configuration)
+
+```bash
+gcloud container images describe gcr.io/${PROJECT_ID}/speech-api-worker:${IMAGE_TAG}
 ```
 
 Viewing a list of images in the remote repository:

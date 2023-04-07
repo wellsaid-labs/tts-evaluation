@@ -44,8 +44,10 @@ del DATASETS[_loader.english.wsl.WADE_C]
 
 # TODO: Remove any non-production datasets from `WSL_DATASETS` so we don't evaluate on them.
 DEV_SPEAKERS = _loader.WSL_DATASETS.copy()
-# NOTE: The `MARI_MONGE__PROMO` dataset is too short for evaluation, at 15 minutes long.
+# NOTE: The `MARI_MONGE__PROMO` and `MARCUS_G__CONVO` datasets are too short for evaluation,
+# at 15 minutes and 60 minutes long, respectively.
 del DEV_SPEAKERS[_loader.english.wsl.MARI_MONGE__PROMO]
+del DEV_SPEAKERS[_loader.english.wsl.MARCUS_G__CONVO]
 # NOTE: The `RAMONA_J__CUSTOM` dataset isn't included in the studio.
 del DEV_SPEAKERS[_loader.english.wsl.RAMONA_J__CUSTOM]
 # NOTE: Elizabeth's dataset is low quality & might be fixed or re-recorded. Tobin's did not differ

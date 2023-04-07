@@ -11,6 +11,7 @@
  */
 import { check, sleep } from "k6";
 import { SharedArray } from "k6/data";
+import exec from "k6/execution";
 import http from "k6/http";
 import { Trend } from "k6/metrics";
 
@@ -21,38 +22,59 @@ const hostHeader = __ENV.HOST;
 const skipValidationEndpoint =
   __ENV.SKIP_VALIDATION_ENDPOINT === "true" || false;
 const apiPathPrefix = __ENV.API_PATH_PREFIX || "v1/tts"; // v1/tts || api/text_to_speech
+const modelVersion = __ENV.MODEL_VERSION || "latest";
+const fixedTextLength = __ENV.FIXED_TEXT_LENGTH || undefined;
 
 let characterLengthTrend = new Trend("character_length");
 
-export let options = {
-  scenarios: {
-    ramping_request_rate: {
-      // https://k6.io/docs/using-k6/scenarios/executors/ramping-arrival-rate/
-      executor: "ramping-arrival-rate",
-      startRate: 8,
-      timeUnit: "1s",
-      stages: [
-        // Sample ramp up to 20iter/sec and back down
-        { target: 1, duration: "30s" },
-        { target: 5, duration: "2m" },
-        { target: 10, duration: "2m" },
-        { target: 20, duration: "1m" },
-        { target: 5, duration: "1m" },
-        { target: 1, duration: "30s" },
-      ],
-      preAllocatedVUs: 4,
-      maxVUs: 256,
-      gracefulStop: "60s",
-    },
+// NOTE: there is a better method of seperating scenario logic via the `exec` configuration,
+// see: https://k6.io/docs/using-k6/scenarios/advanced-examples/#using-multiple-scenarios
+const scenarios = {
+  // Ramping request rate used for testing load
+  ramping_request_rate: {
+    // https://k6.io/docs/using-k6/scenarios/executors/ramping-arrival-rate/
+    executor: "ramping-arrival-rate",
+    startRate: 8,
+    timeUnit: "1s",
+    stages: [
+      // Sample ramp up to 20iter/sec and back down
+      { target: 1, duration: "30s" },
+      { target: 5, duration: "2m" },
+      { target: 10, duration: "2m" },
+      { target: 20, duration: "1m" },
+      { target: 5, duration: "1m" },
+      { target: 1, duration: "30s" },
+    ],
+    preAllocatedVUs: 4,
+    maxVUs: 256,
+    gracefulStop: "60s",
   },
+  // Single constant vu, useful for testing average response time with no concurrency
+  single_constant_vu: {
+    // https://k6.io/docs/using-k6/scenarios/executors/per-vu-iterations/
+    executor: "per-vu-iterations",
+    vus: 1,
+    iterations: 10,
+    maxDuration: "120s",
+  },
+};
+
+export let options = {
+  // Define the `scenario` env if targeting a single scenario, otherwise runs through all
+  scenarios: __ENV.SCENARIO
+    ? {
+        [__ENV.SCENARIO]: scenarios[__ENV.SCENARIO],
+      }
+    : scenarios,
   thresholds: {
     http_req_failed: ["rate<0.01"], // http errors should be less than 1%
     http_req_waiting: ["p(95)<30000"], // 95 percentile of requests should be below 30s
     checks: ["rate>0.98"],
   },
-  minIterationDuration: "1s",
+  minIterationDuration: "50ms",
   // Recommended: https://k6.io/docs/using-k6/options/#discard-response-bodies
   discardResponseBodies: true,
+  summaryTimeUnit: "ms",
 };
 
 const lines = new SharedArray("tos", function loadTosText() {
@@ -74,7 +96,10 @@ export default function main() {
 
   const maxLineNo = lines.length - 1;
   const lineNo = Math.min(__VU + __ITER, (__VU + __ITER) % maxLineNo);
-  const text = lines[lineNo];
+  let text = lines[lineNo];
+  if (exec.scenario.name === "single_constant_vu") {
+    text = lines.join(" ").substring(0, fixedTextLength);
+  }
   characterLengthTrend.add(text.length);
 
   const maxActorIdx = actors.length - 1;
@@ -85,11 +110,13 @@ export default function main() {
     text,
     speaker_id: actor,
     api_key: apiKeyLocation === "body" ? apiKey : undefined,
+    consumerId: "load_test",
+    consumerSource: "local",
   });
   const options = {
     headers: {
       "Content-Type": "application/json",
-      "Accept-Version": "latest",
+      "Accept-Version": modelVersion,
       "X-Api-Key": apiKeyLocation === "header" ? apiKey : undefined,
     },
     timeout: "5m",

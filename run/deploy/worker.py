@@ -49,6 +49,7 @@ import config as cf
 import spacy
 import torch
 import torch.backends.mkl
+import torch.version
 from flask import Flask, jsonify, request
 from flask.wrappers import Response
 from spacy.lang.en import English
@@ -69,7 +70,7 @@ from run.data._loader import Language, Session, Speaker, english
 if "NUM_CPU_THREADS" in os.environ:
     torch.set_num_threads(int(os.environ["NUM_CPU_THREADS"]))
 
-if __name__ == "__main__":
+if __name__ == "__main__" or os.environ.get("DEBUG") == "1":
     # NOTE: Incase this module is imported, don't run `set_basic_logging_config`.
     # NOTE: Flask documentation requests that logging is configured before `app` is created.
     set_basic_logging_config()
@@ -77,7 +78,7 @@ if __name__ == "__main__":
 app = Flask(__name__)
 pprinter = pprint.PrettyPrinter(indent=2)
 
-DEVICE = torch.device("cpu")
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 MAX_CHARS = 10000
 TTS_PACKAGE: TTSPackage
 LANGUAGE_TO_SPACY: typing.Dict[Language, spacy.language.Language]
@@ -171,6 +172,13 @@ _SPKR_ID_TO_SESH = {
     72: (EN.AVA_M__PROMO, "promo_script_1_harris", -23, 0.95, 1.0),
     73: (EN.TOBIN_A__PROMO, "promo_script_1_welch_processed", -23, 0.85, 0.8),
     74: (EN.TOBIN_A__CONVO, "conversational_script_1_welch_processed", -23, 0.9, 0.85),
+    # TODO: Update these after v11 training.
+    75: (EN.BEN_D, "daniel_barnett_narration_script-09-processed", -20, 1.0, 1.0),
+    76: (EN.MICHAEL_V, "forsgren_narration_script-02-processed", -20, 1.0, 1.0),
+    77: (EN.GRAY_L, "platis_narration_script-08-processed", -20, 1.0, 1.0),
+    78: (EN.PAULA_R, "paula_narration_script-06-processed", -20, 1.0, 1.0),
+    79: (EN.BELLA_B, "tugman_narration_script-05-processed", -20, 1.0, 1.0),
+    80: (EN.MARCUS_G__CONVO, "marcus_g_conversational-03-processed", -20, 1.0, 1.0),
 }
 _SPKR_ID_TO_SESH: typing.Dict[int, typing.Tuple[Speaker, str, float, float, float]] = {
     **_SPKR_ID_TO_SESH,
@@ -294,7 +302,9 @@ def validate_and_unpack(
     gc.collect()
 
     try:
-        return process_tts_inputs(tts, language_to_spacy[session.spkr.language], xml, session)
+        return process_tts_inputs(
+            tts, language_to_spacy[session.spkr.language], xml, session, device=DEVICE
+        )
     except PublicSpeakerValueError as error:
         app.logger.exception("Invalid speaker: %r", xml)
         raise FlaskException(str(error), code="INVALID_SPEAKER_ID")
@@ -353,6 +363,7 @@ def get_stream():
         "Cache-Control": "no-cache, no-store, must-revalidate",
         "Pragma": "no-cache",
         "Expires": "0",
+        "X-Text-Length": len(request_args.get("text")),
     }
     output_flags = ("-f", "mp3", "-b:a", "192k")
     generator = tts_ffmpeg_generator(
@@ -362,7 +373,9 @@ def get_stream():
 
 
 if __name__ == "__main__" or "GUNICORN" in os.environ:
+    app.logger.info("Device: %s", DEVICE)
     app.logger.info("PyTorch version: %s", torch.__version__)
+    app.logger.info("PyTorch CUDA version: %s", torch.version.cuda)
     app.logger.info("Found MKL: %s", torch.backends.mkl.is_available())
     app.logger.info("Threads: %s", torch.get_num_threads())
     app.logger.info("Speaker Ids: %s", pprinter.pformat(SPKR_ID_TO_SESH))
