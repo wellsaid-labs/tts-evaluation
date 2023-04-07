@@ -362,7 +362,6 @@ class CometMLExperiment:
 
 @dataclasses.dataclass(frozen=True)
 class Checkpoint:
-
     comet_experiment_key: str
     step: int
 
@@ -841,7 +840,6 @@ def run_workers(
 
 @dataclasses.dataclass(frozen=True)
 class MetricsKey:
-
     label: str
 
 

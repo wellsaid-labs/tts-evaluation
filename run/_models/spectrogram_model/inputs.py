@@ -17,13 +17,11 @@ from run.data._loader import structures as struc
 
 
 class Pronunciation(enum.Enum):
-
     NORMAL: typing.Final = "normal"
     RESPELLING: typing.Final = "respelling"
 
 
 class Casing(enum.Enum):
-
     LOWER: typing.Final = "lower"
     UPPER: typing.Final = "upper"
     NO_CASING: typing.Final = "no casing"
@@ -236,7 +234,7 @@ def _token_to_tokens(
 
 def _preprocess(
     batch: typing.List[typing.Tuple[struc.Session, SpanDoc, SpanDoc]],
-    device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu"),
+    device: torch.device = torch.device("cpu"),
     respell_prob: float = 0.0,
 ) -> Inputs:
     """Preprocess `batch` into model `Inputs`.

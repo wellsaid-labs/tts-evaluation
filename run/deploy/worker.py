@@ -49,6 +49,7 @@ import config as cf
 import spacy
 import torch
 import torch.backends.mkl
+import torch.version
 from flask import Flask, jsonify, request
 from flask.wrappers import Response
 from spacy.lang.en import English
@@ -169,7 +170,7 @@ _SESSIONS = [
     (english.wsl.GRAY_L, "platis_narration_script-08-processed"),
     (english.wsl.PAULA_R, "paula_narration_script-06-processed"),
     (english.wsl.BELLA_B, "tugman_narration_script-05-processed"),
-    (english.wsl.MARCUS_G__CONVO, "marcus_g_conversational-03-processed")
+    (english.wsl.MARCUS_G__CONVO, "marcus_g_conversational-03-processed"),
 ]
 _SPEAKER_ID_TO_SESSION: typing.Dict[int, typing.Tuple[Speaker, str]] = {
     **{i: s for i, s in enumerate(_SESSIONS)},
@@ -293,7 +294,9 @@ def validate_and_unpack(
     gc.collect()
 
     try:
-        return process_tts_inputs(language_to_spacy[session[0].language], tts, text, session)
+        return process_tts_inputs(
+            language_to_spacy[session[0].language], tts, text, session, device=DEVICE
+        )
     except PublicSpeakerValueError as error:
         app.logger.exception("Invalid speaker: %r", text)
         raise FlaskException(str(error), code="INVALID_SPEAKER_ID")
