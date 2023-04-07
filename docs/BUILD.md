@@ -5,6 +5,13 @@ image can be ran and tested locally, or deployed and ran in our cloud
 environment. The source code for this image is located in the `run/deploy`
 directory.
 
+## Prerequisite
+
+You may need to update some files, in particular:
+
+- You may need to add any new speakers to `run/deploy/worker.py` if needed.
+- You may need to update `run/deploy/Dockerfile` with any new dependencies.
+
 ## Building the Docker image
 
 _Naming Convention_: voiceModel.deployment.version # Example v9.viacom.00
@@ -45,8 +52,6 @@ docker run --rm -p 8000:8000 \
   gcr.io/${PROJECT_ID}/speech-api-worker:${IMAGE_TAG}
 ```
 
-In a new terminal window, generate an audio sample like so:
-
 ```bash
 curl http://localhost:8000/api/text_to_speech/stream \
   -H "Content-Type: application/json" \
@@ -54,10 +59,10 @@ curl http://localhost:8000/api/text_to_speech/stream \
   -o sample.mp3
 ```
 
-If this fails and you need to rebuild your Docker image, first remove the tag:
+If this fails and you need to rebuild your Docker image, first remove the tag and delete the image:
 
 ```bash
-docker images untag gcr.io/${PROJECT_ID}/speech-api-worker:${IMAGE_TAG}
+docker rmi gcr.io/${PROJECT_ID}/speech-api-worker:${IMAGE_TAG}
 ```
 
 Then fix, and rebuild from the top ^^

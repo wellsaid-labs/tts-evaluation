@@ -84,8 +84,8 @@ releases. To deploy a new model, follow these steps:
    ```
 
 1. Create the configuration for the new model release, ex:
-   `deployments/staging/v9.config.json`. These configurations map directly to
-   arguments found in `tts.jsonnet`.
+   `Text-To-Speech/ops/run/deployments/staging/v9.config.json`. These configurations
+   map directly to arguments found in `tts.jsonnet`.
 
    ```json
    {
@@ -133,12 +133,14 @@ releases. To deploy a new model, follow these steps:
 
    - `image` is the fully qualified image to deploy. You should use an
      [image digest](https://cloud.google.com/architecture/using-container-images)
-     instead of a tag, since they're immutable. If you know the tag you'd like
-     to release you can use the command below to determine the digest:
+     instead of a tag, since they're immutable. If you know the tag of the docker
+     image you'd like to release (such as `v10.marketplace-2022-q4.00` or `v10.eia.00`),
+     you can use the command below to determine the digest:
 
      ```bash
      docker inspect \
        gcr.io/voice-service-2-313121/speech-api-worker:latest \
+       gcr.io/voice-service-2-313121/speech-api-worker:<tag> \
        --format="{{index .RepoDigests 0}}"
      ```
 
@@ -182,7 +184,7 @@ releases. To deploy a new model, follow these steps:
    ```bash
    cd ops/run
    ENV="" # Example: staging
-   MODEL="" # Example: v9
+   MODEL="" # Use the same name as for the model config json file you created
    ./deploy.sh deployments/$ENV/$MODEL.config.json
    ```
 

@@ -189,7 +189,7 @@ _SPKR_ID_TO_SESH: typing.Dict[int, typing.Tuple[Speaker, str, float, float, floa
     64197676: (EN.US_PHARMACOPEIA__CUSTOM_VOICE, "enthusiastic_script-22", -29, 1.4, 1.4),
     41935205: (HAPPIFY, "anna_long_emotional_clusters_1st_half_clean", -21, 1.25, 1.2),
     42400423: (TEC, "is_it_possible_to_become_invisible", -24, 1, 1),
-    61137774: (EN.ENERGY_INDUSTRY_ACADEMY__CUSTOM_VOICE, "sample_script_2", -18, 1.15, 1.2),
+    61137774: (EN.ENERGY_INDUSTRY_ACADEMY__CUSTOM_VOICE, "sample_script_1", -18, 1.15, 1.2),
     # 30610881: (EN.VIACOM__CUSTOM_VOICE, "kelsey_speech_synthesis_section1"),
     # 50481197: (EN.HOUR_ONE_NBC__BB_CUSTOM_VOICE, "hour_one_nbc_dataset_5"),
     # 77552139: (EN.STUDY_SYNC__CUSTOM_VOICE, "fernandes_audio_5"),
