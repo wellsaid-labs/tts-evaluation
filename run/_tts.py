@@ -24,7 +24,7 @@ import torch
 from lib.audio import griffin_lim
 from lib.environment import PT_EXTENSION, load
 from lib.text import XMLType, xml_to_text
-from lib.utils import get_chunks, tqdm_
+from lib.utils import flatten_parameters, get_chunks, tqdm_
 from run import train
 from run._config import (
     CHECKPOINTS_PATH,
@@ -198,6 +198,14 @@ class TTSPackage:
     signal_model_comet_experiment_key: typing.Optional[str] = None
     signal_model_step: typing.Optional[int] = None
 
+    def __setstate__(self, state):
+        # NOTE: Running `flatten_parameters` during un-pickling in order to address the following
+        # warning:
+        # `UserWarning: RNN module weights are not part of single contiguous chunk of memory.`
+        flatten_parameters(state["spec_model"])
+        flatten_parameters(state["signal_model"])
+        object.__setattr__(self, "__dict__", state)
+
     def session_vocab(self) -> typing.Set[Session]:
         """Get the sessions these models are familiar with."""
         return get_session_vocab(self.spec_model, self.signal_model)
@@ -232,6 +240,7 @@ def _process_tts_inputs(
     token_vocab: typing.Set[str],
     script: XMLType,
     session: Session,
+    **kwargs,
 ) -> typing.Tuple[Inputs, PreprocessedInputs]:
     """Process TTS `script` and `session` for use with the model(s)."""
     normalized = normalize_and_verbalize_text(script, session.spkr.language)
@@ -239,7 +248,7 @@ def _process_tts_inputs(
         raise PublicTextValueError("Text cannot be empty.")
 
     inputs = Inputs.from_xml(normalized, nlp(xml_to_text(normalized)), session)
-    preprocessed = cf.partial(preprocess)(inputs)
+    preprocessed = cf.call(preprocess, inputs, **kwargs)
 
     tokens = typing.cast(typing.List[str], set(preprocessed.tokens[0]))
     excluded = [t for t in tokens if t not in token_vocab]
@@ -256,15 +265,12 @@ def _process_tts_inputs(
 
 
 def process_tts_inputs(
-    package: TTSPackage,
-    nlp: spacy.language.Language,
-    script: XMLType,
-    session: Session,
+    package: TTSPackage, nlp: spacy.language.Language, script: XMLType, session: Session, **kwargs
 ) -> typing.Tuple[Inputs, PreprocessedInputs]:
     """Process TTS `script` and `session` for use with the model(s) in `package`."""
     token_vocab = set(package.spec_model.token_embed.vocab.keys())
     session_vocab = package.session_vocab()
-    return _process_tts_inputs(nlp, session_vocab, token_vocab, script, session)
+    return _process_tts_inputs(nlp, session_vocab, token_vocab, script, session, **kwargs)
 
 
 def griffin_lim_tts(
@@ -330,7 +336,7 @@ def _process_input_batch(
 
 
 def make_batches(
-    inputs: typing.List[typing.Tuple[XMLType, Session]], batch_size: int = 8
+    inputs: typing.List[typing.Tuple[XMLType, Session]], batch_size: int = 8, **kwargs
 ) -> BatchGen:
     """Generate a sorted batch of inputs for batch TTS generation."""
     processed: typing.List[typing.Tuple[XMLType, spacy.tokens.doc.Doc, Session]]
@@ -345,7 +351,7 @@ def make_batches(
             spans=docs,
             xmls=xmls,
             inputs=batch_input,
-            processed=cf.partial(preprocess)(batch_input),
+            processed=cf.call(preprocess, batch_input, **kwargs),
         )
         yield batch, indicies
 

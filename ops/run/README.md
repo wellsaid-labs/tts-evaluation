@@ -99,13 +99,31 @@ releases. To deploy a new model, follow these steps:
        "minScale": 0,
        "maxScale": 32,
        "concurrency": 1,
-       "paths": ["/api/text_to_speech/stream"]
+       "paths": ["/api/text_to_speech/stream"],
+       "resources": {
+         "requests": {
+           "cpu": "6",
+           "memory": "4G",
+           "nvidia.com/gpu": "1"
+         },
+         "limits": {
+           "cpu": "7",
+           "memory": "5G",
+           "nvidia.com/gpu": "1"
+         }
+       }
      },
      "validate": {
        "minScale": 0,
        "maxScale": 32,
        "concurrency": 4,
-       "paths": ["/api/text_to_speech/input_validated"]
+       "paths": ["/api/text_to_speech/input_validated"],
+       "resources": {
+         "requests": {
+           "cpu": "1",
+           "memory": "1G"
+         }
+       }
      },
      "traffic": [
        {
@@ -138,10 +156,12 @@ releases. To deploy a new model, follow these steps:
      you can use the command below to determine the digest:
 
      ```bash
+     # Local image
      docker inspect \
-       gcr.io/voice-service-2-313121/speech-api-worker:latest \
-       gcr.io/voice-service-2-313121/speech-api-worker:<tag> \
+       gcr.io/${PROJECT_ID}/speech-api-worker:${IMAGE_TAG} \
        --format="{{index .RepoDigests 0}}"
+     # Remote image
+     gcloud container images describe gcr.io/${PROJECT_ID}/speech-api-worker:${IMAGE_TAG}
      ```
 
      The result should look something like this:
@@ -177,6 +197,12 @@ releases. To deploy a new model, follow these steps:
 
    - `stream.paths|validate.paths` option defines the http endpoints that the
      service will respond to.
+
+   - `stream.resources|validate.resources` option defines the resource requests
+     for the relevant service. See [memory](https://cloud.google.com/anthos/run/docs/configuring/memory-limits),
+     [cpu](https://cloud.google.com/anthos/run/docs/configuring/cpu),
+     and [gpu](https://cloud.google.com/anthos/run/docs/configuring/compute-power-gpu)
+     configuration details. Resource requests are limited to the node-pool(s) within the cluster.
 
 1. Deploy the configured model release. If you would like to debug the release
    manifests prior to deployment, run the `jsonnet` command below
@@ -317,8 +343,30 @@ parameters, you would run this command with `version=2`.
      --ext-code-file "config=./ops/run/deployments/$ENV/$MODEL.config.json" \
      | kubectl apply --dry-run=server -f -
    # deploy
-   ./deploy deployments/$ENV/$MODEL.config.json
+   ./deploy.sh deployments/$ENV/$MODEL.config.json
    ```
+
+### Updating Everything
+
+In rare cases you may want to update all model endpoints. You can do so by
+first bumping all versions:
+
+```bash
+./bump_versions deployments/staging
+```
+
+Then deploying everything:
+
+```bash
+# Sanity check the cluster you're about to mutate
+kubectl config current-context
+
+# If things look good, release. Note, the trailing slash here is required.
+./deploy_all deployments/staging/
+```
+
+But this should be used judiciously, as it could cause mass chaos by potentially
+breaking all endpoints.
 
 ### Deleting a release
 

@@ -11,13 +11,20 @@ guide for a better understanding of Kong-related concepts.
 
 This document assumes the following dependencies have been installed and
 [cluster setup](../ClusterSetup.md) has been completed. Additionally, you may
-need
-[authorize docker](https://cloud.google.com/container-registry/docs/advanced-authentication)
+need to [authorize docker](https://cloud.google.com/container-registry/docs/advanced-authentication)
 in order to push images to the cloud registry.
 
 - [gcloud](https://cloud.google.com/sdk/docs/quickstart)
 - [kubectl](https://kubernetes.io/docs/tasks/tools/)
 - [helm@v3](https://helm.sh/docs/intro/install/)
+
+Finally, ensure the correct `gcloud` and `kubectl` context is set before proceeding
+
+```bash
+gcloud container clusters get-credentials $CLUSTER_NAME --region=us-central1
+# Very kubectl context
+kubectl config current-context
+```
 
 ## Kong Gateway Configuration
 
@@ -36,10 +43,15 @@ plugins to our [kong configuration](./kong/kong.yaml). See
 [kong plugin distribution](https://docs.konghq.com/gateway-oss/1.0.x/plugin-development/distribution/)
 for more details.
 
-1. Ensure the custom plugins exist locally (via git submodules)
+1. Ensure the custom plugins exist locally (via git submodules). It is important
+   to make sure the submodules are referencing the expected commits before
+   building the docker image.
 
    ```bash
+   # Initial setup
    git submodule update --init --recursive
+   # Update submodules to remote
+   git submodule update --recursive --remote
    ```
 
 1. Setup env variables for image tagging.
@@ -60,7 +72,7 @@ for more details.
 1. Build and tag the docker image locally
 
    ```bash
-   docker build -t $KONG_IMAGE ./ops/gateway/kong
+   docker build -t $KONG_IMAGE --platform linux/amd64 ./ops/gateway/kong
    ```
 
 1. Push the image to our cloud registry
@@ -123,7 +135,8 @@ helm list
 ### Deploying the Kong Gateway
 
 The following will deploy the configured Kong gateway along with the Kong
-Ingress Controller.
+Ingress Controller. If updating an existing deployment of Kong, skip to the
+_Updating our Kong Gateway configuration_ section.
 
 ```bash
 # Add repository so we can reference the kong/kong helm chart
@@ -133,9 +146,11 @@ helm repo add kong https://charts.konghq.com
 kubectl create namespace kong
 # Install helm chart, referencing our configurations (order of file paths is important!)
 helm install gateway kong/kong \
-  --version 2.1.0 \
+  --version 2.3.0 \
   -f ./ops/gateway/kong/kong.base.yaml \
   -f ./ops/gateway/kong/kong.$ENV.yaml
+# Monitor status of the deployment
+kubectl rollout status deployment/gateway-kong -n kong
 ```
 
 Let's confirm the proxy is live on our cluster.
@@ -232,10 +247,18 @@ scaling, resource requirements, etc..). Similar to installing kong, we will also
 use `helm` to "upgrade" the release.
 
 ```bash
-helm upgrade gateway kong/kong \
-  --version 2.1.0 \
+# Preview changes prior to deployment (requires installation of helm diff plugin)
+helm diff gateway kong/kong \
+  --version 2.3.0 \
   -f ./ops/gateway/kong/kong.base.yaml \
   -f ./ops/gateway/kong/kong.$ENV.yaml
+# Deploy changes
+helm upgrade gateway kong/kong \
+  --version 2.3.0 \
+  -f ./ops/gateway/kong/kong.base.yaml \
+  -f ./ops/gateway/kong/kong.$ENV.yaml
+# Monitor status of the deployment
+kubectl rollout status deployment/gateway-kong -n kong
 ```
 
 It may be helpful to see the configured values for a previous release. Omit the
@@ -254,6 +277,30 @@ configuration) we can easily do that via helm.
 helm list
 # Rollback to a previous version
 helm rollback gateway <REVISION_NUMBER>
+```
+
+#### Troubleshooting helm upgrade
+
+If the helm chart deployments are not kept up to date with kubernetes api deprecations you may encounter the following error:
+
+```
+UPGRADE FAILED: unable to build kubernetes objects from current release manifest: resource mapping not found ...
+```
+
+This indicates a mismatch between the helm chart api versions, the previous helm revision configurations (stored in secret/configmap by helm), and available kubernetes apis. The solution is to use the [helm mapkubeapis](https://github.com/helm/helm-mapkubeapis) plugin to remove the references to deprecated apis in the existing stored helm configs.
+
+```sh
+# Install plugin
+helm plugin install https://github.com/helm/helm-mapkubeapis
+# Review list of api mappings in ./misc/mapkubeapis.deprecationmap.yaml
+# Preview changes
+helm mapkubeapis gateway --mapfile ./misc/mapkubeapis.deprecationmap.yaml --dry-run
+# Apply changes
+helm mapkubeapis gateway --mapfile ./misc/mapkubeapis.deprecationmap.yaml
+# Prior to upgrading the deployment, ensure the helm chart being used no longer contains
+# references to the deprecated API's. Compare the output of the following command to the
+# list of removed/deprecated API's.
+helm template kong/kong --version=2.3.0
 ```
 
 ### Kong Consumers

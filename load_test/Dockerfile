@@ -1,4 +1,5 @@
 FROM loadimpact/k6
+USER root
 
 WORKDIR /app
 COPY . .

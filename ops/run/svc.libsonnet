@@ -41,9 +41,11 @@
                 // NOTE: min 2 workers to ensure readiness probes / health checks
                 // work properly while under load
                 '--workers=' + std.max(spec.concurrency, 2),
-                "--access-logfile=-",
-                '--preload',
-              ],
+                "--access-logfile=-"
+              ] + (if "nvidia.com/gpu" in spec.resources.requests then [] else [
+                // NOTE: non-gpu deployments are able to leverage the preload feature
+                "--preload"
+              ]),
               ports: [
                 {
                   containerPort: 8000,
@@ -160,14 +162,27 @@
       },
     };
 
+    // This is a cluster scoped resource. As such it only needs to be created once.
+    // As long as the contents of this are applied via `kubectl apply`, it should
+    // be idempotent (meaning there's no side-effect of creating it per endpoint)
+    local kongIngressClass = {
+      apiVersion: 'networking.k8s.io/v1',
+      kind: 'IngressClass',
+      metadata: {
+        name: 'kong',
+      },
+      spec: {
+        controller: 'ingress-controllers.konghq.com/kong',
+      },
+    };
+
     local ingress = {
-      apiVersion: 'extensions/v1beta1',
+      apiVersion: 'networking.k8s.io/v1',
       kind: 'Ingress',
       metadata: {
         name: 'route-' + spec.serviceName,
         namespace: spec.namespace,
         annotations: {
-          'kubernetes.io/ingress.class': 'kong',
           'konghq.com/override': kongIngress.metadata.name,
           'konghq.com/plugins': 'kong-cluster-key-auth,' + requestTransformer.metadata.name,
           'konghq.com/protocols':'https',
@@ -175,6 +190,7 @@
         },
       },
       spec: {
+        ingressClassName: 'kong',
         rules: [
           {
             host: spec.hostname,
@@ -184,8 +200,12 @@
                   path: path,
                   pathType: "Exact",
                   backend: {
-                    serviceName: spec.serviceName,
-                    servicePort: if "servicePort" in spec then spec.servicePort else 80
+                    service: {
+                      name: spec.serviceName,
+                      port: {
+                        number: if "servicePort" in spec then spec.servicePort else 80,
+                      },
+                    },
                   },
                 } for path in spec.servicePaths
               ],
@@ -194,5 +214,5 @@
         ],
       },
     };
-    [requestTransformer, kongIngress, ingress]
+    [requestTransformer, kongIngress, kongIngressClass, ingress]
 }

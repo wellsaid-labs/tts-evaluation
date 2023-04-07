@@ -62,7 +62,7 @@ JUDE_D__EN_GB = narr(
     "jude_d__en_gb",
     "Jude D (British English)",
     "alistair_davis__en_gb",
-    Dia.EN_UK,
+    Dia.EN_ZA,
 )
 GIA_V = narr("gia_v", "Gia V", "alessandra_ruiz")
 ANTONY_A = narr("antony_a", "Antony A", "alex_marrero")
@@ -91,6 +91,13 @@ KARI_N = narr("kari_n", "Kara Noble (en_UK)", "kara_noble", Dia.EN_UK)
 DIARMID_C = narr("diarmid_c", "Kevin Cherry (en_UK, Scottish)", "kevin_cherry", Dia.EN_UK)
 ELIZABETH_U = narr("elizabeth_u", "Suzi Stringer (en_UK)", "suzi_stringer")
 ALAN_T = narr("alan_t", "Tomas Frazer (en_UK)", "tomas_frazer", Dia.EN_UK)
+
+# 2022 Q3 NARRATION
+GRAY_L = narr("gray_l", "Gray L", "tawny_platis")
+MICHAEL_V = narr("michael_v", "Michael V", "keith_forsgren")
+PAULA_R = narr("paula_r", "Paula R", "paula_r")
+BEN_D = narr("ben_d", "Ben D (en_ZA)", "daniel_barnett", Dia.EN_ZA)
+BELLA_B = narr("bella_b", "Bella B", "izzy_tugman")
 
 ###############
 # PROMOTIONAL #
@@ -131,6 +138,7 @@ NICOLE_L__CONVO = convo(NICOLE_L.label, "Nicole L (Convo)", "megan_sinclair__con
 WADE_C__CONVO = convo(WADE_C.label, "Wade C (Convo)", "sam_scholl__convo")
 PATRICK_K__CONVO = convo(PATRICK_K.label, "Patrick K (Convo)", "steven_wahlberg__convo")
 VANESSA_N__CONVO = convo(VANESSA_N.label, "Vanessa N (Convo)", "susan_murphy__convo")
+MARCUS_G__CONVO = convo(MARCUS_G.label, "Marcus G (Convo)", "marcus_g__convo")
 
 #########
 # OTHER #

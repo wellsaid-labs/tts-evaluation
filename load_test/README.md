@@ -17,6 +17,7 @@ To run the tests:
    API_KEY_LOCATION=<header|body>
    API_PATH_PREFIX=<api/text_to_speech|v1/tts>
    SKIP_VALIDATION_ENDPOINT=<true|false>
+   MODEL_VERSION=<latest>
    ```
 
 Where `ORIGIN` is the HTTP origin of the TTS service that you'd like to test,
@@ -37,6 +38,8 @@ Set the `API_PATH_PREFIX` env variable accordingly:
 - TTS service (tts.wellsaidlabs.com): `api/text_to_speech`
 - Developer API (api.wellsaidlabs.com): `v1/tts`
 
+The `MODEL_VERSION` variable specifies which TTS model version to request, defaulting to `latest`.
+
 1. Build and run the tests like so (replacing `dev.env` with your environment
    configuration file):
 
@@ -56,7 +59,7 @@ characteristics of the data.
 ### data/terms.txt
 
 The WellSaidLabs terms of use:
-https://wellsaidlabs.com/legal?document=terms_of_service.
+<https://wellsaidlabs.com/legal?document=terms_of_service>.
 
 Each line is a single paragraph of text. The character distribution per line is
 as follows:
