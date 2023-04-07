@@ -7,6 +7,7 @@ import pytest
 from torchnlp.random import fork_rng
 
 import lib
+import run._models.spectrogram_model
 from lib.text import XMLType
 from run._models.spectrogram_model import Inputs, preprocess
 from run._tts import tts_ffmpeg_generator
@@ -17,6 +18,10 @@ logger = logging.getLogger(__name__)
 
 @pytest.fixture(autouse=True)
 def run_around_test():
+    config = {
+        run._models.spectrogram_model.SpectrogramModel: cf.Args(clamp_output=False),
+    }
+    cf.add(config, overwrite=True)
     yield
     cf.purge()
 

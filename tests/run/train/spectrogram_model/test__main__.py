@@ -57,7 +57,7 @@ def test_integration():
     assert groups[0]["weight_decay"] == 0.0
     assert len(decay) == len(groups[1]["params"])
     assert "decoder.linear_stop_token.0.bias" in no_decay
-    assert "decoder.linear_out.0.weight" in no_decay
+    assert "decoder.linear_out.weight" in no_decay
     assert "decoder.pre_net.out.1.weight" in no_decay
 
     # Test `_run_step` with `Metrics` and `_State`
