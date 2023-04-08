@@ -403,6 +403,15 @@ def test_strip():
     assert lib.text.utils.strip(" \n\n Hello World \n\n ") == ("Hello World", " \n\n ", " \n\n ")
 
 
+def test_strip_func():
+    """Test `lib.text.utils.strip_func` handles various white space scenarios."""
+    assert lib.text.utils.strip_func("  abc1def   ", lambda c: c.isspace()) == "abc1def"
+    assert lib.text.utils.strip_func("  abc1def", lambda c: c.isspace()) == "abc1def"
+    assert lib.text.utils.strip_func("abc1def   ", lambda c: c.isspace()) == "abc1def"
+    assert lib.text.utils.strip_func("abc1def", lambda c: c.isspace()) == "abc1def"
+    assert lib.text.utils.strip_func("", lambda c: c.isspace()) == ""
+
+
 def test_normalize_vo_script():
     """Test `lib.text.utils.normalize_vo_script` handles all characters from 0 - 128."""
     # fmt: off

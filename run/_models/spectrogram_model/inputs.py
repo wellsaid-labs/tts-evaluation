@@ -14,7 +14,7 @@ import torch
 from lxml import etree
 from torch.nn.utils.rnn import pad_sequence
 
-from lib.text import XMLType, text_to_xml
+from lib.text import XMLType, strip_func, text_to_xml
 from lib.utils import call_once, lengths_to_mask, offset_slices, slice_seq, zip_strict
 from run._config.lang import is_voiced
 from run.data._loader import structures as struc
@@ -382,9 +382,10 @@ class InputsWrapper:
         for batch_span_annotations in (self.loudness, self.tempo):
             for sesh, span_, annotations in zip(self.session, self.span, batch_span_annotations):
                 for prev, annotation in zip([None] + annotations, annotations):
+                    lang = sesh[0].language
                     # NOTE: The only annotations that are acceptable are non-voiced characters
                     # for pauses or spans for speaking tempo.
-                    is_pause = not is_voiced(span_.text[annotation[0]], sesh[0].language)
+                    is_pause = not is_voiced(span_.text[annotation[0]], lang)
                     assert annotation[0].start <= annotation[0].stop
                     assert annotation[0].step is None
                     assert annotation[0].start >= 0 and annotation[0].stop <= len(span_.text)
@@ -397,7 +398,10 @@ class InputsWrapper:
                     # wrapped tokens.
                     doc = span_.as_doc() if isinstance(span_, spacy.tokens.span.Span) else span_
                     char_span = doc.char_span(indices[0], indices[1], alignment_mode="expand")
-                    is_valid_span = char_span is not None and len(char_span.text) <= annotation_len
+                    # NOTE: spaCy for some reason sometimes includes punctuation as a part of
+                    # the token like in "Please note--". We strip that for this check.
+                    span_strip = strip_func(char_span.text, lambda c: not is_voiced(c, lang))
+                    is_valid_span = char_span is not None and len(span_strip) <= annotation_len
                     if not is_valid_span and not is_pause:
                         raise PublicValueError("The annotations must wrap words fully.")
                     if prev is not None:
