@@ -14,7 +14,7 @@ import torch
 from lxml import etree
 from torch.nn.utils.rnn import pad_sequence
 
-from lib.text import XMLType, text_to_xml
+from lib.text import XMLType, strip2, text_to_xml
 from lib.utils import call_once, lengths_to_mask, offset_slices, slice_seq, zip_strict
 from run._config.lang import is_voiced
 from run.data._loader import structures as struc
@@ -390,30 +390,24 @@ class InputsWrapper:
                     assert annotation[0].start <= annotation[0].stop
                     assert annotation[0].step is None
                     assert annotation[0].start >= 0 and annotation[0].stop <= len(span_.text)
-                    indices = annotation[0].indices(len(span_.text))
-                    annotation_len = indices[1] - indices[0]
+                    idx = annotation[0].indices(len(span_.text))
+                    annotation_len = idx[1] - idx[0]
                     if annotation_len == 0:
                         raise PublicValueError("The annotations must wrap text.")
 
                     # NOTE: For these annotations we accept wrappings that include additional
                     # punctuation on either side of a word; however, we don't accept partially
                     # wrapped tokens.
-                    doc = span_.as_doc() if isinstance(span_, spacy.tokens.span.Span) else span_
-                    char_span = doc.char_span(indices[0], indices[1], alignment_mode="expand")
-                    text = span_.text[annotation[0]]
-
                     # NOTE: spaCy for some reason sometimes includes punctuation as a part of
                     # the token like in "Please note--" or "note-- after you register Quicken".
-                    # We strip that for this check.
-                    if len(char_span) > 0:
-                        first = char_span[0].text
-                        if not text.startswith(first) and not is_voiced(first[-1], lang):
-                            char_span = char_span[1:]
-                        last = char_span[-1].text
-                        if not text.endswith(last) and not is_voiced(last[-1], lang):
-                            char_span = char_span[:-1]
+                    # We strip both strings of non-voiced chars, and then compare their length.
+                    doc = span_.as_doc() if isinstance(span_, spacy.tokens.span.Span) else span_
+                    idx_ = struc._strip_unvoiced(span_.text, (idx[0], idx[1]), language=lang)
+                    char_span = doc.char_span(idx_[0], idx_[1], alignment_mode="expand")
+                    func = lambda c: not is_voiced(c, lang)
+                    char_span = char_span if char_span is None else strip2(char_span.text, func)
 
-                    is_valid_span = char_span is not None and len(char_span.text) <= annotation_len
+                    is_valid_span = char_span is not None and len(char_span) <= idx_[1] - idx_[0]
                     if not is_valid_span and not is_pause:
                         raise PublicValueError("The annotations must wrap words fully.")
                     if prev is not None:

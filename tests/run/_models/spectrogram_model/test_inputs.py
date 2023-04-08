@@ -204,6 +204,7 @@ def test__inputs_wrapper__from_xml__span_annotations():
     # NOTE: SpaCy considers this punctuation as a part of the token.
     _check_anno(Sch.LOUDNESS, "Please note", "-20.0", suffix="--")
     _check_anno(Sch.LOUDNESS, "-- after you register Quicken", "-20.0", prefix="note")
+    _check_anno(Sch.LOUDNESS, "Talk about fascinating", "-20.0", prefix="-")
     _check_anno(Sch.LOUDNESS, "Wednesday, November sixth at eight p.m", "-20.0", suffix=".")
 
     with pytest.raises(PublicValueError):
