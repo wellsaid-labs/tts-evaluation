@@ -30,7 +30,7 @@ tabulate
 streamlit
 altair
 git+https://github.com/wellsaid-labs/streamlit-mui-datatable
-streamlit-aggrid
+streamlit-aggrid==0.3.3
 plotly
 statsmodels
 

@@ -34,6 +34,7 @@ from torchnlp.random import fork_rng
 
 import lib
 import run
+from run._config import is_voiced
 from run._config.labels import _speaker
 from run._config.train import _config_spec_model_training
 from run._streamlit import (
@@ -69,11 +70,7 @@ def _gather_data(span_idx: int, span: Span, anno: Alignment, clip: numpy.ndarray
         span_idx: A unique index to identify the span.
         ...
     """
-    doc = span.spacy.as_doc()
     text = span.script[anno.script_slice]
-    spacy_span = doc.char_span(*anno.script, alignment_mode="expand")
-    assert spacy_span is not None
-    assert len(spacy_span.text) <= anno.script_len, "Invalid annotation"
     loudness = cf.partial(_get_loudness_annotation)(clip, span.audio_file.sample_rate, anno)
     tempo = cf.partial(_get_tempo_annotation)(span, anno)
     # TODO: Consider adding this to the `Span` implementation for hashing, equality, etc.
@@ -98,6 +95,7 @@ def _gather_data(span_idx: int, span: Span, anno: Alignment, clip: numpy.ndarray
         "sesh_tempo": span.session.tempo,
         "num_words": len(text.split()),
         "num_alignments": len(span.alignments),
+        "num_voiced_chars": sum(is_voiced(c, span.speaker.language) for c in text),
         "script": text,
         "transcript": span.transcript[anno.transcript_slice],
         "script_len": anno.script_len,

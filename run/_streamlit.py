@@ -467,10 +467,39 @@ def st_tqdm(
 # NOTE: This follows the examples highlighted here:
 # https://github.com/PablocFonseca/streamlit-aggrid-examples/blob/main/cell_renderer_class_example.py
 # https://github.com/PablocFonseca/streamlit-aggrid/issues/119
-audio_renderer = 'function(prms) {return `<audio controls preload="none" src="${prms.value}" />`}'
-audio_renderer = JsCode(audio_renderer)
-img_renderer = 'function(prms) {return `<img src="${prms.value}" />`}'
-img_renderer = JsCode(img_renderer)
+# https://github.com/PablocFonseca/streamlit-aggrid/issues/198
+
+ImgCellRenderer = JsCode(
+    """
+        class ImgCellRenderer {
+          init(params) {
+            this.eGui = document.createElement('img');
+            this.eGui.setAttribute('src', params.value);
+          }
+
+          getGui() {
+            return this.eGui;
+          }
+        }
+    """
+)
+
+AudioCellRenderer = JsCode(
+    """
+        class AudioCellRenderer {
+          init(params) {
+            this.eGui = document.createElement('audio');
+            this.eGui.setAttribute('src', params.value);
+            this.eGui.setAttribute('preload', 'none');
+            this.eGui.setAttribute('controls', 'controls');
+          }
+
+          getGui() {
+            return this.eGui;
+          }
+        }
+    """
+)
 
 
 def st_ag_grid(
@@ -484,8 +513,8 @@ def st_ag_grid(
     options = GridOptionsBuilder.from_dataframe(df)
     options.configure_pagination(paginationAutoPageSize=False, paginationPageSize=page_size)
     options.configure_default_column(wrapText=True, autoHeight=True, min_column_width=1)
-    [options.configure_column(name, cellRenderer=audio_renderer) for name in audio_cols]
-    [options.configure_column(name, cellRenderer=img_renderer) for name in img_cols]
+    [options.configure_column(name, cellRenderer=AudioCellRenderer) for name in audio_cols]
+    [options.configure_column(name, cellRenderer=ImgCellRenderer) for name in img_cols]
     return AgGrid(
         data=df,
         gridOptions=options.build(),
