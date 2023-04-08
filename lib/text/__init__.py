@@ -19,7 +19,6 @@ from lib.text.utils import (
     normalize_vo_script,
     numbers_then_natural_keys,
     respell,
-    strip_func,
     text_to_xml,
     xml_to_text,
 )
@@ -47,7 +46,6 @@ __all__ = [
     "respell",
     "utils",
     "verbalize_text",
-    "strip_func",
     "text_to_xml",
     "xml_to_text",
 ]

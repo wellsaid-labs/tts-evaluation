@@ -536,19 +536,6 @@ def strip(text: str) -> typing.Tuple[str, str, str]:
     return text, left, right
 
 
-def strip_func(text: str, is_strip: typing.Callable[[str], bool]) -> str:
-    """Strip from the left and right of text using a classification function.
-
-    Args:
-        ...
-        is_strip: Return `True` if character should be stripped.
-    """
-    start_idx = next((i for i, c in enumerate(text) if not is_strip(c)), 0)
-    text = text[start_idx:]
-    end_idx = len(text) - next((i for i, c in enumerate(reversed(text)) if not is_strip(c)), 0)
-    return text[:end_idx]
-
-
 def _normalize_whitespace(text: str) -> str:
     """Normalize whitespace variations into standard characters. Formfeed `f` and carriage return
     `r` should be replace with new line `\n` and tab `\t` should be replaced with two spaces
