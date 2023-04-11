@@ -44,6 +44,8 @@ KAI_M__MANUAL_POST = narr(
     post=True,
 )
 JOE_F__NARRATION = narr("joe_f", "Joe F (Narration)", "john_hunerlach__narration")
+# Previously miscategorized as promo
+CHASE_J = narr("chase_j", "Chase J (Narration)", "christopher_daniels__promo")
 TRISTAN_F = narr("tristan_f", "Tristan F", "mark_atherlay")
 NICOLE_L = narr("nicole_l", "Nicole L", "megan_sinclair")
 WADE_C = narr("wade_c", "Wade C", "sam_scholl")
@@ -99,12 +101,36 @@ PAULA_R = narr("paula_r", "Paula R", "paula_r")
 BEN_D = narr("ben_d", "Ben D (en_ZA)", "daniel_barnett", Dia.EN_ZA)
 BELLA_B = narr("bella_b", "Bella B", "izzy_tugman")
 
+# 2022 Q4 NARRATION
+ABBI_D = narr("abbi_d", "Abbi D", "abbi_d")
+LULU_G = narr("lulu_g", "Lulu G", "lulu_g")
+FIONA_H_IE = narr("fiona_h__en_ie", "Fiona H (en_IE)", "fiona_h", Dia.EN_IE)
+LORENZO_D = narr("lorenzo_d", "Lorenzo D (en_MX)", "lorenzo_d", Dia.EN_MX)
+HANNAH_A = narr("hannah_a", "Hannah A (en_MX)", "hannah_a", Dia.EN_MX)
+OLIVER_S = narr("oliver_s", "Oliver S (en_UK)", "oliver_s", Dia.EN_UK)
+JACK_C = narr("jack_c", "Jack C", "jack_c")
+JENSEN_X = narr("jensen_x", "Jensen X", "jensen_x")
+ERIC_S = narr("eric_s", "Eric S (en_IE)", "eric_s", Dia.EN_IE)
+
+# 2023 Q1 NARRATION
+SHELBY_D = narr("shelby_d", "Shelby D", "shelby_d")
+SE_VON_M = narr("se_von_m", "Se'von M", "se_von_m")
+JIMMY_J = narr("jimmy_j", "Jimmy J", "jimmy_j")
+JAY_S = narr("jay_s", "Jay S", "jay_s")
+SELENE_R = narr("selene_r", "Selene R", "selene_r")
+ISSA_B = narr("issa_b", "Issa B (en_ZA)", "issa_b", Dia.EN_ZA)
+LYRIC_K = narr("lyric_k", "Lyric K", "lyric_k")
+ALI_P = narr("ali_p", "Ali P (en_AU)", "ali_p", Dia.EN_AU)
+AARON_G = narr("aaron_g", "Aaron G (en_AU)", "aaron_g", Dia.EN_AU)
+
 ###############
 # PROMOTIONAL #
 ###############
 promo = partial(make, style=struc.Style.PROMO)
 SOFIA_H__PROMO = promo(SOFIA_H.label, "Sofia H-Heller (Promo)", "adrienne_walker__promo")
 AVA_M__PROMO = promo(AVA_M.label, "Alicia Harris (Promo)", "alicia_harris__promo")
+# Previously miscategorized as narration
+ZACH_E__PROMO = promo("zach_e", "Zach E", "seth_jones")
 ERIC_S__EN_IE__PROMO = promo(
     "eric_s__en_ie",
     "Eric S (Promo, Ireland)",
@@ -126,6 +152,19 @@ CHARLIE_Z__PROMO = promo(
     "charlie_z", "Sharon Gauld Alexander (Promo)", "sharon_gauld_alexander__promo", Dia.EN_CA
 )
 
+# 2022 Q4 Promotional
+DIARMID_C__PROMO = promo(DIARMID_C.label, "Diarmid C (Promo, UK)", "diarmid_c__promo", Dia.EN_UK)
+JARVIS_H__PROMO = promo(JARVIS_H.label, "Jarvis H (Promo, UK)", "jarvis_h__promo", Dia.EN_UK)
+GIA_V__PROMO = promo(GIA_V.label, "Gia V (Promo)", "gia_v__promo")
+OWEN_C__PROMO = promo(OWEN_C.label, "Owen C (Promo)", "owen_c__promo")
+
+# 2023 Q1 Promotional
+JORDAN_T__PROMO = promo(JORDAN_T.label, "Jordan T (Promo)", "jordan_t__promo")
+GENEVIEVE_M__PROMO = promo(GENEVIEVE_M.label, "Genevieve M (Promo)", "genevieve_m__promo")
+NICOLE_L__PROMO = promo(NICOLE_L.label, "Nicole L (Promo)", "nicole_l__promo")
+PHILIP_J__PROMO = promo(PHILIP_J.label, "Philip J (Promo)", "philip_j__promo")
+VANESSA_N__PROMO = promo(VANESSA_N.label, "Vanessa N (Promo)", "vanessa_n__promo")
+
 ##################
 # CONVERSATIONAL #
 ##################
@@ -140,6 +179,21 @@ PATRICK_K__CONVO = convo(PATRICK_K.label, "Patrick K (Convo)", "steven_wahlberg_
 VANESSA_N__CONVO = convo(VANESSA_N.label, "Vanessa N (Convo)", "susan_murphy__convo")
 MARCUS_G__CONVO = convo(MARCUS_G.label, "Marcus G (Convo)", "marcus_g__convo")
 
+# 2022 Q4 Conversational
+JORDAN_T__CONVO = convo(JORDAN_T.label, "Jordan T (Convo)", "danielle_whiteside__convo")
+JODI_P__CONVO = convo(JODI_P.label, "Jodi P (Convo)", "jodi_p__convo")
+JARVIS_H__CONVO = convo(JARVIS_H.label, "Jarvis H (Convo, UK)", "jarvis_h__convo", Dia.EN_UK)
+GIA_V__CONVO = convo(GIA_V.label, "Gia V (Convo)", "gia_v__convo")
+OWEN_C__CONVO = convo(OWEN_C.label, "Owen C (Convo)", "owen_c__convo")
+PHILIP_J__CONVO = convo(PHILIP_J.label, "Philip J (Convo)", "philip_j__convo")
+ANTONY_A__CONVO = convo(ANTONY_A.label, "Antony A (Convo)", "antony_a__convo")
+BELLA_B__CONVO = convo(BELLA_B.label, "Bella B (Convo)", "bella_b__convo")
+GREG_G__CONVO = convo(GREG_G.label, "Greg G (Convo, AU)", "greg_g__convo", Dia.EN_AU)
+GENEVIEVE_M__CONVO = convo(GENEVIEVE_M.label, "Genevieve M (Convo)", "genevieve_m__convo")
+
+# 2023 Q1 Conversational
+TILDA_C__CONVO = convo(TILDA_C__PROMO.label, "Tilda C (Convo)", "tilda_c__convo")
+
 #########
 # OTHER #
 #########
@@ -150,6 +204,8 @@ GARRY_J__STORY = other("garry_j", "Garry J (Story-Telling)", "otis_jiry__promo")
 RAMONA_J__CUSTOM = other(RAMONA_J.label, "Ramona J (Custom)", "beth_cameron__custom")
 JOE_F__RADIO = promo(JOE_F__NARRATION.label, "Joe F (Radio)", "john_hunerlach__radio")
 
+# 2023 Q1 Character
+KARI_N__CHARACTER = other("kari_n", "Kari N (Character, UK)", "kari_n__character", Dia.EN_UK)
 
 #################
 # CUSTOM VOICES #

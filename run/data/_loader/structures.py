@@ -218,6 +218,7 @@ class Dialect(Enum):
     EN_AU: typing.Final = (Language.ENGLISH, "English (Australia)")
     EN_CA: typing.Final = (Language.ENGLISH, "English (Canada)")
     EN_IE: typing.Final = (Language.ENGLISH, "English (Ireland)")
+    EN_MX: typing.Final = (Language.ENGLISH, "English (Mexico)")
     EN_NZ: typing.Final = (Language.ENGLISH, "English (New Zealand)")
     EN_UK: typing.Final = (Language.ENGLISH, "English (United Kingdom)")
     EN_UNKNOWNN: typing.Final = (Language.ENGLISH, "English (Unknown)")
