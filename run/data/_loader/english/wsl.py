@@ -44,8 +44,6 @@ KAI_M__MANUAL_POST = narr(
     post=True,
 )
 JOE_F__NARRATION = narr("joe_f", "Joe F (Narration)", "john_hunerlach__narration")
-# Previously miscategorized as promo
-CHASE_J = narr("chase_j", "Chase J (Narration)", "christopher_daniels__promo")
 TRISTAN_F = narr("tristan_f", "Tristan F", "mark_atherlay")
 NICOLE_L = narr("nicole_l", "Nicole L", "megan_sinclair")
 WADE_C = narr("wade_c", "Wade C", "sam_scholl")
@@ -129,8 +127,6 @@ AARON_G = narr("aaron_g", "Aaron G (en_AU)", "aaron_g", Dia.EN_AU)
 promo = partial(make, style=struc.Style.PROMO)
 SOFIA_H__PROMO = promo(SOFIA_H.label, "Sofia H-Heller (Promo)", "adrienne_walker__promo")
 AVA_M__PROMO = promo(AVA_M.label, "Alicia Harris (Promo)", "alicia_harris__promo")
-# Previously miscategorized as narration
-ZACH_E__PROMO = promo("zach_e", "Zach E", "seth_jones")
 ERIC_S__EN_IE__PROMO = promo(
     "eric_s__en_ie",
     "Eric S (Promo, Ireland)",
