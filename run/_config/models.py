@@ -53,7 +53,7 @@ def configure(overwrite: bool = False):
             window_len=9,
             # NOTE: This value was computed with a reference frame size of 4096, and it scales
             # linearly with frame size.
-            avg_frames_per_token=1.45 * (4096 / _config.audio.FRAME_SIZE),
+            avg_frames_per_token=1.460 * (4096 / _config.audio.FRAME_SIZE),
         ),
         run._models.spectrogram_model.decoder.Decoder: cf.Args(
             # SOURCE (Tacotron 2):

@@ -96,7 +96,7 @@ def _config_spec_model_training(
             # NOTE: This value is the average spectrogram length in the training dataset.
             # NOTE: This value was computed with a reference frame size of 4096, and it scales
             # linearly with frame size.
-            average_spectrogram_length=87.485 * (4096 / FRAME_SIZE),
+            average_spectrogram_length=91.652 * (4096 / FRAME_SIZE),
             # NOTE: This starts to decay the stop token loss as soon as it converges so it doesn't
             # overfit. Also, this ensures that the model doesn't unnecessarily prioritize the stop
             # token loss when it has already converged.
