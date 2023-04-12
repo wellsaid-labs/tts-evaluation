@@ -250,8 +250,8 @@ def configure(overwrite: bool = False):
         run._utils.split_dataset: cf.Args(
             groups=groups,
             dev_speakers=DEV_SPEAKERS,
-            approx_dev_len=30 * 60,
-            min_sim=0.9,
+            approx_dev_len=25 * 60,
+            min_sim=0.95,
             min_split_passages=3,
         ),
         run.data._loader.structures.Span.spacy_context: cf.Args(max_words=20),
