@@ -62,7 +62,7 @@ JUDE_D__EN_GB = narr(
     "jude_d__en_gb",
     "Jude D (British English)",
     "alistair_davis__en_gb",
-    Dia.EN_ZA,
+    Dia.EN_UK,
 )
 GIA_V = narr("gia_v", "Gia V", "alessandra_ruiz")
 ANTONY_A = narr("antony_a", "Antony A", "alex_marrero")
