@@ -26,6 +26,8 @@ if [ -f /opt/wellsaid-labs/AUTO_START_FROM_CHECKPOINT ]; then
 
   echo 'Restarting from the latest checkpoint...'
   STARTUP_SCRIPT_USER=$(get_attribute_value startup-script-user)
+  # TODO: If `resume` doesn't work, and there are no checkpoints, then we should start training
+  # from scratch.
   runuser -l $STARTUP_SCRIPT_USER -c "screen -dmL bash -c \
       'cd /opt/wellsaid-labs/Text-to-Speech;
       . venv/bin/activate;
