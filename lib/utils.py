@@ -34,6 +34,9 @@ logger = logging.getLogger(__name__)
 
 def round_(x: float, bucket_size: float) -> float:
     """Bin `x` into buckets."""
+    if math.isinf(x) or math.isnan(x):
+        return x
+
     # NOTE: Without additional rounding, the results can sometimes be not exact: 1.1500000000000001
     ndigits = max(str(bucket_size)[::-1].find("."), 0)
     return round(bucket_size * round(x / bucket_size), ndigits=ndigits)

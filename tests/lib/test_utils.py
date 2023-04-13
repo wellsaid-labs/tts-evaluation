@@ -24,6 +24,9 @@ def test_round_():
     assert lib.utils.round_(3, 4) == 4
     # NOTE: Without additional rounding, this regressed to: 1.1500000000000001.
     assert lib.utils.round_(1.17, 0.05) == 1.15
+    # NOTE: `round` should handle `inf` and `nan` like `round`.
+    assert lib.utils.round_(math.inf, 0.1) == round(math.inf, 1)
+    assert math.isnan(lib.utils.round_(math.nan, 0.1)) == math.isnan(round(math.nan, 1))
 
 
 def test_random_sample():
