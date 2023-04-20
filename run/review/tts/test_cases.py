@@ -11,6 +11,7 @@ Usage:
     $ PYTHONPATH=. streamlit run run/review/tts/test_cases.py --runner.magicEnabled=false
 """
 import random
+import string
 import typing
 from functools import partial
 
@@ -307,6 +308,8 @@ GREEK_SYMBOLS = [
     "Α α Β β Γ γ Δ δ Ε ε Ζ ζ Η η Θ θ Ι ι  Κ κ Λ λ Μ μ Ν ν Ξ ξ Ο ο Π π Ρ ρ Σ σ ς Τ τ Υ υ Φ φ Χ χ Ψ \
       ψ Ω ω",
 ]
+
+ALPHABET = [string.ascii_uppercase * 50]
 
 ABBREVIATIONS_WITH_VOWELS = [
     # NOTE: These various abbreviations consistenly were mispronounced in v11 on March 1st, 2023.
