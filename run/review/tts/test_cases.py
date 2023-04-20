@@ -18,6 +18,7 @@ import config as cf
 import numpy as np
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
+from torchnlp.random import fork_rng
 
 import lib
 import run
@@ -335,12 +336,15 @@ items = locals().items()
 TEST_CASES = {k: v for k, v in items if isinstance(v, list) and all(isinstance(t, str) for t in v)}
 
 
-def generate_test_cases(spec_export: SpectrogramModel, test_cases: typing.List[str]):
-    vocab = list(spec_export.session_embed.get_vocab())
-    for case in test_cases:
-        sesh = random.choice(vocab)
-        st.info(f"Seshion: {sesh}\n\nScript: {case}")
-        yield griffin_lim_tts(spec_export, XMLType(case), sesh)
+def generate_test_cases(
+    spec_export: SpectrogramModel, test_cases: typing.List[str], seed: int = 123
+):
+    with fork_rng(seed):
+        vocab = sorted(list(spec_export.session_embed.get_vocab()))
+        for case in test_cases:
+            sesh = random.choice(vocab)
+            st.info(f"Seshion: {sesh}\n\nScript: {case}")
+            yield griffin_lim_tts(spec_export, XMLType(case), sesh)
 
 
 Generator = typing.Callable[[SpectrogramModel], typing.Generator[np.ndarray, None, None]]
