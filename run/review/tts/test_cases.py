@@ -309,7 +309,11 @@ GREEK_SYMBOLS = [
       ψ Ω ω",
 ]
 
-ALPHABET = [string.ascii_uppercase * 50]
+ALPHABET = [
+    string.ascii_uppercase * 15,
+    " ".join(list(string.ascii_uppercase) * 15),
+    ". ".join(list(string.ascii_uppercase) * 15),
+]
 
 ABBREVIATIONS_WITH_VOWELS = [
     # NOTE: These various abbreviations consistenly were mispronounced in v11 on March 1st, 2023.
@@ -344,10 +348,11 @@ def generate_test_cases(
 ):
     with fork_rng(seed):
         vocab = sorted(list(spec_export.session_embed.get_vocab()))
-        for case in test_cases:
-            sesh = random.choice(vocab)
-            st.info(f"Seshion: {sesh}\n\nScript: {case}")
-            yield griffin_lim_tts(spec_export, XMLType(case), sesh)
+        seshs = [random.choice(vocab) for case in test_cases]
+
+    for sesh, case in zip(seshs, test_cases):
+        st.info(f"Seshion: {sesh}\n\nScript: {case}")
+        yield griffin_lim_tts(spec_export, XMLType(case), sesh)
 
 
 Generator = typing.Callable[[SpectrogramModel], typing.Generator[np.ndarray, None, None]]
@@ -409,7 +414,7 @@ def main():
 
     label = "Spectrogram Checkpoints"
     spec_path = st_select_path(label, SPECTROGRAM_MODEL_EXPERIMENTS_PATH, PT_EXTENSION, form)
-    items = OPTIONS.items()
+    items = sorted(OPTIONS.items())
     format_test_case_name = lambda i: i[0].replace("_", " ").title()
     option = form.selectbox("Test Cases", items, format_func=format_test_case_name)
     assert option is not None
