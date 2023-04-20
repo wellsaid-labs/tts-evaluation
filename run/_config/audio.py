@@ -250,7 +250,7 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
         # as low as 1/2 or 1/3.
         # http://physics.gmu.edu/~dmaria/phys260summer03/sound/DB.HTML#c4
         run._config.data._get_loudness_annotation: Args(
-            block_size=0.400, precision=0, filter_class=filter_class
+            block_size=0.400, bucket_size=0.001, filter_class=filter_class
         ),
         run._models.spectrogram_model.inputs.preprocess: Args(
             get_max_audio_len=partial(
