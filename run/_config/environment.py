@@ -15,6 +15,7 @@ TTS_PACKAGE_PATH = DISK_PATH / "tts_package.pt"
 SIGNAL_MODEL_EXPERIMENTS_PATH = EXPERIMENTS_PATH / "signal_model"
 SPECTROGRAM_MODEL_EXPERIMENTS_PATH = EXPERIMENTS_PATH / "spectrogram_model"
 DATASET_CACHE_PATH = TEMP_PATH / "dataset.pickle"
+REMOTE_ROOT_PATH = "/opt/wellsaid-labs/Text-to-Speech/"
 
 RANDOM_SEED = 1212212
 

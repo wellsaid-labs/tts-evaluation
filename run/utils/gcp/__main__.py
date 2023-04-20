@@ -494,6 +494,27 @@ def ip(zone: str = typer.Option(...), name: str = typer.Option(...)):
     typer.echo(response["networkInterfaces"][0]["accessConfigs"][0]["natIP"])
 
 
+def get_running_instances(prefix: str) -> typing.List[typing.Tuple[str, str]]:
+    """Get a list of all running instances and their corresponding VMs.
+
+    Example:
+    >>> get_running_instances("michaelpetrochuk")
+    [('michaelpetrochuk-experiment-13-k03z', 'us-central1-b'),
+    ('michaelpetrochuk-experiment-11-sdzn', 'us-west1-b'),
+    ('michaelpetrochuk-experiment-15-cgh3', 'us-west1-b')]
+    """
+    instances = subprocess.check_output("gcloud compute instances list", shell=True).decode("utf-8")
+    instances = [i for i in instances.split("\n") if i.startswith(prefix) and i.endswith("RUNNING")]
+    instances = [i.split() for i in instances]
+    return [(i[0], i[1]) for i in instances]
+
+
+@app.command(help="Get all running instances.")
+def running(prefix: str):
+    instances = [" ".join(i) for i in get_running_instances(prefix)]
+    typer.echo("\n".join(instances))
+
+
 def image_and_delete(
     image_family: str, image_name: str, name: str, vm_name: str, zone: str, preemptible: bool
 ):

@@ -101,7 +101,8 @@ class Preds:
         )
 
     def apply(self: PredsType, call: typing.Callable[[torch.Tensor], torch.Tensor]) -> PredsType:
-        applied = {f.name: call(getattr(self, f.name)) for f in dataclasses.fields(self)}
+        applied = {f.name: getattr(self, f.name) for f in dataclasses.fields(self)}
+        applied = {k: call(v) if isinstance(v, torch.Tensor) else v for k, v in applied.items()}
         return dataclasses.replace(self, **applied)
 
 

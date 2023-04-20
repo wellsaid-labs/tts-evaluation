@@ -185,7 +185,7 @@ def _get_loudness_annotation(
     audio: typing.Union[np.ndarray, typing.List[np.ndarray]],
     sample_rate: int,
     block_size: float,
-    precision: int,
+    bucket_size: float,
     **kwargs,
 ) -> typing.Optional[float]:
     """Get the loudness in LUFS for `audio`.
@@ -199,7 +199,7 @@ def _get_loudness_annotation(
 
     Args:
         ...
-        precision: The number of decimal places to round LUFS.
+        bucket_size: The bucket size for rounding in LUFS.
 
     Returns: The loudness in LUFS with a range of 0 to -70 LUFS in alignment with ITU-R BS.1770-4.
         This returns `None` if the loudness cannot be computed.
@@ -215,7 +215,7 @@ def _get_loudness_annotation(
 
     meter = lib.audio.get_pyloudnorm_meter(sample_rate, block_size=block_size, **kwargs)
     if audio.shape[0] >= sec_to_sample_(block_size):
-        loudness = round(float(meter.integrated_loudness(audio)), precision)
+        loudness = lib.utils.round_(float(meter.integrated_loudness(audio)), bucket_size)
         # NOTE: This algorithm returns negative infinity if the loudness is less than -70 LUFS. We
         # return -70 LUFS instead to keep the output finite.
         # NOTE: This number is not parameterized because this specific number is specified in
@@ -232,7 +232,7 @@ def _get_loudness_annotation(
 
 def configure(overwrite: bool = False):
     """Configure modules that process data, other than audio."""
-    cf.add({_get_tempo_annotation: cf.Args(bucket_size=0.05)}, overwrite)
+    cf.add({_get_tempo_annotation: cf.Args(bucket_size=0.001)}, overwrite)
 
     # TODO: Remove `BETH_CAMERON__CUSTOM` from the `WSL_DATASETS` groups because it has it's own
     # custom script.
