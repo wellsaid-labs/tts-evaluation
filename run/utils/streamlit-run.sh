@@ -18,10 +18,6 @@ PORT=8501 # Default Streamlit port
 INFO="\e[36m[INFO]\e[0m"
 SUCCESS="\e[32m[SUCCESS]\e[0m"
 
-echo -e "$INFO Installing Nginx..."
-sudo apt-get update
-sudo apt-get install -y nginx apache2-utils
-
 echo -e "$INFO Setting up basic authentication for Nginx..."
 sudo htpasswd -bc $HTPASSWD $USER $PASSWORD
 
