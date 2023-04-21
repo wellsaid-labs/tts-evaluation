@@ -1,5 +1,4 @@
 import dataclasses
-import math
 import typing
 
 import config as cf
@@ -26,11 +25,10 @@ _AttentionRNNOut = typing.Tuple[
 class _AttentionRNN(torch.nn.Module):
     """An autoregressive attention layer supported by an RNN."""
 
-    def __init__(self, input_size: int, output_size: int, attn_size: int):
+    def __init__(self, input_size: int, attn_size: int):
         super().__init__()
         self.lstm = LSTMCell(input_size + attn_size, attn_size)
         self.attn = cf.partial(Attention)(attn_size)
-        self.proj = torch.nn.Linear(attn_size, output_size)
 
     def __call__(
         self, query: torch.Tensor, encoded: Encoded, hidden_state: AttentionRNNHiddenState, **kwargs
@@ -46,7 +44,7 @@ class _AttentionRNN(torch.nn.Module):
             ...
 
         Returns:
-            rnn_outs (torch.FloatTensor [seq_length, batch_size, output_size]): The output of the
+            rnn_outs (torch.FloatTensor [seq_length, batch_size, attn_size]): The output of the
                 RNN layer.
             attn_contexts (torch.FloatTensor [seq_length, batch_size, attn_size]): The output of the
                 attention layer.
@@ -92,9 +90,6 @@ class _AttentionRNN(torch.nn.Module):
             lstm_hidden_state, last_attn_context, attn_hidden_state
         )
 
-        # [seq_length, batch_size, attn_size] → [seq_length, batch_size, output_size]
-        lstm_out = self.proj(lstm_out)
-
         return lstm_out, attn_cntxts, alignments, window_starts, hidden_state
 
 
@@ -120,15 +115,15 @@ class Decoder(torch.nn.Module):
         self.attn_size = attn_size
 
         self.pre_net = cf.partial(PreNet)(num_frame_channels, hidden_size)
-        self.attn_rnn = _AttentionRNN(hidden_size, hidden_size, attn_size)
+        self.attn_rnn = _AttentionRNN(hidden_size, attn_size)
         self.linear_stop_token = torch.nn.Sequential(
-            torch.nn.Linear(hidden_size + attn_size, hidden_size),
+            torch.nn.Linear(hidden_size + attn_size * 2, hidden_size),
             torch.nn.Mish(),
             cf.partial(torch.nn.LayerNorm)(hidden_size),
             torch.nn.Linear(hidden_size, 1),
         )
-        self.lstm_out = LSTM(hidden_size + attn_size, hidden_size)
-        self.proj_out = torch.nn.Linear(hidden_size, hidden_size * 2)
+        self.lstm_out = LSTM(hidden_size + attn_size * 2, hidden_size)
+        self.proj_out = torch.nn.Linear(hidden_size * 2 + attn_size, hidden_size * 2)
         self.linear_out = torch.nn.Linear(hidden_size, num_frame_channels)
 
         # NOTE: The `Encoded` tokens should be padded by `encoded_pad_len = atten_window_len // 2`
@@ -292,21 +287,19 @@ class Decoder(torch.nn.Module):
         attn_rnn_args = (pre_net_frames, state.encoded_padded, state.attn_rnn_hidden_state)
         attn_rnn_outs = self.attn_rnn(*attn_rnn_args, **kwargs)
         attn_rnn_out, attn_cntxts, alignments, window_starts, attn_rnn_hidden_state = attn_rnn_outs
-        frames = (pre_net_frames + attn_rnn_out) / math.sqrt(2)
 
         # [num_frames, batch_size, hidden_size] (concat) [*, attn_size] →
         # [*, hidden_size + attn_size]
-        block_input = torch.cat([frames, attn_cntxts], dim=2)
+        block_input = torch.cat([attn_rnn_out, pre_net_frames, attn_cntxts], dim=2)
 
         # [num_frames, batch_size, hidden_size + attn_size] → [num_frames, batch_size]
         stop_token = self.linear_stop_token(block_input).squeeze(2)
 
         # [num_frames, batch_size, hidden_size + attn_size] → [*, hidden_size]
         lstm_out, lstm_hidden_state = self.lstm_out(block_input, state.lstm_hidden_state)
-        frames = (pre_net_frames + lstm_out) / math.sqrt(2)
 
         # [num_frames, batch_size, hidden_size] → [*, num_frame_channels]
-        frames = self.proj_out(frames)
+        frames = self.proj_out(torch.cat([lstm_out, pre_net_frames, attn_cntxts], dim=2))
         val, gate = frames.chunk(2, dim=2)
         frames = self.linear_out(torch.nn.functional.mish(gate) * val)
 

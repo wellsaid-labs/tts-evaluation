@@ -36,7 +36,7 @@ def configure(overwrite: bool = False):
             # SOURCE (Tacotron 2):
             # which are passed through a stack of 3 convolutional layers each containing
             # 512 filters with shape 5 × 1, i.e., where each filter spans 5 characters
-            num_layers=4,
+            num_layers=2,
             conv_filter_size=3,
             num_conv_block_layers=2,
         ),
