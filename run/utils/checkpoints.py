@@ -1,4 +1,7 @@
-""" Command-line interface (CLI) for handling checkpoints. """
+""" Command-line interface (CLI) for handling checkpoints.
+
+TODO: Let's consider factoring out `gcloud` to stay platform agnostic.
+"""
 import math
 import pathlib
 import subprocess
