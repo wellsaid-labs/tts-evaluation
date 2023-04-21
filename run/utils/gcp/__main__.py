@@ -262,6 +262,7 @@ def _make_instance(
                     "scopes": ["https://www.googleapis.com/auth/cloud-platform"],
                 }
             ],
+            "tags": {"items": ["http-server"]},
         },
     }
     if gpu_count > 0:
