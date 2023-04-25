@@ -56,6 +56,7 @@ RUN ${VIRTUAL_ENV}/bin/pip3 install --no-cache-dir --upgrade pip cython \
   lxml \
   spacy==3.4.4 \
   pythonic-config \
+  typeguard==2.13.3 \
   num2words \
   git+https://github.com/PetrochukM/PyTorch-NLP.git \
   # TODO: Automatically fetch the languages a model has, and install those.

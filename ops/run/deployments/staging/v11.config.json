@@ -1,8 +1,8 @@
 {
   "env": "staging",
   "model": "v11",
-  "version": "12",
-  "image": "gcr.io/voice-service-2-313121/speech-api-worker@sha256:ee8da38e750415ff1cf19bbeb7e50990afe6d717ff83b38693eca8edc24c87e4",
+  "version": "16",
+  "image": "gcr.io/voice-service-2-313121/speech-api-worker@sha256:87f7a33f01c56cbfac61a2da6cae9b01fcdd0973a81d15b14c045a0ae5ad6bfc",
   "imageEntrypoint": "run.deploy.worker:app",
   "provideApiKeyAuthForLegacyContainerSupport": "true",
   "stream": {
@@ -11,7 +11,19 @@
     "concurrency": 1,
     "paths": [
       "/api/text_to_speech/stream"
-    ]
+    ],
+    "resources": {
+      "requests": {
+        "nvidia.com/gpu": "1",
+        "cpu": "1",
+        "memory": "8G"
+      },
+      "limits": {
+        "nvidia.com/gpu": "1",
+        "cpu": "1",
+        "memory": "8G"
+      }
+    }
   },
   "validate": {
     "minScale": 1,
@@ -19,11 +31,17 @@
     "concurrency": 4,
     "paths": [
       "/api/text_to_speech/input_validated"
-    ]
+    ],
+    "resources": {
+      "requests": {
+        "cpu": "1",
+        "memory": "3G"
+      }
+    }
   },
   "traffic": [
     {
-      "tag": "12",
+      "tag": "16",
       "percent": 100
     }
   ]

@@ -101,8 +101,8 @@ class Checkpoints(enum.Enum):
 
     You can upload a new checkpoint, for example, like so:
 
-        $ gsutil -m cp -r disk/checkpoints/v11_2023_03_06_staging \
-                        gs://wellsaid_labs_checkpoints/v11_2023_03_06_staging
+        $ gsutil -m cp -r disk/checkpoints/v11_2023_04_24_staging \
+                        gs://wellsaid_labs_checkpoints/v11_2023_04_24_staging
     """
 
     """
@@ -164,6 +164,29 @@ class Checkpoints(enum.Enum):
     """
 
     V11_2023_03_06_STAGING: typing.Final = "v11_2023_03_06_staging"
+
+    """
+    These checkpoints were deployed into staging as version "11.beta.5".
+    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/517
+    Spectrogram Model Experiment (Step: 1,334,547):
+    https://www.comet.com/wellsaid-labs/v11-research-spectrogram/d64c6d62008d46a8a2ed643b6241acba
+    Signal Model Experiment (Step: 281,550):
+    https://www.comet.com/wellsaid-labs/v11-research-signal/2b08d009ae9f4fa8b5921ab50fb84b8c
+    """
+
+    V11_2023_04_11_STAGING: typing.Final = "v11_2023_04_11_staging"
+
+    """
+    These checkpoints were deployed into staging as version "11.beta.6".
+
+    Pull Request: https://github.com/wellsaid-labs/Text-to-Speech/pull/521
+    Spectrogram Model Experiment (Step: 638,720):
+    https://www.comet.com/wellsaid-labs/v11-research-spectrogram/68cbb4f2a5cc41998760e8775bae6eea
+    Signal Model Experiment (Step: 469,420):
+    https://www.comet.com/wellsaid-labs/v11-research-signal/854816f81c584aa3b313d690cd58c3e4
+    """
+
+    V11_2023_04_24_STAGING: typing.Final = "v11_2023_04_24_staging"
 
 
 _GCS_PATH = "gs://wellsaid_labs_checkpoints/"
