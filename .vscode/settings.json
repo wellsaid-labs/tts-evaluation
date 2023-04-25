@@ -52,5 +52,6 @@
     "markdown",
     "latex",
     "plaintext"
-  ]
+  ],
+  "terminal.integrated.scrollback": 10000
 }

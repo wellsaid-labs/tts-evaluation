@@ -413,8 +413,11 @@ def st_html(html: str):
     return st.markdown(html, unsafe_allow_html=True)
 
 
-def path_label(path: pathlib.Path) -> str:
+def path_label(path: typing.Optional[pathlib.Path]) -> str:
     """Get a short label for `path`."""
+    if path is None:
+        return "None"
+
     return (
         str(path.relative_to(ROOT_PATH)) + "/"
         if path.is_dir()
@@ -431,11 +434,12 @@ def st_select_path(
     dir: pathlib.Path,
     suffix: str,
     st: DeltaGenerator = typing.cast(DeltaGenerator, st),
-) -> pathlib.Path:
+) -> typing.Optional[pathlib.Path]:
     """Display a path selector for the directory `dir`."""
     options = [p for p in dir.glob("**/*") if p.suffix == suffix]
-    options = sorted(options, key=lambda x: natural_keys(str(x)), reverse=True)
-    return typing.cast(pathlib.Path, st.selectbox(label, options=options, format_func=path_label))
+    options = [None] + sorted(options, key=lambda x: natural_keys(str(x)), reverse=True)
+    selected = st.selectbox(label, options=options, format_func=path_label)
+    return typing.cast(typing.Optional[pathlib.Path], selected)
 
 
 def st_select_paths(label: str, dir: pathlib.Path, suffix: str) -> typing.List[pathlib.Path]:

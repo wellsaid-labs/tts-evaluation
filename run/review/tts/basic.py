@@ -9,11 +9,24 @@ import streamlit as st
 
 import lib
 import run
+from lib.environment import PT_EXTENSION, load
 from lib.text import XMLType, natural_keys
-from run._config import DEFAULT_SCRIPT
-from run._streamlit import audio_to_web_path, load_tts, st_download_files, st_html, web_path_to_url
-from run._tts import CHECKPOINTS_LOADERS, batch_tts, make_batches
-from run.data._loader import Speaker
+from run._config import (
+    DEFAULT_SCRIPT,
+    SIGNAL_MODEL_EXPERIMENTS_PATH,
+    SPECTROGRAM_MODEL_EXPERIMENTS_PATH,
+)
+from run._models import signal_model, spectrogram_model
+from run._streamlit import (
+    audio_to_web_path,
+    load_tts,
+    st_download_files,
+    st_html,
+    st_select_path,
+    web_path_to_url,
+)
+from run._tts import CHECKPOINTS_LOADERS, TTSPackage, batch_tts, make_batches
+from run.data._loader import Session
 
 
 def main():
@@ -21,45 +34,48 @@ def main():
     st.markdown("Use this workbook to generate audio for quick evaluation.")
     run._config.configure(overwrite=True)
 
-    options = [k.name for k in CHECKPOINTS_LOADERS.keys()]
-    checkpoint = typing.cast(str, st.selectbox("Checkpoints", options=options))
+    options = [None] + [k.name for k in CHECKPOINTS_LOADERS.keys()]
+    checkpoint = st.selectbox("(Optional) Combined Checkpoints", options=options)
+    label = "(Optional) Spectrogram Checkpoint"
+    spec_path = st_select_path(label, SPECTROGRAM_MODEL_EXPERIMENTS_PATH, PT_EXTENSION)
+    label = "(Optional) Signal Checkpoint"
+    sig_path = st_select_path(label, SIGNAL_MODEL_EXPERIMENTS_PATH, PT_EXTENSION)
 
-    with st.spinner("Loading checkpoint(s)..."):
-        tts = load_tts(checkpoint)
+    spec_model, sig_model = None, None
+    if checkpoint is not None:
+        with st.spinner("Loading checkpoint(s)..."):
+            tts = load_tts(checkpoint)
+            spec_model, sig_model = tts.spec_model, tts.signal_model
+    if spec_path is not None:
+        spec_model = typing.cast(spectrogram_model.SpectrogramModel, load(spec_path).export())
+    if sig_path is not None:
+        sig_model = typing.cast(signal_model.SignalModel, load(sig_path).export())
+    if spec_model is None or sig_model is None:
+        st.error("Both a Spectrogram and Signal model need to be specified.")
+        return
+    tts = TTSPackage(spec_model, sig_model)
 
-    format_speaker: typing.Callable[[Speaker], str] = lambda s: s.label
-    speakers = sorted(list(set(sesh.spkr for sesh in tts.session_vocab())))
-    speaker = st.selectbox("Speaker", options=speakers, format_func=format_speaker)  # type: ignore
-    speaker = typing.cast(Speaker, speaker)
-    assert speaker.name is not None
-    speaker_name = speaker.name.split()[0].lower()
+    form = st.form(key="form")
 
     seshs = tts.session_vocab()
-    seshs = sorted([s for s in seshs if s.spkr == speaker], key=lambda s: natural_keys(s.label))
-    all_sesh: bool = st.checkbox("Sample all %d sessions" % len(seshs))
-    seshs = st.multiselect(
-        "Session(s)",
-        options=seshs,
-        default=seshs if all_sesh else [],
-        format_func=lambda s: s.label,
-    )
+    seshs = sorted([s for s in seshs], key=lambda s: natural_keys(s.spkr.label + s.label))
+    format_sesh: typing.Callable[[Session], str] = lambda s: f"{s.spkr.label}/{s.label}"
+    sesh = form.selectbox("Session", options=seshs, format_func=format_sesh)
+    sesh = typing.cast(Session, sesh)
+    assert sesh.spkr.name is not None
+    speaker_name = sesh.spkr.name.split()[0].lower()
 
-    if len(seshs) == 0:
-        return
+    script: str = XMLType(form.text_area("Script", value=DEFAULT_SCRIPT, height=150))
 
-    frm = st.form(key="form")
-    script: str = XMLType(frm.text_area("Script", value=DEFAULT_SCRIPT, height=150))
+    num_clips = form.number_input("Number of Clips", min_value=1, max_value=None, value=1)
+    num_clips = typing.cast(int, num_clips)
 
-    label = "Number of Clips Per Session"
-    num_clips = typing.cast(int, frm.number_input(label, min_value=1, max_value=None, value=5))
-
-    if not frm.form_submit_button("Submit"):
+    if not form.form_submit_button("Submit"):
         return
 
     paths = []
     with st.spinner("Generating audio..."):
-        inputs = [(script, s) for s in seshs]
-        inputs = [i for i in inputs for _ in range(num_clips)]
+        inputs = [(script, sesh) for _ in range(num_clips)]
         batches = make_batches(inputs)
         for i, generated in enumerate(batch_tts(tts, batches)):
             clip_num = i % num_clips + 1
