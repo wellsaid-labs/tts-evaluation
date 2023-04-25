@@ -265,33 +265,11 @@ Set up your local development environment by following [these instructions](LOCA
    vars activate $NAME
    ```
 
-1. (Optional) Find the latest checkpoint...
-
-   ```zsh
-   DIR_NAME='spectrogram_model' # EXAMPLE: spectrogram_model
-   CHECKPOINT=$( \
-    gcloud compute ssh --zone=$VM_ZONE $VM_NAME \
-        --command="cd /opt/wellsaid-labs/Text-to-Speech/disk/experiments/$DIR_NAME/; find . \
-            -name '*.pt' -mindepth 1 -printf '%T+ %P\n' | \
-            sort -n -r | \
-            head -1 | \
-            cut -f2- -d' ' | \
-            cut -sd / -f 1-"
-   )
-   echo "CHECKPOINT=$CHECKPOINT"
-   ```
-
-1. (Optional) Download checkpoints to your local drive...
+1. (Optional) Download the latest checkpoint to your local drive...
 
    ```bash
-   DIR_NAME='' # EXAMPLE: spectrogram_model
-   CHECKPOINT='' # EXAMPLE: '**/**/checkpoints/step_630927.pt'
-
-   DEST="disk/experiments/$DIR_NAME/$VM_NAME/"
-   mkdir -p $DEST
-   gcloud compute scp \
-      $VM_NAME:/opt/wellsaid-labs/Text-to-Speech/disk/experiments/$DIR_NAME/$CHECKPOINT \
-      $DEST --zone=$VM_ZONE
+   DIR_NAME='<directory-to-download-from>' # EXAMPLE: spectrogram_model
+   python -m run.utils.checkpoints download-latest $VM_ZONE $VM_NAME $DIR_NAME
    ```
 
 1. Delete your instance...
