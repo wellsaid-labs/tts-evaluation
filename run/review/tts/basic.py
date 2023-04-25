@@ -32,7 +32,6 @@ from run._tts import CHECKPOINTS_LOADERS, TTSPackage, batch_tts, make_batches
 from run.data._loader import Session
 
 st.set_page_config(
-    layout="wide",
     initial_sidebar_state="collapsed",
     page_title=socket.gethostname() + " • " + os.path.basename(__file__)[:-3] + " • Streamlit",
     page_icon=get_random_emoji(),
