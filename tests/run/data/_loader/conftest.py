@@ -25,7 +25,7 @@ def run_around_tests():
     non_speech_segment_frame_length = 50
     config = {
         run._config.data._get_loudness_annotation: cf.Args(
-            block_size=0.400, precision=0, filter_class="DeMan", sample_rate=format_.sample_rate
+            block_size=0.400, bucket_size=1.0, filter_class="DeMan", sample_rate=format_.sample_rate
         ),
         run._config.data._get_tempo_annotation: cf.Args(bucket_size=0.05),
     }

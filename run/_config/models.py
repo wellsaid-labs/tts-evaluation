@@ -21,7 +21,7 @@ def configure(overwrite: bool = False):
     # NOTE: These values can be increased as needed, they preemtively allocate model
     # parameters.
     max_tokens = 1000
-    max_anno_vector_size = 2
+    max_anno_vector_size = 3
     annos = [("loudness_vector", "loudness_mask"), ("tempo_vector", "tempo_mask")]
 
     # NOTE: We add additional space for extra data in the future.

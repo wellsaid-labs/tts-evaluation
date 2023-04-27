@@ -265,9 +265,10 @@ class Inputs:
 
 SpanDoc = typing.Union[spacy.tokens.span.Span, spacy.tokens.doc.Doc]
 Normalize = typing.Callable[[float], float]
+NormalizeRel = typing.Callable[[float, float], float]
 SliceAnno = typing.Tuple[slice, float]
 SliceAnnos = typing.List[SliceAnno]
-NormSliceAnno = typing.List[typing.Tuple[slice, float, float]]
+NormSliceAnno = typing.List[typing.Tuple[slice, float, float, float]]
 TokenAnnos = typing.Dict[spacy.tokens.token.Token, str]
 InputsWrapperTypeVar = typing.TypeVar("InputsWrapperTypeVar")
 
@@ -322,6 +323,9 @@ class InputsWrapper:
           to predict the POS and other linguistic features. What's the purpose of further having
           context? This also creates a discrepency between training and inference that we need
           to navigate.
+    TODO: It doesn't make sense to extend `tempo` to the end of a clip, especially, if it ends in
+          a unvoiced character because that doesn't factor into the cadence of the clip. Should
+          we strip that out automatically?
     """
 
     # Batch of recording sessions
@@ -333,6 +337,8 @@ class InputsWrapper:
     context: typing.List[SpanDoc]
 
     # Batch of annotations per sequence
+    # NOTE: The `loudness` and `tempo` annotations are expected to be relative to the
+    # session average.
     loudness: typing.List[SliceAnnos]
 
     tempo: typing.List[SliceAnnos]
@@ -402,7 +408,7 @@ class InputsWrapper:
                     # the token like in "Please note--" or "note-- after you register Quicken".
                     # We strip both strings of non-voiced chars, and then compare their length.
                     doc = span_.as_doc() if isinstance(span_, spacy.tokens.span.Span) else span_
-                    idx_ = struc._strip_unvoiced(span_.text, (idx[0], idx[1]), language=lang)
+                    idx_ = struc._strip_unvoiced_align(span_.text, (idx[0], idx[1]), language=lang)
                     char_span = doc.char_span(idx_[0], idx_[1], alignment_mode="expand")
                     func = lambda c: not is_voiced(c, lang)
                     char_span = char_span if char_span is None else strip2(char_span.text, func)
@@ -656,9 +662,11 @@ class InputsWrapper:
 
 
 def _norm_annos(
+    avg_val: float,
     annos: SliceAnnos,
+    norm_rel_val: Normalize,
+    norm_abs_val: NormalizeRel,
     norm_len: Normalize,
-    norm_val: Normalize,
     updates: typing.List[typing.Tuple[slice, int]],
     char_offset: int,
 ) -> NormSliceAnno:
@@ -676,7 +684,8 @@ def _norm_annos(
         (
             slice(u.start + char_offset, u.stop + char_offset),
             norm_len(s.stop - s.start),
-            norm_val(v),
+            norm_rel_val(v),
+            norm_abs_val(v, avg_val),
         )
         for u, (s, v) in zip_strict(updated, annos)
     ]
@@ -685,10 +694,13 @@ def _norm_annos(
 def _norm_input(
     inp: InputsWrapper,
     start_char: int,
-    norm_anno_len: Normalize,
-    norm_anno_loudness: Normalize,
+    norm_len: Normalize,
+    norm_rel_loudness: Normalize,
+    norm_abs_loudness: NormalizeRel,
     norm_sesh_loudness: Normalize,
-    norm_tempo: Normalize,
+    norm_rel_tempo: Normalize,
+    norm_abs_tempo: NormalizeRel,
+    norm_sesh_tempo: Normalize,
 ):
     """Normalize `inp` values to a standard range for training, usually -1 to 1."""
     # NOTE: Adjust annotation slices after respellings have been added to the text.
@@ -697,18 +709,17 @@ def _norm_input(
         for token, respell in inp.respells[0].items()
     ]
     # NOTE: The context is not annotated so we need to offset the annotations by `start_char`.
-    args = (respell_updates, start_char)
+    args = (norm_len, respell_updates, start_char)
+    sesh = inp.session[0]
     return (
-        _norm_annos(inp.loudness[0], norm_anno_len, norm_anno_loudness, *args),
-        _norm_annos(inp.tempo[0], norm_anno_len, norm_tempo, *args),
-        norm_sesh_loudness(inp.session[0].loudness),
-        norm_tempo(inp.session[0].tempo),
+        _norm_annos(sesh.loudness, inp.loudness[0], norm_rel_loudness, norm_abs_loudness, *args),
+        _norm_annos(sesh.tempo, inp.tempo[0], norm_rel_tempo, norm_abs_tempo, *args),
+        norm_sesh_loudness(sesh.loudness),
+        norm_sesh_tempo(sesh.tempo),
     )
 
 
-def _anno_vector(
-    anno: NormSliceAnno, avg: float, **kwargs
-) -> typing.Tuple[torch.Tensor, torch.Tensor]:
+def _anno_vector(anno: NormSliceAnno, **kwargs) -> typing.Tuple[torch.Tensor, torch.Tensor]:
     """Create an sequence with a corresponding annotation vector for each token.
 
     Args:
@@ -723,11 +734,12 @@ def _anno_vector(
     # NOTE: The annotation length annotation helps the model understand how "strict" the annotation
     # is. A short annotation does not have much room to deviate while a long one does.
     anno_vector = (
-        slice_seq([(s, value) for s, _, value in anno], **kwargs),
-        slice_seq([(s, length) for s, length, _ in anno], **kwargs),
+        slice_seq([(s, rel_val) for s, _, rel_val, _ in anno], **kwargs),
+        slice_seq([(s, abs_val) for s, _, _, abs_val in anno], **kwargs),
+        slice_seq([(s, length) for s, length, _, _ in anno], **kwargs),
     )
     anno_vector = torch.stack(anno_vector, dim=1)
-    anno_mask = slice_seq([(slice_, 1) for slice_, _, _ in anno], **kwargs).unsqueeze(1)
+    anno_mask = slice_seq([(slice_, 1) for slice_, _, _, _ in anno], **kwargs).unsqueeze(1)
     return anno_vector, anno_mask
 
 
@@ -755,8 +767,6 @@ def _token_vector(
     wrap: InputsWrapper,
     norm_loudness: NormSliceAnno,
     norm_tempo: NormSliceAnno,
-    norm_sesh_loudness: float,
-    norm_sesh_tempo: float,
     spacy_tokens: typing.List[str],
     **kwargs,
 ) -> typing.Tuple[typing.Dict[str, slice], torch.Tensor]:
@@ -766,8 +776,6 @@ def _token_vector(
         ...
         norm_loudness: Normalized loudness annotations.
         norm_tempo: Normalized tempo annotations.
-        norm_sesh_loudness: Normalized loudness session average.
-        norm_sesh_tempo: Normalized tempo session average.
         spacy_tokens: A list of all the spaCy tokens in the input.
 
     Returns:
@@ -776,8 +784,8 @@ def _token_vector(
     """
     num_chars = sum(len(t) for t in spacy_tokens)
     anno_kwargs = dict(length=num_chars, **kwargs)
-    loudness_vector, loudness_mask = _anno_vector(norm_loudness, norm_sesh_loudness, **anno_kwargs)
-    tempo_vector, tempo_mask = _anno_vector(norm_tempo, norm_sesh_tempo, **anno_kwargs)
+    loudness_vector, loudness_mask = _anno_vector(norm_loudness, **anno_kwargs)
+    tempo_vector, tempo_mask = _anno_vector(norm_tempo, **anno_kwargs)
     word_vector = _word_vector(wrap.context[0], spacy_tokens, **kwargs)
     annos = dict(
         loudness_vector=loudness_vector,  # torch.FloatTensor [total_chars, 3]
@@ -801,10 +809,7 @@ def _char_slice(span: SpanDoc, token: spacy.tokens.token.Token) -> slice:
 def preprocess(
     wrap: InputsWrapper,
     get_max_audio_len: typing.Callable[[str], int],
-    norm_anno_len: Normalize,
-    norm_anno_loudness: Normalize,
-    norm_sesh_loudness: Normalize,
-    norm_tempo: Normalize,
+    device: typing.Optional[torch.device] = None,
     **kwargs,
 ) -> Inputs:
     """Preprocess `batch` into model `Inputs`.
@@ -818,12 +823,9 @@ def preprocess(
         wrap: A raw batch of data that needs to be preprocessed.
         get_max_audio_len: A callable for determining the maximum audio length in frames for
             a given piece of text.
-        norm_loudness: Normalized loudness annotations.
-        norm_tempo: Normalized tempo annotations.
-        norm_sesh_loudness: Normalized loudness session average.
-        norm_sesh_tempo: Normalized tempo session average.
+        ...
     """
-    empty = torch.empty(0, **kwargs)
+    empty = torch.empty(0, device=device)
     max_audio_len, token_vectors, token_vector_idx, seq_vectors = [], [], {}, []
     result = Inputs([], [], [], empty, {}, empty, [], empty)  # Preprocessed `Inputs`.
     for item in wrap:
@@ -862,23 +864,16 @@ def preprocess(
         pronun_casing = list(zip_strict(pronun, casing))
         result.token_meta.append([pronun_casing, cntxt])  # type: ignore
 
-        normalizers = dict(
-            norm_anno_len=norm_anno_len,
-            norm_anno_loudness=norm_anno_loudness,
-            norm_sesh_loudness=norm_sesh_loudness,
-            norm_tempo=norm_tempo,
-        )
-        normalized = _norm_input(item, start_char, **normalizers)
-        token_vector_idx, token_vector = _token_vector(item, *normalized, spacy_tokens, **kwargs)
-        assert token_vector.shape[0] == len(chars), "Invariant failure"
-        token_vectors.append(token_vector)
-        _, _, sesh_loudness, sesh_tempo = normalized
-        seq_vectors.append(torch.tensor([sesh_loudness, sesh_tempo], **kwargs))
+        normd = _norm_input(item, start_char, **kwargs)
+        token_vector_idx, tkn_vec = _token_vector(item, *normd[:2], spacy_tokens, device=device)
+        assert tkn_vec.shape[0] == len(chars), "Invariant failure"
+        token_vectors.append(tkn_vec)
+        seq_vectors.append(torch.tensor(normd[2:], device=device))
 
     return dataclasses.replace(
         result,
         token_vectors=pad_sequence(token_vectors, batch_first=True),
         token_vector_idx=token_vector_idx,
         seq_vectors=torch.stack(seq_vectors, dim=0),
-        max_audio_len=torch.tensor(max_audio_len, dtype=torch.long, **kwargs),
+        max_audio_len=torch.tensor(max_audio_len, dtype=torch.long, device=device),
     )

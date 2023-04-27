@@ -58,29 +58,46 @@ def _get_max_audio_len_in_frames(text: str, frames_per_second: float) -> int:
 # normalization functions help adjust for that.
 
 
-def _norm_anno_len(val: float, avg_anno_length: float = 40.5) -> float:
+def _norm_anno_len(val: float, avg_val: float = 40.5) -> float:
     """Normalize a annotation length with an average around `avg_anno_length` characters.
     This is bounded to 1 so this value doesn't grow unbounded for longer annotations.
     """
-    return min(val / avg_anno_length - 1, 1.0)
+    return min(val / avg_val - 1, 1.0)
 
 
-def _norm_anno_loudness(val: float, compression: float = 50) -> float:
-    """Normalize a annotation loudness value which is from 35 to -60 db centered at 0 db."""
-    return val / compression
-
-
-def _norm_tempo(val: float, avg_val: float = 1.0) -> float:
-    """Normalize a annotation tempo value which is from 0.5x to 5x with an average around 1x."""
+def _norm_anno_rel_tempo(val: float, avg_val: float = 1.0) -> float:
+    """Normalize a annotation tempo value which is from 0.3 to 3x with an average around 1x."""
     return val - avg_val
 
 
-def _norm_sesh_loudness(val: float, avg_val: float = -21, compression: float = 50) -> float:
-    """Normalize a session loudness value which is from -5 to -70 db with an average around -21 db.
+def _norm_sesh_tempo(val: float, avg_val: float = 1.0, compression: float = 1 / 5) -> float:
+    """Normalize a annotation tempo value which is from 0.8 to 1.2x with an average around 1x."""
+    return (val - avg_val) / compression
+
+
+def _norm_anno_abs_tempo(rel_val: float, sesh_avg_val: float, avg_val: float = 1.0) -> float:
+    """Normalize a annotation tempo value which is from 0.3 to 3x with an average around 1x."""
+    return rel_val * sesh_avg_val - avg_val
+
+
+def _norm_anno_rel_loudness(val: float, compression: float = 50) -> float:
+    """Normalize a annotation loudness value which is from 10 to -55 db."""
+    return val / compression
+
+
+def _norm_sesh_loudness(val: float, avg_val: float = -23, compression: float = 5) -> float:
+    """Normalize a session loudness value which is from -18 to -33 db with an average
+    around -23 db.
+    """
+    return _norm_anno_rel_loudness(val - avg_val, compression)
+
+
+def _norm_anno_abs_loudness(rel_val: float, sesh_avg_val: float, compression: float = 50) -> float:
+    """Normalize a annotation loudness value which is from 10 to -55 db.
 
     NOTE: LUFS by definition cannot be less than -70 db, or more than 0db.
     """
-    return (val - avg_val) / compression
+    return _norm_sesh_loudness(rel_val + sesh_avg_val, compression)
 
 
 def configure(sample_rate: int = 24000, overwrite: bool = False):
@@ -256,10 +273,13 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
             get_max_audio_len=partial(
                 _get_max_audio_len_in_frames, frames_per_second=frames_per_second
             ),
-            norm_anno_len=_norm_anno_len,
-            norm_anno_loudness=_norm_anno_loudness,
+            norm_len=_norm_anno_len,
+            norm_rel_loudness=_norm_anno_rel_loudness,
+            norm_abs_loudness=_norm_anno_abs_loudness,
             norm_sesh_loudness=_norm_sesh_loudness,
-            norm_tempo=_norm_tempo,
+            norm_rel_tempo=_norm_anno_rel_tempo,
+            norm_abs_tempo=_norm_anno_abs_tempo,
+            norm_sesh_tempo=_norm_sesh_tempo,
         ),
         run._models.spectrogram_model.inputs.InputsWrapper.check_invariants: Args(
             # NOTE: The annotation min and max values can be reviewed in the

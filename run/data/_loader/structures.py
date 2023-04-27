@@ -113,7 +113,7 @@ def has_a_mistranscription(span: typing.Union[Passage, Span]) -> bool:
     return any(_is_alignment_voiced(p, a) for p, s in slices for a in p.nonalignments[s])
 
 
-def _strip_unvoiced(text: str, align: IntInt, **kwargs) -> IntInt:
+def _strip_unvoiced_align(text: str, align: IntInt, **kwargs) -> IntInt:
     """Get an alignment stripped of any unvoiced characters at either end."""
     updated = [align[0], align[1]]
     while updated[1] > updated[0] and not run._config.is_voiced(text[updated[1] - 1], **kwargs):
@@ -121,6 +121,16 @@ def _strip_unvoiced(text: str, align: IntInt, **kwargs) -> IntInt:
     while updated[0] < updated[1] and not run._config.is_voiced(text[updated[0]], **kwargs):
         updated[0] += 1
     return tuple(updated)
+
+
+def strip_unvoiced(text: str, **kwargs) -> str:
+    # NOTE: Our alignments and spans include ending punctuation marks in text; however, we
+    # do not include the corresponding silence in the audio. So, we should remove text characters
+    # that do not align with the audio. These include unvoiced characters at the beginning
+    # and end of the text.
+    # TODO: Let's consider adjusting our alignment so that unvoiced characters do not appear
+    # at the ends of them.
+    return text[slice(*_strip_unvoiced_align(text, (0, len(text)), **kwargs))]
 
 
 _alignment_dtype = [
@@ -716,6 +726,10 @@ class Span:
         return self.passage.session.spkr
 
     @property
+    def lang(self) -> Language:
+        return self.passage.session.spkr.language
+
+    @property
     def session(self) -> Session:
         return self.passage.session
 
@@ -753,9 +767,9 @@ class Span:
         """
         return [
             Alignment(
-                _strip_unvoiced(self.script, a.script, language=self.speaker.language),
+                _strip_unvoiced_align(self.script, a.script, language=self.lang),
                 a.audio,
-                _strip_unvoiced(self.transcript, a.transcript, language=self.speaker.language),
+                _strip_unvoiced_align(self.transcript, a.transcript, language=self.lang),
             )
             for a in self.speech_segments
         ]
@@ -1261,6 +1275,7 @@ def _process_sessions(
                 if any(p.alignments is None for p in sesh_psgs)
                 else (p.aligned_script for p in sesh_psgs)
             )
+            script = strip_unvoiced(script, language=sesh.spkr.dialect.value[0])
             tempo = get_tempo(script, audio_len)
             updates[sesh] = Session(*sesh, get_loudness(audios), tempo, 0)
             total_audio_len += audio_len
