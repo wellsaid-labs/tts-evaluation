@@ -264,11 +264,13 @@ class Inputs:
 
 
 SpanDoc = typing.Union[spacy.tokens.span.Span, spacy.tokens.doc.Doc]
-Normalize = typing.Callable[[float], float]
-NormalizeRel = typing.Callable[[float, float], float]
+NormalizeAnnoTwo = typing.Callable[[float, float], typing.Tuple[float, float]]
+NormalizeAnno = typing.Callable[[float, float], float]
+NormalizeLen = typing.Callable[[float], float]
+NormalizeSesh = typing.Callable[[float], float]
 SliceAnno = typing.Tuple[slice, float]
 SliceAnnos = typing.List[SliceAnno]
-NormSliceAnno = typing.List[typing.Tuple[slice, float, float, float]]
+NormSliceAnno = typing.List[typing.Tuple[slice, typing.Tuple[float, ...]]]
 TokenAnnos = typing.Dict[spacy.tokens.token.Token, str]
 InputsWrapperTypeVar = typing.TypeVar("InputsWrapperTypeVar")
 
@@ -664,9 +666,8 @@ class InputsWrapper:
 def _norm_annos(
     avg_val: float,
     annos: SliceAnnos,
-    norm_rel_val: Normalize,
-    norm_abs_val: NormalizeRel,
-    norm_len: Normalize,
+    norm_anno: typing.Union[NormalizeAnno, NormalizeAnnoTwo],
+    norm_len: NormalizeLen,
     updates: typing.List[typing.Tuple[slice, int]],
     char_offset: int,
 ) -> NormSliceAnno:
@@ -674,18 +675,19 @@ def _norm_annos(
 
     Args:
         annos: Annotations mapping slices to values.
-        norm_len: A function to normalize the annotation length.
-        norm_val: A function to normalize the annotation values.
+        norm_anno: A function to normalizes the annotation values, potentially generating multiple
+            features.
+        norm_len: A function to normalize the annotation length, potentially generating multiple
+            features.
         updates: Updates to make to the underlying `annos` index, adjusting the slices.
         char_offset: The number of characters to offset `annos`.
     """
     updated = offset_slices([s for s, _ in annos], updates)
+    unpack = lambda t: t if isinstance(t, tuple) else (t,)
     return [
         (
             slice(u.start + char_offset, u.stop + char_offset),
-            norm_len(s.stop - s.start),
-            norm_rel_val(v),
-            norm_abs_val(v, avg_val),
+            (*unpack(norm_len(s.stop - s.start)), *unpack(norm_anno(v, avg_val))),
         )
         for u, (s, v) in zip_strict(updated, annos)
     ]
@@ -694,13 +696,11 @@ def _norm_annos(
 def _norm_input(
     inp: InputsWrapper,
     start_char: int,
-    norm_len: Normalize,
-    norm_rel_loudness: Normalize,
-    norm_abs_loudness: NormalizeRel,
-    norm_sesh_loudness: Normalize,
-    norm_rel_tempo: Normalize,
-    norm_abs_tempo: NormalizeRel,
-    norm_sesh_tempo: Normalize,
+    norm_len: NormalizeLen,
+    norm_anno_loudness: NormalizeAnno,
+    norm_sesh_loudness: NormalizeSesh,
+    norm_anno_tempo: NormalizeAnnoTwo,
+    norm_sesh_tempo: NormalizeSesh,
 ):
     """Normalize `inp` values to a standard range for training, usually -1 to 1."""
     # NOTE: Adjust annotation slices after respellings have been added to the text.
@@ -712,19 +712,21 @@ def _norm_input(
     args = (norm_len, respell_updates, start_char)
     sesh = inp.session[0]
     return (
-        _norm_annos(sesh.loudness, inp.loudness[0], norm_rel_loudness, norm_abs_loudness, *args),
-        _norm_annos(sesh.tempo, inp.tempo[0], norm_rel_tempo, norm_abs_tempo, *args),
+        _norm_annos(sesh.loudness, inp.loudness[0], norm_anno_loudness, *args),
+        _norm_annos(sesh.tempo, inp.tempo[0], norm_anno_tempo, *args),
         norm_sesh_loudness(sesh.loudness),
         norm_sesh_tempo(sesh.tempo),
     )
 
 
-def _anno_vector(anno: NormSliceAnno, **kwargs) -> typing.Tuple[torch.Tensor, torch.Tensor]:
+def _anno_vector(
+    num_feats: int, anno: NormSliceAnno, **kwargs
+) -> typing.Tuple[torch.Tensor, torch.Tensor]:
     """Create an sequence with a corresponding annotation vector for each token.
 
     Args:
+        num_feats: The number of features to expect.
         anno: A list of slices with the corresponding length and value.
-        avg: A baseline average value for this annotation for the model to reference.
         kwargs: Additional key-word arguments pased to `_slice_seq`
 
     Returns:
@@ -733,13 +735,13 @@ def _anno_vector(anno: NormSliceAnno, **kwargs) -> typing.Tuple[torch.Tensor, to
     """
     # NOTE: The annotation length annotation helps the model understand how "strict" the annotation
     # is. A short annotation does not have much room to deviate while a long one does.
-    anno_vector = (
-        slice_seq([(s, rel_val) for s, _, rel_val, _ in anno], **kwargs),
-        slice_seq([(s, abs_val) for s, _, _, abs_val in anno], **kwargs),
-        slice_seq([(s, length) for s, length, _, _ in anno], **kwargs),
-    )
+    if len(anno) > 0:
+        assert len(anno[0][1]) == num_feats
+    anno_vector = []
+    for i in range(num_feats):
+        anno_vector.append(slice_seq([(s, feats[i]) for s, feats in anno], **kwargs))
     anno_vector = torch.stack(anno_vector, dim=1)
-    anno_mask = slice_seq([(slice_, 1) for slice_, _, _, _ in anno], **kwargs).unsqueeze(1)
+    anno_mask = slice_seq([(slice_, 1) for slice_, _ in anno], **kwargs).unsqueeze(1)
     return anno_vector, anno_mask
 
 
@@ -784,11 +786,13 @@ def _token_vector(
     """
     num_chars = sum(len(t) for t in spacy_tokens)
     anno_kwargs = dict(length=num_chars, **kwargs)
-    loudness_vector, loudness_mask = _anno_vector(norm_loudness, **anno_kwargs)
-    tempo_vector, tempo_mask = _anno_vector(norm_tempo, **anno_kwargs)
+    # NOTE: `_anno_vector#num_feats` are set by `_norm_input` which has typing to signify the number
+    # of features for each vector.
+    loudness_vector, loudness_mask = _anno_vector(2, norm_loudness, **anno_kwargs)
+    tempo_vector, tempo_mask = _anno_vector(3, norm_tempo, **anno_kwargs)
     word_vector = _word_vector(wrap.context[0], spacy_tokens, **kwargs)
     annos = dict(
-        loudness_vector=loudness_vector,  # torch.FloatTensor [total_chars, 3]
+        loudness_vector=loudness_vector,  # torch.FloatTensor [total_chars, 2]
         loudness_mask=loudness_mask,  # torch.FloatTensor [total_chars, 1]
         tempo_vector=tempo_vector,  # torch.FloatTensor [total_chars, 3]
         tempo_mask=tempo_mask,  # torch.FloatTensor [total_chars, 1]

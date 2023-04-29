@@ -333,11 +333,11 @@ def _check_processed(
     seq_vector = torch.tensor([sesh.loudness, sesh.tempo])
     assert torch.equal(processed.seq_vectors, seq_vector.view(1, 2))
     assert processed.token_vector_idx == dict(
-        loudness_vector=slice(0, 3),
-        loudness_mask=slice(3, 4),
-        tempo_vector=slice(4, 7),
-        tempo_mask=slice(7, 8),
-        word_vector=slice(8, 404),
+        loudness_vector=slice(0, 2),
+        loudness_mask=slice(2, 3),
+        tempo_vector=slice(3, 6),
+        tempo_mask=slice(6, 7),
+        word_vector=slice(7, 403),
     )
     vocab: spacy.vocab.Vocab = nlp.vocab
     word_vector_len = nlp.meta["vectors"]["width"]
@@ -389,11 +389,9 @@ def test_preprocess():
     inp = InputsWrapper.from_xml(XMLType(doc[:-1].text), doc[:-1], sesh, doc)
     kwargs = dict(
         norm_len=identity,
-        norm_rel_loudness=identity,
-        norm_abs_loudness=lambda a, _: a,
+        norm_anno_loudness=lambda a, _: a,
         norm_sesh_loudness=identity,
-        norm_rel_tempo=identity,
-        norm_abs_tempo=lambda a, _: a,
+        norm_anno_tempo=lambda a, _: a,
         norm_sesh_tempo=identity,
     )
     processed = preprocess(inp, lambda t: len(t), **kwargs)
@@ -414,11 +412,9 @@ def test_preprocess__respelling():
     inp = InputsWrapper.from_xml(xml, doc[1:-1], make_session(), doc)
     kwargs = dict(
         norm_len=identity,
-        norm_rel_loudness=identity,
-        norm_abs_loudness=lambda a, b: a,
+        norm_anno_loudness=lambda a, _: a,
         norm_sesh_loudness=identity,
-        norm_rel_tempo=identity,
-        norm_abs_tempo=lambda a, b: a,
+        norm_anno_tempo=lambda a, _: a,
         norm_sesh_tempo=identity,
     )
     processed = preprocess(inp, lambda t: len(t), **kwargs)
@@ -554,11 +550,9 @@ def test_preprocess__slice_anno():
         inp,
         get_max_audio_len=lambda t: len(t),
         norm_len=lambda f: f * 2,
-        norm_rel_loudness=lambda f: f * 3,
-        norm_abs_loudness=lambda f, a: (f + a) * 4,
+        norm_anno_loudness=lambda f, a: (f * 3,),
         norm_sesh_loudness=lambda f: f * 5,
-        norm_rel_tempo=lambda f: f * 6,
-        norm_abs_tempo=lambda f, a: (f * a) * 7,
+        norm_anno_tempo=lambda f, a: (f * 6, (f * a) * 7),
         norm_sesh_tempo=lambda f: f * 8,
     )
 
@@ -567,9 +561,8 @@ def test_preprocess__slice_anno():
     l_prefix = [0] * len("analysis, ")
     l_suffix = [0] * len(" and")
     result = [
-        l_prefix + [10.0 * 3] * l_anno_len + l_suffix,
-        l_prefix + [(10.0 + sesh.loudness) * 4] * l_anno_len + l_suffix,
         l_prefix + [len("not about about I gain") * 2] * l_anno_len + l_suffix,
+        l_prefix + [10.0 * 3] * l_anno_len + l_suffix,
     ]
     result = torch.tensor(result, dtype=torch.float)
     assert_almost_equal(processed.get_token_vec("loudness_vector")[0].T, result)
@@ -583,9 +576,9 @@ def test_preprocess__slice_anno():
     t_prefix = [0] * len("analysis, not uh-BOWT WHAT")
     t_suffix = [0] * len("I gain and")
     result = [
+        t_prefix + [t_anno_len * 2] * t_anno_len + t_suffix,
         t_prefix + [0.5 * 6] * t_anno_len + t_suffix,
         t_prefix + [(0.5 * sesh.tempo) * 7] * t_anno_len + t_suffix,
-        t_prefix + [t_anno_len * 2] * t_anno_len + t_suffix,
     ]
     result = torch.tensor(result, dtype=torch.float)
     assert_almost_equal(processed.get_token_vec("tempo_vector")[0].T, result)

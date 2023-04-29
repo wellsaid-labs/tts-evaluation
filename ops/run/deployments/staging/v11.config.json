@@ -1,8 +1,8 @@
 {
   "env": "staging",
   "model": "v11",
-  "version": "18",
-  "image": "gcr.io/voice-service-2-313121/speech-api-worker@sha256:0b9dbb2cce2aaf161eb48cadd846f0dea65c09a743919ff6bbb638a4e0321b7c",
+  "version": "20",
+  "image": "gcr.io/voice-service-2-313121/speech-api-worker@sha256:8f2c8fd10aa6c703a0c9d11157c2c309ad799a23c6b29af60655243a3b9e9ab9",
   "imageEntrypoint": "run.deploy.worker:app",
   "provideApiKeyAuthForLegacyContainerSupport": "true",
   "stream": {
@@ -41,7 +41,7 @@
   },
   "traffic": [
     {
-      "tag": "18",
+      "tag": "20",
       "percent": 100
     }
   ]

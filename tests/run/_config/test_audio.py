@@ -9,43 +9,29 @@ def test__norm_anno_len():
     assert audio._norm_anno_len(81) == 1.0
 
 
-def test__norm_anno_rel_tempo():
-    """Test `audio._norm_anno_rel_tempo` normalizes input to approx -1 to 1."""
-    assert audio._norm_anno_rel_tempo(0.3) == -0.7
-    assert audio._norm_anno_rel_tempo(1.0) == 0.0
-    assert audio._norm_anno_rel_tempo(3.0) == 2.0
-
-
 def test__norm_sesh_tempo():
     """Test `audio._norm_sesh_tempo` normalizes input to approx -1 to 1."""
-    assert audio._norm_sesh_tempo(0.8) == -0.9999999999999998
+    assert audio._norm_sesh_tempo(0.7) == -1.5000000000000002
     assert audio._norm_sesh_tempo(1.0) == 0.0
     assert audio._norm_sesh_tempo(1.2) == 0.9999999999999998
 
 
-def test__norm_anno_abs_tempo():
-    """Test `audio._norm_anno_abs_tempo` normalizes input to approx -1 to 1."""
-    assert audio._norm_anno_rel_tempo(0.3, 1.0) == -0.7
-    assert audio._norm_anno_rel_tempo(1.0, 1.0) == 0.0
-    assert audio._norm_anno_rel_tempo(3.0, 1.0) == 2.0
-
-
-def test__norm_anno_rel_loudness():
-    """Test `audio._norm_anno_rel_loudness` normalizes input to approx -1 to 1."""
-    assert audio._norm_anno_rel_loudness(-55) == -1.1
-    assert audio._norm_anno_rel_loudness(0) == 0.0
-    assert audio._norm_anno_rel_loudness(10) == 0.2
+def test__norm_anno_tempo():
+    """Test `audio._norm_anno_tempo` normalizes input to approx -1 to 1."""
+    assert audio._norm_anno_tempo(0.8, 1.0) == (-0.9999999999999998, 1.25)
+    assert audio._norm_anno_tempo(1.0, 1.0) == (0.0, 0.0)
+    assert audio._norm_anno_tempo(1.5, 1.0) == (2.5, -1.6666666666666667)
 
 
 def test__norm_sesh_loudness():
     """Test `audio._norm_sesh_loudness` normalizes input to approx -1 to 1."""
-    assert audio._norm_sesh_loudness(-18) == 1.0
+    assert audio._norm_sesh_loudness(-15) == 0.8
     assert audio._norm_sesh_loudness(-23) == 0.0
-    assert audio._norm_sesh_loudness(-33) == -2.0
+    assert audio._norm_sesh_loudness(-35) == -1.2
 
 
-def test__norm_anno_abs_loudness():
-    """Test `audio._norm_anno_abs_loudness` normalizes input to approx -1 to 1."""
-    assert audio._norm_anno_rel_loudness(-55) == -1.1
-    assert audio._norm_anno_rel_loudness(0) == 0.0
-    assert audio._norm_anno_rel_loudness(10) == 0.2
+def test__norm_anno_loudness():
+    """Test `audio._norm_anno_loudness` normalizes input to approx -1 to 1."""
+    assert audio._norm_anno_loudness(3, -23) == (0.3,)
+    assert audio._norm_anno_loudness(0, -23) == (0.0,)
+    assert audio._norm_anno_loudness(-4, -23) == (-0.4,)

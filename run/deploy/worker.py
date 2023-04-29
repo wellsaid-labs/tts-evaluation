@@ -90,6 +90,9 @@ KAI_M__MP = EN.KAI_M__MANUAL_POST
 GEN_M_CONVO = EN.GENEVIEVE_M__CONVO
 
 # NOTE: The keys need to stay the same for backwards compatibility.
+# TODO: Our average tempo accross all speakers is 0.95 or so, which is a bit lower than 1.0.
+# It might be wortwhile to more deeply dive into the discrepencies between calculating the tempo
+# accross an entire session versus an annoation.
 _SPKR_ID_TO_SESH = {
     # NOTE: These 3 are open-source voices that didn't consent to be on our platform.
     # 0: (english.m_ailabs.JUDY_BIEBER, ""),

@@ -65,39 +65,48 @@ def _norm_anno_len(val: float, avg_val: float = 40.5) -> float:
     return min(val / avg_val - 1, 1.0)
 
 
-def _norm_anno_rel_tempo(val: float, avg_val: float = 1.0) -> float:
-    """Normalize a annotation tempo value which is from 0.3 to 3x with an average around 1x."""
-    return val - avg_val
+# NOTE: The normalization values were determined via the
+# `run/review/dataset_processing/annotations.py`s workbook. In the workbook, we look at
+# 10,000 annotations and filter out the smaller annotations (less than 40 voiced characters). This
+# helps us get reasonable values for these annotations, which we've documented below and used
+# for normalization.
 
 
-def _norm_sesh_tempo(val: float, avg_val: float = 1.0, compression: float = 1 / 5) -> float:
-    """Normalize a annotation tempo value which is from 0.8 to 1.2x with an average around 1x."""
+def _norm_anno_rel_tempo(val: float, avg_val: float = 1.0, compression: float = 0.2) -> float:
+    """Normalize a annotation tempo value which is from 0.8 to 1.5x (0.31 to 4.46x bounds) with an
+    average around 1x."""
     return (val - avg_val) / compression
 
 
-def _norm_anno_abs_tempo(rel_val: float, sesh_avg_val: float, avg_val: float = 1.0) -> float:
-    """Normalize a annotation tempo value which is from 0.3 to 3x with an average around 1x."""
-    return rel_val * sesh_avg_val - avg_val
+def _norm_sesh_tempo(val: float, avg_val: float = 1.0, compression: float = 0.2) -> float:
+    """Normalize a annotation tempo value which is from 0.7 to 1.2x (0.57 to 1.33x bounds) with an
+    average around 1x."""
+    return (val - avg_val) / compression
 
 
-def _norm_anno_rel_loudness(val: float, compression: float = 50) -> float:
-    """Normalize a annotation loudness value which is from 10 to -55 db."""
-    return val / compression
+def _norm_anno_tempo(rel_val: float, sesh_avg_val: float) -> typing.Tuple[float, ...]:
+    # NOTE: As tempo gets smaller, it goes to zero, so we include the reverse component of tempo
+    # so that it can continue to grow and influence the model.
+    return (
+        _norm_anno_rel_tempo(rel_val),
+        _norm_anno_rel_tempo((1 / (rel_val * sesh_avg_val)) / sesh_avg_val),
+    )
 
 
-def _norm_sesh_loudness(val: float, avg_val: float = -23, compression: float = 5) -> float:
-    """Normalize a session loudness value which is from -18 to -33 db with an average
-    around -23 db.
+def _norm_anno_rel_loudness(val: float, avg_val: float = 0, compression: float = 10) -> float:
+    """Normalize a annotation loudness value which is from 3 to -4 db (10 to -53 db bounds)."""
+    return (val - avg_val) / compression
+
+
+def _norm_sesh_loudness(val: float, avg_val: float = -23, compression: float = 10) -> float:
+    """Normalize a session loudness value which is from -15 to -35 db (-13 to -36 db bounds) with an
+    average around -23 db.
     """
-    return _norm_anno_rel_loudness(val - avg_val, compression)
+    return (val - avg_val) / compression
 
 
-def _norm_anno_abs_loudness(rel_val: float, sesh_avg_val: float, compression: float = 50) -> float:
-    """Normalize a annotation loudness value which is from 10 to -55 db.
-
-    NOTE: LUFS by definition cannot be less than -70 db, or more than 0db.
-    """
-    return _norm_sesh_loudness(rel_val + sesh_avg_val, compression)
+def _norm_anno_loudness(rel_val: float, sesh_avg_val: float) -> typing.Tuple[float, ...]:
+    return (_norm_anno_rel_loudness(rel_val),)
 
 
 def configure(sample_rate: int = 24000, overwrite: bool = False):
@@ -274,11 +283,9 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
                 _get_max_audio_len_in_frames, frames_per_second=frames_per_second
             ),
             norm_len=_norm_anno_len,
-            norm_rel_loudness=_norm_anno_rel_loudness,
-            norm_abs_loudness=_norm_anno_abs_loudness,
+            norm_anno_loudness=_norm_anno_loudness,
             norm_sesh_loudness=_norm_sesh_loudness,
-            norm_rel_tempo=_norm_anno_rel_tempo,
-            norm_abs_tempo=_norm_anno_abs_tempo,
+            norm_anno_tempo=_norm_anno_tempo,
             norm_sesh_tempo=_norm_sesh_tempo,
         ),
         run._models.spectrogram_model.inputs.InputsWrapper.check_invariants: Args(

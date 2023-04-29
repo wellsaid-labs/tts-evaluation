@@ -112,11 +112,11 @@ def _generate(
             st.warning(f"Skipping `{spkr}` not found in model vocab.")
             continue
         sesh = random.choice(seshs)
-        loudness_diff = random.uniform(min_loudness, max_loudness)
-        expected_loudness = sesh.loudness + loudness_diff
-        tempo_diff = random.uniform(min_tempo, max_tempo)
-        expected_tempo = sesh.spkr_tempo + tempo_diff
-        xml = f"<loudness value='{loudness_diff}'><tempo value='{expected_tempo}'>"
+        rel_loudness = random.uniform(min_loudness, max_loudness)
+        expected_loudness = sesh.loudness + rel_loudness
+        rel_tempo = random.uniform(min_tempo, max_tempo)
+        expected_tempo = rel_tempo * sesh.tempo
+        xml = f"<loudness value='{rel_loudness}'><tempo value='{rel_tempo}'>"
         xml += f"{script}</tempo></loudness>"
         xml = XMLType(xml)
         inputs.append((xml, sesh))
@@ -138,10 +138,10 @@ def main():
     label = "Spectrogram Checkpoints"
     spec_path = st_select_path(label, SPECTROGRAM_MODEL_EXPERIMENTS_PATH, PT_EXTENSION, form)
     num_samples = int(form.number_input("Number of Samples", min_value=1, value=100))
-    min_loudness = float(form.number_input("Minimum Loudness", value=-8))
-    max_loudness = float(form.number_input("Maximum Loudness", value=8))
-    min_tempo = float(form.number_input("Minimum Tempo", value=-0.25))
-    max_tempo = float(form.number_input("Maximum Tempo", value=0.4))
+    min_loudness = float(form.number_input("Minimum Loudness", value=-4))
+    max_loudness = float(form.number_input("Maximum Loudness", value=3))
+    min_tempo = float(form.number_input("Minimum Tempo", value=0.82))
+    max_tempo = float(form.number_input("Maximum Tempo", value=1.52))
     if not form.form_submit_button("Submit"):
         return
 
