@@ -140,10 +140,10 @@ class Encoder(torch.nn.Module):
             torch.nn.Mish(),
             torch.nn.Linear(hidden_size, hidden_size * 6),
         )
-        self.scale = len(self.embed_seq_meta) + len(self.embed_token_meta)
-        self.scale += len([self.embed_word_vec, self.embed_token])
-        self.scale = math.sqrt(self.scale)
-        self.scale_annos = math.sqrt(len(self.annos) + len([self.embed_seq_vector]))
+        self.scale_tok = len(self.embed_token_meta) + len([self.embed_word_vec, self.embed_token])
+        self.scale_tok = math.sqrt(self.scale_tok)
+        self.scale_anno = len(self.annos) + len([self.embed_seq_vector]) + len(self.embed_seq_meta)
+        self.scale_anno = math.sqrt(self.scale_anno)
 
         conv = lambda: _Convs(hidden_size, conv_filter_size, num_conv_block_layers)
         rnn = lambda: LSTM(hidden_size, hidden_size, batch_first=True)
@@ -193,12 +193,12 @@ class Encoder(torch.nn.Module):
         anno_embeds = self.embed_annos(anno_vecs).transpose(1, 2).chunk(len(self.annos), dim=2)
         anno_masks = [inputs.get_token_vec(m) for _, m in self.annos]
         anno_embeds = [e.masked_fill(~m.bool(), 0) for e, m in zip(anno_embeds, anno_masks)]
-        anno_embeds.append(seq_vector)
-        anno_embed = torch.stack(anno_embeds).sum(dim=0) / self.scale_annos
+        anno_embeds.extend([seq_vector, seq_embed])
+        anno_embed = torch.stack(anno_embeds).sum(dim=0) / self.scale_anno
         anno_embeds = self.embed_anno_net(anno_embed).chunk(6, dim=2)
 
-        feats = [tokens, seq_embed, word_vector] + token_meta
-        tokens = torch.stack(feats).sum(dim=0) / self.scale
+        feats = [tokens, word_vector] + token_meta
+        tokens = torch.stack(feats).sum(dim=0) / self.scale_tok
         tokens = self.norms[0](tokens) * anno_embeds[0] + anno_embeds[1]
         tokens_mask = tokens_mask.unsqueeze(2)
         tokens: torch.Tensor = tokens.masked_fill(~tokens_mask, 0)
