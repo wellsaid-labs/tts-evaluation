@@ -1,3 +1,5 @@
+import pytest
+
 from run._config import audio
 
 
@@ -25,6 +27,10 @@ def test__norm_anno_tempo():
     rel_tempo = abs_tempo / sesh_tempo
     expected = (rel_tempo, (1 / abs_tempo) / (1 / sesh_tempo))
     assert audio._norm_anno_tempo(rel_tempo, sesh_tempo, avg_val=0, compression=1) == expected
+    for i in range(1, 20):
+        abs_tempo = i / 10
+        a, b = audio._norm_anno_tempo(abs_tempo / sesh_tempo, sesh_tempo, avg_val=0, compression=1)
+        assert a * b == pytest.approx(1)
 
 
 def test__norm_sesh_loudness():
