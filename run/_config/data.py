@@ -36,11 +36,6 @@ del DATASETS[_loader.portuguese.librivox.RND__LIBRIVOX__FELIPE_PT]
 del DATASETS[_loader.portuguese.librivox.RND__LIBRIVOX__LENI_PT]
 del DATASETS[_loader.portuguese.librivox.RND__LIBRIVOX__MIRAMONTES_PT]
 del DATASETS[_loader.portuguese.librivox.RND__LIBRIVOX__SANDRALUNA_PT]
-# NOTE: The `AVA_M`, `KAI_M`, and `WADE_C` datasets are duplicate datasets.
-# There is an improved version of their datasets already in `DATASETS`.
-del DATASETS[_loader.english.wsl.AVA_M]
-del DATASETS[_loader.english.wsl.KAI_M]
-del DATASETS[_loader.english.wsl.WADE_C]
 
 # TODO: Remove any non-production datasets from `WSL_DATASETS` so we don't evaluate on them.
 DEV_SPEAKERS = _loader.WSL_DATASETS.copy()
@@ -58,12 +53,20 @@ del DEV_SPEAKERS[_loader.english.wsl.TOBIN_A__PROMO]
 del DEV_SPEAKERS[_loader.english.wsl.ELIZABETH_U]
 
 for dataset in [DEV_SPEAKERS, DATASETS]:
+    # NOTE: The `AVA_M`, `KAI_M`, and `WADE_C` datasets are duplicate datasets.
+    # There is an improved version of their datasets already in `DATASETS`.
+    del dataset[_loader.english.wsl.AVA_M]
+    del dataset[_loader.english.wsl.KAI_M]
+    del dataset[_loader.english.wsl.WADE_C]
+
     # NOTE: The following custom datasets are poor quality and should be excluded.
     del dataset[_loader.english.wsl.HOUR_ONE_NBC__BB_CUSTOM_VOICE]
     del dataset[_loader.english.wsl.VIACOM__CUSTOM_VOICE]
     del dataset[_loader.english.wsl.UNEEQ__ASB_CUSTOM_VOICE]
+
     # NOTE: The alignments don't match up with the scripts.
     del dataset[_loader.english.wsl.UNEEQ__ASB_CUSTOM_VOICE_COMBINED]
+
     # NOTE: The alignments don't sound-a-like, in these datasets.
     del dataset[_loader.portuguese.wsl.FIVE_NINE__CUSTOM_VOICE__PT_BR]
     del dataset[_loader.spanish.wsl.FIVE_NINE__CUSTOM_VOICE__ES_CO]
