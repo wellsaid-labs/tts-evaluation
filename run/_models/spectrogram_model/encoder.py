@@ -124,7 +124,9 @@ class Encoder(torch.nn.Module):
         self.embed_seq_vector = torch.nn.Linear(max_seq_vector_size, hidden_size)
         self.embed_token = NumeralizePadEmbed(max_tokens, hidden_size)
         self.embed_token_meta = ModuleList(embed(n) for n in max_token_meta_vals)
-        self.embed_word_vec = torch.nn.Linear(self.max_word_vector_size, hidden_size)
+        self.embed_word_vec = torch.nn.Sequential(
+            torch.nn.Linear(self.max_word_vector_size, hidden_size), torch.nn.LayerNorm(hidden_size)
+        )
         self.embed_annos = torch.nn.Conv1d(
             in_channels=max_anno_vector_size * len(self.annos),
             out_channels=hidden_size * len(self.annos),
