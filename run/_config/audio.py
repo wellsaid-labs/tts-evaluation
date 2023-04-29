@@ -84,12 +84,15 @@ def _norm_sesh_tempo(val: float, avg_val: float = 1.0, compression: float = 0.2)
     return (val - avg_val) / compression
 
 
-def _norm_anno_tempo(rel_val: float, sesh_avg_val: float) -> typing.Tuple[float, ...]:
-    # NOTE: As tempo gets smaller, it goes to zero, so we include the reverse component of tempo
+def _norm_anno_tempo(rel_val: float, sesh_avg_val: float, **kwargs) -> typing.Tuple[float, ...]:
+    # NOTE: As tempo gets smaller, it goes to zero, so we include the inverse component of tempo
     # so that it can continue to grow and influence the model.
+    sesh_avg_val_inv = 1 / sesh_avg_val
+    abs_val = rel_val * sesh_avg_val
+    inv_abs_val = 1 / abs_val
     return (
-        _norm_anno_rel_tempo(rel_val),
-        _norm_anno_rel_tempo((1 / (rel_val * sesh_avg_val)) / sesh_avg_val),
+        _norm_anno_rel_tempo(rel_val, **kwargs),
+        _norm_anno_rel_tempo(inv_abs_val / sesh_avg_val_inv, **kwargs),
     )
 
 

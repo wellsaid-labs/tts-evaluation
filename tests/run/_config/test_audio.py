@@ -21,6 +21,10 @@ def test__norm_anno_tempo():
     assert audio._norm_anno_tempo(0.8, 1.0) == (-0.9999999999999998, 1.25)
     assert audio._norm_anno_tempo(1.0, 1.0) == (0.0, 0.0)
     assert audio._norm_anno_tempo(1.5, 1.0) == (2.5, -1.6666666666666667)
+    abs_tempo, sesh_tempo = 0.8, 0.9
+    rel_tempo = abs_tempo / sesh_tempo
+    expected = (rel_tempo, (1 / abs_tempo) / (1 / sesh_tempo))
+    assert audio._norm_anno_tempo(rel_tempo, sesh_tempo, avg_val=0, compression=1) == expected
 
 
 def test__norm_sesh_loudness():
