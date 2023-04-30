@@ -33,11 +33,14 @@ from run._streamlit import (
     st_download_files,
     st_html,
     st_select_path,
+    st_set_page_config,
     web_path_to_url,
 )
 from run._tts import griffin_lim_tts
 from run.data._loader import Speaker
 from run.data._loader.english import wsl
+
+st_set_page_config()
 
 V10_REGRESSIONS = [
     # NOTE: Respellings are formatted like they were inputted in v10

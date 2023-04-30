@@ -21,10 +21,10 @@ from lib.text import XMLType, xml_to_text
 from run._config import SPECTROGRAM_MODEL_EXPERIMENTS_PATH
 from run._config.data import _get_loudness_annotation, _get_tempo_annotation
 from run._models.spectrogram_model import SpectrogramModel
-from run._streamlit import audio_to_url, st_ag_grid, st_select_path
+from run._streamlit import audio_to_url, st_ag_grid, st_select_path, st_set_page_config
 from run._tts import batch_griffin_lim_tts, make_batches
 
-st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
+st_set_page_config()
 
 TEST_SCRIPTS = [
     # NOTE: These questions each have a different expected inflection.
@@ -95,6 +95,7 @@ def _correlate(name: str, values: typing.List[float], other: str, other_values: 
 def _generate(
     _spec_exp: SpectrogramModel,
     experiment_key: str,  # NOTE: This is largely only used for cache invalidation.
+    exp_step: int,  # NOTE: This is largely only used for cache invalidation.
     num_samples: int,
     min_loudness: float,
     max_loudness: float,
@@ -145,11 +146,13 @@ def main():
     if not form.form_submit_button("Submit"):
         return
 
+    assert spec_path is not None
     spec_ckpt = typing.cast(run.train.spectrogram_model._worker.Checkpoint, load(spec_path))
     spec_exp = spec_ckpt.export()
     expected, batches = _generate(
         spec_exp,
         spec_ckpt.comet_experiment_key,
+        spec_ckpt.step,
         num_samples,
         min_loudness,
         max_loudness,

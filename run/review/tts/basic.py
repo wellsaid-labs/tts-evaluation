@@ -3,13 +3,9 @@
 Usage:
     $ PYTHONPATH=. streamlit run run/review/tts/basic.py --runner.magicEnabled=false
 """
-import os
-import random
-import socket
 import typing
 
 import streamlit as st
-from streamlit.commands.page_config import RANDOM_EMOJIS
 
 import lib
 import run
@@ -27,15 +23,13 @@ from run._streamlit import (
     st_download_files,
     st_html,
     st_select_path,
+    st_set_page_config,
     web_path_to_url,
 )
 from run._tts import CHECKPOINTS_LOADERS, TTSPackage, batch_tts, make_batches
 from run.data._loader import Session
 
-title = socket.gethostname() + " • " + os.path.basename(__file__)[:-3] + " • Streamlit"
-random.seed(title)
-emoji = random.choice(RANDOM_EMOJIS)
-st.set_page_config(initial_sidebar_state="collapsed", page_title=title, page_icon=emoji)
+st_set_page_config()
 
 
 def main():
