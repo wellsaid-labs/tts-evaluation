@@ -93,6 +93,7 @@ GEN_M_CONVO = EN.GENEVIEVE_M__CONVO
 # TODO: Our average tempo accross all speakers is 0.95 or so, which is a bit lower than 1.0.
 # It might be wortwhile to more deeply dive into the discrepencies between calculating the tempo
 # accross an entire session versus an annoation.
+# TODO: Let's make sure this errors, if the session is incorrect.
 _SPKR_ID_TO_SESH = {
     # NOTE: These 3 are open-source voices that didn't consent to be on our platform.
     # 0: (english.m_ailabs.JUDY_BIEBER, ""),
@@ -129,6 +130,8 @@ _SPKR_ID_TO_SESH = {
     24: (EN.SELENE_R__PROMO, "promo_script_1_rousseau", -23.704, 1.06, 1.068),
     25: (EN.MARI_MONGE__PROMO, "promo_script_1_monge", -22.736, 0.907, 0.907),
     26: (EN.WADE_C__PROMO, "promo_script_3_scholl", -20.94, 0.942, 0.941),
+    # TODO: `johnhunerlach_enthusiastic_21` may not exist, this could be a typo for
+    # `johnhunerlach_enthusiastic_12`.
     27: (EN.JOE_F__NARRATION, "johnhunerlach_enthusiastic_21", -23.93, 0.841, 0.89),
     28: (EN.JOE_F__RADIO, "johnhunerlach_diphone_1", -19.325, 0.885, 0.914),
     29: (EN.GARRY_J__STORY, "otis-jiry_the_happening_at_crossroads", -21.067, 0.824, 0.781),

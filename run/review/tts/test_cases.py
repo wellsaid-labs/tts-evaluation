@@ -313,9 +313,19 @@ GREEK_SYMBOLS = [
 ]
 
 ALPHABET = [
+    # NOTE: Long strings of repetitive letters, can highlight model instability.
     string.ascii_uppercase * 15,
     " ".join(list(string.ascii_uppercase) * 15),
     ". ".join(list(string.ascii_uppercase) * 15),
+]
+
+DIFFERENT_SPEAKER = [
+    # NOTE: For short single words, the model sometimes also switches speakers, sometimes.
+    "Yeah",
+    "Lol",
+    # NOTE: Big annotaton values, can also cause the model to switch speakers, sometimes.
+    '<tempo value="0.25">Please do not do that.</tempo>',
+    '<tempo value="5">Please do not do that.</tempo>',
 ]
 
 ABBREVIATIONS_WITH_VOWELS = [
