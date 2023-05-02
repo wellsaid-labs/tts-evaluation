@@ -10,6 +10,7 @@ import numpy as np
 
 import lib
 import run
+from run._config import lang
 from run.data import _loader
 from run.data._loader import structures as struc
 
@@ -72,9 +73,7 @@ for dataset in [DEV_SPEAKERS, DATASETS]:
     del dataset[_loader.spanish.wsl.FIVE_NINE__CUSTOM_VOICE__ES_CO]
 
     # NOTE: The model can only train on one language at a time, right now.
-    for speaker in dataset:
-        if speaker.language != run._config.lang.LANGUAGE:
-            del dataset[speaker]
+    dataset = {k: v for k, v in dataset.items() if k.language == lang.LANGUAGE}
 
 DEV_SPEAKERS = set(DEV_SPEAKERS.keys())
 # NOTE: It's generally useful to evaluate the model on a dictionary dataset, that has a variety

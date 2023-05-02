@@ -1,4 +1,7 @@
-from run._config import audio, data, environment, labels, lang
+# NOTE: Other `run` modules import `lang`; therefore, they need to be imported first.
+from run._config import lang  # isort: skip
+
+from run._config import audio, data, environment, labels
 from run._config.all import configure
 from run._config.audio import FRAME_HOP, NUM_FRAME_CHANNELS
 from run._config.data import DATASETS, DEFAULT_SCRIPT, DEV_SPEAKERS
