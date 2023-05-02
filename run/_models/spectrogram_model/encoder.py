@@ -140,10 +140,11 @@ class Encoder(torch.nn.Module):
             torch.nn.Mish(),
             torch.nn.Linear(hidden_size, hidden_size * 6),
         )
-        self.scale_tok = len(self.embed_token_meta) + len([self.embed_word_vec, self.embed_token])
-        self.scale_tok = math.sqrt(self.scale_tok)
+        self.scale_tok = math.sqrt(len(self.embed_token_meta) + len([self.embed_token]))
         self.scale_anno = len(self.annos) + len([self.embed_seq_vector]) + len(self.embed_seq_meta)
         self.scale_anno = math.sqrt(self.scale_anno)
+        self.scale_emb = len([self.embed_token, self.embed_word_vec, self.embed_anno_net])
+        self.scale_emb = math.sqrt(self.scale_emb)
 
         conv = lambda: _Convs(hidden_size, conv_filter_size, num_conv_block_layers)
         rnn = lambda: LSTM(hidden_size, hidden_size, batch_first=True)
@@ -168,19 +169,18 @@ class Encoder(torch.nn.Module):
         # tokens_mask [batch_size, num_tokens]
         tokens, tokens_mask = self.embed_token(inputs.tokens, batch_first=True)
 
-        # [batch_size] → [batch_size, hidden_size]
-        iter_ = zip(self.embed_seq_meta, inputs.seq_meta_transposed)
-        seq_meta = [embed(meta, batch_first=True)[0] for embed, meta in iter_]
-        # [len(max_seq_meta_vals), batch_size, hidden_size] → [batch_size, num_tokens, hidden_size]
-        seq_embed = torch.stack(seq_meta).sum(dim=0).unsqueeze(1).expand(-1, tokens.shape[1], -1)
-
         # [batch_size, num_tokens] → [batch_size, num_tokens, hidden_size]
         iter_ = zip(self.embed_token_meta, inputs.token_meta_transposed)
         token_meta = [embed(meta, batch_first=True)[0] for embed, meta in iter_]
 
         # [batch_size, num_tokens, hidden_size]
         word_vector = inputs.get_token_vec("word_vector", self.max_word_vector_size)
-        word_vector = self.embed_word_vec(word_vector)
+
+        # [batch_size] → [batch_size, hidden_size]
+        iter_ = zip(self.embed_seq_meta, inputs.seq_meta_transposed)
+        seq_meta = [embed(meta, batch_first=True)[0] for embed, meta in iter_]
+        # [len(max_seq_meta_vals), batch_size, hidden_size] → [batch_size, num_tokens, hidden_size]
+        seq_embed = torch.stack(seq_meta).sum(dim=0).unsqueeze(1).expand(-1, tokens.shape[1], -1)
 
         # [batch_size, max_seq_vector_size] → [batch_size, num_tokens, hidden_size]
         seq_vector = self.embed_seq_vector(inputs.get_seq_vec(self.max_seq_vector_size))
@@ -197,9 +197,11 @@ class Encoder(torch.nn.Module):
         anno_embed = torch.stack(anno_embeds).sum(dim=0) / self.scale_anno
         anno_embeds = self.embed_anno_net(anno_embed).chunk(6, dim=2)
 
-        feats = [tokens, word_vector] + token_meta
-        tokens = torch.stack(feats).sum(dim=0) / self.scale_tok
-        tokens = (self.norms[0](tokens) + anno_embeds[1]) * anno_embeds[0]
+        tokens = torch.stack([tokens] + token_meta).sum(dim=0) / self.scale_tok
+        # NOTE: Add together the various embedding networks, annotation embeddings, word vector
+        # embeddings, and token embeddings.
+        tokens = self.norms[0](tokens) + self.embed_word_vec(word_vector) + anno_embeds[1]
+        tokens = (tokens / self.scale_emb) * anno_embeds[0]
         tokens_mask = tokens_mask.unsqueeze(2)
         tokens: torch.Tensor = tokens.masked_fill(~tokens_mask, 0)
 
@@ -211,11 +213,11 @@ class Encoder(torch.nn.Module):
             tokens = (tokens + convs(tokens, tokens_mask)) / self.residual
             tokens = highway(tokens)
 
-        tokens = (self.norms[1](tokens) + anno_embeds[3]) * anno_embeds[2]
+        tokens = ((self.norms[1](tokens) + anno_embeds[3]) / self.residual) * anno_embeds[2]
         for rnn in self.rnns:
             tokens = (tokens + rnn(tokens)[0]) / self.residual
 
-        tokens = (self.norms[2](tokens) + anno_embeds[5]) * anno_embeds[4]
+        tokens = ((self.norms[2](tokens) + anno_embeds[5]) / self.residual) * anno_embeds[4]
         tokens = self.proj_out(tokens).masked_fill(~tokens_mask, 0)
         tokens = pad_sequence([tokens[i][s] for i, s in enumerate(inputs.slices)])
         tokens, token_keys = tokens.chunk(2, dim=2)
