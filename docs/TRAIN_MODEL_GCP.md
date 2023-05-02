@@ -34,7 +34,7 @@ Set up your local development environment by following [these instructions](LOCA
    runs out of capacity.
 
    💡 TIP: For persistent instances, the `ZONE` parameter is optional. If it's not provided, then
-    this will try all the zones until one is found.
+   this will try all the zones until one is found.
 
    If starting from scratch, use a standard ubuntu image:
 
@@ -71,8 +71,16 @@ Set up your local development environment by following [these instructions](LOCA
       --image-family=$IMAGE_FAMILY \  # Or swap to --image=$IMAGE
       --metadata="startup-script-user=$USER" \
       --metadata="train-script-path=$TRAIN_SCRIPT_PATH" \
-      --metadata-from-file="startup-script=run/utils/gcp/resume_training_on_start_up.sh"
+      --metadata-from-file="startup-script=run/utils/gcp/resume_training_on_start_up.sh" \
+      --exclude-zone="us-west1-a" \
+      --exclude-zone="us-central1-a" \
+      --exclude-zone="us-central1-b" \
+      --exclude-zone="us-central1-c" \
+      --exclude-zone="us-central1-f"
    ```
+
+   📙 NOTE: Please add a zone to our `--exclude-zone` list if your instance dies frequently
+   or quickly in that zone.
 
    📙 NOTE: This will use the environment variable `$USER` as the username whilst the browser
    console will use your email address username.
@@ -96,6 +104,7 @@ Set up your local development environment by following [these instructions](LOCA
    echo "VM_NAME=$VM_NAME"
    export VM_ZONE=$(python -m run.utils.gcp zone --name $VM_NAME)
    export VM_IP=$(python -m run.utils.gcp ip --name $VM_NAME --zone=$VM_ZONE)
+
    gcloud compute ssh --zone=$VM_ZONE $VM_NAME
    ```
 
@@ -197,8 +206,24 @@ Set up your local development environment by following [these instructions](LOCA
 1. For [comet](https://www.comet.ml/wellsaid-labs), name your experiment and pick a project...
 
    ```bash
-   COMET_PROJECT='<your-comet-project>'
-   EXPERIMENT_NAME='<Your experiment name>'
+   COMET_PRJ='<your-comet-project>'
+   EXP_NAME='<Your experiment name>'
+   ```
+
+1. You may want to double check any code changes you made, before running the experiment...
+
+   ```bash
+   git --no-pager diff run/ lib/
+   ```
+
+1. You may want to reset various services and clear out old processes, just in case...
+
+   ```bash
+   sudo rmmod nvidia_uvm
+   sudo modprobe nvidia_uvm
+   pkill -9 python
+   sleep 5s
+   nvidia-smi
    ```
 
 1. Start training...
@@ -206,32 +231,29 @@ Set up your local development environment by following [these instructions](LOCA
    For example, run this command to train a spectrogram model:
 
    ```bash
-   pkill -9 python; sleep 5s; nvidia-smi; \
    PYTHONPATH=. python $TRAIN_SCRIPT_PATH start $COMET_PROJECT "$EXPERIMENT_NAME";
    ```
 
-   ---
-   Or select a `SPECTROGRAM_CHECKPOINT`...
-
-   ```
-   find /opt/wellsaid-labs/Text-to-Speech/disk/experiments/spectrogram_model/ -name <step_######.pt>
-   ```
-
-   And store it...
-
-   ```
-   SPECTROGRAM_CHECKPOINT="<paste>"
-   ```
-
-   Then run the following command to train a signal model...
+   For example, run this command to find the latest spectrogram model and train a signal model:
 
    ```bash
-   SPECTROGRAM_CHECKPOINT="/opt/wellsaid-labs/Text-to-Speech/path/to/spectrogram/checkpoint"
+   DIR_NAME="disk/experiments/spectrogram_model/"
+   SPEC_CHKPNT=$( \
+    find $DIR_NAME -name '*.pt' -printf '%T+ %p\n' | \
+    sort -r | head -n 1 | cut -f2- -d" ")
+   SPEC_CHKPNT="/opt/wellsaid-labs/Text-to-Speech/$SPEC_CHKPNT"
    ```
 
    ```bash
-   pkill -9 python; sleep 5s; nvidia-smi; \
-   PYTHONPATH=. python $TRAIN_SCRIPT_PATH start $SPECTROGRAM_CHECKPOINT $COMET_PROJECT "$EXPERIMENT_NAME";
+   PYTHONPATH=. python $TRAIN_SCRIPT_PATH start $SPEC_CHKPNT $COMET_PRJ "$EXP_NAME";
+   ```
+
+   For example, run this command to fine tune an older signal model, with a new spectrogram
+   checkpoint:
+
+   ```bash
+   $FINE_TUNE = "V11_2023_04_25_STAGING"
+   PYTHONPATH=. python $TRAIN_SCRIPT_PATH fine-tune $FINE_TUNE $SPEC_CHKPNT $COMET_PRJ "$EXP_NAME";
    ```
 
    ❓ LEARN MORE: PyTorch leaves zombie processes that must be killed, check out:

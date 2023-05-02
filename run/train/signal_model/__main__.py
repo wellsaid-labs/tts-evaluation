@@ -68,14 +68,14 @@ def _run_app(
 @app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
 def fine_tune(
     context: typer.Context,
+    tts_checkpoint: Checkpoints = typer.Argument(
+        None, help="TTS checkpoints to fine-tune.", exists=True, dir_okay=False
+    ),
     checkpoint: pathlib.Path = typer.Argument(
         ...,
         help="Spectrogram model checkpoint file to generate training data with.",
         exists=True,
         dir_okay=False,
-    ),
-    tts_checkpoint: Checkpoints = typer.Argument(
-        None, help="TTS checkpoints to fine-tune.", exists=True, dir_okay=False
     ),
     project: str = typer.Argument(..., help="Experiment project name."),
     name: str = typer.Argument("", help="Experiment name."),
