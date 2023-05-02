@@ -199,7 +199,7 @@ class Encoder(torch.nn.Module):
 
         feats = [tokens, word_vector] + token_meta
         tokens = torch.stack(feats).sum(dim=0) / self.scale_tok
-        tokens = self.norms[0](tokens) * anno_embeds[0] + anno_embeds[1]
+        tokens = (self.norms[0](tokens) + anno_embeds[1]) * anno_embeds[0]
         tokens_mask = tokens_mask.unsqueeze(2)
         tokens: torch.Tensor = tokens.masked_fill(~tokens_mask, 0)
 
@@ -211,11 +211,11 @@ class Encoder(torch.nn.Module):
             tokens = (tokens + convs(tokens, tokens_mask)) / self.residual
             tokens = highway(tokens)
 
-        tokens = self.norms[1](tokens) * anno_embeds[2] + anno_embeds[3]
+        tokens = (self.norms[1](tokens) + anno_embeds[3]) * anno_embeds[2]
         for rnn in self.rnns:
             tokens = (tokens + rnn(tokens)[0]) / self.residual
 
-        tokens = self.norms[2](tokens) * anno_embeds[4] + anno_embeds[5]
+        tokens = (self.norms[2](tokens) + anno_embeds[5]) * anno_embeds[4]
         tokens = self.proj_out(tokens).masked_fill(~tokens_mask, 0)
         tokens = pad_sequence([tokens[i][s] for i, s in enumerate(inputs.slices)])
         tokens, token_keys = tokens.chunk(2, dim=2)
