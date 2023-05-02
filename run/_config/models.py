@@ -18,7 +18,7 @@ def configure(overwrite: bool = False):
     # probability exceeds a threshold of 0.5.
     stop_threshold = 0.5
 
-    # NOTE: These values can be increased as needed, they preemtively allocate model
+    # NOTE: These values can be increased as needed, they preemptively allocate model
     # parameters.
     max_tokens = 1000
     max_anno_vector_size = 3

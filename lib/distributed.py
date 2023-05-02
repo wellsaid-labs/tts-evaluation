@@ -244,7 +244,7 @@ class NumeralizePadEmbed(torch.nn.Module, typing.Generic[_NumeralizePadEmbedVar]
           had changed, in order to trigger a vocab update. This turned out to be difficult due
           to the fancy optimizers with various second order and EMA optimization techniques.
 
-          With that in mind, it's theoritically possible, that we could have a fancy update
+          With that in mind, it's theoretically possible, that we could have a fancy update
           detection mechanism based on changes in `unk_token`.
 
     Args:

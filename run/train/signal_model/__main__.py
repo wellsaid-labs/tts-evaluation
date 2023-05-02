@@ -1,3 +1,4 @@
+import dataclasses
 import logging
 import pathlib
 import typing
@@ -6,12 +7,20 @@ from unittest.mock import MagicMock
 import config as cf
 
 from run._config import (
-    SIGNAL_MODEL_EXPERIMENTS_PATH,
+    SIG_MODEL_EXP_PATH,
+    config_fine_tune_training,
     config_sig_model_training_from_datasets,
     get_config_label,
 )
+from run._tts import CHECKPOINTS_LOADERS, Checkpoints
 from run._utils import Dataset
-from run.train._utils import CometMLExperiment, resume_experiment, run_workers, start_experiment
+from run.train._utils import (
+    CometMLExperiment,
+    fine_tune_experiment,
+    resume_experiment,
+    run_workers,
+    start_experiment,
+)
 from run.train.signal_model import _worker
 
 logger = logging.getLogger(__name__)
@@ -57,6 +66,32 @@ def _run_app(
 
 
 @app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+def fine_tune(
+    context: typer.Context,
+    checkpoint: pathlib.Path = typer.Argument(
+        ...,
+        help="Spectrogram model checkpoint file to generate training data with.",
+        exists=True,
+        dir_okay=False,
+    ),
+    tts_checkpoint: Checkpoints = typer.Argument(
+        None, help="TTS checkpoints to fine-tune.", exists=True, dir_okay=False
+    ),
+    project: str = typer.Argument(..., help="Experiment project name."),
+    name: str = typer.Argument("", help="Experiment name."),
+    tags: typing.List[str] = typer.Option([], help="Experiment tags."),
+    debug: bool = typer.Option(False, help="Turn on debugging mode."),
+):
+    """Start a fine-tuning run in PROJECT named NAME with TAGS from CHECKPOINT."""
+    _, sig_model = CHECKPOINTS_LOADERS[tts_checkpoint]()
+    sig_model = dataclasses.replace(sig_model, spec_model_checkpoint_path=checkpoint)
+    config_fine_tune_training()
+    args = fine_tune_experiment(SIG_MODEL_EXP_PATH, sig_model, project, name, tags, debug=debug)
+    cli_config = cf.parse_cli_args(context.args)
+    _run_app(*args, checkpoint, cli_config, debug)
+
+
+@app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
 def resume(
     context: typer.Context,
     checkpoint: typing.Optional[pathlib.Path] = typer.Argument(
@@ -66,7 +101,7 @@ def resume(
 ):
     """Resume training from CHECKPOINT. If CHECKPOINT is not given, the most recent checkpoint
     file is loaded."""
-    args = resume_experiment(SIGNAL_MODEL_EXPERIMENTS_PATH, checkpoint, debug=debug)
+    args = resume_experiment(SIG_MODEL_EXP_PATH, checkpoint, debug=debug)
     cli_config = cf.parse_cli_args(context.args)
     _run_app(*args, None, cli_config, debug)
 
@@ -86,7 +121,7 @@ def start(
     debug: bool = typer.Option(False, help="Turn on debugging mode."),
 ):
     """Start a training run in PROJECT named NAME with TAGS."""
-    args = start_experiment(SIGNAL_MODEL_EXPERIMENTS_PATH, project, name, tags, debug=debug)
+    args = start_experiment(SIG_MODEL_EXP_PATH, project, name, tags, debug=debug)
     cli_config = cf.parse_cli_args(context.args)
     _run_app(*args, None, checkpoint, cli_config, debug)
 

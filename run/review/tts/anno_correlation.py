@@ -18,7 +18,7 @@ import lib
 import run
 from lib.environment import PT_EXTENSION, load
 from lib.text import XMLType, xml_to_text
-from run._config import SPECTROGRAM_MODEL_EXPERIMENTS_PATH
+from run._config import SPEC_MODEL_EXP_PATH
 from run._config.data import _get_loudness_annotation, _get_tempo_annotation
 from run._models.spectrogram_model import SpectrogramModel
 from run._streamlit import audio_to_url, st_ag_grid, st_select_path, st_set_page_config
@@ -137,7 +137,7 @@ def main():
     form: DeltaGenerator = st.form(key="form")
 
     label = "Spectrogram Checkpoints"
-    spec_path = st_select_path(label, SPECTROGRAM_MODEL_EXPERIMENTS_PATH, PT_EXTENSION, form)
+    spec_path = st_select_path(label, SPEC_MODEL_EXP_PATH, PT_EXTENSION, form)
     num_samples = int(form.number_input("Number of Samples", min_value=1, value=100))
     min_loudness = float(form.number_input("Minimum Loudness", value=-4))
     max_loudness = float(form.number_input("Maximum Loudness", value=3))

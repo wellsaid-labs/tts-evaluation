@@ -23,11 +23,7 @@ import lib
 import run
 from lib.environment import PT_EXTENSION, load
 from run import train
-from run._config import (
-    DEFAULT_SCRIPT,
-    SIGNAL_MODEL_EXPERIMENTS_PATH,
-    SPECTROGRAM_MODEL_EXPERIMENTS_PATH,
-)
+from run._config import DEFAULT_SCRIPT, SIG_MODEL_EXP_PATH, SPEC_MODEL_EXP_PATH
 from run._streamlit import (
     audio_to_web_path,
     path_label,
@@ -61,8 +57,8 @@ def main():
     run._config.configure(overwrite=True)
 
     get_paths = functools.partial(st_select_paths, suffix=PT_EXTENSION)
-    sig_paths = get_paths("Signal Checkpoints(s)", SIGNAL_MODEL_EXPERIMENTS_PATH)
-    spec_paths = get_paths("Spectrogram Checkpoints(s)", SPECTROGRAM_MODEL_EXPERIMENTS_PATH)
+    sig_paths = get_paths("Signal Checkpoints(s)", SIG_MODEL_EXP_PATH)
+    spec_paths = get_paths("Spectrogram Checkpoints(s)", SPEC_MODEL_EXP_PATH)
 
     form = st.form("data_form")
     speakers = sorted(list(run._config.DATASETS.keys()))

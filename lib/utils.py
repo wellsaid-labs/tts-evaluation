@@ -271,7 +271,7 @@ def disk_cache(path: pathlib.Path):
         @functools.wraps(function)
         def wrapper(*args, **kwargs):
             if path.exists():
-                logger.warn(
+                logger.info(
                     f"Loading cache for `{function.__qualname__}` from `{path}`. "
                     f"Please delete `{path}` and rerun if you'd like to not use the "
                     "cache."

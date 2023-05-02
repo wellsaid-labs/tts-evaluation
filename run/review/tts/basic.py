@@ -11,11 +11,7 @@ import lib
 import run
 from lib.environment import PT_EXTENSION, load
 from lib.text import XMLType, natural_keys
-from run._config import (
-    DEFAULT_SCRIPT,
-    SIGNAL_MODEL_EXPERIMENTS_PATH,
-    SPECTROGRAM_MODEL_EXPERIMENTS_PATH,
-)
+from run._config import DEFAULT_SCRIPT, SIG_MODEL_EXP_PATH, SPEC_MODEL_EXP_PATH
 from run._models import signal_model, spectrogram_model
 from run._streamlit import (
     audio_to_web_path,
@@ -40,9 +36,9 @@ def main():
     options = [None] + [k.name for k in CHECKPOINTS_LOADERS.keys()]
     checkpoint = st.selectbox("(Optional) Combined Checkpoints", options=options)
     label = "(Optional) Spectrogram Checkpoint"
-    spec_path = st_select_path(label, SPECTROGRAM_MODEL_EXPERIMENTS_PATH, PT_EXTENSION)
+    spec_path = st_select_path(label, SPEC_MODEL_EXP_PATH, PT_EXTENSION)
     label = "(Optional) Signal Checkpoint"
-    sig_path = st_select_path(label, SIGNAL_MODEL_EXPERIMENTS_PATH, PT_EXTENSION)
+    sig_path = st_select_path(label, SIG_MODEL_EXP_PATH, PT_EXTENSION)
 
     spec_model, sig_model = None, None
     if checkpoint is not None:

@@ -250,3 +250,13 @@ def config_sig_model_training_from_datasets(
         ),
     }
     cf.add(config, **kwargs)
+
+
+def config_fine_tune_training():
+    """Configure the fine tunning service."""
+    config = {
+        run.train._utils._prepare_checkpoint_for_fine_tune: cf.Args(
+            lr_multiplier_schedule=partial(lib.optimizers.warmup_lr_multiplier_schedule, warmup=500)
+        ),
+    }
+    cf.add(config)

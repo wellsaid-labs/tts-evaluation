@@ -12,7 +12,7 @@ import lib
 import run
 from lib.environment import PT_EXTENSION, load
 from lib.text import XML_PATTERN, XMLType, natural_keys
-from run._config import DEFAULT_SCRIPT, SPECTROGRAM_MODEL_EXPERIMENTS_PATH
+from run._config import DEFAULT_SCRIPT, SPEC_MODEL_EXP_PATH
 from run._config.data import _get_loudness_annotation, _get_tempo_annotation
 from run._streamlit import audio_to_web_path, st_html, st_select_path, web_path_to_url
 from run._tts import griffin_lim_tts
@@ -25,7 +25,7 @@ def main():
     run._config.configure(overwrite=True)
 
     label = "Spectrogram Checkpoints"
-    spec_path = st_select_path(label, SPECTROGRAM_MODEL_EXPERIMENTS_PATH, PT_EXTENSION)
+    spec_path = st_select_path(label, SPEC_MODEL_EXP_PATH, PT_EXTENSION)
     spec_ckpt = typing.cast(run.train.spectrogram_model._worker.Checkpoint, load(spec_path))
     spec_export = spec_ckpt.export()
 

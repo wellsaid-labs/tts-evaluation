@@ -71,10 +71,19 @@ for dataset in [DEV_SPEAKERS, DATASETS]:
     del dataset[_loader.portuguese.wsl.FIVE_NINE__CUSTOM_VOICE__PT_BR]
     del dataset[_loader.spanish.wsl.FIVE_NINE__CUSTOM_VOICE__ES_CO]
 
+    # NOTE: The model can only train on one language at a time, right now.
+    for speaker in dataset:
+        if speaker.language != run._config.lang.LANGUAGE:
+            del dataset[speaker]
+
 DEV_SPEAKERS = set(DEV_SPEAKERS.keys())
 # NOTE: It's generally useful to evaluate the model on a dictionary dataset, that has a variety
 # of words and acronyms.
 DEV_SPEAKERS.add(_loader.english.dictionary.GCP_SPEAKER)
+
+# NOTE: For fine-tunning, you'll want to add any new speakers here, that the model has not
+# yet been trained on.
+NEW_DATASETS: typing.List[struc.Speaker] = []
 
 
 def _include_passage(passage: struc.Passage) -> bool:
@@ -237,15 +246,19 @@ def configure(overwrite: bool = False):
     """Configure modules that process data, other than audio."""
     cf.add({_get_tempo_annotation: cf.Args(bucket_size=0.001)}, overwrite)
 
-    # TODO: Remove `BETH_CAMERON__CUSTOM` from the `WSL_DATASETS` groups because it has it's own
-    # custom script.
-    groups = [set(itertools.chain(_loader.WSL_DATASETS.keys(), _loader.RND_DATASETS.keys()))]
-    # NOTE: For other datasets like M-AILABS and LJ, this assumes that there is no duplication
-    # between different speakers.
-    groups += [{s} for s in _loader.DATASETS.keys() if s not in groups[0]]
+    # NOTE: Technically, some `WSL_DATASETS` do not have duplication, for example
+    # `BETH_CAMERON__CUSTOM` provided her own scripts completely.
+    new_datasets_group = set(NEW_DATASETS)
+    wsl_group = set(itertools.chain(_loader.WSL_DATASETS.keys(), _loader.RND_DATASETS.keys()))
+    wsl_group = wsl_group - new_datasets_group
+    all_datasets = wsl_group | new_datasets_group
+    # NOTE: For other non-WSL datasets like M-AILABS and LJ, this assumes that there is no
+    # duplication between different speakers.
+    groups = [wsl_group] + [{s} for s in _loader.DATASETS.keys() if s not in all_datasets]
     config = {
         run._utils.get_unprocessed_dataset: cf.Args(datasets=DATASETS),
-        run._utils.get_dataset: cf.Args(datasets=DATASETS, include_passage=_include_passage),
+        run._utils.get_dataset: cf.Args(include_passage=_include_passage),
+        run._utils._get_datasets: cf.Args(datasets=DATASETS),
         # NOTE: Set `approx_dev_len` to 30 minutes for a consistent amount of dev data per speaker,
         # guesstimated to be a sufficient quantity to capture enough variety in each voice.
         # NOTE: Set `min_split_passages` to 3 passages, guesstimated to provide enough passage

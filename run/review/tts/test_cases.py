@@ -25,7 +25,7 @@ import lib
 import run
 from lib.environment import PT_EXTENSION, load
 from lib.text import XMLType
-from run._config import DEFAULT_SCRIPT, SPECTROGRAM_MODEL_EXPERIMENTS_PATH
+from run._config import DEFAULT_SCRIPT, SPEC_MODEL_EXP_PATH
 from run._config.data import _get_loudness_annotation, _get_tempo_annotation
 from run._models.spectrogram_model import SpectrogramModel
 from run._streamlit import (
@@ -426,7 +426,7 @@ def main():
     form: DeltaGenerator = st.form(key="form")
 
     label = "Spectrogram Checkpoints"
-    spec_path = st_select_path(label, SPECTROGRAM_MODEL_EXPERIMENTS_PATH, PT_EXTENSION, form)
+    spec_path = st_select_path(label, SPEC_MODEL_EXP_PATH, PT_EXTENSION, form)
     items = sorted(OPTIONS.items())
     format_test_case_name = lambda i: i[0].replace("_", " ").title()
     option = form.selectbox("Test Cases", items, format_func=format_test_case_name)

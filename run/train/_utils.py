@@ -41,7 +41,7 @@ from torchnlp.encoders.text import SequenceBatch
 
 import lib
 import run
-from lib.distributed import ListedDict, is_master
+from lib.distributed import ListedDict, NumeralizePadEmbed, is_master
 from lib.environment import load, load_most_recent_file
 from lib.utils import dataclass_as_dict, flatten_2d, seconds_to_str
 from run._config import (
@@ -399,7 +399,7 @@ def _get_dataset_stats(
 def _run_experiment(
     comet: CometMLExperiment, debug: bool = False
 ) -> typing.Tuple[Dataset, Dataset]:
-    """Helper function for `start_experiment` and  `resume_experiment`."""
+    """Helper function for `start_experiment` and `resume_experiment`."""
     lib.environment.check_module_versions()
     train_dataset, dev_dataset = get_datasets(debug)
     comet.log_parameters(_get_dataset_stats(train_dataset, dev_dataset))
@@ -481,6 +481,56 @@ def _setup_experiment() -> lib.environment.RecordStandardStreams:
     logger.info("Command line args: %s", str(sys.argv))  # NOTE: Command line args are recorded.
     run._config.configure()
     return recorder
+
+
+class _LRMultiplierSchedule(typing.Protocol):
+    def __call__(self, step: int, offset: int = 0) -> float:
+        ...
+
+
+def _prepare_checkpoint_for_fine_tune(
+    checkpoint: typing.Union[
+        run.train.signal_model._worker.Checkpoint, run.train.spectrogram_model._worker.Checkpoint
+    ],
+    comet: CometMLExperiment,
+    lr_multiplier_schedule: _LRMultiplierSchedule,
+):
+    """Adapt a checkpoint so that's ready to train on new data, as a part of fine-tunning.
+
+    TODO: In preparing the checkpoint, let's consider freezing any non-embedding layers.
+    """
+    for mod in checkpoint.model.modules():
+        if isinstance(mod, NumeralizePadEmbed):
+            mod.reset()
+    lr_multiplier_schedule = functools.partial(lr_multiplier_schedule, offset=checkpoint.step)
+    return dataclasses.replace(
+        checkpoint,
+        comet_experiment_key=comet.get_key(),
+        scheduler=torch.optim.lr_scheduler.LambdaLR(checkpoint.optimizer, lr_multiplier_schedule),
+    )
+
+
+def fine_tune_experiment(
+    directory: pathlib.Path,
+    checkpoint: Checkpoint,
+    project: str,
+    name: str = "",
+    tags: typing.List[str] = [],
+    **kwargs,
+) -> typing.Tuple[pathlib.Path, Dataset, Dataset, CometMLExperiment, pathlib.Path]:
+    """Start a training run to fine-tune `checkpoint` in a comet `project` named `name` with `tags`
+    The training run results are saved in `directory`."""
+    lib.environment.set_basic_logging_config()
+    comet = CometMLExperiment(project_name=project)
+    comet.set_name(name)
+    comet.add_tags(tags)
+    checkpoint = cf.partial(_prepare_checkpoint_for_fine_tune)(checkpoint, comet)
+    recorder = _setup_experiment()
+    experiment_root = directory / lib.environment.bash_time_label()
+    run_root, checkpoints_path = _maybe_make_experiment_directories(experiment_root, recorder)
+    comet.log_other(run._config.get_environment_label("directory"), str(run_root))
+    checkpoint_path = save_checkpoint(checkpoint, checkpoints_path, f"step_{checkpoint.step}")
+    return checkpoints_path, *_run_experiment(comet, **kwargs), comet, checkpoint_path
 
 
 def start_experiment(

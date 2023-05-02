@@ -12,8 +12,8 @@ TEMP_PATH = DISK_PATH / "temp"
 SAMPLES_PATH = DISK_PATH / "samples"
 # NOTE: For production, store an inference version of signal and spectrogram model.
 TTS_PACKAGE_PATH = DISK_PATH / "tts_package.pt"
-SIGNAL_MODEL_EXPERIMENTS_PATH = EXPERIMENTS_PATH / "signal_model"
-SPECTROGRAM_MODEL_EXPERIMENTS_PATH = EXPERIMENTS_PATH / "spectrogram_model"
+SIG_MODEL_EXP_PATH = EXPERIMENTS_PATH / "signal_model"
+SPEC_MODEL_EXP_PATH = EXPERIMENTS_PATH / "spectrogram_model"
 DATASET_CACHE_PATH = TEMP_PATH / "dataset.pickle"
 REMOTE_ROOT_PATH = "/opt/wellsaid-labs/Text-to-Speech/"
 
@@ -29,8 +29,8 @@ def configure(overwrite: bool = False):
         CHECKPOINTS_PATH,
         TEMP_PATH,
         SAMPLES_PATH,
-        SIGNAL_MODEL_EXPERIMENTS_PATH,
-        SPECTROGRAM_MODEL_EXPERIMENTS_PATH,
+        SIG_MODEL_EXP_PATH,
+        SPEC_MODEL_EXP_PATH,
     ]:
         directory.mkdir(exist_ok=True)
 
