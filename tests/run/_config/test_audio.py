@@ -1,3 +1,5 @@
+import math
+
 import pytest
 
 from run._config import audio
@@ -20,16 +22,18 @@ def test__norm_sesh_tempo():
 
 def test__norm_anno_tempo():
     """Test `audio._norm_anno_tempo` normalizes input to approx -1 to 1."""
-    assert audio._norm_anno_tempo(0.8, 1.0) == (-0.9999999999999998, 1.25)
+    assert audio._norm_anno_tempo(0.8, 1.0) == (0, 1.25)
     assert audio._norm_anno_tempo(1.0, 1.0) == (0.0, 0.0)
-    assert audio._norm_anno_tempo(1.5, 1.0) == (2.5, -1.6666666666666667)
+    assert audio._norm_anno_tempo(1.5, 1.0) == (2.5, 0)
+
+    kwargs = dict(avg_val=0, compression=1, cut_off=-math.inf)
     abs_tempo, sesh_tempo = 0.8, 0.9
     rel_tempo = abs_tempo / sesh_tempo
     expected = (rel_tempo, (1 / abs_tempo) / (1 / sesh_tempo))
-    assert audio._norm_anno_tempo(rel_tempo, sesh_tempo, avg_val=0, compression=1) == expected
+    assert audio._norm_anno_tempo(rel_tempo, sesh_tempo, **kwargs) == expected
     for i in range(1, 20):
         abs_tempo = i / 10
-        a, b = audio._norm_anno_tempo(abs_tempo / sesh_tempo, sesh_tempo, avg_val=0, compression=1)
+        a, b = audio._norm_anno_tempo(abs_tempo / sesh_tempo, sesh_tempo, **kwargs)
         assert a * b == pytest.approx(1)
 
 
