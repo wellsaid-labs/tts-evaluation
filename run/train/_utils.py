@@ -531,7 +531,7 @@ def fine_tune_experiment(
     experiment_root = directory / lib.environment.bash_time_label()
     run_root, checkpoints_path = _maybe_make_experiment_directories(experiment_root, recorder)
     comet.log_other(run._config.get_environment_label("directory"), str(run_root))
-    checkpoint_path = checkpoints_path / f"step_{checkpoint.step}{lib.environment.PT_EXTENSION}"
+    checkpoint_path = checkpoints_path / f"base_model{lib.environment.PT_EXTENSION}"
     lib.environment.save(checkpoint_path, checkpoint)
     return checkpoints_path, *_run_experiment(comet, **kwargs), comet, checkpoint_path
 

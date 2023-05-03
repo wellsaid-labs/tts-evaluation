@@ -231,7 +231,7 @@ Set up your local development environment by following [these instructions](LOCA
    For example, run this command to train a spectrogram model:
 
    ```bash
-   PYTHONPATH=. python $TRAIN_SCRIPT_PATH start $COMET_PROJECT "$EXPERIMENT_NAME";
+   PYTHONPATH=. python $TRAIN_SCRIPT_PATH start $COMET_PRJ "$EXP_NAME";
    ```
 
    For example, run this command to find the latest spectrogram model and train a signal model:
@@ -242,6 +242,7 @@ Set up your local development environment by following [these instructions](LOCA
     find $DIR_NAME -name '*.pt' -printf '%T+ %p\n' | \
     sort -r | head -n 1 | cut -f2- -d" ")
    SPEC_CHKPNT="/opt/wellsaid-labs/Text-to-Speech/$SPEC_CHKPNT"
+   echo $SPEC_CHKPNT
    ```
 
    ```bash
@@ -252,7 +253,7 @@ Set up your local development environment by following [these instructions](LOCA
    checkpoint:
 
    ```bash
-   $FINE_TUNE = "V11_2023_04_25_STAGING"
+   FINE_TUNE="<your_deployed_checkpoint>"  # EXAMPLE: `v11_2023_04_25_staging`
    PYTHONPATH=. python $TRAIN_SCRIPT_PATH fine-tune $FINE_TUNE $SPEC_CHKPNT $COMET_PRJ "$EXP_NAME";
    ```
 
