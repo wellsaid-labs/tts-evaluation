@@ -30,7 +30,7 @@ CHECKPOINTS="" # Example: "v10_2022_q3_marketplace_expansion" (see list of Check
 TTS_PACKAGE_PATH=$(python -m run.deploy.package_tts $CHECKPOINTS)
 IMAGE_TAG="" # Example: v10.marketplace-2022-q3.00
 
-docker build -f run/deploy/Dockerfile \
+docker build --platform linux/amd64 -f run/deploy/Dockerfile \
     --build-arg TTS_PACKAGE_PATH=${TTS_PACKAGE_PATH} \
     -t gcr.io/${PROJECT_ID}/speech-api-worker:${IMAGE_TAG} .
 ```
