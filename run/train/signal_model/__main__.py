@@ -28,12 +28,12 @@ logger = logging.getLogger(__name__)
 if typing.TYPE_CHECKING:
     import typer
 
-    app = typer.Typer()
+    app = typer.Typer(pretty_exceptions_show_locals=False)
 else:
     try:
         import typer
 
-        app = typer.Typer()
+        app = typer.Typer(pretty_exceptions_show_locals=False)
     except (ModuleNotFoundError, NameError):
         app = MagicMock()
         typer = MagicMock()
@@ -88,7 +88,7 @@ def fine_tune(
     config_fine_tune_training()
     args = fine_tune_experiment(SIG_MODEL_EXP_PATH, sig_model, project, name, tags, debug=debug)
     cli_config = cf.parse_cli_args(context.args)
-    _run_app(*args, checkpoint, cli_config, debug)
+    _run_app(*args, None, cli_config, debug)
 
 
 @app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})

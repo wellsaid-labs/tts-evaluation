@@ -506,7 +506,9 @@ def _prepare_checkpoint_for_fine_tune(
     return dataclasses.replace(
         checkpoint,
         comet_experiment_key=comet.get_key(),
-        scheduler=torch.optim.lr_scheduler.LambdaLR(checkpoint.optimizer, lr_multiplier_schedule),
+        scheduler=torch.optim.lr_scheduler.LambdaLR(
+            checkpoint.optimizer, lr_multiplier_schedule, last_epoch=checkpoint.step - 1
+        ),
     )
 
 
@@ -529,7 +531,8 @@ def fine_tune_experiment(
     experiment_root = directory / lib.environment.bash_time_label()
     run_root, checkpoints_path = _maybe_make_experiment_directories(experiment_root, recorder)
     comet.log_other(run._config.get_environment_label("directory"), str(run_root))
-    checkpoint_path = save_checkpoint(checkpoint, checkpoints_path, f"step_{checkpoint.step}")
+    checkpoint_path = checkpoints_path / f"step_{checkpoint.step}{lib.environment.PT_EXTENSION}"
+    lib.environment.save(checkpoint_path, checkpoint)
     return checkpoints_path, *_run_experiment(comet, **kwargs), comet, checkpoint_path
 
 
@@ -623,7 +626,7 @@ def save_checkpoint(
     checkpoint: Checkpoint,
     checkpoints_directory: pathlib.Path,
     name: str,
-    suffix=lib.environment.PT_EXTENSION,
+    suffix: str = lib.environment.PT_EXTENSION,
 ) -> pathlib.Path:
     path = checkpoints_directory / f"{name}{suffix}"
     if is_master():

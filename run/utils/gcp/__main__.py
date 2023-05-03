@@ -10,6 +10,7 @@ https://cloud.google.com/compute/docs/instance-groups/rolling-out-updates-to-man
 import logging
 import math
 import pathlib
+import random
 import subprocess
 import time
 import typing
@@ -74,8 +75,13 @@ def _has_made_preemptible_instance(name: str, zone: str, poll_interval: int = 1)
 def _get_zones(preferred_zone: typing.List[str]) -> typing.List[str]:
     """Get a list of available zones."""
     zones_op = compute.zones().list(project=project).execute()
-    sort_key = lambda z: (z in preferred_zone,)
-    return sorted([z["name"] for z in zones_op["items"]], reverse=True, key=sort_key)
+    zones = [z["name"] for z in zones_op["items"]]
+    preferred = [z for z in zones if z in preferred_zone]
+    zones = [z for z in zones if z not in preferred_zone]
+    # NOTE: We shuffle zones, so that there is a chance of finding new unused zones for training.
+    # This also helps ensure our resources are spread around evenly.
+    random.shuffle(zones)
+    return preferred + zones
 
 
 def _make_preemptible_instance(

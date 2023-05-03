@@ -28,12 +28,12 @@ logger = logging.getLogger(__name__)
 if typing.TYPE_CHECKING:
     import typer
 
-    app = typer.Typer()
+    app = typer.Typer(pretty_exceptions_enable=False)
 else:
     try:
         import typer
 
-        app = typer.Typer()
+        app = typer.Typer(pretty_exceptions_enable=False)
     except (ModuleNotFoundError, NameError):
         app = MagicMock()
         typer = MagicMock()
