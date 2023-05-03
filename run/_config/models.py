@@ -10,6 +10,9 @@ from run import _config
 
 logger = logging.getLogger(__name__)
 
+# NOTE: We add additional space for extra data in the future.
+_EXTRA_EMBEDDINGS = 4
+
 
 def configure(overwrite: bool = False):
     """Configure spectrogram and signal model."""
@@ -24,11 +27,10 @@ def configure(overwrite: bool = False):
     max_anno_vector_size = 3
     annos = [("loudness_vector", "loudness_mask"), ("tempo_vector", "tempo_mask")]
 
-    # NOTE: We add additional space for extra data in the future.
-    max_speakers = len(set(s.label for s in _config.data.DATASETS.keys())) * 3
-    max_dialects = len(set(s.dialect for s in _config.data.DATASETS.keys())) * 3
-    max_styles = len(set(s.style for s in _config.data.DATASETS.keys())) * 3
-    max_languages = len(set(s.language for s in _config.data.DATASETS.keys())) * 3
+    max_speakers = len(set(s.label for s in _config.data.DATASETS.keys())) * _EXTRA_EMBEDDINGS
+    max_dialects = len(set(s.dialect for s in _config.data.DATASETS.keys())) * _EXTRA_EMBEDDINGS
+    max_styles = len(set(s.style for s in _config.data.DATASETS.keys())) * _EXTRA_EMBEDDINGS
+    max_languages = len(set(s.language for s in _config.data.DATASETS.keys())) * _EXTRA_EMBEDDINGS
 
     # NOTE: Configure the model sizes.
     config = {

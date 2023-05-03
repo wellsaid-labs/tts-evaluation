@@ -12,6 +12,7 @@ import lib
 import run
 from run._config.audio import FRAME_HOP, FRAME_SIZE, NUM_FRAME_CHANNELS
 from run._config.environment import RANDOM_SEED
+from run._config.models import _EXTRA_EMBEDDINGS
 from run._utils import Dataset
 
 logger = logging.getLogger(__name__)
@@ -149,9 +150,7 @@ def _config_spec_model_training(
             betas=(0.9, 0.999),
         ),
         run._models.spectrogram_model.wrapper.SpectrogramModelWrapper: cf.Args(
-            # NOTE: We add additional space for extra data in the future.
-            max_sessions=num_sesh
-            * 3
+            max_sessions=num_sesh * _EXTRA_EMBEDDINGS
         ),
     }
     cf.add(config, **kwargs)
@@ -246,7 +245,7 @@ def config_sig_model_training_from_datasets(
             real_label=real_label, fake_label=fake_label, threshold=threshold
         ),
         run._models.signal_model.wrapper.SignalModelWrapper: cf.Args(
-            max_sessions=_get_num_sessions(train_dataset),
+            max_sessions=_get_num_sessions(train_dataset) * _EXTRA_EMBEDDINGS,
         ),
     }
     cf.add(config, **kwargs)
