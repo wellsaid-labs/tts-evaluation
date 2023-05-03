@@ -698,6 +698,14 @@ def set_num_threads(num_threads: int):
     assert all(i["num_threads"] == num_threads for i in info), "Failed to set `num_threads`."
 
 
+def _excepthook_worker(type, value, traceback):
+    """Handle an unhandled exception that occurs in a worker process."""
+    # NOTE: Without this `exit`, the worker fails silently, and a `ProcessRaisedException` isn't
+    # propogated. The main process continues to run, and then fails trying to fetch data from
+    # the worker, and prints it's own traceback.
+    sys.exit(1)
+
+
 def _worker_init_fn(
     _,
     configuration: cf.Config,
@@ -705,6 +713,7 @@ def _worker_init_fn(
     rank: int,
     num_threads: int = 1,
 ):
+    sys.excepthook = _excepthook_worker
     cf.enable_fast_trace()
     cf.add(configuration)
     info = torch.utils.data.get_worker_info()
