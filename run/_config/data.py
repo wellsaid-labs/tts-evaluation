@@ -47,8 +47,17 @@ del DEV_SPEAKERS[_loader.english.wsl.MARCUS_G__CONVO]
 # NOTE: The `RAMONA_J__CUSTOM` dataset isn't included in the studio.
 del DEV_SPEAKERS[_loader.english.wsl.RAMONA_J__CUSTOM]
 
+# NOTE: Elizabeth's dataset is low quality & might be fixed or re-recorded. Tobin's did not
+# differ from his Narration enough to be considered new styles & both datasets were again quick
+# & inconsistent delivery.
+# NOTE: These speakers were released, so we continue to train on this data, even if we don't
+# evaluate on it.
+del DEV_SPEAKERS[_loader.english.wsl.ELIZABETH_U]
+del DEV_SPEAKERS[_loader.english.wsl.TOBIN_A__CONVO]
+del DEV_SPEAKERS[_loader.english.wsl.TOBIN_A__PROMO]
 
-def _remove_speakers(dataset):
+
+def _prepare_data(dataset):
     # NOTE: The `AVA_M`, `KAI_M`, and `WADE_C` datasets are duplicate datasets.
     # There is an improved version of their datasets already in `DATASETS`.
     del dataset[_loader.english.wsl.AVA_M]
@@ -67,19 +76,12 @@ def _remove_speakers(dataset):
     del dataset[_loader.portuguese.wsl.FIVE_NINE__CUSTOM_VOICE__PT_BR]
     del dataset[_loader.spanish.wsl.FIVE_NINE__CUSTOM_VOICE__ES_CO]
 
-    # NOTE: Elizabeth's dataset is low quality & might be fixed or re-recorded. Tobin's did not differ
-    # from his Narration enough to be considered new styles & both datasets were again quick &
-    # inconsistent delivery.
-    del dataset[_loader.english.wsl.ELIZABETH_U]
-    del dataset[_loader.english.wsl.TOBIN_A__CONVO]
-    del dataset[_loader.english.wsl.TOBIN_A__PROMO]
-
     # NOTE: The model can only train on one language at a time, right now.
     return {k: v for k, v in dataset.items() if k.language == lang.LANGUAGE}
 
 
-DATASETS = _remove_speakers(DATASETS)
-DEV_SPEAKERS = _remove_speakers(DEV_SPEAKERS)
+DATASETS = _prepare_data(DATASETS)
+DEV_SPEAKERS = _prepare_data(DEV_SPEAKERS)
 
 DEV_SPEAKERS = set(DEV_SPEAKERS.keys())
 # NOTE: It's generally useful to evaluate the model on a dictionary dataset, that has a variety

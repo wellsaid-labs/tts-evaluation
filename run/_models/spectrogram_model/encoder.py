@@ -143,8 +143,6 @@ class Encoder(torch.nn.Module):
         self.scale_tok = math.sqrt(len(self.embed_token_meta) + len([self.embed_token]))
         self.scale_anno = len(self.annos) + len([self.embed_seq_vector]) + len(self.embed_seq_meta)
         self.scale_anno = math.sqrt(self.scale_anno)
-        self.scale_emb = len([self.embed_token, self.embed_word_vec, self.embed_anno_net])
-        self.scale_emb = math.sqrt(self.scale_emb)
 
         conv = lambda: _Convs(hidden_size, conv_filter_size, num_conv_block_layers)
         rnn = lambda: LSTM(hidden_size, hidden_size, batch_first=True)
@@ -201,7 +199,7 @@ class Encoder(torch.nn.Module):
         # NOTE: Add together the various embedding networks, annotation embeddings, word vector
         # embeddings, and token embeddings.
         tokens = self.norms[0](tokens) + self.embed_word_vec(word_vector) + anno_embeds[1]
-        tokens = (tokens / self.scale_emb) * anno_embeds[0]
+        tokens = tokens * anno_embeds[0]
         tokens_mask = tokens_mask.unsqueeze(2)
         tokens: torch.Tensor = tokens.masked_fill(~tokens_mask, 0)
 
@@ -213,11 +211,11 @@ class Encoder(torch.nn.Module):
             tokens = (tokens + convs(tokens, tokens_mask)) / self.residual
             tokens = highway(tokens)
 
-        tokens = ((self.norms[1](tokens) + anno_embeds[3]) / self.residual) * anno_embeds[2]
+        tokens = (self.norms[1](tokens) + anno_embeds[3]) * anno_embeds[2]
         for rnn in self.rnns:
             tokens = (tokens + rnn(tokens)[0]) / self.residual
 
-        tokens = ((self.norms[2](tokens) + anno_embeds[5]) / self.residual) * anno_embeds[4]
+        tokens = (self.norms[2](tokens) + anno_embeds[5]) * anno_embeds[4]
         tokens = self.proj_out(tokens).masked_fill(~tokens_mask, 0)
         tokens = pad_sequence([tokens[i][s] for i, s in enumerate(inputs.slices)])
         tokens, token_keys = tokens.chunk(2, dim=2)
