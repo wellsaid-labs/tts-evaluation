@@ -72,12 +72,69 @@ Set up your local development environment by following [these instructions](LOCA
       --metadata="startup-script-user=$USER" \
       --metadata="train-script-path=$TRAIN_SCRIPT_PATH" \
       --metadata-from-file="startup-script=run/utils/gcp/resume_training_on_start_up.sh" \
-      --exclude-zone="us-west1-a" \
+   ```
+
+    You can just use these zones for persistent training...
+
+    ```zsh
+      --preferred-zone="us-central1-a" \
+      --preferred-zone="us-central1-c"
+    ```
+
+   You may exlcude these zones from pre-emptible training...
+
+   ```zsh
+      --exclude-zone="asia-east1-a" \
+      --exclude-zone="asia-east1-b" \
+      --exclude-zone="asia-northeast2-a" \
+      --exclude-zone="asia-northeast2-c" \
+      --exclude-zone="asia-northeast3-a" \
+      --exclude-zone="asia-northeast3-a" \
+      --exclude-zone="asia-northeast3-b" \
+      --exclude-zone="asia-northeast3-b" \
+      --exclude-zone="asia-south1-c" \
+      --exclude-zone="asia-southeast1-a" \
+      --exclude-zone="australia-southeast1-a" \
+      --exclude-zone="australia-southeast2-c" \
+      --exclude-zone="europe-central2-a" \
+      --exclude-zone="europe-central2-b" \
+      --exclude-zone="europe-north1-a" \
+      --exclude-zone="europe-north1-b" \
+      --exclude-zone="europe-west12-a" \
+      --exclude-zone="europe-west12-b" \
+      --exclude-zone="europe-west2-c" \
+      --exclude-zone="europe-west3-c" \
+      --exclude-zone="europe-west4-c" \
+      --exclude-zone="europe-west6-a" \
+      --exclude-zone="europe-west8-b" \
+      --exclude-zone="europe-west8-c" \
+      --exclude-zone="europe-west9-b" \
+      --exclude-zone="europe-west9-c" \
+      --exclude-zone="me-west1-b" \
+      --exclude-zone="me-west1-c" \
+      --exclude-zone="northamerica-northeast1-b" \
+      --exclude-zone="northamerica-northeast2-b" \
+      --exclude-zone="northamerica-northeast2-c" \
+      --exclude-zone="southamerica-east1-a" \
+      --exclude-zone="southamerica-east1-b" \
+      --exclude-zone="southamerica-east1-c" \
+      --exclude-zone="southamerica-west1-a" \
+      --exclude-zone="southamerica-west1-c" \
       --exclude-zone="us-central1-a" \
       --exclude-zone="us-central1-b" \
       --exclude-zone="us-central1-c" \
-      --exclude-zone="us-central1-f"
-   ```
+      --exclude-zone="us-central1-f" \
+      --exclude-zone="us-east1-b" \
+      --exclude-zone="us-south1-a" \
+      --exclude-zone="us-south1-b" \
+      --exclude-zone="us-south1-c" \
+      --exclude-zone="us-west1-a" \
+      --exclude-zone="us-west2-b" \
+      --exclude-zone="us-west2-c" \
+      --exclude-zone="us-west3-a" \
+      --exclude-zone="us-west3-b" \
+      --exclude-zone="us-west3-c"
+    ```
 
    📙 NOTE: Please add a zone to our `--exclude-zone` list if your instance dies frequently
    or quickly in that zone.
