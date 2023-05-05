@@ -33,7 +33,6 @@ def main():
     speakers = sorted(set(s.spkr for s in spec_export.session_embed.get_vocab()))
     speaker = st.selectbox("Speaker", options=speakers, format_func=format_speaker)  # type: ignore
     speaker = typing.cast(Speaker, speaker)
-    assert speaker.name is not None
 
     spk_sesh = spec_export.session_embed.get_vocab()
     sesh_sort_key: typing.Callable[[Session], typing.List] = lambda s: natural_keys(s.label)
@@ -42,13 +41,15 @@ def main():
     session = typing.cast(Session, session)
 
     form = st.form(key="form")
+    prefix: str = form.text_area("Prefix/Prompt", value="", height=25)
+    suffix: str = form.text_area("Suffix", value="", height=25)
     script: str = form.text_area("Script", value=DEFAULT_SCRIPT, height=150)
 
     if not form.form_submit_button("Submit"):
         return
 
     with st.spinner("Generating audio..."):
-        wave = griffin_lim_tts(spec_export, XMLType(script), session)
+        wave = griffin_lim_tts(spec_export, XMLType(script), session, prefix=prefix, suffix=suffix)
         audio_web_path = audio_to_web_path(wave)
         st_html(f'<audio controls src="{web_path_to_url(audio_web_path)}"></audio>')
 

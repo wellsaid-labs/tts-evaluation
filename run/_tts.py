@@ -299,6 +299,8 @@ def _process_tts_inputs(
     token_vocab: typing.Set[str],
     script: XMLType,
     session: Session,
+    prefix: str = "",
+    suffix: str = "",
     **kw,
 ) -> typing.Tuple[Inputs, PreprocessedInputs]:
     """Process TTS `script` and `session` for use with the model(s)."""
@@ -306,7 +308,16 @@ def _process_tts_inputs(
     if len(normalized) == 0:
         raise PublicTextValueError("Text cannot be empty.")
 
-    inputs = Inputs.from_xml(normalized, nlp(xml_to_text(normalized)), session)
+    text = xml_to_text(normalized)
+    if prefix != "" or suffix != "":
+        doc = nlp(prefix + text + suffix)
+        start = next(i for i, t in enumerate(doc) if text.startswith(t.text))
+        end = next(i for i, t in reversed(list(enumerate(doc))) if text.endswith(t.text))
+        doc = doc[start : end + 1]
+    else:
+        doc = nlp(text)
+
+    inputs = Inputs.from_xml(normalized, doc, session)
     preprocessed = cf.call(preprocess, inputs, **kw)
 
     tokens = typing.cast(typing.List[str], set(preprocessed.tokens[0]))
@@ -333,13 +344,13 @@ def process_tts_inputs(
 
 
 def griffin_lim_tts(
-    spec_model: SpectrogramModel, script: XMLType, session: Session
+    spec_model: SpectrogramModel, script: XMLType, session: Session, **kw
 ) -> numpy.ndarray:
     """Run TTS with griffin-lim."""
     nlp = load_spacy_nlp(session.spkr.language)
     session_vocab = set(spec_model.session_embed.vocab.keys())
     token_vocab = set(spec_model.token_embed.vocab.keys())
-    _, preprocessed = _process_tts_inputs(nlp, session_vocab, token_vocab, script, session)
+    _, preprocessed = _process_tts_inputs(nlp, session_vocab, token_vocab, script, session, **kw)
     preds = spec_model(inputs=preprocessed, mode=Mode.INFER)
     return cf.partial(griffin_lim)(preds.frames.squeeze(1).detach().numpy())
 
