@@ -14,7 +14,7 @@ import config as cf
 import numpy as np
 import tqdm
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, JsCode
-from streamlit.commands.page_config import RANDOM_EMOJIS
+from streamlit.commands.page_config import get_random_emoji
 from streamlit.delta_generator import DeltaGenerator
 from third_party import LazyLoader
 
@@ -534,7 +534,7 @@ def st_set_page_config(initial_sidebar_state: str = "collapsed", layout: str = "
     """`set_page_config` with some pre-set defaults."""
     title = socket.gethostname() + " • " + os.path.basename(__file__)[:-3] + " • Streamlit"
     random.seed(title)
-    emoji = random.choice(RANDOM_EMOJIS)
+    emoji = get_random_emoji()
     st.set_page_config(
         initial_sidebar_state=initial_sidebar_state,  # type: ignore
         layout=layout,  # type: ignore
