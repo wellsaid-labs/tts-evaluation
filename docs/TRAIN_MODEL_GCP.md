@@ -348,8 +348,17 @@ Set up your local development environment by following [these instructions](LOCA
 1. (Optional) Download the latest checkpoint to your local drive...
 
    ```bash
-   DIR_NAME='<directory-to-download-from>' # EXAMPLE: spectrogram_model
+   DIR_NAME='spectrogram_model' # EXAMPLE: spectrogram_model
+   ```
+
+   ```bash
    python -m run.utils.checkpoints download-latest $VM_ZONE $VM_NAME $DIR_NAME
+   ```
+
+   You can also batch download all the latest checkpoints from every machine online...
+
+   ```bash
+   python -m run.utils.checkpoints download-all-latest $USER $DIR_NAME
    ```
 
 1. Delete your instance...
