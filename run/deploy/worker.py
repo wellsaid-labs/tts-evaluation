@@ -90,7 +90,7 @@ KAI_M__MP = EN.KAI_M__MANUAL_POST
 GEN_M_CONVO = EN.GENEVIEVE_M__CONVO
 
 # NOTE: The keys need to stay the same for backwards compatibility.
-_SPKR_ID_TO_SESH = {
+_MARKETPLACE = {
     # NOTE: These 3 are open-source voices that didn't consent to be on our platform.
     # 0: (english.m_ailabs.JUDY_BIEBER, ""),
     # 1: (english.m_ailabs.MARY_ANN, ""),
@@ -207,7 +207,7 @@ _SPKR_ID_TO_SESH = {
     103: (EN.FIONA_H_IE, "fiona_narration_script_2_processed", -21.078, 0.929, 0.884),
 }
 _SPKR_ID_TO_SESH: typing.Dict[int, typing.Tuple[Speaker, str, float, float, float]] = {
-    **_SPKR_ID_TO_SESH,
+    **_MARKETPLACE,
     # NOTE: As a weak security measure, we assign random large numbers to custom voices, so
     # that they are hard to discover by querying the API. This was actually somewhat helpful
     # when we had to momentarily turn off our permissions verification during an outage.

@@ -294,7 +294,7 @@ def _process_tts_inputs(
     if session not in session_vocab:
         # NOTE: We do not expose speaker information in the `ValueError` because this error
         # is passed on to the public via the API.
-        raise PublicSpeakerValueError("Speaker is not available.")
+        raise PublicSpeakerValueError(f"Speaker is not available: {session}")
 
     return inputs, preprocessed
 
