@@ -2,10 +2,6 @@
 
 TODO: Implement `batch_griffin_lim_tts` to support batch generation, speeding up this script.
 
-TODO:
-- Clean up Speaker IDs (no reference to missing keys)
-- Clean up session state per radio/text key!!
-
 Usage:
     $ PYTHONPATH=. streamlit run run/review/tts/simple_audio_evaluation.py --runner.magicEnabled=false
 """
