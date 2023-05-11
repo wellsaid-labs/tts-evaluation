@@ -95,7 +95,7 @@ def main():
     with form:
         label = "Spectrogram Checkpoints"
         spec_path = st_select_path(label, SPECTROGRAM_MODEL_EXPERIMENTS_PATH, PT_EXTENSION, form)
-        items = sorted(OPTIONS.items())
+        items = sorted(OPTIONS.items(), reverse=True)
         format_test_case_name = lambda i: i[0].replace("_", " ").title()
         option = st.selectbox("Test Cases", items, format_func=format_test_case_name, index=15)
         assert option is not None
