@@ -1,5 +1,5 @@
 # Math Library
-numpy
+numpy==1.23.5
 scipy
 
 # NOTE: For optimized `torch` install, visit https://pytorch.org and follow the "Get Started"
