@@ -4,26 +4,25 @@ import string
 from long_scripts import LONG_SCRIPTS
 
 V11_QUESTIONS = [
-    "What is your name?",
-    "What is your quest?",
-    "What is the airspeed velocity of an unladen swallow?",
     "What is the meaning of life, the universe, and everything?",
-    "How much wood could a woodchuck chuck if a woodchuck could chuck wood?",
     "Are birds real?",
     "Why do some believe that birds are not real?",
     "Would you be a dear and make us a cup of tea?",
     "Must you be so inconsiderate?",
     "Have you considered the implications of faster-than-light travel?",
     "Is it true that the moon is made of cheese?",
-    "Who wants to go for a ride in my dirigible? ",
+    "Who wants to go for a ride in my dirigible?",
     "Does that make sense?",
     "Can I help you?",
     "Are you suggesting that coconuts migrate?",
-    "When does the concert start?",
-    "Who is the opening act?",
-    "How many albums do they have?",
     "Can I get a backstage pass to the concert?",
-    "Why'd you have to go and make things so complicated?",
+    "Given that each of the following bonds is of the same quality and has the same maturity as the others, does one hve a longer duration?",
+    "Registration of an investment adviser automatically confers registration on?",
+    "Church and community leaders in West Virginia, did you know that our state has one of the highest rates of children in foster care per capita in the nation?",
+    "Are you daring enough to venture into the unknown and unravel the secrets of our history?",
+    "Would your Patients like to receive monthly Kovid-19 at-home test kits at No Cost, delivered straight to their door?",
+    "Are you unknowingly damaging your skin, with these common skincare mistakes?",
+    "Yes of course, but shall I introduce myself first?",
 ]
 
 V11_INITIALSMS = [
@@ -84,10 +83,8 @@ V11_INITIALISMS_IN_SENTENCES = [
 ]
 
 V11_URLS = [
-    "wellsaidlabs.com",
     "en.wikipedia.org",
     "linkedin.com",
-    "netflix.com",
     "stackoverflow.com",
     "zillow.com",
     "twitch.tv",
@@ -99,6 +96,11 @@ V11_URLS = [
     "imdb.com",
     "nytimes.com",
     "ikea.com",
+    "tracy.madison@CSWPBC.com",
+    "MSDSsource.com",
+    "alliancepropertysystems.com",
+    "ion2.nokia.com",
+    "kay_sorensen@insurewithcompass.com",
 ]
 
 V11_URLS_HTTPS = [f"https://www.{i}" for i in V11_URLS]
