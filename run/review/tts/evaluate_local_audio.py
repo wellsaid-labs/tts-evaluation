@@ -1,9 +1,12 @@
 """ A workbook to load local audio and evaluate test cases.
+TODO: Use context manager and tempfile.TemporaryDirectory() to unzip files instead of extracting
+    them to /tmp-eval and deleting that directory
 
 Usage:
     $ PYTHONPATH=. streamlit run run/review/tts/evaluate_local_audio.py --runner.magicEnabled=false
 """
 import os
+import zipfile
 
 import pandas as pd
 import streamlit as st
@@ -20,6 +23,39 @@ class Session:
     script: str
     dialect: str
     session: str
+
+
+temp_dir = "/tmp/eval"
+
+
+def unzip_audios_and_metadata(zip_file):
+    """Unzip file containing audio .wavs and metadata.csv. Return metadata as pd.DataFrame and
+    audio as list of absolute paths.
+
+    Args:
+        zip_file (File): The UploadedFile object from st.file_upload
+
+    Returns:
+        Tuple(pd.DataFrame, list): Tuple containing the metadata as a dataframe and paths to the
+            audio files
+    """
+    zf = zipfile.ZipFile(zip_file)
+    zf.extractall(temp_dir)
+    files = os.listdir(temp_dir)
+    metadata = [i for i in files if i.endswith(".csv")][0]
+    df_path = os.path.join(temp_dir, metadata)
+    df = pd.read_csv(df_path)
+    audios = [os.path.join(temp_dir, i) for i in df.Audio.tolist()]
+    return df, audios
+
+
+def cleanup_files():
+    """Delete unzipped files"""
+    files = os.listdir(temp_dir)
+    cleanup_paths = [os.path.join(temp_dir, i) for i in files]
+    for i in cleanup_paths:
+        os.remove(i)
+    os.rmdir(temp_dir)
 
 
 def initialize_state():
@@ -68,34 +104,21 @@ def setup_columns():
 def main():
     st.markdown("# Test Case Audio Generator")
     st.markdown("Use this workbook to evaluate test cases.")
+    metadata, audio_paths = pd.DataFrame(), []
 
     if "metadata" not in st.session_state:
         initialize_state()
 
     form: DeltaGenerator = st.form(key="go")
     with form:
-        metadata_dir = st.text_input(
-            f"Absolute path to directory containing metadata csv and audio wavs, "
-            f"e.g. `/Users/{os.getenv('USER')}/Downloads/test-data`"
-        )
-        st.session_state.output_path = f'{metadata_dir.split("/")[-1]}-evaluations.csv'
-        if metadata_dir:
-            st.markdown(f"Your evaluations will be stored as `{st.session_state.output_path}`")
-        if st.form_submit_button("⚡️ GO ⚡️") and metadata_dir:
+        selected_file = st.file_uploader("Upload zipfile", accept_multiple_files=False, type=".zip")
+        if selected_file is not None:
+            metadata, audio_paths = unzip_audios_and_metadata(selected_file)
+            st.session_state.output_path = selected_file.name.replace(".zip", "-evaluations.csv")
+
+        if st.form_submit_button("⚡️ GO ⚡️") and selected_file:
             with st.spinner("Loading audio..."):
                 initialize_state()
-                try:
-                    metadata_path = [
-                        os.path.join(dir_path, fname)
-                        for dir_path, _, fnames in os.walk(metadata_dir)
-                        for fname in fnames
-                        if fname.endswith(".csv")
-                    ][0]
-                except IndexError:
-                    st.write(f"No .csv found in {metadata_dir}")
-                    raise IndexError
-                metadata = pd.read_csv(metadata_path)
-                audio_paths = [os.path.join(metadata_dir, i) for i in metadata.Audio.values.tolist()]
                 metadata = [
                     Session(
                         speaker=r.Speaker,
@@ -165,6 +188,7 @@ def main():
         st.session_state.datatable.to_csv(),
         file_name=st.session_state.output_path
     ):
+        cleanup_files()
         st.success(f"Finished! {lib.utils.mazel_tov()}")
 
 
