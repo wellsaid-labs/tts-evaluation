@@ -444,7 +444,7 @@ SINGLE_WORDS = [
     "aperture",
     "unsatisfactory",
     "automatically",
-    "congratulations",
+    "Congratulations!",
     "management",
     "legislation",
     "capacity",
@@ -461,12 +461,47 @@ SINGLE_WORDS = [
     "buyers",
     "mission",
     "relaxation",
+    "proceed",
+    "next",
+    "Alright.",
+    "ignored",
+    "disconnected",
+    "Yes.",
+    "Meeting?",
+    "example",
+    "Goodbye!",
+    "no",
+    "eight,"
+    "Seventeen",
+    "welcome",
+    "then",
+    "finally",
+    "first",
+    "DNA",
+    "cobra",
+    "rabbit",
+    "parrot",
+    "ostrich",
+    "penguin.",
+    "rooster",
+    "elephant",
+    "cat",
+    "chicken",
+    "crab",
+    "goat",
+    "squid",
+    "antennae",
+    "eyes",
+    "wings",
+    "flying",
+    "protection",
+    "walking",
 ]
 
 SLOW_SCRIPTS = [
     (
-        "<tempo value=0.3>Mirabeau B. Lamar</tempo> was born in Georgia in <tempo value=0.3>1798"
-        "</tempo>. He was the son of a <tempo value=0.3>wealthy plantation owner</tempo>. When he "
+        "<tempo value=0.3>Mirabeau B. Lamar was born in Georgia in 1798"
+        "</tempo>. He was the son of a wealthy plantation owner. When he "
         "was grown, <tempo value=0.3>Lamar entered Georgia politics</tempo> and served on the "
         "state senate. After <tempo value=0.3>visiting a friend in Texas in 1834</tempo>, he "
         "decided he wanted to live there."
@@ -481,27 +516,27 @@ SLOW_SCRIPTS = [
         "power bill was almost cut in HALF!</tempo>"
     ),
     (
-        "Whether it's <tempo value=0.5>puppy classes</tempo> or playdates with <tempo value=0.4>"
+        "Whether it's puppy classes <tempo value=0.4> or playdates with "
         "other dogs</tempo>, exposing your Husky to new experiences can help them to become a "
         "<tempo value=0.7>well-adjusted and friendly companion</tempo>."
     ),
     (
         "How comfortable will you be in applying what you have learned about <tempo value=0.5>"
         "hydraulic design considerations</tempo> to your next bridge project? Drag the slider from "
-        "0 to 10, with <tempo value=0.5>10 being the most comfortable</tempo>."
+        "0 to 10, with <tempo value=0.5> 10 being the most comfortable</tempo>."
     ),
     (
-        "Are you <tempo value=0.7>drowning in tax burden</tempo> and <tempo value=0.7>don't know "
-        "what to do?</tempo> Well, bankruptcy <tempo value=0.7>might</tempo> be an option for you, "
+        "Are you <tempo value=0.7>drowning in tax burden and don't know "
+        "what to do?</tempo> Well, bankruptcy might be an option for you, "
         "but it's important to understand that <tempo value=0.7>not all taxes can be eliminated "
         "through bankruptcy</tempo>."
     ),
     (
         "And one of the most impactful ways we help you connect with fans is through our "
         "<tempo value=0.6>powerful community of subscribers</tempo>. In fact, we recently "
-        "surpassed <tempo value=0.7>200 million</tempo>. That’s about <tempo value=0.6>3 percent "
+        "<tempo value=0.7>surpassed 200 million</tempo>. That’s about <tempo value=0.6>3 percent "
         "of the world’s population</tempo> paying monthly so they can have uninterrupted access to "
-        "your art. This is <tempo value=0.3>huge</tempo>."
+        "your art. <tempo value=0.3>This is huge</tempo>."
     ),
     (
         "As you review the details of the scenario, consider the following:\n\nKnowledge of "
