@@ -23,7 +23,7 @@ from run._streamlit import audio_to_web_path, st_download_files, st_select_path,
 from run._tts import griffin_lim_tts
 from run.data._loader.structures import Session
 from run.deploy.worker import _MARKETPLACE
-from run.review.tts.test_cases import TEST_CASES
+from run.review.tts.v11_test_cases import V11_TEST_CASES
 
 
 def generate_test_cases(
@@ -37,7 +37,7 @@ def generate_test_cases(
         yield (sesh, case, griffin_lim_tts(spec_export, XMLType(case), sesh))
 
 
-OPTIONS = {k: partial(generate_test_cases, test_cases=v) for k, v in TEST_CASES.items()}
+OPTIONS = {k: partial(generate_test_cases, test_cases=v) for k, v in V11_TEST_CASES.items()}
 
 
 def initialize_state():
@@ -95,7 +95,7 @@ def main():
         spec_path = st_select_path(label, SPECTROGRAM_MODEL_EXPERIMENTS_PATH, PT_EXTENSION, form)
         items = sorted(OPTIONS.items(), reverse=True)
         format_test_case_name = lambda i: i[0].replace("_", " ").title()
-        option = st.selectbox("Test Cases", items, format_func=format_test_case_name, index=15)
+        option = st.selectbox("Test Cases", items, format_func=format_test_case_name)
         assert option is not None
         zip_path = f"eval_{option[0]}.zip"
         if st.form_submit_button("⚡️ GO ⚡️"):
