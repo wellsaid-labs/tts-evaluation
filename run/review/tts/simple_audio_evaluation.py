@@ -12,8 +12,6 @@ from functools import partial
 import pandas as pd
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
-from streamlit_datatable import st_datatable
-from torchnlp.random import fork_rng
 
 import lib
 import run
@@ -21,7 +19,7 @@ from lib.environment import PT_EXTENSION, load
 from lib.text import XMLType
 from run._config import SPECTROGRAM_MODEL_EXPERIMENTS_PATH
 from run._models.spectrogram_model import SpectrogramModel
-from run._streamlit import audio_to_web_path, st_download_files, st_select_path
+from run._streamlit import audio_to_web_path, st_download_files, st_select_path, make_temp_web_dir
 from run._tts import griffin_lim_tts
 from run.data._loader.structures import Session
 from run.deploy.worker import _MARKETPLACE
@@ -99,7 +97,7 @@ def main():
         format_test_case_name = lambda i: i[0].replace("_", " ").title()
         option = st.selectbox("Test Cases", items, format_func=format_test_case_name, index=15)
         assert option is not None
-
+        zip_path = f"eval_{option[0]}.zip"
         if st.form_submit_button("⚡️ GO ⚡️"):
             with st.spinner("Generating audio..."):
                 initialize_state()
@@ -111,11 +109,7 @@ def main():
         with st.spinner("Generating survey..."):
             with st.form(key="survey"):
                 setup_columns()
-
-                votes = []
-                notes = []
-                rows = []
-                paths = []
+                votes, notes, rows, paths = [], [], [], []
                 for i, (sesh, script, wave) in enumerate(st.session_state.audios):
                     path = audio_to_web_path(wave, name=(f"audio{i}.wav"))
                     col1, col2, col3, col4, col5 = st.columns(col_widths)
@@ -157,18 +151,18 @@ def main():
                     paths.append(path)
 
                 if rows != []:
-                    if st.form_submit_button("⚡️ SUBMIT ⚡️"):
+                    if st.form_submit_button("⚡️ SAVE CHANGES ⚡️"):
                         for row, vote, note in zip(rows, votes, notes):
                             row["Vote"] = vote
                             row["Note"] = note
                         df = pd.DataFrame(rows)
-                        st_datatable(df)
 
                         with st.spinner("Making Zipfile..."):
                             st.text("")
-                            st_download_files("Audios.zip", "📁 Download Audio(s) (zip)", paths)
-
-                        st.success(f"Finished! {lib.utils.mazel_tov()}")
+                            df_path = make_temp_web_dir() / "evaluations.csv"
+                            df_path.write_text(df.to_csv())
+                            paths.append(df_path)
+                            st_download_files(zip_path, "💾  DOWNLOAD  💾", paths)
 
 
 if __name__ == "__main__":

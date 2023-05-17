@@ -12,6 +12,8 @@ import pandas as pd
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 from dataclasses import dataclass
+import run
+from run._streamlit import st_download_files, path_to_web_path, make_temp_web_dir, audio_to_web_path
 
 import lib
 
@@ -68,6 +70,7 @@ def initialize_state():
     st.session_state.metadata = []
     st.session_state.datatable = pd.DataFrame()
     st.session_state.output_path = ""
+    st.session_state.ready_to_download = False
 
 
 st.set_page_config(layout="wide")
@@ -102,10 +105,27 @@ def setup_columns():
     st.divider()
 
 
+def prepare_download_paths():
+    """Turn audio and evaluations dataframe into WebPath objects, which can then be zipped and
+    downloaded.
+    """
+    download_paths = []
+    for i, a in enumerate(st.session_state.audios):
+        audio_path = make_temp_web_dir() / f"audio{i}.wav"
+        with open(a, "rb") as out_file:
+            audio_path.write_bytes(out_file.read())
+        download_paths.append(audio_path)
+    df_path = make_temp_web_dir() / "evaluations.csv"
+    df_path.write_text(st.session_state.datatable.to_csv())
+    download_paths.append(df_path)
+    return download_paths
+
+
 def main():
+    run._config.configure(overwrite=True)
     st.markdown("# Test Case Audio Generator")
     st.markdown("Use this workbook to evaluate test cases.")
-    metadata, audio_paths = pd.DataFrame(), []
+    metadata, audio_paths, zip_path = pd.DataFrame(), [], ""
 
     if "metadata" not in st.session_state:
         initialize_state()
@@ -115,7 +135,7 @@ def main():
         selected_file = st.file_uploader("Upload zipfile", accept_multiple_files=False, type=".zip")
         if selected_file is not None:
             metadata, audio_paths = unzip_audios_and_metadata(selected_file)
-            st.session_state.output_path = selected_file.name.replace(".zip", "-evaluations.csv")
+            zip_path = f"eval_{selected_file.name}"
 
         if st.form_submit_button("⚡️ GO ⚡️") and selected_file:
             with st.spinner("Loading audio..."):
@@ -179,20 +199,19 @@ def main():
                     rows.append(row)
 
                 if rows:
-                    if st.form_submit_button("⚡️ SAVE CHANGES ⚡️"):
+                    saved = st.form_submit_button("⚡️ SAVE CHANGES ⚡️")
+                    if saved:
                         for row, vote, note in zip(rows, votes, notes):
                             row["Vote"] = vote
                             row["Note"] = note
                         df = pd.DataFrame(rows)
                         st.session_state.datatable = df
+                        st.session_state.ready_to_download = True
 
-    if st.download_button(
-        "💾  DOWNLOAD  💾",
-        st.session_state.datatable.to_csv(),
-        file_name=st.session_state.output_path
-    ):
+    if selected_file and st.session_state.ready_to_download:
+        download_paths = prepare_download_paths()
         cleanup_files()
-        st.success(f"Finished! {lib.utils.mazel_tov()}")
+        st_download_files(zip_path, "💾  DOWNLOAD  💾", download_paths)
 
 
 if __name__ == "__main__":
