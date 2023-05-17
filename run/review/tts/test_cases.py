@@ -71,6 +71,15 @@ V11_INITIALISMS_IN_SENTENCES = [
     "The __ has grown increasingly conservative in recent years.",
     "When possible, always prefer __ links for their increased security.",
     "There is an __ for almost every major intellectual property.",
+    "Each line will have GA Type as Payment, Paid Amount along with PAC, and GA Code.",
+    "Properly use and maintain air-line breathing systems and establish a uniform procedure "
+    "for all employees, for both LACC and LCLA contractors, to follow when working jobs that "
+    "require the use of fresh air.",
+    "QCBS is a method of selecting transaction advisors based on both the quality of their "
+    "technical proposals and the costs shown in their financial proposals.",
+    "HSPs account for fifteen to twenty percent of the population.",
+    "We used to have difficulty with AOA and AMA, but now we are A-okay.",
+    "As far as AIs go, ours is pretty great!",
 ]
 
 V11_INITIALISMS_IN_SENTENCES_PERIOD_SEP = [
@@ -190,6 +199,7 @@ V10_EMAIL = [
 ]
 
 VARIOUS_INITIALISMS = [
+    # NOTE This section will be reused for testing v11 & all examples here are copied in intialisms section above
     "Each line will have GA Type as Payment, Paid Amount along with PAC, and GA Code.",
     "Properly use and maintain air-line breathing systems and establish a uniform procedure "
     "for all employees, for both LACC and LCLA contractors, to follow when working jobs that "
