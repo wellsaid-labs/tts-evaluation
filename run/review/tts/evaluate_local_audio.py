@@ -23,6 +23,7 @@ class Session:
     script: str
     dialect: str
     session: str
+    audio_path: str
 
 
 temp_dir = "/tmp/eval"
@@ -125,7 +126,8 @@ def main():
                         style=r.Style,
                         script=r.Script,
                         dialect=r.Dialect,
-                        session=r.Session
+                        session=r.Session,
+                        audio_path=r.Audio
                     )
                     for i, r in metadata.iterrows()
                 ]
@@ -171,7 +173,8 @@ def main():
                         "Vote": "",
                         "Note": "",
                         "Dialect": session.dialect,
-                        "Session": session.session
+                        "Session": session.session,
+                        "Audio": session.audio_path
                     }
                     rows.append(row)
 
