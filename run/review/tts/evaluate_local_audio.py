@@ -7,15 +7,14 @@ Usage:
 """
 import os
 import zipfile
+from dataclasses import dataclass
 
 import pandas as pd
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
-from dataclasses import dataclass
-import run
-from run._streamlit import st_download_files, path_to_web_path, make_temp_web_dir, audio_to_web_path
 
-import lib
+import run
+from run._streamlit import make_temp_web_dir, st_download_files
 
 
 @dataclass
@@ -147,7 +146,7 @@ def main():
                         script=r.Script,
                         dialect=r.Dialect,
                         session=r.Session,
-                        audio_path=r.Audio
+                        audio_path=r.Audio,
                     )
                     for i, r in metadata.iterrows()
                 ]
@@ -194,7 +193,7 @@ def main():
                         "Note": "",
                         "Dialect": session.dialect,
                         "Session": session.session,
-                        "Audio": session.audio_path
+                        "Audio": session.audio_path,
                     }
                     rows.append(row)
 

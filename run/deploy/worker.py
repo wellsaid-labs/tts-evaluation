@@ -124,7 +124,8 @@ _MARKETPLACE = {
     22: (EN.JODI_P__PROMO, "promo_script_8_hurley", -23.02, 0.972, 0.955),
     23: (EN.LEE_M__PROMO, "promo_script_1_la_comb", -19.306, 0.903, 0.938),
     24: (EN.SELENE_R__PROMO, "promo_script_1_rousseau", -23.704, 1.06, 1.068),
-    25: (EN.MARI_MONGE__PROMO, "promo_script_1_monge", -22.736, 0.907, 0.907),
+    # NOTE: This speaker only provided 15 minutes of audio and should not be released.
+    # 25: (EN.MARI_MONGE__PROMO, "promo_script_1_monge", -22.736, 0.907, 0.907),
     26: (EN.WADE_C__PROMO, "promo_script_3_scholl", -20.94, 0.942, 0.941),
     27: (EN.JOE_F__NARRATION, "johnhunerlach_enthusiastic_21", -23.93, 0.841, 0.89),
     28: (EN.JOE_F__RADIO, "johnhunerlach_diphone_1", -19.325, 0.885, 0.914),

@@ -13,13 +13,12 @@ import pandas as pd
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 
-import lib
 import run
 from lib.environment import PT_EXTENSION, load
 from lib.text import XMLType
 from run._config import SPECTROGRAM_MODEL_EXPERIMENTS_PATH
 from run._models.spectrogram_model import SpectrogramModel
-from run._streamlit import audio_to_web_path, st_download_files, st_select_path, make_temp_web_dir
+from run._streamlit import audio_to_web_path, make_temp_web_dir, st_download_files, st_select_path
 from run._tts import griffin_lim_tts
 from run.data._loader.structures import Session
 from run.deploy.worker import _MARKETPLACE
@@ -115,7 +114,8 @@ def main():
                     col1, col2, col3, col4, col5 = st.columns(col_widths)
                     with col1:
                         st.markdown("\n")
-                        st.markdown(sesh.spkr.name)
+                        st.markdown(sesh.spkr.label)
+                        st.markdown(sesh.spkr.style.value)
                     with col2:
                         st.markdown("\n")
                         st.markdown(script)
