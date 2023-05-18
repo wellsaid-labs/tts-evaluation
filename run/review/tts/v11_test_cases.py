@@ -91,6 +91,15 @@ SINGLE_WORDS = [
     "walking",
 ]
 
+AUDIO_CUTOFF = [
+    "Taking sides early - I feel like that's a recipe for disaster. It is.",
+    "Let me speak to your manager. Egan",
+    "I can't believe he then walked away without taking any questions. Wow,",
+    "Thanks! For..",
+    "using your ears. Why?",
+    "Yes. Are you ready to play? Yeah.",
+]
+
 SLOW_SCRIPTS = [
     (
         '<tempo value="0.3">Mirabeau B. Lamar was born in Georgia in 1798'
