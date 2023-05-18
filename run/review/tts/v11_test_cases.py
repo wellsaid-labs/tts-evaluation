@@ -56,7 +56,7 @@ SINGLE_WORDS = [
     "relaxation",
     "proceed",
     "next",
-    "Alright.",
+    "Alright",
     "ignored",
     "disconnected",
     "Yes.",
@@ -76,8 +76,8 @@ SINGLE_WORDS = [
     "parrot",
     "ostrich",
     "penguin.",
-    "rooster",
-    "elephant",
+    "rooster.",
+    "elephant.",
     "cat",
     "chicken",
     "crab",
@@ -89,6 +89,10 @@ SINGLE_WORDS = [
     "flying",
     "protection",
     "walking",
+    "ECCN",
+    "IANA",
+    "ACLA",
+    "POTUS",
 ]
 
 AUDIO_CUTOFF = [
