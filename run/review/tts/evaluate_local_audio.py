@@ -44,7 +44,9 @@ def unzip_audios_and_metadata(zip_file):
     zf = zipfile.ZipFile(zip_file)
     zf.extractall(temp_dir)
     files = os.listdir(temp_dir)
-    metadata = [i for i in files if i.endswith(".csv")][0]
+    metadata = "metadata.csv"
+    if metadata not in files:
+        st.error("MISSING METADATA.CSV")
     df_path = os.path.join(temp_dir, metadata)
     df = pd.read_csv(df_path)
     audios = [os.path.join(temp_dir, i) for i in df.Audio.tolist()]
