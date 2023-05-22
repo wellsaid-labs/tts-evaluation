@@ -202,6 +202,285 @@ SLOW_SCRIPTS = [
     ),
 ]
 
+LOUDNESS_MIN__WORD = [
+    'a report is <loudness value="-5">also</loudness> generated.',
+    '<loudness value="-5">Click</loudness> on clean piercing needle.',
+    'Social Media <loudness value="-5">helps</loudness> brands...',
+    'and the Box will pop up <loudness value="-5">Below</loudness>',
+    'Focus on benefits, <loudness value="-5">not</loudness> just features: .',
+    '<loudness value="-5">Considerations</loudness> When Hosting a Web Meeting',
+    'And diets and exercise <loudness value="-5">add</loudness> to the struggle.',
+    'To all women <loudness value="-5">struggling</loudness> with puffy under eyes',
+    'and I\'ll get back to you as <loudness value="-5">soon</loudness> as possible.',
+    'determining the <loudness value="-5">most</loudness> effective burn treatments.',
+    'And what <loudness value="-5">about</loudness> sending international transfers?',
+    'Which led him to a <loudness value="-5">deeply</loudness> disturbing conclusion.',
+    'There are <loudness value="-5">two</loudness> ways to create Clauses in I-see-I.',
+    'Decrease <loudness value="-5">significant</loudness> financial and labor expenses.',
+    '2. Help aids in <loudness value="-5">reducing</loudness> soreness and bruising',
+]
+
+LOUDNESS_MAX__WORD = [
+    'a report is <loudness value="5">also</loudness> generated.',
+    '<loudness value="5">Click</loudness> on clean piercing needle.',
+    'Social Media <loudness value="5">helps</loudness> brands...',
+    'and the Box will pop up <loudness value="5">Below</loudness>',
+    'Focus on benefits, <loudness value="5">not</loudness> just features: .',
+    '<loudness value="5">Considerations</loudness> When Hosting a Web Meeting',
+    'And diets and exercise <loudness value="5">add</loudness> to the struggle.',
+    'To all women <loudness value="5">struggling</loudness> with puffy under eyes',
+    'and I\'ll get back to you as <loudness value="5">soon</loudness> as possible.',
+    'determining the <loudness value="5">most</loudness> effective burn treatments.',
+    'And what <loudness value="5">about</loudness> sending international transfers?',
+    'Which led him to a <loudness value="5">deeply</loudness> disturbing conclusion.',
+    'There are <loudness value="5">two</loudness> ways to create Clauses in I-see-I.',
+    'Decrease <loudness value="5">significant</loudness> financial and labor expenses.',
+    '2. Help aids in <loudness value="5">reducing</loudness> soreness and bruising',
+]
+
+LOUDNESS_MIN__CLAUSE = [
+    '<loudness value="-5">The Identification Documents page</loudness> displays your identification documents.',
+    '<loudness value="-5">This chiropractor designed</loudness> the device using breakthrough NMES technology.',
+    'Depending on your team, <loudness value="-5">you may also need to update</loudness> the Meeting Type.',
+    'Everyday, and every way, <loudness value="-5">i am becoming,</loudness> a greater version, of myself.',
+    'Let\'s examine <loudness value="-5">what can affect</loudness> establishing a positive safety culture.',
+    'Employee Templates help save time to <loudness value="-5">streamline employee setup</loudness> in Meevo.',
+    '<loudness value="-5">Looking for a Strategic Partner</loudness> for High-Performance software solutions?',
+    'Next, you <loudness value="-5">use Category filter "Ratings"</loudness> to find the "M. L. F. I." field.',
+    'The person highest in the pecking order tends to <loudness value="-5">tell others what to do.</loudness>',
+    '<loudness value="-5">We have also included</loudness> links to both documents below for your convenience',
+    '<loudness value="-5">The Information section lists</loudness> the Title, URL Name, and Article Type.',
+    'Click the Secret asterix, here <loudness value="-5">you will enter</loudness> your FOD Tenant name...',
+    '<loudness value="-5">This trick to get gas for a penny is going to get banned</loudness> in Canada.',
+    '<loudness value="-5">Segregate the following items</loudness> into waste that require special handling.',
+    '<loudness value="-5">The PTO Requests page allows</loudness> you to manage your paid time off requests.',
+]
+
+LOUDNESS_MAX__CLAUSE = [
+    '<loudness value="5">The Identification Documents page</loudness> displays your identification documents.',
+    '<loudness value="5">This chiropractor designed</loudness> the device using breakthrough NMES technology.',
+    'Depending on your team, <loudness value="5">you may also need to update</loudness> the Meeting Type.',
+    'Everyday, and every way, <loudness value="5">i am becoming,</loudness> a greater version, of myself.',
+    'Let\'s examine <loudness value="5">what can affect</loudness> establishing a positive safety culture.',
+    'Employee Templates help save time to <loudness value="5">streamline employee setup</loudness> in Meevo.',
+    '<loudness value="5">Looking for a Strategic Partner</loudness> for High-Performance software solutions?',
+    'Next, you <loudness value="5">use Category filter "Ratings"</loudness> to find the "M. L. F. I." field.',
+    'The person highest in the pecking order tends to <loudness value="5">tell others what to do.</loudness>',
+    '<loudness value="5">We have also included</loudness> links to both documents below for your convenience',
+    '<loudness value="5">The Information section lists</loudness> the Title, URL Name, and Article Type.',
+    'Click the Secret asterix, here <loudness value="5">you will enter</loudness> your FOD Tenant name...',
+    '<loudness value="5">This trick to get gas for a penny is going to get banned</loudness> in Canada.',
+    '<loudness value="5">Segregate the following items</loudness> into waste that require special handling.',
+    '<loudness value="5">The PTO Requests page allows</loudness> you to manage your paid time off requests.',
+]
+
+LOUDNESS_MIN__SENTENCE = [
+    '<loudness value="-5">Every product has gone through multiple on the job tests to refine it and guarantee it meets the tough standards of the HVACR industry.</loudness> The same quality and service you’ve come to know from Habegger over the years is now available in a variety of hvac chemicals. From coil cleaners and lineset flush to leak sealants and vacuum pump oil, Hab kim is now offering chemicals your customers can depend on for any job they need to tackle.',
+    'Finally, we need to mention some additional dimensions available in the system, including Restatement, Disposal and Currency Adjustment. <loudness value="-5">Data in these dimensions are loaded mainly to the defaul value, None, with some exceptions.</loudness> For instance, the adjustments performed by the consolidation team in HFM can be posted to dollar or euro depending on the currency of the adjustment.',
+    'I asked his username and it was him. 2000 miles away from where I first virtually met this guy he’s sitting next to me in math class. <loudness value="-5">When I told him mine his face went into total shock and he didn’t know how to respond.</loudness> It was awkward for sure.',
+    'Several factors can influence systolic blood pressure, including age, gender, body mass index, and physical activity levels. <loudness value="-5">Lifestyle choices, such as consuming excessive salt and alcohol, smoking, and experiencing stress, can also contribute to elevated systolic blood pressure.</loudness> Diastolic blood pressure, the lower of the two readings, refers to the pressure in the arteries between heart beats.',
+    'As a Jeminigh, you are known for your adaptability and social nature. <loudness value="-5">However, it\'s important to know when to draw the line and take care of yourself.</loudness> Establishing healthy boundaries will allow you to prioritize your own needs and prevent burnout.',
+    "Of course, forgiving your spouse doesn't entail being a coward or tolerating abuse. It's important to be conscious of the many non-physical signs of an abusive relationship. <loudness value=\"-5\">You must first decide to accept them fully in order to have a successful relationship.</loudness>",
+    '<loudness value="-5">While there is some support for Kohlberg\'s theory, there are also limitations and criticisms of the theory.</loudness> Longitudinal studies have found that individuals generally progress through the stages of moral development in a sequential order, without skipping stages. Furthermore, there is evidence to suggest that moral reasoning and moral behavior are linked, as individuals who reason at higher levels are more likely to behave morally.',
+    'Sparklines are mini charts that can be inserted inside the cells. <loudness value="-5">Sparklines are great for showing trends in a series of values, such as seasonal increases or decreases and economic cycles.</loudness> They also make you able to highlight maximum and minimum values.',
+    'From the main menu, expand the data views and reports. <loudness value="-5">Select report library, click run report, expand custom reports, click on store weekly schedule or daily break schedule and click select.</loudness> Select the timeframe, location, Output, and click run report.',
+    'This situation could benefit from a relief structure through the embankment on the relatively wide right floodplain. <loudness value="-5">Therefore, another alternative could be combining the original 400-foot bridge with a 150-foot relief bridge.</loudness> The two alternatives provide 150 feet of additional bridge length compared to the 400-foot bridge, so we can compare the hydraulic performance of these alternatives.',
+    'Machine learning uses an algorithm to analyze data, learn from it, and make decisions based on what it learned. <loudness value="-5">Deep learning is a subset of machine learning.</loudness> In deep learning, the algorithm can actually learn as a brain learns through the artificial neural networks.',
+    'Each client is paired with a dedicated team member who will be your guide from start to finish, which includes a project manager, a design & sourcing expert, a master patternmaker, and a seasoned seamstress. <loudness value="-5">The Visualz Group prides itself on training the future of fashion and is proud to have helped launch the careers for hundreds of young designers.</loudness> No question is too big or too small.',
+    "<loudness value=\"-5\">Today, we're going to talk about one of the most underrated forms of exercise out there: running.</loudness> It's an activity that is often overlooked or dismissed as too difficult, too time-consuming, or just plain boring. But the truth is, running is one of the most beneficial things you can do for your body and mind, and it's accessible to almost everyone.",
+    '<loudness value="-5">tendoneyetis causes aching or stabbing pain, tenderness, and stiffness.</loudness> tendonitis is usually associated with a particular body part; for example, Achilles tendonitis or patellar tendonitis. Early treatment usually starts with ice, rest, and anti-inflammatories and can prevent chronic problems that require surgery.',
+    '<loudness value="-5">The famous statistician Edwards Deming once said, "In God we Trust: All others must bring Data ".</loudness> That’s how important "Data" is. A regularly scheduled Data Analysis not just gives us an overview of our tasks but also allows us to detect systematic errors, as well as to evaluate and prevent the associated risks.',
+]
+
+LOUDNESS_MAX__SENTENCE = [
+    '<loudness value="5">Every product has gone through multiple on the job tests to refine it and guarantee it meets the tough standards of the HVACR industry.</loudness> The same quality and service you’ve come to know from Habegger over the years is now available in a variety of hvac chemicals. From coil cleaners and lineset flush to leak sealants and vacuum pump oil, Hab kim is now offering chemicals your customers can depend on for any job they need to tackle.',
+    'Finally, we need to mention some additional dimensions available in the system, including Restatement, Disposal and Currency Adjustment. <loudness value="5">Data in these dimensions are loaded mainly to the defaul value, None, with some exceptions.</loudness> For instance, the adjustments performed by the consolidation team in HFM can be posted to dollar or euro depending on the currency of the adjustment.',
+    'I asked his username and it was him. 2000 miles away from where I first virtually met this guy he’s sitting next to me in math class. <loudness value="5">When I told him mine his face went into total shock and he didn’t know how to respond.</loudness> It was awkward for sure.',
+    'Several factors can influence systolic blood pressure, including age, gender, body mass index, and physical activity levels. <loudness value="5">Lifestyle choices, such as consuming excessive salt and alcohol, smoking, and experiencing stress, can also contribute to elevated systolic blood pressure.</loudness> Diastolic blood pressure, the lower of the two readings, refers to the pressure in the arteries between heart beats.',
+    'As a Jeminigh, you are known for your adaptability and social nature. <loudness value="5">However, it\'s important to know when to draw the line and take care of yourself.</loudness> Establishing healthy boundaries will allow you to prioritize your own needs and prevent burnout.',
+    "Of course, forgiving your spouse doesn't entail being a coward or tolerating abuse. It's important to be conscious of the many non-physical signs of an abusive relationship. <loudness value=\"5\">You must first decide to accept them fully in order to have a successful relationship.</loudness>",
+    '<loudness value="5">While there is some support for Kohlberg\'s theory, there are also limitations and criticisms of the theory.</loudness> Longitudinal studies have found that individuals generally progress through the stages of moral development in a sequential order, without skipping stages. Furthermore, there is evidence to suggest that moral reasoning and moral behavior are linked, as individuals who reason at higher levels are more likely to behave morally.',
+    'Sparklines are mini charts that can be inserted inside the cells. <loudness value="5">Sparklines are great for showing trends in a series of values, such as seasonal increases or decreases and economic cycles.</loudness> They also make you able to highlight maximum and minimum values.',
+    'From the main menu, expand the data views and reports. <loudness value="5">Select report library, click run report, expand custom reports, click on store weekly schedule or daily break schedule and click select.</loudness> Select the timeframe, location, Output, and click run report.',
+    'This situation could benefit from a relief structure through the embankment on the relatively wide right floodplain. <loudness value="5">Therefore, another alternative could be combining the original 400-foot bridge with a 150-foot relief bridge.</loudness> The two alternatives provide 150 feet of additional bridge length compared to the 400-foot bridge, so we can compare the hydraulic performance of these alternatives.',
+    'Machine learning uses an algorithm to analyze data, learn from it, and make decisions based on what it learned. <loudness value="5">Deep learning is a subset of machine learning.</loudness> In deep learning, the algorithm can actually learn as a brain learns through the artificial neural networks.',
+    'Each client is paired with a dedicated team member who will be your guide from start to finish, which includes a project manager, a design & sourcing expert, a master patternmaker, and a seasoned seamstress. <loudness value="5">The Visualz Group prides itself on training the future of fashion and is proud to have helped launch the careers for hundreds of young designers.</loudness> No question is too big or too small.',
+    "<loudness value=\"5\">Today, we're going to talk about one of the most underrated forms of exercise out there: running.</loudness> It's an activity that is often overlooked or dismissed as too difficult, too time-consuming, or just plain boring. But the truth is, running is one of the most beneficial things you can do for your body and mind, and it's accessible to almost everyone.",
+    '<loudness value="5">tendoneyetis causes aching or stabbing pain, tenderness, and stiffness.</loudness> tendonitis is usually associated with a particular body part; for example, Achilles tendonitis or patellar tendonitis. Early treatment usually starts with ice, rest, and anti-inflammatories and can prevent chronic problems that require surgery.',
+    '<loudness value="5">The famous statistician Edwards Deming once said, "In God we Trust: All others must bring Data ".</loudness> That’s how important "Data" is. A regularly scheduled Data Analysis not just gives us an overview of our tasks but also allows us to detect systematic errors, as well as to evaluate and prevent the associated risks.',
+]
+
+TEMPO_MIN__WORD = [
+    'a report is <tempo value="0.8">also</tempo> generated.',
+    '<tempo value="0.8">Click</tempo> on clean piercing needle.',
+    'Social Media <tempo value="0.8">helps</tempo> brands...',
+    'and the Box will pop up <tempo value="0.8">Below</tempo>',
+    'Focus on benefits, <tempo value="0.8">not</tempo> just features: .',
+    '<tempo value="0.8">Considerations</tempo> When Hosting a Web Meeting',
+    'And diets and exercise <tempo value="0.8">add</tempo> to the struggle.',
+    'To all women <tempo value="0.8">struggling</tempo> with puffy under eyes',
+    'and I\'ll get back to you as <tempo value="0.8">soon</tempo> as possible.',
+    'determining the <tempo value="0.8">most</tempo> effective burn treatments.',
+    'And what <tempo value="0.8">about</tempo> sending international transfers?',
+    'Which led him to a <tempo value="0.8">deeply</tempo> disturbing conclusion.',
+    'There are <tempo value="0.8">two</tempo> ways to create Clauses in I-see-I.',
+    'Decrease <tempo value="0.8">significant</tempo> financial and labor expenses.',
+    '2. Help aids in <tempo value="0.8">reducing</tempo> soreness and bruising',
+]
+
+TEMPO_MAX__WORD = [
+    'a report is <tempo value="1.5">also</tempo> generated.',
+    '<tempo value="1.5">Click</tempo> on clean piercing needle.',
+    'Social Media <tempo value="1.5">helps</tempo> brands...',
+    'and the Box will pop up <tempo value="1.5">Below</tempo>',
+    'Focus on benefits, <tempo value="1.5">not</tempo> just features: .',
+    '<tempo value="1.5">Considerations</tempo> When Hosting a Web Meeting',
+    'And diets and exercise <tempo value="1.5">add</tempo> to the struggle.',
+    'To all women <tempo value="1.5">struggling</tempo> with puffy under eyes',
+    'and I\'ll get back to you as <tempo value="1.5">soon</tempo> as possible.',
+    'determining the <tempo value="1.5">most</tempo> effective burn treatments.',
+    'And what <tempo value="1.5">about</tempo> sending international transfers?',
+    'Which led him to a <tempo value="1.5">deeply</tempo> disturbing conclusion.',
+    'There are <tempo value="1.5">two</tempo> ways to create Clauses in I-see-I.',
+    'Decrease <tempo value="1.5">significant</tempo> financial and labor expenses.',
+    '2. Help aids in <tempo value="1.5">reducing</tempo> soreness and bruising',
+]
+
+TEMPO_MIN__CLAUSE = [
+    '<tempo value="0.8">The Identification Documents page</tempo> displays your identification documents.',
+    '<tempo value="0.8">This chiropractor designed</tempo> the device using breakthrough NMES technology.',
+    'Depending on your team, <tempo value="0.8">you may also need to update</tempo> the Meeting Type.',
+    'Everyday, and every way, <tempo value="0.8">i am becoming,</tempo> a greater version, of myself.',
+    'Let\'s examine <tempo value="0.8">what can affect</tempo> establishing a positive safety culture.',
+    'Employee Templates help save time to <tempo value="0.8">streamline employee setup</tempo> in Meevo.',
+    '<tempo value="0.8">Looking for a Strategic Partner</tempo> for High-Performance software solutions?',
+    'Next, you <tempo value="0.8">use Category filter "Ratings"</tempo> to find the "M. L. F. I." field.',
+    'The person highest in the pecking order tends to <tempo value="0.8">tell others what to do.</tempo>',
+    '<tempo value="0.8">We have also included</tempo> links to both documents below for your convenience',
+    '<tempo value="0.8">The Information section lists</tempo> the Title, URL Name, and Article Type.',
+    'Click the Secret asterix, here <tempo value="0.8">you will enter</tempo> your FOD Tenant name...',
+    '<tempo value="0.8">This trick to get gas for a penny is going to get banned</tempo> in Canada.',
+    '<tempo value="0.8">Segregate the following items</tempo> into waste that require special handling.',
+    '<tempo value="0.8">The PTO Requests page allows</tempo> you to manage your paid time off requests.',
+]
+
+TEMPO_MAX__CLAUSE = [
+    '<tempo value="1.5">The Identification Documents page</tempo> displays your identification documents.',
+    '<tempo value="1.5">This chiropractor designed</tempo> the device using breakthrough NMES technology.',
+    'Depending on your team, <tempo value="1.5">you may also need to update</tempo> the Meeting Type.',
+    'Everyday, and every way, <tempo value="1.5">i am becoming,</tempo> a greater version, of myself.',
+    'Let\'s examine <tempo value="1.5">what can affect</tempo> establishing a positive safety culture.',
+    'Employee Templates help save time to <tempo value="1.5">streamline employee setup</tempo> in Meevo.',
+    '<tempo value="1.5">Looking for a Strategic Partner</tempo> for High-Performance software solutions?',
+    'Next, you <tempo value="1.5">use Category filter "Ratings"</tempo> to find the "M. L. F. I." field.',
+    'The person highest in the pecking order tends to <tempo value="1.5">tell others what to do.</tempo>',
+    '<tempo value="1.5">We have also included</tempo> links to both documents below for your convenience',
+    '<tempo value="1.5">The Information section lists</tempo> the Title, URL Name, and Article Type.',
+    'Click the Secret asterix, here <tempo value="1.5">you will enter</tempo> your FOD Tenant name...',
+    '<tempo value="1.5">This trick to get gas for a penny is going to get banned</tempo> in Canada.',
+    '<tempo value="1.5">Segregate the following items</tempo> into waste that require special handling.',
+    '<tempo value="1.5">The PTO Requests page allows</tempo> you to manage your paid time off requests.',
+]
+
+TEMPO_MIN__SENTENCE = [
+    '<tempo value="0.8">Every product has gone through multiple on the job tests to refine it and guarantee it meets the tough standards of the HVACR industry.</tempo> The same quality and service you’ve come to know from Habegger over the years is now available in a variety of hvac chemicals. From coil cleaners and lineset flush to leak sealants and vacuum pump oil, Hab kim is now offering chemicals your customers can depend on for any job they need to tackle.',
+    'Finally, we need to mention some additional dimensions available in the system, including Restatement, Disposal and Currency Adjustment. <tempo value="0.8">Data in these dimensions are loaded mainly to the defaul value, None, with some exceptions.</tempo> For instance, the adjustments performed by the consolidation team in HFM can be posted to dollar or euro depending on the currency of the adjustment.',
+    'I asked his username and it was him. 2000 miles away from where I first virtually met this guy he’s sitting next to me in math class. <tempo value="0.8">When I told him mine his face went into total shock and he didn’t know how to respond.</tempo> It was awkward for sure.',
+    'Several factors can influence systolic blood pressure, including age, gender, body mass index, and physical activity levels. <tempo value="0.8">Lifestyle choices, such as consuming excessive salt and alcohol, smoking, and experiencing stress, can also contribute to elevated systolic blood pressure.</tempo> Diastolic blood pressure, the lower of the two readings, refers to the pressure in the arteries between heart beats.',
+    'As a Jeminigh, you are known for your adaptability and social nature. <tempo value="0.8">However, it\'s important to know when to draw the line and take care of yourself.</tempo> Establishing healthy boundaries will allow you to prioritize your own needs and prevent burnout.',
+    "Of course, forgiving your spouse doesn't entail being a coward or tolerating abuse. It's important to be conscious of the many non-physical signs of an abusive relationship. <tempo value=\"0.8\">You must first decide to accept them fully in order to have a successful relationship.</tempo>",
+    '<tempo value="0.8">While there is some support for Kohlberg\'s theory, there are also limitations and criticisms of the theory.</tempo> Longitudinal studies have found that individuals generally progress through the stages of moral development in a sequential order, without skipping stages. Furthermore, there is evidence to suggest that moral reasoning and moral behavior are linked, as individuals who reason at higher levels are more likely to behave morally.',
+    'Sparklines are mini charts that can be inserted inside the cells. <tempo value="0.8">Sparklines are great for showing trends in a series of values, such as seasonal increases or decreases and economic cycles.</tempo> They also make you able to highlight maximum and minimum values.',
+    'From the main menu, expand the data views and reports. <tempo value="0.8">Select report library, click run report, expand custom reports, click on store weekly schedule or daily break schedule and click select.</tempo> Select the timeframe, location, Output, and click run report.',
+    'This situation could benefit from a relief structure through the embankment on the relatively wide right floodplain. <tempo value="0.8">Therefore, another alternative could be combining the original 400-foot bridge with a 150-foot relief bridge.</tempo> The two alternatives provide 150 feet of additional bridge length compared to the 400-foot bridge, so we can compare the hydraulic performance of these alternatives.',
+    'Machine learning uses an algorithm to analyze data, learn from it, and make decisions based on what it learned. <tempo value="0.8">Deep learning is a subset of machine learning.</tempo> In deep learning, the algorithm can actually learn as a brain learns through the artificial neural networks.',
+    'Each client is paired with a dedicated team member who will be your guide from start to finish, which includes a project manager, a design & sourcing expert, a master patternmaker, and a seasoned seamstress. <tempo value="0.8">The Visualz Group prides itself on training the future of fashion and is proud to have helped launch the careers for hundreds of young designers.</tempo> No question is too big or too small.',
+    "<tempo value=\"0.8\">Today, we're going to talk about one of the most underrated forms of exercise out there: running.</tempo> It's an activity that is often overlooked or dismissed as too difficult, too time-consuming, or just plain boring. But the truth is, running is one of the most beneficial things you can do for your body and mind, and it's accessible to almost everyone.",
+    '<tempo value="0.8">tendoneyetis causes aching or stabbing pain, tenderness, and stiffness.</tempo> tendonitis is usually associated with a particular body part; for example, Achilles tendonitis or patellar tendonitis. Early treatment usually starts with ice, rest, and anti-inflammatories and can prevent chronic problems that require surgery.',
+    '<tempo value="0.8">The famous statistician Edwards Deming once said, "In God we Trust: All others must bring Data ".</tempo> That’s how important "Data" is. A regularly scheduled Data Analysis not just gives us an overview of our tasks but also allows us to detect systematic errors, as well as to evaluate and prevent the associated risks.',
+]
+
+TEMPO_MAX__SENTENCE = [
+    '<tempo value="1.5">Every product has gone through multiple on the job tests to refine it and guarantee it meets the tough standards of the HVACR industry.</tempo> The same quality and service you’ve come to know from Habegger over the years is now available in a variety of hvac chemicals. From coil cleaners and lineset flush to leak sealants and vacuum pump oil, Hab kim is now offering chemicals your customers can depend on for any job they need to tackle.',
+    'Finally, we need to mention some additional dimensions available in the system, including Restatement, Disposal and Currency Adjustment. <tempo value="1.5">Data in these dimensions are loaded mainly to the defaul value, None, with some exceptions.</tempo> For instance, the adjustments performed by the consolidation team in HFM can be posted to dollar or euro depending on the currency of the adjustment.',
+    'I asked his username and it was him. 2000 miles away from where I first virtually met this guy he’s sitting next to me in math class. <tempo value="1.5">When I told him mine his face went into total shock and he didn’t know how to respond.</tempo> It was awkward for sure.',
+    'Several factors can influence systolic blood pressure, including age, gender, body mass index, and physical activity levels. <tempo value="1.5">Lifestyle choices, such as consuming excessive salt and alcohol, smoking, and experiencing stress, can also contribute to elevated systolic blood pressure.</tempo> Diastolic blood pressure, the lower of the two readings, refers to the pressure in the arteries between heart beats.',
+    'As a Jeminigh, you are known for your adaptability and social nature. <tempo value="1.5">However, it\'s important to know when to draw the line and take care of yourself.</tempo> Establishing healthy boundaries will allow you to prioritize your own needs and prevent burnout.',
+    "Of course, forgiving your spouse doesn't entail being a coward or tolerating abuse. It's important to be conscious of the many non-physical signs of an abusive relationship. <tempo value=\"1.5\">You must first decide to accept them fully in order to have a successful relationship.</tempo>",
+    '<tempo value="1.5">While there is some support for Kohlberg\'s theory, there are also limitations and criticisms of the theory.</tempo> Longitudinal studies have found that individuals generally progress through the stages of moral development in a sequential order, without skipping stages. Furthermore, there is evidence to suggest that moral reasoning and moral behavior are linked, as individuals who reason at higher levels are more likely to behave morally.',
+    'Sparklines are mini charts that can be inserted inside the cells. <tempo value="1.5">Sparklines are great for showing trends in a series of values, such as seasonal increases or decreases and economic cycles.</tempo> They also make you able to highlight maximum and minimum values.',
+    'From the main menu, expand the data views and reports. <tempo value="1.5">Select report library, click run report, expand custom reports, click on store weekly schedule or daily break schedule and click select.</tempo> Select the timeframe, location, Output, and click run report.',
+    'This situation could benefit from a relief structure through the embankment on the relatively wide right floodplain. <tempo value="1.5">Therefore, another alternative could be combining the original 400-foot bridge with a 150-foot relief bridge.</tempo> The two alternatives provide 150 feet of additional bridge length compared to the 400-foot bridge, so we can compare the hydraulic performance of these alternatives.',
+    'Machine learning uses an algorithm to analyze data, learn from it, and make decisions based on what it learned. <tempo value="1.5">Deep learning is a subset of machine learning.</tempo> In deep learning, the algorithm can actually learn as a brain learns through the artificial neural networks.',
+    'Each client is paired with a dedicated team member who will be your guide from start to finish, which includes a project manager, a design & sourcing expert, a master patternmaker, and a seasoned seamstress. <tempo value="1.5">The Visualz Group prides itself on training the future of fashion and is proud to have helped launch the careers for hundreds of young designers.</tempo> No question is too big or too small.',
+    "<tempo value=\"1.5\">Today, we're going to talk about one of the most underrated forms of exercise out there: running.</tempo> It's an activity that is often overlooked or dismissed as too difficult, too time-consuming, or just plain boring. But the truth is, running is one of the most beneficial things you can do for your body and mind, and it's accessible to almost everyone.",
+    '<tempo value="1.5">tendoneyetis causes aching or stabbing pain, tenderness, and stiffness.</tempo> tendonitis is usually associated with a particular body part; for example, Achilles tendonitis or patellar tendonitis. Early treatment usually starts with ice, rest, and anti-inflammatories and can prevent chronic problems that require surgery.',
+    '<tempo value="1.5">The famous statistician Edwards Deming once said, "In God we Trust: All others must bring Data ".</tempo> That’s how important "Data" is. A regularly scheduled Data Analysis not just gives us an overview of our tasks but also allows us to detect systematic errors, as well as to evaluate and prevent the associated risks.',
+]
+
+TEMPO_MIN__LOUDNESS_MIN__CLAUSE = [
+    '<tempo value="0.8"><loudness value="-5">This trick to get gas for a penny is going to get banned</tempo></loudness> in Canada.',
+    'Let\'s examine <tempo value="0.8"><loudness value="-5">what can affect</tempo></loudness> establishing a positive safety culture.',
+    '<tempo value="0.8"><loudness value="-5">This chiropractor designed</tempo></loudness> the device using breakthrough NMES technology.',
+    '<tempo value="0.8"><loudness value="-5">Looking for a Strategic Partner</tempo></loudness> for High-Performance software solutions?',
+    'Depending on your team, <tempo value="0.8"><loudness value="-5">you may also need to update</tempo></loudness> the Meeting Type.',
+]
+
+TEMPO_MIN__LOUDNESS_MAX__CLAUSE = [
+    '<tempo value="0.8"><loudness value="5">This trick to get gas for a penny is going to get banned</tempo></loudness> in Canada.',
+    'Let\'s examine <tempo value="0.8"><loudness value="5">what can affect</tempo></loudness> establishing a positive safety culture.',
+    '<tempo value="0.8"><loudness value="5">This chiropractor designed</tempo></loudness> the device using breakthrough NMES technology.',
+    '<tempo value="0.8"><loudness value="5">Looking for a Strategic Partner</tempo></loudness> for High-Performance software solutions?',
+    'Depending on your team, <tempo value="0.8"><loudness value="5">you may also need to update</tempo></loudness> the Meeting Type.',
+]
+
+TEMPO_MAX__LOUDNESS_MIN__CLAUSE = [
+    '<tempo value="1.5"><loudness value="-5">This trick to get gas for a penny is going to get banned</tempo></loudness> in Canada.',
+    'Let\'s examine <tempo value="1.5"><loudness value="-5">what can affect</tempo></loudness> establishing a positive safety culture.',
+    '<tempo value="1.5"><loudness value="-5">This chiropractor designed</tempo></loudness> the device using breakthrough NMES technology.',
+    '<tempo value="1.5"><loudness value="-5">Looking for a Strategic Partner</tempo></loudness> for High-Performance software solutions?',
+    'Depending on your team, <tempo value="1.5"><loudness value="-5">you may also need to update</tempo></loudness> the Meeting Type.',
+]
+
+TEMPO_MAX__LOUDNESS_MAX__CLAUSE = [
+    '<tempo value="1.5"><loudness value="5">This trick to get gas for a penny is going to get banned</tempo></loudness> in Canada.',
+    'Let\'s examine <tempo value="1.5"><loudness value="5">what can affect</tempo></loudness> establishing a positive safety culture.',
+    '<tempo value="1.5"><loudness value="5">This chiropractor designed</tempo></loudness> the device using breakthrough NMES technology.',
+    '<tempo value="1.5"><loudness value="5">Looking for a Strategic Partner</tempo></loudness> for High-Performance software solutions?',
+    'Depending on your team, <tempo value="1.5"><loudness value="5">you may also need to update</tempo></loudness> the Meeting Type.',
+]
+
+LOUDNESS_MIN__TEMPO_MIN__CLAUSE = [
+    '<loudness value="-5"><tempo value="0.8">This trick to get gas for a penny is going to get banned</loudness></tempo> in Canada.',
+    'Let\'s examine <loudness value="-5"><tempo value="0.8">what can affect</loudness></tempo> establishing a positive safety culture.',
+    '<loudness value="-5"><tempo value="0.8">This chiropractor designed</loudness></tempo> the device using breakthrough NMES technology.',
+    '<loudness value="-5"><tempo value="0.8">Looking for a Strategic Partner</loudness></tempo> for High-Performance software solutions?',
+    'Depending on your team, <loudness value="-5"><tempo value="0.8">you may also need to update</loudness></tempo> the Meeting Type.',
+]
+
+LOUDNESS_MIN__TEMPO_MAX__CLAUSE = [
+    '<loudness value="-5"><tempo value="1.5">This trick to get gas for a penny is going to get banned</loudness></tempo> in Canada.',
+    'Let\'s examine <loudness value="-5"><tempo value="1.5">what can affect</loudness></tempo> establishing a positive safety culture.',
+    '<loudness value="-5"><tempo value="1.5">This chiropractor designed</loudness></tempo> the device using breakthrough NMES technology.',
+    '<loudness value="-5"><tempo value="1.5">Looking for a Strategic Partner</loudness></tempo> for High-Performance software solutions?',
+    'Depending on your team, <loudness value="-5"><tempo value="1.5">you may also need to update</loudness></tempo> the Meeting Type.',
+]
+
+LOUDNESS_MAX__TEMPO_MIN__CLAUSE = [
+    '<loudness value="5"><tempo value="0.8">This trick to get gas for a penny is going to get banned</loudness></tempo> in Canada.',
+    'Let\'s examine <loudness value="5"><tempo value="0.8">what can affect</loudness></tempo> establishing a positive safety culture.',
+    '<loudness value="5"><tempo value="0.8">This chiropractor designed</loudness></tempo> the device using breakthrough NMES technology.',
+    '<loudness value="5"><tempo value="0.8">Looking for a Strategic Partner</loudness></tempo> for High-Performance software solutions?',
+    'Depending on your team, <loudness value="5"><tempo value="0.8">you may also need to update</loudness></tempo> the Meeting Type.',
+]
+
+LOUDNESS_MAX__TEMPO_MAX__CLAUSE = [
+    '<loudness value="5"><tempo value="1.5">This trick to get gas for a penny is going to get banned</loudness></tempo> in Canada.',
+    'Let\'s examine <loudness value="5"><tempo value="1.5">what can affect</loudness></tempo> establishing a positive safety culture.',
+    '<loudness value="5"><tempo value="1.5">This chiropractor designed</loudness></tempo> the device using breakthrough NMES technology.',
+    '<loudness value="5"><tempo value="1.5">Looking for a Strategic Partner</loudness></tempo> for High-Performance software solutions?',
+    'Depending on your team, <loudness value="5"><tempo value="1.5">you may also need to update</loudness></tempo> the Meeting Type.',
+]
 
 items = locals().items()
 V11_TEST_CASES = {
