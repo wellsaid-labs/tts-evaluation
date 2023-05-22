@@ -148,15 +148,13 @@ def main():
 
     teammates = ["Julia", "Jordan", "Alison", "Vic", "Sara", "Rhyan", "Alecia", "Michael"]
     for mate in teammates:
-        audios = []
         with st.spinner(f"Generating surveys for {mate}..."):
             for option in test_cases:
                 case_name = option[0]
+                audios, paths, rows = [], [], []
 
                 audios.extend(option[1](spec_export))
 
-                paths = []
-                rows = []
                 for i, (sesh, script, wave) in enumerate(audios):
                     path = audio_to_web_path(wave, name=(f"{case_name}_audio{i}.wav"))
                     paths.append(path)
