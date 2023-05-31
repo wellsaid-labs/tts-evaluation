@@ -2,100 +2,13 @@
 text, and various annotations."""
 
 from long_scripts import LONG_SCRIPTS
-
-SINGLE_WORDS = [
-    "augmented",
-    "stimulant",
-    "query",
-    "adventurous",
-    "paraplegic",
-    "irregularity",
-    "unique",
-    "mechanism",
-    "litmus",
-    "mountaintop",
-    "Alzheimer's",
-    "debilitating",
-    "cedar",
-    "indicator",
-    "calcium",
-    "mildew",
-    "subrogation",
-    "eczema",
-    "craft",
-    "anemia",
-    "enroll",
-    "predetermined",
-    "whiskey",
-    "molasses",
-    "lightweight",
-    "inscriptions",
-    "thoughts",
-    "literacy",
-    "knowledge",
-    "enabled",
-    "aperture",
-    "unsatisfactory",
-    "automatically",
-    "Congratulations!",
-    "management",
-    "legislation",
-    "capacity",
-    "engage",
-    "efficiency",
-    "criteria",
-    "colleagues",
-    "electrical",
-    "accessed",
-    "protocol",
-    "sequential",
-    "simultaneously",
-    "addresses",
-    "buyers",
-    "mission",
-    "relaxation",
-    "proceed",
-    "next",
-    "Alright",
-    "ignored",
-    "disconnected",
-    "Yes.",
-    "Meeting?",
-    "example",
-    "Goodbye!",
-    "no",
-    "eight",
-    "Seventeen",
-    "welcome",
-    "then",
-    "finally",
-    "first",
-    "DNA",
-    "cobra",
-    "rabbit",
-    "parrot",
-    "ostrich",
-    "penguin.",
-    "rooster.",
-    "elephant.",
-    "cat",
-    "chicken",
-    "crab",
-    "goat",
-    "squid",
-    "antennae",
-    "eyes",
-    "wings",
-    "flying",
-    "protection",
-    "walking",
-    "ECCN",
-    "IANA",
-    "ACLA",
-    "POTUS",
-]
+# I deleted the single word tests from this doc as we have completed that phase of testing
 
 AUDIO_CUTOFF = [
+    # these clips are here to test the v11 model's performance on a known error for v10: audio
+    # cutoff. When a clip ended in a sentence or beginning clause that consisted of 4 characters or
+    # less, the model cut off that final sentence or sentence fragment.
+    # Of these test cases, all but the first experience this error in our current v10 model in prod.
     "Taking sides early - I feel like that's a recipe for disaster. It is.",
     "Let me speak to your manager. Egan",
     "I can't believe he then walked away without taking any questions. Wow,",
@@ -105,8 +18,10 @@ AUDIO_CUTOFF = [
 ]
 
 SLOW_SCRIPTS = [
-    (
-        '<tempo value="0.3">Mirabeau B. Lamar was born in Georgia in 1798'
+      # These scripts were created using user text, with an assortment of phrases
+      # slowed down to evaluate the potential impact of reduced tempo on pronunciation.
+      # These test cases will be further refined after they've been tried in testing.
+    (   '<tempo value="0.3">Mirabeau B. Lamar was born in Georgia in 1798'
         "</tempo>. He was the son of a wealthy plantation owner. When he "
         'was grown, <tempo value="0.3">Lamar entered Georgia politics</tempo> and served on the '
         'state senate. After <tempo value="0.3">visiting a friend in Texas in 1834</tempo>, he '
@@ -271,7 +186,7 @@ LOUDNESS_MAX__CLAUSE = [
     'Click the Secret asterix, here <loudness value="5">you will enter</loudness> your FOD Tenant name...',
     '<loudness value="5">This trick to get gas for a penny is going to get banned</loudness> in Canada.',
     '<loudness value="5">Segregate the following items</loudness> into waste that require special handling.',
-    '<loudness value="5">The PTO Requests page allows</loudness> you to manage your paid time off requests.',
+    '<loudness value="5">The PTO Requests page </loudness> allows you to manage your paid time off requests.',
 ]
 
 LOUDNESS_MIN__SENTENCE = [
@@ -480,6 +395,115 @@ LOUDNESS_MAX__TEMPO_MAX__CLAUSE = [
     '<loudness value="5"><tempo value="1.5">This chiropractor designed</tempo></loudness> the device using breakthrough NMES technology.',
     '<loudness value="5"><tempo value="1.5">Looking for a Strategic Partner</tempo></loudness> for High-Performance software solutions?',
     'Depending on your team, <loudness value="5"><tempo value="1.5">you may also need to update</tempo></loudness> the Meeting Type.',
+]
+
+# Tests in DIFFICULT_USER_INITIALISMS,DIFFICULT_USER_QUESTIONS, and DIFFICULT_USER_URLS should be rendered in v10 for parity.
+DIFFICULT_USER_INITIALISMS = [
+    # The following initialisms in context were found by looking at user clips where users had used one
+    # or more workaround methods to input their initialism into WSL Studio. Some of these are presented
+    # with respellings as well as without.
+    'Garmin\'s 7-inch Echomap 73 CV is a dual-beam, dual-frequency chartplotter that excels at scanning sonar.',
+    'The VS 02 is a bit bulkier, more feature-rich, and more expensive than our previous pick, but it\'s '
+    'easier and less expensive to use, and it also has an automatic shut-off. ',
+    'Now, let\'s discuss LOA Waivers and when it would be appropriate to apply. Anyone who is not '
+    'eligible to participate, such as employees out on LOA should be assigned a waiver.',
+    'It provides exceptional adhesion on bare metal and OEM substrates, and it sands easily by hand or machine.',
+    'The next step is to print the necessary sections to PDF so you can include it with the application '
+    'packet that will be sent to the client.',
+    'A key concept - the LCES system is identified to each firefighter prior to when it must be used. '
+    'The nature of wildland fire suppression dictates continuously evaluating and, when necessary, '
+    're-establishing LCES as time and fire growth progress. I want to take a minute and briefly review '
+    'each component and its interconnection with the others.',
+    'Generate the HTML documentation.',
+    'Generate the HTML documentation.',
+    'The CMM has completed the inspection.',
+    'Next, you can optionally select to Enable WS Trust next to ‘WS Trust Configuration’ if you have '
+    'users that log in with Azure AD joined machines, or mail clients that do not support Modern authentication.',
+    'Chatbots: AI-powered chatbots answer frequently asked questions, allowing human representatives '
+    'to focus on more complex issues.',
+    'Download the My Benefits Work app, visit www.mybenefitswork.com, or call 800-800-7616 for more '
+    'information. Your Group ID is HPBBAMRG.',
+    'Auto GPT is an impressive new feature in Chat GPT that can program AI on its own, making it both '
+    'powerful and potentially scary.',
+    'Smart LED panels would allow the facility manager to customize, schedule and remotely control the '
+    'building’s lighting with minimal labor and setup when compared to traditional or standard LED lighting. '
+    'So, not only could he save energy and reduce costs but also improve the overall functionality and '
+    'convenience of the smart lighting system.',
+]
+
+DIFFICULT_USER_QUESTIONS = [
+    # The following questions in context were found by looking at user clips where users demosntrated
+    # frustration in inputting their questions into WSL Studio, such as using multiple question marks
+    # or putting the upward-inflecting final word or phrase in quotation marks.
+    # We are also testing the impact of cues on questions, so some are presented here cued and plain.
+    # Current user feedback: We’re running into a recurring problem with WellSaid - anytime a
+    # script has a question in it, it’s getting flagged as robotic by clients and I have to drop over
+    # to human voice talent. Is there a best practice, or any sort of trick to getting WellSaid voices
+    # to put a little more questioning emphasis at the end of sentences? Right now, it sounds mostly
+    # like a period on the vast majority of avatars when I use default punctuation.
+    'Have a topic you’d like us to cover in "Wired In"? Let us know!',
+    'Is it similar to configuring the other Contract Types?',
+    'Remember our new facility manager?',
+    'Hi everyone! I hope the week is going well for you all! Let’s jump into our agenda starting with '
+    'an open action. Have the recruiters given Final Approval on the offer template?',
+    'What did you notice about the shift change at 22:30, when Inspector A filled out his turnover form '
+    'and then went home?',
+    'And also she posted a hairstyles picture. "Big Hair? Don\'t care!" With a rolling on the floor laugh '
+    'emoji.',
+    'Are you "ready to learn" with CTY?',
+    'Perfect! \n\nDo you want to give it a shot for the next Masterdata Contract Type, Jessie?',
+    'You mean like getting better drinks at happy hour?',
+    'Since the Signatory Roles are a part of the Approval Rule: family, will the Conditions and '
+    'Actions be similar to the other Approval Rules?',
+    'Is it fair to say that the root cause of the confusion is in the Job-profile titles?',
+    'I’m a little busy at the moment. Could we do it sometime later in the week instead?',
+    'Will a Business Unit Head be considered as an approver for an agreement at Dynamic Fix?',
+    'Danny, is there a way to \'View\' the newly created rule on the ICI interface?',
+    #skip the rest of these in v10 for parity
+    'Remember our new <tempo value="2"><loudness="10">facility</loudness> manager?</tempo>',
+    'Is it similar to configuring the other <tempo value="0.5">Contract Types?</tempo>',
+    'Is it similar to configuring the other <tempo value="2">Contract Types?</tempo>',
+    # This user had created a question with pausing to force a specific phrasing, so we are testing
+    # a question in combination with using cues to create breaks or pauses.
+    'In what scenario would such <tempo value="0.2">,</tempo>restricted access <tempo value="0.2">,'
+    '</tempo>to Attribute Groups <tempo value="0.2">,</tempo>be necessary?',
+    # This user had also created a question with two commas after a list of items, so we are testing
+    # a question in combination with using cues to create breaks or pauses.
+    'For this, you can configure an Event Rule to add the Secondary Owner to the team, only when required. '
+    'You can define multiple conditions when adding a Secondary Owner to the team, such as an agreement '
+    'created for a specific vendor,<tempo value="0.2">,</tempo> country,<tempo value="0.2">,</tempo> '
+    'specific contract value,<tempo value="0.2">,</tempo> etc. \n\nHas Jeremy mentioned any such specifications?',
+    # This user included SEVERAL respellings in their question, so we thought we'd test this in v10
+    # as well as v11 because wow. That's so much respelling in one question!
+    'I get your point. \n\nOn another note, will it make a difference to the end <respell value="YOO'
+    '-zer>User</respell> whether the attribute <respell value="VAEL-yoohz">Values</respell> are '
+    'retrieved from the choice <respell value="DEY-tuh">Data</respell> type <respell value="OR">or'
+    '</respell> master <respell value="DEY-tuh">Data</respell>?',
+
+]
+
+DIFFICULT_USER_URLS = [
+    # These URLs come directly from user scripts, copied and pasted as found in context. If a URL was
+    # modified (presumably to prompt a better performance from the v10 model), I have also provided a
+    #reconstructed URL in context as a separate test case.
+    'So, check us out at www.cranetrainingservices.org, or give us a call at 309-231-6146, and help '
+    'us unlock your future!',
+    'For the quickest and easiest way to secure your cabin, visit our website at www.lifeatseacruises.com '
+    'and click "Reserve Your Cabin" in the top right corner.',
+    'For immediate assistance or self-help options, please visit our support page at www.centrios.com "slash support". '
+    '\n\nFor immediate assistance or self-help options, please visit our support page at www.centrios.com/support.',
+    'For the latest information go to www.MyTel.com, login, and select MyAccess.',
+    'Courtesy the ADA accessibility Guidelines, https://www.access-board.gov/guides/p d f s/golf.p d f '
+    '(See resources below) The US access board is responsible for the development of minimum-accessibility '
+    'guidelines for recreation areas including golf courses. \n\nCourtesy the ADA accessibility Guidelines, '
+    ' www.access-board.gov/guides/PDFS/golf.PDF (See resources below) The US access board is responsible '
+    'for the development of minimum-accessibility guidelines for recreation areas including golf courses.',
+    'Savings include 25% off in-house medical services at participating veterinarians and 25% off '
+    'purchases from PetCareRx.com. \n\nSavings include 25% off in-house medical services at participating '
+    'veterinarians and 25% off purchases from petcareRX.com.',
+    'Download the My Benefits Work app, visit www.mybenefitswork.com, or call 800-800-7616 for more information.',
+    # This is not a user URL but I just really need to cleanse my palate after our earlier v11 tests
+    'For more information, visit www.BBC.co.UK.',
 ]
 
 items = locals().items()
