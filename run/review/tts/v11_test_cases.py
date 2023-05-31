@@ -419,67 +419,67 @@ TEMPO_MAX__SENTENCE = [
 ]
 
 TEMPO_MIN__LOUDNESS_MIN__CLAUSE = [
-    '<tempo value="0.8"><loudness value="-5">This trick to get gas for a penny is going to get banned</tempo></loudness> in Canada.',
-    'Let\'s examine <tempo value="0.8"><loudness value="-5">what can affect</tempo></loudness> establishing a positive safety culture.',
-    '<tempo value="0.8"><loudness value="-5">This chiropractor designed</tempo></loudness> the device using breakthrough NMES technology.',
-    '<tempo value="0.8"><loudness value="-5">Looking for a Strategic Partner</tempo></loudness> for High-Performance software solutions?',
-    'Depending on your team, <tempo value="0.8"><loudness value="-5">you may also need to update</tempo></loudness> the Meeting Type.',
+    '<tempo value="0.8"><loudness value="-5">This trick to get gas for a penny is going to get banned</loudness></tempo> in Canada.',
+    'Let\'s examine <tempo value="0.8"><loudness value="-5">what can affect</loudness></tempo> establishing a positive safety culture.',
+    '<tempo value="0.8"><loudness value="-5">This chiropractor designed</loudness></tempo> the device using breakthrough NMES technology.',
+    '<tempo value="0.8"><loudness value="-5">Looking for a Strategic Partner</loudness></tempo> for High-Performance software solutions?',
+    'Depending on your team, <tempo value="0.8"><loudness value="-5">you may also need to update</loudness></tempo> the Meeting Type.',
 ]
 
 TEMPO_MIN__LOUDNESS_MAX__CLAUSE = [
-    '<tempo value="0.8"><loudness value="5">This trick to get gas for a penny is going to get banned</tempo></loudness> in Canada.',
-    'Let\'s examine <tempo value="0.8"><loudness value="5">what can affect</tempo></loudness> establishing a positive safety culture.',
-    '<tempo value="0.8"><loudness value="5">This chiropractor designed</tempo></loudness> the device using breakthrough NMES technology.',
-    '<tempo value="0.8"><loudness value="5">Looking for a Strategic Partner</tempo></loudness> for High-Performance software solutions?',
-    'Depending on your team, <tempo value="0.8"><loudness value="5">you may also need to update</tempo></loudness> the Meeting Type.',
+    '<tempo value="0.8"><loudness value="5">This trick to get gas for a penny is going to get banned</loudness></tempo> in Canada.',
+    'Let\'s examine <tempo value="0.8"><loudness value="5">what can affect</loudness></tempo> establishing a positive safety culture.',
+    '<tempo value="0.8"><loudness value="5">This chiropractor designed</loudness></tempo> the device using breakthrough NMES technology.',
+    '<tempo value="0.8"><loudness value="5">Looking for a Strategic Partner</loudness></tempo> for High-Performance software solutions?',
+    'Depending on your team, <tempo value="0.8"><loudness value="5">you may also need to update</loudness></tempo> the Meeting Type.',
 ]
 
 TEMPO_MAX__LOUDNESS_MIN__CLAUSE = [
-    '<tempo value="1.5"><loudness value="-5">This trick to get gas for a penny is going to get banned</tempo></loudness> in Canada.',
-    'Let\'s examine <tempo value="1.5"><loudness value="-5">what can affect</tempo></loudness> establishing a positive safety culture.',
-    '<tempo value="1.5"><loudness value="-5">This chiropractor designed</tempo></loudness> the device using breakthrough NMES technology.',
-    '<tempo value="1.5"><loudness value="-5">Looking for a Strategic Partner</tempo></loudness> for High-Performance software solutions?',
-    'Depending on your team, <tempo value="1.5"><loudness value="-5">you may also need to update</tempo></loudness> the Meeting Type.',
+    '<tempo value="1.5"><loudness value="-5">This trick to get gas for a penny is going to get banned</loudness></tempo> in Canada.',
+    'Let\'s examine <tempo value="1.5"><loudness value="-5">what can affect</loudness></tempo> establishing a positive safety culture.',
+    '<tempo value="1.5"><loudness value="-5">This chiropractor designed</loudness></tempo> the device using breakthrough NMES technology.',
+    '<tempo value="1.5"><loudness value="-5">Looking for a Strategic Partner</loudness></tempo> for High-Performance software solutions?',
+    'Depending on your team, <tempo value="1.5"><loudness value="-5">you may also need to update</loudness></tempo> the Meeting Type.',
 ]
 
 TEMPO_MAX__LOUDNESS_MAX__CLAUSE = [
-    '<tempo value="1.5"><loudness value="5">This trick to get gas for a penny is going to get banned</tempo></loudness> in Canada.',
-    'Let\'s examine <tempo value="1.5"><loudness value="5">what can affect</tempo></loudness> establishing a positive safety culture.',
-    '<tempo value="1.5"><loudness value="5">This chiropractor designed</tempo></loudness> the device using breakthrough NMES technology.',
-    '<tempo value="1.5"><loudness value="5">Looking for a Strategic Partner</tempo></loudness> for High-Performance software solutions?',
-    'Depending on your team, <tempo value="1.5"><loudness value="5">you may also need to update</tempo></loudness> the Meeting Type.',
+    '<tempo value="1.5"><loudness value="5">This trick to get gas for a penny is going to get banned</loudness></tempo> in Canada.',
+    'Let\'s examine <tempo value="1.5"><loudness value="5">what can affect</loudness></tempo> establishing a positive safety culture.',
+    '<tempo value="1.5"><loudness value="5">This chiropractor designed</loudness></tempo> the device using breakthrough NMES technology.',
+    '<tempo value="1.5"><loudness value="5">Looking for a Strategic Partner</loudness></tempo> for High-Performance software solutions?',
+    'Depending on your team, <tempo value="1.5"><loudness value="5">you may also need to update</loudness></tempo> the Meeting Type.',
 ]
 
 LOUDNESS_MIN__TEMPO_MIN__CLAUSE = [
-    '<loudness value="-5"><tempo value="0.8">This trick to get gas for a penny is going to get banned</loudness></tempo> in Canada.',
-    'Let\'s examine <loudness value="-5"><tempo value="0.8">what can affect</loudness></tempo> establishing a positive safety culture.',
-    '<loudness value="-5"><tempo value="0.8">This chiropractor designed</loudness></tempo> the device using breakthrough NMES technology.',
-    '<loudness value="-5"><tempo value="0.8">Looking for a Strategic Partner</loudness></tempo> for High-Performance software solutions?',
-    'Depending on your team, <loudness value="-5"><tempo value="0.8">you may also need to update</loudness></tempo> the Meeting Type.',
+    '<loudness value="-5"><tempo value="0.8">This trick to get gas for a penny is going to get banned</tempo></loudness> in Canada.',
+    'Let\'s examine <loudness value="-5"><tempo value="0.8">what can affect</tempo></loudness> establishing a positive safety culture.',
+    '<loudness value="-5"><tempo value="0.8">This chiropractor designed</tempo></loudness> the device using breakthrough NMES technology.',
+    '<loudness value="-5"><tempo value="0.8">Looking for a Strategic Partner</tempo></loudness> for High-Performance software solutions?',
+    'Depending on your team, <loudness value="-5"><tempo value="0.8">you may also need to update</tempo></loudness> the Meeting Type.',
 ]
 
 LOUDNESS_MIN__TEMPO_MAX__CLAUSE = [
-    '<loudness value="-5"><tempo value="1.5">This trick to get gas for a penny is going to get banned</loudness></tempo> in Canada.',
-    'Let\'s examine <loudness value="-5"><tempo value="1.5">what can affect</loudness></tempo> establishing a positive safety culture.',
-    '<loudness value="-5"><tempo value="1.5">This chiropractor designed</loudness></tempo> the device using breakthrough NMES technology.',
-    '<loudness value="-5"><tempo value="1.5">Looking for a Strategic Partner</loudness></tempo> for High-Performance software solutions?',
-    'Depending on your team, <loudness value="-5"><tempo value="1.5">you may also need to update</loudness></tempo> the Meeting Type.',
+    '<loudness value="-5"><tempo value="1.5">This trick to get gas for a penny is going to get banned</tempo></loudness> in Canada.',
+    'Let\'s examine <loudness value="-5"><tempo value="1.5">what can affect</tempo></loudness> establishing a positive safety culture.',
+    '<loudness value="-5"><tempo value="1.5">This chiropractor designed</tempo></loudness> the device using breakthrough NMES technology.',
+    '<loudness value="-5"><tempo value="1.5">Looking for a Strategic Partner</tempo></loudness> for High-Performance software solutions?',
+    'Depending on your team, <loudness value="-5"><tempo value="1.5">you may also need to update</tempo></loudness> the Meeting Type.',
 ]
 
 LOUDNESS_MAX__TEMPO_MIN__CLAUSE = [
-    '<loudness value="5"><tempo value="0.8">This trick to get gas for a penny is going to get banned</loudness></tempo> in Canada.',
-    'Let\'s examine <loudness value="5"><tempo value="0.8">what can affect</loudness></tempo> establishing a positive safety culture.',
-    '<loudness value="5"><tempo value="0.8">This chiropractor designed</loudness></tempo> the device using breakthrough NMES technology.',
-    '<loudness value="5"><tempo value="0.8">Looking for a Strategic Partner</loudness></tempo> for High-Performance software solutions?',
-    'Depending on your team, <loudness value="5"><tempo value="0.8">you may also need to update</loudness></tempo> the Meeting Type.',
+    '<loudness value="5"><tempo value="0.8">This trick to get gas for a penny is going to get banned</tempo></loudness> in Canada.',
+    'Let\'s examine <loudness value="5"><tempo value="0.8">what can affect</tempo></loudness> establishing a positive safety culture.',
+    '<loudness value="5"><tempo value="0.8">This chiropractor designed</tempo></loudness> the device using breakthrough NMES technology.',
+    '<loudness value="5"><tempo value="0.8">Looking for a Strategic Partner</tempo></loudness> for High-Performance software solutions?',
+    'Depending on your team, <loudness value="5"><tempo value="0.8">you may also need to update</tempo></loudness> the Meeting Type.',
 ]
 
 LOUDNESS_MAX__TEMPO_MAX__CLAUSE = [
-    '<loudness value="5"><tempo value="1.5">This trick to get gas for a penny is going to get banned</loudness></tempo> in Canada.',
-    'Let\'s examine <loudness value="5"><tempo value="1.5">what can affect</loudness></tempo> establishing a positive safety culture.',
-    '<loudness value="5"><tempo value="1.5">This chiropractor designed</loudness></tempo> the device using breakthrough NMES technology.',
-    '<loudness value="5"><tempo value="1.5">Looking for a Strategic Partner</loudness></tempo> for High-Performance software solutions?',
-    'Depending on your team, <loudness value="5"><tempo value="1.5">you may also need to update</loudness></tempo> the Meeting Type.',
+    '<loudness value="5"><tempo value="1.5">This trick to get gas for a penny is going to get banned</tempo></loudness> in Canada.',
+    'Let\'s examine <loudness value="5"><tempo value="1.5">what can affect</tempo></loudness> establishing a positive safety culture.',
+    '<loudness value="5"><tempo value="1.5">This chiropractor designed</tempo></loudness> the device using breakthrough NMES technology.',
+    '<loudness value="5"><tempo value="1.5">Looking for a Strategic Partner</tempo></loudness> for High-Performance software solutions?',
+    'Depending on your team, <loudness value="5"><tempo value="1.5">you may also need to update</tempo></loudness> the Meeting Type.',
 ]
 
 items = locals().items()
