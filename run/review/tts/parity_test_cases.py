@@ -14,7 +14,7 @@ QUESTIONS = [
     "Can I help you?",
     "Are you suggesting that coconuts migrate?",
     "Can I get a backstage pass to the concert?",
-    "Given that each of the following bonds is of the same quality and has the same maturity as the others, does one hve a longer duration?",
+    "Given that each of the following bonds is of the same quality and has the same maturity as the others, does one have a longer duration?",
     "Registration of an investment adviser automatically confers registration on?",
     "Church and community leaders in West Virginia, did you know that our state has one of the highest rates of children in foster care per capita in the nation?",
     "Are you daring enough to venture into the unknown and unravel the secrets of our history?",
