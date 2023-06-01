@@ -397,7 +397,10 @@ LOUDNESS_MAX__TEMPO_MAX__CLAUSE = [
     'Depending on your team, <loudness value="5"><tempo value="1.5">you may also need to update</tempo></loudness> the Meeting Type.',
 ]
 
-# Tests in DIFFICULT_USER_INITIALISMS,DIFFICULT_USER_QUESTIONS, and DIFFICULT_USER_URLS should be rendered in v10 for parity.
+# Tests in DIFFICULT_USER_INITIALISMS,DIFFICULT_USER_QUESTIONS, and DIFFICULT_USER_URLS should be rendered in v10 as well.
+# These scripts are intended to test the limits of v11 for cases that we suspect are difficult for v10,
+# and it would be good to have the v10 data to confirm our suspicions.
+
 DIFFICULT_USER_INITIALISMS = [
     # The following initialisms in context were found by looking at user clips where users had used one
     # or more workaround methods to input their initialism into WSL Studio. Some of these are presented
@@ -415,7 +418,7 @@ DIFFICULT_USER_INITIALISMS = [
     're-establishing LCES as time and fire growth progress. I want to take a minute and briefly review '
     'each component and its interconnection with the others.',
     'Generate the HTML documentation.',
-    'Generate the HTML documentation.',
+    'Generate the <respell value="AYCH-tee-ehm-EHL">HTML</respell documentation.',
     'The CMM has completed the inspection.',
     'Next, you can optionally select to Enable WS Trust next to ‘WS Trust Configuration’ if you have '
     'users that log in with Azure AD joined machines, or mail clients that do not support Modern authentication.',
