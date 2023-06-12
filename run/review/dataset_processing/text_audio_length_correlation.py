@@ -32,19 +32,23 @@ from run._config.lang import _get_long_abbrevs, get_avg_audio_length, get_max_au
 from run._config.train import _config_spec_model_training
 from run._streamlit import audio_to_url, clip_audio, get_datasets, get_spans, st_ag_grid, st_tqdm
 from run.data._loader import Span, Speaker
+from run.data._loader.structures import strip_unvoiced
 
 lib.environment.set_basic_logging_config(reset=True)
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 logger = logging.getLogger(__name__)
 
 
-def _get_letter_feats(text: str, common_punct: typing.Set[str]) -> typing.Dict[str, int]:
+def _get_letter_feats(text: str, common_punct: typing.Set[str], **kwargs) -> typing.Dict[str, int]:
     """Analyze `text` and extract various features.
 
     Args:
         ...
         common_punct: A list of common punctuation marks that could be in `span.script`.
     """
+    # NOTE: For `Span` or `Alignment`s, we need to strip any unvoiced characters from the ends of
+    # the text because that's not considered in the audio length.
+    text = strip_unvoiced(text, **kwargs)
     punct_feats = {repr(l): text.count(l) for l in common_punct}
     num_alpha = sum(c.isalpha() for c in text)
     num_vowels = sum(text.lower().count(x) for x in "aeiou")
@@ -145,7 +149,7 @@ def _gather_span_data(
         pick_first: Use the first pronunciation if there are multiple available.
         analyze_pronun: Add pronunciation features to data.
     """
-    letter_feats = _get_letter_feats(span.script, common_punct)
+    letter_feats = _get_letter_feats(span.script, common_punct, language=span.lang)
 
     word_tokens = [t for t in span.spacy if any(c.isalnum() for c in t.text)]
     num_word_chars = sum(len(w.text) for w in word_tokens)
@@ -184,7 +188,7 @@ def _gather_alignment_data(
         common_punct: A list of common punctuation marks that could be in `span.script`.
     """
     span = context[i]
-    feats = _get_letter_feats(span.script, common_punct)
+    feats = _get_letter_feats(span.script, common_punct, language=span.lang)
 
     pronun = None
     if analyze_pronun:
@@ -213,7 +217,7 @@ def _summarize(spans: typing.List[Span], df: pandas.DataFrame):
         "Num Rows": df.shape[0],
         "Num Rows w/ Pronunciations": df["pronun"].notnull().sum() if "pronun" in df else 0,
     }
-    st.dataframe(pandas.DataFrame(data=stats.values(), index=list(stats.keys())))
+    st.dataframe(pandas.DataFrame(data=stats.values(), index=list(stats.keys())))  # type: ignore
 
 
 def _distributions(

@@ -1,4 +1,7 @@
-from run._config import audio, data, environment, labels, lang
+# NOTE: Other `run` modules import `lang`; therefore, they need to be imported first.
+from run._config import lang  # isort: skip
+
+from run._config import audio, data, environment, labels
 from run._config.all import configure
 from run._config.audio import FRAME_HOP, NUM_FRAME_CHANNELS
 from run._config.data import DATASETS, DEFAULT_SCRIPT, DEV_SPEAKERS
@@ -8,8 +11,8 @@ from run._config.environment import (
     DATASET_CACHE_PATH,
     RANDOM_SEED,
     SAMPLES_PATH,
-    SIGNAL_MODEL_EXPERIMENTS_PATH,
-    SPECTROGRAM_MODEL_EXPERIMENTS_PATH,
+    SIG_MODEL_EXP_PATH,
+    SPEC_MODEL_EXP_PATH,
     TEMP_PATH,
     TTS_PACKAGE_PATH,
 )
@@ -40,6 +43,7 @@ from run._config.lang import (
     replace_punc,
 )
 from run._config.train import (
+    config_fine_tune_training,
     config_sig_model_training_from_datasets,
     config_spec_model_training_from_datasets,
 )
@@ -63,8 +67,8 @@ __all__ = [
     "DATASET_CACHE_PATH",
     "RANDOM_SEED",
     "SAMPLES_PATH",
-    "SIGNAL_MODEL_EXPERIMENTS_PATH",
-    "SPECTROGRAM_MODEL_EXPERIMENTS_PATH",
+    "SIG_MODEL_EXP_PATH",
+    "SPEC_MODEL_EXP_PATH",
     "TEMP_PATH",
     "TTS_PACKAGE_PATH",
     "Cadence",
@@ -89,6 +93,7 @@ __all__ = [
     "replace_punc",
     "normalize_and_verbalize_text",
     "load_spacy_nlp",
+    "config_fine_tune_training",
     "config_sig_model_training_from_datasets",
     "config_spec_model_training_from_datasets",
 ]

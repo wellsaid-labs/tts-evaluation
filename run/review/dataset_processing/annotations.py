@@ -84,13 +84,13 @@ def _gather_data(span_idx: int, span: Span, anno: Alignment, clip: numpy.ndarray
         "key": key,
         "anno_script": repr(_annotate(span.script, anno)),
         "tempo": cf.partial(_get_tempo_annotation)(span, anno),
-        "diff_loudness": loudness if loudness is None else loudness - span.session.loudness,
+        "rel_loudness": loudness if loudness is None else loudness - span.session.loudness,
         "audio_len": round(anno.audio_len, 2),
         "clip": audio_to_url(clip_audio(clip, span, anno)),
         "speaker": repr(span.session.spkr),
         "session": span.session.label,
         "loudness": loudness,
-        "diff_tempo": tempo - span.session.spkr_tempo,
+        "rel_tempo": tempo / span.session.tempo,
         "sesh_loudness": span.session.loudness,
         "sesh_tempo": span.session.tempo,
         "num_words": len(text.split()),
@@ -204,7 +204,7 @@ def _speakers_variability(data: typing.List[typing.Dict]):
         ("[1 no filter]", lambda _: True),
         ("[2 short]", lambda r: r["audio_len"] < 1),
     )
-    attrs = (("diff_loudness", "loudness"), ("diff_tempo", "spkr_tempo"))
+    attrs = (("rel_loudness", "loudness"), ("rel_tempo", "spkr_tempo"))
 
     stats: typing.Dict[Speaker, typing.Dict[str, typing.Any]] = defaultdict(dict)
     for filter_name, filter_ in filters:

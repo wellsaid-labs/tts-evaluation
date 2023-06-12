@@ -10,6 +10,7 @@ import numpy as np
 
 import lib
 import run
+from run._config import lang
 from run.data import _loader
 from run.data._loader import structures as struc
 
@@ -36,11 +37,6 @@ del DATASETS[_loader.portuguese.librivox.RND__LIBRIVOX__FELIPE_PT]
 del DATASETS[_loader.portuguese.librivox.RND__LIBRIVOX__LENI_PT]
 del DATASETS[_loader.portuguese.librivox.RND__LIBRIVOX__MIRAMONTES_PT]
 del DATASETS[_loader.portuguese.librivox.RND__LIBRIVOX__SANDRALUNA_PT]
-# NOTE: The `AVA_M`, `KAI_M`, and `WADE_C` datasets are duplicate datasets.
-# There is an improved version of their datasets already in `DATASETS`.
-del DATASETS[_loader.english.wsl.AVA_M]
-del DATASETS[_loader.english.wsl.KAI_M]
-del DATASETS[_loader.english.wsl.WADE_C]
 
 # TODO: Remove any non-production datasets from `WSL_DATASETS` so we don't evaluate on them.
 DEV_SPEAKERS = _loader.WSL_DATASETS.copy()
@@ -50,28 +46,51 @@ del DEV_SPEAKERS[_loader.english.wsl.MARI_MONGE__PROMO]
 del DEV_SPEAKERS[_loader.english.wsl.MARCUS_G__CONVO]
 # NOTE: The `RAMONA_J__CUSTOM` dataset isn't included in the studio.
 del DEV_SPEAKERS[_loader.english.wsl.RAMONA_J__CUSTOM]
-# NOTE: Elizabeth's dataset is low quality & might be fixed or re-recorded. Tobin's did not differ
-# from his Narration enough to be considered new styles & both datasets were again quick &
-# inconsistent delivery.
+
+# NOTE: Elizabeth's dataset is low quality & might be fixed or re-recorded. Tobin's did not
+# differ from his Narration enough to be considered new styles & both datasets were again quick
+# & inconsistent delivery.
+# NOTE: These speakers were released, so we continue to train on this data, even if we don't
+# evaluate on it.
+del DEV_SPEAKERS[_loader.english.wsl.ELIZABETH_U]
 del DEV_SPEAKERS[_loader.english.wsl.TOBIN_A__CONVO]
 del DEV_SPEAKERS[_loader.english.wsl.TOBIN_A__PROMO]
-del DEV_SPEAKERS[_loader.english.wsl.ELIZABETH_U]
 
-for dataset in [DEV_SPEAKERS, DATASETS]:
+
+def _prepare_data(dataset):
+    # NOTE: The `AVA_M`, `KAI_M`, and `WADE_C` datasets are duplicate datasets.
+    # There is an improved version of their datasets already in `DATASETS`.
+    del dataset[_loader.english.wsl.AVA_M]
+    del dataset[_loader.english.wsl.KAI_M]
+    del dataset[_loader.english.wsl.WADE_C]
+
     # NOTE: The following custom datasets are poor quality and should be excluded.
     del dataset[_loader.english.wsl.HOUR_ONE_NBC__BB_CUSTOM_VOICE]
     del dataset[_loader.english.wsl.VIACOM__CUSTOM_VOICE]
     del dataset[_loader.english.wsl.UNEEQ__ASB_CUSTOM_VOICE]
+
     # NOTE: The alignments don't match up with the scripts.
     del dataset[_loader.english.wsl.UNEEQ__ASB_CUSTOM_VOICE_COMBINED]
+
     # NOTE: The alignments don't sound-a-like, in these datasets.
     del dataset[_loader.portuguese.wsl.FIVE_NINE__CUSTOM_VOICE__PT_BR]
     del dataset[_loader.spanish.wsl.FIVE_NINE__CUSTOM_VOICE__ES_CO]
+
+    # NOTE: The model can only train on one language at a time, right now.
+    return {k: v for k, v in dataset.items() if k.language == lang.LANGUAGE}
+
+
+DATASETS = _prepare_data(DATASETS)
+DEV_SPEAKERS = _prepare_data(DEV_SPEAKERS)
 
 DEV_SPEAKERS = set(DEV_SPEAKERS.keys())
 # NOTE: It's generally useful to evaluate the model on a dictionary dataset, that has a variety
 # of words and acronyms.
 DEV_SPEAKERS.add(_loader.english.dictionary.GCP_SPEAKER)
+
+# NOTE: For fine-tunning, you'll want to add any new speakers here, that the model has not
+# yet been trained on.
+NEW_DATASETS: typing.List[struc.Speaker] = []
 
 
 def _include_passage(passage: struc.Passage) -> bool:
@@ -234,15 +253,19 @@ def configure(overwrite: bool = False):
     """Configure modules that process data, other than audio."""
     cf.add({_get_tempo_annotation: cf.Args(bucket_size=0.001)}, overwrite)
 
-    # TODO: Remove `BETH_CAMERON__CUSTOM` from the `WSL_DATASETS` groups because it has it's own
-    # custom script.
-    groups = [set(itertools.chain(_loader.WSL_DATASETS.keys(), _loader.RND_DATASETS.keys()))]
-    # NOTE: For other datasets like M-AILABS and LJ, this assumes that there is no duplication
-    # between different speakers.
-    groups += [{s} for s in _loader.DATASETS.keys() if s not in groups[0]]
+    # NOTE: Technically, some `WSL_DATASETS` do not have duplication, for example
+    # `BETH_CAMERON__CUSTOM` provided her own scripts completely.
+    new_datasets_group = set(NEW_DATASETS)
+    wsl_group = set(itertools.chain(_loader.WSL_DATASETS.keys(), _loader.RND_DATASETS.keys()))
+    wsl_group = wsl_group - new_datasets_group
+    all_datasets = wsl_group | new_datasets_group
+    # NOTE: For other non-WSL datasets like M-AILABS and LJ, this assumes that there is no
+    # duplication between different speakers.
+    groups = [wsl_group] + [{s} for s in _loader.DATASETS.keys() if s not in all_datasets]
     config = {
         run._utils.get_unprocessed_dataset: cf.Args(datasets=DATASETS),
-        run._utils.get_dataset: cf.Args(datasets=DATASETS, include_passage=_include_passage),
+        run._utils.get_dataset: cf.Args(include_passage=_include_passage),
+        run._utils._get_datasets: cf.Args(datasets=DATASETS),
         # NOTE: Set `approx_dev_len` to 30 minutes for a consistent amount of dev data per speaker,
         # guesstimated to be a sufficient quantity to capture enough variety in each voice.
         # NOTE: Set `min_split_passages` to 3 passages, guesstimated to provide enough passage

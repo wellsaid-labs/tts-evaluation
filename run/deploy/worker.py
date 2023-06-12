@@ -127,6 +127,8 @@ _MARKETPLACE = {
     # NOTE: This speaker only provided 15 minutes of audio and should not be released.
     # 25: (EN.MARI_MONGE__PROMO, "promo_script_1_monge", -22.736, 0.907, 0.907),
     26: (EN.WADE_C__PROMO, "promo_script_3_scholl", -20.94, 0.942, 0.941),
+    # TODO: `johnhunerlach_enthusiastic_21` may not exist, this could be a typo for
+    # `johnhunerlach_enthusiastic_12`.
     27: (EN.JOE_F__NARRATION, "johnhunerlach_enthusiastic_21", -23.93, 0.841, 0.89),
     28: (EN.JOE_F__RADIO, "johnhunerlach_diphone_1", -19.325, 0.885, 0.914),
     29: (EN.GARRY_J__STORY, "otis-jiry_the_happening_at_crossroads", -21.067, 0.824, 0.781),

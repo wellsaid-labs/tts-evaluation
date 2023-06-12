@@ -74,7 +74,6 @@ class Checkpoint(_utils.Checkpoint):
         https://github.com/pytorch/pytorch/issues/28594
         """
         assert len(self.discrims) == len(self.discrim_optimizers)
-        assert self.scheduler._step_count == self.step + 1  # type: ignore
         assert self.scheduler.last_epoch == self.step  # type: ignore
         assert self.scheduler.optimizer == self.optimizer  # type: ignore
         assert self.ema.step == self.step + 1

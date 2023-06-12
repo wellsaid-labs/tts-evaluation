@@ -1,8 +1,6 @@
 """Script to hold test cases for tts models"""
 import string
 
-from long_scripts import LONG_SCRIPTS
-
 V11_QUESTIONS = [
     "What is the meaning of life, the universe, and everything?",
     "Are birds real?",
@@ -382,9 +380,19 @@ GREEK_SYMBOLS = [
 ]
 
 ALPHABET = [
+    # NOTE: Long strings of repetitive letters, can highlight model instability.
     string.ascii_uppercase * 15,
     " ".join(list(string.ascii_uppercase) * 15),
     ". ".join(list(string.ascii_uppercase) * 15),
+]
+
+DIFFERENT_SPEAKER = [
+    # NOTE: For short single words, the model sometimes also switches speakers, sometimes.
+    "Yeah",
+    "Lol",
+    # NOTE: Big annotaton values, can also cause the model to switch speakers, sometimes.
+    '<tempo value="0.25">Please do not do that.</tempo>',
+    '<tempo value="5">Please do not do that.</tempo>',
 ]
 
 ABBREVIATIONS_WITH_VOWELS = [
@@ -409,94 +417,6 @@ ABBREVIATIONS_WITH_VOWELS = [
     "YAHOO (search engine) - Yet Another Hierarchical Officious Oracle",
     "YOLO - You Only Live Once",
     "ZIP code - Zone Improvement Plan code",
-]
-
-SINGLE_WORDS = [
-    "augmented",
-    "stimulant",
-    "query",
-    "adventurous",
-    "paraplegic",
-    "irregularity",
-    "unique",
-    "mechanism",
-    "litmus",
-    "mountaintop",
-    "Alzheimer's",
-    "debilitating",
-    "cedar",
-    "indicator",
-    "calcium",
-    "mildew",
-    "subrogation",
-    "eczema",
-    "craft",
-    "anemia",
-    "enroll",
-    "predetermined",
-    "whiskey",
-    "molasses",
-    "lightweight",
-    "inscriptions",
-    "thoughts",
-    "literacy",
-    "knowledge",
-    "enabled",
-    "aperture",
-    "unsatisfactory",
-    "automatically",
-    "Congratulations!",
-    "management",
-    "legislation",
-    "capacity",
-    "engage",
-    "efficiency",
-    "criteria",
-    "colleagues",
-    "electrical",
-    "accessed",
-    "protocol",
-    "sequential",
-    "simultaneously",
-    "addresses",
-    "buyers",
-    "mission",
-    "relaxation",
-    "proceed",
-    "next",
-    "Alright.",
-    "ignored",
-    "disconnected",
-    "Yes.",
-    "Meeting?",
-    "example",
-    "Goodbye!",
-    "no",
-    "eight",
-    "Seventeen",
-    "welcome",
-    "then",
-    "finally",
-    "first",
-    "DNA",
-    "cobra",
-    "rabbit",
-    "parrot",
-    "ostrich",
-    "penguin.",
-    "rooster",
-    "elephant",
-    "cat",
-    "chicken",
-    "crab",
-    "goat",
-    "squid",
-    "antennae",
-    "eyes",
-    "wings",
-    "flying",
-    "protection",
-    "walking",
 ]
 
 SLOW_SCRIPTS = [

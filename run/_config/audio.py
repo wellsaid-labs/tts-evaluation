@@ -58,29 +58,60 @@ def _get_max_audio_len_in_frames(text: str, frames_per_second: float) -> int:
 # normalization functions help adjust for that.
 
 
-def _norm_anno_len(val: float, avg_anno_length: float = 40.5) -> float:
+def _norm_anno_len(val: float, avg_val: float = 40.5) -> float:
     """Normalize a annotation length with an average around `avg_anno_length` characters.
     This is bounded to 1 so this value doesn't grow unbounded for longer annotations.
     """
-    return min(val / avg_anno_length - 1, 1.0)
+    return min(val / avg_val - 1, 1.0)
 
 
-def _norm_anno_loudness(val: float, compression: float = 50) -> float:
-    """Normalize a annotation loudness value which is from 35 to -60 db centered at 0 db."""
-    return val / compression
+# NOTE: The normalization values were determined via the
+# `run/review/dataset_processing/annotations.py`s workbook. In the workbook, we look at
+# 10,000 annotations and filter out the smaller annotations (less than 40 voiced characters). This
+# helps us get reasonable values for these annotations, which we've documented below and used
+# for normalization.
 
 
-def _norm_tempo(val: float, avg_val: float = 1.0) -> float:
-    """Normalize a annotation tempo value which is from 0.5x to 5x with an average around 1x."""
-    return val - avg_val
+def _norm_anno_rel_tempo(val: float, avg_val: float = 1.0, compression: float = 0.2) -> float:
+    """Normalize a annotation tempo value which is from 0.8 to 1.5x (0.31 to 4.46x bounds) with an
+    average around 1x."""
+    return (val - avg_val) / compression
 
 
-def _norm_sesh_loudness(val: float, avg_val: float = -21, compression: float = 50) -> float:
-    """Normalize a session loudness value which is from -5 to -70 db with an average around -21 db.
+def _norm_sesh_tempo(val: float, avg_val: float = 1.0, compression: float = 0.2) -> float:
+    """Normalize a annotation tempo value which is from 0.7 to 1.2x (0.57 to 1.33x bounds) with an
+    average around 1x."""
+    return (val - avg_val) / compression
 
-    NOTE: LUFS by definition cannot be less than -70 db, or more than 0db.
+
+def _norm_anno_tempo(
+    rel_val: float, sesh_avg_val: float, cut_off: float = 1.0, **kwargs
+) -> typing.Tuple[float, ...]:
+    """
+    NOTE: Tempo, as it gets smaller, goes to zero. So we include the inverse component of tempo
+    so that it can continue to grow and influence the model. This is represented with two components
+    a slow down feature and a speed up feature. We've shown that this slightly improves our models.
+    """
+    return (
+        _norm_anno_rel_tempo(max(cut_off, rel_val), **kwargs),
+        _norm_anno_rel_tempo(max(cut_off, 1 / rel_val), **kwargs),
+    )
+
+
+def _norm_anno_rel_loudness(val: float, avg_val: float = 0, compression: float = 10) -> float:
+    """Normalize a annotation loudness value which is from 3 to -4 db (10 to -53 db bounds)."""
+    return (val - avg_val) / compression
+
+
+def _norm_sesh_loudness(val: float, avg_val: float = -23, compression: float = 10) -> float:
+    """Normalize a session loudness value which is from -15 to -35 db (-13 to -36 db bounds) with an
+    average around -23 db.
     """
     return (val - avg_val) / compression
+
+
+def _norm_anno_loudness(rel_val: float, sesh_avg_val: float) -> typing.Tuple[float, ...]:
+    return (_norm_anno_rel_loudness(rel_val),)
 
 
 def configure(sample_rate: int = 24000, overwrite: bool = False):
@@ -256,10 +287,11 @@ def configure(sample_rate: int = 24000, overwrite: bool = False):
             get_max_audio_len=partial(
                 _get_max_audio_len_in_frames, frames_per_second=frames_per_second
             ),
-            norm_anno_len=_norm_anno_len,
+            norm_len=_norm_anno_len,
             norm_anno_loudness=_norm_anno_loudness,
             norm_sesh_loudness=_norm_sesh_loudness,
-            norm_tempo=_norm_tempo,
+            norm_anno_tempo=_norm_anno_tempo,
+            norm_sesh_tempo=_norm_sesh_tempo,
         ),
         run._models.spectrogram_model.inputs.InputsWrapper.check_invariants: Args(
             # NOTE: The annotation min and max values can be reviewed in the

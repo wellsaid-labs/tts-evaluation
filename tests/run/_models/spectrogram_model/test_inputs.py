@@ -35,7 +35,7 @@ def run_around_tests():
     run._config.configure()
     config = {
         run._models.spectrogram_model.inputs.InputsWrapper.check_invariants: cf.Args(
-            min_loudness=-100, max_loudness=0, min_tempo=0, max_tempo=10
+            min_loudness=-100, max_loudness=100, min_tempo=0, max_tempo=10
         ),
     }
     cf.add(config, overwrite=True)
@@ -335,9 +335,9 @@ def _check_processed(
     assert processed.token_vector_idx == dict(
         loudness_vector=slice(0, 2),
         loudness_mask=slice(2, 3),
-        tempo_vector=slice(3, 5),
-        tempo_mask=slice(5, 6),
-        word_vector=slice(6, 402),
+        tempo_vector=slice(3, 6),
+        tempo_mask=slice(6, 7),
+        word_vector=slice(7, 403),
     )
     vocab: spacy.vocab.Vocab = nlp.vocab
     word_vector_len = nlp.meta["vectors"]["width"]
@@ -387,7 +387,14 @@ def test_preprocess():
     script, sesh = "In 1968 the U.S. Army", make_session()
     doc = nlp(script + " Phone")[:-1]
     inp = InputsWrapper.from_xml(XMLType(doc[:-1].text), doc[:-1], sesh, doc)
-    processed = preprocess(inp, lambda t: len(t), identity, identity, identity, identity)
+    kwargs = dict(
+        norm_len=identity,
+        norm_anno_loudness=lambda a, _: a,
+        norm_sesh_loudness=identity,
+        norm_anno_tempo=lambda a, _: a,
+        norm_sesh_tempo=identity,
+    )
+    processed = preprocess(inp, lambda t: len(t), **kwargs)
     _check_processed(nlp, processed, script, doc, sesh)
     _check_processed(nlp, processed[0], script, doc, sesh)
     assert len(processed) == 1
@@ -403,7 +410,14 @@ def test_preprocess__respelling():
     script = "Why don't people from EDGE catch-the-flu?"
     doc = nlp(script)
     inp = InputsWrapper.from_xml(xml, doc[1:-1], make_session(), doc)
-    processed = preprocess(inp, lambda t: len(t), identity, identity, identity, identity)
+    kwargs = dict(
+        norm_len=identity,
+        norm_anno_loudness=lambda a, _: a,
+        norm_sesh_loudness=identity,
+        norm_anno_tempo=lambda a, _: a,
+        norm_sesh_tempo=identity,
+    )
+    processed = preprocess(inp, lambda t: len(t), **kwargs)
     casing = [
         (Pronun.NORMAL, Casing.UPPER),  # W
         (Pronun.NORMAL, Casing.LOWER),  # h
@@ -524,9 +538,9 @@ def test_preprocess__respelling():
 def test_preprocess__slice_anno():
     """Test that `preprocess` handles annotations along with context and duplicate respellings."""
     xml = XMLType(
-        f"<{Sch.LOUDNESS} {Sch._VALUE}='-49.0'>not <{Sch.RESPELL} {Sch._VALUE}='uh-BOWT'>about"
+        f"<{Sch.LOUDNESS} {Sch._VALUE}='10.0'>not <{Sch.RESPELL} {Sch._VALUE}='uh-BOWT'>about"
         f"</{Sch.RESPELL}> <{Sch.RESPELL} {Sch._VALUE}='WHAT'>about</{Sch.RESPELL}>"
-        f"<{Sch.TEMPO} {Sch._VALUE}='5.0'> </{Sch.TEMPO}>I gain</{Sch.LOUDNESS}>"
+        f"<{Sch.TEMPO} {Sch._VALUE}='0.5'> </{Sch.TEMPO}>I gain</{Sch.LOUDNESS}>"
     )
     sesh = make_session()
     script = "analysis, not about about I gain and"
@@ -535,10 +549,11 @@ def test_preprocess__slice_anno():
     processed = preprocess(
         inp,
         get_max_audio_len=lambda t: len(t),
-        norm_anno_len=lambda f: f * 2,
-        norm_anno_loudness=lambda f: f * 3,
-        norm_sesh_loudness=lambda f: f * 4,
-        norm_tempo=lambda f: f * 5,
+        norm_len=lambda f: f * 2,
+        norm_anno_loudness=lambda f, a: (f * 3,),
+        norm_sesh_loudness=lambda f: f * 5,
+        norm_anno_tempo=lambda f, a: (f * 6, (f * a) * 7),
+        norm_sesh_tempo=lambda f: f * 8,
     )
 
     # Loudness vectors
@@ -546,8 +561,8 @@ def test_preprocess__slice_anno():
     l_prefix = [0] * len("analysis, ")
     l_suffix = [0] * len(" and")
     result = [
-        l_prefix + [-49.0 * 3] * l_anno_len + l_suffix,
         l_prefix + [len("not about about I gain") * 2] * l_anno_len + l_suffix,
+        l_prefix + [10.0 * 3] * l_anno_len + l_suffix,
     ]
     result = torch.tensor(result, dtype=torch.float)
     assert_almost_equal(processed.get_token_vec("loudness_vector")[0].T, result)
@@ -561,8 +576,9 @@ def test_preprocess__slice_anno():
     t_prefix = [0] * len("analysis, not uh-BOWT WHAT")
     t_suffix = [0] * len("I gain and")
     result = [
-        t_prefix + [5 * 5] * t_anno_len + t_suffix,
         t_prefix + [t_anno_len * 2] * t_anno_len + t_suffix,
+        t_prefix + [0.5 * 6] * t_anno_len + t_suffix,
+        t_prefix + [(0.5 * sesh.tempo) * 7] * t_anno_len + t_suffix,
     ]
     result = torch.tensor(result, dtype=torch.float)
     assert_almost_equal(processed.get_token_vec("tempo_vector")[0].T, result)

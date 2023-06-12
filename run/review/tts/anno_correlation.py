@@ -18,13 +18,13 @@ import lib
 import run
 from lib.environment import PT_EXTENSION, load
 from lib.text import XMLType, xml_to_text
-from run._config import SPECTROGRAM_MODEL_EXPERIMENTS_PATH
+from run._config import SPEC_MODEL_EXP_PATH
 from run._config.data import _get_loudness_annotation, _get_tempo_annotation
 from run._models.spectrogram_model import SpectrogramModel
-from run._streamlit import audio_to_url, st_ag_grid, st_select_path
+from run._streamlit import audio_to_url, st_ag_grid, st_select_path, st_set_page_config
 from run._tts import batch_griffin_lim_tts, make_batches
 
-st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
+st_set_page_config()
 
 TEST_SCRIPTS = [
     # NOTE: These questions each have a different expected inflection.
@@ -95,6 +95,7 @@ def _correlate(name: str, values: typing.List[float], other: str, other_values: 
 def _generate(
     _spec_exp: SpectrogramModel,
     experiment_key: str,  # NOTE: This is largely only used for cache invalidation.
+    exp_step: int,  # NOTE: This is largely only used for cache invalidation.
     num_samples: int,
     min_loudness: float,
     max_loudness: float,
@@ -112,11 +113,11 @@ def _generate(
             st.warning(f"Skipping `{spkr}` not found in model vocab.")
             continue
         sesh = random.choice(seshs)
-        loudness_diff = random.uniform(min_loudness, max_loudness)
-        expected_loudness = sesh.loudness + loudness_diff
-        tempo_diff = random.uniform(min_tempo, max_tempo)
-        expected_tempo = sesh.spkr_tempo + tempo_diff
-        xml = f"<loudness value='{loudness_diff}'><tempo value='{expected_tempo}'>"
+        rel_loudness = random.uniform(min_loudness, max_loudness)
+        expected_loudness = sesh.loudness + rel_loudness
+        rel_tempo = random.uniform(min_tempo, max_tempo)
+        expected_tempo = rel_tempo * sesh.tempo
+        xml = f"<loudness value='{rel_loudness}'><tempo value='{rel_tempo}'>"
         xml += f"{script}</tempo></loudness>"
         xml = XMLType(xml)
         inputs.append((xml, sesh))
@@ -136,20 +137,22 @@ def main():
     form: DeltaGenerator = st.form(key="form")
 
     label = "Spectrogram Checkpoints"
-    spec_path = st_select_path(label, SPECTROGRAM_MODEL_EXPERIMENTS_PATH, PT_EXTENSION, form)
+    spec_path = st_select_path(label, SPEC_MODEL_EXP_PATH, PT_EXTENSION, form)
     num_samples = int(form.number_input("Number of Samples", min_value=1, value=100))
-    min_loudness = float(form.number_input("Minimum Loudness", value=-8))
-    max_loudness = float(form.number_input("Maximum Loudness", value=8))
-    min_tempo = float(form.number_input("Minimum Tempo", value=-0.25))
-    max_tempo = float(form.number_input("Maximum Tempo", value=0.4))
+    min_loudness = float(form.number_input("Minimum Loudness", value=-4))
+    max_loudness = float(form.number_input("Maximum Loudness", value=3))
+    min_tempo = float(form.number_input("Minimum Tempo", value=0.82))
+    max_tempo = float(form.number_input("Maximum Tempo", value=1.52))
     if not form.form_submit_button("Submit"):
         return
 
+    assert spec_path is not None
     spec_ckpt = typing.cast(run.train.spectrogram_model._worker.Checkpoint, load(spec_path))
     spec_exp = spec_ckpt.export()
     expected, batches = _generate(
         spec_exp,
         spec_ckpt.comet_experiment_key,
+        spec_ckpt.step,
         num_samples,
         min_loudness,
         max_loudness,

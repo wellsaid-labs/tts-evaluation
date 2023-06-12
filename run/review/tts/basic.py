@@ -3,23 +3,15 @@
 Usage:
     $ PYTHONPATH=. streamlit run run/review/tts/basic.py --runner.magicEnabled=false
 """
-import os
-import random
-import socket
 import typing
 
 import streamlit as st
-from streamlit.commands.page_config import RANDOM_EMOJIS
 
 import lib
 import run
 from lib.environment import PT_EXTENSION, load
 from lib.text import XMLType, natural_keys
-from run._config import (
-    DEFAULT_SCRIPT,
-    SIGNAL_MODEL_EXPERIMENTS_PATH,
-    SPECTROGRAM_MODEL_EXPERIMENTS_PATH,
-)
+from run._config import DEFAULT_SCRIPT, SIG_MODEL_EXP_PATH, SPEC_MODEL_EXP_PATH
 from run._models import signal_model, spectrogram_model
 from run._streamlit import (
     audio_to_web_path,
@@ -27,15 +19,13 @@ from run._streamlit import (
     st_download_files,
     st_html,
     st_select_path,
+    st_set_page_config,
     web_path_to_url,
 )
 from run._tts import CHECKPOINTS_LOADERS, TTSPackage, batch_tts, make_batches
 from run.data._loader import Session
 
-title = socket.gethostname() + " • " + os.path.basename(__file__)[:-3] + " • Streamlit"
-random.seed(title)
-emoji = random.choice(RANDOM_EMOJIS)
-st.set_page_config(initial_sidebar_state="collapsed", page_title=title, page_icon=emoji)
+st_set_page_config()
 
 
 def main():
@@ -46,9 +36,9 @@ def main():
     options = [None] + [k.name for k in CHECKPOINTS_LOADERS.keys()]
     checkpoint = st.selectbox("(Optional) Combined Checkpoints", options=options)
     label = "(Optional) Spectrogram Checkpoint"
-    spec_path = st_select_path(label, SPECTROGRAM_MODEL_EXPERIMENTS_PATH, PT_EXTENSION)
+    spec_path = st_select_path(label, SPEC_MODEL_EXP_PATH, PT_EXTENSION)
     label = "(Optional) Signal Checkpoint"
-    sig_path = st_select_path(label, SIGNAL_MODEL_EXPERIMENTS_PATH, PT_EXTENSION)
+    sig_path = st_select_path(label, SIG_MODEL_EXP_PATH, PT_EXTENSION)
 
     spec_model, sig_model = None, None
     if checkpoint is not None:

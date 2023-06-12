@@ -5,6 +5,7 @@ import os
 import pathlib
 import random
 import shutil
+import socket
 import tempfile
 import typing
 import zipfile
@@ -13,6 +14,7 @@ import config as cf
 import numpy as np
 import tqdm
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, JsCode
+from streamlit.commands.page_config import get_random_emoji
 from streamlit.delta_generator import DeltaGenerator
 from third_party import LazyLoader
 
@@ -525,4 +527,18 @@ def st_ag_grid(
         update_mode=GridUpdateMode.NO_UPDATE,
         allow_unsafe_jscode=True,
         height=height,
+    )
+
+
+def st_set_page_config(initial_sidebar_state: str = "collapsed", layout: str = "wide", **kwargs):
+    """`set_page_config` with some pre-set defaults."""
+    title = socket.gethostname() + " • " + os.path.basename(__file__)[:-3] + " • Streamlit"
+    random.seed(title)
+    emoji = get_random_emoji()
+    st.set_page_config(
+        initial_sidebar_state=initial_sidebar_state,  # type: ignore
+        layout=layout,  # type: ignore
+        page_title=title,
+        page_icon=emoji,
+        **kwargs,
     )

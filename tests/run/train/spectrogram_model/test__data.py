@@ -63,7 +63,7 @@ def test__get_loudness():
     sample_rate = 1000
     length = 10
     implementation = "K-weighting"
-    precision = 5
+    bucket_size = 0.00001
     block_size = 0.4
     meter = lib.audio.get_pyloudnorm_meter(
         sample_rate=sample_rate, filter_class=implementation, block_size=block_size
@@ -75,14 +75,14 @@ def test__get_loudness():
             audio=audio,
             alignment=alignment,
             block_size=block_size,
-            precision=precision,
+            bucket_size=bucket_size,
             sample_rate=sample_rate,
             filter_class=implementation,
             get_anno=_get_loudness_annotation,
         )
         assert loudness is not None
         assert math.isfinite(loudness)
-        assert round(meter.integrated_loudness(audio), precision) == loudness
+        assert lib.utils.round_(meter.integrated_loudness(audio), bucket_size) == loudness
 
 
 def test__get_loudness__short_audio():
@@ -97,7 +97,7 @@ def test__get_loudness__short_audio():
             audio=audio,
             alignment=alignment,
             block_size=block_size,
-            precision=5,
+            bucket_size=0.00001,
             sample_rate=sample_rate,
             filter_class="DeMan",
             get_anno=_get_loudness_annotation,
@@ -115,7 +115,7 @@ def test__get_loudness__quiet_audio():
         audio=audio,
         alignment=alignment,
         block_size=block_size,
-        precision=5,
+        bucket_size=0.00001,
         sample_rate=sample_rate,
         filter_class="DeMan",
         get_anno=_get_loudness_annotation,
@@ -138,7 +138,7 @@ def test__get_loudness__quieter_audio():
             audio=audio,
             alignment=alignment,
             block_size=block_size,
-            precision=5,
+            bucket_size=0.00001,
             sample_rate=sample_rate,
             filter_class="DeMan",
             get_anno=_get_loudness_annotation,
@@ -151,7 +151,7 @@ def test__random_loudness_annotations():
         span = make_passage(script="This is a test.")[:]
         length = int(span.audio_file.sample_rate * span.alignments[-1].audio[-1])
         signal = lib.audio.full_scale_sine_wave(span.audio_file.sample_rate, 20, length)
-        out = _data._random_loudness_annotations(span, signal, precision=0)
+        out = _data._random_loudness_annotations(span, signal, bucket_size=1.0)
         # NOTE: These loudness values are irregular because the sample rate is so small.
         expected: SliceAnnos = [
             (slice(0, 4), -49),

@@ -216,6 +216,12 @@ def _get_long_abbrevs(text: str) -> typing.Tuple[str]:
 def get_avg_audio_length(text: str) -> float:
     """Predict the audio length given the text.
 
+    NOTE: These values were generated with
+          `run/review/dataset_processing/text_audio_length_correlation.py`. We analyzed 50k spans
+          (not alignments), in order to determine how long each character took. We reviewed only
+          dev speakers. We use the upper & lower case model that has an r-squared value is 0.964
+          with an intercept of 0.338.
+
     TODO: This could be slightly improved by using phonetics; however, there are some challenges
           to that approach. The issues are tokenization and out-of-vocabulary words.
     TODO: We could use a deep learning approach for this. We could create a task on in our
@@ -223,16 +229,16 @@ def get_avg_audio_length(text: str) -> float:
           interpretable; however, they might be far more accurate.
     """
     seconds = [
-        (0.3267, "\n"),
-        (0.3190, ":"),
-        (0.2491, "!"),
-        (0.2118, ","),
-        (0.1892, ";"),
-        (0.1556, "?"),
-        (0.1247, "-"),
-        (0.1118, "."),
-        (0.1041, '"'),
-        (0.0151, " "),
+        (0.5134, ":"),
+        (0.3977, "!"),
+        (0.3264, "?"),
+        (0.311, "."),
+        (0.2517, ","),
+        (0.1924, ";"),
+        (0.1779, "\n"),
+        (0.1317, '"'),
+        (0.0994, "-"),
+        (0.0093, " "),
         (0.0000, "'"),
     ]
     counts = {p: text.count(p) for _, p in seconds}
@@ -257,29 +263,29 @@ def get_avg_audio_length(text: str) -> float:
     # `run/review/dataset_processing/text_audio_length_correlation.py`. It has a r=0.946
     # correlation with audio length.
     seconds = seconds + [
-        (0.3055, "num_initials"),
-        (0.0767, "num_other_punc"),
-        (0.0779, "num_upper"),
-        (0.0623, "num_lower"),
+        (0.2891, "num_initials"),
+        (0.2288, "num_other_punc"),
+        (0.0598, "num_upper"),
+        (0.0627, "num_lower"),
     ]
     assert len(seconds) == len(counts)
-    # TODO: Our linear correlation found an intercept of 0.2781 seconds. This likely means that
-    # on average our clips have 139 milliseconds of silent padding on either side. This is larger
+    # TODO: Our linear correlation found an intercept of 0.3380 seconds. This likely means that
+    # on average our clips have 169 milliseconds of silent padding on either side. This is larger
     # than our processing which adds 50 milliseconds of padding. See the configuration for
     # `_make_speech_segments_helper.pad`. Let's investigate better trimming.
-    return sum(counts[feat] * val for val, feat in seconds) + 0.2781
+    return sum(counts[feat] * val for val, feat in seconds) + 0.3380
 
 
 def get_max_audio_length(text: str) -> float:
     """Predict the maximum audio length given `text`.
 
     NOTE: This approach models max audio length based on the slowest speaker and the biggest offset.
-          In this case, the slowest speakers spoke on average 20% slower than the average when
+          In this case, the slowest speakers spoke on average 17% slower than the average when
           analyzing training data spans; however, our slowest speaker could deliver content as much
-          as 60% slower. They were at most 500 milliseconds off of that pace, at anytime. It was
+          as 60% slower. They were at most 250 milliseconds off of that pace, at anytime. It was
           developed using this workbook
           `run/review/dataset_processing/text_audio_length_correlation.py`.
-    NOTE: This ensures that 99.976% of the time, in our training data (excluding non-dev speakers),
+    NOTE: This ensures that 99.988% of the time, in our training data (excluding non-dev speakers),
           the audio length is smaller than this maximum audio length, after analyzing 50k segments.
           The cases are buggy because extenuated pauses should not have been included in spans,
           see `SpanGenerator.max_pause` in `run._config.audio`.
@@ -289,7 +295,7 @@ def get_max_audio_length(text: str) -> float:
     TODO: Let's consider filtering out the remaining .024% of spans with this rule.
     """
     slowest_pace = 1.6
-    max_offset_from_slowest_pace = 0.5
+    max_offset_from_slowest_pace = 0.25
     return get_avg_audio_length(text) * slowest_pace + max_offset_from_slowest_pace
 
 

@@ -18,7 +18,7 @@ import run
 from lib.audio import amp_to_db, db_to_power, power_spectrogram_to_framed_rms, power_to_db
 from lib.environment import PT_EXTENSION, load
 from run import _streamlit as _st
-from run._config import SPECTROGRAM_MODEL_EXPERIMENTS_PATH
+from run._config import SPEC_MODEL_EXP_PATH
 from run._config.train import _config_spec_model_training
 from run._models.spectrogram_model import Preds
 from run._tts import batch_griffin_lim_tts, make_training_batches
@@ -201,7 +201,7 @@ def main():
 
     form: DeltaGenerator = st.form("form")
     label = "Spectrogram Checkpoint(s)"
-    spec_path = _st.st_select_path(label, SPECTROGRAM_MODEL_EXPERIMENTS_PATH, PT_EXTENSION, form)
+    spec_path = _st.st_select_path(label, SPEC_MODEL_EXP_PATH, PT_EXTENSION, form)
     num_samples = int(form.number_input("Num of Sample(s)", min_value=0, value=512, step=1))
     include_dic = form.checkbox("Include Dictionary Dataset(s)", value=False)
     if not form.form_submit_button("Generate"):

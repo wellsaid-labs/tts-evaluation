@@ -371,10 +371,24 @@ def split_dataset(
 
 
 @disk_cache(_config.DATASET_CACHE_PATH)
-def _get_datasets():
+def _get_datasets_helper(datasets: DataLoaders):
     """Get a `train` and `dev` dataset."""
-    dataset = cf.partial(get_dataset)()
+    dataset = cf.partial(get_dataset)(datasets)
     return cf.partial(split_dataset)(dataset)
+
+
+def _get_datasets(datasets: DataLoaders):
+    """Get a `train` and `dev` dataset with cache validation."""
+    train_dataset, dev_dataset = _get_datasets_helper(datasets)
+    to_load_speakers = set(datasets.keys())
+    loaded_speakers = set(s for d in (train_dataset, dev_dataset) for s in d.keys())
+    spkrs_not_found = to_load_speakers - loaded_speakers
+    if len(spkrs_not_found) > 0:
+        message = f"Invalidating dataset cache, it doesn't have these speakers:\n{spkrs_not_found}."
+        logger.info(message)
+        _get_datasets_helper.clear_cache()
+        return _get_datasets_helper(datasets)
+    return train_dataset, dev_dataset
 
 
 def _get_debug_datasets(speakers: typing.Set[Speaker]):
@@ -390,7 +404,7 @@ def get_datasets(debug: bool):
     """Get a `train` and `dev` dataset."""
     if debug:
         return cf.partial(_get_debug_datasets)()
-    return _get_datasets()
+    return cf.partial(_get_datasets)()
 
 
 SpanGeneratorGetWeight = typing.Callable[[Speaker, float], float]

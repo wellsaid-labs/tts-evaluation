@@ -157,15 +157,17 @@ def constant_lr_multiplier_schedule(step: int) -> float:
     return 1.0
 
 
-def warmup_lr_multiplier_schedule(step: int, warmup: int) -> float:
+def warmup_lr_multiplier_schedule(step: int, warmup: int, offset: int = 0) -> float:
     """Basic learning rate multiplier schedule.
 
     Args:
         step: The current step.
         warmup: The number of warmup steps.
+        offset: The number of steps to offset the step counter.
 
     Returns: Learning rate multiplier.
     """
+    step = step - offset
     if step < warmup:
         return step / warmup
     return 1.0

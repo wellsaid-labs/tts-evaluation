@@ -34,7 +34,7 @@ Set up your local development environment by following [these instructions](LOCA
    runs out of capacity.
 
    💡 TIP: For persistent instances, the `ZONE` parameter is optional. If it's not provided, then
-    this will try all the zones until one is found.
+   this will try all the zones until one is found.
 
    If starting from scratch, use a standard ubuntu image:
 
@@ -71,8 +71,73 @@ Set up your local development environment by following [these instructions](LOCA
       --image-family=$IMAGE_FAMILY \  # Or swap to --image=$IMAGE
       --metadata="startup-script-user=$USER" \
       --metadata="train-script-path=$TRAIN_SCRIPT_PATH" \
-      --metadata-from-file="startup-script=run/utils/gcp/resume_training_on_start_up.sh"
+      --metadata-from-file="startup-script=run/utils/gcp/resume_training_on_start_up.sh" \
    ```
+
+    You can just use these zones for persistent training...
+
+    ```zsh
+      --preferred-zone="us-central1-a" \
+      --preferred-zone="us-central1-c"
+    ```
+
+   You may exlcude these zones from pre-emptible training...
+
+   ```zsh
+      --exclude-zone="asia-east1-a" \
+      --exclude-zone="asia-east1-b" \
+      --exclude-zone="asia-northeast2-a" \
+      --exclude-zone="asia-northeast2-c" \
+      --exclude-zone="asia-northeast3-a" \
+      --exclude-zone="asia-northeast3-a" \
+      --exclude-zone="asia-northeast3-b" \
+      --exclude-zone="asia-northeast3-b" \
+      --exclude-zone="asia-south1-c" \
+      --exclude-zone="asia-southeast1-a" \
+      --exclude-zone="australia-southeast1-a" \
+      --exclude-zone="australia-southeast2-c" \
+      --exclude-zone="europe-central2-a" \
+      --exclude-zone="europe-central2-b" \
+      --exclude-zone="europe-north1-a" \
+      --exclude-zone="europe-north1-b" \
+      --exclude-zone="europe-west12-a" \
+      --exclude-zone="europe-west12-b" \
+      --exclude-zone="europe-west2-c" \
+      --exclude-zone="europe-west3-c" \
+      --exclude-zone="europe-west4-c" \
+      --exclude-zone="europe-west6-a" \
+      --exclude-zone="europe-west8-b" \
+      --exclude-zone="europe-west8-c" \
+      --exclude-zone="europe-west9-b" \
+      --exclude-zone="europe-west9-c" \
+      --exclude-zone="me-west1-b" \
+      --exclude-zone="me-west1-c" \
+      --exclude-zone="northamerica-northeast1-b" \
+      --exclude-zone="northamerica-northeast2-b" \
+      --exclude-zone="northamerica-northeast2-c" \
+      --exclude-zone="southamerica-east1-a" \
+      --exclude-zone="southamerica-east1-b" \
+      --exclude-zone="southamerica-east1-c" \
+      --exclude-zone="southamerica-west1-a" \
+      --exclude-zone="southamerica-west1-c" \
+      --exclude-zone="us-central1-a" \
+      --exclude-zone="us-central1-b" \
+      --exclude-zone="us-central1-c" \
+      --exclude-zone="us-central1-f" \
+      --exclude-zone="us-east1-b" \
+      --exclude-zone="us-south1-a" \
+      --exclude-zone="us-south1-b" \
+      --exclude-zone="us-south1-c" \
+      --exclude-zone="us-west1-a" \
+      --exclude-zone="us-west2-b" \
+      --exclude-zone="us-west2-c" \
+      --exclude-zone="us-west3-a" \
+      --exclude-zone="us-west3-b" \
+      --exclude-zone="us-west3-c"
+    ```
+
+   📙 NOTE: Please add a zone to our `--exclude-zone` list if your instance dies frequently
+   or quickly in that zone.
 
    📙 NOTE: This will use the environment variable `$USER` as the username whilst the browser
    console will use your email address username.
@@ -96,6 +161,7 @@ Set up your local development environment by following [these instructions](LOCA
    echo "VM_NAME=$VM_NAME"
    export VM_ZONE=$(python -m run.utils.gcp zone --name $VM_NAME)
    export VM_IP=$(python -m run.utils.gcp ip --name $VM_NAME --zone=$VM_ZONE)
+
    gcloud compute ssh --zone=$VM_ZONE $VM_NAME
    ```
 
@@ -197,8 +263,24 @@ Set up your local development environment by following [these instructions](LOCA
 1. For [comet](https://www.comet.ml/wellsaid-labs), name your experiment and pick a project...
 
    ```bash
-   COMET_PROJECT='<your-comet-project>'
-   EXPERIMENT_NAME='<Your experiment name>'
+   COMET_PRJ='<your-comet-project>'
+   EXP_NAME='<Your experiment name>'
+   ```
+
+1. You may want to double check any code changes you made, before running the experiment...
+
+   ```bash
+   git --no-pager diff run/ lib/
+   ```
+
+1. You may want to reset various services and clear out old processes, just in case...
+
+   ```bash
+   sudo rmmod nvidia_uvm
+   sudo modprobe nvidia_uvm
+   pkill -9 python
+   sleep 5s
+   nvidia-smi
    ```
 
 1. Start training...
@@ -206,32 +288,30 @@ Set up your local development environment by following [these instructions](LOCA
    For example, run this command to train a spectrogram model:
 
    ```bash
-   pkill -9 python; sleep 5s; nvidia-smi; \
-   PYTHONPATH=. python $TRAIN_SCRIPT_PATH start $COMET_PROJECT "$EXPERIMENT_NAME";
+   PYTHONPATH=. python $TRAIN_SCRIPT_PATH start $COMET_PRJ "$EXP_NAME";
    ```
 
-   ---
-   Or select a `SPECTROGRAM_CHECKPOINT`...
-
-   ```
-   find /opt/wellsaid-labs/Text-to-Speech/disk/experiments/spectrogram_model/ -name <step_######.pt>
-   ```
-
-   And store it...
-
-   ```
-   SPECTROGRAM_CHECKPOINT="<paste>"
-   ```
-
-   Then run the following command to train a signal model...
+   For example, run this command to find the latest spectrogram model and train a signal model:
 
    ```bash
-   SPECTROGRAM_CHECKPOINT="/opt/wellsaid-labs/Text-to-Speech/path/to/spectrogram/checkpoint"
+   DIR_NAME="disk/experiments/spectrogram_model/"
+   SPEC_CHKPNT=$( \
+    find $DIR_NAME -name '*.pt' -printf '%T+ %p\n' | \
+    sort -r | head -n 1 | cut -f2- -d" ")
+   SPEC_CHKPNT="/opt/wellsaid-labs/Text-to-Speech/$SPEC_CHKPNT"
+   echo $SPEC_CHKPNT
    ```
 
    ```bash
-   pkill -9 python; sleep 5s; nvidia-smi; \
-   PYTHONPATH=. python $TRAIN_SCRIPT_PATH start $SPECTROGRAM_CHECKPOINT $COMET_PROJECT "$EXPERIMENT_NAME";
+   PYTHONPATH=. python $TRAIN_SCRIPT_PATH start $SPEC_CHKPNT $COMET_PRJ "$EXP_NAME";
+   ```
+
+   For example, run this command to fine tune an older signal model, with a new spectrogram
+   checkpoint:
+
+   ```bash
+   FINE_TUNE="<your_deployed_checkpoint>"  # EXAMPLE: `v11_2023_04_25_staging`
+   PYTHONPATH=. python $TRAIN_SCRIPT_PATH fine-tune $FINE_TUNE $SPEC_CHKPNT $COMET_PRJ "$EXP_NAME";
    ```
 
    ❓ LEARN MORE: PyTorch leaves zombie processes that must be killed, check out:
@@ -268,8 +348,17 @@ Set up your local development environment by following [these instructions](LOCA
 1. (Optional) Download the latest checkpoint to your local drive...
 
    ```bash
-   DIR_NAME='<directory-to-download-from>' # EXAMPLE: spectrogram_model
+   DIR_NAME='spectrogram_model' # EXAMPLE: spectrogram_model
+   ```
+
+   ```bash
    python -m run.utils.checkpoints download-latest $VM_ZONE $VM_NAME $DIR_NAME
+   ```
+
+   You can also batch download all the latest checkpoints from every machine online...
+
+   ```bash
+   python -m run.utils.checkpoints download-all-latest $USER $DIR_NAME
    ```
 
 1. Delete your instance...
