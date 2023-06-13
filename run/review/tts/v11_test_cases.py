@@ -1,7 +1,7 @@
 """Testing scripts crafted to evaluate TTS Model performance of single words, slow tempo, long
 text, and various annotations."""
 
-from long_scripts import LONG_SCRIPTS
+from run.review.tts.long_scripts import LONG_SCRIPTS
 
 # I deleted the single word tests from this doc as we have completed that phase of testing
 
