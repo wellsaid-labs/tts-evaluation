@@ -106,6 +106,7 @@ def patch(model_path, test_cases):
     subprocess.run(patch_cmd, shell=True, check=True)
     generate_audio_cmd = f"{py} -m run.review.tts.generate_audio -i {idx} -s {model_path} -t {json.dumps(test_cases)}"
     subprocess.run(generate_audio_cmd, shell=True, check=True)
+    subprocess.run(git_reset, shell=True, capture_output=True, check=True)
 
 
 def init_state():
