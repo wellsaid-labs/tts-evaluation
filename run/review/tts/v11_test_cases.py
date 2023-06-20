@@ -3,7 +3,6 @@ text, and various annotations."""
 
 from run.review.tts.long_scripts import LONG_SCRIPTS
 
-# I deleted the single word tests from this doc as we have completed that phase of testing
 
 AUDIO_CUTOFF = [
     # these clips are here to test the v11 model's performance on a known error for v10: audio
