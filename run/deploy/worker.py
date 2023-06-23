@@ -168,7 +168,8 @@ _MARKETPLACE = {
     61: (EN.MARCUS_G, "furca_audio_part2", -21.035, 0.801, 0.837),
     62: (EN.JORDAN_T, "narration_script_1_whiteside_processed", -21.034, 0.843, 0.86),
     63: (EN.FIONA_H, "hughes_narration_script_1", -21.064, 0.902, 0.908),
-    64: (EN.ROXY_T, "topping_narration_script_1processed", -21.035, 0.859, 0.871),
+    # NOTE: Roxy asked for her voice to be removed from our services
+    # 64: (EN.ROXY_T, "topping_narration_script_1processed", -21.035, 0.859, 0.871),
     65: (EN.DONNA_W, "brookhyser_narration_script_1", -21.054, 0.85, 0.888),
     66: (EN.GREG_G, "lloyd_narration_script_1", -20.803, 0.954, 0.972),
     67: (EN.ZOEY_O, "helen_marion-rowe_script_1_processed", -21.039, 0.776, 0.709),
