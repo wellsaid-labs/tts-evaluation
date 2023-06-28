@@ -23,17 +23,7 @@ from run._tts import griffin_lim_tts
 from run.data._loader.structures import Session
 from run.deploy.worker import _MARKETPLACE
 from run.review.tts.test_cases.v11_test_cases import V11_TEST_CASES
-
-
-def generate_test_cases(
-    spec_export: SpectrogramModel, test_cases: typing.List[str], seed: int = 123
-):
-    # with fork_rng(seed):
-    spk_sessions: typing.List[Session]
-    spk_sessions = [Session(*args) for args in _MARKETPLACE.values()]
-    for case in test_cases:
-        sesh = random.choice(spk_sessions)
-        yield (sesh, case, griffin_lim_tts(spec_export, XMLType(case), sesh))
+from run.review.tts.util.generate_audio import generate_test_cases
 
 
 OPTIONS = {k: partial(generate_test_cases, test_cases=v) for k, v in V11_TEST_CASES.items()}
