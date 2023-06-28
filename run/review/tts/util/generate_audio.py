@@ -18,11 +18,11 @@ from run._tts import griffin_lim_tts
 from run.data._loader import Session
 from run.deploy.worker import _MARKETPLACE
 
-from run.review.tts.test_cases.long_scripts import LONG_SCRIPTS
-from run.review.tts.test_cases.parity_test_cases import PARITY_TEST_CASES
-from run.review.tts.util.speaker_ids import SPEAKER_IDS
-from run.review.tts.test_cases.test_cases import TEST_CASES
-from run.review.tts.test_cases.v11_test_cases import V11_TEST_CASES
+from run.review.tts._test_cases._long_scripts import LONG_SCRIPTS
+from run.review.tts._test_cases._parity_test_cases import PARITY_TEST_CASES
+from run.review.tts.util._speaker_ids import SPEAKER_IDS
+from run.review.tts._test_cases._test_cases import TEST_CASES
+from run.review.tts._test_cases._v11_test_cases import V11_TEST_CASES
 
 all_test_cases = dict()
 all_test_cases.update(TEST_CASES)

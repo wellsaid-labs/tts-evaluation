@@ -13,10 +13,10 @@ import subprocess
 from lib.utils import mazel_tov
 
 import streamlit as st
-from run.review.tts.test_cases.long_scripts import LONG_SCRIPTS
-from run.review.tts.test_cases.parity_test_cases import PARITY_TEST_CASES
-from run.review.tts.test_cases.test_cases import TEST_CASES
-from run.review.tts.test_cases.v11_test_cases import V11_TEST_CASES
+from run.review.tts._test_cases._long_scripts import LONG_SCRIPTS
+from run.review.tts._test_cases._parity_test_cases import PARITY_TEST_CASES
+from run.review.tts._test_cases._test_cases import TEST_CASES
+from run.review.tts._test_cases._v11_test_cases import V11_TEST_CASES
 
 all_test_cases = dict()
 all_test_cases.update(TEST_CASES)
