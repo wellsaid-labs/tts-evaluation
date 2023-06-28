@@ -3,7 +3,7 @@
 TODO: Implement `batch_griffin_lim_tts` to support batch generation, speeding up this script.
 
 Usage:
-    $ PYTHONPATH=. streamlit run run/review/tts/simple_audio_evaluation.py --runner.magicEnabled=false
+    $ PYTHONPATH=. streamlit run run/review/tts/streamlit_apps/simple_audio_evaluation.py --runner.magicEnabled=false
 """
 import random
 import typing
@@ -16,13 +16,13 @@ from streamlit.delta_generator import DeltaGenerator
 import run
 from lib.environment import PT_EXTENSION, load
 from lib.text import XMLType
-from run._config import SPECTROGRAM_MODEL_EXPERIMENTS_PATH
+from run._config import SPEC_MODEL_EXP_PATH
 from run._models.spectrogram_model import SpectrogramModel
 from run._streamlit import audio_to_web_path, make_temp_web_dir, st_download_files, st_select_path
 from run._tts import griffin_lim_tts
 from run.data._loader.structures import Session
 from run.deploy.worker import _MARKETPLACE
-from run.review.tts.v11_test_cases import V11_TEST_CASES
+from run.review.tts.test_cases.v11_test_cases import V11_TEST_CASES
 
 
 def generate_test_cases(
@@ -91,7 +91,7 @@ def main():
 
     with form:
         label = "Spectrogram Checkpoints"
-        spec_path = st_select_path(label, SPECTROGRAM_MODEL_EXPERIMENTS_PATH, PT_EXTENSION, form)
+        spec_path = st_select_path(label, SPEC_MODEL_EXP_PATH, PT_EXTENSION, form)
         items = sorted(OPTIONS.items(), reverse=True)
         format_test_case_name = lambda i: i[0].replace("_", " ").title()
         option = st.selectbox("Test Cases", items, format_func=format_test_case_name)

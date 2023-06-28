@@ -3,7 +3,7 @@ files generated from that model as well as a `metadata.csv`, which contains info
 those audio files. The output of this can be given to `evaluate_local_audio.py`. This script was
 written during v11 testing and therefore the upstream branch must be `v11_fine_tune` for it to work.
 
-USAGE: $ PYTHONPATH=. streamlit run run/review/tts/test_batch_models.py --runner.magicEnabled=false
+USAGE: $ PYTHONPATH=. streamlit run run/review/tts/streamlit_apps/test_batch_models.py --runner.magicEnabled=false
 """
 import json
 import os
@@ -14,10 +14,10 @@ from lib.text.utils import XMLType
 from lib.utils import mazel_tov
 
 import streamlit as st
-from long_scripts import LONG_SCRIPTS
-from parity_test_cases import PARITY_TEST_CASES
-from test_cases import TEST_CASES
-from v11_test_cases import V11_TEST_CASES
+from run.review.tts.test_cases.long_scripts import LONG_SCRIPTS
+from run.review.tts.test_cases.parity_test_cases import PARITY_TEST_CASES
+from run.review.tts.test_cases.test_cases import TEST_CASES
+from run.review.tts.test_cases.v11_test_cases import V11_TEST_CASES
 
 all_test_cases = dict()
 all_test_cases.update(TEST_CASES)
@@ -104,7 +104,7 @@ def patch(model_path, test_cases):
 
     patch_cmd = f'{py} -m run.utils.comet patch {exp_id} --overwrite --include="*.py"'
     subprocess.run(patch_cmd, shell=True, check=True)
-    generate_audio_cmd = f"{py} -m run.review.tts.generate_audio -i {idx} -s {model_path} -t {json.dumps(test_cases)}"
+    generate_audio_cmd = f"{py} -m run.review.tts.util.generate_audio -i {idx} -s {model_path} -t {json.dumps(test_cases)}"
     subprocess.run(generate_audio_cmd, shell=True, check=True)
     subprocess.run(git_reset, shell=True, capture_output=True, check=True)
 
