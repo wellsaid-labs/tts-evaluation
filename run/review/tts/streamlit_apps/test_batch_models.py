@@ -10,7 +10,6 @@ import os
 import shutil
 import subprocess
 
-from lib.text.utils import XMLType
 from lib.utils import mazel_tov
 
 import streamlit as st

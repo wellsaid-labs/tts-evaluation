@@ -3,7 +3,6 @@
 Usage:
     $ PYTHONPATH=. streamlit run run/review/tts/streamlit_apps/parity_audio_generation.py --runner.magicEnabled=false
 """
-import random
 import typing
 from functools import partial
 from pathlib import Path
@@ -16,15 +15,9 @@ import lib
 import run
 from lib.environment import PT_EXTENSION, ROOT_PATH, load
 from lib.text import natural_keys
-from lib.text.utils import XMLType
-from run._models.spectrogram_model import SpectrogramModel
 from run._streamlit import audio_to_web_path, make_temp_web_dir, st_download_files
-from run._tts import griffin_lim_tts
-from run.data._loader import Session
-from run.deploy.worker import _MARKETPLACE
 from run.review.tts.test_cases.parity_test_cases import PARITY_TEST_CASES
 from run.review.tts.util.generate_audio import generate_test_cases
-
 
 SPEC_MODEL_EXP_PATH = ROOT_PATH / "disk" / "experiments" / "spectrogram_model"
 
