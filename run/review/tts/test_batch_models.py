@@ -1,9 +1,8 @@
 """This script generates a zip file per model experiment and test case chosen which contains audio
 files generated from that model as well as a `metadata.csv`, which contains informaiton relevant to
-those audio files. The output of this can be given to `evaluate_local_audio.py`. This script was
-written during v11 testing and therefore the upstream branch must be `v11_fine_tune` for it to work.
+those audio files. The output of this can be given to `evaluate_local_audio.py`.
 
-USAGE: $ PYTHONPATH=. streamlit run run/review/tts/streamlit_apps/test_batch_models.py --runner.magicEnabled=false
+USAGE: $ PYTHONPATH=. streamlit run run/review/tts/test_batch_models.py --runner.magicEnabled=false
 """
 import json
 import os

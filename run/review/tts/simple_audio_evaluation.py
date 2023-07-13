@@ -3,7 +3,7 @@
 TODO: Implement `batch_griffin_lim_tts` to support batch generation, speeding up this script.
 
 Usage:
-    $ PYTHONPATH=. streamlit run run/review/tts/streamlit_apps/simple_audio_evaluation.py --runner.magicEnabled=false
+    $ PYTHONPATH=. streamlit run run/review/tts/simple_audio_evaluation.py --runner.magicEnabled=false
 """
 import random
 import typing
@@ -18,7 +18,7 @@ from lib.environment import PT_EXTENSION, load
 from run._config import SPEC_MODEL_EXP_PATH
 from run._streamlit import audio_to_web_path, make_temp_web_dir, st_download_files, st_select_path
 from run.review.tts._test_cases._v11_test_cases import V11_TEST_CASES
-from run.review.tts.util.generate_audio import generate_test_cases
+from run.review.tts.generate_audio import generate_test_cases
 
 OPTIONS = {k: partial(generate_test_cases, test_cases=v) for k, v in V11_TEST_CASES.items()}
 

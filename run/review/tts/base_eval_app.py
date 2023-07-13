@@ -8,7 +8,7 @@ TODO: Instead of using random speakers and sessions, let's consider using the ch
 TODO: Implement `batch_griffin_lim_tts` to support batch generation, speeding up this script.
 
 Usage:
-    $ PYTHONPATH=. streamlit run run/review/tts/streamlit_apps/test_cases.py --runner.magicEnabled=false
+    $ PYTHONPATH=. streamlit run run/review/tts/base_eval_app.py --runner.magicEnabled=false
 """
 
 import random
@@ -39,7 +39,7 @@ from run._streamlit import (
 from run._tts import griffin_lim_tts
 from run.data._loader import Speaker
 from run.data._loader.english import wsl
-from run.review.tts.test_cases.test_cases import TEST_CASES
+from run.review.tts._test_cases._test_cases import TEST_CASES
 
 
 def generate_test_cases(

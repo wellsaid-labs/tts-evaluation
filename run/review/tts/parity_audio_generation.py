@@ -1,7 +1,7 @@
 """ A workbook to generate audio for quick evaluations.
 
 Usage:
-    $ PYTHONPATH=. streamlit run run/review/tts/streamlit_apps/parity_audio_generation.py --runner.magicEnabled=false
+    $ PYTHONPATH=. streamlit run run/review/tts/parity_audio_generation.py --runner.magicEnabled=false
 """
 import typing
 from functools import partial
@@ -17,7 +17,7 @@ from lib.environment import PT_EXTENSION, ROOT_PATH, load
 from lib.text import natural_keys
 from run._streamlit import audio_to_web_path, make_temp_web_dir, st_download_files
 from run.review.tts._test_cases._parity_test_cases import PARITY_TEST_CASES
-from run.review.tts.util.generate_audio import generate_test_cases
+from run.review.tts.generate_audio import generate_test_cases
 
 SPEC_MODEL_EXP_PATH = ROOT_PATH / "disk" / "experiments" / "spectrogram_model"
 

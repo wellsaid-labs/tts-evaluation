@@ -1,7 +1,7 @@
 """ A workbook to stream clip generation.
 
 Usage:
-    $ PYTHONPATH=. streamlit run run/review/tts/streamlit_apps/stream.py --runner.magicEnabled=false
+    $ PYTHONPATH=. streamlit run run/review/tts/stream.py --runner.magicEnabled=false
 """
 import copy
 import logging

@@ -1,7 +1,7 @@
 """A workbook to generate a batch of predictions with griffin lim.
 
 Usage:
-    $ PYTHONPATH=. streamlit run run/review/tts/streamlit_apps/batch_griffin_lim.py --runner.magicEnabled=false
+    $ PYTHONPATH=. streamlit run run/review/tts/batch_griffin_lim.py --runner.magicEnabled=false
 """
 import typing
 

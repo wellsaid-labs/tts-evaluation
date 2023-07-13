@@ -3,7 +3,7 @@
 TODO: Make sure the correlation has no bias.
 
 Usage:
-    $ PYTHONPATH=. streamlit run run/review/tts/streamlit_apps/anno_correlation.py --runner.magicEnabled=false
+    $ PYTHONPATH=. streamlit run run/review/tts/anno_correlation.py --runner.magicEnabled=false
 """
 import random
 import typing

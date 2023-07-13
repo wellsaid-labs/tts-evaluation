@@ -8,7 +8,7 @@ TODO:
   would help ensure that the evaluation is consistent.
 
 Usage:
-    $ PYTHONPATH=. streamlit run run/review/tts/streamlit_apps/grid_search.py --runner.magicEnabled=false
+    $ PYTHONPATH=. streamlit run run/review/tts/grid_search.py --runner.magicEnabled=false
 """
 import functools
 import itertools
