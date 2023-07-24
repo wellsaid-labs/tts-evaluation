@@ -17,7 +17,7 @@ import run
 from lib.environment import PT_EXTENSION, load
 from run._config import SPEC_MODEL_EXP_PATH
 from run._streamlit import audio_to_web_path, make_temp_web_dir, st_download_files, st_select_path
-from run.review.tts._test_cases._v11_test_cases import V11_TEST_CASES
+from run.review.tts._test_cases.v11_test_cases import V11_TEST_CASES
 from run.review.tts.generate_audio import generate_test_cases
 
 OPTIONS = {k: partial(generate_test_cases, test_cases=v) for k, v in V11_TEST_CASES.items()}
