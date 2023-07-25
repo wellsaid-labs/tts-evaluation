@@ -3,7 +3,6 @@
 Usage:
     $ PYTHONPATH=. streamlit run run/review/tts/parity_audio_generation.py --runner.magicEnabled=false
 """
-import random
 import typing
 from functools import partial
 from pathlib import Path
@@ -16,13 +15,9 @@ import lib
 import run
 from lib.environment import PT_EXTENSION, ROOT_PATH, load
 from lib.text import natural_keys
-from lib.text.utils import XMLType
-from run._models.spectrogram_model import SpectrogramModel
 from run._streamlit import audio_to_web_path, make_temp_web_dir, st_download_files
-from run._tts import griffin_lim_tts
-from run.data._loader import Session
-from run.deploy.worker import _MARKETPLACE
-from run.review.tts.parity_test_cases import PARITY_TEST_CASES
+from run.review.tts._test_cases.parity_test_cases import PARITY_TEST_CASES
+from run.review.tts.generate_audio import generate_test_cases
 
 SPEC_MODEL_EXP_PATH = ROOT_PATH / "disk" / "experiments" / "spectrogram_model"
 
@@ -108,22 +103,6 @@ def st_select_path(
     options = sorted(options, key=lambda x: natural_keys(str(x)), reverse=True)
     selected = st.selectbox(label, options=options, format_func=path_label)
     return typing.cast(typing.Optional[Path], selected)
-
-
-def generate_test_cases(
-    spec_export: SpectrogramModel, test_cases: typing.List[str], seed: int = 123
-):
-    # with fork_rng(seed):
-    spk_sessions: typing.List[Session]
-    session_vocab = list(set(spec_export.session_embed.vocab.keys()))
-    spk_sessions = [Session(*args) for i, args in _MARKETPLACE.items() if i in SPEAKER_IDS]
-    for sp_s in spk_sessions:
-        if sp_s not in session_vocab:
-            st.write(f"Speaker missing: {sp_s}")
-
-    for case in test_cases:
-        sesh = random.choice(spk_sessions)
-        yield (sesh, case, griffin_lim_tts(spec_export, XMLType(case), sesh))
 
 
 OPTIONS = {k: partial(generate_test_cases, test_cases=v) for k, v in PARITY_TEST_CASES.items()}

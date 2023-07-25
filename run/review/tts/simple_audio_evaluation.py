@@ -15,26 +15,10 @@ from streamlit.delta_generator import DeltaGenerator
 
 import run
 from lib.environment import PT_EXTENSION, load
-from lib.text import XMLType
-from run._config import SPECTROGRAM_MODEL_EXPERIMENTS_PATH
-from run._models.spectrogram_model import SpectrogramModel
+from run._config import SPEC_MODEL_EXP_PATH
 from run._streamlit import audio_to_web_path, make_temp_web_dir, st_download_files, st_select_path
-from run._tts import griffin_lim_tts
-from run.data._loader.structures import Session
-from run.deploy.worker import _MARKETPLACE
-from run.review.tts.v11_test_cases import V11_TEST_CASES
-
-
-def generate_test_cases(
-    spec_export: SpectrogramModel, test_cases: typing.List[str], seed: int = 123
-):
-    # with fork_rng(seed):
-    spk_sessions: typing.List[Session]
-    spk_sessions = [Session(*args) for args in _MARKETPLACE.values()]
-    for case in test_cases:
-        sesh = random.choice(spk_sessions)
-        yield (sesh, case, griffin_lim_tts(spec_export, XMLType(case), sesh))
-
+from run.review.tts._test_cases.v11_test_cases import V11_TEST_CASES
+from run.review.tts.generate_audio import generate_test_cases
 
 OPTIONS = {k: partial(generate_test_cases, test_cases=v) for k, v in V11_TEST_CASES.items()}
 
@@ -91,7 +75,7 @@ def main():
 
     with form:
         label = "Spectrogram Checkpoints"
-        spec_path = st_select_path(label, SPECTROGRAM_MODEL_EXPERIMENTS_PATH, PT_EXTENSION, form)
+        spec_path = st_select_path(label, SPEC_MODEL_EXP_PATH, PT_EXTENSION, form)
         items = sorted(OPTIONS.items(), reverse=True)
         format_test_case_name = lambda i: i[0].replace("_", " ").title()
         option = st.selectbox("Test Cases", items, format_func=format_test_case_name)

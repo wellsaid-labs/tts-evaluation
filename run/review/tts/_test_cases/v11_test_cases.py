@@ -1,7 +1,7 @@
 """Testing scripts crafted to evaluate TTS Model performance of single words, slow tempo, long
 text, and various annotations."""
 
-from run.review.tts.long_scripts import LONG_SCRIPTS
+from run.review.tts._test_cases._long_scripts import LONG_SCRIPTS
 
 """
 These clips are here to test the v11 model's performance on a known error for v10: audio cutoff.
