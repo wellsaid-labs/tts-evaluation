@@ -124,16 +124,25 @@ def prepare_download_paths():
 
 def main():
     run._config.configure(overwrite=True)
-    st.markdown("# Test Case Audio Generator")
+    st.markdown("# Local audio evaluation tool")
     st.markdown("Use this workbook to evaluate test cases.")
     metadata, audio_paths, zip_path = pd.DataFrame(), [], ""
-
+    note_options = [
+        "slurring",
+        "gibberish",
+        "word skip",
+        "word cutoff",
+        "mispronunciation",
+        "unnatural intonation",
+    ]
     if "metadata" not in st.session_state:
         initialize_state()
 
     form: DeltaGenerator = st.form(key="go")
     with form:
-        selected_file = st.file_uploader("Upload zipfile", accept_multiple_files=False, type=".zip")
+        selected_file = st.file_uploader(
+            "Upload zipfile", accept_multiple_files=False, type=".zip"
+        )
         if selected_file is not None:
             metadata, audio_paths = unzip_audios_and_metadata(selected_file)
             zip_path = f"eval_{selected_file.name}"
@@ -160,7 +169,9 @@ def main():
             with st.form(key="survey"):
                 setup_columns()
                 votes, notes, rows = [], [], []
-                audios_and_metadata = zip(st.session_state.audios, st.session_state.metadata)
+                audios_and_metadata = zip(
+                    st.session_state.audios, st.session_state.metadata
+                )
                 for i, (wave, session) in enumerate(audios_and_metadata):
                     col1, col2, col3, col4, col5 = st.columns(col_widths)
                     with col1:
@@ -184,7 +195,12 @@ def main():
                         )
                     with col5:
                         notes.append(
-                            st.text_input("note", key=f"note{i}", label_visibility="hidden")
+                            st.multiselect(
+                                "note",
+                                options=note_options,
+                                key=f"note{i}",
+                                label_visibility="hidden",
+                            )
                         )
                     st.divider()
                     row = {
