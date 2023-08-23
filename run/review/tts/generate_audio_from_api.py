@@ -124,9 +124,7 @@ def main():
         test_case_selection = st.selectbox(
             label="Test Cases", options=test_case_options
         )
-        single_sentence_mode = st.selectbox(
-            label="Split into single sententces", options=["Yes", "No"]
-        )
+        single_sentence_mode = st.checkbox(label="Split test cases into single sententces")
         sentence_limit = st.slider(
             label="Max number of sentences to generate. 500 sentences results in a ~200mb zip file",
             min_value=1,
@@ -135,7 +133,7 @@ def main():
         )
         if test_case_selection and model_version:
             texts = V11_TEST_CASES[test_case_selection]
-            if single_sentence_mode == "Yes":
+            if single_sentence_mode:
                 texts = [
                     sentence
                     for i in texts
