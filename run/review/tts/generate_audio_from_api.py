@@ -140,9 +140,7 @@ def main():
                 speaker = task["speaker"]
                 speaker_id = task["speaker_id"]
                 text = task["text"]
-                audio_file_name = (
-                    f"{model_version}_{speaker}_{text[:15]}.wav"
-                )
+                audio_file_name = f"{model_version}_{speaker}_{text[:15]}.wav"
                 try:
                     resp = query_tts_api(
                         speaker_id=speaker_id,
@@ -172,9 +170,7 @@ def main():
                         audio_array, sample_rate = sf.read(
                             fp.name, dtype="float32"
                         )
-                    path = audio_to_web_path(
-                        audio_array, name=audio_file_name
-                    )
+                    path = audio_to_web_path(audio_array, name=audio_file_name)
                     download_paths.append(path)
                     file_data = {
                         "Speaker": "".join(speaker.split("_")[0:1]),
@@ -195,9 +191,7 @@ def main():
                     st.write(msg)
                 current_task += 1
                 progress_pct = round(current_task / total_tasks, 4)
-                progress_txt = (
-                    f"Generating... {progress_pct * 100}% complete"
-                )
+                progress_txt = f"Generating... {progress_pct * 100}% complete"
                 pbar.progress(progress_pct, text=progress_txt)
 
             # Create metadata csv and save zipped audio
