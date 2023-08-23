@@ -67,24 +67,46 @@ speakers_in_v9_v10_v11 = {
 }
 
 
-def query_tts_api(speaker_id, text, style, headers, endpoint):
-    """Send speaker_id and word to TTS API and convert the resulting file to
-    np.ndarray. kwargs are used here to allow for easy multiprocessing
+def query_tts_api(
+    speaker_id: int,
+    text: str,
+    headers: dict,
+    endpoint: str,
+    retry_number: int = 0,
+) -> requests.Response:
+    """Post a request to WSL's API and return the result
     Args:
+        speaker_id (int): The speaker id associated with a particular voice and style
+        text (str): The text to be rendered
+        headers (dict): The headers specific to an API endpoint
+        endpoint (str): The API address the request will be posted to
+        retry_attempt_number (int): The number of times this function will be allowed to error
+            before returning a default value
     Returns:
         response (Response): The response from the post to WSL's API
     """
+    max_retries = 2
     json_data = {
         "speaker_id": speaker_id,
         "text": text,
         "consumerId": "id",
         "consumerSource": "source",
     }
-    response = requests.post(
-        endpoint,
-        headers=headers,
-        json=json_data,
-    )
+    response = requests.Response()
+    if retry_number <= max_retries:
+        try:
+            response = requests.post(
+                endpoint,
+                headers=headers,
+                json=json_data,
+            )
+        except Exception as exc:
+            st.write(
+                f"Exception encountered: {exc}. Attempt number {retry_number}/{max_retries}."
+            )
+            time.sleep(3)
+            retry_number += 1
+            query_tts_api(speaker_id, text, headers, endpoint, retry_number)
     return response
 
 
@@ -141,26 +163,7 @@ def main():
                 speaker_id = task["speaker_id"]
                 text = task["text"]
                 audio_file_name = f"{model_version}_{speaker}_{text[:15]}.wav"
-                try:
-                    resp = query_tts_api(
-                        speaker_id=speaker_id,
-                        text=text,
-                        style=speaker,
-                        endpoint=endpoint,
-                        headers=headers,
-                    )
-                except requests.exceptions.ConnectionError:
-                    st.write(
-                        "Connection error encountered, trying once more in 5s"
-                    )
-                    time.sleep(5)
-                    resp = query_tts_api(
-                        speaker_id=speaker_id,
-                        text=text,
-                        style=speaker,
-                        endpoint=endpoint,
-                        headers=headers,
-                    )
+                resp = query_tts_api(speaker_id, text, headers, endpoint)
                 if resp.status_code == 200:
                     with tempfile.NamedTemporaryFile(
                         mode="wb", suffix=".wav"
@@ -176,8 +179,8 @@ def main():
                         "Speaker": "".join(speaker.split("_")[0:1]),
                         "Style": speaker.split("_")[-1],
                         "Script": text,
-                        "Vote": [],
-                        "Note": "",
+                        "Vote": "",
+                        "Issues": "",
                         "Session": "",
                         "Dialect": "",
                         "Audio": audio_file_name,
