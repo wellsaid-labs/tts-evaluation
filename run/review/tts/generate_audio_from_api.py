@@ -127,74 +127,78 @@ def main():
             total_tasks = (
                 sentence_limit if total_tasks > sentence_limit else total_tasks
             )
-            current_task = 0
-            metadata = []
-            download_paths = []
+            tasks = [
+                {"text": text, "speaker_id": speaker_id, "speaker": speaker}
+                for text in texts
+                for speaker, speaker_id in speakers_in_v9_v10_v11.items()
+            ][:total_tasks]
+            metadata, download_paths = [], []
             st.write(f"Total audio files: {total_tasks}")
             pbar = st.progress(0, text="Generating...")
-            for text in texts:
-                for speaker in speakers_in_v9_v10_v11:
-                    if current_task < total_tasks:
-                        speaker_id = speakers_in_v9_v10_v11[speaker]
-                        audio_file_name = (
-                            f"{model_version}_{speaker}_{text[:15]}.wav"
+            current_task = 0
+            for task in tasks:
+                speaker = task["speaker"]
+                speaker_id = task["speaker_id"]
+                text = task["text"]
+                audio_file_name = (
+                    f"{model_version}_{speaker}_{text[:15]}.wav"
+                )
+                try:
+                    resp = query_tts_api(
+                        speaker_id=speaker_id,
+                        text=text,
+                        style=speaker,
+                        endpoint=endpoint,
+                        headers=headers,
+                    )
+                except requests.exceptions.ConnectionError:
+                    st.write(
+                        "Connection error encountered, trying once more in 5s"
+                    )
+                    time.sleep(5)
+                    resp = query_tts_api(
+                        speaker_id=speaker_id,
+                        text=text,
+                        style=speaker,
+                        endpoint=endpoint,
+                        headers=headers,
+                    )
+                if resp.status_code == 200:
+                    with tempfile.NamedTemporaryFile(
+                        mode="wb", suffix=".wav"
+                    ) as fp:
+                        fp.write(resp.content)
+                        fp.seek(0)
+                        audio_array, sample_rate = sf.read(
+                            fp.name, dtype="float32"
                         )
-                        try:
-                            resp = query_tts_api(
-                                speaker_id=speaker_id,
-                                text=text,
-                                style=speaker,
-                                endpoint=endpoint,
-                                headers=headers,
-                            )
-                        except requests.exceptions.ConnectionError:
-                            st.write(
-                                "Connection error encountered, trying once more in 5s"
-                            )
-                            time.sleep(5)
-                            resp = query_tts_api(
-                                speaker_id=speaker_id,
-                                text=text,
-                                style=speaker,
-                                endpoint=endpoint,
-                                headers=headers,
-                            )
-                        if resp.status_code == 200:
-                            with tempfile.NamedTemporaryFile(
-                                mode="wb", suffix=".wav"
-                            ) as fp:
-                                fp.write(resp.content)
-                                fp.seek(0)
-                                audio_array, sample_rate = sf.read(
-                                    fp.name, dtype="float32"
-                                )
-                            path = audio_to_web_path(
-                                audio_array, name=audio_file_name
-                            )
-                            download_paths.append(path)
-                            file_data = {
-                                "Speaker": "".join(speaker.split("_")[0:1]),
-                                "Style": speaker.split("_")[-1],
-                                "Script": text,
-                                "Vote": [],
-                                "Note": "",
-                                "Session": "",
-                                "Dialect": "",
-                                "Audio": audio_file_name,
-                            }
-                            metadata.append(file_data)
-                        else:
-                            msg = (
-                                f"Received status code {resp.status_code} while generating "
-                                f"{audio_file_name}. Full content: {resp.content}"
-                            )
-                            st.write(msg)
-                        current_task += 1
-                        progress_pct = round(current_task / total_tasks, 4)
-                        progress_txt = (
-                            f"Generating... {progress_pct * 100}% complete"
-                        )
-                        pbar.progress(progress_pct, text=progress_txt)
+                    path = audio_to_web_path(
+                        audio_array, name=audio_file_name
+                    )
+                    download_paths.append(path)
+                    file_data = {
+                        "Speaker": "".join(speaker.split("_")[0:1]),
+                        "Style": speaker.split("_")[-1],
+                        "Script": text,
+                        "Vote": [],
+                        "Note": "",
+                        "Session": "",
+                        "Dialect": "",
+                        "Audio": audio_file_name,
+                    }
+                    metadata.append(file_data)
+                else:
+                    msg = (
+                        f"Received status code {resp.status_code} while generating "
+                        f"{audio_file_name}. Full content: {resp.content}"
+                    )
+                    st.write(msg)
+                current_task += 1
+                progress_pct = round(current_task / total_tasks, 4)
+                progress_txt = (
+                    f"Generating... {progress_pct * 100}% complete"
+                )
+                pbar.progress(progress_pct, text=progress_txt)
 
             # Create metadata csv and save zipped audio
             metadata_path = make_temp_web_dir() / "metadata.csv"
