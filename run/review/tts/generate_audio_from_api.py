@@ -5,6 +5,8 @@ $ PYTHONPATH=. streamlit run run/review/tts/generate_audio_from_api.py --runner.
 
 import tempfile
 import time
+from dataclasses import dataclass
+from typing import Optional, Tuple
 
 import pandas as pd
 import requests
@@ -14,17 +16,22 @@ from _test_cases.slurring import SLURRING
 from _test_cases.v11_test_cases import V11_TEST_CASES
 
 from run._config import configure
-from run._streamlit import (
-    audio_to_web_path,
-    make_temp_web_dir,
-    st_download_files,
-)
+from run._streamlit import audio_to_web_path, make_temp_web_dir, st_download_files
+
+
+@dataclass
+class APIInput:
+    text: str
+    speaker_id: int
+    speaker: str
+    model_version: str
+    headers: dict
+    endpoint: str
+
 
 test_case_options = V11_TEST_CASES
 test_case_options["SLURRING"] = SLURRING
-test_case_options = {
-    k: v for k, v in sorted(test_case_options.items(), key=lambda x: x[0])
-}
+test_case_options = {k: v for k, v in sorted(test_case_options.items(), key=lambda x: x[0])}
 
 staging_headers = {
     "X-Api-Key": "d5637035-23d6-472d-9b44-87001cd337dc",
@@ -67,19 +74,10 @@ speakers_in_v9_v10_v11 = {
 }
 
 
-def query_tts_api(
-    speaker_id: int,
-    text: str,
-    headers: dict,
-    endpoint: str,
-    retry_number: int = 0,
-) -> requests.Response:
+def query_tts_api(task: APIInput, retry_number: int = 0) -> requests.Response:
     """Post a request to WSL's API and return the result
     Args:
-        speaker_id (int): The speaker id associated with a particular voice and style
-        text (str): The text to be rendered
-        headers (dict): The headers specific to an API endpoint
-        endpoint (str): The API address the request will be posted to
+        task (APIInput): An APIInput object containing the necessary data to post a request.
         retry_attempt_number (int): The number of times this function will be allowed to error
             before returning a default value
     Returns:
@@ -87,123 +85,130 @@ def query_tts_api(
     """
     max_retries = 2
     json_data = {
-        "speaker_id": speaker_id,
-        "text": text,
+        "speaker_id": task.speaker_id,
+        "text": task.text,
         "consumerId": "id",
         "consumerSource": "source",
     }
     response = requests.Response()
     if retry_number <= max_retries:
-        try:
-            response = requests.post(
-                endpoint,
-                headers=headers,
-                json=json_data,
-            )
-        except Exception as exc:
+        response = requests.post(
+            task.endpoint,
+            headers=task.headers,
+            json=json_data,
+        )
+        if response.status_code != 200:
             st.write(
-                f"Exception encountered: {exc}. Attempt number {retry_number}/{max_retries}."
+                f"Received status code {response.status_code}. Attempt {retry_number}/{max_retries}"
             )
             time.sleep(3)
             retry_number += 1
-            query_tts_api(speaker_id, text, headers, endpoint, retry_number)
-    return response
+            query_tts_api(task, retry_number)
+        return response
+    else:
+        st.write("Max retries reached. Returning empty Response object")
+        return response
+
+
+def process_task(task: APIInput) -> Tuple[Optional[str], Optional[str]]:
+    """Wrapper for query_tts_api()
+    Args:
+        task (APIInput): The input to the API
+    Returns:
+        Tuple containing an entry to this run's metadata and the audio web path
+    """
+    metadata_entry, audio_path = None, None
+    audio_file_name = f"{task.model_version}_{task.speaker}_{task.text[:15]}.wav"
+    resp = query_tts_api(task)
+    if resp.status_code == 200:
+        with tempfile.NamedTemporaryFile(mode="wb", suffix=".wav") as fp:
+            fp.write(resp.content)
+            fp.seek(0)
+            audio_array, sample_rate = sf.read(fp.name, dtype="float32")
+        audio_path = audio_to_web_path(audio_array, name=audio_file_name)
+        metadata_entry = {
+            "Speaker": "".join(task.speaker.split("_")[0:1]),
+            "Style": task.speaker.split("_")[-1],
+            "Script": task.text,
+            "Vote": "",
+            "Issues": "",
+            "Session": "",
+            "Dialect": "",
+            "Audio": audio_file_name,
+        }
+    else:
+        msg = (
+            f"Received status code {resp.status_code} while generating "
+            f"{audio_file_name}. Full content: {resp.content}"
+        )
+        st.write(msg)
+    return metadata_entry, audio_path
 
 
 def main():
     # Configure parameters and select appropriate headers for the API
     configure(overwrite=True)
-    with st.form("Options"):
-        texts = []
-        endpoint, headers = None, None
-        model_version = st.selectbox(
-            label="Model Version", options=["v9", "v10", "v11"]
-        )
-        if model_version:
-            endpoint, headers = model_to_endpoints_and_headers[model_version]
-        test_case_selection = st.selectbox(
-            label="Test Cases", options=test_case_options
-        )
-        single_sentence_mode = st.checkbox(label="Split test cases into single sententces")
-        sentence_limit = st.slider(
-            label="Max number of sentences to generate. 500 sentences results in a ~200mb zip file",
-            min_value=1,
-            max_value=500,
-            value=250,
-        )
-        if test_case_selection and model_version:
-            texts = V11_TEST_CASES[test_case_selection]
-            if single_sentence_mode:
-                texts = [
-                    sentence
-                    for i in texts
-                    for sentence in i.split(".")
-                    if len(sentence.strip()) > 1
-                ]
-        if st.form_submit_button("Generate audio!"):
-            # Generate audio. This could be sped up with multiprocessing, but the API is limited to
-            # 2.5 requests per second
-            total_tasks = len(texts) * len(speakers_in_v9_v10_v11)
-            total_tasks = (
-                sentence_limit if total_tasks > sentence_limit else total_tasks
+    st.header("Use this app to generate audio from WSL's API")
+    opts_form = st.form("Options")
+    texts = []
+    endpoint, headers = None, None
+    model_version = opts_form.selectbox(label="Model Version", options=["v9", "v10", "v11"])
+    if model_version:
+        endpoint, headers = model_to_endpoints_and_headers[model_version]
+    test_case_selection = opts_form.selectbox(label="Test Cases", options=test_case_options)
+    single_sentence_mode = opts_form.checkbox(label="Split test cases into single sententces")
+    sentence_limit = opts_form.slider(
+        label="Max number of sentences to generate. 500 sentences results in a ~200mb zip file",
+        min_value=1,
+        max_value=500,
+        value=250,
+    )
+    if test_case_selection and model_version:
+        texts = V11_TEST_CASES[test_case_selection]
+        if single_sentence_mode:
+            texts = [
+                sentence for i in texts for sentence in i.split(".") if len(sentence.strip()) > 1
+            ]
+    if opts_form.form_submit_button("Generate audio!"):
+        # Generate audio. This could be sped up with multiprocessing, but the API is limited to
+        # 2.5 requests per second
+        total_tasks = len(texts) * len(speakers_in_v9_v10_v11)
+        total_tasks = sentence_limit if total_tasks > sentence_limit else total_tasks
+        tasks = [
+            APIInput(
+                text=text,
+                speaker_id=speaker_id,
+                speaker=speaker,
+                model_version=model_version,
+                headers=headers,
+                endpoint=endpoint,
             )
-            tasks = [
-                {"text": text, "speaker_id": speaker_id, "speaker": speaker}
-                for text in texts
-                for speaker, speaker_id in speakers_in_v9_v10_v11.items()
-            ][:total_tasks]
-            metadata, download_paths = [], []
-            st.write(f"Total audio files: {total_tasks}")
-            pbar = st.progress(0, text="Generating...")
-            current_task = 0
-            for task in tasks:
-                speaker = task["speaker"]
-                speaker_id = task["speaker_id"]
-                text = task["text"]
-                audio_file_name = f"{model_version}_{speaker}_{text[:15]}.wav"
-                resp = query_tts_api(speaker_id, text, headers, endpoint)
-                if resp.status_code == 200:
-                    with tempfile.NamedTemporaryFile(
-                        mode="wb", suffix=".wav"
-                    ) as fp:
-                        fp.write(resp.content)
-                        fp.seek(0)
-                        audio_array, sample_rate = sf.read(
-                            fp.name, dtype="float32"
-                        )
-                    path = audio_to_web_path(audio_array, name=audio_file_name)
-                    download_paths.append(path)
-                    file_data = {
-                        "Speaker": "".join(speaker.split("_")[0:1]),
-                        "Style": speaker.split("_")[-1],
-                        "Script": text,
-                        "Vote": "",
-                        "Issues": "",
-                        "Session": "",
-                        "Dialect": "",
-                        "Audio": audio_file_name,
-                    }
-                    metadata.append(file_data)
-                else:
-                    msg = (
-                        f"Received status code {resp.status_code} while generating "
-                        f"{audio_file_name}. Full content: {resp.content}"
-                    )
-                    st.write(msg)
-                current_task += 1
-                progress_pct = round(current_task / total_tasks, 4)
-                progress_txt = f"Generating... {progress_pct * 100}% complete"
-                pbar.progress(progress_pct, text=progress_txt)
+            for text in texts
+            for speaker, speaker_id in speakers_in_v9_v10_v11.items()
+        ][:total_tasks]
+        metadata, download_paths = [], []
+        st.write(f"Total audio files: {total_tasks}")
+        pbar = st.progress(0, text="Generating...")
+        current_task = 0
+        for task in tasks:
+            metadata_entry, audio_path = process_task(task)
+            if metadata_entry and audio_path:
+                metadata.append(metadata_entry)
+                download_paths.append(audio_path)
+            current_task += 1
+            progress_pct = round(current_task / total_tasks, 4)
+            progress_txt = f"Generating... {progress_pct * 100}% complete"
+            pbar.progress(progress_pct, text=progress_txt)
 
-            # Create metadata csv and save zipped audio
-            metadata_path = make_temp_web_dir() / "metadata.csv"
-            metadata_path.write_text(pd.DataFrame(metadata).to_csv())
-            download_paths.append(metadata_path)
-            st_download_files(
-                f"{model_version}-{test_case_selection}-audio-and-metadata.zip",
-                "💾  DOWNLOAD  💾",
-                download_paths,
-            )
+        # Create metadata csv and save zipped audio
+        metadata_path = make_temp_web_dir() / "metadata.csv"
+        metadata_path.write_text(pd.DataFrame(metadata).to_csv())
+        download_paths.append(metadata_path)
+        st_download_files(
+            f"{model_version}-{test_case_selection}-audio-and-metadata.zip",
+            "💾  DOWNLOAD  💾",
+            download_paths,
+        )
 
 
 if __name__ == "__main__":
