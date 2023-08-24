@@ -2,11 +2,11 @@
 USAGE:
 $ PYTHONPATH=. streamlit run run/review/tts/generate_audio_from_api.py --runner.magicEnabled=false
 """
-
+from dotenv import dotenv_values
 import tempfile
 import time
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Tuple, Optional
 
 import pandas as pd
 import requests
@@ -33,18 +33,19 @@ test_case_options = V11_TEST_CASES
 test_case_options["SLURRING"] = SLURRING
 test_case_options = {k: v for k, v in sorted(test_case_options.items(), key=lambda x: x[0])}
 
+api_keys = dotenv_values(".env")
 staging_headers = {
-    "X-Api-Key": "d5637035-23d6-472d-9b44-87001cd337dc",
+    "X-Api-Key": api_keys["STAGING_API_KEY"],
     "Accept-Version": "v11",
     "Content-Type": "application/json",
 }
 prod_headers = {
-    "X-Api-Key": "c20c3edd-f60a-40fc-83f1-bcdf33b47b8c",
+    "X-Api-Key": api_keys["PROD_API_KEY"],
     "Accept-Version": "v10",
     "Content-Type": "application/json",
 }
 previous_headers = {
-    "X-Api-Key": "c20c3edd-f60a-40fc-83f1-bcdf33b47b8c",
+    "X-Api-Key": api_keys["PROD_API_KEY"],
     "Accept-Version": "v9",
     "Content-Type": "application/json",
 }
