@@ -111,8 +111,8 @@ def prepare_download_paths():
     downloaded.
     """
     download_paths = []
-    for i, a in enumerate(st.session_state.audios):
-        audio_path = make_temp_web_dir() / f"audio{i}.wav"
+    for a in st.session_state.audios:
+        audio_path = make_temp_web_dir() / f"{a.split('/')[-1:][0]}"
         with open(a, "rb") as out_file:
             audio_path.write_bytes(out_file.read())
         download_paths.append(audio_path)
@@ -124,16 +124,25 @@ def prepare_download_paths():
 
 def main():
     run._config.configure(overwrite=True)
-    st.markdown("# Test Case Audio Generator")
+    st.markdown("# Local audio evaluation tool")
     st.markdown("Use this workbook to evaluate test cases.")
     metadata, audio_paths, zip_path = pd.DataFrame(), [], ""
-
+    issue_options = [
+        "slurring",
+        "gibberish",
+        "word skip",
+        "word cutoff",
+        "mispronunciation",
+        "unnatural intonation",
+    ]
     if "metadata" not in st.session_state:
         initialize_state()
 
     form: DeltaGenerator = st.form(key="go")
     with form:
-        selected_file = st.file_uploader("Upload zipfile", accept_multiple_files=False, type=".zip")
+        selected_file = st.file_uploader(
+            "Upload zipfile", accept_multiple_files=False, type=".zip"
+        )
         if selected_file is not None:
             metadata, audio_paths = unzip_audios_and_metadata(selected_file)
             zip_path = f"eval_{selected_file.name}"
@@ -159,8 +168,10 @@ def main():
         with st.spinner("Generating survey..."):
             with st.form(key="survey"):
                 setup_columns()
-                votes, notes, rows = [], [], []
-                audios_and_metadata = zip(st.session_state.audios, st.session_state.metadata)
+                votes, issues, rows = [], [], []
+                audios_and_metadata = zip(
+                    st.session_state.audios, st.session_state.metadata
+                )
                 for i, (wave, session) in enumerate(audios_and_metadata):
                     col1, col2, col3, col4, col5 = st.columns(col_widths)
                     with col1:
@@ -183,9 +194,8 @@ def main():
                             )
                         )
                     with col5:
-                        notes.append(
-                            st.text_input("note", key=f"note{i}", label_visibility="hidden")
-                        )
+                        opts = [st.checkbox(i, key=f"{i}_{len(issues)}") for i in issue_options]
+                        issues.append([issue_options[idx] for idx, i in enumerate(opts) if i])
                     st.divider()
                     row = {
                         "Speaker": session.speaker,
@@ -202,9 +212,9 @@ def main():
                 if rows:
                     saved = st.form_submit_button("⚡️ SAVE CHANGES ⚡️")
                     if saved:
-                        for row, vote, note in zip(rows, votes, notes):
+                        for row, vote, issue in zip(rows, votes, issues):
                             row["Vote"] = vote
-                            row["Note"] = note
+                            row["Issues"] = issue
                         df = pd.DataFrame(rows)
                         st.session_state.datatable = df
                         st.session_state.ready_to_download = True
