@@ -64,7 +64,7 @@ def cleanup_files():
 
 def initialize_state():
     for key in st.session_state.keys():
-        if key.startswith("vote") or key.startswith("note"):  # type: ignore
+        if key.startswith("vote") or key.startswith("Issue"):  # type: ignore
             st.session_state[key] = ""
 
     st.session_state.audios = []
@@ -102,7 +102,7 @@ def setup_columns():
     h2.subheader("Script")
     h3.subheader("Audio")
     h4.subheader("Vote")
-    h5.subheader("Note")
+    h5.subheader("Issues")
     st.divider()
 
 
@@ -202,7 +202,7 @@ def main():
                         "Style": session.style,
                         "Script": session.script,
                         "Vote": "",
-                        "Note": "",
+                        "Issues": "",
                         "Dialect": session.dialect,
                         "Session": session.session,
                         "Audio": session.audio_path,
