@@ -1,7 +1,79 @@
-"""Testing scripts crafted to evaluate TTS Model performance of single words, slow tempo, long
-text, and various annotations."""
+"""Testing scripts crafted to evaluate TTS Model performance of challenging text to establish baseline
+and measure progress."""
 
-from run.review.tts._test_cases.long_scripts import LONG_SCRIPTS
+"""
+These clips are here to test if the v11.1 model update performs speaker switching on single words --
+a known problem for our pre-beta v11 model. When a single word was rendered, v11 was prone to rendering
+that audio in a random voice, so that the clip was very rarely spoken by the selected speaker. This poses
+a potential ethics concern: revealing the voices of our custom voices that are not available for public use.
+"""
+SPEAKER_SWITCH_SINGLE_WORDS_A1a = [
+    "Incorporate.",
+    "Sterile,",
+    "cover",
+    '"Signage."',
+    "Antihistamines,",
+    "Giving.",
+    "table",
+    "Juxtaposition,",
+    "Responsible,",
+    "decision",
+    "Authority.",
+    "Quarantine.",
+    "::HYST::",
+    "Element,",
+    "feisty",
+    "Application.",
+    "::AY-gyoo::",
+    '"Critical."',
+    "::WURLD::",
+    "Fully.",
+    "workers",
+    "::EH-furts::",
+    '"Relations."',
+    "Something,",
+    "plants",
+    "ACBD",
+    "JFK",
+    "RGB",
+    "3D",
+    "Y2K",
+]
+
+"""
+These clips are here to test if the v11.1 model update performs speaker switching on text with max cue values
+-- a known problem for our pre-beta v11 model. See note for A1a.
+Tempo min max values that elicit speech: 0.4, 3.5
+Loudness min max values that elicit speech: -50, 25
+"""
+SPEAKER_SWITCH_BIG_CUES_A1b = [
+    (
+        'Let\'s examine <tempo value="0.4"><loudness value="-50">what can affect'
+        " establishing a positive</loudness></tempo> safety culture."
+    ),
+    (
+        'If you\’ve ever cyberbullied someone, <tempo value="0.4"><loudness value="25">'
+        "you may have thought it was funny</loudness></tempo> at the time."
+    ),
+    (
+        'It provides <tempo value="3.5"><loudness value="25">exceptional adhesion '
+        "on bare metal</loudness></tempo>."
+    ),
+    (
+        'Thanks for asking. <tempo value="3.5"><loudness value="-50">I haven\'t been able '
+        "to find the right links</loudness></tempo>. Can you help me?"
+    ),
+    (
+        '<loudness value="17">Looking for a Strategic Partner</loudness> for High-Performance'
+        " software solutions?"
+    ),
+    (
+        '<loudness value="-20">The Identification Documents page</loudness> displays your'
+        " identification documents."
+    ),
+    ('a report is <tempo value="0.4">also</tempo> generated.'),
+    ('<tempo value="3.5">Considerations</tempo> When Hosting a Web Meeting'),
+]
 
 """
 These clips are here to test the v11 model's performance on a known error for v10: audio cutoff.
@@ -9,6 +81,7 @@ When a clip ended in a sentence or beginning clause that consisted of 4 characte
 model cut off that final sentence or sentence fragment. Of these test cases, all but the first
 experience this error in our current v10 model in prod.
 """
+
 AUDIO_CUTOFF = [
     "Taking sides early - I feel like that's a recipe for disaster. It is.",
     "Let me speak to your manager. Egan",
@@ -927,8 +1000,8 @@ TEMPO_MAX__LOUDNESS_MAX__CLAUSE = [
         " banned</loudness></tempo> in Canada."
     ),
     (
-        'Let\'s examine <tempo value="3.5"><loudness value="17">what can affect</loudness></tempo>'
-        " establishing a positive safety culture."
+        'Let\'s examine <tempo value="3.5"><loudness value="17">what can affect'
+        " establishing a positive</loudness></tempo> safety culture."
     ),
     (
         '<tempo value="3.5"><loudness value="17">This chiropractor designed</loudness></tempo> the'
