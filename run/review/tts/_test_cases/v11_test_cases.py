@@ -7,7 +7,7 @@ a known problem for our pre-beta v11 model. When a single word was rendered, v11
 that audio in a random voice, so that the clip was very rarely spoken by the selected speaker. This poses
 a potential ethics concern: revealing the voices of our custom voices that are not available for public use.
 """
-A1a_SINGLE_WORDS_SPEAKERSWITCH = [
+SPEAKER_SWITCH_SINGLE_WORDS_A1a = [
     "Incorporate.",
     "Sterile,",
     "cover",
@@ -42,14 +42,11 @@ A1a_SINGLE_WORDS_SPEAKERSWITCH = [
 
 """
 These clips are here to test if the v11.1 model update performs speaker switching on text with max cue values
--- a known problem for our pre-beta v11 model. When max cue values were used, v11 was prone to rendering
-that audio in a different voice, so that the annotated portion was spoken by a speaker other than the selected
-speaker. This poses a potential ethics concern: revealing the voices of our custom voices that are not available
-for public use.
+-- a known problem for our pre-beta v11 model. See note for A1a.
 Tempo min max values that elicit speech: 0.4, 3.5
 Loudness min max values that elicit speech: -50, 25
 """
-A1b_BIG_CUES_SPEAKERSWITCH = [
+SPEAKER_SWITCH_BIG_CUES_A1b = [
     (
         'Let\'s examine <tempo value="0.4"><loudness value="-50">what can affect'
         " establishing a positive</loudness></tempo> safety culture."
