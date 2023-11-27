@@ -355,17 +355,16 @@ def split_dataset(
         num_dev = len(dev.get(spkr, []))
         assert train_len > 0, f"{spkr} `train` dataset has no data."
         if spkr in dev_speakers:
-            msg = f"For `{spkr.label}`, `dev` is longer than `train` ({dev_len}s > {train_len})s."
-            assert train_len >= dev_len, msg
-            assert dev_len > 0, f"{spkr} `dev` dataset has no data."
-            if num_dev < min_split_passages:
-                logger.warning(
-                    f"For `{spkr.label}`, dev set has only {num_dev} passage(s), fewer than "
-                    f"{min_split_passages}."
-                )
-
+            message = "The `dev` dataset is larger than the "
+            message += f"`train` dataset ({dev_len} >= {train_len}); label: {spkr.label}, name: {spkr.name}"
+            if train_len + dev_len <= 8500:
+                assert dev_len <= 2.3 * train_len, message
+            else:
+                assert train_len >= dev_len, message
+            assert (
+                dev_len > 0
+            ), f"{spkr} `dev` dataset has no data; label: {spkr.label}, name: {spkr.name}"
         logger.info(f"Split {spkr} into {num_train} train, {num_dev} dev passages.")
-
     _is_duplicate.cache_clear()
     return train, dev
 
