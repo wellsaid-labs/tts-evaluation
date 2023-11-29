@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Tuple, Optional
 
 import pandas as pd
+import random
 import requests
 import soundfile as sf
 import streamlit as st
@@ -34,30 +35,6 @@ test_case_options["SLURRING"] = SLURRING
 test_case_options = {k: v for k, v in sorted(test_case_options.items(), key=lambda x: x[0])}
 
 api_keys = dotenv_values(".env")
-staging_headers = {
-    "X-Api-Key": api_keys["STAGING_API_KEY"],
-    "Accept-Version": "v11",
-    "Content-Type": "application/json",
-}
-prod_headers = {
-    "X-Api-Key": api_keys["PROD_API_KEY"],
-    "Accept-Version": "v10",
-    "Content-Type": "application/json",
-}
-previous_headers = {
-    "X-Api-Key": api_keys["PROD_API_KEY"],
-    "Accept-Version": "v9",
-    "Content-Type": "application/json",
-}
-
-model_to_endpoints_and_headers = {
-    "v9": ("https://api.wellsaidlabs.com/v1/tts/stream", previous_headers),
-    "v10": ("https://api.wellsaidlabs.com/v1/tts/stream", prod_headers),
-    "v11": (
-        "https://api.wellsaidlabs.com/v1/staging/tts/stream",
-        staging_headers,
-    ),
-}
 
 speakers_in_v9_v10_v11 = {
     "Ramona_J_Narration": 4,
@@ -119,7 +96,7 @@ def process_task(task: APIInput) -> Tuple[Optional[str], Optional[str]]:
         Tuple containing an entry to this run's metadata and the audio web path
     """
     metadata_entry, audio_path = None, None
-    audio_file_name = f"{task.model_version}_{task.speaker}_{task.text[:15]}.wav"
+    audio_file_name = f"{task.model_version}_{task.speaker}_{task.text[:25]}.wav"
     resp = query_tts_api(task)
     if resp.status_code == 200:
         with tempfile.NamedTemporaryFile(mode="wb", suffix=".wav") as fp:
@@ -152,14 +129,17 @@ def main():
     st.header("Use this app to generate audio from WSL's API")
     opts_form = st.form("Options")
     texts = []
-    endpoint, headers = None, None
-    model_version = opts_form.selectbox(label="Model Version", options=["v9", "v10", "v11"])
-    if model_version:
-        endpoint, headers = model_to_endpoints_and_headers[model_version]
+    endpoint = "https://staging.tts.wellsaidlabs.com/api/text_to_speech/stream"
+    model_version = opts_form.text_input(label="Model Version")
+    headers = {
+        "X-Api-Key": api_keys["KONG_STAGING"],
+        "Accept-Version": model_version,
+        "Content-Type": "application/json",
+    }
     test_case_selection = opts_form.selectbox(label="Test Cases", options=test_case_options)
-    single_sentence_mode = opts_form.checkbox(label="Split test cases into single sententces")
+    single_sentence_mode = opts_form.checkbox(label="Split test cases into single sentences")
     sentence_limit = opts_form.slider(
-        label="Max number of sentences to generate. 500 sentences results in a ~200mb zip file",
+        label="Max number of sentences to generate.",
         min_value=1,
         max_value=500,
         value=250,
@@ -174,6 +154,11 @@ def main():
         # Generate audio. This could be sped up with multiprocessing, but the API is limited to
         # 2.5 requests per second
         total_tasks = len(texts) * len(speakers_in_v9_v10_v11)
+        if total_tasks < sentence_limit:
+            st.write(
+                f"Total tasks: {total_tasks} greater than sentence limit: "
+                f"{sentence_limit}. Generating {total_tasks} clips"
+            )
         total_tasks = sentence_limit if total_tasks > sentence_limit else total_tasks
         tasks = [
             APIInput(
@@ -184,11 +169,12 @@ def main():
                 headers=headers,
                 endpoint=endpoint,
             )
-            for text in texts
             for speaker, speaker_id in speakers_in_v9_v10_v11.items()
-        ][:total_tasks]
+            for text in texts
+        ]
+        tasks = random.sample(tasks, total_tasks)
         metadata, download_paths = [], []
-        st.write(f"Total audio files: {total_tasks}")
+        st.write(f"Total audio files: {len(tasks)}")
         pbar = st.progress(0, text="Generating...")
         current_task = 0
         for task in tasks:
@@ -197,13 +183,13 @@ def main():
                 metadata.append(metadata_entry)
                 download_paths.append(audio_path)
             current_task += 1
-            progress_pct = round(current_task / total_tasks, 4)
+            progress_pct = round(current_task / sentence_limit, 4)
             progress_txt = f"Generating... {progress_pct * 100}% complete"
             pbar.progress(progress_pct, text=progress_txt)
 
         # Create metadata csv and save zipped audio
         metadata_path = make_temp_web_dir() / "metadata.csv"
-        metadata_path.write_text(pd.DataFrame(metadata).to_csv())
+        metadata_path.write_text(pd.DataFrame(metadata).sort_values(by="Speaker").to_csv())
         download_paths.append(metadata_path)
         st_download_files(
             f"{model_version}-{test_case_selection}-audio-and-metadata.zip",
