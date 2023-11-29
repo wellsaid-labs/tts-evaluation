@@ -134,6 +134,7 @@ def main():
         "word cutoff",
         "mispronunciation",
         "unnatural intonation",
+        "speaker switching"
     ]
     if "metadata" not in st.session_state:
         initialize_state()
