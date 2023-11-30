@@ -62,7 +62,11 @@ SPEAKER_IDS = [
     71,
     72,
 ]
-
+"""
+These ids were gathered by brute-force sending requests to the API with speaker ids ranging from 0-140, inclusive. If 
+the API returned a successful response with the selected speaker id and model version, it is recorded here. Some have 
+been commented out due to low quality. 
+"""
 MODEL_TO_SPEAKERS = {
     "v10": [
         ("ALANA_B__NARRATION", 3),
@@ -85,7 +89,7 @@ MODEL_TO_SPEAKERS = {
         ("JODI_P__PROMO", 22),
         ("LEE_M__PROMO", 23),
         ("SELENE_R__PROMO", 24),
-        ("MARI_MONGE__PROMO", 25),
+        # ("MARI_MONGE__PROMO", 25),
         ("WADE_C__PROMO", 26),
         ("JOE_F__NARRATION", 27),
         ("JOE_F__PROMO", 28),
@@ -382,13 +386,13 @@ MODEL_TO_SPEAKERS = {
         ("JUDE_D__CONVO", 140),
     ],
     "v9": [
-        ("m_ailabs.JUDY_BIEBER", 0),
-        ("m_ailabs.MARY_ANN", 1),
-        ("lj_speech.LINDA_JOHNSON", 2),
+        # ("m_ailabs.JUDY_BIEBER", 0),
+        # ("m_ailabs.MARY_ANN", 1),
+        # ("lj_speech.LINDA_JOHNSON", 2),
         ("ALANA_B__NARRATION", 3),
         ("RAMONA_J__NARRATION", 4),
         ("RAMONA_J__PROMO", 5),
-        ("lj_speech.LINDA_JOHNSON", 6),
+        # ("lj_speech.LINDA_JOHNSON", 6),
         ("WADE_C", 7),
         ("SOFIA_H__NARRATION", 8),
         ("DAVID_D", 9),
@@ -407,7 +411,7 @@ MODEL_TO_SPEAKERS = {
         ("JODI_P__PROMO", 22),
         ("LEE_M__PROMO", 23),
         ("SELENE_R__PROMO", 24),
-        ("MARI_MONGE__PROMO", 25),
+        # ("MARI_MONGE__PROMO", 25),
         ("WADE_C__PROMO", 26),
         ("JOE_F__NARRATION", 27),
         ("JOE_F__PROMO", 28),
