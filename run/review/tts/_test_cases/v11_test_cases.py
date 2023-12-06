@@ -29,7 +29,7 @@ SPEAKER_SWITCH_SINGLE_WORDS_A1a = [
     "<respell value='WURLD'>world</respell>",
     "Fully.",
     "workers",
-    "<respell value='EH-furts'>efforts</respell>::",
+    "<respell value='EH-furts'>efforts</respell>",
     '"Relations."',
     "Something,",
     "plants",
