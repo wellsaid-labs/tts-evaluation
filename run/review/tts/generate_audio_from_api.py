@@ -15,6 +15,7 @@ import soundfile as sf
 import streamlit as st
 from _test_cases.slurring import SLURRING
 from _test_cases.v11_test_cases import V11_TEST_CASES
+from _test_cases.report_card_test_cases import REPORT_CARD_TEST_CASES
 from _speaker_ids import MODEL_TO_SPEAKERS
 
 import run
@@ -33,6 +34,7 @@ class APIInput:
 
 test_case_options = V11_TEST_CASES
 test_case_options["SLURRING"] = SLURRING
+test_case_options["REPORT_CARD_TEST_CASES"] = REPORT_CARD_TEST_CASES
 test_case_options = {k: v for k, v in sorted(test_case_options.items(), key=lambda x: x[0])}
 
 api_keys = dotenv_values(".env")
