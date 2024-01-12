@@ -113,7 +113,7 @@ def process_task(task: APIInput) -> Tuple[Optional[str], Optional[str]]:
             audio_array, sample_rate = sf.read(fp.name, dtype="float32")
         audio_path = audio_to_web_path(audio_array, name=audio_file_name)
         metadata_entry = {
-            "Speaker": "".join(task.speaker.split("_")[0:1]),
+            "Speaker": "_".join(task.speaker.split("_")[0:2]),
             "Style": task.speaker.split("_")[-1],
             "Speaker_ID": task.speaker_id,
             "Script": task.text,
