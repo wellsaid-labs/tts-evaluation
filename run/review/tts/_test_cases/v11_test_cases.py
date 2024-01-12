@@ -1122,7 +1122,7 @@ with respellings as well as without.
 """
 DIFFICULT_USER_INITIALISMS = [
     (
-        "Garmin's 7-inch Echomap 73 CV is a dual-beam, dual-frequency chartplotter that excels at"
+        "Garmin's 7-inch Echomap 73 CV is a dual-beam, dual-frequency chart-plotter that excels at"
         " scanning sonar."
     ),
     (
@@ -1131,7 +1131,7 @@ DIFFICULT_USER_INITIALISMS = [
     ),
     (
         "Now, let's discuss LOA Waivers and when it would be appropriate to apply. Anyone who is"
-        " not eligible to participate, such as employees out on LOA should be assigned a waiver."
+        " not eligible to participate, such as employees out on LOA, should be assigned a waiver."
     ),
     (
         "It provides exceptional adhesion on bare metal and OEM substrates, and it sands easily by"
@@ -1148,7 +1148,6 @@ DIFFICULT_USER_INITIALISMS = [
         " and briefly review each component and its interconnection with the others."
     ),
     "Generate the HTML documentation.",
-    'Generate the <respell value="AYCH-tee-ehm-EHL">HTML</respell documentation.',
     "The CMM has completed the inspection.",
     (
         "Next, you can optionally select to Enable WS Trust next to ‘WS Trust Configuration’ if you"
@@ -1159,18 +1158,15 @@ DIFFICULT_USER_INITIALISMS = [
         "Chatbots: AI-powered chatbots answer frequently asked questions, allowing human"
         " representatives to focus on more complex issues."
     ),
-    (
-        "Download the My Benefits Work app, visit www.mybenefitswork.com, or call 800-800-7616 for"
-        " more information. Your Group ID is HPBBAMRG."
-    ),
+    ("Download the My Benefits Work app for" " more information. Your Group ID is HPBBAMRG."),
     (
         "Auto GPT is an impressive new feature in Chat GPT that can program AI on its own, making"
         " it both powerful and potentially scary."
     ),
     (
-        "Smart LED panels would allow the facility manager to customize, schedule and remotely"
+        "Smart LED panels would allow the facility manager to customize, schedule, and remotely"
         " control the building’s lighting with minimal labor and setup when compared to traditional"
-        " or standard LED lighting. So, not only could he save energy and reduce costs but also"
+        " or standard LED lighting. So, not only could he save energy and reduce costs, but also"
         " improve the overall functionality and convenience of the smart lighting system."
     ),
 ]
@@ -1203,37 +1199,29 @@ DIFFICULT_USER_QUESTIONS = [
         'And also she posted a hairstyles picture. "Big Hair? Don\'t care!" With a rolling on the'
         " floor laugh emoji."
     ),
-    'Are you "ready to learn" with CTY?',
+    "Are you ready to learn with CTY?",
     "Perfect! \n\nDo you want to give it a shot for the next Masterdata Contract Type, Jessie?",
     "You mean like getting better drinks at happy hour?",
     (
         "Since the Signatory Roles are a part of the Approval Rule: family, will the Conditions and"
         " Actions be similar to the other Approval Rules?"
     ),
-    "Is it fair to say that the root cause of the confusion is in the Job-profile titles?",
+    "Is it fair to say that the root cause of the confusion is in the job-profile titles?",
     "I’m a little busy at the moment. Could we do it sometime later in the week instead?",
     "Will a Business Unit Head be considered as an approver for an agreement at Dynamic Fix?",
-    "Danny, is there a way to 'View' the newly created rule on the ICI interface?",
-    'Remember our new <tempo value="2"><loudness="10">facility</loudness> manager?</tempo>',
-    'Is it similar to configuring the other <tempo value="0.5">Contract Types?</tempo>',
-    'Is it similar to configuring the other <tempo value="2">Contract Types?</tempo>',
-    (
-        'In what scenario would such <tempo value="0.2">,</tempo>restricted access <tempo'
-        ' value="0.2">,</tempo>to Attribute Groups <tempo value="0.2">,</tempo>be necessary?'
-    ),
+    "Danny, is there a way to view the newly created rule on the ICI interface?",
+    "Remember our new facility manager?",
+    "Is it similar to configuring the other Contract Types?",
+    ("In what scenario would such restricted access to Attribute Groups be necessary?"),
     (
         "For this, you can configure an Event Rule to add the Secondary Owner to the team, only"
         " when required. You can define multiple conditions when adding a Secondary Owner to the"
-        ' team, such as an agreement created for a specific vendor,<tempo value="0.2">,</tempo>'
-        ' country,<tempo value="0.2">,</tempo> specific contract value,<tempo value="0.2">,</tempo>'
+        " team, such as an agreement created for a specific vendor, country, specific contract value, "
         " etc. \n\nHas Jeremy mentioned any such specifications?"
     ),
     (
-        "I get your point. \n\nOn another note, will it make a difference to the end <respell"
-        ' value="YOO-zer>User</respell> whether the attribute <respell'
-        ' value="VAEL-yoohz">Values</respell> are retrieved from the choice <respell'
-        ' value="DEY-tuh">Data</respell> type <respell value="OR">or</respell> master <respell'
-        ' value="DEY-tuh">Data</respell>?'
+        "I get your point. \n\nOn another note, will it make a difference to the end user whether the attribute "
+        " values are retrieved from the choice data type or master data?"
     ),
 ]
 """
@@ -1251,29 +1239,24 @@ DIFFICULT_USER_URLS = [
         ' www.lifeatseacruises.com and click "Reserve Your Cabin" in the top right corner.'
     ),
     (
-        "For immediate assistance or self-help options, please visit our support page at"
-        ' www.centrios.com "slash support". \n\nFor immediate assistance or self-help options,'
+        " For immediate assistance or self-help options,"
         " please visit our support page at www.centrios.com/support."
     ),
     "For the latest information go to www.MyTel.com, login, and select MyAccess.",
     (
-        "Courtesy the ADA accessibility Guidelines, https://www.access-board.gov/guides/p d f"
-        " s/golf.p d f (See resources below) The US access board is responsible for the development"
-        " of minimum-accessibility guidelines for recreation areas including golf courses."
-        " \n\nCourtesy the ADA accessibility Guidelines,  www.access-board.gov/guides/PDFS/golf.PDF"
-        " (See resources below) The US access board is responsible for the development of"
-        " minimum-accessibility guidelines for recreation areas including golf courses."
+        " Courtesy the ADA accessibility Guidelines, www.access-board.gov/guides/PDFs/golf.PDF"
+        " (see resources below), The US access board is responsible for the development of"
+        " minimum-accessibility guidelines for recreation areas, including golf courses."
     ),
     (
-        "Savings include 25% off in-house medical services at participating veterinarians and 25%"
-        " off purchases from PetCareRx.com. \n\nSavings include 25% off in-house medical services"
+        "Savings include 25% off in-house medical services "
         " at participating veterinarians and 25% off purchases from petcareRX.com."
     ),
     (
         "Download the My Benefits Work app, visit www.mybenefitswork.com, or call 800-800-7616 for"
         " more information."
     ),
-    "For more information, visit www.BBC.co.UK.",
+    "For more information, visit www.BBC.co.uk.",
 ]
 
 items = locals().items()
