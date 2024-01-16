@@ -1,5 +1,7 @@
+import random
 import re
 
+from run.review.tts._test_cases.parity_test_cases import QUESTIONS, INITIALISMS
 from run.review.tts._test_cases.slurring import SLURRING
 from run.review.tts._test_cases.test_cases import (
     ABBREVIATIONS_WITH_VOWELS,
@@ -25,6 +27,7 @@ REPORT_CARD_TEST_CASES = (
     + SLOW_SCRIPTS
     + HARD_SCRIPTS
     + HARD_SCRIPTS_2
+    + QUESTIONS
     + QUESTIONS_WITH_VARIED_INFLECTION
     + QUESTIONS_WITH_UPWARD_INFLECTION
     + VARIOUS_INITIALISMS
@@ -40,4 +43,5 @@ def remove_xml(string):
     return string
 
 
-REPORT_CARD_TEST_CASES = [remove_xml(i) for i in REPORT_CARD_TEST_CASES]
+REPORT_CARD_TEST_CASES = list(set(remove_xml(i) for i in REPORT_CARD_TEST_CASES))
+random.shuffle(REPORT_CARD_TEST_CASES)

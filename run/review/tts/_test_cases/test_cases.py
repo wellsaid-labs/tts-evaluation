@@ -114,7 +114,7 @@ QUESTIONS_WITH_UPWARD_INFLECTION = [
     "Have you ever done something embarrassing in front of the office CCTV cameras?",
     "In your opinion, are giant spiders worse than giant chickens?",
     "Would you like to be part of the UK Royal Family?",
-    "HAve you ever tried any DIY projects?",
+    "Have you ever tried any DIY projects?",
     "Can people from NASA catch the flu?",
     "Do you watch ESPN at night?",
     "Will AI replace humans?",

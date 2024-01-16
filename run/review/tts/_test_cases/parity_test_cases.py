@@ -16,10 +16,10 @@ QUESTIONS = [
     "Can I get a backstage pass to the concert?",
     "Given that each of the following bonds is of the same quality and has the same maturity as the others, does one have a longer duration?",
     "Registration of an investment adviser automatically confers registration on?",
-    "Church and community leaders in West Virginia, did you know that our state has one of the highest rates of children in foster care per capita in the nation?",
+    "Church and community leaders in West Virginia: did you know that our state has one of the highest rates of children in foster care per capita in the nation?",
     "Are you daring enough to venture into the unknown and unravel the secrets of our history?",
-    "Would your Patients like to receive monthly Kovid-19 at-home test kits at No Cost, delivered straight to their door?",
-    "Are you unknowingly damaging your skin, with these common skincare mistakes?",
+    "Would your Patients like to receive monthly Covid-19 at-home test kits at no cost, delivered straight to their door?",
+    "Are you unknowingly damaging your skin with these common skincare mistakes?",
     "Yes of course, but shall I introduce myself first?",
     "Do you consider yourself an adventurous person?",
     "Have you ever hidden a snack so that nobody else would find it and eat it first?",
@@ -33,7 +33,7 @@ INITIALISMS = [
     "My shady uncle works for the NSA.",
     "NHL allstar Wayne Gretzky played for four teams over the course of his career.",
     "Open up, FBI!",
-    "This chart shows the S-P-E software initialization process as it connects to the hardware and transmit is enabled.",
+    "This chart shows the SPE software initialization process as it connects to the hardware and transmit is enabled.",
     "There is an MMORPG for almost every major intellectual property.",
     "The 18 BUN dialog box is displayed.",
     "While many Swayj-lock products are classified E.A.R. 99, some Swayj-lock products have ECCNs that require government "
@@ -45,9 +45,9 @@ INITIALISMS = [
     "It was a tale of two halves. One half, where Eagles quarterback, Jaylen Hurts, was well on his way to the Super Bowl MVP.",
     "GHG Protocol (or GHGP) was developed in partnership with the World Resources Institute (WRI) "
     "and the World Business Council for Sustainable Development (WBCSD).",
-    "Now, this system has generated an A-C-H file, which includes five beneficiaries for which the total amount "
+    "Now, this system has generated an ACH file, which includes five beneficiaries for which the total amount "
     "of five thousand three hundred ninety-six dollars is being paid.",
-    "These sections are located where the smaller IFA's on the narrower left floodplain indicate that flow "
+    "These sections are located where the smaller IFAs on the narrower left floodplain indicate that flow "
     "in the left floodplain contracts and expands over a shorter distance.",
     "It took six Ph.Ds to design a VCR a five-year-old could use.",
 ]
