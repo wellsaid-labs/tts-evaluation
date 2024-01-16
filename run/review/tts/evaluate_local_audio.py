@@ -18,12 +18,10 @@ from run._streamlit import make_temp_web_dir, st_download_files
 
 
 @dataclass
-class Session:
+class Utterance:
     speaker: str
     style: str
     script: str
-    dialect: str
-    session: str
     audio_path: str
 
 
@@ -64,7 +62,7 @@ def cleanup_files():
 
 def initialize_state():
     for key in st.session_state.keys():
-        if key.startswith("vote") or key.startswith("Issue"):  # type: ignore
+        if key.startswith("Note") or key.startswith("Issue"):  # type: ignore
             st.session_state[key] = ""
 
     st.session_state.audios = []
@@ -101,8 +99,8 @@ def setup_columns():
     h1.subheader("Speaker")
     h2.subheader("Script")
     h3.subheader("Audio")
-    h4.subheader("Vote")
-    h5.subheader("Issues")
+    h4.subheader("Issues")
+    h5.subheader("Notes")
     st.divider()
 
 
@@ -128,13 +126,14 @@ def main():
     st.markdown("Use this workbook to evaluate test cases.")
     metadata, audio_paths, zip_path = pd.DataFrame(), [], ""
     issue_options = [
-        "slurring",
-        "gibberish",
-        "word skip",
-        "word cutoff",
-        "mispronunciation",
-        "unnatural intonation",
-        "speaker switching"
+        "Slurring",
+        "Gibberish",
+        "Word Skip",
+        "Word Cutoff",
+        "Mispronunciation",
+        "Unnatural Intonation",
+        "Speaker Switching",
+        "Other"
     ]
     if "metadata" not in st.session_state:
         initialize_state()
@@ -152,7 +151,7 @@ def main():
             with st.spinner("Loading audio..."):
                 initialize_state()
                 metadata = [
-                    Session(
+                    Utterance(
                         speaker=r.Speaker,
                         style=r.Style,
                         script=r.Script,
@@ -169,53 +168,50 @@ def main():
         with st.spinner("Generating survey..."):
             with st.form(key="survey"):
                 setup_columns()
-                votes, issues, rows = [], [], []
+                notes, issues, rows = [], [], []
                 audios_and_metadata = zip(
                     st.session_state.audios, st.session_state.metadata
                 )
-                for i, (wave, session) in enumerate(audios_and_metadata):
+                for i, (wave, utterance) in enumerate(audios_and_metadata):
                     col1, col2, col3, col4, col5 = st.columns(col_widths)
                     with col1:
                         st.markdown("\n")
-                        st.markdown(session.speaker)
+                        st.markdown(f"{utterance.speaker}_{utterance.style}")
                     with col2:
                         st.markdown("\n")
-                        st.markdown(session.script)
+                        st.markdown(utterance.script)
                     with col3:
                         st.markdown("\n")
                         st.audio(wave)
                     with col4:
-                        votes.append(
-                            st.radio(
-                                "vote",
-                                ["", "⭐", "❌"],
-                                key=f"vote{i}",
-                                horizontal=True,
+                        opts = [st.checkbox(i, key=f"{i}_{len(issues)}") for i in issue_options]
+                        issues.append([issue_options[idx] for idx, i in enumerate(opts) if i])
+                    with col5:
+                        notes.append(
+                            st.text_area(
+                                "Notes",
+                                key=f"Note{i}",
                                 label_visibility="hidden",
                             )
                         )
-                    with col5:
-                        opts = [st.checkbox(i, key=f"{i}_{len(issues)}") for i in issue_options]
-                        issues.append([issue_options[idx] for idx, i in enumerate(opts) if i])
+
                     st.divider()
                     row = {
-                        "Speaker": session.speaker,
-                        "Style": session.style,
-                        "Script": session.script,
-                        "Vote": "",
+                        "Speaker": utterance.speaker,
+                        "Style": utterance.style,
+                        "Script": utterance.script,
                         "Issues": "",
-                        "Dialect": session.dialect,
-                        "Session": session.session,
-                        "Audio": session.audio_path,
+                        "Notes": "",
+                        "Audio": utterance.audio_path,
                     }
                     rows.append(row)
 
                 if rows:
                     saved = st.form_submit_button("⚡️ SAVE CHANGES ⚡️")
                     if saved:
-                        for row, vote, issue in zip(rows, votes, issues):
-                            row["Vote"] = vote
-                            row["Issues"] = issue
+                        for row, note, issue in zip(rows, notes, issues):
+                            row["Notes"] = note
+                            row["Issues"] = ", ".join(issue)
                         df = pd.DataFrame(rows)
                         st.session_state.datatable = df
                         st.session_state.ready_to_download = True

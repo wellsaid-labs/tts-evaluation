@@ -15,6 +15,7 @@ import soundfile as sf
 import streamlit as st
 from _test_cases.slurring import SLURRING
 from _test_cases.v11_test_cases import V11_TEST_CASES
+from _test_cases.report_card_test_cases import REPORT_CARD_TEST_CASES
 from _speaker_ids import MODEL_TO_SPEAKERS
 
 import run
@@ -33,6 +34,7 @@ class APIInput:
 
 test_case_options = V11_TEST_CASES
 test_case_options["SLURRING"] = SLURRING
+test_case_options["REPORT_CARD_TEST_CASES"] = REPORT_CARD_TEST_CASES
 test_case_options = {k: v for k, v in sorted(test_case_options.items(), key=lambda x: x[0])}
 
 api_keys = dotenv_values(".env")
@@ -113,7 +115,7 @@ def process_task(task: APIInput) -> Tuple[Optional[str], Optional[str]]:
             audio_array, sample_rate = sf.read(fp.name, dtype="float32")
         audio_path = audio_to_web_path(audio_array, name=audio_file_name)
         metadata_entry = {
-            "Speaker": "".join(task.speaker.split("_")[0:1]),
+            "Speaker": "_".join(task.speaker.split("_")[0:2]),
             "Style": task.speaker.split("_")[-1],
             "Speaker_ID": task.speaker_id,
             "Script": task.text,
