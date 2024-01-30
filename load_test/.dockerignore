@@ -1,4 +1,0 @@
-*.env
-**/*.md
-Dockerfile
-results_*.txt
