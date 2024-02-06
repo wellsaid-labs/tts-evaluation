@@ -146,9 +146,22 @@ def main():
         "Accept-Version": model_version,
         "Content-Type": "application/json",
     }
-    speaker_selection = opts_form.multiselect(label="Speakers", options=MODEL_TO_SPEAKERS[model_version], default=MODEL_TO_SPEAKERS[model_version])
-    test_case_selection = opts_form.selectbox(label="Test Cases", options=test_case_options)
-    single_sentence_mode = opts_form.checkbox(label="Split test cases into single sentences")
+    speaker_selection = opts_form.multiselect(
+        label="Speakers",
+        options=MODEL_TO_SPEAKERS[model_version],
+        default=MODEL_TO_SPEAKERS[model_version]
+    )
+    test_case_selection = opts_form.selectbox(
+        label="Select from predefined set of test cases",
+        options=test_case_options,
+        index=None
+    )
+    single_sentence_mode = opts_form.checkbox(
+        label="Split test cases into single sentences. Does not apply to custom test cases"
+    )
+    custom_test_case = opts_form.text_area(
+        label="Custom Test Case - Overrides Test Cases dropdown above"
+    )
     sentence_limit = opts_form.slider(
         label="Max number of sentences to generate.",
         min_value=1,
@@ -161,6 +174,8 @@ def main():
             texts = [
                 sentence for i in texts for sentence in i.split(".") if len(sentence.strip()) > 1
             ]
+    elif custom_test_case and model_version:
+        texts = [custom_test_case]
     if opts_form.form_submit_button("Generate audio!"):
         # Generate audio. This could be sped up with multiprocessing, but the API is limited to
         # 2.5 requests per second
@@ -202,8 +217,9 @@ def main():
         metadata_path = make_temp_web_dir() / "metadata.csv"
         metadata_path.write_text(pd.DataFrame(metadata).sort_values(by="Speaker").to_csv())
         download_paths.append(metadata_path)
+        fname = "custom-input" if custom_test_case else test_case_selection
         st_download_files(
-            f"{model_version}-{test_case_selection}-audio-and-metadata.zip",
+            f"{model_version}-{fname}-audio-and-metadata.zip",
             "💾  DOWNLOAD  💾",
             download_paths,
         )
