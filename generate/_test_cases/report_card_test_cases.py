@@ -1,9 +1,9 @@
 import random
 import re
 
-from generate_audio._test_cases.parity_test_cases import QUESTIONS, INITIALISMS
-from generate_audio._test_cases.slurring import SLURRING
-from generate_audio._test_cases.test_cases import (
+from generate._test_cases.parity_test_cases import QUESTIONS, INITIALISMS
+from generate._test_cases.slurring import SLURRING
+from generate._test_cases.test_cases import (
     ABBREVIATIONS_WITH_VOWELS,
     HARD_SCRIPTS,
     HARD_SCRIPTS_2,
@@ -12,7 +12,7 @@ from generate_audio._test_cases.test_cases import (
     SLOW_SCRIPTS,
     VARIOUS_INITIALISMS,
 )
-from generate_audio._test_cases.v11_test_cases import (
+from generate._test_cases.v11_test_cases import (
     DIFFICULT_USER_INITIALISMS,
     DIFFICULT_USER_QUESTIONS,
     DIFFICULT_USER_URLS,

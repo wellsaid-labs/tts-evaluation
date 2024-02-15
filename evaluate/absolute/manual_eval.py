@@ -3,7 +3,7 @@ TODO: Use context manager and tempfile.TemporaryDirectory() to unzip files inste
     them to /tmp-eval and deleting that directory
 
 Usage:
-    $ python -m streamlit run evaluate_audio/manual/evaluate_local_audio.py --runner.magicEnabled=false
+    $ python -m streamlit run evaluate/absolute/manual_eval.py --runner.magicEnabled=false
 """
 import os
 import zipfile

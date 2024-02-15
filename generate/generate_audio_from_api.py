@@ -1,6 +1,6 @@
 """Function to send requests to WSL's API. Saves audio and a .csv containing metadata to a zip file
 USAGE:
-$ python -m streamlit run generate_audio/generate_audio_from_api.py --runner.magicEnabled=false
+$ python -m streamlit run generate/generate_audio_from_api.py --runner.magicEnabled=false
 """
 from dotenv import dotenv_values
 import tempfile
