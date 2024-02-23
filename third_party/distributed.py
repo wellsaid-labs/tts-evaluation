@@ -18,7 +18,9 @@ def _object_to_tensor(obj, device):
     bytes_ = pickle.dumps(obj, protocol=pickle.HIGHEST_PROTOCOL)
     byte_storage = torch.ByteStorage.from_buffer(bytes_)
     byte_tensor = torch.tensor(byte_storage, dtype=torch.uint8, device=device)
-    local_size = torch.tensor([byte_tensor.numel()], dtype=torch.long, device=device)
+    local_size = torch.tensor(
+        [byte_tensor.numel()], dtype=torch.long, device=device
+    )
     return byte_tensor, local_size
 
 
@@ -83,15 +85,23 @@ def gather_object(obj, object_gather_list=None, dst=0, group=None):
     _validate_output_list_for_rank(my_rank, dst, object_gather_list)
     group_size = get_world_size(group=group)
     is_nccl = _check_for_nccl_backend(group)
-    device = torch.device("cuda", torch.cuda.current_device()) if is_nccl else torch.device("cpu")
+    device = (
+        torch.device("cuda", torch.cuda.current_device())
+        if is_nccl
+        else torch.device("cpu")
+    )
     cpu = torch.device("cpu")
 
     input_tensor, local_size = _object_to_tensor(obj, device)
 
     # NOTE: Gather all local sizes. This is so that we can find the max size, and index until the
     # correct size when deserializing the tensors.
-    object_sizes_tensor = torch.zeros(group_size, dtype=torch.long, device=device)
-    object_size_list = [object_sizes_tensor[i : i + 1] for i in range(group_size)]
+    object_sizes_tensor = torch.zeros(
+        group_size, dtype=torch.long, device=device
+    )
+    object_size_list = [
+        object_sizes_tensor[i : i + 1] for i in range(group_size)
+    ]
 
     # NOTE: Allgather tensor sizes. An all-gather is needed here despite this being a gather, since
     # each rank needs to broadcast a tensor of the same (maximal) size.
@@ -111,7 +121,9 @@ def gather_object(obj, object_gather_list=None, dst=0, group=None):
         return
 
     shape = (group_size, max_object_size)
-    coalesced_output_tensor = torch.empty(shape, dtype=torch.uint8, device=device)
+    coalesced_output_tensor = torch.empty(
+        shape, dtype=torch.uint8, device=device
+    )
     gather_list = [coalesced_output_tensor[i] for i in range(group_size)]
     gather(input_tensor, gather_list=gather_list, dst=dst, group=group)
     if coalesced_output_tensor.device != cpu:
@@ -120,5 +132,7 @@ def gather_object(obj, object_gather_list=None, dst=0, group=None):
     assert object_gather_list is not None
     for i in range(group_size):
         # NOTE: Apply this potentially? https://github.com/pytorch/pytorch/issues/19143
-        bytes_ = coalesced_bytes[max_object_size * i : max_object_size * (i + 1)]
+        bytes_ = coalesced_bytes[
+            max_object_size * i : max_object_size * (i + 1)
+        ]
         object_gather_list[i] = pickle.loads(bytes_)
