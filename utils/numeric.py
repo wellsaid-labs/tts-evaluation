@@ -20,4 +20,6 @@ def mean(list_: typing.Iterable[float]) -> float:
     list_ = list(list_)
     if len(list_) == 0:
         return math.nan
-    return statistics.mean(list_)  # NOTE: `statistics.mean` returns an error for an empty list
+    return statistics.mean(
+        list_
+    )  # NOTE: `statistics.mean` returns an error for an empty list

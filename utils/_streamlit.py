@@ -9,17 +9,15 @@ import socket
 import tempfile
 import typing
 import zipfile
+from functools import partial
 
 import numpy as np
 import tqdm
+import utils.audio
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, JsCode
 from streamlit.commands.page_config import get_random_emoji
 from streamlit.delta_generator import DeltaGenerator
-from functools import partial
-
-import utils.audio
 from third_party import LazyLoader
-
 from utils.environment import ROOT_PATH
 from utils.text import natural_keys
 
@@ -62,7 +60,9 @@ def make_temp_root_dir():
 
     NOTE: With `cache_resource`, this function runs once per session.
     """
-    assert pathlib.Path(st.__file__).parent in STREAMLIT_STATIC_TEMP_PATH.parents
+    assert (
+        pathlib.Path(st.__file__).parent in STREAMLIT_STATIC_TEMP_PATH.parents
+    )
     if STREAMLIT_STATIC_TEMP_PATH.exists():
         path = STREAMLIT_STATIC_TEMP_PATH.relative_to(ROOT_PATH)
         logger.info(f"Clearing temporary files at {path}...")
@@ -73,7 +73,9 @@ def make_temp_root_dir():
 def make_temp_web_dir() -> WebPath:
     """Make a temporary directory accessible via HTTP in the streamlit app."""
     make_temp_root_dir()
-    return WebPath(pathlib.Path(tempfile.mkdtemp(dir=STREAMLIT_STATIC_TEMP_PATH)))
+    return WebPath(
+        pathlib.Path(tempfile.mkdtemp(dir=STREAMLIT_STATIC_TEMP_PATH))
+    )
 
 
 def web_path_to_url(path: WebPath) -> RelativeUrl:
@@ -91,7 +93,9 @@ def path_to_web_path(path: pathlib.Path) -> WebPath:
     return WebPath(web_path)
 
 
-def audio_to_web_path(audio: np.ndarray, name: str = "audio.wav", **kwargs) -> WebPath:
+def audio_to_web_path(
+    audio: np.ndarray, name: str = "audio.wav", **kwargs
+) -> WebPath:
     web_path = make_temp_web_dir() / name
     partial(utils.audio.write_audio)(web_path, audio, **kwargs)
     return web_path
@@ -110,10 +114,15 @@ def audio_to_url(audio: np.ndarray, name: str = "audio.wav", **kwargs):
 
 
 def audio_to_html(
-    audio: np.ndarray, name: str = "audio.wav", attrs: str = "controls", **kwargs
+    audio: np.ndarray,
+    name: str = "audio.wav",
+    attrs: str = "controls",
+    **kwargs,
 ) -> str:
     """Create an audio HTML element from a numpy array."""
-    return f'<audio {attrs} src="{audio_to_url(audio, name, **kwargs)}"></audio>'
+    return (
+        f'<audio {attrs} src="{audio_to_url(audio, name, **kwargs)}"></audio>'
+    )
 
 
 # NOTE: While streamlit does provide `st.download`, it'll force the entire app to reload when it's
@@ -125,7 +134,9 @@ def _bytes_to_html_download_link(name: str, label: str, bytes_: bytes) -> str:
     """Make a zipfile named `name` that can be downloaded with a button called `label`."""
     web_path = make_temp_web_dir() / name
     web_path.write_bytes(bytes_)
-    return f'<a href="{web_path_to_url(web_path)}" download="{name}">{label}</a>'
+    return (
+        f'<a href="{web_path_to_url(web_path)}" download="{name}">{label}</a>'
+    )
 
 
 def st_download_bytes(*args, **kwargs):
@@ -144,11 +155,15 @@ def _paths_to_html_download_link(
     TODO: Implement a utility like `st_download_bytes` for `paths_to_html_download_link`.
     """
     web_path = make_temp_web_dir() / name
-    archive_paths_ = [p.name for p in paths] if archive_paths is None else archive_paths
+    archive_paths_ = (
+        [p.name for p in paths] if archive_paths is None else archive_paths
+    )
     with zipfile.ZipFile(web_path, "w") as file_:
         for path, archive_path in zip(paths, archive_paths_):
             file_.write(path, arcname=archive_path)
-    return f'<a href="{web_path_to_url(web_path)}" download="{name}">{label}</a>'
+    return (
+        f'<a href="{web_path_to_url(web_path)}" download="{name}">{label}</a>'
+    )
 
 
 def st_download_files(*args, **kwargs):
@@ -199,7 +214,9 @@ def make_signal_chart(
     envelope = np.max(np.abs(frames), axis=-1)
     assert frames.shape[1] == ratio
     assert frames.shape[0] == envelope.shape[0]
-    ticks = np.arange(0, envelope.shape[0] * ratio / sample_rate, ratio / sample_rate)
+    ticks = np.arange(
+        0, envelope.shape[0] * ratio / sample_rate, ratio / sample_rate
+    )
     return (
         alt.Chart(pd.DataFrame({x: ticks, y[0]: -envelope, y[1]: envelope}))  # type: ignore
         .mark_area()
@@ -221,7 +238,10 @@ def make_interval_chart(
     **kwargs,
 ):
     """Make `altair.Chart` for the `intervals`."""
-    source = {"x_min": [i[0] for i in intervals], "x_max": [i[1] for i in intervals]}
+    source = {
+        "x_min": [i[0] for i in intervals],
+        "x_max": [i[1] for i in intervals],
+    }
     return (
         alt.Chart(pd.DataFrame(source))  # type: ignore
         .mark_rect(
@@ -279,20 +299,33 @@ def st_select_path(
 ) -> typing.Optional[pathlib.Path]:
     """Display a path selector for the directory `dir`."""
     options = [p for p in dir.glob("**/*") if p.suffix == suffix]
-    options = [None] + sorted(options, key=lambda x: natural_keys(str(x)), reverse=True)
+    options = [None] + sorted(
+        options, key=lambda x: natural_keys(str(x)), reverse=True
+    )
     selected = st.selectbox(label, options=options, format_func=path_label)
     return typing.cast(typing.Optional[pathlib.Path], selected)
 
 
-def st_select_paths(label: str, dir: pathlib.Path, suffix: str) -> typing.List[pathlib.Path]:
+def st_select_paths(
+    label: str, dir: pathlib.Path, suffix: str
+) -> typing.List[pathlib.Path]:
     """Display a file and directory selector for the directory `dir`."""
-    options = [p for p in dir.glob("**/*") if p.suffix == suffix or p.is_dir()] + [dir]
+    options = [
+        p for p in dir.glob("**/*") if p.suffix == suffix or p.is_dir()
+    ] + [dir]
     options = sorted(options, key=lambda x: natural_keys(str(x)), reverse=True)
     paths = [st.selectbox(label, options=options, format_func=path_label)]
     paths = typing.cast(typing.List[pathlib.Path], paths)
-    paths = [f for p in paths for f in ([p] if p.is_file() else list(p.glob(f"**/*{suffix}")))]
+    paths = [
+        f
+        for p in paths
+        for f in ([p] if p.is_file() else list(p.glob(f"**/*{suffix}")))
+    ]
     if len(paths) > 0:
-        st.info(f"Selected {label}:\n" + "".join(["\n - " + path_label(p) for p in paths]))
+        st.info(
+            f"Selected {label}:\n"
+            + "".join(["\n - " + path_label(p) for p in paths])
+        )
     return paths
 
 
@@ -357,10 +390,20 @@ def st_ag_grid(
 ):
     """Display a table to preview `data`."""
     options = GridOptionsBuilder.from_dataframe(df)
-    options.configure_pagination(paginationAutoPageSize=False, paginationPageSize=page_size)
-    options.configure_default_column(wrapText=True, autoHeight=True, min_column_width=1)
-    [options.configure_column(name, cellRenderer=AudioCellRenderer) for name in audio_cols]
-    [options.configure_column(name, cellRenderer=ImgCellRenderer) for name in img_cols]
+    options.configure_pagination(
+        paginationAutoPageSize=False, paginationPageSize=page_size
+    )
+    options.configure_default_column(
+        wrapText=True, autoHeight=True, min_column_width=1
+    )
+    [
+        options.configure_column(name, cellRenderer=AudioCellRenderer)
+        for name in audio_cols
+    ]
+    [
+        options.configure_column(name, cellRenderer=ImgCellRenderer)
+        for name in img_cols
+    ]
     return AgGrid(
         data=df,
         gridOptions=options.build(),
@@ -370,9 +413,16 @@ def st_ag_grid(
     )
 
 
-def st_set_page_config(initial_sidebar_state: str = "collapsed", layout: str = "wide", **kwargs):
+def st_set_page_config(
+    initial_sidebar_state: str = "collapsed", layout: str = "wide", **kwargs
+):
     """`set_page_config` with some pre-set defaults."""
-    title = socket.gethostname() + " • " + os.path.basename(__file__)[:-3] + " • Streamlit"
+    title = (
+        socket.gethostname()
+        + " • "
+        + os.path.basename(__file__)[:-3]
+        + " • Streamlit"
+    )
     random.seed(title)
     emoji = get_random_emoji()
     st.set_page_config(

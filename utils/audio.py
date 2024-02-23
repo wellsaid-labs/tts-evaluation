@@ -9,9 +9,10 @@ from functools import partial
 from pathlib import Path
 
 import numpy as np
-
 import utils.numeric
 from third_party import LazyLoader
+
+SAMPLE_RATE = 24000
 
 
 def sample_to_sec(sample: int, sample_rate: int) -> float:
@@ -25,7 +26,10 @@ def sec_to_sample(sec: float, sample_rate: int) -> int:
 
 
 def read_audio(
-    path: Path, start: float = 0, length: float = math.inf, dtype=("f32le", "pcm_f32le", np.float32)
+    path: Path,
+    start: float = 0,
+    length: float = math.inf,
+    dtype=("f32le", "pcm_f32le", np.float32),
 ) -> np.ndarray:
     """Read an audio file slice into a `numpy` array.
 
@@ -49,9 +53,21 @@ def read_audio(
     command = ["ffmpeg"]
     command += [] if start == 0 else ["-ss", start]
     command += [] if math.isinf(length) else ["-t", length]
-    command += ["-i", path, "-f", dtype[0], "-acodec", dtype[1], "-ac", "1", "pipe:"]
+    command += [
+        "-i",
+        path,
+        "-f",
+        dtype[0],
+        "-acodec",
+        dtype[1],
+        "-ac",
+        "1",
+        "pipe:",
+    ]
     command = [str(c) for c in command]
-    ndarray = np.frombuffer(subprocess.check_output(command, stderr=subprocess.DEVNULL), dtype[2])
+    ndarray = np.frombuffer(
+        subprocess.check_output(command, stderr=subprocess.DEVNULL), dtype[2]
+    )
     return clip_waveform(ndarray)
 
 
@@ -71,8 +87,11 @@ def write_audio(
     """
     if not overwrite and isinstance(path, Path) and path.exists():
         raise ValueError(f"File exists at {path}.")
-    audio = audio.detach().cpu().numpy() if not isinstance(audio, np.ndarray) else audio
-    assert audio.dtype == np.float32  # type: ignore
+    audio = (
+        audio.detach().cpu().numpy()
+        if not isinstance(audio, np.ndarray)
+        else audio
+    )
     if typing.cast(int, audio.size) > 0:
         error = f"Signal must be in range [-1, 1] rather than [{np.min(audio)}, {np.max(audio)}]."
         assert np.max(audio) <= 1.0 and np.min(audio) >= -1.0, error
@@ -87,12 +106,18 @@ def clip_waveform(waveform: np.ndarray) -> np.ndarray:
     """
     dtype = waveform.dtype
     is_floating = np.issubdtype(dtype, np.floating)
-    min_: typing.Union[int, float] = -1.0 if is_floating else np.iinfo(dtype).min
+    min_: typing.Union[int, float] = (
+        -1.0 if is_floating else np.iinfo(dtype).min
+    )
     max_: typing.Union[int, float] = 1.0 if is_floating else np.iinfo(dtype).max
     num_clipped_samples = (waveform < min_).sum() + (waveform > max_).sum()
     if num_clipped_samples > 0:
         max_sample = np.max(np.absolute(waveform))
-        logger.debug("%d samples clipped (%f max sample)", num_clipped_samples, max_sample)
+        logger.debug(
+            "%d samples clipped (%f max sample)",
+            num_clipped_samples,
+            max_sample,
+        )
     return np.clip(waveform, min_, max_)
 
 
@@ -167,7 +192,6 @@ class AudioMetadata(AudioFormat):
         )
 
 
-
 wavfile = LazyLoader("wavfile", globals(), "scipy.io.wavfile")
 logger = logging.getLogger(__name__)
 
@@ -193,16 +217,34 @@ def read_wave_audio(
         AudioEncoding.PCM_INT_16_BIT.value: np.int16,
         AudioEncoding.PCM_INT_8_BIT.value: np.int8,
     }
-    assert metadata.encoding.value in lookup, f"Metadata encoding '{metadata}' is not supported."
+    assert (
+        metadata.encoding.value in lookup
+    ), f"Metadata encoding '{metadata}' is not supported."
     dtype = lookup[metadata.encoding.value]
     bytes_per_sample = np.dtype(dtype).itemsize
     sec_to_sample_ = partial(sec_to_sample, sample_rate=metadata.sample_rate)
-    header_size = os.path.getsize(metadata.path) - bytes_per_sample * metadata.num_samples
-    start = int(utils.numeric.round_(sec_to_sample_(start) * bytes_per_sample, bytes_per_sample))
-    length = sec_to_sample_(length) if length > 0 else metadata.num_samples - sec_to_sample_(start)
+    header_size = (
+        os.path.getsize(metadata.path) - bytes_per_sample * metadata.num_samples
+    )
+    start = int(
+        utils.numeric.round_(
+            sec_to_sample_(start) * bytes_per_sample, bytes_per_sample
+        )
+    )
+    length = (
+        sec_to_sample_(length)
+        if length > 0
+        else metadata.num_samples - sec_to_sample_(start)
+    )
     if memmap:
-        ndarray = np.memmap(metadata.path, dtype=dtype, shape=(length,), offset=start + header_size)
+        ndarray = np.memmap(
+            metadata.path,
+            dtype=dtype,
+            shape=(length,),
+            offset=start + header_size,
+        )
     else:
-        ndarray = np.fromfile(metadata.path, dtype=dtype, count=length, offset=start + header_size)
+        ndarray = np.fromfile(
+            metadata.path, dtype=dtype, count=length, offset=start + header_size
+        )
     return clip_waveform(ndarray)
-
