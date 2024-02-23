@@ -1,9 +1,1 @@
-{
-  "include": [
-    "lib",
-    "run",
-    "tests",
-    "third_party"
-  ],
-  "typeCheckingMode": "basic"
-}
+{"include": ["lib", "run", "tests", "third_party"], "typeCheckingMode": "basic"}
