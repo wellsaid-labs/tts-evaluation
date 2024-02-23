@@ -3,6 +3,7 @@
   "texts": ["hello", "world"],
   "speakers": [["Ramona_J_Narration", 4], ["Alana_B_Narration", 3]],
   "model_versions": ["v10"],
-  "gcs_path": "gs://",
+  "gcs_bucket": "wellsaid_labs_model_evaluations",
+  "gcs_path": "test_tts_eval.parquet",
   "dataset_type": "comparative"
 }

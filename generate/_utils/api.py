@@ -107,7 +107,7 @@ class APITransaction:
         """
         unwanted_attrs = {"headers", "wav_data"}
         api_transaction_dict = {k: v for k, v in asdict(self).items() if k not in unwanted_attrs}
-        api_transaction_dict["wav_data"] = np.array2string(self.wav_data)
+        api_transaction_dict["wav_bytes"] = [i.tobytes() for i in self.wav_data]
         return api_transaction_dict
 
 

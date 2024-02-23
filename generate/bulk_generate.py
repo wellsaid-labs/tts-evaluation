@@ -1,12 +1,11 @@
 import logging
 import time
-import sys
-sys.path.append(".")
 from multiprocessing import Pool
 
-from tqdm import tqdm
 from generate._utils.api import APITransaction, query_wsl_api
 from generate._utils.structures import AudioDataset, DatasetConfig
+from tqdm import tqdm
+
 logging.basicConfig(format='%(asctime)s - %(message)s', datefmt='%d-%b-%y %H:%M:%S', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -14,10 +13,8 @@ logger = logging.getLogger(__name__)
 def main(
     audio_dataset,
     model_versions,
-    gcs_path,
     speakers,
     texts,
-    dataset_type,
     clips_per_text,
     debug=False,
 ):
@@ -60,5 +57,9 @@ if __name__ == "__main__":
     main(
         audio_dataset=audio_dataset,
         debug=True,
-        **run_config.as_dict(),
+        model_versions=run_config.model_versions,
+        speakers=run_config.speakers,
+        texts=run_config.texts,
+        clips_per_text=run_config.clips_per_text
     )
+    audio_dataset.upload_blob_from_memory()
