@@ -1,4 +1,5 @@
 """Script to hold test cases for tts models"""
+
 import string
 
 V10_REGRESSIONS = [
@@ -388,4 +389,8 @@ SLOW_SCRIPTS = [
 ]
 
 items = locals().items()
-TEST_CASES = {k: v for k, v in items if isinstance(v, list) and all(isinstance(t, str) for t in v)}
+TEST_CASES = {
+    k: v
+    for k, v in items
+    if isinstance(v, list) and all(isinstance(t, str) for t in v)
+}

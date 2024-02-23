@@ -1,6 +1,7 @@
 """Scripts directly copied from a listening exercise conducted in August 2023 where participants
 noticed slurring. The scripts have not been altered in any way.
 """
+
 SLURRING = [
     """If you’ve ever cyberbullied someone, you may have thought it was funny at the time. When you can’t see someone’s face, it can be easier to be mean to them. But chances are, you don’t really want to cause anyone to experience anything on the list above. It’s important to use empathy for others, even when we’re online and can’t look them in the eyes. Empathy is when we put ourselves in another person’s shoes to identify with how they are feeling. The next time you’re thinking about being disrespectful online just to get a laugh, put yourself in the other person’s shoes. Ask yourself, would you like someone to treat you that way?
     """,

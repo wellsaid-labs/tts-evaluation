@@ -1,7 +1,7 @@
 import random
 import re
 
-from generate._test_cases.parity_test_cases import QUESTIONS, INITIALISMS
+from generate._test_cases.parity_test_cases import INITIALISMS, QUESTIONS
 from generate._test_cases.slurring import SLURRING
 from generate._test_cases.test_cases import (
     ABBREVIATIONS_WITH_VOWELS,
@@ -43,5 +43,7 @@ def remove_xml(string):
     return string
 
 
-REPORT_CARD_TEST_CASES = list(set(remove_xml(i) for i in REPORT_CARD_TEST_CASES))
+REPORT_CARD_TEST_CASES = list(
+    set(remove_xml(i) for i in REPORT_CARD_TEST_CASES)
+)
 random.shuffle(REPORT_CARD_TEST_CASES)

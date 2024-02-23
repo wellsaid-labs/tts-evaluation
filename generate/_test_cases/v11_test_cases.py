@@ -1158,7 +1158,10 @@ DIFFICULT_USER_INITIALISMS = [
         "Chatbots: AI-powered chatbots answer frequently asked questions, allowing human"
         " representatives to focus on more complex issues."
     ),
-    ("Download the My Benefits Work app for" " more information. Your Group ID is HPBBAMRG."),
+    (
+        "Download the My Benefits Work app for"
+        " more information. Your Group ID is HPBBAMRG."
+    ),
     (
         "Auto GPT is an impressive new feature in Chat GPT that can program AI on its own, making"
         " it both powerful and potentially scary."
@@ -1212,7 +1215,9 @@ DIFFICULT_USER_QUESTIONS = [
     "Danny, is there a way to view the newly created rule on the ICI interface?",
     "Remember our new facility manager?",
     "Is it similar to configuring the other Contract Types?",
-    ("In what scenario would such restricted access to Attribute Groups be necessary?"),
+    (
+        "In what scenario would such restricted access to Attribute Groups be necessary?"
+    ),
     (
         "For this, you can configure an Event Rule to add the Secondary Owner to the team, only"
         " when required. You can define multiple conditions when adding a Secondary Owner to the"
@@ -1261,5 +1266,7 @@ DIFFICULT_USER_URLS = [
 
 items = locals().items()
 V11_TEST_CASES = {
-    k: v for k, v in items if isinstance(v, list) and all(isinstance(t, str) for t in v)
+    k: v
+    for k, v in items
+    if isinstance(v, list) and all(isinstance(t, str) for t in v)
 }

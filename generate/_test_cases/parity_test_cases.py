@@ -1,7 +1,6 @@
 """Testing scripts crafted to evaluate TTS Model Parity in performance of question intonation,
 initialism pronunciation, and URL pronunciation."""
 
-
 # Yes/No questions expecting an upward inflection at the end of the sentence
 QUESTIONS = [
     "What is the meaning of life, the universe, and everything?",
@@ -73,19 +72,27 @@ URLS = [
 
 URLS_HTTPS = [f"https://www.{i}" for i in URLS]
 
-URLS_IN_SENTENCES = [f"Visit our website at {i} for more information." for i in URLS]
+URLS_IN_SENTENCES = [
+    f"Visit our website at {i} for more information." for i in URLS
+]
 
-URLS_HTTPS_IN_SENTENCES = [f"Visit our website at {i} for more information." for i in URLS_HTTPS]
+URLS_HTTPS_IN_SENTENCES = [
+    f"Visit our website at {i} for more information." for i in URLS_HTTPS
+]
 
 EMAILS = [
     "tracy.madison@CSWPBC.com",
     "kay_sorensen@insurewithcompass.com",
 ]
 
-EMAILS_IN_SENTENCES = [f"Please email {i} if you need further support." for i in EMAILS]
+EMAILS_IN_SENTENCES = [
+    f"Please email {i} if you need further support." for i in EMAILS
+]
 
 
-V10_PARITY__URLS = URLS_IN_SENTENCES + URLS_HTTPS_IN_SENTENCES + EMAILS_IN_SENTENCES
+V10_PARITY__URLS = (
+    URLS_IN_SENTENCES + URLS_HTTPS_IN_SENTENCES + EMAILS_IN_SENTENCES
+)
 V10_PARITY__QUESTIONS = QUESTIONS
 V10_PARITY__INITIALISMS = INITIALISMS
 
@@ -94,5 +101,7 @@ items = locals().items()
 PARITY_TEST_CASES = {
     k: v
     for k, v in items
-    if isinstance(v, list) and k.startswith("V10_PARITY") and all(isinstance(t, str) for t in v)
+    if isinstance(v, list)
+    and k.startswith("V10_PARITY")
+    and all(isinstance(t, str) for t in v)
 }
