@@ -1,19 +1,13 @@
 import logging
-import os
-import shutil
 import tempfile
 import time
-import typing
-import zipfile
 from dataclasses import dataclass, asdict
 
 import numpy as np
-import pandas as pd
 import requests
 import resampy
 import soundfile as sf
 from dotenv import dotenv_values
-from scipy.io import wavfile
 from utils.audio import SAMPLE_RATE
 logging.basicConfig(format='%(asctime)s - %(message)s', datefmt='%d-%b-%y %H:%M:%S', level=logging.INFO)
 
@@ -24,6 +18,8 @@ kong_staging = api_keys["KONG_STAGING"]
 TTS_API_ENDPOINT = (
     "https://staging.tts.wellsaidlabs.com/api/text_to_speech/stream"
 )
+
+np.set_printoptions(threshold=np.inf)
 
 
 @dataclass
@@ -46,11 +42,10 @@ class APITransaction:
 
     def as_dict(self):
         """Return a dictionary version of this class. Do not include headers as they contain
-        sensitive information. Use np.array2string for array string conversion.
+        sensitive information.
         """
-        unwanted_attrs = {"headers", "wav_data"}
+        unwanted_attrs = {"headers"}
         api_transaction_dict = {k: v for k, v in asdict(self).items() if k not in unwanted_attrs}
-        api_transaction_dict["wav_bytes"] = [i.tobytes() for i in self.wav_data]
         return api_transaction_dict
 
 
@@ -69,7 +64,7 @@ def query_wsl_api(
     """
     if attempt_number > max_attempts:
         logger.error(
-            "Max retries reached. Returning original AudioFromAPI object"
+            "Max retries reached. Returning original APITransaction object"
         )
         return task
 
@@ -97,8 +92,7 @@ def query_wsl_api(
             f"Invalid speaker id: {task.speaker_id} for model version: {task.model_version}"
         )
         raise ValueError
-    wav_data = response_to_wav(response)
-    task.wav_data = wav_data
+    task.wav_data = response_to_wav(response)
     return task
 
 

@@ -40,7 +40,11 @@ class AudioDataset:
     audio: typing.List[APITransaction]
 
     def _audio_as_parquet(self):
-        return pd.DataFrame([a.as_dict() for a in self.audio]).to_parquet()
+        df = pd.DataFrame([a.as_dict() for a in self.audio])
+        for col in ["model_version", "text", "speaker", "speaker_id", "endpoint"]:
+            df[f"{col}"] = df[f"{col}"].astype("category")
+
+        return df.to_parquet()
 
     def upload_blob_from_memory(self):
         """Uploads a file to Google Cloud Storage"""
