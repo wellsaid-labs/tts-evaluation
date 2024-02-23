@@ -27,63 +27,6 @@ TTS_API_ENDPOINT = (
 
 
 @dataclass
-class AudioMetadata:
-    """ """
-
-    name: str
-    settings: dict
-    audio: typing.List[np.ndarray]
-    metadata: pd.DataFrame
-
-    def to_zip(self):
-        tmpdir = tempfile.mkdtemp()
-        # metadata_file = self._metadata_to_file()
-        raise NotImplementedError
-
-    def _audio_to_file(self) -> typing.List:
-        return []
-
-    def _metadata_to_file(self) -> typing.AnyStr:
-        return ""
-
-    @classmethod
-    def from_zip(cls):
-        raise NotImplementedError
-
-
-@dataclass
-class Generate:
-    name: str
-    settings: dict
-    audio: typing.List[np.ndarray]
-    metadata: pd.DataFrame
-
-    def _audio_to_paths(self):
-        for a in self.audio:
-            with tempfile.NamedTemporaryFile(suffix=".wav") as audio_path:
-                wavfile.write(audio_path.name, SAMPLE_RATE, a)
-                yield audio_path
-
-    def _package_as_zip(self):
-        tmpdir = tempfile.mkdtemp()
-        try:
-            tmparchive = os.path.join(tmpdir, "archive")
-            root_dir = ""
-            data = open(
-                shutil.make_archive(tmparchive, "zip", root_dir), "rb"
-            ).read()
-        finally:
-            shutil.rmtree(tmpdir)
-
-        with tempfile.SpooledTemporaryFile() as tmp:
-            with zipfile.ZipFile(tmp, "w") as zf:
-                for a in self._audio_to_paths():
-                    zf.write(a)
-                zf.write(self.metadata.to_csv())
-            tmp.seek(0)
-
-
-@dataclass
 class APITransaction:
     """Class to hold request to and response from WSL's API"""
 
