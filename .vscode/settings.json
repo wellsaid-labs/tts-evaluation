@@ -2,14 +2,14 @@
   "editor.detectIndentation": false,
   "editor.formatOnSave": true,
   "editor.rulers": [
-    100
+    80
   ],
-  "editor.tabSize": 2,
+  "editor.tabSize": 4,
   "editor.codeActionsOnSave": {
     "source.fixAll.eslint": true,
     "source.organizeImports": true
   },
-  "editor.wordWrapColumn": 100,
+  "editor.wordWrapColumn": 80,
   "files.autoSave": "onFocusChange",
   "files.exclude": {
     "**/.git": true,
@@ -41,7 +41,7 @@
   "editor.bracketPairColorization.enabled": true,
   "editor.guides.bracketPairs": true,
   "python.analysis.diagnosticMode": "workspace",
-  "reflowMarkdown.preferredLineLength": 100,
+  "reflowMarkdown.preferredLineLength": 80,
   "markdownlint.config": {
     "no-trailing-punctuation": false
   },

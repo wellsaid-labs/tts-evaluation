@@ -61,6 +61,7 @@ lxml
 psutil # For Comet CPU logging
 typeguard==2.13.3 # For `pythonic-config`
 python-dotenv
+pyyaml
 
 # Web
 flask
