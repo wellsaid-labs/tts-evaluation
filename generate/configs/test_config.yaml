@@ -1,0 +1,16 @@
+clips_per_text: 1
+custom_texts:
+- hello
+- world
+predefined_texts:
+  - REPORT_CARD_TEST_CASES
+speakers:
+- - Ramona_J_Narration
+  - 4
+- - Alana_B_Narration
+  - 3
+model_versions:
+- v10
+gcs_bucket: wellsaid_labs_model_evaluations
+gcs_path: test_tts_eval.parquet
+dataset_type: comparative

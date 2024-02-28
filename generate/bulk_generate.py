@@ -1,13 +1,11 @@
-import logging
 import time
 from multiprocessing import Pool
-
-from generate._utils.api import APITransaction, query_wsl_api
-from generate._utils.structures import AudioDataset, DatasetConfig
+from package_utils.environment import logger
+from generate.utils.api import APITransaction, query_wsl_api
+from generate.utils.structures import AudioDataset, DatasetConfig
 from tqdm import tqdm
-
-logging.basicConfig(format='%(asctime)s - %(message)s', datefmt='%d-%b-%y %H:%M:%S', level=logging.INFO)
-logger = logging.getLogger(__name__)
+from pprint import pformat
+import sys
 
 
 def main(
@@ -50,8 +48,8 @@ def main(
 
 
 if __name__ == "__main__":
-    # args = parse_args()
-    run_config = DatasetConfig.from_json("/Users/jordan/Workspaces/tts-evaluation/generate/configs/test_config.json")
+    run_config = DatasetConfig.from_file(sys.argv[1])
+    logger.info(f"Dataset Configuration: \n{pformat(run_config.as_dict())}")
     audio_dataset = AudioDataset(config=run_config, audio=list())
 
     main(
@@ -59,7 +57,7 @@ if __name__ == "__main__":
         debug=True,
         model_versions=run_config.model_versions,
         speakers=run_config.speakers,
-        texts=run_config.texts,
-        clips_per_text=run_config.clips_per_text
+        texts=run_config.combined_texts,
+        clips_per_text=run_config.clips_per_text,
     )
     audio_dataset.upload_blob_from_memory()
