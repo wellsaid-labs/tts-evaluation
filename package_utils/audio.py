@@ -9,7 +9,7 @@ from functools import partial
 from pathlib import Path
 
 import numpy as np
-import utils.numeric
+import package_utils.numeric
 from third_party import LazyLoader
 
 SAMPLE_RATE = 24000
@@ -227,7 +227,7 @@ def read_wave_audio(
         os.path.getsize(metadata.path) - bytes_per_sample * metadata.num_samples
     )
     start = int(
-        utils.numeric.round_(
+        package_utils.numeric.round_(
             sec_to_sample_(start) * bytes_per_sample, bytes_per_sample
         )
     )
