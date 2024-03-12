@@ -1,10 +1,134 @@
 {
+  "model_versions": [
+    "v9"
+  ],
+  "gcs_path": "test_evaluations",
+  "speakers": [
+    [
+      "ALANA_B__NARRATION",
+      3
+    ],
+    [
+      "AVA_M",
+      12
+    ],
+    [
+      "AVA_M__NARRATION",
+      31
+    ],
+    [
+      "DAMIAN_P__PROMO",
+      21
+    ],
+    [
+      "DAVID_D",
+      9
+    ],
+    [
+      "GARRY_J__CHRACHTER",
+      29
+    ],
+    [
+      "ISABEL_V",
+      11
+    ],
+    [
+      "JEREMY_G__NARRATION",
+      13
+    ],
+    [
+      "JODI_P__PROMO",
+      22
+    ],
+    [
+      "JOE_F__NARRATION",
+      27
+    ],
+    [
+      "JOE_F__PROMO",
+      28
+    ],
+    [
+      "KAI_M",
+      17
+    ],
+    [
+      "KAI_M__NARRATION",
+      32
+    ],
+    [
+      "LEE_M__PROMO",
+      23
+    ],
+    [
+      "NICOLE_L__NARRATION",
+      14
+    ],
+    [
+      "PAIGE_L__NARRATION",
+      15
+    ],
+    [
+      "PATRICK_K__NARRATION",
+      19
+    ],
+    [
+      "RAMONA_J__NARRATION",
+      4
+    ],
+    [
+      "RAMONA_J__PROMO",
+      5
+    ],
+    [
+      "SELENE_R__PROMO",
+      24
+    ],
+    [
+      "SOFIA_H__NARRATION",
+      8
+    ],
+    [
+      "SOFIA_H__PROMO",
+      20
+    ],
+    [
+      "TOBIN_A__NARRATION",
+      16
+    ],
+    [
+      "TRISTAN_F__NARRATION",
+      18
+    ],
+    [
+      "VANESSA_N__NARRATION",
+      10
+    ],
+    [
+      "WADE_C",
+      7
+    ],
+    [
+      "WADE_C__NARRATION",
+      30
+    ],
+    [
+      "WADE_C__PROMO",
+      26
+    ]
+  ],
   "clips_per_text": 1,
-  "speakers": [["Ramona_J_Narration", 4], ["Alana_B_Narration", 3]],
-  "model_versions": ["v10"],
-  "gcs_bucket": "wellsaid_labs_model_evaluations",
-  "gcs_path": "test_tts_eval.parquet",
-  "dataset_type": "comparative",
-  "custom_texts": ["hello", "world"],
-  "predefined_texts": ["REPORT_CARD_TEST_CASES"]
+  "dataset_type": "absolute",
+  "gcs_bucket": "tts_evaluations",
+  "task_limit": 5,
+  "custom_texts": [
+    "Hello there"
+  ],
+  "predefined_texts": [
+    "/Users/jordan/Workspaces/tts-evaluation/generate/lib/test_case_csvs/test.csv"
+  ],
+  "combined_texts": [
+    "Loons, or divers, are a group of aquatic birds found in much of North America and northern Eurasia",
+    "Hello there"
+  ]
 }
