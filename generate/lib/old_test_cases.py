@@ -16,7 +16,7 @@ def remove_xml(s: str):
 
 @dataclass
 class TestCases:
-    LONG_SCRIPTS = (
+    LONG_SCRIPTS = [
         (
             "“Yield Computations.”\nThe interest rate will always be stated as a percentage of the par "
             "value. The interest stated on the face of the bond is called the nominal yield. Sometimes "
@@ -334,9 +334,9 @@ class TestCases:
             "carefree and cheerful to mask their true evil aim. You'll hear people say they weren't "
             "awful people, just naive or innocent."
         ),
-    )
+    ]
     # Yes/No questions expecting an upward inflection at the end of the sentence
-    QUESTIONS = (
+    QUESTIONS = [
         "What is the meaning of life, the universe, and everything?",
         "Are birds real?",
         "Would you be a dear and make us a cup of tea?",
@@ -357,8 +357,8 @@ class TestCases:
         "Do you consider yourself an adventurous person?",
         "Have you ever hidden a snack so that nobody else would find it and eat it first?",
         "How do we propose to end the scourge of liens ignorance, you ask?",
-    )
-    INITIALISMS = (
+    ]
+    INITIALISMS = [
         "E3, Electronic Entertainment Expo, is an annual video games conference.",
         "IDK what you mean.",
         "The WHO has declared COVID-19 a global pandemic.",
@@ -382,8 +382,8 @@ class TestCases:
         "These sections are located where the smaller IFAs on the narrower left floodplain indicate that flow "
         "in the left floodplain contracts and expands over a shorter distance.",
         "It took six Ph.Ds to design a VCR a five-year-old could use.",
-    )
-    URLS = (
+    ]
+    URLS = [
         "en.wikipedia.org",
         "linkedin.com",
         "stackoverflow.com",
@@ -400,415 +400,360 @@ class TestCases:
         "MSDSsource.com",
         "alliancepropertysystems.com",
         "ion2.nokia.com",
-    )
-    URLS_HTTPS = tuple([f"https://www.{i}" for i in URLS])
-    URLS_IN_SENTENCES = tuple(
-        [f"Visit our website at {i} for more information." for i in URLS]
-    )
-    URLS_HTTPS_IN_SENTENCES = tuple(
-        [f"Visit our website at {i} for more information." for i in URLS_HTTPS]
-    )
-    EMAILS = (
+    ]
+    URLS_HTTPS = [f"https://www.{i}" for i in URLS]
+    URLS_IN_SENTENCES = [
+        f"Visit our website at {i} for more information." for i in URLS
+    ]
+    URLS_HTTPS_IN_SENTENCES = [
+        f"Visit our website at {i} for more information." for i in URLS_HTTPS
+    ]
+    EMAILS = [
         "tracy.madison@CSWPBC.com",
         "kay_sorensen@insurewithcompass.com",
-    )
-    EMAILS_IN_SENTENCES = tuple(
-        [f"Please email {i} if you need further support." for i in EMAILS]
-    )
-    RESPELLINGS: typing.Dict = field(
-        default_factory=lambda: {
-            "acetaminophen": (
-                "<respell value='uh-SEE-tuh-MIH-nuh-fuhn'>acetaminophen</respell>",
-                "::uh-SEE-tuh-MIH-nuh-fuhn::",
-            ),
-            "adobe": (
-                "<respell value='uh-DOH-bee'>adobe</respell>",
-                "::uh-DOH-bee::",
-            ),
-            "antihistamines": (
-                "<respell value='AN-tee-HIH-stuh-muhnz'>antihistamines</respell>",
-                "::AN-tee-HIH-stuh-muhnz::",
-            ),
-            "asphalt": (
-                "<respell value='AS-fawlt'>asphalt</respell>",
-                "::AS-fawlt::",
-            ),
-            "asthma": (
-                "<respell value='AZ-muh'>asthma</respell>",
-                "::AZ-muh::",
-            ),
-            "asymptomatic": (
-                "<respell value='AY-SIHMP-tuh-MA-tihk'>asymptomatic</respell>",
-                "::AY-SIHMP-tuh-MA-tihk::",
-            ),
-            "bluish": (
-                "<respell value='BLOO-ihsh'>bluish</respell>",
-                "::BLOO-ihsh::",
-            ),
-            "crises": (
-                "<respell value='KRY-seez'>crises</respell>",
-                "::KRY-seez::",
-            ),
-            "denials": (
-                "<respell value='dih-NY-uhlz'>denials</respell>",
-                "::dih-NY-uhlz::",
-            ),
-            "deny": ("<respell value='dih-NY'>deny</respell>", "::dih-NY::"),
-            "duo": ("<respell value='DOO-oh'>duo</respell>", "::DOO-oh::"),
-            "enrolled": (
-                "<respell value='ehn-ROHLD'>enrolled</respell>",
-                "::ehn-ROHLD::",
-            ),
-            "flange": ("<respell value='FLANJ'>flange</respell>", "::FLANJ::"),
-            "goldilocks": (
-                "<respell value='GOHL-dee-lawks'>goldilocks</respell>",
-                "::GOHL-dee-lawks::",
-            ),
-            "hypoglycemic": (
-                "<respell value='HY-poh-gly-SEE-mihk'>hypoglycemic</respell>",
-                "::HY-poh-gly-SEE-mihk::",
-            ),
-            "icon": ("<respell value='Y-kahn'>icon</respell>", "::Y-kahn::"),
-            "incorporate": (
-                "<respell value='ihn-KOR-pur-ayt'>incorporate</respell>",
-                "::ihn-KOR-pur-ayt::",
-            ),
-            "iodine": (
-                "<respell value='Y-uh-dyn'>iodine</respell>",
-                "::Y-uh-dyn::",
-            ),
-            "karaoke": (
-                "<respell value='KEH-ree-OH-kee'>karaoke</respell>",
-                "::KEH-ree-OH-kee::",
-            ),
-            "meteor": (
-                "<respell value='MEE-tee-ur'>meteor</respell>",
-                "::MEE-tee-ur::",
-            ),
-            "niche": ("<respell value='NIHCH'>niche</respell>", "::NIHCH::"),
-            "nomenclature": (
-                "<respell value='NOH-muhn-klay-chur'>nomenclature</respell>",
-                "::NOH-muhn-klay-chur::",
-            ),
-            "omit": ("<respell value='oh-MIHT'>omit</respell>", "::oh-MIHT::"),
-            "oodles": (
-                "<respell value='OO-duhlz'>oodles</respell>",
-                "::OO-duhlz::",
-            ),
-            "osteoporosis": (
-                "<respell value='AW-stee-OH-pur-OH-sihs'>osteoporosis</respell>",
-                "::AW-stee-OH-pur-OH-sihs::",
-            ),
-            "pancreas": (
-                "<respell value='PAN-kree-uhs'>pancreas</respell>",
-                "::PAN-kree-uhs::",
-            ),
-            "quarantine": (
-                "<respell value='KWOH-ruhn-teen'>quarantine</respell>",
-                "::KWOH-ruhn-teen::",
-            ),
-            "realm": ("<respell value='REHLM'>realm</respell>", "::REHLM::"),
-            "reconnaissance": (
-                "<respell value='ree-KAH-nuh-suhns'>reconnaissance</respell>",
-                "::ree-KAH-nuh-suhns::",
-            ),
-            "rendezvous": (
-                "<respell value='RAHN-dih-voo'>rendezvous</respell>",
-                "::RAHN-dih-voo::",
-            ),
-            "ricocheted": (
-                "<respell value='RIH-kuh-shayd'>ricocheted</respell>",
-                "::RIH-kuh-shayd::",
-            ),
-            "scarce": (
-                "<respell value='SKERRS'>scarce</respell>",
-                "::SKERRS::",
-            ),
-            "sew": ("<respell value='SOH'>sew</respell>", "::SOH::"),
-            "signage": (
-                "<respell value='SY-nihj'>signage</respell>",
-                "::SY-nihj::",
-            ),
-            "sterile": (
-                "<respell value='STEH-ruhl'>sterile</respell>",
-                "::STEH-ruhl::",
-            ),
-            "teammate": (
-                "<respell value='TEE-mayt'>teammate</respell>",
-                "::TEE-mayt::",
-            ),
-            "trachea": (
-                "<respell value='TRAY-kee-uh'>trachea</respell>",
-                "::TRAY-kee-uh::",
-            ),
-            "treachery": (
-                "<respell value='TREH-chur-ee'>treachery</respell>",
-                "::TREH-chur-ee::",
-            ),
-            "triage": (
-                "<respell value='TREE-ahj'>triage</respell>",
-                "::TREE-ahj::",
-            ),
-            "verbatim": (
-                "<respell value='vur-BAY-tuhm'>verbatim</respell>",
-                "::vur-BAY-tuhm::",
-            ),
-            "feisty": (
-                "<respell value='FY-stee'>feisty</respell>",
-                " ::FY-stee::",
-            ),
-            "corps": ("<respell value='KOR'>corps</respell>", "::KOR::"),
-            "ague": ("<respell value='AY-gyoo'>ague</respell>", "::AY-gyoo::"),
-            "saga": ("<respell value='SAH-guh'>saga</respell>", "::SAH-guh::"),
-            "heist": ("<respell value='HYST'>heist</respell>", "::HYST::"),
-            "overzealous": (
-                "<respell value='OH-vur-ZEH-luhs'>overzealous</respell>",
-                "::OH-vur-ZEH-luhs::",
-            ),
-            "zeal": ("<respell value='ZEEL'>zeal</respell>", "::ZEEL::"),
-            "juxtaposition": (
-                "<respell value='JUHK-stuh-puh-ZIH-shuhn'>juxtaposition</respell>",
-                "::JUHK-stuh-puh-ZIH-shuhn::",
-            ),
-            "overexaggerated": (
-                "<respell value='OH-vur-ihg-ZA-juh-ray-duhd'>overexaggerated</respell>",
-                "::OH-vur-ihg-ZA-juh-ray-duhd::",
-            ),
-            "onomatopoeia": (
-                "<respell value='AH-nuh-MAH-duh-PEE-uh'>onomatopoeia</respell>",
-                "::AH-nuh-MAH-duh-PEE-uh::",
-            ),
-            "California": (
-                "<respell value='KA-luh-FOR-nyuh'>California</respell>",
-                "::KA-luh-FOR-nyuh::",
-            ),
-            "Indian": (
-                "<respell value='IHN-dee-uhn'>Indian</respell>",
-                "::IHN-dee-uhn::",
-            ),
-            "Italian": (
-                "<respell value='ih-TA-lyuhn'>Italian</respell>",
-                "::ih-TA-lyuhn::",
-            ),
-            "application": (
-                "<respell value='A-pluh-KAY-shuhn'>application</respell>",
-                "::A-pluh-KAY-shuhn::",
-            ),
-            "authority": (
-                "<respell value='uh-THOH-ruh-tee'>authority</respell>",
-                "::uh-THOH-ruh-tee::",
-            ),
-            "becoming": (
-                "<respell value='bih-KUH-mihng'>becoming</respell>",
-                "::bih-KUH-mihng::",
-            ),
-            "board": ("<respell value='BORD'>board</respell>", "::BORD::"),
-            "car": ("<respell value='KAR'>car</respell>", "::KAR::"),
-            "civil": (
-                "<respell value='SIH-vuhl'>civil</respell>",
-                "::SIH-vuhl::",
-            ),
-            "cover": (
-                "<respell value='KUH-vur'>cover</respell>",
-                "::KUH-vur::",
-            ),
-            "critical": (
-                "<respell value='KRIH-tih-kuhl'>critical</respell>",
-                "::KRIH-tih-kuhl::",
-            ),
-            "decision": (
-                "<respell value='dih-SIH-zhuhn'>decision</respell>",
-                "::dih-SIH-zhuhn::",
-            ),
-            "determined": (
-                "<respell value='dih-TUR-muhnd'>determined</respell>",
-                "::dih-TUR-muhnd::",
-            ),
-            "develop": (
-                "<respell value='dih-VEH-luhp'>develop</respell>",
-                "::dih-VEH-luhp::",
-            ),
-            "device": (
-                "<respell value='dih-VYS'>device</respell>",
-                "::dih-VYS::",
-            ),
-            "distribution": (
-                "<respell value='DIHS-truh-BYOO-shuhn'>distribution</respell>",
-                "::DIHS-truh-BYOO-shuhn::",
-            ),
-            "efforts": (
-                "<respell value='EH-furts'>efforts</respell>",
-                "::EH-furts::",
-            ),
-            "element": (
-                "<respell value='EH-luh-muhnt'>element</respell>",
-                "::EH-luh-muhnt::",
-            ),
-            "famous": (
-                "<respell value='FAY-muhs'>famous</respell>",
-                "::FAY-muhs::",
-            ),
-            "finally": (
-                "<respell value='FY-nuh-lee'>finally</respell>",
-                "::FY-nuh-lee::",
-            ),
-            "fully": (
-                "<respell value='FUU-lee'>fully</respell>",
-                "::FUU-lee::",
-            ),
-            "gives": ("<respell value='GIHVZ'>gives</respell>", "::GIHVZ::"),
-            "giving": (
-                "<respell value='GIH-vihng'>giving</respell>",
-                "::GIH-vihng::",
-            ),
-            "growing": (
-                "<respell value='GROH-ihng'>growing</respell>",
-                "::GROH-ihng::",
-            ),
-            "hard": ("<respell value='HARD'>hard</respell>", "::HARD::"),
-            "ideas": (
-                "<respell value='y-DEE-uhz'>ideas</respell>",
-                "::y-DEE-uhz::",
-            ),
-            "instance": (
-                "<respell value='IHN-stuhns'>instance</respell>",
-                "::IHN-stuhns::",
-            ),
-            "instead": (
-                "<respell value='ihn-STEHD'>instead</respell>",
-                "::ihn-STEHD::",
-            ),
-            "leaving": (
-                "<respell value='LEE-vihng'>leaving</respell>",
-                "::LEE-vihng::",
-            ),
-            "moving": (
-                "<respell value='MOO-vihng'>moving</respell>",
-                "::MOO-vihng::",
-            ),
-            "musical": (
-                "<respell value='MYOO-zih-kuhl'>musical</respell>",
-                "::MYOO-zih-kuhl::",
-            ),
-            "notes": ("<respell value='NOHTS'>notes</respell>", "::NOHTS::"),
-            "nuclear": (
-                "<respell value='NOOK-lee-ur'>nuclear</respell>",
-                "::NOOK-lee-ur::",
-            ),
-            "ordered": (
-                "<respell value='OR-durd'>ordered</respell>",
-                "::OR-durd::",
-            ),
-            "output": (
-                "<respell value='OWT-puut'>output</respell>",
-                "::OWT-puut::",
-            ),
-            "phase": ("<respell value='FAYZ'>phase</respell>", "::FAYZ::"),
-            "plants": (
-                "<respell value='PLANTS'>plants</respell>",
-                "::PLANTS::",
-            ),
-            "previously": (
-                "<respell value='PREE-vee-uhs-lee'>previously</respell>",
-                "::PREE-vee-uhs-lee::",
-            ),
-            "purpose": (
-                "<respell value='PUR-puhs'>purpose</respell>",
-                "::PUR-puhs::",
-            ),
-            "quite": ("<respell value='KWYT'>quite</respell>", "::KWYT::"),
-            "race": ("<respell value='RAYS'>race</respell>", "::RAYS::"),
-            "relations": (
-                "<respell value='ree-LAY-shuhnz'>relations</respell>",
-                "::ree-LAY-shuhnz::",
-            ),
-            "responsible": (
-                "<respell value='ree-SPAHN-suh-buhl'>responsible</respell>",
-                "::ree-SPAHN-suh-buhl::",
-            ),
-            "risk": ("<respell value='RIHSK'>risk</respell>", "::RIHSK::"),
-            "rock": ("<respell value='RAHK'>rock</respell>", "::RAHK::"),
-            "sets": ("<respell value='SEHTS'>sets</respell>", "::SEHTS::"),
-            "share": ("<respell value='SHERR'>share</respell>", "::SHERR::"),
-            "shot": ("<respell value='SHAHT'>shot</respell>", "::SHAHT::"),
-            "situation": (
-                "<respell value='SIH-choo-AY-shuhn'>situation</respell>",
-                "::SIH-choo-AY-shuhn::",
-            ),
-            "something": (
-                "<respell value='SUHM-thihng'>something</respell>",
-                "::SUHM-thihng::",
-            ),
-            "table": (
-                "<respell value='TAY-buhl'>table</respell>",
-                "::TAY-buhl::",
-            ),
-            "techniques": (
-                "<respell value='tehk-NEEKS'>techniques</respell>",
-                "::tehk-NEEKS::",
-            ),
-            "unique": (
-                "<respell value='yoo-NEEK'>unique</respell>",
-                "::yoo-NEEK::",
-            ),
-            "vote": ("<respell value='VOHT'>vote</respell>", "::VOHT::"),
-            "weeks": ("<respell value='WEEKS'>weeks</respell>", "::WEEKS::"),
-            "win": ("<respell value='WIHN'>win</respell>", "::WIHN::"),
-            "workers": (
-                "<respell value='WUR-kurz'>workers</respell>",
-                "::WUR-kurz::",
-            ),
-            "world": ("<respell value='WURLD'>world</respell>", "::WURLD::"),
-        }
-    )
-    SLURRING = (
-        (
-            "If you’ve ever cyberbullied someone, you may have thought it was funny at the time. "
-            "When you can’t see someone’s face, it can be easier to be mean to them. But chances "
-            "are, you don’t really want to cause anyone to experience anything on the list above. "
-            "It’s important to use empathy for others, even when we’re online and can’t look them "
-            "in the eyes. Empathy is when we put ourselves in another person’s shoes to identify "
-            "with how they are feeling. The next time you’re thinking about being disrespectful "
-            "online just to get a laugh, put yourself in the other person’s shoes. Ask yourself, "
-            "would you like someone to treat you that way?",
+    ]
+    EMAILS_IN_SENTENCES = [
+        f"Please email {i} if you need further support." for i in EMAILS
+    ]
+    RESPELLINGS = {
+        "acetaminophen": (
+            "<respell value='uh-SEE-tuh-MIH-nuh-fuhn'>acetaminophen</respell>",
+            "::uh-SEE-tuh-MIH-nuh-fuhn::",
         ),
-        (
-            "After a couple of minutes, Gaius groaned once more and opened his eyes. “What… what "
-            "happened?” he asked, as he immediately tried to sit up. Leon, pushing him back down, said,"
-            " “We got the shadow cat, but you seemed to have passed out. How are you feeling?” “Uggh, "
-            "like I fought a bull and lost,” Gaius replied, as he shifted around enough to pull his "
-            "shirt up and see that the wound Leon had left on his abdomen had closed over with "
-            "freshly-healed skin. “At least that’s taken care of. Thank you, Leon.”",
+        "adobe": (
+            "<respell value='uh-DOH-bee'>adobe</respell>",
+            "::uh-DOH-bee::",
         ),
-        (
-            "Hi, I'm Idris. I'm going to guide you through this session today. I'm so excited to have "
-            "you here to learn about underwriting recreational vehicles for our customers! I'd like "
-            "to get to know you before we start; can you enter your name, please?",
+        "antihistamines": (
+            "<respell value='AN-tee-HIH-stuh-muhnz'>antihistamines</respell>",
+            "::AN-tee-HIH-stuh-muhnz::",
         ),
-        (
-            "Let’s look at a couple of questions to reinforce what we have learned. You can pause the "
-            "webcast to give yourself time to answer the question. Then, press 'play' to see if you "
-            "answered correctly and to hear the rationale. Keep in mind there may be more than one "
-            "answer. Number 1. In an ICD-10 PCS cabbage procedure code, what does the Body Part value "
-            "identify? The name of the body part being bypassed. The number of coronary arteries being "
-            "treated. The number of coronary arteries being bypassed to. The vessel bypassed from.",
-            "We're sorry for the delay. Our average wait time is well under a minute, so we will be "
-            "with you shortly. Did you know that we perform custom alterations for many of our "
-            "customers? That’s right. Do you need a shorter than standard inseam, but can't find that "
-            "service elsewhere? All of our pants are hemmed on-site free of charge, while adding a "
-            "zipper to the leg of any of our pants can make accessing a knee brace or prosthesis so "
-            "much easier. Most alterations add only one day to your order turnaround, so ask your "
-            "order taker for more information. We will be with you shortly.",
+        "asphalt": (
+            "<respell value='AS-fawlt'>asphalt</respell>",
+            "::AS-fawlt::",
         ),
-        (
-            "It's time to take what you've learned about DocuSign and put it into practice. In this "
-            "course, you will learn how to access the demo environment, and have the opportunity to "
-            "send practice documents.. both with a template and without a template. It will take "
-            "approximately 10 minutes to complete and the course does contain audio, so please make "
-            "sure your sound is turned on. To begin, click the start button.",
+        "asthma": ("<respell value='AZ-muh'>asthma</respell>", "::AZ-muh::"),
+        "asymptomatic": (
+            "<respell value='AY-SIHMP-tuh-MA-tihk'>asymptomatic</respell>",
+            "::AY-SIHMP-tuh-MA-tihk::",
         ),
-    )
-    V10_REGRESSIONS = (
+        "bluish": (
+            "<respell value='BLOO-ihsh'>bluish</respell>",
+            "::BLOO-ihsh::",
+        ),
+        "crises": (
+            "<respell value='KRY-seez'>crises</respell>",
+            "::KRY-seez::",
+        ),
+        "denials": (
+            "<respell value='dih-NY-uhlz'>denials</respell>",
+            "::dih-NY-uhlz::",
+        ),
+        "deny": ("<respell value='dih-NY'>deny</respell>", "::dih-NY::"),
+        "duo": ("<respell value='DOO-oh'>duo</respell>", "::DOO-oh::"),
+        "enrolled": (
+            "<respell value='ehn-ROHLD'>enrolled</respell>",
+            "::ehn-ROHLD::",
+        ),
+        "flange": ("<respell value='FLANJ'>flange</respell>", "::FLANJ::"),
+        "goldilocks": (
+            "<respell value='GOHL-dee-lawks'>goldilocks</respell>",
+            "::GOHL-dee-lawks::",
+        ),
+        "hypoglycemic": (
+            "<respell value='HY-poh-gly-SEE-mihk'>hypoglycemic</respell>",
+            "::HY-poh-gly-SEE-mihk::",
+        ),
+        "icon": ("<respell value='Y-kahn'>icon</respell>", "::Y-kahn::"),
+        "incorporate": (
+            "<respell value='ihn-KOR-pur-ayt'>incorporate</respell>",
+            "::ihn-KOR-pur-ayt::",
+        ),
+        "iodine": (
+            "<respell value='Y-uh-dyn'>iodine</respell>",
+            "::Y-uh-dyn::",
+        ),
+        "karaoke": (
+            "<respell value='KEH-ree-OH-kee'>karaoke</respell>",
+            "::KEH-ree-OH-kee::",
+        ),
+        "meteor": (
+            "<respell value='MEE-tee-ur'>meteor</respell>",
+            "::MEE-tee-ur::",
+        ),
+        "niche": ("<respell value='NIHCH'>niche</respell>", "::NIHCH::"),
+        "nomenclature": (
+            "<respell value='NOH-muhn-klay-chur'>nomenclature</respell>",
+            "::NOH-muhn-klay-chur::",
+        ),
+        "omit": ("<respell value='oh-MIHT'>omit</respell>", "::oh-MIHT::"),
+        "oodles": (
+            "<respell value='OO-duhlz'>oodles</respell>",
+            "::OO-duhlz::",
+        ),
+        "osteoporosis": (
+            "<respell value='AW-stee-OH-pur-OH-sihs'>osteoporosis</respell>",
+            "::AW-stee-OH-pur-OH-sihs::",
+        ),
+        "pancreas": (
+            "<respell value='PAN-kree-uhs'>pancreas</respell>",
+            "::PAN-kree-uhs::",
+        ),
+        "quarantine": (
+            "<respell value='KWOH-ruhn-teen'>quarantine</respell>",
+            "::KWOH-ruhn-teen::",
+        ),
+        "realm": ("<respell value='REHLM'>realm</respell>", "::REHLM::"),
+        "reconnaissance": (
+            "<respell value='ree-KAH-nuh-suhns'>reconnaissance</respell>",
+            "::ree-KAH-nuh-suhns::",
+        ),
+        "rendezvous": (
+            "<respell value='RAHN-dih-voo'>rendezvous</respell>",
+            "::RAHN-dih-voo::",
+        ),
+        "ricocheted": (
+            "<respell value='RIH-kuh-shayd'>ricocheted</respell>",
+            "::RIH-kuh-shayd::",
+        ),
+        "scarce": ("<respell value='SKERRS'>scarce</respell>", "::SKERRS::"),
+        "sew": ("<respell value='SOH'>sew</respell>", "::SOH::"),
+        "signage": (
+            "<respell value='SY-nihj'>signage</respell>",
+            "::SY-nihj::",
+        ),
+        "sterile": (
+            "<respell value='STEH-ruhl'>sterile</respell>",
+            "::STEH-ruhl::",
+        ),
+        "teammate": (
+            "<respell value='TEE-mayt'>teammate</respell>",
+            "::TEE-mayt::",
+        ),
+        "trachea": (
+            "<respell value='TRAY-kee-uh'>trachea</respell>",
+            "::TRAY-kee-uh::",
+        ),
+        "treachery": (
+            "<respell value='TREH-chur-ee'>treachery</respell>",
+            "::TREH-chur-ee::",
+        ),
+        "triage": (
+            "<respell value='TREE-ahj'>triage</respell>",
+            "::TREE-ahj::",
+        ),
+        "verbatim": (
+            "<respell value='vur-BAY-tuhm'>verbatim</respell>",
+            "::vur-BAY-tuhm::",
+        ),
+        "feisty": ("<respell value='FY-stee'>feisty</respell>", " ::FY-stee::"),
+        "corps": ("<respell value='KOR'>corps</respell>", "::KOR::"),
+        "ague": ("<respell value='AY-gyoo'>ague</respell>", "::AY-gyoo::"),
+        "saga": ("<respell value='SAH-guh'>saga</respell>", "::SAH-guh::"),
+        "heist": ("<respell value='HYST'>heist</respell>", "::HYST::"),
+        "overzealous": (
+            "<respell value='OH-vur-ZEH-luhs'>overzealous</respell>",
+            "::OH-vur-ZEH-luhs::",
+        ),
+        "zeal": ("<respell value='ZEEL'>zeal</respell>", "::ZEEL::"),
+        "juxtaposition": (
+            "<respell value='JUHK-stuh-puh-ZIH-shuhn'>juxtaposition</respell>",
+            "::JUHK-stuh-puh-ZIH-shuhn::",
+        ),
+        "overexaggerated": (
+            "<respell value='OH-vur-ihg-ZA-juh-ray-duhd'>overexaggerated</respell>",
+            "::OH-vur-ihg-ZA-juh-ray-duhd::",
+        ),
+        "onomatopoeia": (
+            "<respell value='AH-nuh-MAH-duh-PEE-uh'>onomatopoeia</respell>",
+            "::AH-nuh-MAH-duh-PEE-uh::",
+        ),
+        "California": (
+            "<respell value='KA-luh-FOR-nyuh'>California</respell>",
+            "::KA-luh-FOR-nyuh::",
+        ),
+        "Indian": (
+            "<respell value='IHN-dee-uhn'>Indian</respell>",
+            "::IHN-dee-uhn::",
+        ),
+        "Italian": (
+            "<respell value='ih-TA-lyuhn'>Italian</respell>",
+            "::ih-TA-lyuhn::",
+        ),
+        "application": (
+            "<respell value='A-pluh-KAY-shuhn'>application</respell>",
+            "::A-pluh-KAY-shuhn::",
+        ),
+        "authority": (
+            "<respell value='uh-THOH-ruh-tee'>authority</respell>",
+            "::uh-THOH-ruh-tee::",
+        ),
+        "becoming": (
+            "<respell value='bih-KUH-mihng'>becoming</respell>",
+            "::bih-KUH-mihng::",
+        ),
+        "board": ("<respell value='BORD'>board</respell>", "::BORD::"),
+        "car": ("<respell value='KAR'>car</respell>", "::KAR::"),
+        "civil": ("<respell value='SIH-vuhl'>civil</respell>", "::SIH-vuhl::"),
+        "cover": ("<respell value='KUH-vur'>cover</respell>", "::KUH-vur::"),
+        "critical": (
+            "<respell value='KRIH-tih-kuhl'>critical</respell>",
+            "::KRIH-tih-kuhl::",
+        ),
+        "decision": (
+            "<respell value='dih-SIH-zhuhn'>decision</respell>",
+            "::dih-SIH-zhuhn::",
+        ),
+        "determined": (
+            "<respell value='dih-TUR-muhnd'>determined</respell>",
+            "::dih-TUR-muhnd::",
+        ),
+        "develop": (
+            "<respell value='dih-VEH-luhp'>develop</respell>",
+            "::dih-VEH-luhp::",
+        ),
+        "device": ("<respell value='dih-VYS'>device</respell>", "::dih-VYS::"),
+        "distribution": (
+            "<respell value='DIHS-truh-BYOO-shuhn'>distribution</respell>",
+            "::DIHS-truh-BYOO-shuhn::",
+        ),
+        "efforts": (
+            "<respell value='EH-furts'>efforts</respell>",
+            "::EH-furts::",
+        ),
+        "element": (
+            "<respell value='EH-luh-muhnt'>element</respell>",
+            "::EH-luh-muhnt::",
+        ),
+        "famous": (
+            "<respell value='FAY-muhs'>famous</respell>",
+            "::FAY-muhs::",
+        ),
+        "finally": (
+            "<respell value='FY-nuh-lee'>finally</respell>",
+            "::FY-nuh-lee::",
+        ),
+        "fully": ("<respell value='FUU-lee'>fully</respell>", "::FUU-lee::"),
+        "gives": ("<respell value='GIHVZ'>gives</respell>", "::GIHVZ::"),
+        "giving": (
+            "<respell value='GIH-vihng'>giving</respell>",
+            "::GIH-vihng::",
+        ),
+        "growing": (
+            "<respell value='GROH-ihng'>growing</respell>",
+            "::GROH-ihng::",
+        ),
+        "hard": ("<respell value='HARD'>hard</respell>", "::HARD::"),
+        "ideas": (
+            "<respell value='y-DEE-uhz'>ideas</respell>",
+            "::y-DEE-uhz::",
+        ),
+        "instance": (
+            "<respell value='IHN-stuhns'>instance</respell>",
+            "::IHN-stuhns::",
+        ),
+        "instead": (
+            "<respell value='ihn-STEHD'>instead</respell>",
+            "::ihn-STEHD::",
+        ),
+        "leaving": (
+            "<respell value='LEE-vihng'>leaving</respell>",
+            "::LEE-vihng::",
+        ),
+        "moving": (
+            "<respell value='MOO-vihng'>moving</respell>",
+            "::MOO-vihng::",
+        ),
+        "musical": (
+            "<respell value='MYOO-zih-kuhl'>musical</respell>",
+            "::MYOO-zih-kuhl::",
+        ),
+        "notes": ("<respell value='NOHTS'>notes</respell>", "::NOHTS::"),
+        "nuclear": (
+            "<respell value='NOOK-lee-ur'>nuclear</respell>",
+            "::NOOK-lee-ur::",
+        ),
+        "ordered": (
+            "<respell value='OR-durd'>ordered</respell>",
+            "::OR-durd::",
+        ),
+        "output": (
+            "<respell value='OWT-puut'>output</respell>",
+            "::OWT-puut::",
+        ),
+        "phase": ("<respell value='FAYZ'>phase</respell>", "::FAYZ::"),
+        "plants": ("<respell value='PLANTS'>plants</respell>", "::PLANTS::"),
+        "previously": (
+            "<respell value='PREE-vee-uhs-lee'>previously</respell>",
+            "::PREE-vee-uhs-lee::",
+        ),
+        "purpose": (
+            "<respell value='PUR-puhs'>purpose</respell>",
+            "::PUR-puhs::",
+        ),
+        "quite": ("<respell value='KWYT'>quite</respell>", "::KWYT::"),
+        "race": ("<respell value='RAYS'>race</respell>", "::RAYS::"),
+        "relations": (
+            "<respell value='ree-LAY-shuhnz'>relations</respell>",
+            "::ree-LAY-shuhnz::",
+        ),
+        "responsible": (
+            "<respell value='ree-SPAHN-suh-buhl'>responsible</respell>",
+            "::ree-SPAHN-suh-buhl::",
+        ),
+        "risk": ("<respell value='RIHSK'>risk</respell>", "::RIHSK::"),
+        "rock": ("<respell value='RAHK'>rock</respell>", "::RAHK::"),
+        "sets": ("<respell value='SEHTS'>sets</respell>", "::SEHTS::"),
+        "share": ("<respell value='SHERR'>share</respell>", "::SHERR::"),
+        "shot": ("<respell value='SHAHT'>shot</respell>", "::SHAHT::"),
+        "situation": (
+            "<respell value='SIH-choo-AY-shuhn'>situation</respell>",
+            "::SIH-choo-AY-shuhn::",
+        ),
+        "something": (
+            "<respell value='SUHM-thihng'>something</respell>",
+            "::SUHM-thihng::",
+        ),
+        "table": ("<respell value='TAY-buhl'>table</respell>", "::TAY-buhl::"),
+        "techniques": (
+            "<respell value='tehk-NEEKS'>techniques</respell>",
+            "::tehk-NEEKS::",
+        ),
+        "unique": (
+            "<respell value='yoo-NEEK'>unique</respell>",
+            "::yoo-NEEK::",
+        ),
+        "vote": ("<respell value='VOHT'>vote</respell>", "::VOHT::"),
+        "weeks": ("<respell value='WEEKS'>weeks</respell>", "::WEEKS::"),
+        "win": ("<respell value='WIHN'>win</respell>", "::WIHN::"),
+        "workers": (
+            "<respell value='WUR-kurz'>workers</respell>",
+            "::WUR-kurz::",
+        ),
+        "world": ("<respell value='WURLD'>world</respell>", "::WURLD::"),
+    }
+    SLURRING = [
+        """If you’ve ever cyberbullied someone, you may have thought it was funny at the time. When you can’t see someone’s face, it can be easier to be mean to them. But chances are, you don’t really want to cause anyone to experience anything on the list above. It’s important to use empathy for others, even when we’re online and can’t look them in the eyes. Empathy is when we put ourselves in another person’s shoes to identify with how they are feeling. The next time you’re thinking about being disrespectful online just to get a laugh, put yourself in the other person’s shoes. Ask yourself, would you like someone to treat you that way?
+        """,
+        """After a couple of minutes, Gaius groaned once more and opened his eyes.
+    
+        “What… what happened?” he asked, as he immediately tried to sit up.
+    
+        Leon, pushing him back down, said, “We got the shadow cat, but you seemed to have passed out. How are you feeling?”
+    
+        “Uggh, like I fought a bull and lost,” Gaius replied, as he shifted around enough to pull his shirt up and see that the wound Leon had left on his abdomen had closed over with freshly-healed skin. “At least that’s taken care of. Thank you, Leon.”
+        """,
+        """Hi, I'm Idris. I'm going to guide you through this session today. I'm so excited to have you here to learn about underwriting recreational vehicles for our customers! I'd like to get to know you before we start; can you enter your name, please?
+        """,
+        """Let’s look at a couple of questions to reinforce what we have learned. You can pause the webcast to give yourself time to answer the question. Then, press "play" to see if you answered correctly and to hear the rationale. Keep in mind there may be more than one correct answer. Number 1. In an ICD-10 PCS cabbage procedure code, what does the Body Part value identify? The name of the body part being bypassed. The number of coronary arteries being treated. The number of coronary arteries being bypassed to. The vessel bypassed from.
+        """,
+        """We're sorry for the delay. Our average wait time is well under a minute, so we will be with you shortly. Did you know that we perform custom alterations for many of our customers? That’s right.
+    Do you need a shorter than standard inseam, but can't find that service elsewhere? All of our pants are hemmed on-site free of charge, while adding a zipper to the leg of any of our pants can make accessing a knee brace or prosthesis so much easier. Most alterations add only one day to your order turnaround, so ask your order taker for more information. We will be with you shortly.
+        """,
+        """It's time to take what you've learned about DocuSign and put it into practice. In this course, you will learn how to access the demo environment, and have the opportunity to send practice documents.. both with a template and without a template. It will take approximately 10 minutes to complete and the course does contain audio, so please make sure your sound is turned on. To begin, click the start button.
+        """,
+    ]
+    V10_REGRESSIONS = [
         # NOTE: Respellings are formatted like they were inputted in v10
         # - Difficult acronyms
         "It took six Ph.Ds to design a VCR a five-year-old could use.",
@@ -855,29 +800,34 @@ class TestCases:
           four hundred and wonk",
         "I work for a financial industry and am making lots of videos talking about 401(k)s, 457(b)s, \
           and so on.",
-    )
-    # NOTE Slack Reference: https://wellsaidlabs.slack.com/archives/C0149LB6LKX/p1671134275497839
-    # Wade ("EVV" pronounced with inconsistent speed)
-    V10_ACCENTURE = (
-        "Step 2: The EVV vendor reviews the EVV Provider Onboarding Form and confirms all required "
-        "fields are complete and accurate.",
-        "Within one business day of receipt, the EVV vendor will send an email to the signature "
-        "authority and Program Provider/FMSA EVV System Administrator listed on the form to "
-        "acknowledge receipt of the EVV Provider Onboarding Form.",
-        "The EVV vendor will advise that the submitted form is under review and the contact "
-        "information for the Program Provider/FMSA EVV System Administrator on the form will be "
-        "used to contact  the program provider or FMSA to begin the EVV Provider Onboarding "
-        "Process."
-    )
-    V10_SYNTHESIA = (
-        # Slack Reference: https://wellsaidlabs.slack.com/archives/C0149LB6LKX/p1673021131011249
+    ]
+    V10_ACCENTURE = [
+        # NOTE Slack Reference: https://wellsaidlabs.slack.com/archives/C0149LB6LKX/p1671134275497839
+        # Wade ("EVV" pronounced with inconsistent speed)
+        "Step 2: The EVV vendor reviews the EVV Provider Onboarding Form and confirms all required \
+          fields are complete and accurate.",
+        "Within one business day of receipt, the EVV vendor will send an email to the signature \
+          authority and Program Provider/FMSA EVV System Administrator listed on the form to \
+            acknowledge receipt of the EVV Provider Onboarding Form.",
+        "The EVV vendor will advise that the submitted form is under review and the contact information\
+          for the Program Provider/FMSA EVV System Administrator on the form will be used to contact \
+            the program provider or FMSA to begin the EVV Provider Onboarding Process.",
+    ]
+    V10_SYNTHESIA = [
+        # NOTE Slack Reference: https://wellsaidlabs.slack.com/archives/C0149LB6LKX/p1673021131011249
         # "AI", "Xelia", "studio" requesting v10 downgrade to v9
         "I’m an AI avatar",
         "Mindblowing AI tools you’ve never heard of",
         "We are happy to support tools supporting Xelia grows",
         "Here’s a quick overview of our studio platform",
-    )
-    VARIOUS_INITIALISMS = (
+    ]
+    V10_EMAIL = [
+        "hello@wellsaidlabs.com.",
+        "hello123@wellsaidlabs.com.",
+        "hello-123@wellsaidlabs.com.",
+        "hello_123@wellsaidlabs.com.",
+    ]
+    VARIOUS_INITIALISMS = [
         # NOTE This section will be reused for testing v11 & all examples here are copied in intialisms section above
         "Each line will have GA Type as Payment, Paid Amount along with PAC, and the GA Code.",
         "Properly use and maintain air-line breathing systems and establish a uniform procedure "
@@ -888,8 +838,8 @@ class TestCases:
         "HSPs account for fifteen to twenty percent of the population.",
         "We used to have difficulty with AOA and AMA, but now we are A-okay.",
         "As far as AIs go, ours is pretty great!",
-    )
-    QUESTIONS_WITH_UPWARD_INFLECTION = (
+    ]
+    QUESTIONS_WITH_UPWARD_INFLECTION = [
         # NOTE: All these questions should have an upward inflection at the end.
         "Have you ever hidden a snack so that nobody else would find it and eat it first?",
         "Can fish see air like we see water?",
@@ -916,8 +866,8 @@ class TestCases:
         "Do you watch ESPN at night?",
         "Will AI replace humans?",
         "Can our AI say AI?",
-    )
-    QUESTIONS_WITH_VARIED_INFLECTION = (
+    ]
+    QUESTIONS_WITH_VARIED_INFLECTION = [
         # NOTE: These questions each have a different expected inflection.
         "If you can instantly become an expert in something, what would it be?",
         "What led to the two of you having a disagreement?",
@@ -930,10 +880,10 @@ class TestCases:
         "What childish things do you still do as an adult?",
         "If you were to perform in the circus, what would you do?",
         "Who is eligible for reimbursement?",
-    )
-    # These statements have a mix of heteronyms, initialisms, hard words (locations,
-    # medical terms, technical terms), etc for testing pronunciation.
-    HARD_SCRIPTS = (
+    ]
+    HARD_SCRIPTS = [
+        # NOTE: These statements have a mix of heteronyms, initialisms, hard words (locations,
+        # medical terms, technical terms), etc for testing pronunciation.
         "For more updates on covid nineteen, please contact us via the URL at the bottom of the "
         "screen, or visit our office in Seattle at the address shown here.",
         "I've listed INTJ on my resume because it's important for me that you understand how I "
@@ -949,9 +899,9 @@ class TestCases:
         "Let's add a row on our assay tracking sheet so we can build out the proper egress "
         "measurements.",
         "Hello! Can you put this contractor into a supervisory role?",
-    )
-    # Test cases with a variety of lengths, respellings, and punctuation marks.
-    HARD_SCRIPTS_2 = (
+    ]
+    HARD_SCRIPTS_2 = [
+        # NOTE: Test cases with a variety of lengths, respellings, and punctuation marks.
         "WellSaid Labs.",
         "Livingroom",
         "ACLA.",
@@ -959,25 +909,80 @@ class TestCases:
         "NASA",
         "Topic two:     Is an NRA right for my rate?.",
         "Internet Assigned Numbers Authority (IANA)",
-    )
-    GREEK_SYMBOLS = (
-        "Α α Β β Γ γ Δ δ Ε ε Ζ ζ Η η Θ θ Ι ι  Κ κ Λ λ Μ μ Ν ν Ξ ξ Ο ο Π π Ρ ρ Σ σ ς Τ τ Υ υ Φ φ Χ "
-        "χ Ψ ψ Ω ω",
-    )
-    # Long strings of repetitive letters can highlight model instability.
-    ALPHABET = (
+    ]
+    V10_AUDIO_QUALITY_DISTORTION = [
+        # 05/2021: Tobin (Alison: Noticeable in datasets, but not in model output)
+        "Tobin’s “breathing” events will become highly distorted approximately 80 percent of the time,\
+           especially when using samples of 300-400 words.",
+        # 11/2022: Ramona (Alison: Noticeable in datasets, but not in model output)
+        "We hear distortion in the audio file, a hissing sound, particularly in Romana J Avatar.",
+    ]
+    V10_AUDIO_QUALITY_BREATHING = [
+        # 08/2020: Isabel
+        "Isabel seems to struggle with more than one sentence. There is a bug with her breathing and \
+          the end of sentences",
+        # 2020: Kai (Alison: Not noticeable in datasets, or model output)
+        # "I use Kai the most, however, I don’t always enjoy editing out all his breaths before each \
+        #   sentence, but still gets used most frequently.",
+        # 2020-2022: Jeremy
+        # "Jeremy's voice is great- perfect speed and inflection in most cases.  The loud breaths in \
+        #   his speech are tough to listed to after a while.",
+    ]
+    V10_AUDIO_QUALITY_HARSHNESS = [
+        # NOTE: Harshness pertaining to buzz, fuzz, hiss, artifacts
+        # NOTE: Commented out the following test cases because Alison did not find them noticeable \
+        # in datasets after investigating. Test cases are here just to keep a record, in case we want \
+        # to revisit them in the future.
+        # 10/2022: Jeremy
+        # "The Jeremy avatar has an issue where there's a static/electrical noise when he pauses \
+        #   between words.",
+        # 07/2021: Alana (Alison: Not noticeable in datasets, or model output)
+        # "Alana B - sounded great, but then others seemed to have odd artifacts or hiss sounds"
+        # 07/2021: Sofia (Alison: Not a problem that needs fixing)
+        # "if memory serves, Sofia H had some rather pronounced sibilance"
+        # 07/2021: Isabel
+        "and then Isabel V had a static-like sound going on",
+    ]
+    V10_AUDIO_QUALITY_LOUDNESS = [
+        # NOTE: 2020-2022
+        # NOTE: WSL voices suffer from inconsistent loudness between VA, styles, clips, and within clips
+        # Isabel: Too soft
+        "My favourite voice was always Isabel V. But, she is too quiet.",
+        # Terra: Too loud at the beginning of sentences
+        "Terra G. is the avatar. Seems like the beginning of alot of her sentences are loud.",
+        # James B.(UK):
+        "Whenever I create a voice with James, initially the volume of the audio is fine, but after \
+      15-16 seconds of the audio playing, the sound volume goes down automatically.",
+        # Wade: Too soft
+        "I have noticed that some voices, like Wade, come into Storyline with super low volume.",
+        # Wade: Inconsistent loudness between styles
+        "Wade's styles have inconsistent loudness. For example, we hear this when switching from his\
+      narration to conversational style.",
+        # Ava: Too soft
+        "Ava M is dramatically lower than Wade C in volume level. The recording quality varies greatly\
+      as well.",
+    ]
+    GREEK_SYMBOLS = [
+        # Greek letters for math
+        "Α α Β β Γ γ Δ δ Ε ε Ζ ζ Η η Θ θ Ι ι  Κ κ Λ λ Μ μ Ν ν Ξ ξ Ο ο Π π Ρ ρ Σ σ ς Τ τ Υ υ Φ φ Χ χ Ψ \
+      ψ Ω ω",
+    ]
+    ALPHABET = [
+        # NOTE: Long strings of repetitive letters, can highlight model instability.
         string.ascii_uppercase * 15,
         " ".join(list(string.ascii_uppercase) * 15),
         ". ".join(list(string.ascii_uppercase) * 15),
-    )
-    # short words and large annotation values can cause speaker switching
-    SPEAKER_SWITCHING = (
+    ]
+    SPEAKER_SWITCHING = [
+        # NOTE: For short single words, the model sometimes also switches speakers, sometimes.
         "Yeah",
         "Lol",
+        # NOTE: Big annotaton values, can also cause the model to switch speakers, sometimes.
         '<tempo value="0.25">Please do not do that.</tempo>',
         '<tempo value="5">Please do not do that.</tempo>',
-    )
-    ABBREVIATIONS_WITH_VOWELS = (
+    ]
+    ABBREVIATIONS_WITH_VOWELS = [
+        # NOTE: These various abbreviations consistenly were mispronounced in v11 on March 1st, 2023.
         "ABBA (musical group) - Agnetha, Björn, Benny, Anni-Frid (first names of the band’s members)",
         "AFK - Away From Keyboard",
         "AFL – American Football League",
@@ -998,8 +1003,8 @@ class TestCases:
         "YAHOO (search engine) - Yet Another Hierarchical Officious Oracle",
         "YOLO - You Only Live Once",
         "ZIP code - Zone Improvement Plan code",
-    )
-    SLOW_SCRIPTS = (
+    ]
+    SLOW_SCRIPTS = [
         (
             '<tempo value="0.3">Mirabeau B. Lamar was born in Georgia in 1798'
             "</tempo>. He was the son of a wealthy plantation owner. When he "
@@ -1095,7 +1100,7 @@ class TestCases:
             '<tempo value="0.5">Ocular Ultrasound, Fluorescein Angiography, and Optical Coherence '
             "Tomography</tempo>."
         ),
-    )
+    ]
 
     def __post_init__(self):
         REPORT_CARD_TEST_CASES = (
