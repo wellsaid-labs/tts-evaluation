@@ -92,7 +92,7 @@ MODEL_TO_SPEAKERS = {
         ("WADE_C__PROMO", 26),
         ("JOE_F__NARRATION", 27),
         ("JOE_F__PROMO", 28),
-        ("GARRY_J__CHRACHTER", 29),
+        ("GARRY_J__CHARACTER", 29),
         ("WADE_C__NARRATION", 30),
         ("AVA_M__NARRATION", 31),
         ("KAI_M__NARRATION", 32),
