@@ -1,4 +1,6 @@
 from dataclasses import dataclass, asdict
+import random
+
 from generate.utils.api import APITransaction
 from google.cloud import storage
 import typing
@@ -6,10 +8,8 @@ import json
 import yaml
 import pandas as pd
 from package_utils.environment import logger
-from lib.test_cases import TestCases
 
 DATASET_TYPES = {"absolute", "comparative"}
-test_cases = TestCases()
 
 
 @dataclass
@@ -28,11 +28,12 @@ class DatasetConfig:
     """
 
     model_versions: typing.List[str]
-    gcs_bucket: str
     gcs_path: str
     speakers: typing.List[str]
     clips_per_text: int
     dataset_type: str
+    gcs_bucket: str = "tts_evaluations"
+    task_limit: int = None
     custom_texts: typing.List[str] = None
     predefined_texts: typing.List[str] = None
     combined_texts: typing.List[str] = None
@@ -41,16 +42,14 @@ class DatasetConfig:
         if self.dataset_type not in DATASET_TYPES:
             logger.error(f"Dataset type must be one of {DATASET_TYPES}")
             raise AttributeError
-        combined_texts = self.custom_texts
-        for text_source in self.predefined_texts:
-            list_of_texts = getattr(test_cases, text_source)
-            if not list_of_texts:
-                logger.error(
-                    f"Predefined text source {text_source} could not be found"
-                )
-                raise ValueError
-            combined_texts.extend(list_of_texts)
-        self.combined_texts = combined_texts
+
+        combined_texts = pd.concat(
+            [pd.read_csv(i, usecols=[0]) for i in self.predefined_texts]
+        )
+        if self.custom_texts:
+            for i in self.custom_texts:
+                combined_texts.loc[-1] = i
+        self.combined_texts = combined_texts.text.tolist()
 
     @classmethod
     def from_file(cls, conf_path):
@@ -70,6 +69,37 @@ class DatasetConfig:
 
     def as_dict(self):
         return asdict(self)
+
+    def to_file(self, extension, path):
+        supported = {"json", "yaml", "yml"}
+        if not any(extension.endswith(s) for s in supported):
+            logger.error(
+                f"{extension} is not supported. Use one of {supported}"
+            )
+            raise ValueError
+        d = self.as_dict()
+
+        with open(path, "w") as ofp:
+            if extension == "json":
+                ofp.write(json.dumps(d))
+            elif extension in {"yaml", "yml"}:
+                ofp.write(yaml.dump(d))
+
+    def get_api_transactions(self) -> typing.List[APITransaction]:
+        tasks = [
+            APITransaction(
+                text=text,
+                speaker_id=speaker_id,
+                speaker=speaker,
+                model_version=model_version,
+            )
+            for model_version in self.model_versions
+            for speaker, speaker_id in self.speakers
+            for text in self.combined_texts
+        ] * self.clips_per_text
+        if self.task_limit > 0:
+            tasks = random.sample(tasks, self.task_limit)
+        return tasks
 
 
 @dataclass
