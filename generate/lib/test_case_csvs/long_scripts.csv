@@ -1,0 +1,270 @@
+﻿"In the initial setup stage, customize your experience by selecting logo and branding options, establishing key dates, and preparing templates and contacts for your new billing experience. Admin access is necessary to access settings and complete the Billing and Payments setup.
+
+By the end of this section, you should have:
+
+Chosen a start date (to exclude work billed elsewhere).
+
+Set your tax rates and tax identification numbers.
+
+Set up your branding.
+
+Customized your invoice template.
+
+Reviewed your invoice email template.
+
+Set up your accounting periods.
+
+And Connected to your chart of accounts.
+
+For firms already utilizing Product to manage client work, it's necessary to set a billing start date. 
+
+This step ensures that only the work you intend to bill through Product is included. It prevents work items not billed in Product, are not marked as ""unbilled"" but are instead completely excluded. Start dates are not editable or changeable once chosen.
+
+Based on the start date you enter, the following will not be shown in the Unbilled screen:
+
+Fixed fee work items with a start date preceding the chosen billing start date will be excluded. For instance, if January 2023 is selected, fixed fee work items that commenced before January 2023 will not be displayed. Items starting after January 2023 will be shown.
+
+For Time and Material work items, only entries or expenses made before the chosen billing start date will be excluded. For example, if January 2023 is selected and the last entry was in December 2022, it will not be displayed. Entries or expenses added from January 2023 onward will be included.
+
+Time entries and expenses on contacts that were added before the billing start date.
+
+Any fixed fee work items and time or expenses added after the start date selected will be included in Unbilled. 
+
+Once your billing start date is set, review your tax rates.
+
+Tax Rates Billing Settings is where the firm can set up Tax Rates, Tax Identification Numbers, and Invoice Templates. The information entered in these sections will then be applied to the Invoices created in Product. 
+
+All accounts will have a set of base tax rates (core rates) applied based on the country of the tenant: 
+
+Navigating to Settings then Billing, the firm can add additional single tax rates for their jurisdiction. This can be done by clicking 'Add Tax Rate'. The firm can then fill in the name and rate and click ‘add’.
+
+Combined tax rates are made up of existing single tax rates. Combined Tax Rates can be used in two ways. 
+
+A combined tax rate will be shown as combined on the invoice. For example in Canada there is HST tax, which is made up of PST + GST. 
+
+As a combined tax rate that will be shown as separate on the invoice. In the US, multiple tax rates will likely need to be applied on an invoice. For example, Marin County in California will have Federal, State, and County taxes. If the firm displays summarized invoices or does Fixed Fee work, there is only one place on the invoice to apply a tax rate. This option allows the firm to set up a tax rate combination so multiple rates can be applied to the invoice. 
+
+What is the Default Tax Rate?
+
+The firm can set one tax rate (single or combined) to be the default tax rate. The default tax rate selected will then be applied by default to Invoices created in Product. 
+
+Let's learn about Updating Tax Rates
+
+Tax rates can be edited by clicking on the row to select a saved rate or click on the ellipses on the relevant row. Tax rates can also be duplicated. 
+
+Note: If a firm updates a tax rate (edits the name or rate), all invoices in a draft state will be affected and use the new name or rate if applied to the invoice.
+
+Tax Identification Numbers 
+
+In many countries, invoices legally need to show a Tax Identification Number (TIN) for each Tax Rate. 
+
+In Billing Settings, firms can associate Single Tax Rates to a TIN. When the Tax Rates are applied to the invoice, any associated TIN will be shown on the invoice (if set to show). 
+
+To set up a Tax Identification Number: 
+
+Click 'Add Tax Identification Number'
+
+Enter the Identifier field which is the name displayed on the Invoice.
+
+Enter the Tax Identification Number 
+
+Select related Tax Rates 
+
+Select if the Tax Identification Number will appear on the invoice. If 'don't show on invoices' is selected, when associated tax rates are applied, a TIN will not be applied on the invoice. 
+
+Note: 
+
+When setting up a Tax Identification Number, the related tax options only show single tax rates. When a combined tax rate is applied on the invoice and includes a single tax rate that is associated with a TIN, that TIN will appear on the invoice. 
+
+If a firm edits the name or changes the rates associated to a Tax Identification Number, all invoices in a draft state will be affected. If a firm deletes a TIN and it was on a draft invoice, it will no longer be visible.
+
+Next, we will proceed with the setup steps shown on the Billing Dashboard. ", March 2024,"non-enterprise user script
+instructional step by step "
+"Question 21: How should a security guard handle a situation where they are the first to respond to a severe fire emergency?
+
+A. Attempt to extinguish the fire single-handedly;
+B. Evacuate the area, alert the fire department, and assist in crowd control;
+C. Lockdown the building to prevent people from entering;
+D. Take photographs of the fire for incident reporting.
+
+Answer: B. Evacuate the area, alert the fire department, and assist in crowd control. In a severe fire emergency, a security guard should prioritize evacuating the area, alerting the fire department, and assisting in crowd control to ensure the safety of all individuals.
+
+Question 22: What are the key considerations for a security guard when assessing threats in a high-tension environment?
+
+A. Focus only on the most apparent threats;
+B. Assess all potential threats, remain vigilant, and prioritize safety;
+C. Ignore minor disturbances to avoid escalation;
+D. Rely on intuition rather than established protocols.
+
+Answer: B. Assess all potential threats, remain vigilant, and prioritize safety. In a high-tension environment, a security guard should assess all potential threats, maintain vigilance, and prioritize the safety of individuals and the property.
+
+Question 23: How does a security guard manage a situation where a visitor makes a serious threat against another individual on the property?
+A. Dismiss the threat as unlikely to be acted upon;
+B. Secure the area, report the threat, and monitor the visitor’s actions;
+C. Encourage the threatened individual to leave the property;
+D. Facilitate a meeting between the visitor and the threatened individual.
+
+Answer: B. Secure the area, report the threat, and monitor the visitor’s actions. The security guard should secure the area to ensure safety, report the threat to the appropriate authorities or management, and closely monitor the actions of the visitor who made the threat.
+
+Question 24: Explain the role of a security guard in an active shooter situation before law enforcement arrives.
+A. Confront the shooter directly to neutralize the threat;
+B. Evacuate individuals if safe, provide information to law enforcement, and follow lockdown procedures;
+C. Continue with regular duties until law enforcement takes over;
+D. Arm themselves with available weapons to respond.
+
+Answer: B. Evacuate individuals if safe, provide information to law enforcement, and follow lockdown procedures. In an active shooter situation, the security guard's role is to evacuate individuals if it is safe to do so, provide critical information to law enforcement, and implement lockdown procedures to enhance safety.
+
+Question 25: Describe the protocol for handling a situation where a security guard is confronted with a potentially explosive device.
+A. Attempt to disarm the device based on personal judgment;
+B. Evacuate the area, inform authorities, and establish a safety perimeter;
+C. Move the device to a less populated area;
+D. Close off the area but allow normal activities to continue.
+
+Answer: B. Evacuate the area, inform authorities, and establish a safety perimeter. Upon encountering a potentially explosive device, the security guard should evacuate the immediate area, inform the appropriate authorities, and establish a safety perimeter while awaiting specialized assistance.
+
+Question 26: What are the legal considerations for a security guard using physical force to detain a person suspected of theft?
+A. Use any necessary force to ensure compliance;
+B. Utilize reasonable and proportionate force based on the situation;
+C. Avoid using any physical force in all circumstances;
+D. Detain the suspect without using any force until law enforcement arrives.
+
+Answer: B. Utilize reasonable and proportionate force based on the situation. When detaining a person suspected of theft, a security guard should use force that is reasonable and proportionate to the situation, ensuring not to exceed the legal boundaries of their authority.
+
+Question 27: How should a security guard react to discovering a covert illegal gambling operation on the premises?
+A. Join the game to gather evidence;
+B. Immediately shut down the operation and detain the participants;
+C. Report the discovery to management and law enforcement;
+D. Warn the operators to cease their activities.
+
+Answer: C. Report the discovery to management and law enforcement. Upon discovering a covert illegal gambling operation, the security guard should report the operation to management and law enforcement for appropriate legal action.", March 2024,"how does our model handle a list of questions with multiple choice answers?
+
+reformatted the text from user version, which made use of ellipses to control pausing
+
+non-enterprise user script"
+"Alfred Adler
+
+""The only normal people are the ones you don't know very well.""
+""Imagination is more important than knowledge.""
+""Follow your heart but take your brain with you.""
+""Meanings are not determined by situations, but we determine ourselves by the meanings we give to situations.""
+""The greater the feeling of inferiority that has been experienced, the more powerful is the urge to conquest and the more violent the emotional agitation.""
+""Trust only movement. Life happens at the level of events, not of words. Trust movement.""
+""It is easier to fight for one's principles than to liv up to them.""
+""To be human is to feel inferior.""
+""The task of a psychologist or psychotherapist is not necessarily to teach virtue, but to eliminate vice.""
+""Follow your instincts. That's where true wisdom manifests itself.""
+""The only thing we can truly control is our own reaction to the world.""
+""Life happens at the level of events, not of words. Trust movement.""
+""It is not a matter of measuring the degree of that contribution, but of kindling the spark from which it may arise.""
+""The science of the mind can only have for its proper goal the understanding of human nature by every human being, and through its use, brings peace to every human soul.""
+""One who is pampered reacts like a poor relation the moment anything goes against his will.""
+""It is always the secure who are humble.""
+""The truth is awfen a terrible weapon of aggression. It is possible to lie, and even to murder with the truth.""
+""The neurotic is nailed to the cross of his fiction.""
+""A simple rule in dealing with those who are hard to get along with is to remember that this person is striving to assert his superiority; and you must deal with him from that point of view.""
+""Man knows much more than he understands.""
+""To be a human being means to possess a feeling of inferiority which constantly presses towards its own conquest. The greater the feeling of inferiority that has been experienced, the more powerful is the urge for conquest and the more violent the emotional agitation.""
+""The more you know yourself, the more you will understand others.""
+""We can be cured of our sins only by love.""
+""There is a Law that man should love his neighbor as himself. In a few hundred years it should be as natural to mankind as breathing or the upright gait; but if he does not learn it he must perish.""
+
+
+Jean-Jacques Rousseau
+
+""Man is born free, and everywhere he is in chains.""
+""The first man who, having fenced in a piece of land, said 'This is mine,' and found people naïve enough to believe him, that man was the true founder of civil society.""
+""We are born weak, we need strength; helpless, we need aid; foolish, we need reason.""
+""To liv is not to breathe but to act.""
+""The person who has lived the most is not the one with the most years but the one with the richest experiences.""
+""I may be no better, but at least I am different.""
+""People who know little are usually great talkers, while men who know much say little.""
+""Man is naturally good, it is society that corrupts him.""
+""Patience is bitter, but its fruit is sweet.""
+""What wisdom can you find that is greater than kindness?""
+""The strongest is never strong enough to be always the master, unless he transforms strength into right, and obedience into duty.""
+""Money buys everything, except morality and citizens.""
+""Force does not constitute right... obedience is due only to legitimate powers.""
+""The more we love our friends, the less we flatter them; it is by excusing nothing that pure love shows itself.""
+""We pity in others only the those evils which we ourselves have experienced.""
+""The world of reality has its limits; the world of imagination is boundless.""
+""We are more concerned about our reputation with other people than about our conscience with ourselves.""
+""One is not rich by what one owns, but more by what one is able to do without with dignity.""
+""Man is condemned to be free; because once thrown into the world, he is responsible for everything he does.""
+""The greatest good of man is the conquest of his faculties.""
+""The more a man has, the more he wants. Instead of filling a vacuum, it makes one.""
+""The general will is always right, but the judgment which guides it is not always enlightened.""
+""Conscience is the voice of the soul; the passions are the voice of the body.""
+""Virtue is a state of war, and to liv in it we have always to combat with ourselves.""
+""Freedom is not worth having if it does not include the freedom to make mistakes.""
+""To renounce freedom is to renounce one's humanity, one's rights as a man and equally one's duties.""
+""The less men think, the more they talk.""
+""Happiness: a good bank account, a good cook, and a good digestion.""
+""We are all born ignorant, but one must work hard to remain stupid.""
+""The first step towards vice is to shroud innocent actions in mystery, and whoever likes to conceal something sooner or later has reason to conceal it.""
+""Man was born free, and everywhere he is in chains.""", March 2024,"how does our model handle so many quoted passages in a row?
+
+non-enterprise user script"
+"According to Raw Story's article from Thursday, December 28, 2023, Jolly said that Trump's increasing court dates are to blame for his outbursts, implying that the thought of going to prison is plainly bothering him.
+Jolly made a joke on Trump's seemingly insane behavior during his interview with fill-in anchor Charles F. Coleman Jr.
+In response, he smiled and said, ""My takeaway is, the old man's afraid of prison."" According to Jolly, Trump has a tendency to act out when he feels trapped; for example, on Christmas Day, he had a tantrum and prayed his adversaries would ""rot in hell.""Additionally, Jolly brought attention to Trump's trend of going against prosecutors who are engaged in cases that could endanger his freedom.
+The speaker brought up Trump's criticism of New York Attorney General Letitia James during his Thanksgiving address, who is in charge of investigations into Trump's financial affairs.
+Jolly also brought up Trump's assaults on special counsel Jack Smith, highlighting how the ex-president is feeling the heat as his legal battles heat up.
+A former Republican lawmaker has speculated that Trump's actions may be a sign that he has lost it. Then Jolly said, ""Maybe he has lost it.""
+Many people are talking about Trump's legal issues and his Truth Social agenda.
+Some have voiced concerns about the lack of transparency and the possibility of disinformation spreading on Truth Social, a network that Trump developed to compete with popular social media platforms.
+Some have hypothesized that Trump's hostile tone on the platform reflects his anxiety over the legal obstacles he must overcome.
+The former president is clearly struggling with the prospect of incarceration as the dates of his court appearances approach. As a former Trump supporter, Jolly's comments illuminate worries about the president's mental health and his capacity to handle the increasing legal constraints on him.
+People are still very interested in what's happening with Trump's Truth Social platform and his legal issues.
+People are watching these developments closely to see how they affect Trump's future political ambitions.
+In light of Donald Trump's impending court appearances, former congressman Dave Jolly's comments on MSNBC brought attention to his evident dread of prison.
+Jolly's remarks show Trump's erratic behavior and his propensity to react aggressively when he perceives himself being squeezed.
+The release of Truth Social and the continuation of legal challenges have added fuel to the fire of concern around Trump's mental health and capacity to handle the fallout from his actions. As reported by Newsweek on Thursday, December 28, 2023, a motion was filed by the team of Special Counsel Jack Smith, which has led to speculation over possible testimony from former Trump attorneys or members of Congress.
+The motion may signal that specific individuals are willing to testify in the case, according to legal commentators such as MSNBC's Lisa Rubin and former U.S. attorney for Alabama Joyce Vance.
+In a post on X (formerly Twitter), renowned legal expert Lisa Rubin claimed that Special Counsel Jack Smith's motion suggests that former Trump attorneys or members of Congress would be willing to testify.
+The ongoing judicial processes against the former president are becoming even more intriguing with the addition of this claim.
+In a post on her Substack blog, Joyce Vance expressed similar concerns, mirroring Rubin’s discoveries.
+The document ""suggests members of Congress, their personal or office staff, or people who received communications from them"" as possible witnesses, according to Vance's interpretation of the documentation.
+The legal picture surrounding Trump's case is becoming more complex due to the possibility of testimony from persons closely linked to Congress.
+Trump is facing charges that include alleged violations of the law in relation to his efforts to reverse Joe Biden's 2020 presidential election victory.
+Trump has entered a not guilty plea to all four federal accusations, firmly asserting his innocence.
+March is when the trial is supposed to begin, with U.S. District Judge Tanya Chutkan presiding over it.
+The case was temporarily halted until the U.S. Supreme Court decides on Trump's claims of presidential immunity, but new developments suggest that there may be a delay.
+Because it concerns a former president who is facing federal charges stemming from his behavior after the 2020 election, the upcoming trial is quite significant.
+The hearings are further complicated by the potential testimony of members of Trump's inner circle, including former attorneys and lawmakers.
+Experts in the field will be keeping a careful eye on these events, trying to predict how they might affect the course and result of the trial.
+The start date of the trial is still up in the air due to the ever-changing legal landscape; any postponement could occur until the Supreme Court rules on Trump's allegations.", March 2024,"news-style content
+
+non-enterprise user script"
+"Introducing the Creality Halot-Mage Resin 3D Printer, a revolutionary addition to the world of 3D printing. This remarkable device combines cutting-edge technology with user-friendly features to deliver outstanding results. With a generous printing size, unmatched 8K precision, and innovative design elements, this 3D printer sets a new standard for resin 3D printing. Join us as we delve into the details of this impressive machine and discover how it can elevate your 3D printing experience to new heights.
+
+
+Check the link in the description below to get the most updated price in real-time, you never know when these things might go on sale.
+What makes this product a smarter choice?
+
+Number 1: Impressive Printing Size 
+This 3D Printer boasts a notably larger build volume, setting it apart from many other resin printers. With a spacious printing area, it offers approximately 45% more space than an average 8.9-inch resin printer. This generous printing size grants users the creative freedom to produce a wide range of 3D models with ample room for complex designs.
+Number 2: Unprecedented 8K High Precision 
+One of the standout features of this 3D Printer is its astonishing 8K mono LCD. This cutting-edge technology delivers an impressive 33,177,600 pixels and a remarkable 29.7μm “X Y” resolution, a substantial improvement from the typical 50μm found in 4K printers. This precision allows for exceptional rendering of fine details, such as hair, fabric textures, skin tones, and organic shapes, resulting in lifelike and intricate prints.
+Number 3: High-precision Integral Light Source 
+This 3D Printer impresses with its self-developed integrated light source, boasting a light intensity of 5000±10 percent μW centimeter square. This ensures uniform light distribution across the entire screen, contributing to enhanced printing efficiency while preserving intricate model details. With standard 405nm resin, each layer cures in just 1 to 5 seconds, significantly reducing print times without compromising quality.
+Number 4: Innovative Orange ""Mage Arch"" Flip Lid 
+The printer's unique flip lid design sets it apart from the competition. The orange transparent cover is not only stylish but also serves a crucial purpose, blocking an impressive 99.89% of ambient “U V” light. This minimizes external interference, making it safe and user-friendly, especially for beginners and children. Additionally, the lid is easy to open and close with one hand, eliminating the need to set it aside during operation.
+Number 5: Odor-free Printing Environment 
+This 3D Printer features a built-in activated carbon filter, which is 5.8 times larger than typical filters. This effective filtration system efficiently absorbs and eliminates resinous odors and pungent fumes, ensuring a clean and odor-free printing environment. Furthermore, a vent hole is conveniently located at the back, allowing users to connect a vent tube for improved air circulation.
+
+(Dimensions)
+
+Product Dimensions are 23 inches Diameter by 5.12 inches Width by 3.94 inches Height.
+
+(Specifications)
+
+Take a moment to look at the specifications. Pause if you'd like to read them thoroughly.
+
+(Conclusion)
+
+the Creality Halot-Mage Resin 3D Printer is a game-changer in the world of resin 3D printing. Its expansive printing size, unparalleled 8K precision, innovative features like the ""Mage Arch"" flip lid, and odor-reducing technology make it a compelling choice for both enthusiasts and professionals. With these features and the inclusion of Chitubox Pro, it offers a robust and versatile 3D printing experience that can accommodate a wide range of creative projects.
+
+
+Thanks For Watching. I Leave My Affiliate Links Down In The Video Description Below, Click On Those Links and They'll Give You Most Updated Prices In Real Time You Never Know When These Things Might Go On Sale.", March 2024,"product review
+
+non-enterprise user script"
