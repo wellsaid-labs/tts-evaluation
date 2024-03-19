@@ -170,8 +170,9 @@ def main():
     gen_stats = pd.DataFrame(
         [
             {
-                "Test Cases": len(dataset_config.combined_texts) if
-                dataset_config else 0,
+                "Test Cases": (
+                    len(dataset_config.combined_texts) if dataset_config else 0
+                ),
                 "Speakers": len(speaker_selection),
                 "Models": model_versions,
                 "Total Clips": len(api_transactions),
