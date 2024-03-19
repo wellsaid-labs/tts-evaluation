@@ -12,8 +12,7 @@ from package_utils._streamlit import (
     st_download_files,
 )
 from package_utils.environment import ROOT_PATH
-from utils.api import query_wsl_api
-from utils.structures import DATASET_TYPES, APITransaction, DatasetConfig
+from _utils import APITransaction, query_wsl_api, DATASET_TYPES, DatasetConfig
 
 api_keys = dotenv_values(".env")
 
@@ -73,6 +72,7 @@ def main():
     st.header("Generate Audio from WSL's API")
     api_transactions = []
     speaker_selection = []
+    dataset_config = None
     test_cases_path = f"{ROOT_PATH}/generate/lib/test_case_csvs"
     test_case_options = [
         i for i in os.listdir(test_cases_path) if i.endswith("csv")
@@ -170,7 +170,8 @@ def main():
     gen_stats = pd.DataFrame(
         [
             {
-                "Test Cases": len(dataset_config.combined_texts),
+                "Test Cases": len(dataset_config.combined_texts) if
+                dataset_config else 0,
                 "Speakers": len(speaker_selection),
                 "Models": model_versions,
                 "Total Clips": len(api_transactions),
