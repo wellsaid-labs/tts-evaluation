@@ -1,12 +1,12 @@
-from dataclasses import dataclass, asdict
+import json
 import random
+import typing
+from dataclasses import asdict, dataclass
 
+import pandas as pd
+import yaml
 from generate.utils.api import APITransaction
 from google.cloud import storage
-import typing
-import json
-import yaml
-import pandas as pd
 from package_utils.environment import logger
 
 DATASET_TYPES = {"absolute", "comparative"}
@@ -27,11 +27,11 @@ class DatasetConfig:
         predefined_texts: List of existing texts, found in _test_cases.py
     """
 
-    model_versions: typing.List[str]
     gcs_path: str
-    speakers: typing.List[str]
+    speakers: typing.List[tuple]
     clips_per_text: int
     dataset_type: str
+    model_versions: typing.List[str] = None
     gcs_bucket: str = "tts_evaluations"
     task_limit: int = None
     custom_texts: typing.List[str] = None
@@ -42,9 +42,11 @@ class DatasetConfig:
         if self.dataset_type not in DATASET_TYPES:
             logger.error(f"Dataset type must be one of {DATASET_TYPES}")
             raise AttributeError
-
         combined_texts = pd.concat(
-            [pd.read_csv(i, usecols=[0]) for i in self.predefined_texts]
+            [
+                pd.read_csv(i, usecols=[0], names=["text"])
+                for i in self.predefined_texts
+            ]
         )
         if self.custom_texts:
             for i in self.custom_texts:
