@@ -13,13 +13,14 @@ from functools import partial
 
 import numpy as np
 import tqdm
-from package_utils import audio as pkg_audio, text
+from package_utils import audio as pkg_audio
+from package_utils import text
+from package_utils.environment import ROOT_PATH
+from package_utils.text import natural_keys
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, JsCode
 from streamlit.commands.page_config import get_random_emoji
 from streamlit.delta_generator import DeltaGenerator
 from third_party import LazyLoader
-from package_utils.environment import ROOT_PATH
-from package_utils.text import natural_keys
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     import altair as alt
@@ -260,6 +261,7 @@ def make_interval_chart(
 # def load_en_core_web_md(*args, **kwargs):
 #     return text.load_spacy_nlp("en_core_web_md", *args, **kwargs)
 #
+
 
 def st_data_frame(df: pd.DataFrame):
     """Display the `DataFrame` in the `streamlit` app."""
