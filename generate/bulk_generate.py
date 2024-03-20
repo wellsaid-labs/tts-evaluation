@@ -1,11 +1,16 @@
+import sys
 import time
 from multiprocessing import Pool
-from package_utils.environment import logger
-from generate.utils.api import APITransaction, query_wsl_api
-from generate.utils.structures import AudioDataset, DatasetConfig
-from tqdm import tqdm
 from pprint import pformat
-import sys
+
+from generate._utils import (
+    APITransaction,
+    query_wsl_api,
+    DatasetConfig,
+    AudioDataset,
+)
+from package_utils.environment import logger
+from tqdm import tqdm
 
 
 def main(
