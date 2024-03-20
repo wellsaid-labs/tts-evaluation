@@ -129,7 +129,8 @@ def response_to_wav(response: requests.Response) -> np.ndarray:
         fp.write(response.content)
         fp.seek(0)
         wav_data, source_sr = sf.read(fp.name)
-        wav_data = resampy.resample(wav_data, source_sr, SAMPLE_RATE)
+        if source_sr != SAMPLE_RATE:
+            wav_data = resampy.resample(wav_data, source_sr, SAMPLE_RATE)
         wav_data = np.trim_zeros(wav_data)
     if isinstance(wav_data, np.ndarray):
         return wav_data
