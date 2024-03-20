@@ -25,7 +25,8 @@ def process_task(task: APITransaction) -> typing.Tuple[dict, WebPath]:
         Tuple containing an entry to audio metadata and the audio web path
     """
     audio_file_name = (
-        f"{task.model_version}_{task.speaker}_{task.text[:25]}.wav"
+        f"{task.model_version}_{task.speaker}_"
+        f"{''.join(c for c in task.text[:25] if c.isalpha())}.wav"
     )
     task = query_wsl_api(task)
     audio_path = audio_to_web_path(task.wav_data, name=audio_file_name)
@@ -129,7 +130,8 @@ def main():
         model_speakers = pd.DataFrame(
             model_speakers, columns=["name", "speaker_id"]
         ).sort_values(by="name", ignore_index=True)
-        model_speakers["selected"] = True
+        select_none = st.checkbox("Deselect all speakers")
+        model_speakers["selected"] = False if select_none else True
         st.write(f"{model_speakers.shape[0]} available speakers")
         speaker_selection = st.data_editor(
             data=model_speakers,
@@ -182,8 +184,8 @@ def main():
     st.dataframe(gen_stats, hide_index=True, use_container_width=True)
 
     if st.button("Generate"):
-        st.write(api_transactions)
-        fname = "custom-input" if custom_text else predefined_text
+        fname = "custom-input" if custom_text else ",".join(
+            i.split("/")[-1].strip(".csv") for i in test_case_paths)
         model_name = (
             f"{','.join(model_versions) if model_versions else custom_model}"
         )
