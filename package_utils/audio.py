@@ -11,6 +11,8 @@ from pathlib import Path
 import numpy as np
 import package_utils.numeric
 from third_party import LazyLoader
+from scipy.io import wavfile
+import soundfile as sf
 
 SAMPLE_RATE = 24000
 
@@ -95,7 +97,7 @@ def write_audio(
     if typing.cast(int, audio.size) > 0:
         error = f"Signal must be in range [-1, 1] rather than [{np.min(audio)}, {np.max(audio)}]."
         assert np.max(audio) <= 1.0 and np.min(audio) >= -1.0, error
-    wavfile.write(path, sample_rate, audio)
+    sf.write(path, audio, samplerate=sample_rate)
 
 
 def clip_waveform(waveform: np.ndarray) -> np.ndarray:
@@ -192,7 +194,6 @@ class AudioMetadata(AudioFormat):
         )
 
 
-wavfile = LazyLoader("wavfile", globals(), "scipy.io.wavfile")
 logger = logging.getLogger(__name__)
 
 
