@@ -9,12 +9,10 @@ import socket
 import tempfile
 import typing
 import zipfile
-from functools import partial
 
 import numpy as np
 import tqdm
 from package_utils import audio as pkg_audio
-from package_utils import text
 from package_utils.environment import ROOT_PATH
 from package_utils.text import natural_keys
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, JsCode
@@ -45,7 +43,7 @@ STREAMLIT_WEB_ROOT_PATH = pathlib.Path(st.__file__).parent / "static"
 STREAMLIT_STATIC_PATH = STREAMLIT_WEB_ROOT_PATH / "static"
 
 # NOTE: These are the WSL TTS directories served by Streamlit.
-STREAMLIT_STATIC_PRIVATE_PATH = STREAMLIT_STATIC_PATH / "_wsl_tts"
+STREAMLIT_STATIC_PRIVATE_PATH = STREAMLIT_STATIC_PATH / "wsl_tts"
 STREAMLIT_STATIC_TEMP_PATH = STREAMLIT_STATIC_PRIVATE_PATH / "temp"
 STREAMLIT_STATIC_SYMLINK_PATH = STREAMLIT_STATIC_PRIVATE_PATH / "symlink"
 
@@ -98,7 +96,7 @@ def audio_to_web_path(
     audio: np.ndarray, name: str = "audio.wav", **kwargs
 ) -> WebPath:
     web_path = make_temp_web_dir() / name
-    partial(pkg_audio.write_audio)(web_path, audio, **kwargs)
+    pkg_audio.write_audio(web_path, audio, **kwargs)
     return web_path
 
 
