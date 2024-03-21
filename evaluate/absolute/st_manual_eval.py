@@ -52,7 +52,7 @@ def unzip_audio_and_metadata(zip_file):
         for idx, row in df.iterrows():
             data, sr = sf.read(os.path.join(tempdir, row.Audio))
             audio_path = audio_to_web_path(
-                data, name=f"{row.Speaker}_{row.Script}.wav"
+                data, name=row.Audio
             )
             st.session_state["input_audio"].append(audio_path)
         st.session_state["input_metadata"] = df
