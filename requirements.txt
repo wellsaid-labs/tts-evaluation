@@ -3,14 +3,6 @@ numpy
 scipy
 numba
 
-# NOTE: For optimized `torch` install, visit https://pytorch.org and follow the "Get Started"
-# guide.
-torch==1.13.1
-
-# Language Library
-git+https://github.com/PetrochukM/PyTorch-NLP
-git+https://github.com/savoirfairelinux/num2words
-# Learn more: https://spacy.io/usage/models#production
 spacy==3.4.4
 https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.4.0/en_core_web_sm-3.4.0.tar.gz#egg=en_core_web_sm
 https://github.com/explosion/spacy-models/releases/download/en_core_web_md-3.4.0/en_core_web_md-3.4.0.tar.gz#egg=en_core_web_md
@@ -49,7 +41,6 @@ isort
 
 # Utils
 tqdm # Progress bar
-python-Levenshtein==0.12.2 # Sequence alignment
 pythonic-config # Organize hyperparameters
 pandas
 retry
