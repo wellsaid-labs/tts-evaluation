@@ -33,6 +33,7 @@ def process_task(task: APITransaction) -> typing.Tuple[dict, WebPath]:
     metadata_entry = {
         "Speaker": "_".join(task.speaker.split("_")[0:2]),
         "Style": task.speaker.split("_")[-1],
+        "Model_Version": task.model_version,
         "Speaker_ID": task.speaker_id,
         "Script": task.text,
         "Vote": "",
@@ -135,8 +136,9 @@ def main():
         st.write(f"{model_speakers.shape[0]} available speakers")
         speaker_selection = st.data_editor(
             data=model_speakers,
-            use_container_width=True,
+            use_container_width=False,
             hide_index=True,
+            height=750
         )
         speaker_selection = speaker_selection[
             speaker_selection.selected == True
@@ -181,7 +183,7 @@ def main():
             }
         ]
     )
-    st.dataframe(gen_stats, hide_index=True, use_container_width=True)
+    st.dataframe(gen_stats, hide_index=True, use_container_width=False)
 
     if st.button("Generate"):
         fname = "custom-input" if custom_text else ",".join(
