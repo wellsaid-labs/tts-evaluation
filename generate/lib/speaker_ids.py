@@ -127,7 +127,7 @@ MODEL_TO_SPEAKERS = {
         ("MARCUS_G__NARRATION", 61),
         ("JORDAN_T__NARRATION", 62),
         ("FIONA_H__EN_UK__NARRATION", 63),
-        ("ROXY_T__NARRATION", 64),
+        # ("ROXY_T__NARRATION", 64),  Retired
         ("DONNA_W__NARRATION", 65),
         ("GREG_G__NARRATION", 66),
         ("ZOEY_O__NARRATION", 67),
@@ -194,7 +194,7 @@ MODEL_TO_SPEAKERS = {
         ("MARCUS_G__NARRATION", 61),
         ("JORDAN_T__NARRATION", 62),
         ("FIONA_H__EN_UK__NARRATION", 63),
-        ("ROXY_T__NARRATION", 64),
+        # ("ROXY_T__NARRATION", 64),  Retired
         ("DONNA_W__NARRATION", 65),
         ("GREG_G__NARRATION", 66),
         ("ZOEY_O__NARRATION", 67),
@@ -305,7 +305,7 @@ MODEL_TO_SPEAKERS = {
         ("MARCUS_G__NARRATION", 61),
         ("JORDAN_T__NARRATION", 62),
         ("FIONA_H__EN_UK__NARRATION", 63),
-        ("ROXY_T__NARRATION", 64),
+        # ("ROXY_T__NARRATION", 64),  Retired
         ("DONNA_W__NARRATION", 65),
         ("GREG_G__NARRATION", 66),
         ("ZOEY_O__NARRATION", 67),
@@ -374,7 +374,7 @@ MODEL_TO_SPEAKERS = {
         ("PAIGE_L__CONVO", 131),
         ("FIONA_H__CONVO", 132),
         ("RAMONA_J__CONVO", 133),
-        ("ROXY_T__CONVO", 134),
+        # ("ROXY_T__CONVO", 134),  Retired
         ("DONNA_W__CONVO", 135),
         ("TERRA_G__CONVO", 136),
         ("JEREMY_G__CONVO", 138),
@@ -387,7 +387,7 @@ MODEL_TO_SPEAKERS = {
         ("RAMONA_J__PROMO", 5),
         ("WADE_C", 7),
         ("SOFIA_H__NARRATION", 8),
-        ("DAVID_D", 9),
+        # ("DAVID_D", 9),  Retired
         ("VANESSA_N__NARRATION", 10),
         ("ISABEL_V", 11),
         ("AVA_M", 12),
