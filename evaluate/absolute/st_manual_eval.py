@@ -8,6 +8,7 @@ import os
 import tempfile
 import zipfile
 from functools import partial
+from typing import Callable
 
 import pandas as pd
 import soundfile as sf
@@ -33,14 +34,27 @@ issue_options = sorted(
 issue_options.append("Other")
 
 
-def unzip_audio_and_metadata(zip_file):
-    """Unzip file containing audio .wavs and metadata.csv. Return metadata as
-        pd.DataFrame and audio as list of absolute paths.
+def initialize_state() -> None:
+    """Set values in st.session_state for first run"""
+    for key in st.session_state.keys():
+        if key.startswith("Note") or key.startswith("Issue"):  # type: ignore
+            st.session_state[key] = ""
+    st.session_state.input_audio = []
+    st.session_state.output_metadata = pd.DataFrame()
+    st.session_state.input_metadata = pd.DataFrame()
+    st.session_state.output_path = ""
+    st.session_state.ready_to_download = False
+    st.session_state.zip_path = ""
+    st.session_state.output_rows = []
+
+
+def unzip_audio_and_metadata(zip_file: str) -> None:
+    """Unzip file containing audio wavs and metadata.csv. Update session state
+    with data from zip file.
     Args:
         zip_file (File): The UploadedFile object from st.file_upload
     Returns:
-        Tuple(pd.DataFrame, list): Tuple containing the metadata as a dataframe
-            and paths to the audio files
+        None: This function only updates st.session_state
     """
     zf = zipfile.ZipFile(zip_file)
     with tempfile.TemporaryDirectory() as tempdir:
@@ -58,48 +72,42 @@ def unzip_audio_and_metadata(zip_file):
         st.session_state["input_metadata"] = df
 
 
-def initialize_state():
-    for key in st.session_state.keys():
-        if key.startswith("Note") or key.startswith("Issue"):  # type: ignore
-            st.session_state[key] = ""
-    st.session_state.input_audio = []
-    st.session_state.output_metadata = pd.DataFrame()
-    st.session_state.input_metadata = pd.DataFrame()
-    st.session_state.output_path = ""
-    st.session_state.ready_to_download = False
-    st.session_state.zip_path = ""
-    st.session_state.output_rows = []
-
-
-def setup_columns():
-    h1, h2, h3, h4, h5 = st.columns(col_widths)
-    h1.subheader("Speaker")
-    h2.subheader("Script")
-    h3.subheader("Audio")
-    h4.subheader("Issues")
-    h5.subheader("Notes")
-    st.divider()
-
-
-def prepare_metadata():
-    issues_widgets = {
-        k: v for k, v in st.session_state.items() if k.startswith("Issue")
+def get_widget_values(
+    widget_prefix: str, value_func: Callable, sort_func: Callable
+) -> list:
+    """Helper function to retrieve and format items from st.session_state
+    Args:
+        widget_prefix: The starting characters of the widgets to fetch
+        value_func: Function to format the values of the widgets
+        sort_func: Function to sort the values of the widgets
+    Returns:
+        values: The list of values associated with the widgets
+    """
+    widgets = {
+        k: v for k, v in st.session_state.items() if k.startswith(widget_prefix)
     }
-    issues = [
-        ", ".join(v) if v else ""
-        for k, v in sorted(
-            issues_widgets.items(), key=lambda x: int(x[0].split("_")[1])
-        )
-    ]
-    notes_widgets = {
-        k: v for k, v in st.session_state.items() if k.startswith("Note")
-    }
-    notes = [
-        v
-        for k, v in sorted(
-            notes_widgets.items(), key=lambda x: int(x[0].split("_")[1])
-        )
-    ]
+    values = [value_func(v) for k, v in sorted(widgets.items(), key=sort_func)]
+    return values
+
+
+def fetch_user_inputs() -> list:
+    """Fetch evaluations from st.session_state
+    Returns:
+        download_paths: A list of paths to download, including original audio
+            files and new user inputs
+    """
+    issues = get_widget_values(
+        widget_prefix="Issue",
+        value_func=lambda x: ", ".join(x),
+        sort_func=lambda x: int(x[0].split("_")[1]),
+    )
+    notes = get_widget_values(
+        widget_prefix="Notes",
+        value_func=lambda x: x,
+        sort_func=lambda x: int(x[0].split("_")[1]),
+    )
+    st.write(issues)
+    st.write(notes)
     new_rows = []
     for row, issue, note in zip(st.session_state.output_rows, issues, notes):
         row["Issues"] = issue
@@ -115,12 +123,27 @@ def prepare_metadata():
     return download_paths
 
 
-def set_ready_to_dl(output_rows):
+def setup_columns() -> None:
+    """Set up column headers for survey()"""
+    h1, h2, h3, h4, h5 = st.columns(col_widths)
+    h1.subheader("Speaker")
+    h2.subheader("Script")
+    h3.subheader("Audio")
+    h4.subheader("Issues")
+    h5.subheader("Notes")
+    st.divider()
+
+
+def set_ready_to_dl(output_rows) -> None:
+    """Callback function which indicates the output is ready to be downloaded"""
     st.session_state.output_rows = output_rows
     st.session_state.ready_to_download = True
 
 
-def survey():
+def survey() -> None:
+    """The main survey portion of the evaluation app. Since this is function
+    is called within a form, the actual values input by users are stored in
+    st.session_state and retrieved later."""
     setup_columns()
     output_rows = []
     audios_and_metadata = zip(
@@ -136,15 +159,15 @@ def survey():
             st.audio(str(audio_path))
         with col4:
             st.multiselect(
-                "",
+                label="Issues",
                 options=issue_options,
                 key=f"Issues_" f"{row_idx}",
                 label_visibility="collapsed",
             )
         with col5:
             st.text_area(
-                "",
-                key=f"Note_{idx}",
+                label="Notes",
+                key=f"Notes_{idx}",
                 label_visibility="collapsed",
             )
         st.divider()
@@ -164,7 +187,7 @@ def survey():
     )
 
 
-def main():
+def main() -> None:
     st.set_page_config(layout="wide")
     if "input_audio" not in st.session_state:
         initialize_state()
@@ -181,7 +204,7 @@ def main():
             with st.form(key="survey"):
                 survey()
     else:
-        download_paths = prepare_metadata()
+        download_paths = fetch_user_inputs()
         st_download_files(
             st.session_state.zip_path, "💾  DOWNLOAD  💾", download_paths
         )
