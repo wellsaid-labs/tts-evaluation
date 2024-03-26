@@ -18,17 +18,19 @@ from package_utils._streamlit import (
     st_download_files,
 )
 
-col_widths = [1, 1, 1, 1, 1]
-issue_options = [
-    "Slurring",
-    "Gibberish",
-    "Word-Skip",
-    "Word-Cutoff",
-    "Mispronunciation",
-    "Unnatural-Intonation",
-    "Speaker-Switching",
-    "Other",
-]
+col_widths = [1, 2, 1.5, 1, 1]
+issue_options = sorted(
+    [
+        "Slurring",
+        "Gibberish",
+        "Word-Skip",
+        "Word-Cutoff",
+        "Mispronunciation",
+        "Unnatural-Intonation",
+        "Speaker-Switching",
+    ]
+)
+issue_options.append("Other")
 
 
 def unzip_audio_and_metadata(zip_file):
@@ -51,9 +53,7 @@ def unzip_audio_and_metadata(zip_file):
         df = pd.read_csv(df_path)
         for idx, row in df.iterrows():
             data, sr = sf.read(os.path.join(tempdir, row.Audio))
-            audio_path = audio_to_web_path(
-                data, name=row.Audio
-            )
+            audio_path = audio_to_web_path(data, name=row.Audio)
             st.session_state["input_audio"].append(audio_path)
         st.session_state["input_metadata"] = df
 
@@ -82,20 +82,27 @@ def setup_columns():
 
 
 def prepare_metadata():
+    issues_widgets = {
+        k: v for k, v in st.session_state.items() if k.startswith("Issue")
+    }
     issues = [
-        {
-            k.split("_")[1]: v
-            for k, v in st.session_state.items()
-            if k.startswith("Issue") and k.endswith(str(i))
-        }
-        for i in range(len(st.session_state.input_audio))
+        ", ".join(v) if v else ""
+        for k, v in sorted(
+            issues_widgets.items(), key=lambda x: int(x[0].split("_")[1])
+        )
     ]
+    notes_widgets = {
+        k: v for k, v in st.session_state.items() if k.startswith("Note")
+    }
     notes = [
-        st.session_state[i] for i in st.session_state if i.startswith("Note")
+        v
+        for k, v in sorted(
+            notes_widgets.items(), key=lambda x: int(x[0].split("_")[1])
+        )
     ]
     new_rows = []
     for row, issue, note in zip(st.session_state.output_rows, issues, notes):
-        row["Issues"] = ", ".join(i for i in issue if issue[i])
+        row["Issues"] = issue
         row["Notes"] = note
         new_rows.append(row)
     df = pd.DataFrame(new_rows)
@@ -115,7 +122,7 @@ def set_ready_to_dl(output_rows):
 
 def survey():
     setup_columns()
-    notes, issues, output_rows = [], [], []
+    output_rows = []
     audios_and_metadata = zip(
         st.session_state.input_audio, st.session_state.input_metadata.iterrows()
     )
@@ -128,25 +135,24 @@ def survey():
         with col3:
             st.audio(str(audio_path))
         with col4:
-            opts = [
-                st.checkbox(i, key=f"Issue_{i}_{len(issues)}")
-                for i in issue_options
-            ]
-            issues.append(
-                [issue_options[idx] for idx, i in enumerate(opts) if i]
+            st.multiselect(
+                "",
+                options=issue_options,
+                key=f"Issues_" f"{row_idx}",
+                label_visibility="collapsed",
             )
         with col5:
-            notes.append(
-                st.text_area(
-                    "Notes",
-                    key=f"Note_{idx}",
-                    label_visibility="hidden",
-                )
+            st.text_area(
+                "",
+                key=f"Note_{idx}",
+                label_visibility="collapsed",
             )
         st.divider()
         output_row = {
             "Speaker": row.Speaker,
             "Style": row.Style,
+            "Speaker_ID": row.Speaker_ID,
+            "Model_Version": row.Model_Version,
             "Script": row.Script,
             "Audio": str(audio_path).split("/")[-1],
         }
