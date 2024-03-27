@@ -106,8 +106,6 @@ def fetch_user_inputs() -> list:
         value_func=lambda x: x,
         sort_func=lambda x: int(x[0].split("_")[1]),
     )
-    st.write(issues)
-    st.write(notes)
     new_rows = []
     for row, issue, note in zip(st.session_state.output_rows, issues, notes):
         row["Issues"] = issue
@@ -161,13 +159,13 @@ def survey() -> None:
             st.multiselect(
                 label="Issues",
                 options=issue_options,
-                key=f"Issues_" f"{row_idx}",
+                key=f"Issues_{row_idx}",
                 label_visibility="collapsed",
             )
         with col5:
             st.text_area(
                 label="Notes",
-                key=f"Notes_{idx}",
+                key=f"Notes_{row_idx}",
                 label_visibility="collapsed",
             )
         st.divider()
