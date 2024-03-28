@@ -76,9 +76,9 @@ def main():
     speaker_selection = []
     dataset_config = None
     test_cases_path = f"{ROOT_PATH}/generate/lib/test_case_csvs"
-    test_case_options = [
+    test_case_options = sorted([
         i for i in os.listdir(test_cases_path) if i.endswith("csv")
-    ]
+    ])
 
     with st.container(border=True):
         c1, c2 = st.columns(2)
