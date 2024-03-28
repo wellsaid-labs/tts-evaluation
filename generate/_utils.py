@@ -18,9 +18,9 @@ from package_utils.audio import SAMPLE_RATE
 from package_utils.environment import logger
 
 api_keys = dotenv_values(".env")
-kong_staging = api_keys["KONG_STAGING"]
+prod_api_key = api_keys["TEAM_PROD_API_KEY"]
 TTS_API_ENDPOINT = (
-    "https://staging.tts.wellsaidlabs.com/api/text_to_speech/stream"
+    "https://api.wellsaidlabs.com/v1/tts/stream"
 )
 np.set_printoptions(threshold=np.inf)
 
@@ -45,9 +45,10 @@ class APITransaction:
 
     def __post_init__(self):
         self.headers = {
-            "X-Api-Key": kong_staging,
+            "X-Api-Key": prod_api_key,
             "Accept-Version": self.model_version,
             "Content-Type": "application/json",
+            "Accept": "audio/mpeg",
         }
 
     def as_dict(self):
